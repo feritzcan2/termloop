@@ -143,6 +143,7 @@ pub(super) fn cleanup_unknown_preview(
     task: &termloop_domain::TaskRecord,
     proof: &ManagedWorktreeProof,
     blocker: WorktreeCleanupBlocker,
+    record_only_forget_available: bool,
 ) -> Value {
     json!({
         "task_id": task.id,
@@ -152,7 +153,15 @@ pub(super) fn cleanup_unknown_preview(
         "decision": "unknown",
         "blockers": [cleanup_blocker_name(&blocker)],
         "destructive_cleanup": { "status": "unavailable", "eligible_blockers": [] },
-        "stale_resolution": stale_resolution_unavailable_json(vec![stale_blocker_from_cleanup(&blocker)]),
+        "stale_resolution": if record_only_forget_available {
+            json!({
+                "forget_status": "available",
+                "disposal_status": "unavailable",
+                "blockers": [stale_resolution_blocker_name(&stale_blocker_from_cleanup(&blocker))],
+            })
+        } else {
+            stale_resolution_unavailable_json(vec![stale_blocker_from_cleanup(&blocker)])
+        },
         "warnings": [],
         "health": Value::Null,
         "presence": Value::Null,

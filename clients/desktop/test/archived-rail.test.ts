@@ -25,7 +25,7 @@ function archivedTask(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
-async function renderArchived(tasks: readonly Task[], options: { loading?: boolean; disabled?: boolean; expand?: boolean } = {}): Promise<string> {
+async function renderArchived(tasks: readonly Task[], options: { loading?: boolean; disabled?: boolean; expand?: boolean; deleting?: boolean } = {}): Promise<string> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -34,7 +34,7 @@ async function renderArchived(tasks: readonly Task[], options: { loading?: boole
     tasks,
     loading: options.loading ?? false,
     disabled: options.disabled ?? false,
-    deletingTaskIds: new Set<string>(),
+    deletingTaskIds: options.deleting ? new Set(tasks.map((task) => task.id)) : new Set<string>(),
     restore: () => {},
     inspectTaskWorktreeCleanup: async () => { throw new Error("not inspected in rail test"); },
     deleteTask: async (): Promise<TaskDeleteWorktreeResult> => ({ status: "completed" }),
@@ -122,6 +122,12 @@ describe("Archived rail layout", () => {
 
   it("disables restore while the rail is disabled", async () => {
     expect(await renderArchived([archivedTask()], { disabled: true })).toContain("disabled");
+  });
+
+  it("shows Deleting while an archived Task is being removed", async () => {
+    const markup = await renderArchived([archivedTask()], { deleting: true });
+    expect(markup).toContain("Deleting…");
+    expect(markup).toContain('class="archived-row deleting"');
   });
 });
 

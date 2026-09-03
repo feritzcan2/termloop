@@ -120,7 +120,18 @@ function isSavedConnection(value: unknown): value is SavedConnection {
     && typeof record.terminalToken === "string"
     && (record.lastConnectedAtEpochMs === null || typeof record.lastConnectedAtEpochMs === "number")
     && (record.productVersion === null || typeof record.productVersion === "string")
-    && (record.contractIdentity === null || typeof record.contractIdentity === "string");
+    && (record.contractIdentity === null || typeof record.contractIdentity === "string")
+    && Object.keys(record).every((key) => [
+      "id",
+      "name",
+      "controlUrl",
+      "controlToken",
+      "terminalUrl",
+      "terminalToken",
+      "lastConnectedAtEpochMs",
+      "productVersion",
+      "contractIdentity",
+    ].includes(key));
 }
 
 function profileKey(id: string): string {

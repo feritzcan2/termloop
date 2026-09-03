@@ -7,10 +7,13 @@ import type {
   AgentLaunchInspection,
   AgentLaunchSelection,
   ConnectionProfile,
+  MobileAgentGroupLayout,
   MobileRuntime,
   PlaybookProjection,
   SelectedImage,
   StewardMessage,
+  StewardVoiceClip,
+  StewardVoiceReceiptStore,
   TerminalAttachment,
   TerminalEvent,
 } from "@/application/ports";
@@ -20,8 +23,21 @@ import type {
   SavedConnection,
   SecureConnectionRepository,
 } from "@/platform/secure-connections";
+import {
+  mobileDiagnostics,
+  websocketEndpointLabel,
+  type MobileDiagnosticReporter,
+  type MobileDiagnosticValue,
+} from "../../platform/mobile-diagnostics";
 import { parsePairingCode } from "../../platform/pairing-code";
 import { MobileControlClient, MobileControlError } from "./mobile-control-client";
+import { probeGatewayCompatibility } from "./gateway-compatibility";
+import {
+  dataSocketMessageBytes,
+  type DataSocket,
+  type DataSocketFactory,
+} from "./data-socket";
+import { MobileConnectionCoordinator } from "./mobile-connection-coordinator";
 import {
   FRAME_MAGIC,
   KIND_ACK,
@@ -32,28 +48,40 @@ import {
   KIND_INPUT,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  decodeReplayAck,
   decodeFrame,
   decodeGapCount,
   encodeFrame,
+  replayRequestPayload,
 } from "./terminal-frame";
 
 const AUTH_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
-const MIN_RECONNECT_MS = 250;
-const MAX_RECONNECT_MS = 2_000;
+const MIN_RECONNECT_MS = 500;
+const MAX_RECONNECT_MS = 30_000;
+const STABLE_CONNECTION_MS = 30_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
-/// A replay is a frozen bounded snapshot, but the wire must split it into 16 KiB
-/// frames. Publishing every transport frame separately makes React reconcile dozens
-/// of incomplete Claude redraws before it ever sees the current screen. Fold one
-/// replay burst back into its snapshot boundary before presentation sees it.
-const REPLAY_BATCH_SETTLE_MS = 16;
+/// Older daemons have no replay-complete metadata. Their 16 KiB replay frames can be
+/// 700+ ms apart over Tailnet, so retain a one-second quiet-window fallback. Newer
+/// daemons negotiate the exact replay frame count and complete synchronously.
+const REPLAY_BATCH_SETTLE_MS = 1_000;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 const STEWARD_TRANSCRIPT_LIMIT = 60;
 const STEWARD_MESSAGE_LIMIT = 8_192;
+const STEWARD_VOICE_LIMIT_BYTES = 2 * 1024 * 1024;
+const STEWARD_SPEECH_LIMIT_BYTES = 10 * 1024 * 1024;
 const INITIAL_PROMPT_LIMIT = 4_096;
+/// A closed Mac must never hold the saved-computer catalog behind two 5s
+/// request attempts. Healthy local/Tailscale paths usually settle inside this
+/// window; slower profiles remain visible as reconnecting and finish in the
+/// background.
+const PROFILE_DISCOVERY_SETTLE_MS = 250;
+const ONLINE_PROFILE_FRESH_MS = 30_000;
+const UNAVAILABLE_PROFILE_FRESH_MS = 2_000;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
+let terminalDiagnosticSequence = 0;
 
 /// The daemon returns the newest messages first; a chat reads oldest first.
 function orderedTranscript(messages: readonly StewardMessage[]): StewardMessage[] {
@@ -117,23 +145,20 @@ async function namePromptedSession(
   }
 }
 
-export interface DataSocket {
-  binaryType: string;
-  readonly readyState: number;
-  onopen: (() => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
-  onerror: (() => void) | null;
-  onclose: (() => void) | null;
-  send(data: string | ArrayBuffer | Uint8Array): void;
-  close(): void;
-}
-
-export type DataSocketFactory = (url: string) => DataSocket;
+export type { DataSocket } from "./data-socket";
 
 export interface ProductionRuntimeOptions {
   readonly repository: SecureConnectionRepository;
+  readonly diagnostics?: MobileDiagnosticReporter;
   readonly controlSocketFactory?: SocketFactory;
   readonly terminalSocketFactory?: DataSocketFactory;
+  /// Enables the v2 route-independent `/mobile` transport. Kept injectable so
+  /// legacy adapter tests can exercise the v1 control/terminal fallbacks.
+  readonly multiplexSocketFactory?: DataSocketFactory;
+  /// Secret-free HTTP reachability proof used before allocating a native multiplex
+  /// WebSocket. Production enables it; adapter tests may omit it when exercising
+  /// transport state directly.
+  readonly connectionPreflight?: (connection: SavedConnection) => Promise<void>;
   readonly fetch?: typeof fetch;
   readonly watchBridge?: {
     syncCredentials(
@@ -142,15 +167,34 @@ export interface ProductionRuntimeOptions {
     ): Promise<boolean>;
   };
   readonly watchTargetSettings?: WatchTargetSettings;
+  readonly voiceReceipts?: StewardVoiceReceiptStore;
 }
 
 export function createProductionRuntime(options: ProductionRuntimeOptions): MobileRuntime {
+  const diagnostics = options.diagnostics ?? mobileDiagnostics;
   const controlSocketFactory = options.controlSocketFactory
     ?? ((url: string) => new WebSocket(url) as never);
   const terminalSocketFactory = options.terminalSocketFactory
     ?? ((url: string) => new WebSocket(url) as unknown as DataSocket);
   const request = options.fetch ?? fetch;
   const watchTargetSettings = options.watchTargetSettings ?? noWatchTargetSettings;
+  const voiceReceipts = options.voiceReceipts ?? noVoiceReceipts;
+  const connectionChangeListeners = new Set<() => void>();
+  const profileCache = new Map<string, {
+    readonly connection: SavedConnection;
+    readonly checkedAtEpochMs: number;
+    readonly value: ConnectionProfile;
+  }>();
+  const profileProbes = new Map<string, {
+    readonly connection: SavedConnection;
+    readonly promise: Promise<void>;
+  }>();
+  const authenticatedActivityAtEpochMs = new Map<string, number>();
+  let profileGeneration = 0;
+  const coordinators = new Map<string, {
+    readonly coordinator: MobileConnectionCoordinator;
+    readonly unsubscribeStatus: () => void;
+  }>();
   const controlClients = new Map<string, {
     readonly url: string;
     readonly token: string;
@@ -158,6 +202,8 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   }>();
 
   const controlClient = (connection: SavedConnection): MobileControlClient => {
+    const multiplex = connectionCoordinator(connection);
+    if (multiplex !== undefined) return multiplex.control;
     const current = controlClients.get(connection.id);
     if (current?.url === connection.controlUrl && current.token === connection.controlToken) {
       return current.client;
@@ -167,6 +213,8 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       connection.controlUrl,
       connection.controlToken,
       controlSocketFactory,
+      diagnostics,
+      connection.id,
     );
     controlClients.set(connection.id, {
       url: connection.controlUrl,
@@ -176,10 +224,129 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     return next;
   };
 
+  const connectionCoordinator = (connection: SavedConnection): MobileConnectionCoordinator | undefined => {
+    if (options.multiplexSocketFactory === undefined) return undefined;
+    const current = coordinators.get(connection.id);
+    if (current?.coordinator.matches(connection)) return current.coordinator;
+    current?.unsubscribeStatus();
+    current?.coordinator.close();
+    const connectionPreflight = options.connectionPreflight;
+    const coordinator = new MobileConnectionCoordinator(
+      connection,
+      options.multiplexSocketFactory,
+      diagnostics,
+      connectionPreflight === undefined
+        ? undefined
+        : () => connectionPreflight(connection),
+    );
+    const unsubscribeStatus = coordinator.subscribeStatus((status) => {
+      const cached = profileCache.get(connection.id);
+      if (status === "online") {
+        const now = Date.now();
+        authenticatedActivityAtEpochMs.set(connection.id, now);
+        const cachedMatches = cached !== undefined
+          && sameConnectionIdentity(cached.connection, connection);
+        const recovered = !cachedMatches || cached.value.availability !== "online";
+        profileCache.set(connection.id, {
+          connection,
+          checkedAtEpochMs: now,
+          value: profile(
+            connection,
+            "online",
+            cachedMatches ? cached.value.productVersion : connection.productVersion,
+            cachedMatches ? cached.value.contractIdentity : connection.contractIdentity,
+          ),
+        });
+        if (recovered) {
+          for (const listener of connectionChangeListeners) listener();
+        }
+        return;
+      }
+      if (status === "offline") {
+        /// Transport loss expires the reachability lease immediately. The next
+        /// catalog read starts a fresh version proof instead of reusing success.
+        authenticatedActivityAtEpochMs.delete(connection.id);
+        profileCache.delete(connection.id);
+        for (const listener of connectionChangeListeners) listener();
+      }
+    });
+    coordinators.set(connection.id, { coordinator, unsubscribeStatus });
+    return coordinator;
+  };
+
+  const probeProfile = (connection: SavedConnection): Promise<void> | undefined => {
+    const cached = profileCache.get(connection.id);
+    const freshnessMs = cached?.value.availability === "online"
+      ? ONLINE_PROFILE_FRESH_MS
+      : UNAVAILABLE_PROFILE_FRESH_MS;
+    if (cached !== undefined && sameConnectionIdentity(cached.connection, connection)
+      && Date.now() - cached.checkedAtEpochMs < freshnessMs) return undefined;
+    const current = profileProbes.get(connection.id);
+    if (current !== undefined && sameConnectionIdentity(current.connection, connection)) return current.promise;
+
+    const generation = profileGeneration;
+    const startedAtEpochMs = Date.now();
+    const promise = controlClient(connection).version(true).then(
+      (version) => ({
+        transientFailure: false,
+        value: profile(connection, "online", version.version, version.protocolVersion),
+      }),
+      async (cause: unknown) => {
+        if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
+          return { transientFailure: false, value: profile(connection, "updateRequired") };
+        }
+        if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
+          return { transientFailure: false, value: profile(connection, "revoked") };
+        }
+        const gatewayCompatibility = await probeGatewayCompatibility(connection, request);
+        if (gatewayCompatibility === "gatewayUpdateRequired") {
+          return { transientFailure: false, value: profile(connection, "gatewayUpdateRequired") };
+        }
+        if (gatewayCompatibility === "mobileUpdateRequired") {
+          return { transientFailure: false, value: profile(connection, "updateRequired") };
+        }
+        return { transientFailure: true, value: profile(connection, "offline") };
+      },
+    ).then(({ transientFailure, value }) => {
+      if (generation !== profileGeneration) return;
+      const active = profileProbes.get(connection.id);
+      if (active === undefined || !sameConnectionIdentity(active.connection, connection)) return;
+      if (transientFailure
+        && (authenticatedActivityAtEpochMs.get(connection.id) ?? -1) >= startedAtEpochMs) {
+        return;
+      }
+      const previous = profileCache.get(connection.id);
+      profileCache.set(connection.id, {
+        connection,
+        checkedAtEpochMs: Date.now(),
+        value,
+      });
+      if (previous === undefined || !sameProfile(previous.value, value)) {
+        for (const listener of connectionChangeListeners) listener();
+      }
+    }).finally(() => {
+      const active = profileProbes.get(connection.id);
+      if (active?.promise === promise) profileProbes.delete(connection.id);
+    });
+    profileProbes.set(connection.id, { connection, promise });
+    return promise;
+  };
+
   const resolve = async (connectionId: string): Promise<SavedConnection> => {
     const connection = await options.repository.get(connectionId);
     if (connection === undefined) throw new Error("Saved Mac was not found.");
     return connection;
+  };
+
+  const attachConnectionTerminal = (
+    connection: SavedConnection,
+    session: { id: string; runtime_epoch: number },
+    onEvent: (event: TerminalEvent) => void,
+  ): Promise<TerminalAttachment> => {
+    const coordinator = connectionCoordinator(connection);
+    return coordinator === undefined
+      ? attachTerminal(connection, session, onEvent, terminalSocketFactory, diagnostics)
+      : coordinator.attachTerminal(session, onEvent);
   };
 
   const syncWatchCatalog = async (): Promise<boolean> => {
@@ -216,27 +383,61 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
 
   return {
     kind: "production",
+    voiceReceipts,
     connections: {
+      subscribeChanges(listener) {
+        let active = true;
+        connectionChangeListeners.add(listener);
+        void options.repository.list().then((saved) => {
+          if (!active) return;
+          for (const connection of saved) connectionCoordinator(connection);
+        }, () => {});
+        return () => {
+          active = false;
+          connectionChangeListeners.delete(listener);
+        };
+      },
       async list() {
         const saved = await options.repository.list();
-        return Promise.all(saved.map(async (connection): Promise<ConnectionProfile> => {
-          try {
-            const version = await controlClient(connection).version();
-            return profile(connection, "online", version.version, version.protocolVersion);
-          } catch (cause: unknown) {
-            if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
-              return profile(connection, "updateRequired");
-            }
-            if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
-              return profile(connection, "revoked");
-            }
-            return profile(connection, "offline");
-          }
-        }));
+        const knownIds = new Set(saved.map(({ id }) => id));
+        for (const connectionId of profileCache.keys()) {
+          if (!knownIds.has(connectionId)) profileCache.delete(connectionId);
+        }
+        const probes = saved.flatMap((connection) => {
+          const pending = probeProfile(connection);
+          return pending === undefined ? [] : [pending];
+        });
+        if (saved.some((connection) => profileCache.get(connection.id) === undefined)) {
+          await settleWithin(probes, PROFILE_DISCOVERY_SETTLE_MS);
+        }
+        return saved.map((connection) => {
+          const cached = profileCache.get(connection.id);
+          return cached !== undefined && sameConnectionIdentity(cached.connection, connection)
+            ? profile(
+              connection,
+              cached.value.availability,
+              cached.value.productVersion,
+              cached.value.contractIdentity,
+            )
+            : profile(connection, "reconnecting");
+        });
+      },
+      resetTransports(reconnect = false) {
+        profileGeneration += 1;
+        profileCache.clear();
+        profileProbes.clear();
+        authenticatedActivityAtEpochMs.clear();
+        for (const connection of controlClients.values()) connection.client.close();
+        controlClients.clear();
+        for (const connection of coordinators.values()) {
+          connection.coordinator.resetTransport(reconnect);
+        }
       },
       async pair(code) {
         const connection = parsePairingCode(code);
         await options.repository.save(connection);
+        authenticatedActivityAtEpochMs.delete(connection.id);
+        profileCache.delete(connection.id);
         return connection.id;
       },
     },
@@ -297,7 +498,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory);
+        return await launchResult(
+          namedSession,
+          prompt,
+          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
+        );
       },
       async previewProject(connectionId, project, selection) {
         const control = controlClient(await resolve(connectionId));
@@ -321,7 +526,84 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory);
+        return await launchResult(
+          namedSession,
+          prompt,
+          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
+        );
+      },
+    },
+
+    sessionActions: {
+      async fork(connectionId, sessionId) {
+        return await controlClient(await resolve(connectionId)).call("session.forkAgent", { sessionId });
+      },
+      async repairProviderHistory(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.repairProviderHistory", {
+          sessionId,
+          acknowledgeHistoryRewrite: true,
+        });
+      },
+      async retry(connectionId, sessionId) {
+        const control = controlClient(await resolve(connectionId));
+        const preview = await control.call("session.previewResumeAgent", { sessionId });
+        return await control.call("session.resumeAgent", {
+          sessionId,
+          launchTicket: preview.launch_ticket,
+        });
+      },
+      async restart(connectionId, sessionId) {
+        return await controlClient(await resolve(connectionId)).call("session.restartAgent", { sessionId });
+      },
+      async askTo(connectionId, sessionId, targetAgentId) {
+        await controlClient(await resolve(connectionId)).call("session.requestAskTo", {
+          sessionId,
+          targetAgentId,
+        });
+      },
+      async handoverTo(connectionId, sessionId, targetSessionId) {
+        await controlClient(await resolve(connectionId)).call("session.requestHandoverTo", {
+          sessionId,
+          targetSessionId,
+        });
+      },
+      async rename(connectionId, sessionId, name) {
+        return await controlClient(await resolve(connectionId)).call("session.rename", { sessionId, name });
+      },
+      async previewRelocateToTask(connectionId, sessionId, taskId, mode) {
+        return await controlClient(await resolve(connectionId)).call("session.previewRelocateAgentToTask", {
+          sessionId,
+          taskId,
+          mode,
+        });
+      },
+      async relocateToTask(connectionId, sessionId, taskId, operationId, relocationTicket) {
+        return await controlClient(await resolve(connectionId)).call("session.relocateAgentToTask", {
+          sessionId,
+          taskId,
+          operationId,
+          relocationTicket,
+        });
+      },
+      async previewRelocateToProject(connectionId, sessionId, projectId) {
+        return await controlClient(await resolve(connectionId)).call("session.previewRelocateAgentToProject", {
+          sessionId,
+          projectId,
+        });
+      },
+      async relocateToProject(connectionId, sessionId, projectId, operationId, relocationTicket) {
+        return await controlClient(await resolve(connectionId)).call("session.relocateAgentToProject", {
+          sessionId,
+          projectId,
+          operationId,
+          relocationTicket,
+        });
+      },
+      async terminate(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.terminate", { sessionId });
+      },
+      async close(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.close", { sessionId });
       },
     },
 
@@ -340,6 +622,62 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         await control.call("companion.transcriptAppend", { projectId, content: trimmed });
         const result = await control.call("companion.transcriptList", { projectId, limit: STEWARD_TRANSCRIPT_LIMIT });
         return orderedTranscript(result.messages);
+      },
+      async transcribeVoice(connectionId, clip) {
+        const connection = await resolve(connectionId);
+        if (!validStewardVoiceClip(clip)) {
+          throw new Error("This recording cannot be transcribed.");
+        }
+        const endpoint = gatewayHttpEndpoint(connection, "/steward/transcribe");
+        const response = await request(endpoint.toString(), {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${connection.controlToken}`,
+            "content-type": clip.mediaType,
+          },
+          body: clip.bytes,
+        });
+        if (!response.ok) throw new Error(stewardVoiceFailure(response.status));
+        const value: unknown = await response.json();
+        const transcript = (value as { transcript?: unknown } | null)?.transcript;
+        if (typeof transcript !== "string" || transcript.trim().length === 0) {
+          throw new Error("Your Mac returned an invalid voice transcript.");
+        }
+        return transcript.trim();
+      },
+      async commitVoice(connectionId, projectId, transcript) {
+        const control = controlClient(await resolve(connectionId));
+        const trimmed = transcript.trim();
+        if (!validProjectId(projectId) || trimmed.length === 0 || trimmed.length > STEWARD_MESSAGE_LIMIT) {
+          throw new Error("Correct the transcript before sending it to the Steward.");
+        }
+        const result = await control.call("companion.transcriptAppend", {
+          projectId,
+          inputMode: "voice",
+          content: trimmed,
+        });
+        return { transcript: trimmed, userSequence: result.message.sequence };
+      },
+      async speech(connectionId, projectId, sequence) {
+        const connection = await resolve(connectionId);
+        if (!validProjectId(projectId) || !Number.isSafeInteger(sequence) || sequence < 1) {
+          throw new Error("This Steward reply cannot be spoken.");
+        }
+        const endpoint = gatewayHttpEndpoint(connection, "/steward/speech");
+        const response = await request(endpoint.toString(), {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${connection.controlToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ projectId, sequence }),
+        });
+        if (!response.ok) throw new Error(stewardSpeechFailure(response.status));
+        const body = await response.arrayBuffer();
+        if (body.byteLength === 0 || body.byteLength > STEWARD_SPEECH_LIMIT_BYTES) {
+          throw new Error("Your Mac returned invalid Steward speech.");
+        }
+        return new Uint8Array(body);
       },
       async respond(connectionId, projectId, messageId, action) {
         const control = controlClient(await resolve(connectionId));
@@ -361,15 +699,67 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       async loadOverview(connectionId) {
         const connection = await resolve(connectionId);
         const control = controlClient(connection);
-        const [projects, sessions, agentStatuses] = await Promise.all([
+        const [projects, sessions, agentStatuses, agentGroupsByProject] = await Promise.all([
           control.call("project.list"),
           control.call("session.list"),
           control.call("agent.statusList"),
+          readMobileAgentGroups(request, connection, diagnostics),
         ]);
-        const tasks = (await Promise.all(
-          projects.map((project) => listActiveTasks(control, project.id)),
-        )).flat();
-        return { projects, tasks, sessions, agentStatuses };
+        const [taskPages, stewardConfigurations] = await Promise.all([
+          Promise.all(projects.map((project) => listActiveTasks(control, project.id))),
+          Promise.all(projects.map(async (project) => {
+            try {
+              const result = await control.call("steward.configurationGet", { projectId: project.id });
+              return result.configuration?.enabled === true ? result.configuration : undefined;
+            } catch (cause: unknown) {
+              // Steward voice is an optional projection. A server-side read
+              // error must not erase otherwise-successful Projects, Tasks,
+              // Sessions, and Agent statuses from Home. Transport and
+              // authentication failures remain fatal so the connection is
+              // never presented as healthy without delivery evidence.
+              if (cause instanceof MobileControlError
+                && cause.code !== "unauthenticated"
+                && cause.code !== "unsupportedMobileApi") {
+                diagnostics.report("control", "optional_steward_read_failed", {
+                  connectionId,
+                  errorCode: cause.code,
+                });
+                return undefined;
+              }
+              throw cause;
+            }
+          })),
+        ]);
+        const tasks = taskPages.flat();
+        const enabledStewards = stewardConfigurations
+          .filter((configuration): configuration is NonNullable<typeof configuration> => configuration !== undefined);
+        const stewardEnabledProjectIds = enabledStewards.map((configuration) => configuration.projectId);
+        const stewardExecutorSessionIds = Object.fromEntries(enabledStewards.flatMap((configuration) => (
+          configuration.executorSessionId === null
+            ? []
+            : [[configuration.projectId, configuration.executorSessionId]]
+        )));
+        return {
+          projects,
+          stewardEnabledProjectIds,
+          stewardExecutorSessionIds,
+          agentGroupsByProject,
+          tasks,
+          sessions,
+          agentStatuses,
+        };
+      },
+      subscribeInvalidations(connectionId, listener) {
+        let disposed = false;
+        let unsubscribe: (() => void) | undefined;
+        void resolve(connectionId).then((connection) => {
+          if (disposed) return;
+          unsubscribe = connectionCoordinator(connection)?.subscribeInvalidations(listener);
+        });
+        return () => {
+          disposed = true;
+          unsubscribe?.();
+        };
       },
     },
 
@@ -391,7 +781,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     terminal: {
       async attach(connectionId, session, onEvent) {
         const connection = await resolve(connectionId);
-        return attachTerminal(connection, session, onEvent, terminalSocketFactory);
+        return attachConnectionTerminal(connection, session, onEvent);
       },
     },
     images: {
@@ -469,11 +859,125 @@ const noWatchTargetSettings: WatchTargetSettings = {
   async set() {},
 };
 
+const noVoiceReceipts: StewardVoiceReceiptStore = {
+  async read() {
+    return { initialized: false, acknowledgedSequence: 0, pendingUserSequence: null };
+  },
+  async write() {},
+};
+
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function validSessionId(value: string): boolean {
   return /^[A-Za-z0-9-]{1,128}$/.test(value);
+}
+
+function validProjectId(value: string): boolean {
+  return /^[A-Za-z0-9-]{1,64}$/.test(value);
+}
+
+function validStewardVoiceClip(clip: StewardVoiceClip): boolean {
+  return clip.bytes.byteLength > 0 && clip.bytes.byteLength <= STEWARD_VOICE_LIMIT_BYTES
+    && ["audio/m4a", "audio/mp4", "audio/wav", "audio/webm"].includes(clip.mediaType);
+}
+
+function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL {
+  const endpoint = new URL(connection.controlUrl);
+  endpoint.protocol = endpoint.protocol === "wss:" ? "https:" : "http:";
+  endpoint.pathname = pathname;
+  endpoint.search = "";
+  endpoint.hash = "";
+  return endpoint;
+}
+
+async function readMobileAgentGroups(
+  request: typeof fetch,
+  connection: SavedConnection,
+  diagnostics: MobileDiagnosticReporter,
+): Promise<Readonly<Record<string, readonly MobileAgentGroupLayout[]>>> {
+  try {
+    const response = await request(gatewayHttpEndpoint(connection, "/agent-groups").toString(), {
+      headers: { authorization: `Bearer ${connection.controlToken}` },
+    });
+    // Agent grouping is an optional presentation projection. An older gateway
+    // must not hide Projects, Sessions, or statuses while desktop upgrades it.
+    if (response.status === 404) return {};
+    if (!response.ok) {
+      diagnostics.report("control", "optional_agent_groups_read_failed", {
+        connectionId: connection.id,
+        status: response.status,
+      });
+      return {};
+    }
+    const decoded = decodeMobileAgentGroups(await response.json());
+    if (decoded !== undefined) return decoded;
+    diagnostics.report("control", "optional_agent_groups_read_failed", {
+      connectionId: connection.id,
+      reason: "invalidProjection",
+    });
+  } catch (cause: unknown) {
+    diagnostics.report("control", "optional_agent_groups_read_failed", {
+      connectionId: connection.id,
+      errorType: cause instanceof Error ? cause.name : "unknown",
+    });
+  }
+  return {};
+}
+
+function decodeMobileAgentGroups(
+  value: unknown,
+): Readonly<Record<string, readonly MobileAgentGroupLayout[]>> | undefined {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.groupsByProject)) return undefined;
+  const result: Record<string, MobileAgentGroupLayout[]> = {};
+  for (const [projectId, candidate] of Object.entries(value.groupsByProject)) {
+    if (!validAgentGroupId(projectId) || !Array.isArray(candidate)) return undefined;
+    const seenSessionIds = new Set<string>();
+    const groups: MobileAgentGroupLayout[] = [];
+    for (const item of candidate) {
+      if (!isRecord(item) || !Array.isArray(item.sessionIds) || item.sessionIds.length < 2
+        || !item.sessionIds.every(validAgentGroupId)
+        || new Set(item.sessionIds).size !== item.sessionIds.length
+        || item.sessionIds.some((sessionId) => seenSessionIds.has(sessionId))) {
+        return undefined;
+      }
+      if (!(item.name === undefined || (typeof item.name === "string"
+        && item.name.trim().length > 0 && [...item.name.trim()].length <= 80))) {
+        return undefined;
+      }
+      item.sessionIds.forEach((sessionId) => seenSessionIds.add(sessionId));
+      groups.push({
+        sessionIds: [...item.sessionIds],
+        ...(typeof item.name === "string" ? { name: item.name.trim() } : {}),
+      });
+    }
+    if (groups.length > 0) result[projectId] = groups;
+  }
+  return result;
+}
+
+function validAgentGroupId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128
+    && !/[\u0000-\u001F\u007F]/u.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+
+function stewardVoiceFailure(status: number): string {
+  if (status === 401) return "This Mac no longer accepts the saved mobile credential.";
+  if (status === 413) return "Keep each voice turn under 2 MB.";
+  if (status === 422) return "I could not hear speech in that recording.";
+  if (status === 404) return "Your Mac's mobile access gateway needs an update.";
+  return "Steward voice is unavailable. Try again shortly.";
+}
+
+function stewardSpeechFailure(status: number): string {
+  if (status === 401) return "This Mac no longer accepts the saved mobile credential.";
+  if (status === 404) return "That Steward reply is no longer available for speech.";
+  return "Steward speech is unavailable. Check the OpenAI voice key on your Mac.";
 }
 
 function imageMediaType(image: SelectedImage, responseMediaType: string | null): string | undefined {
@@ -526,12 +1030,53 @@ function profile(
   };
 }
 
+function sameConnectionIdentity(left: SavedConnection, right: SavedConnection): boolean {
+  return left.id === right.id
+    && left.controlUrl === right.controlUrl
+    && left.controlToken === right.controlToken
+    && left.terminalUrl === right.terminalUrl
+    && left.terminalToken === right.terminalToken;
+}
+
+function sameProfile(left: ConnectionProfile, right: ConnectionProfile): boolean {
+  return left.id === right.id
+    && left.name === right.name
+    && left.endpointLabel === right.endpointLabel
+    && left.availability === right.availability
+    && left.lastConnectedAtEpochMs === right.lastConnectedAtEpochMs
+    && left.productVersion === right.productVersion
+    && left.contractIdentity === right.contractIdentity;
+}
+
+async function settleWithin(promises: readonly Promise<void>[], timeoutMs: number): Promise<void> {
+  if (promises.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled(promises),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
+}
+
 async function attachTerminal(
   connection: SavedConnection,
   session: { id: string; runtime_epoch: number },
   onEvent: (event: TerminalEvent) => void,
   socketFactory: DataSocketFactory,
+  diagnostics: MobileDiagnosticReporter,
 ): Promise<TerminalAttachment> {
+  const attachmentId = `terminal-${++terminalDiagnosticSequence}`;
+  const report = (
+    event: string,
+    details: Readonly<Record<string, MobileDiagnosticValue | undefined>> = {},
+  ) => diagnostics.report("terminal", event, {
+    connectionId: connection.id,
+    ...diagnostics.correlation(),
+    sessionId: session.id,
+    runtimeEpoch: session.runtime_epoch,
+    attachmentId,
+    ...details,
+  });
   let socket: DataSocket | undefined;
   let sequence = 1n;
   let detached = false;
@@ -541,10 +1086,17 @@ async function attachTerminal(
   let connectionTimer: ReturnType<typeof setTimeout> | undefined;
   let authenticationTimer: ReturnType<typeof setTimeout> | undefined;
   let replayTimer: ReturnType<typeof setTimeout> | undefined;
+  let stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   let replayChunks: Uint8Array[] = [];
   let replayBytes = 0;
+  let replayExpectedFrames: number | undefined;
+  let replayExpectedBytes: number | undefined;
+  let replayReceivedFrames = 0;
+  let replayDroppedFrames = 0;
+  let replayEof = false;
   let inbound = Promise.resolve();
   let successfulConnections = 0;
+  let connectionAttempt = 0;
   let resolveFirst: (() => void) | undefined;
   let rejectFirst: ((cause: Error) => void) | undefined;
   const reconnectWaiters = new Set<{
@@ -556,6 +1108,9 @@ async function attachTerminal(
   const firstConnection = new Promise<void>((resolve, reject) => {
     resolveFirst = resolve;
     rejectFirst = reject;
+  });
+  report("attachment_started", {
+    endpoint: websocketEndpointLabel(connection.terminalUrl),
   });
 
   const clearAuthenticationTimer = () => {
@@ -573,15 +1128,32 @@ async function attachTerminal(
     replayTimer = undefined;
   };
 
+  const clearStabilityTimer = () => {
+    if (stabilityTimer !== undefined) clearTimeout(stabilityTimer);
+    stabilityTimer = undefined;
+  };
+
   const discardReplay = () => {
     clearReplayTimer();
     replayChunks = [];
     replayBytes = 0;
+    replayExpectedFrames = undefined;
+    replayExpectedBytes = undefined;
+    replayReceivedFrames = 0;
+    replayDroppedFrames = 0;
+    replayEof = false;
   };
 
   const settleReconnectWaiters = (cause?: Error) => {
     const waiters = [...reconnectWaiters];
     reconnectWaiters.clear();
+    if (waiters.length > 0) {
+      report("reconnect_waiters_settled", {
+        waiterCount: waiters.length,
+        ok: cause === undefined,
+        reason: cause?.message,
+      });
+    }
     for (const waiter of waiters) {
       clearTimeout(waiter.timeout);
       if (cause === undefined) waiter.resolve();
@@ -591,16 +1163,34 @@ async function attachTerminal(
 
   const flushReplay = () => {
     clearReplayTimer();
-    if (detached || replayBytes === 0) return;
+    if (detached) return;
+    const expectedFrames = replayExpectedFrames;
+    const expectedBytes = replayExpectedBytes;
+    const receivedFrames = replayReceivedFrames;
+    const droppedFrames = replayDroppedFrames;
+    const eof = replayEof;
+    const chunkCount = replayChunks.length;
     const bytes = new Uint8Array(replayBytes);
     let offset = 0;
     for (const chunk of replayChunks) {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    replayChunks = [];
-    replayBytes = 0;
-    onEvent({ type: "replay", bytes });
+    discardReplay();
+    if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
+    if (bytes.byteLength > 0) onEvent({ type: "replay", bytes });
+    if (eof) onEvent({ type: "eof" });
+    if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
+      report("replay_received", {
+        bytes: bytes.byteLength,
+        chunks: chunkCount,
+        droppedFrames,
+        expectedFrames,
+        expectedBytes,
+        receivedFrames,
+        complete: expectedFrames === undefined || receivedFrames === expectedFrames,
+      });
+    }
   };
 
   const queueReplay = (bytes: Uint8Array) => {
@@ -614,7 +1204,30 @@ async function attachTerminal(
     replayTimer = setTimeout(flushReplay, REPLAY_BATCH_SETTLE_MS);
   };
 
-  const failFirst = (message: string) => {
+  const consumeNegotiatedReplayFrame = (kind: number, payload: Uint8Array): boolean => {
+    const expected = replayExpectedFrames;
+    if (expected === undefined || replayReceivedFrames >= expected) return false;
+    if (kind === KIND_REPLAY_OUTPUT) {
+      if (replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
+        flushReplay();
+        return false;
+      }
+      replayChunks.push(payload);
+      replayBytes += payload.byteLength;
+    } else if (kind === KIND_GAP) {
+      replayDroppedFrames += decodeGapCount(payload);
+    } else if (kind === KIND_EOF) {
+      replayEof = true;
+    } else {
+      flushReplay();
+      return false;
+    }
+    replayReceivedFrames += 1;
+    if (replayReceivedFrames === expected) flushReplay();
+    return true;
+  };
+
+  const failFirst = (message: string, reason = "initialConnectionFailed") => {
     if (rejectFirst === undefined) return;
     const reject = rejectFirst;
     resolveFirst = undefined;
@@ -622,12 +1235,25 @@ async function attachTerminal(
     detached = true;
     clearConnectionTimer();
     clearAuthenticationTimer();
-    socket?.close();
+    clearStabilityTimer();
+    const failed = socket;
+    socket = undefined;
+    report("attachment_failed", {
+      reason,
+      connectionAttempt,
+      successfulConnections,
+    });
+    failed?.close();
     reject(new Error(message));
   };
 
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (reason: string) => {
     if (detached || reconnectTimer !== undefined) return;
+    report("reconnect_scheduled", {
+      reason,
+      delayMs: reconnectDelay,
+      successfulConnections,
+    });
     onEvent({ type: "state", state: "connectionLost" });
     reconnectTimer = setTimeout(() => {
       reconnectTimer = undefined;
@@ -636,26 +1262,51 @@ async function attachTerminal(
     }, reconnectDelay);
   };
 
-  const handleClosed = (closed: DataSocket) => {
+  const handleClosed = (
+    closed: DataSocket,
+    reason: string,
+    close?: { code?: number; reason?: string; wasClean?: boolean },
+  ) => {
     if (socket !== closed) return;
+    report("connection_closed", {
+      reason,
+      connectionAttempt,
+      authenticated,
+      successfulConnections,
+      closeCode: close?.code,
+      closeReasonLength: close?.reason?.length,
+      wasClean: close?.wasClean,
+    });
     socket = undefined;
     authenticated = false;
     clearConnectionTimer();
     clearAuthenticationTimer();
+    clearStabilityTimer();
     discardReplay();
-    if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
-    else scheduleReconnect();
+    if (resolveFirst !== undefined) failFirst("Terminal connection failed.", reason);
+    else scheduleReconnect(reason);
   };
 
   const connect = () => {
     if (detached) return;
+    connectionAttempt += 1;
+    const attempt = connectionAttempt;
+    const startedAtEpochMs = Date.now();
+    report("connection_started", {
+      connectionAttempt: attempt,
+      reconnectDelayMs: reconnectDelay,
+    });
     onEvent({ type: "state", state: "connecting" });
     let next: DataSocket;
     try {
       next = socketFactory(connection.terminalUrl);
-    } catch {
-      if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
-      else scheduleReconnect();
+    } catch (cause: unknown) {
+      report("connection_factory_failed", {
+        connectionAttempt: attempt,
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+      if (resolveFirst !== undefined) failFirst("Terminal connection failed.", "socketFactoryFailed");
+      else scheduleReconnect("socketFactoryFailed");
       return;
     }
     socket = next;
@@ -665,44 +1316,106 @@ async function attachTerminal(
       /// iOS can leave a WebSocket in CONNECTING without ever emitting open,
       /// error, or close after foregrounding. Treat that silence as a failed
       /// transport so the bounded reconnect loop can create a new socket.
-      handleClosed(next);
+      report("connection_timeout", {
+        connectionAttempt: attempt,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      handleClosed(next, "connectTimeout");
       next.close();
     }, CONNECT_TIMEOUT_MS);
     next.onopen = () => {
       if (socket !== next || detached) return;
       clearConnectionTimer();
-      next.send(authenticationBytes(connection.terminalToken));
+      report("connection_opened", {
+        connectionAttempt: attempt,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      try {
+        next.send(authenticationBytes(connection.terminalToken));
+      } catch (cause: unknown) {
+        report("authentication_send_failed", {
+          connectionAttempt: attempt,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
+        handleClosed(next, "authenticationSendFailed");
+        next.close();
+        return;
+      }
       authenticationTimer = setTimeout(() => {
-        if (resolveFirst !== undefined) failFirst("Terminal authentication timed out.");
-        else next.close();
+        report("authentication_timeout", {
+          connectionAttempt: attempt,
+          durationMs: Date.now() - startedAtEpochMs,
+        });
+        if (resolveFirst !== undefined) failFirst("Terminal authentication timed out.", "authenticationTimeout");
+        else {
+          handleClosed(next, "authenticationTimeout");
+          next.close();
+        }
       }, AUTH_TIMEOUT_MS);
     };
     next.onmessage = (event) => {
       inbound = inbound
         .then(() => handleMessage(next, event.data))
-        .catch(() => next.close());
+        .catch((cause: unknown) => {
+          report("message_handling_failed", {
+            connectionAttempt: attempt,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+          });
+          handleClosed(next, "messageHandlingFailed");
+          next.close();
+        });
     };
-    next.onerror = () => handleClosed(next);
-    next.onclose = () => handleClosed(next);
+    next.onerror = (event) => {
+      report("socket_error", {
+        connectionAttempt: attempt,
+        eventType: event?.type,
+      });
+      handleClosed(next, "socketError");
+    };
+    next.onclose = (event) => handleClosed(next, "socketClose", event);
   };
 
   const handleMessage = async (source: DataSocket, data: unknown) => {
     if (socket !== source || detached) return;
-    const bytes = await messageBytes(data);
+    const bytes = await dataSocketMessageBytes(data);
     if (!authenticated) {
       const response = new TextDecoder().decode(bytes);
       if (response === "TLAUTH") {
-        failFirst("Terminal credential was refused.");
+        report("authentication_refused", { connectionAttempt });
+        failFirst("Terminal credential was refused.", "credentialRefused");
         return;
       }
-      if (response !== "TLOK") return;
+      if (response !== "TLOK") {
+        report("authentication_response_ignored", {
+          connectionAttempt,
+          responseBytes: bytes.byteLength,
+        });
+        return;
+      }
       clearAuthenticationTimer();
       authenticated = true;
-      reconnectDelay = MIN_RECONNECT_MS;
+      clearStabilityTimer();
+      stabilityTimer = setTimeout(() => {
+        if (socket !== source || !authenticated || detached) return;
+        reconnectDelay = MIN_RECONNECT_MS;
+        report("connection_stabilized", { connectionAttempt, stableForMs: STABLE_CONNECTION_MS });
+      }, STABLE_CONNECTION_MS);
       if (successfulConnections > 0) onEvent({ type: "reset" });
       successfulConnections += 1;
+      report("authenticated", {
+        connectionAttempt,
+        successfulConnections,
+        reconnected: successfulConnections > 1,
+      });
       onEvent({ type: "state", state: "connected" });
-      source.send(encodeFrame(session.id, session.runtime_epoch, sequence++, KIND_ATTACH));
+      discardReplay();
+      source.send(encodeFrame(
+        session.id,
+        session.runtime_epoch,
+        sequence++,
+        KIND_ATTACH,
+        replayRequestPayload(),
+      ));
       settleReconnectWaiters();
       resolveFirst?.();
       resolveFirst = undefined;
@@ -714,9 +1427,37 @@ async function attachTerminal(
     try {
       frame = decodeFrame(bytes);
     } catch {
+      report("invalid_frame_ignored", {
+        connectionAttempt,
+        bytes: bytes.byteLength,
+      });
       return;
     }
-    if (frame.sessionId !== session.id || frame.epoch !== session.runtime_epoch) return;
+    if (frame.sessionId !== session.id || frame.epoch !== session.runtime_epoch) {
+      report("stale_frame_ignored", {
+        connectionAttempt,
+        sessionMatched: frame.sessionId === session.id,
+        epochMatched: frame.epoch === session.runtime_epoch,
+        frameKind: frame.kind,
+      });
+      return;
+    }
+    if (frame.kind === KIND_ACK) {
+      const replay = decodeReplayAck(frame.payload);
+      if (replay !== undefined) {
+        replayExpectedFrames = replay.frameCount;
+        replayExpectedBytes = replay.outputBytes;
+        replayReceivedFrames = 0;
+        report("replay_negotiated", {
+          connectionAttempt,
+          replayFrames: replay.frameCount,
+          replayBytes: replay.outputBytes,
+        });
+        if (replay.frameCount === 0) flushReplay();
+      }
+      return;
+    }
+    if (consumeNegotiatedReplayFrame(frame.kind, frame.payload)) return;
     if (frame.kind === KIND_REPLAY_OUTPUT) {
       queueReplay(frame.payload);
       return;
@@ -725,10 +1466,20 @@ async function attachTerminal(
     /// visible before a following gap, live byte, or exit state.
     flushReplay();
     if (frame.kind === KIND_OUTPUT) onEvent({ type: "live", bytes: frame.payload });
-    else if (frame.kind === KIND_GAP) onEvent({ type: "gap", droppedFrames: decodeGapCount(frame.payload) });
-    else if (frame.kind === KIND_EOF) onEvent({ type: "eof" });
-    else if (frame.kind === KIND_ERROR) source.close();
-    else if (frame.kind === KIND_ACK) return;
+    else if (frame.kind === KIND_GAP) {
+      const droppedFrames = decodeGapCount(frame.payload);
+      report("output_gap", { connectionAttempt, droppedFrames });
+      onEvent({ type: "gap", droppedFrames });
+    } else if (frame.kind === KIND_EOF) {
+      report("terminal_eof", { connectionAttempt });
+      onEvent({ type: "eof" });
+    } else if (frame.kind === KIND_ERROR) {
+      report("server_frame_error", {
+        connectionAttempt,
+        errorBytes: frame.payload.byteLength,
+      });
+      source.close();
+    }
   };
 
   connect();
@@ -754,19 +1505,34 @@ async function attachTerminal(
         /// Browser WebSocket implementations can throw before delivering `close`.
         /// Enter the same bounded reconnect path immediately so presentation cannot
         /// remain permanently disconnected behind a socket that is already unusable.
-        handleClosed(target);
+        report("input_send_failed", {
+          connectionAttempt,
+          inputBytes: bytes.byteLength,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
+        handleClosed(target, "inputSendFailed");
         target.close();
         throw cause;
       }
     },
     reconnect() {
       if (detached) return Promise.reject(new Error("Terminal is detached."));
+      report("forced_reconnect_started", {
+        connectionAttempt,
+        authenticated,
+        successfulConnections,
+        reconnectWaiters: reconnectWaiters.size + 1,
+      });
       const waiting = new Promise<void>((resolve, reject) => {
         const waiter = {
           resolve,
           reject,
           timeout: setTimeout(() => {
             reconnectWaiters.delete(waiter);
+            report("forced_reconnect_timeout", {
+              connectionAttempt,
+              reconnectWaiters: reconnectWaiters.size,
+            });
             reject(new Error("Terminal did not reconnect."));
           }, FORCE_RECONNECT_TIMEOUT_MS),
         };
@@ -781,6 +1547,7 @@ async function attachTerminal(
       authenticated = false;
       clearConnectionTimer();
       clearAuthenticationTimer();
+      clearStabilityTimer();
       discardReplay();
       onEvent({ type: "state", state: "connectionLost" });
       stale?.close();
@@ -789,10 +1556,17 @@ async function attachTerminal(
     },
     async detach() {
       if (detached) return;
+      report("attachment_detached", {
+        connectionAttempt,
+        authenticated,
+        successfulConnections,
+        reconnectWaiters: reconnectWaiters.size,
+      });
       detached = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
       clearConnectionTimer();
       clearAuthenticationTimer();
+      clearStabilityTimer();
       discardReplay();
       settleReconnectWaiters(new Error("Terminal is detached."));
       socket?.close();
@@ -802,10 +1576,12 @@ async function attachTerminal(
 }
 
 async function launchResult(
-  connection: SavedConnection,
   session: { id: string; runtime_epoch: number },
   prompt: string | undefined,
-  socketFactory: DataSocketFactory,
+  attach: (
+    session: { id: string; runtime_epoch: number },
+    onEvent: (event: TerminalEvent) => void,
+  ) => Promise<TerminalAttachment>,
 ): Promise<{ sessionId: string; runtimeEpoch: number; promptSubmitted: boolean | null }> {
   const content = prompt === undefined ? undefined : launchPrompt(prompt);
   if (content === undefined) {
@@ -814,7 +1590,7 @@ async function launchResult(
 
   let attachment: TerminalAttachment | undefined;
   try {
-    attachment = await attachTerminal(connection, session, () => {}, socketFactory);
+    attachment = await attach(session, () => {});
     const encoder = new TextEncoder();
     await attachment.input(encoder.encode(`${BRACKETED_PASTE_START}${content}${BRACKETED_PASTE_END}`));
     await attachment.input(new Uint8Array([13]));
@@ -842,16 +1618,4 @@ function authenticationBytes(token: string): Uint8Array {
   bytes.set(magic, 0);
   bytes.set(credential, magic.byteLength);
   return bytes;
-}
-
-async function messageBytes(data: unknown): Promise<Uint8Array> {
-  if (typeof data === "string") return new TextEncoder().encode(data);
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
-  }
-  if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return new Uint8Array(await data.arrayBuffer());
-  }
-  throw new Error("Terminal message type is unsupported.");
 }

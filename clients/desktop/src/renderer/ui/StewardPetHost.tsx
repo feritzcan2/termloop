@@ -39,6 +39,8 @@ type Props = {
   setEnabled?(enabled: boolean): Promise<void>;
   userBusy: boolean;
   getSteward(): Promise<StewardConfigurationGetResult>;
+  /** Uncached narrow poll; PTY presence has no durable invalidation edge. */
+  getPresence?(): Promise<StewardConfigurationGetResult>;
   /** When present, a disabled Steward with no Playbook routes the pet to
       Playbook creation instead of offering the enable switch. */
   getPlaybook?(): Promise<PlaybookGetResult>;
@@ -113,10 +115,11 @@ export function StewardPetHost(props: Props) {
   useEffect(() => {
     let current = true;
     let inFlight = false;
+    let handle: number | undefined;
     const refreshPresence = () => {
       if (inFlight) return;
       inFlight = true;
-      void props.getSteward()
+      void (props.getPresence ?? props.getSteward)()
         .then((result) => {
           if (!current) return;
           setSteward(result.configuration);
@@ -126,39 +129,49 @@ export function StewardPetHost(props: Props) {
         .catch(() => undefined)
         .finally(() => { inFlight = false; });
     };
-    const handle = window.setInterval(refreshPresence, 1_000);
+    const stop = () => {
+      if (handle === undefined) return;
+      window.clearInterval(handle);
+      handle = undefined;
+    };
+    const start = (refreshNow: boolean) => {
+      if (document.visibilityState === "hidden" || handle !== undefined) return;
+      if (refreshNow) refreshPresence();
+      handle = window.setInterval(refreshPresence, 1_000);
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "hidden") stop();
+      else start(true);
+    };
+    document.addEventListener("visibilitychange", visibilityChanged);
+    start(false);
     return () => {
       current = false;
-      window.clearInterval(handle);
+      stop();
+      document.removeEventListener("visibilitychange", visibilityChanged);
     };
   }, [props.projectId]);
 
-  // Transcript and Routine changes can share the same projection token. Wait
-  // for a short quiet edge so PTY liveness invalidations do not fan out into
-  // repeated full assistant reads while the executor is streaming output.
+  // Composition already coalesces the projection token and single-flights the
+  // named reads, so this host does not add a second timing layer.
   useEffect(() => {
     let current = true;
-    const handle = window.setTimeout(() => {
-      void Promise.all([
-        props.listTranscript(),
-        props.listRuntime(),
-        props.getPlaybook?.() ?? Promise.resolve(null),
-      ])
-        .then(([transcript, runtime, playbook]) => {
-          if (!current) return;
-          setMessages(transcript.messages);
-          setReports(runtime.reports);
-          if (playbook !== null) {
-            setPlaybookMissing(playbook.playbook === null
-              || playbook.playbook.milestones.length === 0);
-          }
-        })
-        .catch(() => undefined);
-    }, 200);
-    return () => {
-      current = false;
-      window.clearTimeout(handle);
-    };
+    void Promise.all([
+      props.listTranscript(),
+      props.listRuntime(),
+      props.getPlaybook?.() ?? Promise.resolve(null),
+    ])
+      .then(([transcript, runtime, playbook]) => {
+        if (!current) return;
+        setMessages(transcript.messages);
+        setReports(runtime.reports);
+        if (playbook !== null) {
+          setPlaybookMissing(playbook.playbook === null
+            || playbook.playbook.milestones.length === 0);
+        }
+      })
+      .catch(() => undefined);
+    return () => { current = false; };
   }, [props.projectId, props.refreshToken]);
 
   useEffect(() => {

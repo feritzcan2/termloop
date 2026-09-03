@@ -85,6 +85,79 @@ describe("Git host projection refresh", () => {
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps successful automatic reads hot for a short TTL", async () => {
+    let now = 1_000;
+    const request = vi.fn(async (_projectId: string, taskIds: string[]) =>
+      taskIds.map((taskId) => ({ task_id: taskId } as GitHostTaskProjectionDto)));
+    const coordinator = new GitHostRefreshCoordinator(request, vi.fn(), () => now, 500);
+    const cacheKeys = new Map([["one", "branch-a"]]);
+    coordinator.activateProject("project-one");
+
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+    expect(request).toHaveBeenCalledTimes(1);
+    now += 499;
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+    expect(request).toHaveBeenCalledTimes(1);
+
+    now += 1;
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes inside the TTL when Task-owned inputs change", async () => {
+    const request = vi.fn(async (_projectId: string, taskIds: string[]) =>
+      taskIds.map((taskId) => ({ task_id: taskId } as GitHostTaskProjectionDto)));
+    const coordinator = new GitHostRefreshCoordinator(request, vi.fn(), () => 1_000, 500);
+    coordinator.activateProject("project-one");
+
+    await coordinator.request("project-one", ["one"], {
+      cacheKeys: new Map([["one", "branch-a"]]),
+    });
+    await coordinator.request("project-one", ["one"], {
+      cacheKeys: new Map([["one", "branch-b"]]),
+    });
+
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("turns a forced invalidation during an active read into one trailing round", async () => {
+    const releases: Array<() => void> = [];
+    const request = vi.fn(async (_projectId: string, taskIds: string[]) => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return taskIds.map((taskId) => ({ task_id: taskId } as GitHostTaskProjectionDto));
+    });
+    const coordinator = new GitHostRefreshCoordinator(request, vi.fn(), () => 1_000, 500);
+    const cacheKeys = new Map([["one", "branch-a"]]);
+    coordinator.activateProject("project-one");
+
+    const initial = coordinator.request("project-one", ["one"], { cacheKeys });
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const forced = coordinator.request("project-one", ["one"], { force: true, cacheKeys });
+    releases.shift()?.();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    releases.shift()?.();
+    await Promise.all([initial, forced]);
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a failed read", async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce([{ task_id: "one" } as GitHostTaskProjectionDto]);
+    const coordinator = new GitHostRefreshCoordinator(request, vi.fn(), () => 1_000, 500);
+    const cacheKeys = new Map([["one", "branch-a"]]);
+    coordinator.activateProject("project-one");
+
+    await expect(coordinator.request("project-one", ["one"], { cacheKeys }))
+      .rejects.toThrow("provider unavailable");
+    await coordinator.request("project-one", ["one"], { cacheKeys });
+
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it("drops obsolete responses and does not start their queued batches after a Project switch", async () => {
     let release: (() => void) | undefined;
     const request = vi.fn(async (_projectId: string, taskIds: string[]) => {

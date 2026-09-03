@@ -1,7 +1,12 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus, TaskSuspensionReason};
+use std::collections::HashSet;
+use std::path::Path;
+use termloop_domain::{
+    IssueLinkProvider, TASK_DEVELOPER_NOTES_MAX, TaskDeveloperNote, TaskRecord, TaskStatus,
+    TaskSuspensionReason,
+};
 
 use super::cleanup::{
     cleanup_operation_json, health_json, presence_json, stale_resolution_operation_json,
@@ -20,6 +25,48 @@ struct TaskListCursor {
     status: Option<String>,
     state_revision: u64,
     offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoordinationAgentSelection<'a> {
+    None,
+    Selected {
+        session_id: &'a str,
+        reason: &'static str,
+    },
+    Ambiguous {
+        reason: &'static str,
+    },
+}
+
+fn select_coordination_agent(candidates: &[(String, bool)]) -> CoordinationAgentSelection<'_> {
+    let preferred = candidates
+        .iter()
+        .filter(|(_, steward_started)| !steward_started)
+        .collect::<Vec<_>>();
+    match preferred.as_slice() {
+        [(session_id, _)] => CoordinationAgentSelection::Selected {
+            session_id,
+            reason: if candidates.len() == 1 {
+                "soleCurrentTaskAgent"
+            } else {
+                "preferredNonStewardTaskAgent"
+            },
+        },
+        [_, _, ..] => CoordinationAgentSelection::Ambiguous {
+            reason: "multipleNonStewardTaskAgents",
+        },
+        [] => match candidates {
+            [] => CoordinationAgentSelection::None,
+            [(session_id, _)] => CoordinationAgentSelection::Selected {
+                session_id,
+                reason: "soleStewardStartedTaskAgent",
+            },
+            [_, _, ..] => CoordinationAgentSelection::Ambiguous {
+                reason: "multipleStewardStartedTaskAgents",
+            },
+        },
+    }
 }
 
 fn decode_task_list_cursor(value: &str) -> Result<TaskListCursor, CoreError> {
@@ -194,6 +241,180 @@ impl CoreRuntime {
         Ok(value)
     }
 
+    /// Returns one exact Task projection inside the caller's authenticated
+    /// Project. Agent-facing reads never accept Project scope from the payload.
+    pub fn task_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        if !self
+            .store
+            .tasks()
+            .iter()
+            .any(|task| task.id == task_id && task.project_id == project_id)
+        {
+            return Err(CoreError::NotFound);
+        }
+        self.task_current_projection(task_id)
+    }
+
+    fn task_agent_session_ids_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<HashSet<String>, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id)
+            .ok_or(CoreError::NotFound)?;
+        let Some(worktree) = task.worktree.as_ref() else {
+            return Ok(HashSet::new());
+        };
+        let worktree_key = super::comparison_key(Path::new(&worktree.path))
+            .map_err(|_| CoreError::InvalidParams("taskWorktree".into()))?;
+        let assistant_session_ids = self
+            .store
+            .steward_configurations()
+            .iter()
+            .filter(|configuration| configuration.project_id == project_id)
+            .filter_map(|configuration| configuration.executor_session_id.as_deref())
+            .chain(
+                self.store
+                    .worker_configurations()
+                    .iter()
+                    .filter(|configuration| configuration.project_id == project_id)
+                    .filter_map(|configuration| configuration.executor_session_id.as_deref()),
+            )
+            .collect::<HashSet<_>>();
+        Ok(self
+            .store
+            .sessions()
+            .iter()
+            .filter(|session| {
+                session.project_id == project_id
+                    && session.kind == termloop_domain::SessionKind::Agent
+                    && session.ask_to_source_session_id.is_none()
+                    && session.improver_target.is_none()
+                    && !assistant_session_ids.contains(session.id.as_str())
+                    && super::comparison_key(Path::new(&session.process.cwd))
+                        .is_ok_and(|session_key| worktree_key.contains_or_equals(&session_key))
+            })
+            .map(|session| session.id.clone())
+            .collect())
+    }
+
+    /// Projects current status only for ordinary Agent Sessions whose cwd is
+    /// inside this exact Task's current worktree. Persistent assistants,
+    /// helpers, and Improve Sessions never become Task evidence through cwd.
+    pub fn task_agent_status_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let task_session_ids = self.task_agent_session_ids_for_executor(project_id, task_id)?;
+        let statuses = self.agent_status_list_for_project(Some(project_id))?;
+        Ok(Value::Array(
+            statuses
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|status| {
+                    status
+                        .get("sessionId")
+                        .and_then(Value::as_str)
+                        .is_some_and(|session_id| task_session_ids.contains(session_id))
+                })
+                .cloned()
+                .collect(),
+        ))
+    }
+
+    /// Selects the one current ordinary Agent that Worker and Steward
+    /// coordination should address for this exact Task. A non-Steward Agent
+    /// remains canonical when a legacy Steward-started duplicate also exists;
+    /// genuinely competing peers remain explicit ambiguity rather than an
+    /// order-dependent guess.
+    pub fn task_coordination_agent_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let candidates = self.current_task_coordination_agent_candidates(project_id, task_id)?;
+        let candidate_session_ids = candidates
+            .iter()
+            .map(|(session_id, _)| session_id)
+            .collect::<Vec<_>>();
+        Ok(match select_coordination_agent(&candidates) {
+            CoordinationAgentSelection::None => json!({
+                "state": "none",
+                "sessionId": null,
+                "reason": "noCurrentTaskAgent",
+                "candidateSessionIds": candidate_session_ids,
+            }),
+            CoordinationAgentSelection::Selected { session_id, reason } => json!({
+                "state": "selected",
+                "sessionId": session_id,
+                "reason": reason,
+                "candidateSessionIds": candidate_session_ids,
+            }),
+            CoordinationAgentSelection::Ambiguous { reason } => json!({
+                "state": "ambiguous",
+                "sessionId": null,
+                "reason": reason,
+                "candidateSessionIds": candidate_session_ids,
+            }),
+        })
+    }
+
+    /// Authorizes one Worker request target only when it is an ordinary Agent
+    /// projected into this exact Task worktree. The server separately proves
+    /// the Worker's live Playbook check and scoped Task-read receipt before
+    /// invoking the existing authenticated handoff path.
+    pub fn ensure_task_agent_request_target_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        target_session_id: &str,
+    ) -> Result<(), CoreError> {
+        let candidates = self.current_task_coordination_agent_candidates(project_id, task_id)?;
+        matches!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Selected { session_id, .. }
+                if session_id == target_session_id
+        )
+        .then_some(())
+        .ok_or(CoreError::CapabilityDenied)
+    }
+
+    fn current_task_coordination_agent_candidates(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<(String, bool)>, CoreError> {
+        let task_session_ids = self.task_agent_session_ids_for_executor(project_id, task_id)?;
+        let mut candidates = self
+            .store
+            .sessions()
+            .iter()
+            .filter(|session| {
+                task_session_ids.contains(&session.id)
+                    && matches!(session.lifecycle_state.as_str(), "running" | "resuming")
+            })
+            .map(|session| {
+                (
+                    session.id.clone(),
+                    session.process.template_ref.as_deref()
+                        == Some("builtin.steward.task-assignment"),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(candidates)
+    }
+
     pub(crate) fn create_task(&mut self, params: Value) -> Result<Value, CoreError> {
         let project_id = required_string(&params, "projectId")?;
         if !self.project_exists(&project_id) {
@@ -235,6 +456,7 @@ impl CoreRuntime {
             project_id,
             title,
             brief,
+            developer_notes: Vec::new(),
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,
@@ -282,6 +504,27 @@ impl CoreRuntime {
                 &self.write_authority,
                 &task_id,
                 brief,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn update_task_developer_notes(
+        &mut self,
+        params: Value,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let expected_notes = parse_developer_notes(&params, "expectedDeveloperNotes")?;
+        let developer_notes = parse_developer_notes(&params, "developerNotes")?;
+        let task = self
+            .store
+            .update_task_developer_notes(
+                &self.write_authority,
+                &task_id,
+                &expected_notes,
+                developer_notes,
                 termloop_platform::current_epoch_ms(),
             )
             .map_err(store_error)?;
@@ -441,6 +684,7 @@ impl CoreRuntime {
             .find(|link| link.task_id == task.id && link.provider == IssueLinkProvider::Jira)
             .and_then(|link| link.url.as_ref())
             .map_or(Value::Null, |url| json!(url));
+        value["branches"] = self.task_branches_json(task);
         // Current protocol always emits the durable generation. It remains optional in
         // the schema only so a new client can safely detect an older daemon.
         if let Some(operation) = self
@@ -457,6 +701,148 @@ impl CoreRuntime {
         }
         Ok(value)
     }
+
+    fn task_branches_json(&self, task: &TaskRecord) -> Value {
+        let checked_out = self
+            .cached_task_worktree_health(&task.id)
+            .and_then(|health| health.checked_out_branch.as_deref());
+        let recorded_base = task
+            .branch
+            .as_ref()
+            .and_then(|binding| self.task_recorded_branch_base(&task.id, binding));
+        let mut items = Vec::new();
+        if let Some(binding) = task.branch.as_ref() {
+            items.push(json!({
+                "branch_id": "primary",
+                "name": binding.name,
+                "role": "primary",
+                "held_by_task_id": Value::Null,
+                "checked_out": checked_out == Some(binding.name.as_str()),
+                "base_ref": recorded_base.as_ref().and_then(|(reference, _)| display_branch_ref(reference)),
+                "base_oid": recorded_base.as_ref().map(|(_, oid)| oid),
+                "base_evidence": recorded_base.as_ref().map(|_| "provisioned"),
+                "first_observed_worktree_generation": task.worktree_generation,
+                "rollup_eligible": true,
+            }));
+        }
+        let branch_set = self
+            .store
+            .task_branch_sets()
+            .iter()
+            .find(|set| set.task_id == task.id);
+        if let Some(branch_set) = branch_set {
+            for membership in &branch_set.memberships {
+                let Some(name) = display_branch_ref(&membership.ref_name) else {
+                    continue;
+                };
+                let base_ref = membership
+                    .parent_ref_name
+                    .as_deref()
+                    .and_then(display_branch_ref);
+                let (role, held_by_task_id) = self.task_branch_membership_role(
+                    task,
+                    &membership.repository_root,
+                    &membership.ref_name,
+                    recorded_base
+                        .as_ref()
+                        .map(|(reference, _)| reference.as_str()),
+                );
+                items.push(json!({
+                    "branch_id": membership.id,
+                    "name": name,
+                    "role": role,
+                    "held_by_task_id": held_by_task_id,
+                    "checked_out": checked_out == Some(name.as_str()),
+                    "base_ref": base_ref,
+                    "base_oid": membership.first_observed_oid,
+                    "base_evidence": match membership.evidence {
+                        termloop_domain::TaskBranchMembershipEvidence::CurrentBranch => "currentBranch",
+                        termloop_domain::TaskBranchMembershipEvidence::WorktreeReflog => "worktreeReflog",
+                        termloop_domain::TaskBranchMembershipEvidence::BranchCreationReflog => "branchCreationReflog",
+                    },
+                    "first_observed_worktree_generation": membership.first_observed_worktree_generation,
+                    "rollup_eligible": role == "associated",
+                }));
+            }
+        }
+        let checked_out_branch_id = items.iter().find_map(|item| {
+            item.get("checked_out")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                .then(|| item.get("branch_id").and_then(Value::as_str))
+                .flatten()
+        });
+        json!({
+            "primary_branch_id": task.branch.as_ref().map(|_| "primary"),
+            "checked_out_branch_id": checked_out_branch_id,
+            "evidence_truncated": branch_set.is_some_and(|set| set.evidence_truncated),
+            "items": items,
+        })
+    }
+
+    fn task_branch_membership_role(
+        &self,
+        task: &TaskRecord,
+        repository_root: &str,
+        ref_name: &str,
+        recorded_base_ref: Option<&str>,
+    ) -> (&'static str, Option<String>) {
+        if recorded_base_ref
+            .and_then(local_counterpart_ref)
+            .is_some_and(|base| base == ref_name)
+        {
+            return ("baseBranch", None);
+        }
+        let held = self.store.tasks().iter().find(|candidate| {
+            candidate.id != task.id
+                && candidate.project_id == task.project_id
+                && candidate.branch.as_ref().is_some_and(|binding| {
+                    binding.repository_root == repository_root
+                        && format!("refs/heads/{}", binding.name) == ref_name
+                })
+        });
+        match held {
+            Some(held) => ("heldByOtherTask", Some(held.id.clone())),
+            None => ("associated", None),
+        }
+    }
+}
+
+fn parse_developer_notes(params: &Value, key: &str) -> Result<Vec<TaskDeveloperNote>, CoreError> {
+    let notes = serde_json::from_value::<Vec<TaskDeveloperNote>>(
+        params
+            .get(key)
+            .cloned()
+            .ok_or_else(|| CoreError::InvalidParams(key.into()))?,
+    )
+    .map_err(|_| CoreError::InvalidParams(key.into()))?;
+    if notes.len() > TASK_DEVELOPER_NOTES_MAX
+        || notes.iter().any(|note| !note.is_valid())
+        || notes.iter().enumerate().any(|(index, note)| {
+            notes[index + 1..]
+                .iter()
+                .any(|candidate| candidate.id == note.id)
+        })
+    {
+        return Err(CoreError::InvalidParams(key.into()));
+    }
+    Ok(notes)
+}
+
+fn display_branch_ref(reference: &str) -> Option<String> {
+    reference
+        .strip_prefix("refs/heads/")
+        .or_else(|| {
+            reference
+                .strip_prefix("refs/remotes/")
+                .and_then(|value| value.split_once('/').map(|(_, branch)| branch))
+        })
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn local_counterpart_ref(reference: &str) -> Option<String> {
+    display_branch_ref(reference).map(|name| format!("refs/heads/{name}"))
 }
 
 fn normalized_required_text(params: &Value, key: &str, limit: usize) -> Result<String, CoreError> {
@@ -486,4 +872,35 @@ fn normalized_nullable_text(
         return Err(CoreError::InvalidParams(key.into()));
     }
     Ok(value.chars().next().is_some().then(|| value.to_owned()))
+}
+
+#[cfg(test)]
+mod coordination_tests {
+    use super::{CoordinationAgentSelection, select_coordination_agent};
+
+    #[test]
+    fn coordination_prefers_the_existing_non_steward_agent_over_a_legacy_duplicate() {
+        let candidates = vec![
+            ("agent-from-task".to_owned(), false),
+            ("agent-from-steward".to_owned(), true),
+        ];
+        assert_eq!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Selected {
+                session_id: "agent-from-task",
+                reason: "preferredNonStewardTaskAgent",
+            }
+        );
+    }
+
+    #[test]
+    fn coordination_never_guesses_between_peer_agents() {
+        let candidates = vec![("agent-a".to_owned(), false), ("agent-b".to_owned(), false)];
+        assert_eq!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Ambiguous {
+                reason: "multipleNonStewardTaskAgents",
+            }
+        );
+    }
 }

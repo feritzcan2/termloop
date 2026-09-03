@@ -8,6 +8,9 @@
 
 ## Invariants
 
+- All TermLoop-authored prompt prose and model-facing instructions are written
+  in English. User-provided content and multilingual test payloads remain
+  explicit bindings rather than authored prompt copy.
 - No hidden or inline fallback prompt may exist in production code.
 - Every delivered prompt has a stable template reference, explicit bindings, and
   a user-visible preview of the delivered form.

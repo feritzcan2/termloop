@@ -893,7 +893,7 @@ fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapsh
             .fields
             .description
             .as_ref()
-            .and_then(adf_plain_text)
+            .and_then(jira_description_plain_text)
             .filter(|value| !value.is_empty()),
         status_name: truncate_utf8(issue.fields.status.name.trim(), 256),
         assignee_display: issue
@@ -905,7 +905,12 @@ fn decode_search_issue(site: &str, issue: SearchIssue) -> Option<JiraIssueSnapsh
     })
 }
 
-fn adf_plain_text(value: &serde_json::Value) -> Option<String> {
+fn jira_description_plain_text(value: &serde_json::Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        let text = truncate_utf8(text.trim(), JIRA_TEXT_MAX_BYTES);
+        return (!text.is_empty()).then_some(text);
+    }
+
     fn visit(value: &serde_json::Value, output: &mut String) {
         if output.len() >= JIRA_TEXT_MAX_BYTES {
             return;
@@ -1203,6 +1208,24 @@ mod tests {
         assert_eq!(
             result.issues[0].url,
             "https://example.atlassian.net/browse/TERM-42"
+        );
+    }
+
+    #[test]
+    fn decodes_plain_text_description_from_agile_issue_search() {
+        let result = decode_search_bytes(
+            "https://example.atlassian.net",
+            br#"{
+              "issues":[{"id":"10043","key":"TERM-43","fields":{
+                "summary":"Import board issue","description":"  Jira Agile issue details  ",
+                "status":{"name":"Open"},"assignee":null,"updated":"2026-09-01T10:35:18.549+0200"
+              }}],"isLast":true
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            result.issues[0].description.as_deref(),
+            Some("Jira Agile issue details")
         );
     }
 

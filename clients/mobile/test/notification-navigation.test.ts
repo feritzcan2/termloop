@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   notificationDestination,
+  notificationRoute,
   resolveNotificationConnectionId,
 } from "../src/features/notifications/notification-navigation";
 
@@ -49,5 +50,16 @@ describe("notification navigation", () => {
       { kind: "session", sessionId: "session-codex" },
       [{ connectionId: "mac-1", sessionIds: [], projectIds: [] }],
     )).toBe("mac-1");
+  });
+
+  it("builds an exact replacement route for the tapped Agent", () => {
+    expect(notificationRoute({
+      kind: "session",
+      connectionId: "stale-hint",
+      sessionId: "session-codex",
+    }, "mac-2")).toEqual({
+      pathname: "/session/[sessionId]",
+      params: { sessionId: "session-codex", connectionId: "mac-2" },
+    });
   });
 });

@@ -30,7 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           candidate_sha="$(git rev-parse HEAD)"
-          test "$candidate_sha" = "$GITHUB_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            test "$candidate_sha" = "$GITHUB_SHA"
+          fi
           remote_tag_sha="$(git ls-remote origin "refs/tags/$TERMLOOP_RELEASE_TAG" | awk 'NR == 1 { print $1 }')"
           test "$remote_tag_sha" = "$candidate_sha"
           git fetch origin --prune --no-tags \
@@ -73,11 +75,6 @@ jobs:
             os: linux
             arch: x64
             archive: tar.gz
-          - runner: windows-2025
-            runs-on: '["windows-2025"]'
-            os: windows
-            arch: x64
-            archive: zip
     runs-on: ${{ fromJSON(matrix.runs-on) }}
     timeout-minutes: ${{ matrix.os == 'macos' && 120 || 45 }}
     env:
@@ -160,17 +157,6 @@ jobs:
             echo "Missing complete macOS notarization credentials" >&2
             exit 1
           fi
-      - name: Validate Windows signing secrets
-        if: runner.os == 'Windows'
-        env:
-          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for name in WINDOWS_CERTIFICATE_BASE64 WINDOWS_CERTIFICATE_PASSWORD; do
-            test -n "${!name:-}" || { echo "Missing required Windows release secret: $name" >&2; exit 1; }
-          done
       - name: Package desktop installers
         shell: bash
         env:
@@ -183,8 +169,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -260,29 +244,6 @@ jobs:
             codesign -dvv "clients/desktop/out/mac-universal/TermLoop Next.app" 2>&1 |
               grep -q "Authority=Developer ID Application"
             xcrun stapler validate "clients/desktop/out/mac-universal/TermLoop Next.app"
-          elif [ "$RUNNER_OS" = "Windows" ]; then
-            certificate_path="$RUNNER_TEMP/termloop-release-signing.p12"
-            cleanup_windows_certificate() {
-              rm -f "$certificate_path"
-            }
-            trap cleanup_windows_certificate EXIT
-            printf '%s' "$WINDOWS_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
-            export CSC_LINK="$certificate_path"
-            export CSC_KEY_PASSWORD="$WINDOWS_CERTIFICATE_PASSWORD"
-            pnpm --filter @termloop/desktop package
-            powershell -NoProfile -Command '
-              $files = @(
-                Get-ChildItem "clients/desktop/out" -File -Filter "termloop-desktop-windows-*.exe"
-                Get-ChildItem "clients/desktop/out" -Recurse -File -Filter "TermLoop Next.exe"
-              )
-              if ($files.Count -lt 2) { throw "Expected signed Windows application and installer" }
-              foreach ($file in $files) {
-                $signature = Get-AuthenticodeSignature $file.FullName
-                if ($signature.Status -ne "Valid") {
-                  throw "Invalid Authenticode signature: $($file.Name) ($($signature.Status))"
-                }
-              }
-            '
           else
             pnpm --filter @termloop/desktop package
           fi
@@ -293,21 +254,12 @@ jobs:
           server_dir="$RUNNER_TEMP/server-package"
           mkdir -p "$asset_dir" "$server_dir"
           cp tools/skills-manager/LICENSE "$server_dir/skills-manager-LICENSE"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cp target/release/termloop-server.exe "$server_dir/termloop-server.exe"
-            cp target/release/termloop-companion.exe "$server_dir/termloop-companion.exe"
-            cp target/release/skills-manager-cli.exe "$server_dir/skills-manager-cli.exe"
-            cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl.mjs"
-            printf '@echo off\r\nnode "%%~dp0termloopctl.mjs" %%*\r\n' > "$server_dir/termloopctl.cmd"
-            powershell -NoProfile -Command "Compress-Archive -Path '$server_dir/*' -DestinationPath '$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.zip'"
-          else
-            cp target/release/termloop-server "$server_dir/termloop-server"
-            cp target/release/termloop-companion "$server_dir/termloop-companion"
-            cp target/release/skills-manager-cli "$server_dir/skills-manager-cli"
-            cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl"
-            chmod +x "$server_dir/termloop-server" "$server_dir/termloop-companion" "$server_dir/skills-manager-cli" "$server_dir/termloopctl"
-            tar -C "$server_dir" -czf "$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.tar.gz" .
-          fi
+          cp target/release/termloop-server "$server_dir/termloop-server"
+          cp target/release/termloop-companion "$server_dir/termloop-companion"
+          cp target/release/skills-manager-cli "$server_dir/skills-manager-cli"
+          cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl"
+          chmod +x "$server_dir/termloop-server" "$server_dir/termloop-companion" "$server_dir/skills-manager-cli" "$server_dir/termloopctl"
+          tar -C "$server_dir" -czf "$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.tar.gz" .
           find clients/desktop/out -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print0 |
             while IFS= read -r -d '' file; do
               cp "$file" "$asset_dir/"
@@ -323,6 +275,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-24.04
+    environment: production
     env:
       TERMLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -338,7 +291,9 @@ jobs:
         run: |
           set -euo pipefail
           candidate_sha="$(git rev-parse HEAD)"
-          test "$candidate_sha" = "$GITHUB_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            test "$candidate_sha" = "$GITHUB_SHA"
+          fi
           remote_tag_sha="$(git ls-remote origin "refs/tags/$TERMLOOP_RELEASE_TAG" | awk 'NR == 1 { print $1 }')"
           test "$remote_tag_sha" = "$candidate_sha"
           git fetch origin --prune --no-tags \
@@ -360,9 +315,6 @@ jobs:
             "termloop-server-linux-x64-$version.tar.gz"
             "termloop-desktop-linux-x64-$version.AppImage"
             "termloop-desktop-linux-x64-$version.deb"
-            "termloop-server-windows-x64-$version.zip"
-            "termloop-desktop-windows-x64-$version.exe"
-            "latest.yml"
             "latest-mac.yml"
             "latest-linux.yml"
           )
@@ -399,7 +351,6 @@ jobs:
             "termloop-desktop-macos-universal-$version.zip"
             "termloop-desktop-linux-x64-$version.AppImage"
             "termloop-desktop-linux-x64-$version.deb"
-            "termloop-desktop-windows-x64-$version.exe"
           )
           while IFS= read -r blockmap; do
             payloads+=("${blockmap##*/}")
@@ -410,7 +361,7 @@ jobs:
               --only-show-errors \
               --cache-control "public,max-age=31536000,immutable"
           done
-          for manifest in latest.yml latest-mac.yml latest-linux.yml; do
+          for manifest in latest-mac.yml latest-linux.yml; do
             aws s3 cp "release-assets/$manifest" "s3://$R2_BUCKET_NAME/stable/$manifest" \
               --endpoint-url "$endpoint" \
               --only-show-errors \

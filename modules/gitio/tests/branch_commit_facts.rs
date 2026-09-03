@@ -26,6 +26,7 @@ fn counts_commits_not_reachable_from_the_local_remote_default_ref() {
         "refs/remotes/origin/HEAD",
         "refs/remotes/origin/main",
     ]);
+    repository.git(["update-ref", "refs/remotes/origin/development", "HEAD"]);
     repository.git(["checkout", "-b", "feature/count"]);
     for index in 1..=3 {
         fs::write(
@@ -84,6 +85,41 @@ fn counts_commits_not_reachable_from_the_local_remote_default_ref() {
         merged.state,
         BranchCommitState::Available { count: 0, .. }
     ));
+
+    let current_base = GitRunner::discover()
+        .unwrap()
+        .observe_branch_commit_summary_requests(
+            repository.root(),
+            &[
+                termloop_gitio::BranchCommitSummaryRequest::with_current_base(
+                    b"feature/count".to_vec(),
+                    b"refs/heads/development".to_vec(),
+                ),
+            ],
+        )
+        .unwrap()
+        .observations
+        .pop()
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        current_base.state,
+        BranchCommitState::Available { count: 3, ref base_ref }
+            if base_ref.as_bytes() == b"refs/remotes/origin/development"
+    ));
+    let current_base_commits = GitRunner::discover()
+        .unwrap()
+        .list_branch_commits_with_current_base(
+            repository.root(),
+            b"feature/count",
+            b"refs/heads/development",
+        )
+        .unwrap();
+    assert_eq!(current_base_commits.commits.len(), 3);
+    assert_eq!(
+        current_base_commits.base_ref.as_bytes(),
+        b"refs/remotes/origin/development"
+    );
 
     let recorded = GitRunner::discover()
         .unwrap()
@@ -159,10 +195,8 @@ fn no_remote_uses_only_the_caller_proven_exact_local_base() {
     ));
     assert!(matches!(
         observed.not_in_base,
-        BranchCommitState::Unavailable {
-            reason: BranchCommitUnavailable::BaseRefUnavailable,
-            ..
-        }
+        BranchCommitState::Available { count: 2, ref base_ref }
+            if base_ref.as_bytes() == b"refs/heads/main"
     ));
     let managed = runner
         .observe_branch_commit_summary_with_recorded_base(
@@ -187,6 +221,52 @@ fn no_remote_uses_only_the_caller_proven_exact_local_base() {
     assert_eq!(commits.commits.len(), 2);
     assert_eq!(commits.base_ref.as_bytes(), b"refs/heads/main");
     assert_eq!(before, repository.index_snapshot(repository.root()));
+}
+
+#[test]
+fn current_base_count_fails_closed_when_the_managed_branch_lost_its_recorded_base() {
+    let repository = TestRepository::init("branch-commit-diverged");
+    repository.create_commit("managed base");
+    let recorded_base_oid = repository.git(["rev-parse", "HEAD"]).stdout;
+    let recorded_base_oid = recorded_base_oid.strip_suffix(b"\n").unwrap();
+    repository.git([
+        "remote",
+        "add",
+        "origin",
+        "https://example.invalid/repository.git",
+    ]);
+    repository.git(["update-ref", "refs/remotes/origin/development", "HEAD"]);
+    repository.git(["checkout", "--orphan", "unrelated"]);
+    fs::write(repository.root().join("unrelated.txt"), "unrelated\n").unwrap();
+    repository.git(["add", "--", "unrelated.txt"]);
+    repository.git(["commit", "-m", "unrelated history"]);
+    repository.git(["branch", "feature/diverged"]);
+
+    let observed = GitRunner::discover()
+        .unwrap()
+        .observe_branch_commit_summary_requests(
+            repository.root(),
+            &[
+                termloop_gitio::BranchCommitSummaryRequest::with_current_base_and_recorded_base(
+                    b"feature/diverged".to_vec(),
+                    b"refs/heads/development".to_vec(),
+                    recorded_base_oid.to_vec(),
+                ),
+            ],
+        )
+        .unwrap()
+        .observations
+        .pop()
+        .unwrap()
+        .unwrap();
+
+    assert!(matches!(
+        observed.state,
+        BranchCommitState::Unavailable {
+            reason: BranchCommitUnavailable::BranchDiverged,
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -20,11 +20,12 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "202608272300",
+      "buildNumber": "202609030928",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true,
         "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
-        "NSMicrophoneUsageDescription": "TermLoop uses the microphone only when you choose to send audio to a TermLoop agent."
+        "NSMicrophoneUsageDescription": "TermLoop uses the microphone only while recording a voice message for Steward."
       }
     },
     "android": {
@@ -43,10 +44,18 @@
       ],
       "expo-secure-store",
       [
+        "@sentry/react-native/expo",
+        {
+          "organization": "agentloop-22",
+          "project": "termloop-mobile",
+          "url": "https://sentry.io/"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Scan a TermLoop pairing QR code or take a photo to send to a TermLoop agent.",
-          "microphonePermission": false,
+          "microphonePermission": "TermLoop uses the microphone only while recording a voice message for Steward.",
           "recordAudioAndroid": false
         }
       ],
@@ -55,6 +64,15 @@
         {
           "photosPermission": "Choose a photo to send to a TermLoop agent.",
           "cameraPermission": "Take a photo to send to a TermLoop agent."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "TermLoop uses the microphone only while recording a voice message for Steward.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": true,
+          "enableBackgroundPlayback": true
         }
       ]
     ],

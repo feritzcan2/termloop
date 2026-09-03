@@ -10,13 +10,10 @@ export type RefreshTimerScheduler = (
 export const ASSISTANT_REFRESH_COALESCE_MS = 250;
 
 /**
- * Every assistant surface fans several named reads out per refresh, and PTY
- * liveness keeps `session` and `agentStatus` moving while an executor streams
- * output. Refreshing once per invalidation exhausts the control connection's
- * in-flight budget and the reads start timing out, so a burst refreshes on its
- * leading edge — a single discrete change still lands immediately — and then
- * collapses into at most one further round per window for as long as
- * invalidations keep arriving.
+ * PTY liveness keeps `session` and `agentStatus` moving while an executor
+ * streams output. This throttle bounds React notification frequency; the
+ * composition-owned read coordinator separately single-flights named reads
+ * until their remote round completes.
  */
 export class AssistantRefreshThrottle {
   #cooldown: RefreshTimerHandle | undefined;

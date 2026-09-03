@@ -13,7 +13,20 @@ import type {
   RoutineConfigurationListResult,
   RoutineRunNowResult,
   SessionLaunchAgentResult,
+  SessionCloseResult,
+  SessionForkAgentResult,
+  SessionRelocateAgentToProjectResult,
+  SessionRelocateAgentToTaskResult,
+  SessionRepairProviderHistoryResult,
+  SessionPreviewResumeAgentResult,
   SessionRenameResult,
+  SessionRequestAskToResult,
+  SessionRequestHandoverToResult,
+  SessionResumeAgentResult,
+  SessionRestartAgentResult,
+  SessionPreviewRelocateAgentToProjectResult,
+  SessionPreviewRelocateAgentToTaskResult,
+  SessionTerminateResult,
   SessionDto,
   SocketFactory,
   TaskDto,
@@ -22,8 +35,15 @@ import type {
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
+  StewardConfigurationGetResult,
 } from "@termloop/contract/current";
 import { validateMethodResult } from "@termloop/contract/current";
+
+import {
+  mobileDiagnostics,
+  websocketEndpointLabel,
+  type MobileDiagnosticReporter,
+} from "../../platform/mobile-diagnostics";
 
 export const MOBILE_API_VERSION = 1 as const;
 
@@ -37,6 +57,7 @@ type MobileControlMethod =
   | "task.worktreeChangeList"
   | "task.worktreeDiff"
   | "task.worktreePreImage"
+  | "steward.configurationGet"
   | "playbook.get"
   | "playbook.runtime"
   | "playbook.taskPositionSet"
@@ -46,7 +67,20 @@ type MobileControlMethod =
   | "task.launchAgent"
   | "session.previewAgent"
   | "session.launchAgent"
+  | "session.forkAgent"
+  | "session.repairProviderHistory"
+  | "session.requestAskTo"
+  | "session.requestHandoverTo"
+  | "session.previewResumeAgent"
+  | "session.resumeAgent"
+  | "session.restartAgent"
+  | "session.previewRelocateAgentToTask"
+  | "session.relocateAgentToTask"
+  | "session.previewRelocateAgentToProject"
+  | "session.relocateAgentToProject"
   | "session.rename"
+  | "session.terminate"
+  | "session.close"
   | "companion.transcriptList"
   | "companion.transcriptAppend"
   | "companion.suggestionAccept"
@@ -62,6 +96,7 @@ interface MobileControlResults {
   "task.worktreeChangeList": TaskWorktreeChangeListResult;
   "task.worktreeDiff": TaskWorktreeDiffResult;
   "task.worktreePreImage": TaskWorktreePreImageResult;
+  "steward.configurationGet": StewardConfigurationGetResult;
   "playbook.get": PlaybookGetResult;
   "playbook.runtime": PlaybookRuntimeResult;
   "playbook.taskPositionSet": PlaybookTaskPositionSetResult;
@@ -71,14 +106,34 @@ interface MobileControlResults {
   "task.launchAgent": TaskLaunchAgentResult;
   "session.previewAgent": AgentLaunchPreviewResult;
   "session.launchAgent": SessionLaunchAgentResult;
+  "session.forkAgent": SessionForkAgentResult;
+  "session.repairProviderHistory": SessionRepairProviderHistoryResult;
+  "session.requestAskTo": SessionRequestAskToResult;
+  "session.requestHandoverTo": SessionRequestHandoverToResult;
+  "session.previewResumeAgent": SessionPreviewResumeAgentResult;
+  "session.resumeAgent": SessionResumeAgentResult;
+  "session.restartAgent": SessionRestartAgentResult;
+  "session.previewRelocateAgentToTask": SessionPreviewRelocateAgentToTaskResult;
+  "session.relocateAgentToTask": SessionRelocateAgentToTaskResult;
+  "session.previewRelocateAgentToProject": SessionPreviewRelocateAgentToProjectResult;
+  "session.relocateAgentToProject": SessionRelocateAgentToProjectResult;
   "session.rename": SessionRenameResult;
+  "session.terminate": SessionTerminateResult;
+  "session.close": SessionCloseResult;
   "companion.transcriptList": CompanionTranscriptListResult;
   "companion.transcriptAppend": CompanionTranscriptAppendResult;
   "companion.suggestionAccept": CompanionSuggestionAcceptResult;
   "companion.proposalRespond": CompanionProposalRespondResult;
 }
 
-const REQUEST_TIMEOUT_MS = 5_000;
+/// Includes Tailnet wake-up and WebSocket authentication. Five seconds caused a
+/// retry loop to retire the native socket at exactly the point an iPhone was still
+/// restoring its VPN route after foregrounding.
+const REQUEST_TIMEOUT_MS = 12_000;
+/// A successful control response is stronger reachability evidence than another
+/// dedicated version probe. Reusing it for one foreground polling window avoids
+/// making the health check race the overview reads on the same WebSocket.
+const REACHABILITY_EVIDENCE_MS = 30_000;
 /// Starting an Agent provisions a checkout and waits for the provider to come up,
 /// so it cannot answer inside the read budget every other call lives in. The
 /// longer window is per method rather than global: a slow read still fails fast.
@@ -87,6 +142,19 @@ const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "task.launchAgent": 120_000,
   "session.previewAgent": 30_000,
   "session.launchAgent": 120_000,
+  "session.forkAgent": 120_000,
+  "session.repairProviderHistory": 20_000,
+  "session.requestAskTo": 20_000,
+  "session.requestHandoverTo": 20_000,
+  "session.previewResumeAgent": 30_000,
+  "session.resumeAgent": 120_000,
+  "session.restartAgent": 120_000,
+  "session.previewRelocateAgentToTask": 30_000,
+  "session.relocateAgentToTask": 120_000,
+  "session.previewRelocateAgentToProject": 30_000,
+  "session.relocateAgentToProject": 120_000,
+  "session.terminate": 20_000,
+  "session.close": 20_000,
   "routine.runNow": 120_000,
   "companion.transcriptAppend": 20_000,
   "companion.suggestionAccept": 20_000,
@@ -104,6 +172,7 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
   "task.worktreeChangeList",
   "task.worktreeDiff",
   "task.worktreePreImage",
+  "steward.configurationGet",
   "playbook.get",
   "playbook.runtime",
   "routine.configurationList",
@@ -112,13 +181,18 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
 
 interface PendingMobileCall {
   readonly method: MobileControlMethod;
+  readonly startedAtEpochMs: number;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
 }
 
 export class MobileControlError extends Error {
-  constructor(message: string, readonly code: string | undefined) {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly details: Readonly<Record<string, unknown>> | undefined = undefined,
+  ) {
     super(message);
     this.name = "MobileControlError";
   }
@@ -138,17 +212,39 @@ export class MobileControlClient {
   private counter = 0;
   private generation = 0;
   private socket: ReturnType<SocketFactory> | undefined;
-  private connecting: Promise<ReturnType<SocketFactory>> | undefined;
+  private connecting: {
+    readonly promise: Promise<ReturnType<SocketFactory>>;
+    readonly socket: ReturnType<SocketFactory>;
+  } | undefined;
   private readonly pending = new Map<string, PendingMobileCall>();
+  private cachedVersion: MobileControlResults["system.version"] | undefined;
+  private versionProbe: Promise<MobileControlResults["system.version"]> | undefined;
+  private lastSuccessfulResponseAtEpochMs = 0;
 
   constructor(
     private readonly url: string,
     private readonly token: string,
     private readonly socketFactory: SocketFactory,
+    private readonly diagnostics: MobileDiagnosticReporter = mobileDiagnostics,
+    private readonly connectionId: string = "unspecified",
   ) {}
 
-  version() {
-    return this.call("system.version");
+  version(fresh = false) {
+    if (!fresh && this.cachedVersion !== undefined
+      && Date.now() - this.lastSuccessfulResponseAtEpochMs <= REACHABILITY_EVIDENCE_MS) {
+      return Promise.resolve(this.cachedVersion);
+    }
+    if (this.versionProbe !== undefined) return this.versionProbe;
+    const probe: Promise<MobileControlResults["system.version"]> = this.call("system.version").then((version) => {
+      this.cachedVersion = version;
+      return version;
+    });
+    this.versionProbe = probe;
+    void probe.then(
+      () => { if (this.versionProbe === probe) this.versionProbe = undefined; },
+      () => { if (this.versionProbe === probe) this.versionProbe = undefined; },
+    );
+    return probe;
   }
 
   async call<M extends MobileControlMethod>(
@@ -164,6 +260,12 @@ export class MobileControlClient {
       if (!(cause instanceof MobileControlTransportError) || !RETRYABLE_READ_METHODS.has(method)) {
         throw cause;
       }
+      this.diagnostics.report("control", "request_retry", {
+        connectionId: this.connectionId,
+        method,
+        reason: cause.message,
+        nextAttempt: 2,
+      });
       return await this.callOnce(method, params);
     }
   }
@@ -176,21 +278,42 @@ export class MobileControlClient {
       throw new MobileControlError("Too many mobile control requests are in flight.", "serviceBusy");
     }
     const id = String(++this.counter);
+    const timeoutMs = SLOW_METHOD_TIMEOUT_MS[method] ?? REQUEST_TIMEOUT_MS;
+    const startedAtEpochMs = Date.now();
+    this.diagnostics.report("control", "request_started", {
+      connectionId: this.connectionId,
+      ...this.diagnostics.correlation(),
+      requestId: id,
+      method,
+      timeoutMs,
+      pendingRequests: this.pending.size + 1,
+      transportState: this.transportState(),
+    });
     return await new Promise<MobileControlResults[M]>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.pending.delete(id)) return;
         const error = new MobileControlTransportError("request timeout");
+        this.diagnostics.report("control", "request_timeout", {
+          connectionId: this.connectionId,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.pending.size,
+          transportState: this.transportState(),
+          generation: this.generation,
+        });
         reject(error);
         /// iOS can suspend a foreground WebSocket without delivering `close` to
         /// JavaScript. Once one request times out, that transport is no longer
         /// evidence of a usable connection: retaining it makes every later probe
         /// reuse the same silent socket until the whole app is restarted.
-        const socket = this.socket;
+        const socket = this.socket ?? this.connecting?.socket;
         this.disconnect(this.generation, error);
         socket?.close();
-      }, SLOW_METHOD_TIMEOUT_MS[method] ?? REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
       this.pending.set(id, {
         method,
+        startedAtEpochMs,
         resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
@@ -201,27 +324,55 @@ export class MobileControlClient {
           socket.send(JSON.stringify({
             id,
             mobileApiVersion: MOBILE_API_VERSION,
+            ...this.diagnostics.correlation(),
+            controlGeneration: this.generation,
             token: this.token,
             method,
             params,
           }));
-        } catch {
+          this.diagnostics.report("control", "request_sent", {
+            connectionId: this.connectionId,
+            requestId: id,
+            method,
+            generation: this.generation,
+          });
+        } catch (cause: unknown) {
           const error = new MobileControlTransportError("connection failed");
+          this.diagnostics.report("control", "request_send_failed", {
+            connectionId: this.connectionId,
+            requestId: id,
+            method,
+            generation: this.generation,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+          });
           this.disconnect(this.generation, error);
           socket.close();
         }
-      }).catch(() => {
+      }).catch((cause: unknown) => {
         const pending = this.pending.get(id);
         if (!pending) return;
         this.pending.delete(id);
         clearTimeout(pending.timeout);
+        this.diagnostics.report("control", "request_connection_failed", {
+          connectionId: this.connectionId,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
         pending.reject(new MobileControlTransportError("connection failed"));
       });
     });
   }
 
   close(): void {
-    const socket = this.socket;
+    const socket = this.socket ?? this.connecting?.socket;
+    this.diagnostics.report("control", "client_closed", {
+      connectionId: this.connectionId,
+      generation: this.generation,
+      pendingRequests: this.pending.size,
+      transportState: this.transportState(),
+    });
     this.generation += 1;
     this.socket = undefined;
     this.connecting = undefined;
@@ -231,13 +382,36 @@ export class MobileControlClient {
 
   private connected(): Promise<ReturnType<SocketFactory>> {
     if (this.socket) return Promise.resolve(this.socket);
-    if (this.connecting) return this.connecting;
+    if (this.connecting) return this.connecting.promise;
     const generation = ++this.generation;
-    const socket = this.socketFactory(this.url);
+    const startedAtEpochMs = Date.now();
+    this.diagnostics.report("control", "connection_started", {
+      connectionId: this.connectionId,
+      generation,
+      endpoint: websocketEndpointLabel(this.url),
+      pendingRequests: this.pending.size,
+    });
+    let socket: ReturnType<SocketFactory>;
+    try {
+      socket = this.socketFactory(this.url);
+    } catch (cause: unknown) {
+      this.diagnostics.report("control", "connection_factory_failed", {
+        connectionId: this.connectionId,
+        generation,
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+      throw cause;
+    }
     const connecting = new Promise<ReturnType<SocketFactory>>((resolve, reject) => {
       let opened = false;
       socket.addEventListener("open", () => {
         if (generation !== this.generation) {
+          this.diagnostics.report("control", "connection_superseded", {
+            connectionId: this.connectionId,
+            generation,
+            currentGeneration: this.generation,
+            durationMs: Date.now() - startedAtEpochMs,
+          });
           socket.close();
           reject(new MobileControlTransportError("connection superseded"));
           return;
@@ -245,61 +419,153 @@ export class MobileControlClient {
         opened = true;
         this.socket = socket;
         this.connecting = undefined;
+        this.diagnostics.report("control", "connection_opened", {
+          connectionId: this.connectionId,
+          generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.pending.size,
+        });
         resolve(socket);
       }, { once: true });
       socket.addEventListener("message", (event) => this.receive(generation, event));
-      socket.addEventListener("error", () => {
+      socket.addEventListener("error", (event) => {
+        this.diagnostics.report("control", "connection_error", {
+          connectionId: this.connectionId,
+          generation,
+          opened,
+          stale: generation !== this.generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          eventType: isRecord(event) && typeof event.type === "string" ? event.type : undefined,
+        });
         if (!opened) reject(new MobileControlTransportError("connection failed"));
         this.disconnect(generation, new MobileControlTransportError("connection failed"));
         socket.close();
       }, { once: true });
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", (event) => {
+        this.diagnostics.report("control", "connection_closed", {
+          connectionId: this.connectionId,
+          generation,
+          opened,
+          stale: generation !== this.generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          closeCode: isRecord(event) && typeof event.code === "number" ? event.code : undefined,
+          closeReasonLength: isRecord(event) && typeof event.reason === "string"
+            ? event.reason.length
+            : undefined,
+          wasClean: isRecord(event) && typeof event.wasClean === "boolean" ? event.wasClean : undefined,
+        });
         if (!opened) reject(new MobileControlTransportError("connection closed"));
         this.disconnect(generation, new MobileControlTransportError("connection closed"));
       }, { once: true });
     });
-    this.connecting = connecting;
+    this.connecting = { promise: connecting, socket };
     return connecting;
   }
 
   private receive(generation: number, event: { data: unknown }): void {
-    if (generation !== this.generation) return;
+    if (generation !== this.generation) {
+      this.diagnostics.report("control", "stale_response_ignored", {
+        connectionId: this.connectionId,
+        generation,
+        currentGeneration: this.generation,
+      });
+      return;
+    }
     let response: unknown;
     try {
       response = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
     } catch {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "invalidJson",
+      });
       const socket = this.socket;
       this.disconnect(generation, new Error("invalid mobile gateway response"));
       socket?.close();
       return;
     }
     if (!isRecord(response)) {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "notObject",
+      });
       const socket = this.socket;
       this.disconnect(generation, new Error("invalid mobile gateway response"));
       socket?.close();
       return;
     }
-    if (typeof response.id !== "string") return;
+    if (typeof response.id !== "string") {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "missingRequestId",
+      });
+      return;
+    }
     const pending = this.pending.get(response.id);
-    if (!pending) return;
+    if (!pending) {
+      this.diagnostics.report("control", "orphan_response_ignored", {
+        connectionId: this.connectionId,
+        generation,
+        requestId: response.id,
+      });
+      return;
+    }
     this.pending.delete(response.id);
     clearTimeout(pending.timeout);
     if (response.ok !== true) {
       const error = isRecord(response.error) ? response.error : undefined;
       const message = typeof error?.message === "string" ? error.message : "request failed";
       const code = typeof error?.code === "string" ? error.code : undefined;
-      pending.reject(new MobileControlError(message, code));
+      const details = isRecord(error?.details) ? error.details : undefined;
+      this.diagnostics.report("control", "request_completed", {
+        connectionId: this.connectionId,
+        requestId: response.id,
+        method: pending.method,
+        ok: false,
+        errorCode: code,
+        reason: typeof details?.reason === "string" ? details.reason : undefined,
+        durationMs: Date.now() - pending.startedAtEpochMs,
+        pendingRequests: this.pending.size,
+      });
+      pending.reject(new MobileControlError(message, code, details));
       return;
     }
     try {
-      pending.resolve(decodeResult(pending.method, response.result));
+      const result = decodeResult(pending.method, response.result);
+      this.lastSuccessfulResponseAtEpochMs = Date.now();
+      pending.resolve(result);
+      this.diagnostics.report("control", "request_completed", {
+        connectionId: this.connectionId,
+        requestId: response.id,
+        method: pending.method,
+        ok: true,
+        durationMs: Date.now() - pending.startedAtEpochMs,
+        pendingRequests: this.pending.size,
+      });
     } catch (cause) {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        requestId: response.id,
+        method: pending.method,
+        reason: "invalidResult",
+      });
       pending.reject(cause instanceof Error ? cause : new Error("invalid mobile gateway response"));
     }
   }
 
   private disconnect(generation: number, error: Error): void {
     if (generation !== this.generation) return;
+    this.diagnostics.report("control", "transport_disconnected", {
+      connectionId: this.connectionId,
+      generation,
+      reason: error.message,
+      pendingRequests: this.pending.size,
+      transportState: this.transportState(),
+    });
     this.generation += 1;
     this.socket = undefined;
     this.connecting = undefined;
@@ -311,8 +577,20 @@ export class MobileControlClient {
     this.pending.clear();
     for (const request of pending) {
       clearTimeout(request.timeout);
+      this.diagnostics.report("control", "request_interrupted", {
+        connectionId: this.connectionId,
+        method: request.method,
+        reason: error.message,
+        durationMs: Date.now() - request.startedAtEpochMs,
+      });
       request.reject(error);
     }
+  }
+
+  private transportState(): "connected" | "connecting" | "disconnected" {
+    if (this.socket !== undefined) return "connected";
+    if (this.connecting !== undefined) return "connecting";
+    return "disconnected";
   }
 }
 
@@ -380,6 +658,9 @@ function decodeResult<M extends MobileControlMethod>(
     case "agent.capabilityList":
       if (!validateMethodResult(method, value)) throw incompatible(method);
       return value as MobileControlResults[M];
+    case "steward.configurationGet":
+      if (!validateMethodResult(method, value)) throw incompatible(method);
+      return value as MobileControlResults[M];
     case "playbook.get": {
       // A Project with no pipeline answers `playbook: null`, which is a fact
       // rather than a malformed projection.
@@ -414,7 +695,8 @@ function decodeResult<M extends MobileControlMethod>(
       // well-formed is accepted rather than pinned to a shape it never uses.
       return value as MobileControlResults[M];
     case "task.previewAgent":
-    case "session.previewAgent": {
+    case "session.previewAgent":
+    case "session.previewResumeAgent": {
       if (!isRecord(value) || typeof value.launch_ticket !== "string"
         || !isRecord(value.manifest) || !isRecord(value.manifest.target)
         || typeof value.manifest.target.executable !== "string"
@@ -426,12 +708,26 @@ function decodeResult<M extends MobileControlMethod>(
     }
     case "task.launchAgent":
     case "session.launchAgent":
+    case "session.forkAgent":
+    case "session.resumeAgent":
+    case "session.restartAgent":
+    case "session.relocateAgentToTask":
+    case "session.relocateAgentToProject":
     case "session.rename": {
       if (!isRecord(value) || typeof value.id !== "string" || typeof value.project_id !== "string") {
         throw incompatible(method);
       }
       return value as MobileControlResults[M];
     }
+    case "session.repairProviderHistory":
+    case "session.requestAskTo":
+    case "session.requestHandoverTo":
+    case "session.previewRelocateAgentToTask":
+    case "session.previewRelocateAgentToProject":
+    case "session.terminate":
+    case "session.close":
+      if (!validateMethodResult(method, value)) throw incompatible(method);
+      return value as MobileControlResults[M];
     case "companion.transcriptList": {
       if (!isRecord(value) || typeof value.stateRevision !== "number") throw incompatible(method);
       readRows(value.messages, method, validCompanionMessage);

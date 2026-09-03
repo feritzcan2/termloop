@@ -12,7 +12,9 @@ serde_json.workspace = true
 similar.workspace = true
 termloop-platform = { path = "../platform" }
 thiserror.workspace = true
+tokio.workspace = true
 unicode-normalization.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 termloop-platform = { path = "../platform", features = ["test-support"] }

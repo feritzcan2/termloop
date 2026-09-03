@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn schema_47_adds_no_inferred_task_branch_membership() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-migration-task-branches-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 47,
+            "revision": 2,
+            "projects": [],
+            "sessions": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert!(store.task_branch_sets().is_empty());
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(persisted["task_branch_sets"], serde_json::json!([]));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn schema_38_adds_an_empty_deleted_agent_bin_without_inference() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-migration-deleted-agents-{}-{}.json",

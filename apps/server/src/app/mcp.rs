@@ -16,7 +16,7 @@ use termloop_contract::current::{
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
     McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
     RoutineFindingResolveParams, SendToAgentParams, WorkerRoutineCompleteParams,
-    WorkerRoutineProblemParams, WorkerStepVerdictsParams,
+    WorkerRoutineProblemParams, WorkerStepVerdictsParams, WorkerTaskAgentRequestParams,
 };
 use tokio::time::{Duration, Instant};
 
@@ -318,15 +318,15 @@ async fn tool_call_inner(
                     .project_projection_for_executor(project_id),
             )
         }
-        (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "task_read")
-        | (termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. }, "task_read") => {
-            text_result(
-                state
-                    .core
-                    .lock()
-                    .await
-                    .list_tasks_current(json!({ "projectId": project_id })),
-            )
+        (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "task_read") => {
+            let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            read_tasks(project_id, None, params, state).await
+        }
+        (termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. }, "task_read") => {
+            let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            read_tasks(project_id, Some(principal.session_id()), params, state).await
         }
         (
             termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
@@ -548,6 +548,15 @@ async fn tool_call_inner(
             send_steward_agent_message(project_id, principal.session_id(), params, state).await
         }
         (
+            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
+            "task_agent_request",
+        ) => {
+            let params: WorkerTaskAgentRequestParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            worker_task_agent_request(project_id, principal.session_id(), token, params, state)
+                .await
+        }
+        (
             termloop_core::session_launch::AgentMcpRole::Worker {
                 project_id,
                 worker_id: _,
@@ -672,7 +681,7 @@ async fn execute_ask_to_launch(
 fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {
     match role {
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. Use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'codexle tartış'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
+            "Interactive Session profile. Use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -681,7 +690,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Authenticated Project Steward profile. Follow the visible versioned Steward and wake prompts; the exposed MCP tools enforce Project scope and mutation authority."
         }
         termloop_core::session_launch::AgentMcpRole::Worker { .. } => {
-            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. Workers cannot contact Task Agents."
+            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. During an exact claimed Playbook step, task_agent_request may send one Task-scoped question or delegated follow-up only to the canonical Agent selected by that Task's successful scoped task_read coordinationAgent projection; the Agent may return a visible handoff to this exact Worker Session. Workers cannot contact any other Agent or launch a replacement."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -704,6 +713,185 @@ fn text_result(
     })
 }
 
+async fn read_tasks(
+    project_id: &str,
+    worker_session_id: Option<&str>,
+    params: protocol::McpTaskReadParams,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let Some(task_id) = params.task_id else {
+        if params.check_id.is_some() {
+            return Err(termloop_core::CoreError::InvalidParams("checkId".into()));
+        }
+        return text_result(
+            state
+                .core
+                .lock()
+                .await
+                .list_tasks_current(json!({ "projectId": project_id })),
+        );
+    };
+
+    let worker_claim = if let Some(session_id) = worker_session_id {
+        let check_id = params
+            .check_id
+            .as_deref()
+            .ok_or_else(|| termloop_core::CoreError::InvalidParams("checkId".into()))?;
+        let capability = claimed_check(state, project_id, session_id, check_id)?;
+        let claimed_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
+        if claimed_task_id
+            .as_deref()
+            .is_some_and(|claimed_task_id| claimed_task_id != task_id)
+        {
+            return Err(termloop_core::CoreError::CapabilityDenied);
+        }
+        Some((session_id.to_owned(), check_id.to_owned(), capability))
+    } else {
+        if params.check_id.is_some() {
+            return Err(termloop_core::CoreError::InvalidParams("checkId".into()));
+        }
+        None
+    };
+
+    // Fail before provider or Git work when the exact Task is not in the
+    // authenticated Project. Each observation path revalidates its own Task
+    // binding again before committing or returning evidence.
+    state
+        .core
+        .lock()
+        .await
+        .task_projection_for_executor(project_id, &task_id)?;
+    let task_ids = vec![task_id.clone()];
+    let (branch_commits, pull_requests) = tokio::join!(
+        super::control::task_branch_commit_summary_list(
+            json!({ "projectId": project_id, "taskIds": task_ids.clone() }),
+            state,
+        ),
+        super::control::git_host_pull_request_list(
+            json!({ "projectId": project_id, "taskIds": task_ids }),
+            state,
+        ),
+    );
+    let branch_commits = branch_commits?;
+    let pull_requests = pull_requests?;
+
+    let (task, agent_statuses, coordination_agent) = {
+        let core = state.core.lock().await;
+        if let Some((_, _, capability)) = worker_claim.as_ref() {
+            let claimed_task_id = core.tracker_check_task_id(capability)?;
+            if claimed_task_id
+                .as_deref()
+                .is_some_and(|claimed_task_id| claimed_task_id != task_id)
+            {
+                return Err(termloop_core::CoreError::TrackerReportStale);
+            }
+        }
+        (
+            core.task_projection_for_executor(project_id, &task_id)?,
+            core.task_agent_status_projection_for_executor(project_id, &task_id)?,
+            core.task_coordination_agent_projection_for_executor(project_id, &task_id)?,
+        )
+    };
+    if let Some((session_id, check_id, _)) = worker_claim {
+        let marked =
+            state
+                .tracker_report_capabilities
+                .lock()
+                .ok()
+                .is_some_and(|mut capabilities| {
+                    capabilities.mark_task_read(
+                        &session_id,
+                        &check_id,
+                        &task_id,
+                        super::current_epoch_ms(),
+                    )
+                });
+        if !marked {
+            return Err(termloop_core::CoreError::TrackerReportStale);
+        }
+    }
+
+    text_result(Ok(task_read_projection(
+        task,
+        branch_commits,
+        pull_requests,
+        agent_statuses,
+        coordination_agent,
+    )))
+}
+
+fn task_read_projection(
+    task: Value,
+    branch_commits: Value,
+    pull_requests: Value,
+    agent_statuses: Value,
+    coordination_agent: Value,
+) -> Value {
+    let effective_branch = task
+        .get("worktree_health")
+        .and_then(|health| health.get("checked_out_branch"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            task.get("branch")
+                .and_then(|branch| branch.get("name"))
+                .and_then(Value::as_str)
+        });
+    let pull_request = pull_requests
+        .as_array()
+        .and_then(|items| items.first())
+        .cloned();
+    let pull_request_candidates_by_base_branch = pull_request
+        .as_ref()
+        .map(pull_request_candidates_by_base_branch)
+        .unwrap_or_default();
+    json!({
+        "task": task,
+        "effectiveBranch": effective_branch,
+        "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
+        "pullRequest": pull_request,
+        "pullRequestCandidatesByBaseBranch": pull_request_candidates_by_base_branch,
+        "agentStatuses": agent_statuses,
+        "coordinationAgent": coordination_agent,
+        "evidenceSemantics": {
+            "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
+            "effectiveBranch": "currentCheckoutConvenienceNotUniversalDeliveryIdentity",
+            "branchCommitSummary": "boundedGitObservationBranchDivergedIsNotTaskOwnedWork",
+            "pullRequest": "providerProjectionUseExactHeadBaseMergeCommitAndFreshness",
+            "pullRequestCandidatesByBaseBranch": "sameExactTaskProviderMatchesGroupedForStageSpecificSelectionCurrentCheckoutDoesNotInvalidateAMatchingPullRequest",
+            "agentStatus": "runtimeObservation",
+            "coordinationAgent": "canonicalCurrentTaskAgentForWorkerAndStewardCoordination",
+            "agentPlan": "agentReportedClaimNotIndependentlyVerified",
+        },
+    })
+}
+
+fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Vec<Value> {
+    let mut groups = std::collections::BTreeMap::<String, Vec<Value>>::new();
+    for candidate in pull_request
+        .get("matches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(base_branch) = candidate.get("base_branch").and_then(Value::as_str) else {
+            continue;
+        };
+        groups
+            .entry(base_branch.to_owned())
+            .or_default()
+            .push(candidate.clone());
+    }
+    groups
+        .into_iter()
+        .map(|(base_branch, matches)| {
+            json!({
+                "baseBranch": base_branch,
+                "matches": matches,
+            })
+        })
+        .collect()
+}
+
 async fn read_pull_requests(
     project_id: &str,
     state: &AppState,
@@ -713,14 +901,7 @@ async fn read_pull_requests(
         .lock()
         .await
         .list_tasks_current(json!({ "projectId": project_id }))?;
-    let task_ids = tasks
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|task| task.get("id").and_then(Value::as_str))
-        .take(40)
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let task_ids = task_ids_from_list(&tasks);
     if task_ids.is_empty() {
         return Ok(json!({ "content": "[]" }));
     }
@@ -731,6 +912,18 @@ async fn read_pull_requests(
         )
         .await,
     )
+}
+
+fn task_ids_from_list(tasks: &Value) -> Vec<String> {
+    tasks
+        .get("items")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|task| task.get("id").and_then(Value::as_str))
+        .take(40)
+        .map(str::to_owned)
+        .collect()
 }
 
 async fn read_task_agent_transcript_tail(
@@ -801,7 +994,7 @@ async fn steward_suggest(
         .pointer("/refs/routineFindingId")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    let routine_finding_ids = arguments
+    let routine_finding_ids: Vec<String> = arguments
         .pointer("/refs/routineFindingIds")
         .and_then(Value::as_array)
         .map(|finding_ids| {
@@ -812,6 +1005,8 @@ async fn steward_suggest(
                 .collect()
         })
         .unwrap_or_default();
+    let dismisses_findings = matches!(kind, "update" | "attention" | "problem")
+        && (routine_finding_id.is_some() || !routine_finding_ids.is_empty());
     let mut core = state.core.lock().await;
     core.append_steward_suggestion(
         session_id,
@@ -829,11 +1024,21 @@ async fn steward_suggest(
     let state_revision = core.state_revision();
     drop(core);
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Companion],
+        topics: if dismisses_findings {
+            vec![ProjectionTopic::Companion, ProjectionTopic::Routine]
+        } else {
+            vec![ProjectionTopic::Companion]
+        },
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
-    Ok(json!({ "status": "delivered" }))
+    Ok(json!({
+        "status": if dismisses_findings {
+            "deliveredAndDismissed"
+        } else {
+            "delivered"
+        }
+    }))
 }
 
 async fn resolve_routine_finding(
@@ -1066,6 +1271,47 @@ async fn send_steward_agent_message(
     Ok(json!({ "sessionId": params.session_id, "status": "submitting" }))
 }
 
+async fn worker_task_agent_request(
+    project_id: &str,
+    worker_session_id: &str,
+    token: &str,
+    params: WorkerTaskAgentRequestParams,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let capability = claimed_check(state, project_id, worker_session_id, &params.check_id)?;
+    let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
+    if focused_task_id.as_deref() != Some(params.task_id.as_str()) {
+        return Err(termloop_core::CoreError::CapabilityDenied);
+    }
+    let task_read_completed =
+        state
+            .tracker_report_capabilities
+            .lock()
+            .ok()
+            .is_some_and(|mut capabilities| {
+                capabilities.task_was_read(
+                    worker_session_id,
+                    &params.check_id,
+                    &params.task_id,
+                    super::current_epoch_ms(),
+                )
+            });
+    if !task_read_completed {
+        return Err(termloop_core::CoreError::TrackerReportInvalid);
+    }
+
+    let mut core = state.core.lock().await;
+    if core.tracker_check_task_id(&capability)?.as_deref() != Some(params.task_id.as_str()) {
+        return Err(termloop_core::CoreError::TrackerReportStale);
+    }
+    core.ensure_task_agent_request_target_for_executor(
+        project_id,
+        &params.task_id,
+        &params.session_id,
+    )?;
+    core.send_to_agent(token, &params.session_id, &params.message)
+}
+
 async fn worker_get_next_routine(
     project_id: &str,
     session_id: &str,
@@ -1216,18 +1462,18 @@ async fn worker_report_routine_problem(
         termloop_platform::generate_opaque_id(),
         super::current_epoch_ms(),
     );
-    finish_worker_report_attempt(state, session_id, &capability, result).await?;
+    let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_check(session_id, &capability.check_id);
     }
-    finish_routine_report(project_id, state, None).await;
+    finish_routine_report(project_id, state, routine_finding_wake(&result)).await;
     Ok(json!({ "status": "problemReported" }))
 }
 
 /// A step Routine reports completion for its one focused Task at this stage.
-/// Only a passed verdict moves that Task along the board. A materially new waiting
-/// verdict may separately wake the Steward when that Routine's response policy
-/// asks for review; unchanged evidence remains silent.
+/// Only a passed verdict moves that Task along the board. A current unresolved
+/// waiting finding wakes the Steward unless an already-visible proposal owns
+/// that decision, so a prior Steward no-op cannot strand the Task forever.
 async fn worker_report_step_verdicts(
     project_id: &str,
     session_id: &str,
@@ -1237,6 +1483,24 @@ async fn worker_report_step_verdicts(
     let params: WorkerStepVerdictsParams =
         serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
     let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
+    let task_read_completed =
+        state
+            .tracker_report_capabilities
+            .lock()
+            .ok()
+            .is_some_and(|mut capabilities| {
+                params.verdicts.iter().all(|verdict| {
+                    capabilities.task_was_read(
+                        session_id,
+                        &params.check_id,
+                        &verdict.task_id,
+                        super::current_epoch_ms(),
+                    )
+                })
+            });
+    if !task_read_completed {
+        return Err(termloop_core::CoreError::TrackerReportInvalid);
+    }
     let verdicts = params
         .verdicts
         .into_iter()
@@ -1272,7 +1536,7 @@ async fn worker_report_step_verdicts(
 fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
     match (
         result["passedCount"].as_u64().unwrap_or(0) > 0,
-        result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0,
+        result["stewardReviewRequired"].as_bool().unwrap_or(false),
     ) {
         (true, true) => Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding),
         (true, false) => Some(protocol::CompanionWakeReason::PipelineMoved),
@@ -1304,7 +1568,9 @@ async fn finish_worker_report_attempt<T>(
 }
 
 fn routine_finding_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
-    (result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0)
+    result["stewardReviewRequired"]
+        .as_bool()
+        .unwrap_or_else(|| result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0)
         .then_some(protocol::CompanionWakeReason::RoutineFinding)
 }
 
@@ -1483,6 +1749,19 @@ fn core_tool_error(id: Value, error: &termloop_core::CoreError) -> Response {
                 "observedBranches": observed_branches,
             })),
         ),
+        termloop_core::CoreError::TaskAgentAlreadyAttached {
+            task_id,
+            session_id,
+        } => tool_error(
+            id,
+            "taskAgentStartFailed",
+            "Task already has a current Agent; send the assignment to that Session with agent_message_send",
+            Some(json!({
+                "taskId": task_id,
+                "sessionId": session_id,
+                "suggestedAction": "messageExistingAgent",
+            })),
+        ),
         termloop_core::CoreError::TaskJiraUrlAlreadySet { task_id, jira_url } => tool_error(
             id,
             "jiraUrlAlreadySet",
@@ -1643,6 +1922,14 @@ mod tests {
         assert!(tool_names(&steward).contains(&"task_create"));
         assert!(tool_names(&steward).contains(&"send_to_agent"));
         assert!(tool_names(&steward).contains(&"task_agent_start"));
+        let task_agent_start = steward
+            .iter()
+            .find(|tool| tool["name"] == "task_agent_start")
+            .unwrap();
+        assert_eq!(task_agent_start["inputSchema"]["type"], "object");
+        assert!(task_agent_start["inputSchema"]["allOf"].is_null());
+        assert!(task_agent_start["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_agent_start["inputSchema"]["properties"]["assignment"].is_object());
         assert!(tool_names(&steward).contains(&"task_set_jira_url"));
         assert!(tool_names(&steward).contains(&"steward_system_prompt_read"));
         assert!(tool_names(&steward).contains(&"steward_system_prompt_update"));
@@ -1703,8 +1990,23 @@ mod tests {
         assert!(!tool_names(&steward).contains(&"ask_to"));
         assert!(!tool_names(&steward).contains(&"worker_complete_routine"));
         assert!(tool_names(&worker).contains(&"worker_complete_routine"));
+        let task_read = worker
+            .iter()
+            .find(|tool| tool["name"] == "task_read")
+            .unwrap();
+        assert!(task_read["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_read["inputSchema"]["properties"]["checkId"].is_object());
+        assert_eq!(task_read["annotations"]["readOnlyHint"], true);
+        assert_eq!(task_read["annotations"]["openWorldHint"], true);
+        assert!(
+            task_read["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("successful scoped read"))
+        );
         assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
         assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
+        assert!(tool_names(&worker).contains(&"task_agent_request"));
+        assert!(!tool_names(&steward).contains(&"task_agent_request"));
         assert!(!tool_names(&worker).contains(&"send_to_agent"));
         assert!(tool_names(&worker).contains(&"worker_report_routine_problem"));
         assert!(!tool_names(&worker).contains(&"ask_to"));
@@ -1741,6 +2043,19 @@ mod tests {
                     "visible `builtin.steward.task-assignment` explicitly supplies the exact Steward Session ID"
                 ))
         );
+        let task_agent_request = worker
+            .iter()
+            .find(|tool| tool["name"] == "task_agent_request")
+            .unwrap();
+        assert!(task_agent_request["inputSchema"]["properties"]["checkId"].is_object());
+        assert!(task_agent_request["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_agent_request["inputSchema"]["properties"]["sessionId"].is_object());
+        assert_eq!(task_agent_request["annotations"]["readOnlyHint"], false);
+        assert!(
+            task_agent_request["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("may return one visible handoff"))
+        );
     }
 
     #[test]
@@ -1757,24 +2072,24 @@ mod tests {
     }
 
     #[test]
-    fn step_verdict_wake_preserves_movement_and_new_waiting_findings() {
+    fn step_verdict_wake_preserves_movement_and_unresolved_waiting_findings() {
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 1, "newPendingFindingCount": 0 })),
+            step_verdict_wake(&json!({ "passedCount": 1, "stewardReviewRequired": false })),
             Some(protocol::CompanionWakeReason::PipelineMoved)
         );
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 0, "newPendingFindingCount": 1 })),
+            step_verdict_wake(&json!({ "passedCount": 0, "stewardReviewRequired": true })),
             Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 1, "newPendingFindingCount": 1 })),
+            step_verdict_wake(&json!({ "passedCount": 1, "stewardReviewRequired": true })),
             Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding)
         );
         assert_eq!(step_verdict_wake(&json!({})), None);
     }
 
     #[test]
-    fn only_a_novel_pending_finding_wakes_the_steward() {
+    fn routine_finding_wake_supports_novel_and_recoverable_findings() {
         assert_eq!(
             routine_finding_wake(&json!({ "newPendingFindingCount": 1 })),
             Some(protocol::CompanionWakeReason::RoutineFinding)
@@ -1782,6 +2097,13 @@ mod tests {
         assert_eq!(
             routine_finding_wake(&json!({ "newPendingFindingCount": 0 })),
             None
+        );
+        assert_eq!(
+            routine_finding_wake(&json!({
+                "newPendingFindingCount": 0,
+                "stewardReviewRequired": true
+            })),
+            Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(routine_finding_wake(&json!({})), None);
     }
@@ -1846,6 +2168,15 @@ mod tests {
             "task_set_jira_url",
             &json!({ "taskId": "task-1", "jiraUrl": "TERM-42" })
         ));
+        assert!(protocol::validate_mcp_tool_params("task_read", &json!({})));
+        assert!(protocol::validate_mcp_tool_params(
+            "task_read",
+            &json!({ "taskId": "task-1", "checkId": "check-1" })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "task_read",
+            &json!({ "taskId": "task-1", "branch": "guessed" })
+        ));
         assert!(protocol::validate_mcp_tool_params(
             "task_agent_transcript_tail_read",
             &json!({ "taskId": "task-1" })
@@ -1853,6 +2184,24 @@ mod tests {
         assert!(!protocol::validate_mcp_tool_params(
             "task_agent_transcript_tail_read",
             &json!({ "taskId": "task-1", "sessionId": "session-1" })
+        ));
+        assert!(protocol::validate_mcp_tool_params(
+            "task_agent_request",
+            &json!({
+                "checkId": "check-1",
+                "taskId": "task-1",
+                "sessionId": "123e4567-e89b-42d3-a456-426614174001",
+                "message": "Investigate the exact merged behavior and return correlation evidence."
+            })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "task_agent_request",
+            &json!({
+                "checkId": "check-1",
+                "taskId": "task-1",
+                "sessionId": "another-task-agent",
+                "message": "Investigate it."
+            })
         ));
         assert!(protocol::validate_mcp_tool_params(
             "steward_system_prompt_update",
@@ -1879,6 +2228,91 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn scoped_task_read_combines_task_owned_delivery_evidence() {
+        let projection = task_read_projection(
+            json!({
+                "id": "task-1",
+                "branch": { "name": "termloop/exact" },
+                "worktree_health": { "checked_out_branch": "termloop/current" }
+            }),
+            json!([{ "task_id": "task-1", "count": 2, "freshness": "fresh" }]),
+            json!([{
+                "taskId": "task-1",
+                "matches": [
+                    { "number": 43, "base_branch": "master" },
+                    { "number": 42, "base_branch": "development" }
+                ]
+            }]),
+            json!([{ "sessionId": "agent-1", "status": "idle" }]),
+            json!({
+                "state": "selected",
+                "sessionId": "agent-1",
+                "reason": "soleCurrentTaskAgent",
+                "candidateSessionIds": ["agent-1"]
+            }),
+        );
+        assert_eq!(projection["task"]["id"], "task-1");
+        assert_eq!(projection["task"]["branch"]["name"], "termloop/exact");
+        assert_eq!(projection["effectiveBranch"], "termloop/current");
+        assert_eq!(projection["branchCommitSummary"]["count"], 2);
+        assert_eq!(projection["pullRequest"]["matches"][0]["number"], 43);
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][0]["baseBranch"],
+            "development"
+        );
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][0]["matches"][0]["number"],
+            42
+        );
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][1]["baseBranch"],
+            "master"
+        );
+        assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
+        assert_eq!(projection["coordinationAgent"]["sessionId"], "agent-1");
+        assert_eq!(
+            projection["evidenceSemantics"]["agentPlan"],
+            "agentReportedClaimNotIndependentlyVerified"
+        );
+        assert_eq!(
+            projection["evidenceSemantics"]["pullRequest"],
+            "providerProjectionUseExactHeadBaseMergeCommitAndFreshness"
+        );
+
+        let fallback = task_read_projection(
+            json!({ "id": "task-2", "branch": { "name": "termloop/fallback" } }),
+            json!([]),
+            json!([]),
+            json!([]),
+            json!({ "state": "none", "sessionId": null }),
+        );
+        assert_eq!(fallback["effectiveBranch"], "termloop/fallback");
+        let unavailable = task_read_projection(
+            json!({ "id": "task-3" }),
+            json!([]),
+            json!([]),
+            json!([]),
+            json!({ "state": "none", "sessionId": null }),
+        );
+        assert!(unavailable["effectiveBranch"].is_null());
+        assert!(unavailable["branchCommitSummary"].is_null());
+        assert!(unavailable["pullRequest"].is_null());
+        assert_eq!(unavailable["pullRequestCandidatesByBaseBranch"], json!([]));
+    }
+
+    #[test]
+    fn pull_request_reads_take_ids_from_the_current_paginated_task_shape() {
+        assert_eq!(
+            task_ids_from_list(&json!({
+                "items": [{ "id": "task-1" }, { "id": "task-2" }],
+                "next_cursor": null,
+            })),
+            ["task-1", "task-2"]
+        );
+        assert!(task_ids_from_list(&json!([])).is_empty());
+    }
+
     #[tokio::test]
     async fn jira_url_replacement_returns_the_typed_append_only_error() {
         let response = response_json(core_tool_error(
@@ -1898,6 +2332,31 @@ mod tests {
                 "details": {
                     "taskId": "task-1",
                     "jiraUrl": "https://example.atlassian.net/browse/TERM-42"
+                }
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_task_agent_error_returns_the_exact_reuse_action() {
+        let response = response_json(core_tool_error(
+            json!(9),
+            &termloop_core::CoreError::TaskAgentAlreadyAttached {
+                task_id: "task-1".into(),
+                session_id: "123e4567-e89b-42d3-a456-426614174000".into(),
+            },
+        ))
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(
+            response["result"]["structuredContent"],
+            json!({
+                "code": "taskAgentStartFailed",
+                "message": "Task already has a current Agent; send the assignment to that Session with agent_message_send",
+                "details": {
+                    "taskId": "task-1",
+                    "sessionId": "123e4567-e89b-42d3-a456-426614174000",
+                    "suggestedAction": "messageExistingAgent"
                 }
             })
         );

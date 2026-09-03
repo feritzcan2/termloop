@@ -9,7 +9,7 @@ import type { ConnectionAvailability } from "../application/ports";
 /// attention hue that a waiting agent has earned.
 export type ConnectionDot = "connected" | "connecting" | "offline" | "needsAttention";
 
-export type ConnectionBlock = "offline" | "revoked" | "updateRequired";
+export type ConnectionBlock = "offline" | "revoked" | "gatewayUpdateRequired" | "updateRequired";
 
 export interface ConnectionPresentation {
   dot: ConnectionDot;
@@ -28,6 +28,12 @@ const presentation: Record<ConnectionAvailability, ConnectionPresentation> = {
     summary: "Connected.",
     block: undefined,
   },
+  reconnecting: {
+    dot: "connecting",
+    label: "Reconnecting",
+    summary: "Trying to reach this Mac again. Showing its last known data meanwhile.",
+    block: undefined,
+  },
   offline: {
     dot: "offline",
     label: "Offline",
@@ -39,6 +45,12 @@ const presentation: Record<ConnectionAvailability, ConnectionPresentation> = {
     label: "Needs re-pairing",
     summary: "This phone's access was removed on the Mac. Pair it again to reconnect.",
     block: "revoked",
+  },
+  gatewayUpdateRequired: {
+    dot: "needsAttention",
+    label: "Mac update required",
+    summary: "This Mac's persistent mobile gateway is too old for this app.",
+    block: "gatewayUpdateRequired",
   },
   /// Never offers "connect anyway". A build that cannot decode the daemon's exact
   /// current contract has nothing safe to say about its state, and guessing is how
@@ -66,13 +78,18 @@ export interface ConnectionBlockCopy {
 const blockCopy: Record<ConnectionBlock, ConnectionBlockCopy> = {
   offline: {
     title: "Not connected",
-    body: "This Mac is not reachable right now, so its projects are not shown.",
+    body: "This Mac is not reachable right now. Home keeps its last known project and agent status visible while reconnecting.",
     resolution: "Reconnecting automatically. Keep Tailscale connected and make sure the Mac is awake with TermLoop running.",
   },
   revoked: {
     title: "Needs re-pairing",
     body: "This phone's access was removed on the Mac, so it can no longer read anything from it.",
     resolution: "Pair this phone again from TermLoop on your Mac.",
+  },
+  gatewayUpdateRequired: {
+    title: "Update your Mac",
+    body: "This Mac is reachable, but its persistent mobile access gateway is too old for this app.",
+    resolution: "Update or open TermLoop on your Mac so it can refresh Mobile Access, then reconnect.",
   },
   updateRequired: {
     title: "Update required",

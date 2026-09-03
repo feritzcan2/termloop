@@ -1,10 +1,14 @@
 use crate::{CoreError, CoreRuntime};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
-use termloop_domain::{PathComparisonKey, SessionKind};
+use termloop_domain::{
+    PathComparisonKey, SessionKind, TASK_BRANCH_MEMBERSHIPS_MAX, TaskBranchMembership,
+    TaskBranchMembershipEvidence,
+};
 use termloop_gitio::{
     ChangeState, ContentState, GitRunner, HeadState, LockState, RegisteredPathState,
-    SubmoduleFacts, SubmoduleState, UpstreamState, WorktreeHealthObservation, WorktreeStatusFacts,
+    SubmoduleFacts, SubmoduleState, UpstreamState, WorktreeBranchEvidence,
+    WorktreeBranchObservationSource, WorktreeHealthObservation, WorktreeStatusFacts,
 };
 
 const GLOBAL_HEALTH_CAP: usize = 256;
@@ -155,7 +159,13 @@ pub struct TaskWorktreeWatchTarget {
 pub struct ObservedTaskWorktreeHealth {
     task_id: String,
     proof: termloop_domain::ManagedWorktreeProof,
-    observation: Result<WorktreeHealthObservation, CoreError>,
+    observation: Result<TaskWorktreeObservation, CoreError>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskWorktreeObservation {
+    health: WorktreeHealthObservation,
+    branches: Option<WorktreeBranchEvidence>,
 }
 
 impl TaskWorktreeHealthPlan {
@@ -167,19 +177,28 @@ impl TaskWorktreeHealthPlan {
     /// Observes the canonical checkout once. The resulting Git facts are not
     /// Task-specific and may be applied to every Task that still owns the same
     /// proof tuple.
-    pub fn observe_shared(&self) -> Result<WorktreeHealthObservation, CoreError> {
+    pub fn observe_shared(&self) -> Result<TaskWorktreeObservation, CoreError> {
         GitRunner::discover_with_timeout(termloop_gitio::HEALTH_GIT_SUBPROCESS_DEADLINE)
             .map_err(super::git_mapping::map_git_observation_error)
             .and_then(|runner| {
-                runner
+                let health = runner
                     .inspect_worktree_health(Path::new(&self.proof.registered_worktree_path))
+                    .map_err(super::git_mapping::map_git_observation_error)?;
+                let branches = runner
+                    .observe_worktree_branches_with_timeout(
+                        Path::new(&self.proof.normalized_spec.repository_root),
+                        Path::new(&self.proof.registered_worktree_path),
+                        termloop_gitio::HEALTH_GIT_SUBPROCESS_DEADLINE,
+                    )
                     .map_err(super::git_mapping::map_git_observation_error)
+                    .ok();
+                Ok(TaskWorktreeObservation { health, branches })
             })
     }
 
     pub fn with_observation(
         self,
-        observation: Result<WorktreeHealthObservation, CoreError>,
+        observation: Result<TaskWorktreeObservation, CoreError>,
     ) -> ObservedTaskWorktreeHealth {
         ObservedTaskWorktreeHealth {
             task_id: self.task_id,
@@ -465,11 +484,29 @@ impl CoreRuntime {
             });
         }
         match observed.observation {
-            Ok(observation) => self.apply_task_worktree_health(
-                &observed.task_id,
-                observation,
-                observed_at_epoch_ms,
-            ),
+            Ok(observation) => {
+                let branches_changed = observation
+                    .branches
+                    .map(|branches| {
+                        self.apply_task_worktree_branch_evidence(
+                            &observed.task_id,
+                            &observed.proof,
+                            branches,
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or(false);
+                let mut applied = self.apply_task_worktree_health(
+                    &observed.task_id,
+                    observation.health,
+                    observed_at_epoch_ms,
+                )?;
+                if branches_changed && !applied.changed {
+                    applied.changed = true;
+                    applied.observation_sequence = self.next_observation_sequence()?;
+                }
+                Ok(applied)
+            }
             Err(_) => self.apply_task_worktree_health_facts(
                 &observed.task_id,
                 TaskWorktreeHealthFacts::unknown(
@@ -480,6 +517,102 @@ impl CoreRuntime {
                 observed_at_epoch_ms,
             ),
         }
+    }
+
+    fn apply_task_worktree_branch_evidence(
+        &mut self,
+        task_id: &str,
+        proof: &termloop_domain::ManagedWorktreeProof,
+        evidence: WorktreeBranchEvidence,
+    ) -> Result<bool, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        let binding = task
+            .branch
+            .as_ref()
+            .ok_or(CoreError::BranchMutationConflict)?;
+        let primary_ref = format!("refs/heads/{}", binding.name);
+        let previous = self
+            .store
+            .task_branch_sets()
+            .iter()
+            .find(|set| set.task_id == task_id)
+            .cloned();
+        let existing_count = previous.as_ref().map_or(0, |set| set.memberships.len());
+        let remaining = TASK_BRANCH_MEMBERSHIPS_MAX.saturating_sub(existing_count);
+        let mut incoming = Vec::new();
+        let mut omitted = false;
+        for observation in evidence.observations {
+            let Ok(reference) = std::str::from_utf8(observation.reference.as_bytes()) else {
+                omitted = true;
+                continue;
+            };
+            if reference == primary_ref
+                || previous.as_ref().is_some_and(|set| {
+                    set.memberships.iter().any(|membership| {
+                        membership.repository_common_dir == proof.repository_common_dir
+                            && membership.ref_name == reference
+                    })
+                })
+                || incoming
+                    .iter()
+                    .any(|membership: &TaskBranchMembership| membership.ref_name == reference)
+            {
+                continue;
+            }
+            if incoming.len() >= remaining {
+                omitted = true;
+                continue;
+            }
+            let first_observed_oid = std::str::from_utf8(observation.first_observed_oid.as_bytes())
+                .map_err(|_| CoreError::RepositoryUnavailable)?
+                .to_owned();
+            let parent_ref_name = observation
+                .parent_reference
+                .as_ref()
+                .map(|parent| {
+                    std::str::from_utf8(parent.as_bytes())
+                        .map(str::to_owned)
+                        .map_err(|_| CoreError::RepositoryUnavailable)
+                })
+                .transpose()?;
+            incoming.push(TaskBranchMembership {
+                id: termloop_platform::generate_uuid_v4(),
+                repository_root: binding.repository_root.clone(),
+                repository_common_dir: proof.repository_common_dir.clone(),
+                ref_name: reference.to_owned(),
+                first_observed_worktree_generation: task.worktree_generation,
+                first_observed_oid,
+                parent_ref_name,
+                evidence: match observation.source {
+                    WorktreeBranchObservationSource::CurrentBranch => {
+                        TaskBranchMembershipEvidence::CurrentBranch
+                    }
+                    WorktreeBranchObservationSource::HeadReflog => {
+                        TaskBranchMembershipEvidence::WorktreeReflog
+                    }
+                    WorktreeBranchObservationSource::BranchCreationReflog => {
+                        TaskBranchMembershipEvidence::BranchCreationReflog
+                    }
+                },
+            });
+        }
+        let next = self
+            .store
+            .reconcile_task_branch_set(
+                &self.write_authority,
+                task_id,
+                task.worktree_generation,
+                &proof.repository_common_dir,
+                incoming,
+                evidence.truncated || omitted,
+            )
+            .map_err(crate::store_error)?;
+        Ok(previous.as_ref() != Some(&next))
     }
 
     pub fn apply_task_worktree_health(

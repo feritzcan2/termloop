@@ -1,17 +1,35 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, truncate, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+  createGatewayDiagnosticReporter,
+  mobileDiagnosticContext,
+} from "./mobile-access-diagnostics.mjs";
+import {
+  configureWebSocketHeartbeat,
+  sweepWebSocketHeartbeats,
+  trackWebSocketHeartbeat,
+} from "./mobile-access-heartbeat.mjs";
+import {
+  enableTerminalInputAckFrame,
+  terminalFrameMetadata,
+  terminalInputReceipt,
+} from "./mobile-access-input-receipt.mjs";
+import { mobileUpdatePage } from "./mobile-access-update-page.mjs";
+import {
   apnsPayload,
   attentionTransitions,
+  defaultPushNotificationPreferences,
   isStewardOrWorkerSession,
   loadApnsProvider,
   macDesktopRecentlyActive,
   nextStatusMap,
   pendingStewardDecisionNotifications,
+  pushDeliveryOptions,
+  pushNotificationPreferencesOf,
   retainCurrentAttention,
   sendApns,
   stewardTranscriptNotifications,
@@ -37,14 +55,41 @@ import {
 import { readTerminalNotificationPreview } from "./mobile-access-terminal-preview.mjs";
 import {
   ensureTranscriber,
+  preferPrimaryTranscription,
   transcribeAudioFile,
   validVoiceUpload,
+  voiceContainerOf,
   voiceUploadLimitBytes,
 } from "./mobile-access-transcribe.mjs";
 
 const MOBILE_API_VERSION = 1;
+const MOBILE_TRANSPORT_VERSION = 2;
+const GATEWAY_IDENTITY = typeof __TERMLOOP_GATEWAY_IDENTITY__ === "undefined"
+  ? Object.freeze({
+    manifestVersion: 1,
+    buildId: "source-development",
+    releaseVersion: "2.0.0",
+    channel: "development",
+    sequence: 3,
+    owner: "termloop.source",
+    compatibility: {
+      mobileTransport: { min: MOBILE_TRANSPORT_VERSION, max: MOBILE_TRANSPORT_VERSION },
+      mobileApi: { min: MOBILE_API_VERSION, max: MOBILE_API_VERSION },
+      configSchema: { min: 1, max: 2 },
+    },
+  })
+  : __TERMLOOP_GATEWAY_IDENTITY__;
+const GATEWAY_VERSION_HEADERS = Object.freeze({
+  "content-type": "application/json",
+  "cache-control": "no-store",
+  "x-termloop-gateway-build": GATEWAY_IDENTITY.buildId,
+  "x-termloop-mobile-transport-min": String(GATEWAY_IDENTITY.compatibility.mobileTransport.min),
+  "x-termloop-mobile-transport-max": String(GATEWAY_IDENTITY.compatibility.mobileTransport.max),
+});
 const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
+const DOWNSTREAM_HEARTBEAT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_AGENT_GROUP_PROJECTION_BYTES = 256 * 1024;
 const IMAGE_RETENTION_MS = 24 * 60 * 60 * 1_000;
 const IMAGE_MEDIA_TYPES = new Map([
   ["image/jpeg", "jpg"],
@@ -60,6 +105,7 @@ const MOBILE_CONTROL_METHODS = new Set([
   "agent.statusList",
   "agent.capabilityList",
   "task.list",
+  "steward.configurationGet",
 ]);
 /// Methods outside the daemon's read-only scope that a paired phone may still
 /// reach, each named individually and routed on the full token exactly as the
@@ -68,7 +114,9 @@ const MOBILE_CONTROL_METHODS = new Set([
 /// "this exact list": a Task's bounded worktree snapshot and patches, the delivery
 /// pipeline it sits on, its position on it, one inspected Agent launch, and the
 /// Steward conversation. Nothing else in the contract becomes reachable, and every
-/// entry is still gated by core's own commands and safety gates on arrival.
+/// entry is still gated by core's own commands and safety gates on arrival. Session
+/// lifecycle and coordination entries back the mobile long-press menu; they remain
+/// exact methods rather than turning the owner credential into arbitrary forwarding.
 const MOBILE_FULL_CONTROL_METHODS = new Set([
   // Worktree content reads are full-control in the daemon contract. Keeping
   // them named here gives the phone a bounded review surface without exposing
@@ -85,7 +133,20 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "task.launchAgent",
   "session.previewAgent",
   "session.launchAgent",
+  "session.forkAgent",
+  "session.repairProviderHistory",
+  "session.requestAskTo",
+  "session.requestHandoverTo",
+  "session.previewResumeAgent",
+  "session.resumeAgent",
+  "session.restartAgent",
+  "session.previewRelocateAgentToTask",
+  "session.relocateAgentToTask",
+  "session.previewRelocateAgentToProject",
+  "session.relocateAgentToProject",
   "session.rename",
+  "session.terminate",
+  "session.close",
   "quickAction.preview",
   "quickAction.launch",
   "companion.transcriptList",
@@ -94,20 +155,39 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "companion.proposalRespond",
 ]);
 let controlRequestSequence = 0;
+let downstreamConnectionSequence = 0;
 const upstreamControlConnections = new Map();
 const MAX_UPSTREAM_CONTROL_IN_FLIGHT = 128;
 
 const configFile = process.argv[2];
 if (!configFile) throw new Error("usage: mobile-access-gateway <config-file>");
 const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
+const agentGroupsFile = path.join(path.dirname(configFile), "agent-groups.json");
+const notificationPreferencesFile = path.join(path.dirname(configFile), "notification-preferences.json");
 await boundLog();
+const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 const server = http.createServer(async (request, response) => {
+  if (request.url === "/.well-known/termloop-mobile-access") {
+    response.writeHead(200, GATEWAY_VERSION_HEADERS);
+    response.end(JSON.stringify(GATEWAY_IDENTITY));
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/mobile-update") {
+    const page = mobileUpdatePage(request.url);
+    response.writeHead(200, page.headers);
+    response.end(page.body);
+    return;
+  }
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ ready: true }));
+    response.writeHead(200, GATEWAY_VERSION_HEADERS);
+    response.end(JSON.stringify({ ready: true, ...GATEWAY_IDENTITY }));
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/agent-groups") {
+    await mobileAgentGroups(request, response);
     return;
   }
   if (request.method === "POST" && request.url === "/push/register") {
@@ -116,6 +196,18 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === "POST" && safePathname(request.url) === "/session/image") {
     await uploadSessionImage(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/steward/voice") {
+    await mobileStewardVoiceSend(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/steward/transcribe") {
+    await mobileStewardTranscribe(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/steward/speech") {
+    await mobileStewardSpeech(request, response);
     return;
   }
   if (request.method === "POST" && request.url === "/watch/pair") {
@@ -158,6 +250,10 @@ const server = http.createServer(async (request, response) => {
     await watchVoiceSend(request, response);
     return;
   }
+  if (request.method === "POST" && request.url === "/watch/speech") {
+    await watchStewardSpeech(request, response);
+    return;
+  }
   if (request.method === "POST" && request.url === "/watch/reply") {
     await watchReply(request, response);
     return;
@@ -187,22 +283,61 @@ const server = http.createServer(async (request, response) => {
 
 server.on("upgrade", (request, socket, head) => {
   const pathname = safePathname(request.url);
-  if (pathname !== "/control" && pathname !== "/terminal") {
-    socket.destroy();
+  if (pathname !== "/control" && pathname !== "/terminal" && pathname !== "/mobile") {
+    diagnostics.report("downstream", "upgrade_refused", { reason: "unsupportedPath" });
+    unsupportedUpgrade(socket);
     return;
   }
   websocketServer.handleUpgrade(request, socket, head, (client) => {
+    const connectionId = ++downstreamConnectionSequence;
+    const channel = pathname === "/control" ? "control"
+      : pathname === "/terminal" ? "terminal" : "mobile";
+    const startedAtEpochMs = Date.now();
     sockets.add(client);
-    client.once("close", () => sockets.delete(client));
-    if (pathname === "/control") acceptControl(client);
-    else acceptTerminal(client);
+    trackWebSocketHeartbeat(client, { connectionId, channel }, {
+      /// Existing unified clients did not advertise an application heartbeat.
+      /// Keep probing them, but never treat a missing native Pong as proof that
+      /// their React Native socket is dead.
+      enforceTimeout: channel !== "mobile",
+    });
+    diagnostics.report("downstream", "accepted", { connectionId, channel });
+    client.once("error", (error) => {
+      diagnostics.report("downstream", "socket_error", {
+        connectionId,
+        channel,
+        errorType: error?.name,
+      });
+    });
+    client.once("close", (code, reason) => {
+      sockets.delete(client);
+      diagnostics.report("downstream", "closed", {
+        connectionId,
+        channel,
+        closeCode: code,
+        closeReasonBytes: reason?.byteLength,
+        lifetimeMs: Date.now() - startedAtEpochMs,
+      });
+    });
+    if (pathname === "/control") acceptControl(client, connectionId);
+    else if (pathname === "/terminal") acceptTerminal(client, connectionId);
+    else acceptMobile(client, connectionId);
   });
 });
+
+const heartbeatTimer = setInterval(() => {
+  sweepWebSocketHeartbeats(sockets, ({ connectionId, channel }) => {
+    diagnostics.report("downstream", "heartbeat_timeout", { connectionId, channel });
+  });
+}, DOWNSTREAM_HEARTBEAT_MS);
+heartbeatTimer.unref();
 
 server.listen(config.port, "127.0.0.1", () => {
   // A restart loop is otherwise indistinguishable from a silent gateway, so
   // record the one fact every diagnosis starts from. Never log credentials.
-  process.stdout.write(`${new Date().toISOString()} gateway listening pid=${process.pid} port=${config.port}\n`);
+  diagnostics.report("gateway", "listening", { port: config.port });
+});
+server.on("error", (error) => {
+  diagnostics.report("gateway", "server_error", { errorType: error?.name });
 });
 if (config.push !== undefined) startAttentionMonitor();
 // Compile the wrist transcriber before the first request needs it: a cold
@@ -211,15 +346,28 @@ ensureTranscriber(path.dirname(configFile)).catch(() => {
   // The first transcription request will retry the build and surface failure.
 });
 
-// The supervisor holds this file open in append mode, so truncating in place is
-// safe: later writes resume at the new end. A crash loop restarts the process,
-// which is exactly when this bound gets re-applied.
+// The supervisor holds this file open in append mode, so copying then truncating
+// in place keeps its descriptor valid. Preserve one complete overflow generation:
+// losing the exact interval that crossed the cap made the hardest incidents
+// impossible to diagnose.
 async function boundLog() {
-  if (config.logFile === undefined) return;
+  if (config.logFile === undefined) return false;
   try {
-    if ((await stat(config.logFile)).size > LOG_LIMIT_BYTES) await truncate(config.logFile, 0);
+    if ((await stat(config.logFile)).size <= LOG_LIMIT_BYTES) return false;
+    const overflowFile = `${config.logFile}.overflow`;
+    await copyFile(config.logFile, overflowFile);
+    await chmod(overflowFile, 0o600);
+    await truncate(config.logFile, 0);
+    return true;
   } catch { /* A missing or unreadable log must never stop mobile access. */ }
+  return false;
 }
+
+setInterval(() => {
+  void boundLog().then((truncated) => {
+    if (truncated) diagnostics.report("gateway", "log_rotated", { limitBytes: LOG_LIMIT_BYTES });
+  });
+}, 60_000).unref();
 
 async function registerPushDevice(request, response) {
   if (config.push === undefined) return json(response, 404, { registered: false });
@@ -240,6 +388,60 @@ async function registerPushDevice(request, response) {
   } catch {
     return json(response, 400, { registered: false });
   }
+}
+
+async function mobileAgentGroups(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, { version: 1, groupsByProject: {} });
+  try {
+    const info = await stat(agentGroupsFile);
+    if (!info.isFile() || info.size > MAX_AGENT_GROUP_PROJECTION_BYTES) {
+      return json(response, 422, { version: 1, groupsByProject: {} });
+    }
+    const projection = decodeAgentGroupProjection(JSON.parse(await readFile(agentGroupsFile, "utf8")));
+    return projection === undefined
+      ? json(response, 422, { version: 1, groupsByProject: {} })
+      : json(response, 200, projection);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return json(response, 200, { version: 1, groupsByProject: {} });
+    }
+    diagnostics.report("gateway", "agent_groups_read_failed", { errorType: error?.name });
+    return json(response, 503, { version: 1, groupsByProject: {} });
+  }
+}
+
+function decodeAgentGroupProjection(value) {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.groupsByProject)) return undefined;
+  const groupsByProject = {};
+  for (const [projectId, candidate] of Object.entries(value.groupsByProject)) {
+    if (!validAgentGroupId(projectId) || !Array.isArray(candidate)) return undefined;
+    const seen = new Set();
+    const groups = [];
+    for (const group of candidate) {
+      if (!isRecord(group) || !Array.isArray(group.sessionIds) || group.sessionIds.length < 2
+        || !group.sessionIds.every(validAgentGroupId) || new Set(group.sessionIds).size !== group.sessionIds.length
+        || group.sessionIds.some((sessionId) => seen.has(sessionId))) {
+        return undefined;
+      }
+      const name = group.name;
+      if (!(name === undefined || (typeof name === "string" && name.trim().length > 0
+        && [...name.trim()].length <= 80))) {
+        return undefined;
+      }
+      group.sessionIds.forEach((sessionId) => seen.add(sessionId));
+      groups.push({
+        sessionIds: [...group.sessionIds],
+        ...(typeof name === "string" ? { name: name.trim() } : {}),
+      });
+    }
+    if (groups.length > 0) groupsByProject[projectId] = groups;
+  }
+  return { version: 1, groupsByProject };
+}
+
+function validAgentGroupId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 128
+    && !/[\u0000-\u001F\u007F]/u.test(value);
 }
 
 /// Images are deliberately not terminal frames: the terminal plane remains raw
@@ -502,11 +704,12 @@ async function watchChatSend(request, response) {
   }
 }
 
-async function appendStewardMessage(projectId, content) {
+async function appendStewardMessage(projectId, content, inputMode) {
   const runtime = await currentRuntime();
   if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
   const full = controlCaller(runtime, runtime.fullToken);
-  const result = await full("companion.transcriptAppend", { projectId, content });
+  const params = inputMode === undefined ? { projectId, content } : { projectId, inputMode, content };
+  const result = await full("companion.transcriptAppend", params);
   return watchChatMessageOf(result.message);
 }
 
@@ -541,43 +744,222 @@ async function watchStewardAction(request, response) {
   }
 }
 
-/// Wrist audio, transcribed by this Mac's own on-device speech recognition and
-/// appended to the Steward transcript. The recording never leaves the machine
-/// the daemon already runs on, and the temporary file is removed on every path.
+/// Wrist audio is sent through the daemon-owned OpenAI voice capability. The
+/// gateway never sees the API key. If cloud transcription is not configured or
+/// temporarily unavailable, the existing on-device Mac recognizer remains a
+/// no-secret fallback.
 async function watchVoiceSend(request, response) {
   if (!watchAuthorized(request)) return json(response, 401, {});
+  return stewardVoiceSend(request, response);
+}
+
+async function mobileStewardVoiceSend(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  return stewardVoiceSend(request, response);
+}
+
+async function mobileStewardTranscribe(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  const transcription = await transcribeVoiceRequest(request);
+  if (transcription.status !== 200) {
+    return json(response, transcription.status, { error: transcription.error });
+  }
+  return json(response, 200, { transcript: transcription.text });
+}
+
+async function stewardVoiceSend(request, response) {
   const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
+  const transcription = await transcribeVoiceRequest(request);
+  if (transcription.status !== 200) {
+    return json(response, transcription.status, { error: transcription.error });
+  }
+  try {
+    const message = await appendStewardMessage(projectId, transcription.text.slice(0, 8192), "voice");
+    return json(response, 200, { transcript: transcription.text, message });
+  } catch {
+    return json(response, 503, { error: "transcription unavailable" });
+  }
+}
+
+async function transcribeVoiceRequest(request) {
   let audio;
   try {
     audio = await readBinaryBody(request, voiceUploadLimitBytes);
   } catch {
-    return json(response, 413, { error: "recording too large" });
+    return { status: 413, error: "recording too large" };
   }
   if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
-    return json(response, 400, { error: "invalid recording" });
+    return { status: 400, error: "invalid recording" };
   }
+  try {
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
+    const text = await transcribeVoiceAudio(runtime, audio, request.headers["content-type"]);
+    if (text.length === 0) {
+      return { status: 422, error: "no speech recognized" };
+    }
+    return { status: 200, text };
+  } catch {
+    // Keep the generic response. Provider and credential details stay private.
+    return { status: 503, error: "transcription unavailable" };
+  }
+}
+
+async function transcribeVoiceAudio(runtime, audio, contentType) {
   const runtimeDir = path.dirname(configFile);
   const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
-  let status = 503;
-  let payload = { error: "transcription unavailable" };
+  const container = voiceContainerOf(audio);
+  const startedAt = Date.now();
+  let providerStatus = "unreachable";
+  let providerDurationMs;
+  let fallbackStatus = "pending";
+  let fallbackDurationMs;
+  const fallbackAbort = new AbortController();
+  diagnostics.report("voiceTranscription", "transcription_started", {
+    container,
+    bytes: audio.length,
+  });
   try {
     await writeFile(audioFile, audio, { mode: 0o600 });
-    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
-    if (text.length === 0) {
-      status = 422;
-      payload = { error: "no speech recognized" };
-    } else {
-      const message = await appendStewardMessage(projectId, text.slice(0, 8192));
-      status = 200;
-      payload = { transcript: text, message };
-    }
-  } catch {
-    // Keep the generic response and remove the recording before replying.
+    // Start the local recognizer before awaiting OpenAI. OpenAI remains the
+    // source of truth when it succeeds; after a failure, the already-running
+    // Apple result is available without paying a second serial wait.
+    const providerStartedAt = Date.now();
+    const providerPromise = (async () => {
+      try {
+        const provider = await daemonVoiceFetch(runtime, "/voice/transcriptions", {
+          method: "POST",
+          headers: { "content-type": contentType },
+          body: audio,
+        });
+        providerStatus = String(provider.status);
+        if (!provider.ok) throw new Error("OpenAI transcription failed");
+        const payload = await provider.json();
+        const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+        if (text.length === 0 || text.length > 64 * 1024) {
+          providerStatus = `${provider.status}-invalid`;
+          throw new Error("OpenAI transcription was empty or oversized");
+        }
+        return text;
+      } finally {
+        providerDurationMs = Date.now() - providerStartedAt;
+      }
+    })();
+    const fallbackStartedAt = Date.now();
+    const fallbackPromise = (async () => {
+      try {
+        const transcription = await transcribeAudioFile(
+          runtimeDir,
+          audioFile,
+          undefined,
+          { signal: fallbackAbort.signal },
+        );
+        const text = transcription.text.trim();
+        if (text.length === 0 || text.length > 64 * 1024) {
+          fallbackStatus = "invalid";
+          throw new Error("Apple transcription was empty or oversized");
+        }
+        fallbackStatus = transcription.onDevice ? "apple-on-device" : "apple-speech";
+        return text;
+      } catch (cause) {
+        if (fallbackAbort.signal.aborted) fallbackStatus = "cancelled";
+        else if (fallbackStatus === "pending") fallbackStatus = "failed";
+        throw cause;
+      } finally {
+        fallbackDurationMs = Date.now() - fallbackStartedAt;
+      }
+    })();
+    const selected = await preferPrimaryTranscription(
+      providerPromise,
+      fallbackPromise,
+      () => fallbackAbort.abort(),
+    );
+    diagnostics.report("voiceTranscription", "transcription_completed", {
+      provider: selected.provider,
+      providerStatus,
+      providerDurationMs,
+      fallbackStatus,
+      fallbackDurationMs,
+      totalDurationMs: Date.now() - startedAt,
+      container,
+      bytes: audio.length,
+    });
+    return selected.transcription;
+  } catch (cause) {
+    diagnostics.report("voiceTranscription", "transcription_failed", {
+      providerStatus,
+      providerDurationMs,
+      fallbackStatus,
+      fallbackDurationMs,
+      totalDurationMs: Date.now() - startedAt,
+      container,
+      bytes: audio.length,
+    });
+    throw cause;
   } finally {
+    fallbackAbort.abort();
     await rm(audioFile, { force: true });
   }
-  return json(response, status, payload);
+}
+
+async function watchStewardSpeech(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  return stewardSpeech(request, response);
+}
+
+async function mobileStewardSpeech(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  return stewardSpeech(request, response);
+}
+
+async function stewardSpeech(request, response) {
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const sequence = Number(body?.sequence);
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)
+      || !Number.isSafeInteger(sequence) || sequence < 1) {
+      return json(response, 400, { error: "invalid speech target" });
+    }
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const transcript = await full("companion.transcriptList", { projectId, limit: 100 });
+    const message = transcript.messages.find((entry) => entry.sequence === sequence && entry.author === "steward");
+    if (message === undefined) return json(response, 404, { error: "Steward reply was not found" });
+    const provider = await daemonVoiceFetch(runtime, "/voice/speech", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: message.content }),
+    });
+    if (!provider.ok) return json(response, 503, { error: "Steward voice is unavailable" });
+    const audio = Buffer.from(await provider.arrayBuffer());
+    if (audio.length === 0 || audio.length > 10 * 1024 * 1024) {
+      return json(response, 503, { error: "Steward voice is unavailable" });
+    }
+    response.writeHead(200, {
+      "content-type": "audio/mpeg",
+      "content-length": audio.length,
+      "cache-control": "no-store",
+    });
+    response.end(audio);
+  } catch {
+    return json(response, 503, { error: "Steward voice is unavailable" });
+  }
+}
+
+function daemonVoiceFetch(runtime, pathname, options) {
+  const endpoint = new URL(runtime.controlUrl);
+  endpoint.protocol = "http:";
+  endpoint.pathname = pathname;
+  endpoint.search = "";
+  endpoint.hash = "";
+  return fetch(endpoint, {
+    ...options,
+    headers: { ...options.headers, authorization: `Bearer ${runtime.fullToken}` },
+    signal: AbortSignal.timeout(30_000),
+  });
 }
 
 async function watchReply(request, response) {
@@ -602,7 +984,7 @@ async function watchVoiceReply(request, response) {
     || !Number.isSafeInteger(runtimeEpoch) || runtimeEpoch < 0) {
     return json(response, 400, { error: "invalid reply target" });
   }
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   try {
     const runtime = await currentRuntime();
@@ -621,41 +1003,14 @@ async function watchVoiceReply(request, response) {
 
 /// Transcribe-only: the watch shows the recognized text before anything is
 /// sent, so the user reads exactly what a later launch or reply will deliver.
-/// One content-free outcome line per request: transcription failures are
-/// otherwise invisible from the wrist, and this is the only evidence of them.
+/// Keep one endpoint-level outcome beside the shared provider timing records.
 async function watchTranscribe(request, response) {
   if (!watchAuthorized(request)) return json(response, 401, {});
   const startedAt = Date.now();
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   process.stdout.write(`${new Date().toISOString()} watch transcribe status=${transcription.status} ms=${Date.now() - startedAt}\n`);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   return json(response, 200, { transcript: transcription.text });
-}
-
-async function transcribeWatchRequest(request) {
-  let audio;
-  try {
-    audio = await readBinaryBody(request, voiceUploadLimitBytes);
-  } catch {
-    return { status: 413, error: "recording too large" };
-  }
-  if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
-    return { status: 400, error: "invalid recording" };
-  }
-  const runtimeDir = path.dirname(configFile);
-  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
-  try {
-    await writeFile(audioFile, audio, { mode: 0o600 });
-    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
-    if (text.length === 0) {
-      return { status: 422, error: "no speech recognized" };
-    }
-    return { status: 200, text };
-  } catch {
-    return { status: 503, error: "transcription unavailable" };
-  } finally {
-    await rm(audioFile, { force: true });
-  }
 }
 
 /// Watch task launches follow the same inspected-manifest path as every other
@@ -739,7 +1094,7 @@ async function watchProjectAgentVoice(request, response) {
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) {
     return json(response, 400, { error: "invalid project" });
   }
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   try {
     const runtime = await currentRuntime();
@@ -908,7 +1263,10 @@ function desktopRecentlyActive() {
 async function deliverPush(notification, skipDeviceTokens = new Set()) {
   let provider;
   try { provider = await loadApnsProvider(config.push.apnsConfigFile); } catch { return new Set(); }
-  const current = await readPushDevices();
+  const [current, preferences] = await Promise.all([
+    readPushDevices(),
+    readPushNotificationPreferences(),
+  ]);
   const devices = current.devices ?? [];
   const retained = [];
   const accepted = new Set();
@@ -917,7 +1275,16 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
       retained.push(device);
       continue;
     }
-    const result = await sendApns(provider, device, apnsPayload(notification, config.push.connectionId));
+    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind);
+    if (!delivery.enabled) {
+      retained.push(device);
+      continue;
+    }
+    const result = await sendApns(
+      provider,
+      device,
+      apnsPayload(notification, config.push.connectionId, { playSound: delivery.playSound }),
+    );
     if (result.ok) accepted.add(device.deviceToken);
     if (!["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"].includes(result.reason)) {
       retained.push(device);
@@ -930,6 +1297,16 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
   return accepted;
 }
 
+async function readPushNotificationPreferences() {
+  try {
+    const source = await readFile(notificationPreferencesFile, "utf8");
+    if (Buffer.byteLength(source) > 32 * 1024) return defaultPushNotificationPreferences;
+    return pushNotificationPreferencesOf(JSON.parse(source)) ?? defaultPushNotificationPreferences;
+  } catch {
+    return defaultPushNotificationPreferences;
+  }
+}
+
 async function readPushDevices() {
   try {
     const value = JSON.parse(await readFile(config.push.devicesFile, "utf8"));
@@ -939,48 +1316,87 @@ async function readPushDevices() {
   }
 }
 
-async function acceptControl(client) {
-  const first = await firstMessage(client);
-  if (first === undefined || first.isBinary) return refuse(client, "invalid control request");
+async function acceptControl(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "control");
+  if (first === undefined || first.isBinary) {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "binaryFirstMessage",
+    });
+    return refuse(client, "invalid control request");
+  }
   let request;
   try {
     request = JSON.parse(first.data.toString("utf8"));
   } catch {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: "invalidJson",
+    });
     return refuse(client, "invalid control request");
   }
   if (!constantTimeEqual(request?.token, config.controlToken)) {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: "invalidCredential",
+    });
     return refuse(client, "invalid credential");
   }
 
   if (Object.hasOwn(request, "mobileApiVersion")) {
+    const correlation = mobileDiagnosticContext(request);
+    diagnostics.report("control", "mobile_authenticated", {
+      connectionId,
+      ...correlation,
+    });
     client.on("message", (data, isBinary) => {
-      if (isBinary) return mobileControlResponse(client, "invalid", false, undefined, {
-        code: "invalidMessage",
-        message: "Mobile control requests must be JSON text.",
-      });
+      if (isBinary) {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "binaryMessage",
+          ...correlation,
+        });
+        return mobileControlResponse(client, "invalid", false, undefined, {
+          code: "invalidMessage",
+          message: "Mobile control requests must be JSON text.",
+        });
+      }
       let next;
       try { next = JSON.parse(data.toString("utf8")); } catch {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "invalidJson",
+          ...correlation,
+        });
         return mobileControlResponse(client, "invalid", false, undefined, {
           code: "invalidMessage",
           message: "Mobile control request is invalid.",
         });
       }
       if (!constantTimeEqual(next?.token, config.controlToken)) {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "invalidCredential",
+          ...mobileDiagnosticContext(next),
+        });
         return mobileControlResponse(client, typeof next?.id === "string" ? next.id : "invalid", false, undefined, {
           code: "unauthenticated",
           message: "Mobile control credential is invalid.",
         });
       }
-      void acceptMobileControl(client, next);
+      void acceptMobileControl(client, next, connectionId);
     });
-    void acceptMobileControl(client, request);
+    void acceptMobileControl(client, request, connectionId);
     return;
   }
+
+  diagnostics.report("control", "legacy_authenticated", { connectionId });
 
   let runtime;
   try {
     runtime = await currentRuntime();
   } catch {
+    diagnostics.report("control", "runtime_unavailable", { connectionId, clientKind: "legacy" });
     return unavailable(client);
   }
   const clientProtocolVersion = request.protocolVersion;
@@ -992,10 +1408,13 @@ async function acceptControl(client) {
     upstream,
     () => upstream.send(JSON.stringify(request)),
     (data, isBinary) => legacyControlResponse(data, isBinary, request.method, clientProtocolVersion),
+    { connectionId, channel: "control", clientKind: "legacy" },
   );
 }
 
-async function acceptMobileControl(client, request) {
+async function acceptMobileControl(client, request, connectionId) {
+  const startedAtEpochMs = Date.now();
+  const correlation = mobileDiagnosticContext(request);
   const id = typeof request.id === "string" && request.id.length > 0 && request.id.length <= 128
     ? request.id
     : undefined;
@@ -1004,6 +1423,12 @@ async function acceptMobileControl(client, request) {
   if (id === undefined || request.mobileApiVersion !== MOBILE_API_VERSION
     || !(readOnlyMethod || fullMethod)
     || !isRecord(request.params)) {
+    diagnostics.report("control", "request_refused", {
+      connectionId,
+      requestId: id,
+      reason: request.mobileApiVersion === MOBILE_API_VERSION ? "invalidMethodOrParams" : "unsupportedMobileApi",
+      ...correlation,
+    });
     return mobileControlResponse(client, id ?? "invalid", false, undefined, {
       code: request.mobileApiVersion === MOBILE_API_VERSION ? "methodNotFound" : "unsupportedMobileApi",
       message: request.mobileApiVersion === MOBILE_API_VERSION
@@ -1011,11 +1436,28 @@ async function acceptMobileControl(client, request) {
         : "This TermLoop Mobile API version is not supported.",
     });
   }
+  diagnostics.report("control", "request_started", {
+    connectionId,
+    requestId: id,
+    method: request.method,
+    authority: fullMethod ? "full" : "readOnly",
+    ...correlation,
+  });
   try {
     const runtime = await currentRuntime();
     // A discovery file without the full credential keeps every read working and
     // refuses only the named full-token methods, the same way the Watch reads do.
     if (fullMethod && runtime.fullToken === undefined) {
+      diagnostics.report("control", "request_completed", {
+        connectionId,
+        requestId: id,
+        method: request.method,
+        ok: false,
+        errorCode: "unauthenticated",
+        durationMs: Date.now() - startedAtEpochMs,
+        delivered: client.readyState === WebSocket.OPEN,
+        ...correlation,
+      });
       return mobileControlResponse(client, id, false, undefined, {
         code: "unauthenticated",
         message: "This Mac did not publish a credential for this action.",
@@ -1026,79 +1468,445 @@ async function acceptMobileControl(client, request) {
       request.method,
       request.params,
       fullMethod ? runtime.fullToken : runtime.readOnlyToken,
+      {
+        downstreamConnectionId: connectionId,
+        downstreamRequestId: id,
+        ...correlation,
+      },
     );
+    diagnostics.report("control", "request_completed", {
+      connectionId,
+      requestId: id,
+      method: request.method,
+      ok: true,
+      durationMs: Date.now() - startedAtEpochMs,
+      delivered: client.readyState === WebSocket.OPEN,
+      ...correlation,
+    });
     return mobileControlResponse(client, id, true, result);
   } catch (cause) {
     const error = cause instanceof UpstreamControlError
       ? cause.controlError
       : { code: "operationFailed", message: "TermLoop is restarting. Try again shortly." };
+    diagnostics.report("control", "request_completed", {
+      connectionId,
+      requestId: id,
+      method: request.method,
+      ok: false,
+      errorCode: error.code,
+      reason: typeof error.details?.reason === "string" ? error.details.reason : undefined,
+      causeType: cause instanceof Error ? cause.name : typeof cause,
+      durationMs: Date.now() - startedAtEpochMs,
+      delivered: client.readyState === WebSocket.OPEN,
+      ...correlation,
+    });
     return mobileControlResponse(client, id, false, undefined, error);
   }
 }
 
-async function acceptTerminal(client) {
-  const first = await firstMessage(client);
-  if (first === undefined || !first.isBinary) return refuse(client, "invalid terminal authentication");
+async function acceptTerminal(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "terminal");
+  if (first === undefined || !first.isBinary) {
+    diagnostics.report("terminal", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "textFirstMessage",
+    });
+    return refuse(client, "invalid terminal authentication");
+  }
   const expected = Buffer.concat([Buffer.from("TL01"), Buffer.from(config.terminalToken)]);
-  if (!constantTimeBufferEqual(first.data, expected)) return refuse(client, "invalid credential");
+  if (!constantTimeBufferEqual(first.data, expected)) {
+    diagnostics.report("terminal", "authentication_refused", {
+      connectionId,
+      reason: "invalidCredential",
+      authenticationBytes: first.data.byteLength,
+    });
+    return refuse(client, "invalid credential");
+  }
+  diagnostics.report("terminal", "mobile_authenticated", { connectionId });
 
   let runtime;
   try {
     runtime = await currentRuntime();
   } catch {
+    diagnostics.report("terminal", "runtime_unavailable", { connectionId });
     return unavailable(client);
   }
   const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
   bridge(client, upstream, () => {
     upstream.send(Buffer.concat([Buffer.from("TL01"), Buffer.from(runtime.terminalToken)]));
+  }, undefined, { connectionId, channel: "terminal", clientKind: "mobile" });
+}
+
+/// Unified phone transport. Authentication proves both authorities before the
+/// socket becomes usable: the read/control credential alone can never become a
+/// terminal-input credential. Control remains JSON text and every PTY byte stays
+/// in the existing TL01 binary data plane, so multiplexing does not smuggle
+/// terminal content through JSON or duplicate the daemon protocol.
+async function acceptMobile(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "mobile");
+  if (first === undefined || first.isBinary) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "binaryFirstMessage",
+    });
+    return refuse(client, "invalid mobile authentication");
+  }
+  let authentication;
+  try { authentication = JSON.parse(first.data.toString("utf8")); } catch {
+    diagnostics.report("mobile", "authentication_refused", { connectionId, reason: "invalidJson" });
+    return refuse(client, "invalid mobile authentication");
+  }
+  if (authentication?.type !== "mobile.authenticate"
+    || authentication.mobileTransportVersion !== MOBILE_TRANSPORT_VERSION) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: "unsupportedTransport",
+      ...mobileDiagnosticContext(authentication),
+    });
+    const version = Number(authentication?.mobileTransportVersion);
+    const reason = Number.isFinite(version) && version < MOBILE_TRANSPORT_VERSION
+      ? "mobile transport too old"
+      : "mobile transport too new";
+    return incompatible(client, reason);
+  }
+  if (!constantTimeEqual(authentication.controlToken, config.controlToken)
+    || !constantTimeEqual(authentication.terminalToken, config.terminalToken)) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: "invalidCredential",
+      ...mobileDiagnosticContext(authentication),
+    });
+    return refuse(client, "invalid credential");
+  }
+  if (authentication.mobileHeartbeatVersion === 1) {
+    configureWebSocketHeartbeat(client, {
+      enforceTimeout: true,
+      probe: () => {
+        if (client.readyState !== WebSocket.OPEN) throw new Error("mobile socket is not open");
+        client.send(JSON.stringify({ event: "mobile.ping" }));
+      },
+    });
+  }
+
+  let runtime;
+  try { runtime = await currentRuntime(); } catch {
+    diagnostics.report("mobile", "runtime_unavailable", { connectionId });
+    return unavailable(client);
+  }
+  const daemonInputAck = authentication.terminalInputAckVersion === 1
+    && runtime.terminalInputAckVersion === 1;
+  const gatewayInputReceipt = !daemonInputAck
+    && authentication.mobileInputReceiptVersion === 1;
+  const startedAtEpochMs = Date.now();
+  const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
+  let terminalReady = false;
+  let subscription;
+  const timeout = setTimeout(() => {
+    if (terminalReady) return;
+    diagnostics.report("mobile", "authentication_timeout", {
+      connectionId,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
+    upstream.terminate();
+    unavailable(client);
+  }, 5_000);
+  timeout.unref();
+
+  upstream.once("open", () => {
+    upstream.send(Buffer.concat([Buffer.from("TL01"), Buffer.from(runtime.terminalToken)]));
+  });
+  upstream.on("message", (data, isBinary) => {
+    if (!terminalReady) {
+      if (data.toString("utf8") !== "TLOK") {
+        clearTimeout(timeout);
+        diagnostics.report("mobile", "upstream_authentication_refused", { connectionId });
+        upstream.terminate();
+        return refuse(client, "upstream credential refused");
+      }
+      terminalReady = true;
+      clearTimeout(timeout);
+      diagnostics.report("mobile", "authenticated", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+        ...mobileDiagnosticContext(authentication),
+      });
+      if (daemonInputAck) upstream.send(enableTerminalInputAckFrame(), { binary: true });
+      client.send(JSON.stringify({
+        event: "mobile.ready",
+        mobileTransportVersion: MOBILE_TRANSPORT_VERSION,
+        ...(daemonInputAck ? { terminalInputAckVersion: 1 } : {}),
+        ...(gatewayInputReceipt
+          ? { mobileInputReceiptVersion: 1 } : {}),
+      }));
+      subscription = subscribeMobileInvalidations(runtime, client, connectionId);
+      client.on("message", (nextData, nextIsBinary) => {
+        if (nextIsBinary) {
+          const frameBytes = rawBuffer(nextData);
+          const metadata = terminalFrameMetadata(frameBytes);
+          if (upstream.readyState !== WebSocket.OPEN) {
+            diagnostics.report("mobile", "terminal_frame_refused", {
+              connectionId,
+              reason: "upstreamUnavailable",
+              ...terminalDiagnosticContext(metadata),
+            });
+            unavailable(client);
+            return;
+          }
+          const receipt = daemonInputAck || gatewayInputReceipt
+            ? terminalInputReceipt(frameBytes) : undefined;
+          try {
+            upstream.send(nextData, { binary: true }, (error) => {
+              if (error != null) {
+                diagnostics.report("mobile", "terminal_frame_refused", {
+                  connectionId,
+                  reason: "upstreamSendFailed",
+                  ...terminalDiagnosticContext(metadata),
+                });
+                upstream.terminate();
+                unavailable(client);
+                return;
+              }
+              if (client.readyState !== WebSocket.OPEN) return;
+              if (gatewayInputReceipt) {
+                client.send(JSON.stringify({
+                  event: "mobile.inputAccepted",
+                  mobileInputReceiptVersion: 1,
+                  sessionId: receipt.sessionId,
+                  runtimeEpoch: receipt.runtimeEpoch,
+                  frameSequence: receipt.frameSequence,
+                }));
+              }
+              if (metadata !== undefined) diagnostics.report("mobile", receipt !== undefined
+                ? daemonInputAck ? "terminal_input_forwarded" : "terminal_input_accepted"
+                : "terminal_frame_forwarded", {
+                connectionId,
+                ...terminalDiagnosticContext(metadata),
+              });
+            });
+          } catch {
+            diagnostics.report("mobile", "terminal_frame_refused", {
+              connectionId,
+              reason: "upstreamSendThrew",
+              ...terminalDiagnosticContext(metadata),
+            });
+            upstream.terminate();
+            unavailable(client);
+          }
+          return;
+        }
+        let request;
+        try { request = JSON.parse(nextData.toString("utf8")); } catch {
+          diagnostics.report("mobile", "request_refused", { connectionId, reason: "invalidJson" });
+          return mobileControlResponse(client, "invalid", false, undefined, {
+            code: "invalidMessage",
+            message: "Mobile control request is invalid.",
+          });
+        }
+        if (request?.type === "mobile.pong") return;
+        if (!constantTimeEqual(request?.token, config.controlToken)) {
+          diagnostics.report("mobile", "request_refused", {
+            connectionId,
+            reason: "invalidCredential",
+            ...mobileDiagnosticContext(request),
+          });
+          return mobileControlResponse(
+            client,
+            typeof request?.id === "string" ? request.id : "invalid",
+            false,
+            undefined,
+            { code: "unauthenticated", message: "Mobile control credential is invalid." },
+          );
+        }
+        void acceptMobileControl(client, request, connectionId);
+      });
+      return;
+    }
+    if (isBinary) {
+      const metadata = terminalFrameMetadata(rawBuffer(data));
+      if (metadata !== undefined && [4, 5, 11, 12, 14, 16].includes(metadata.frameKind)) {
+        diagnostics.report("mobile", "terminal_frame_received", {
+          connectionId,
+          ...terminalDiagnosticContext(metadata),
+        });
+      }
+    }
+    if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+  });
+  upstream.once("error", (error) => {
+    clearTimeout(timeout);
+    diagnostics.report("mobile", "upstream_error", {
+      connectionId,
+      terminalReady,
+      errorType: error?.name,
+    });
+    upstream.terminate();
+    unavailable(client);
+  });
+  upstream.once("close", (code, reason) => {
+    clearTimeout(timeout);
+    subscription?.close();
+    diagnostics.report("mobile", "upstream_closed", {
+      connectionId,
+      terminalReady,
+      closeCode: code,
+      closeReasonBytes: reason?.byteLength,
+      lifetimeMs: Date.now() - startedAtEpochMs,
+    });
+    if (client.readyState === WebSocket.OPEN) client.close(safeCloseCode(code), "upstream closed");
+  });
+  client.once("close", () => {
+    subscription?.close();
+    if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
+      upstream.terminate();
+    }
   });
 }
 
-function bridge(client, upstream, onOpen, transformDownstream) {
+function subscribeMobileInvalidations(runtime, client, connectionId) {
+  let socket;
+  let stopped = false;
+  let retry;
+  let delayMs = 500;
+  let generation = 0;
+  const connect = () => {
+    if (stopped || client.readyState !== WebSocket.OPEN) return;
+    const currentGeneration = ++generation;
+    socket = new WebSocket(runtime.controlUrl, { maxPayload: 1024 * 1024 });
+    const requestId = `mobile-subscription-${connectionId}-${currentGeneration}`;
+    socket.once("open", () => {
+      socket.send(JSON.stringify({
+        id: requestId,
+        protocolVersion: runtime.protocolVersion,
+        token: runtime.readOnlyToken,
+        method: "control.subscribe",
+        params: {
+          topics: ["project", "task", "session", "agentStatus", "companion", "steward", "worker", "routine", "keepAwake"],
+        },
+      }));
+    });
+    socket.on("message", (data, isBinary) => {
+      if (isBinary || stopped || currentGeneration !== generation) return;
+      let message;
+      try { message = JSON.parse(data.toString("utf8")); } catch { return socket.close(1002, "invalid control event"); }
+      if (message?.id === requestId && message.ok === true) {
+        delayMs = 500;
+        diagnostics.report("mobile", "invalidation_subscription_ready", { connectionId });
+        return;
+      }
+      if (message?.event !== "projection.invalidated" || !isRecord(message.payload)) return;
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ event: "projection.invalidated", payload: message.payload }));
+      }
+    });
+    socket.once("error", () => socket.terminate());
+    socket.once("close", () => {
+      if (stopped || currentGeneration !== generation || client.readyState !== WebSocket.OPEN) return;
+      const waitMs = delayMs;
+      delayMs = Math.min(30_000, delayMs * 2);
+      diagnostics.report("mobile", "invalidation_subscription_retry", { connectionId, delayMs: waitMs });
+      retry = setTimeout(connect, waitMs);
+      retry.unref();
+    });
+  };
+  connect();
+  return {
+    close() {
+      if (stopped) return;
+      stopped = true;
+      generation += 1;
+      if (retry !== undefined) clearTimeout(retry);
+      if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+        socket.terminate();
+      }
+    },
+  };
+}
+
+function bridge(client, upstream, onOpen, transformDownstream, context) {
   let opened = false;
+  const startedAtEpochMs = Date.now();
+  let downstreamMessages = 0;
+  let downstreamBytes = 0;
+  let upstreamMessages = 0;
+  let upstreamBytes = 0;
+  diagnostics.report("upstream", "connection_started", context);
   upstream.once("open", () => {
     opened = true;
+    diagnostics.report("upstream", "connection_opened", {
+      ...context,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
     onOpen();
     client.on("message", (data, isBinary) => {
+      downstreamMessages += 1;
+      downstreamBytes += rawBuffer(data).byteLength;
       if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
     });
   });
   upstream.on("message", (data, isBinary) => {
+    upstreamMessages += 1;
+    upstreamBytes += rawBuffer(data).byteLength;
     if (client.readyState !== WebSocket.OPEN) return;
     const next = transformDownstream?.(data, isBinary) ?? { data, isBinary };
     client.send(next.data, { binary: next.isBinary });
   });
-  upstream.once("error", () => {
+  upstream.once("error", (error) => {
+    diagnostics.report("upstream", "socket_error", {
+      ...context,
+      opened,
+      errorType: error?.name,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
     upstream.terminate();
     unavailable(client);
   });
-  upstream.once("close", (code) => {
+  upstream.once("close", (code, reason) => {
+    diagnostics.report("upstream", "connection_closed", {
+      ...context,
+      opened,
+      closeCode: code,
+      closeReasonBytes: reason?.byteLength,
+      lifetimeMs: Date.now() - startedAtEpochMs,
+      downstreamMessages,
+      downstreamBytes,
+      upstreamMessages,
+      upstreamBytes,
+    });
     if (client.readyState === WebSocket.OPEN) client.close(safeCloseCode(code), "upstream closed");
   });
   client.once("close", () => {
     if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
       // This legacy raw bridge owns a dedicated upstream connection. Once the
       // downstream closes no response has a consumer, so release it immediately.
+      diagnostics.report("upstream", "terminated_after_downstream_close", {
+        ...context,
+        opened,
+        lifetimeMs: Date.now() - startedAtEpochMs,
+      });
       upstream.terminate();
     }
   });
   setTimeout(() => {
     if (!opened && upstream.readyState === WebSocket.CONNECTING) {
+      diagnostics.report("upstream", "connection_timeout", {
+        ...context,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
       upstream.terminate();
       unavailable(client);
     }
   }, 5_000).unref();
 }
 
-function callCurrentControl(runtime, method, params, token = runtime.readOnlyToken) {
+function callCurrentControl(runtime, method, params, token = runtime.readOnlyToken, trace = {}) {
   const role = constantTimeEqual(token, runtime.readOnlyToken) ? "readOnly" : "full";
   let connection = upstreamControlConnections.get(role);
   if (connection === undefined || !connection.matches(runtime, token)) {
     connection?.close();
-    connection = new CurrentControlConnection(runtime, token);
+    connection = new CurrentControlConnection(runtime, token, role);
     upstreamControlConnections.set(role, connection);
   }
-  return connection.call(method, params);
+  return connection.call(method, params, trace);
 }
 
 class CurrentControlConnection {
@@ -1107,9 +1915,10 @@ class CurrentControlConnection {
   #generation = 0;
   #pending = new Map();
 
-  constructor(runtime, token) {
+  constructor(runtime, token, role) {
     this.runtime = runtime;
     this.token = token;
+    this.role = role;
   }
 
   matches(runtime, token) {
@@ -1118,22 +1927,55 @@ class CurrentControlConnection {
       && constantTimeEqual(this.token, token);
   }
 
-  call(method, params) {
+  call(method, params, trace) {
     if (this.#pending.size >= MAX_UPSTREAM_CONTROL_IN_FLIGHT) {
+      diagnostics.report("upstreamControl", "request_refused", {
+        role: this.role,
+        method,
+        reason: "inFlightLimit",
+        pendingRequests: this.#pending.size,
+        ...trace,
+      });
       return Promise.reject(new UpstreamControlError({
         code: "serviceBusy",
         message: "Too many gateway control requests are in flight.",
       }));
     }
     const id = `mobile-gateway-${++controlRequestSequence}`;
+    const startedAtEpochMs = Date.now();
+    const downstreamRequest = trace?.downstreamConnectionId !== undefined;
+    if (downstreamRequest) {
+      diagnostics.report("upstreamControl", "request_started", {
+        role: this.role,
+        requestId: id,
+        method,
+        pendingRequests: this.#pending.size + 1,
+        generation: this.#generation,
+        ...trace,
+      });
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
+        diagnostics.report("upstreamControl", "request_timeout", {
+          role: this.role,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+          generation: this.#generation,
+          ...trace,
+        });
         this.#cancel(id);
+        const stalled = this.#socket === undefined ? this.#connecting?.socket : undefined;
+        if (stalled !== undefined) {
+          this.#disconnect(this.#generation, new Error("control connection timed out"));
+          stalled.terminate();
+        }
         reject(new Error("control request timed out"));
       }, 5_000);
       timeout.unref();
-      this.#pending.set(id, { resolve, reject, timeout });
+      this.#pending.set(id, { resolve, reject, timeout, method, startedAtEpochMs, trace });
       Promise.resolve().then(() => this.#connected()).then((socket) => {
         if (!this.#pending.has(id)) return;
         try {
@@ -1144,22 +1986,54 @@ class CurrentControlConnection {
             method,
             params,
           }));
-        } catch {
+          if (downstreamRequest) {
+            diagnostics.report("upstreamControl", "request_sent", {
+              role: this.role,
+              requestId: id,
+              method,
+              generation: this.#generation,
+              ...trace,
+            });
+          }
+        } catch (cause) {
+          diagnostics.report("upstreamControl", "request_send_failed", {
+            role: this.role,
+            requestId: id,
+            method,
+            generation: this.#generation,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+            ...trace,
+          });
           socket.terminate();
           this.#disconnect(this.#generation, new Error("control connection failed"));
         }
-      }).catch(() => {
+      }).catch((cause) => {
         const pending = this.#pending.get(id);
         if (pending === undefined) return;
         this.#pending.delete(id);
         clearTimeout(pending.timeout);
+        diagnostics.report("upstreamControl", "request_connection_failed", {
+          role: this.role,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+          ...trace,
+        });
         pending.reject(new Error("control connection failed"));
       });
     });
   }
 
   close() {
-    const socket = this.#socket;
+    const socket = this.#socket ?? this.#connecting?.socket;
+    diagnostics.report("upstreamControl", "client_closed", {
+      role: this.role,
+      generation: this.#generation,
+      pendingRequests: this.#pending.size,
+      transportState: this.#socket !== undefined ? "connected"
+        : this.#connecting !== undefined ? "connecting" : "disconnected",
+    });
     this.#generation += 1;
     this.#socket = undefined;
     this.#connecting = undefined;
@@ -1169,13 +2043,25 @@ class CurrentControlConnection {
 
   #connected() {
     if (this.#socket !== undefined) return Promise.resolve(this.#socket);
-    if (this.#connecting !== undefined) return this.#connecting;
+    if (this.#connecting !== undefined) return this.#connecting.promise;
     const generation = ++this.#generation;
+    const startedAtEpochMs = Date.now();
+    diagnostics.report("upstreamControl", "connection_started", {
+      role: this.role,
+      generation,
+      pendingRequests: this.#pending.size,
+    });
     const socket = new WebSocket(this.runtime.controlUrl, { maxPayload: 4 * 1024 * 1024 });
-    this.#connecting = new Promise((resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       let opened = false;
       socket.once("open", () => {
         if (generation !== this.#generation) {
+          diagnostics.report("upstreamControl", "connection_superseded", {
+            role: this.role,
+            generation,
+            currentGeneration: this.#generation,
+            durationMs: Date.now() - startedAtEpochMs,
+          });
           socket.terminate();
           reject(new Error("control connection superseded"));
           return;
@@ -1183,25 +2069,61 @@ class CurrentControlConnection {
         opened = true;
         this.#socket = socket;
         this.#connecting = undefined;
+        diagnostics.report("upstreamControl", "connection_opened", {
+          role: this.role,
+          generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+        });
         resolve(socket);
       });
       socket.on("message", (data, isBinary) => this.#receive(generation, data, isBinary));
-      socket.once("error", () => {
+      socket.once("error", (error) => {
+        diagnostics.report("upstreamControl", "connection_error", {
+          role: this.role,
+          generation,
+          opened,
+          stale: generation !== this.#generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          errorType: error?.name,
+        });
         if (!opened) reject(new Error("control connection failed"));
         this.#disconnect(generation, new Error("control connection failed"));
         socket.terminate();
       });
-      socket.once("close", () => {
+      socket.once("close", (code, reason) => {
+        diagnostics.report("upstreamControl", "connection_closed", {
+          role: this.role,
+          generation,
+          opened,
+          stale: generation !== this.#generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          closeCode: code,
+          closeReasonBytes: reason?.byteLength,
+        });
         if (!opened) reject(new Error("control connection closed"));
         this.#disconnect(generation, new Error("control connection closed"));
       });
     });
-    return this.#connecting;
+    this.#connecting = { promise, socket };
+    return promise;
   }
 
   #receive(generation, data, isBinary) {
-    if (generation !== this.#generation) return;
+    if (generation !== this.#generation) {
+      diagnostics.report("upstreamControl", "stale_response_ignored", {
+        role: this.role,
+        generation,
+        currentGeneration: this.#generation,
+      });
+      return;
+    }
     if (isBinary) {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "binaryMessage",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("binary control response"));
       socket?.terminate();
@@ -1209,23 +2131,58 @@ class CurrentControlConnection {
     }
     let response;
     try { response = JSON.parse(data.toString("utf8")); } catch {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "invalidJson",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
       socket?.terminate();
       return;
     }
     if (!isRecord(response)) {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "notObject",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
       socket?.terminate();
       return;
     }
-    if (typeof response.id !== "string") return;
+    if (typeof response.id !== "string") {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "missingRequestId",
+      });
+      return;
+    }
     const pending = this.#pending.get(response.id);
-    if (pending === undefined) return;
+    if (pending === undefined) {
+      diagnostics.report("upstreamControl", "orphan_response_ignored", {
+        role: this.role,
+        generation,
+        requestId: response.id,
+      });
+      return;
+    }
     this.#pending.delete(response.id);
     clearTimeout(pending.timeout);
     if (response.ok === true) {
+      if (pending.trace?.downstreamConnectionId !== undefined) {
+        diagnostics.report("upstreamControl", "request_completed", {
+          role: this.role,
+          requestId: response.id,
+          method: pending.method,
+          ok: true,
+          durationMs: Date.now() - pending.startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+          ...pending.trace,
+        });
+      }
       pending.resolve(response.result);
       return;
     }
@@ -1235,8 +2192,20 @@ class CurrentControlConnection {
         message: typeof response.error.message === "string"
           ? response.error.message
           : "TermLoop could not complete the request.",
+        ...(isRecord(response.error.details) ? { details: response.error.details } : {}),
       }
       : { code: "operationFailed", message: "TermLoop could not complete the request." };
+    diagnostics.report("upstreamControl", "request_completed", {
+      role: this.role,
+      requestId: response.id,
+      method: pending.method,
+      ok: false,
+      errorCode: error.code,
+      reason: typeof error.details?.reason === "string" ? error.details.reason : undefined,
+      durationMs: Date.now() - pending.startedAtEpochMs,
+      pendingRequests: this.#pending.size,
+      ...pending.trace,
+    });
     pending.reject(new UpstreamControlError(error));
   }
 
@@ -1259,6 +2228,12 @@ class CurrentControlConnection {
 
   #disconnect(generation, error) {
     if (generation !== this.#generation) return;
+    diagnostics.report("upstreamControl", "transport_disconnected", {
+      role: this.role,
+      generation,
+      reason: error.message,
+      pendingRequests: this.#pending.size,
+    });
     this.#generation += 1;
     this.#socket = undefined;
     this.#connecting = undefined;
@@ -1270,6 +2245,13 @@ class CurrentControlConnection {
     this.#pending.clear();
     for (const request of pending) {
       clearTimeout(request.timeout);
+      diagnostics.report("upstreamControl", "request_interrupted", {
+        role: this.role,
+        method: request.method,
+        reason: error.message,
+        durationMs: Date.now() - request.startedAtEpochMs,
+        ...request.trace,
+      });
       request.reject(error);
     }
   }
@@ -1312,6 +2294,7 @@ async function currentRuntime() {
     protocolVersion: requiredString(value.protocolVersion),
     readOnlyToken: requiredString(value.readOnlyToken),
     terminalToken: requiredString(value.terminalToken),
+    terminalInputAckVersion: value.terminalInputAckVersion === 1 ? 1 : undefined,
     // Present in real discovery files; optional so credential-free fixtures
     // and older daemons keep the proxy paths working. Watch worktree reads
     // need it and answer 503 without it.
@@ -1319,15 +2302,40 @@ async function currentRuntime() {
   };
 }
 
-function firstMessage(socket) {
+function firstMessage(socket, connectionId, channel) {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(undefined), 5_000);
+    const startedAtEpochMs = Date.now();
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      diagnostics.report(channel, "first_message_timeout", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      resolve(undefined);
+    }, 5_000);
     socket.once("message", (data, isBinary) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      resolve({ data: rawBuffer(data), isBinary });
+      const bytes = rawBuffer(data);
+      diagnostics.report(channel, "first_message_received", {
+        connectionId,
+        binary: isBinary,
+        bytes: bytes.byteLength,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      resolve({ data: bytes, isBinary });
     });
     socket.once("close", () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
+      diagnostics.report(channel, "closed_before_first_message", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
       resolve(undefined);
     });
   });
@@ -1433,15 +2441,60 @@ function rawBuffer(value) {
   return Buffer.from(value);
 }
 
+function terminalDiagnosticContext(metadata) {
+  return metadata === undefined ? {} : {
+    sessionId: metadata.sessionId,
+    runtimeEpoch: metadata.runtimeEpoch,
+    frameSequence: metadata.frameSequence,
+    frameKind: metadata.frameKind,
+    frameKindName: metadata.frameKindName,
+    payloadBytes: metadata.payloadBytes,
+  };
+}
+
 function safePathname(value) {
   try { return new URL(value ?? "/", "http://127.0.0.1").pathname; } catch { return ""; }
 }
 
 function refuse(socket, reason) {
+  diagnostics.report("gateway", "socket_refused", {
+    closeCode: 1008,
+    reason,
+  });
   if (socket.readyState === WebSocket.OPEN) socket.close(1008, reason);
 }
 
+function incompatible(socket, reason) {
+  diagnostics.report("gateway", "socket_incompatible", {
+    closeCode: 4406,
+    reason,
+  });
+  if (socket.readyState === WebSocket.OPEN) socket.close(4406, reason);
+}
+
+function unsupportedUpgrade(socket) {
+  const body = Buffer.from(JSON.stringify({
+    error: "unsupportedWebSocketPath",
+    buildId: GATEWAY_IDENTITY.buildId,
+    compatibility: GATEWAY_IDENTITY.compatibility,
+  }));
+  const headers = [
+    "HTTP/1.1 426 Upgrade Required",
+    "Connection: close",
+    "Cache-Control: no-store",
+    "Content-Type: application/json",
+    `Content-Length: ${body.byteLength}`,
+    `X-TermLoop-Gateway-Build: ${GATEWAY_IDENTITY.buildId}`,
+    `X-TermLoop-Mobile-Transport-Min: ${GATEWAY_IDENTITY.compatibility.mobileTransport.min}`,
+    `X-TermLoop-Mobile-Transport-Max: ${GATEWAY_IDENTITY.compatibility.mobileTransport.max}`,
+    "",
+    "",
+  ].join("\r\n");
+  socket.end(Buffer.concat([Buffer.from(headers), body]));
+}
+
 function unavailable(socket) {
+  diagnostics.report("gateway", "socket_unavailable", { closeCode: 1013 });
   if (socket.readyState === WebSocket.OPEN) socket.close(1013, "TermLoop is starting");
 }
 
@@ -1450,6 +2503,8 @@ function safeCloseCode(code) {
 }
 
 function shutdown() {
+  clearInterval(heartbeatTimer);
+  diagnostics.report("gateway", "shutdown_started", { openSockets: sockets.size });
   for (const socket of sockets) socket.close(1001, "gateway restarting");
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1_000).unref();

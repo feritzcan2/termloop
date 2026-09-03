@@ -1439,7 +1439,10 @@ impl CoreRuntime {
             _,
         >(|_| std::collections::BTreeMap::new());
         for session in self.store.sessions().iter().filter(|session| {
-            session.kind == SessionKind::Agent && session.lifecycle_state == "resuming"
+            session.kind == SessionKind::Agent
+                && (session.lifecycle_state == "resuming"
+                    || session.lifecycle_state == "resumeFailed"
+                        && self.session_is_persistent_assistant_executor(&session.id))
         }) {
             let lane = self.resume_lane_for_session(session);
             let lane_index = match lane {

@@ -10,7 +10,6 @@ import {
   stepEvidence,
   stepIsCheckable,
   stepTiming,
-  taskIdentityFacts,
   taskPipelineView,
   type TaskPipelineStep,
 } from "../src/renderer/ui/TaskDetailPanel.js";
@@ -288,38 +287,32 @@ describe("what a step tells the reader", () => {
   });
 });
 
-describe("the Task's identity chips", () => {
-  function task(overrides: Partial<Task> = {}): Task {
+describe("the Task detail page on screen", () => {
+  function health(
+    overrides: Partial<NonNullable<Task["worktree_health"]>> = {},
+  ): NonNullable<Task["worktree_health"]> {
     return {
-      id: "task-1",
-      project_id: "project-1",
-      title: "Ship the pipeline page",
-      brief: null,
-      jira_url: null,
-      status: "open",
-      archived_at_epoch_ms: null,
-      branch: { name: "task/pipeline-page", repository_path: "/repository" },
-      worktree: { path: "/repository-worktrees/pipeline-page", created_at_epoch_ms: NOW },
-      rank: 1,
-      created_at_epoch_ms: NOW,
-      updated_at_epoch_ms: NOW,
+      observation_sequence: 1,
+      observed_at_epoch_ms: NOW,
+      path_state: "present",
+      registration_state: "matching",
+      head_state: "matching",
+      launch_ready: true,
+      checked_out_branch: "task/pipeline-page",
+      change_count: 0,
+      tracked_state: "clean",
+      staged_state: "clean",
+      untracked_state: "absent",
+      ignored_state: "absent",
+      submodule_state: "absent",
+      worktree_lock_state: "absent",
+      index_lock_state: "absent",
+      upstream_state: "inSync",
+      summary: "healthy",
       ...overrides,
-    } as Task;
+    };
   }
 
-  it("names the branch, the worktree leaf, and the issue in that order", () => {
-    expect(taskIdentityFacts(task({ jira_url: "https://example.atlassian.net/browse/UKIE-42" }))
-      .map((fact) => fact.label))
-      .toEqual(["task/pipeline-page", "pipeline-page", "UKIE-42"]);
-  });
-
-  it("says a Task has no branch rather than leaving the chips empty", () => {
-    expect(taskIdentityFacts(task({ branch: null, worktree: null })).map((fact) => fact.label))
-      .toEqual(["No branch"]);
-  });
-});
-
-describe("the Task detail page on screen", () => {
   function detailTask(overrides: Partial<Task> = {}): Task {
     return {
       id: "task-1",
@@ -430,12 +423,115 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("carries the Task's bindings as separate chips beside its status", async () => {
+  it("heads the page with the sidebar's own meta line and no status pill while open", async () => {
     const { container, unmount } = await mount();
 
-    expect([...container.querySelectorAll(".td-chip")].map((chip) => chip.textContent))
-      .toEqual(["task/pipeline-page", "pipeline-page"]);
-    expect(container.querySelector(".td-status")?.textContent).toBe("Open");
+    expect(container.querySelector(".td-chip")).toBeNull();
+    expect(container.querySelector(".td-header .task-meta-branch")?.textContent).toBe("task/pipeline-page");
+    expect(container.querySelector(".td-status")).toBeNull();
+    // The fixture's checkout is still being observed, so that is the one thing
+    // "Now" says; a healthy Task prints no reassurance line here at all.
+    expect(container.querySelectorAll(".td-now-item")).toHaveLength(1);
+    expect(container.textContent).not.toContain("Ready to run agents");
+    // Sections in order of use, one column.
+    expect([...container.querySelectorAll(".td-body > .td-block > h2, .td-body > .td-block .td-block-head h2")].map((h) => h.textContent))
+      .toEqual(["Now", "Sessions", "Changes", "Pipeline"]);
+    expect(container.querySelector(".td-side")).toBeNull();
+
+    await unmount();
+  });
+
+  it("keeps a long description inside the detail page's scroll surface", async () => {
+    const task = detailTask({ brief: Array.from({ length: 80 }, (_, index) => `Description line ${index + 1}`).join("\n") });
+    const { container, unmount } = await mount({ task });
+
+    const body = container.querySelector(".td-body")!;
+    const brief = container.querySelector(".td-brief")!;
+    expect(container.querySelector(".td-header .td-brief")).toBeNull();
+    expect(brief.parentElement).toBe(body);
+    expect(brief.compareDocumentPosition(container.querySelector('[aria-label="Sessions"]')!))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    await unmount();
+  });
+
+  it("shows the checked-out worktree branch as the effective branch", async () => {
+    const task = detailTask({
+      worktree_health: health({ checked_out_branch: "feature/live-checkout", head_state: "mismatch" }),
+    });
+    const { container, unmount } = await mount({ task });
+
+    expect(container.querySelector(".td-effective-branch")?.textContent)
+      .toBe("feature/live-checkout");
+    expect(container.querySelector(".td-effective-branch")?.classList.contains("attention"))
+      .toBe(true);
+    expect(container.querySelector(".td-effective-branch")?.getAttribute("title"))
+      .toContain("Task branch task/pipeline-page");
+
+    await unmount();
+  });
+
+  it("shows every observed Task-worktree branch with its named base and opens that branch", async () => {
+    const opened: unknown[] = [];
+    const task = detailTask({
+      branches: {
+        primary_branch_id: "primary",
+        checked_out_branch_id: "branch-2",
+        evidence_truncated: false,
+        items: [
+          {
+            branch_id: "primary",
+            name: "task/pipeline-page",
+            role: "primary",
+            held_by_task_id: null,
+            checked_out: false,
+            base_ref: "develop",
+            base_oid: "a".repeat(40),
+            base_evidence: "provisioned",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
+          {
+            branch_id: "branch-2",
+            name: "feature/api",
+            role: "associated",
+            held_by_task_id: null,
+            checked_out: true,
+            base_ref: "task/pipeline-page",
+            base_oid: "b".repeat(40),
+            base_evidence: "branchCreationReflog",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
+          {
+            branch_id: "branch-3",
+            name: "feature/legacy-checkout",
+            role: "associated",
+            held_by_task_id: null,
+            checked_out: false,
+            base_ref: null,
+            base_oid: "c".repeat(40),
+            base_evidence: "worktreeReflog",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
+        ],
+      },
+    });
+    const { container, unmount } = await mount({
+      task,
+      openChanges: (source: unknown) => opened.push(source),
+    });
+
+    const branch = [...container.querySelectorAll<HTMLButtonElement>(".td-fact-action")]
+      .find((button) => button.textContent?.includes("feature/api · base task/pipeline-page"));
+    expect(branch).toBeDefined();
+    const branchWithoutNamedBase = [...container.querySelectorAll<HTMLButtonElement>(".td-fact-action")]
+      .find((button) => button.textContent?.includes("feature/legacy-checkout"));
+    expect(branchWithoutNamedBase?.textContent).toBe("feature/legacy-checkout");
+    expect(container.textContent).not.toContain("cccccccccccc");
+    await act(async () => branch!.click());
+    expect(opened).toEqual([{ kind: "commits", branchId: "branch-2" }]);
 
     await unmount();
   });
@@ -463,13 +559,15 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("keeps a cleared question's whole recorded answer on the page", async () => {
+  it("keeps a cleared question's recorded answer one hover away", async () => {
     const { container, unmount } = await mount();
 
     // The sentence itself is the evidence; it is never handed to a tooltip.
-    const cleared = container.querySelector(".td-step.passed .td-evidence");
-    expect(cleared?.textContent).toBe("Branch has 3 commits and no agent is working.");
-    expect(cleared?.getAttribute("title")).toBeNull();
+    // A cleared rung is one line; its whole recorded answer rides on the row
+    // tooltip rather than spending a paragraph on a settled question.
+    expect(container.querySelector(".td-step.passed .td-evidence")).toBeNull();
+    expect(container.querySelector(".td-step.passed")?.getAttribute("title"))
+      .toBe("Branch has 3 commits and no agent is working.");
 
     await unmount();
   });
@@ -609,7 +707,8 @@ describe("the Task detail page on screen", () => {
       ]),
     });
 
-    expect(container.querySelector(".td-note")?.textContent).toContain("closed");
+    expect(container.querySelector(".td-status")?.textContent).toBe("Closed");
+    expect(container.querySelector(".td-pipeline .td-note")?.textContent).toContain("closed");
     expect(container.querySelector(".td-check-now")).toBeNull();
     expect(container.querySelector(".td-progress")?.textContent)
       .toBe("Dev PR to production · 1 of 3 cleared");

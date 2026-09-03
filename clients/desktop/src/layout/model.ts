@@ -325,7 +325,7 @@ function decodeAgentGroups(value: unknown): Record<string, AgentGroupLayout[]> |
   if (!isRecord(value)) return undefined;
   const result: Record<string, AgentGroupLayout[]> = {};
   for (const [projectId, candidate] of Object.entries(value)) {
-    if (!validId(projectId) || !Array.isArray(candidate) || candidate.length > 512) return undefined;
+    if (!validId(projectId) || !Array.isArray(candidate)) return undefined;
     const seenSessionIds = new Set<string>();
     const groups: AgentGroupLayout[] = [];
     for (const candidateGroup of candidate) {
@@ -337,7 +337,7 @@ function decodeAgentGroups(value: unknown): Record<string, AgentGroupLayout[]> |
         : isRecord(candidateGroup) && Array.isArray(candidateGroup.sessionIds)
           ? candidateGroup.sessionIds
           : undefined;
-      if (!sessionIds || sessionIds.length < 2 || sessionIds.length > 128 || !sessionIds.every(validId)) return undefined;
+      if (!sessionIds || sessionIds.length < 2 || !sessionIds.every(validId)) return undefined;
       if (new Set(sessionIds).size !== sessionIds.length || sessionIds.some((sessionId) => seenSessionIds.has(sessionId))) return undefined;
       const rawName = legacy ? undefined : candidateGroup.name;
       if (!(rawName === undefined || (typeof rawName === "string" && rawName.trim().length > 0 && rawName.trim().length <= 80))) return undefined;
@@ -347,7 +347,6 @@ function decodeAgentGroups(value: unknown): Record<string, AgentGroupLayout[]> |
         ...(typeof rawName === "string" ? { name: rawName.trim() } : {}),
       });
     }
-    if (seenSessionIds.size > 1_024) return undefined;
     if (groups.length > 0) result[projectId] = groups;
   }
   return result;

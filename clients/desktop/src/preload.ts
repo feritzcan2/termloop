@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { LayoutDocument } from "./layout/model.js";
+import type { NotificationPreferences } from "./notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
   RemoteHostTransport,
@@ -62,6 +63,9 @@ ipcRenderer.on("termloop:native-overlay-closed", () => {
 
 contextBridge.exposeInMainWorld("termloop", {
   isPackaged: () => ipcRenderer.invoke("termloop:app-is-packaged"),
+  notificationPreferencesGet: () => ipcRenderer.invoke("termloop:notification-preferences-get"),
+  notificationPreferencesSet: (preferences: NotificationPreferences) =>
+    ipcRenderer.invoke("termloop:notification-preferences-set", preferences),
   pickLocalFolder: (defaultPath?: string) => ipcRenderer.invoke("termloop:pick-local-folder", defaultPath),
   mobileAccessPairing: () => ipcRenderer.invoke("termloop:mobile-access-pairing"),
   connectionProfileList: () => ipcRenderer.invoke("termloop:connection-profile-list"),

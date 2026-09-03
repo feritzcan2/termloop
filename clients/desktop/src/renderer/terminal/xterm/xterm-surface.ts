@@ -35,6 +35,7 @@ export class XtermSurface implements TerminalSurface {
   constructor(
     onInput: (data: string) => void,
     onResize: (rows: number, cols: number) => void,
+    onImagePaste: () => void,
   ) {
     // Distinct from the sidebar's `.session-item.terminal` kind modifier, which
     // otherwise matches the same bare `.terminal` selector and inherits the
@@ -102,6 +103,14 @@ export class XtermSurface implements TerminalSurface {
       },
     });
     this.#terminal.loadAddon(this.#fit);
+    this.#host.addEventListener("paste", (event) => {
+      if (event.clipboardData?.getData("text/plain")) return;
+      if (![...(event.clipboardData?.items ?? [])]
+        .some((item) => item.kind === "file" && item.type.startsWith("image/"))) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onImagePaste();
+    }, true);
     this.#terminal.attachCustomKeyEventHandler((event) => {
       // Explicit Ctrl+Shift+V paste / Ctrl+Shift+C copy for the xterm path
       // (Windows/Linux). `term.paste` preserves bracketed-paste semantics.
@@ -113,12 +122,17 @@ export class XtermSurface implements TerminalSurface {
       if (!decision.handled) return true;
       event.preventDefault();
       if (decision.action === "paste") {
-        void navigator.clipboard.readText().then(
-          (text) => {
-            if (text.length > 0) this.#terminal.paste(text);
-          },
-          () => {},
-        );
+        void (async () => {
+          const text = await navigator.clipboard.readText().catch(() => "");
+          if (text.length > 0) {
+            this.#terminal.paste(text);
+            return;
+          }
+          const items = await navigator.clipboard.read().catch(() => []);
+          if (items.some((item) => item.types.some((type) => type.startsWith("image/")))) {
+            onImagePaste();
+          }
+        })();
       } else if (decision.action === "copy") {
         void navigator.clipboard.writeText(this.#terminal.getSelection()).catch(() => {});
       }

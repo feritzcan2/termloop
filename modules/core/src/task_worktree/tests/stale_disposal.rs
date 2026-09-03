@@ -1,6 +1,88 @@
 use super::*;
 
 #[test]
+fn missing_repository_and_worktree_can_forget_the_managed_binding_without_touching_files() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let canonical_destination =
+        termloop_platform::canonical_existing_directory_path(&destination).unwrap();
+    std::fs::remove_dir_all(&destination).unwrap();
+    std::fs::remove_dir_all(fixture.project_directory.join(".git")).unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["decision"], "unknown");
+    assert_eq!(preview["blockers"], json!(["repositoryUnavailable"]));
+    assert_eq!(preview["stale_resolution"]["forget_status"], "available");
+    assert_eq!(
+        preview["stale_resolution"]["disposal_status"],
+        "unavailable"
+    );
+    let TaskWorktreeStaleResolutionPlanning::Observe(disposal_plan) = fixture
+        .runtime
+        .plan_task_worktree_stale_disposal(stale_resolution_params(
+            &task_id,
+            &Uuid::new_v4().to_string(),
+            Some(&proof_id),
+            generation,
+            &canonical_destination,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("missing checkout disposal unexpectedly replayed");
+    };
+    assert!(matches!(
+        disposal_plan.observe(),
+        Err(CoreError::RepositoryUnavailable)
+    ));
+
+    let TaskWorktreeStaleResolutionPlanning::Observe(plan) = fixture
+        .runtime
+        .plan_task_worktree_stale_forget(stale_resolution_params(
+            &task_id,
+            &Uuid::new_v4().to_string(),
+            Some(&proof_id),
+            generation,
+            &canonical_destination,
+            false,
+        ))
+        .unwrap()
+    else {
+        panic!("missing checkout forget unexpectedly replayed");
+    };
+    let TaskWorktreeStaleResolutionProgress::Revalidate(step) = fixture
+        .runtime
+        .begin_task_worktree_stale_resolution(plan.observe().unwrap())
+        .unwrap()
+    else {
+        panic!("record-only forget skipped final tuple validation");
+    };
+    let task = fixture
+        .runtime
+        .apply_task_worktree_stale_forget(step.observe())
+        .unwrap();
+    assert!(task["worktree"].is_null());
+    assert!(!canonical_destination.exists());
+    assert!(fixture.runtime.store.managed_worktrees().is_empty());
+
+    fixture
+        .runtime
+        .delete_task(json!({ "taskId": task_id }))
+        .unwrap();
+    assert!(
+        fixture
+            .runtime
+            .store
+            .tasks()
+            .iter()
+            .all(|task| task.id != task_id)
+    );
+}
+
+#[test]
 fn orphaned_managed_directory_can_forget_after_cleanup_attention_without_touching_files_or_sessions()
  {
     let mut fixture = Fixture::new();

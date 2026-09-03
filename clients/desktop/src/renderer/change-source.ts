@@ -11,7 +11,7 @@ import type {
 
 export type ChangesOpenSource =
   | { kind: "local" }
-  | { kind: "commits" }
+  | { kind: "commits"; branchId?: string | undefined }
   | {
       kind: "pullRequest";
       pullRequest: GitHostPullRequestIdentityDto;

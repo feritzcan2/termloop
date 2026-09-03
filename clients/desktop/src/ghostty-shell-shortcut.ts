@@ -1,4 +1,5 @@
 export type GhosttyShellShortcut =
+  | "pasteImage"
   | "quickAction"
   | "commandPalette"
   | "newTerminal"
@@ -15,6 +16,7 @@ export type GhosttyShellShortcut =
   | "project.9";
 
 const GHOSTTY_SHELL_SHORTCUTS: ReadonlySet<string> = new Set([
+  "pasteImage",
   "quickAction",
   "commandPalette",
   "newTerminal",

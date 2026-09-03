@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn task_agent_tail_is_scoped_to_ordinary_sessions_in_the_task_worktree() {
-        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let (mut runtime, project_id, native_id, root, mut conversation) = fixture();
         let worktree = root.join("task-worktree");
         std::fs::create_dir_all(&worktree).unwrap();
         let worktree = worktree.to_string_lossy().into_owned();
@@ -819,6 +819,7 @@ mod tests {
                     project_id: project_id.clone(),
                     title: "Finish release pipeline".into(),
                     brief: None,
+                    developer_notes: vec![],
                     status: TaskStatus::Open,
                     archived_at_epoch_ms: None,
                     branch: None,
@@ -940,6 +941,38 @@ mod tests {
                 },
             )
             .unwrap();
+        let legacy_steward_session_id = "legacy-steward-task-agent";
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    id: legacy_steward_session_id.into(),
+                    project_id: project_id.clone(),
+                    name: Some("Legacy Steward Agent".into()),
+                    kind: SessionKind::Agent,
+                    process: ProcessDescriptor {
+                        program: "claude".into(),
+                        args: Vec::new(),
+                        cwd: worktree.clone(),
+                        agent_id: Some("claude".into()),
+                        template_ref: Some("builtin.steward.task-assignment".into()),
+                        template_version: Some(1),
+                    },
+                    launch_selection: Default::default(),
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 1,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
         runtime
             .store
             .insert_session(
@@ -997,12 +1030,48 @@ mod tests {
             .task_agent_transcript_tail_projection_for_executor(&project_id, task_id)
             .unwrap();
         assert_eq!(tail["status"], "available");
-        assert_eq!(tail["sessions"].as_array().unwrap().len(), 1);
-        assert_eq!(tail["sessions"][0]["sessionId"], session_id);
+        let tail_sessions = tail["sessions"].as_array().unwrap();
+        assert_eq!(tail_sessions.len(), 2);
+        let developer_tail = tail_sessions
+            .iter()
+            .find(|session| session["sessionId"] == session_id)
+            .unwrap();
         assert_eq!(
-            tail["sessions"][0]["messages"][1]["text"],
+            developer_tail["messages"][1]["text"],
             "Implemented it; focused tests passed."
         );
+        let coordination = runtime
+            .task_coordination_agent_projection_for_executor(&project_id, task_id)
+            .unwrap();
+        assert_eq!(coordination["state"], "selected");
+        assert_eq!(coordination["sessionId"], session_id);
+        assert_eq!(coordination["reason"], "preferredNonStewardTaskAgent");
+        assert!(
+            runtime
+                .ensure_task_agent_request_target_for_executor(&project_id, task_id, session_id)
+                .is_ok()
+        );
+        assert!(matches!(
+            runtime.ensure_task_agent_request_target_for_executor(
+                &project_id,
+                task_id,
+                legacy_steward_session_id,
+            ),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime.ensure_task_agent_request_target_for_executor(
+                &project_id,
+                task_id,
+                "helper-in-task-worktree",
+            ),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime
+                .ensure_task_agent_request_target_for_executor(&project_id, task_id, &native_id,),
+            Err(CoreError::CapabilityDenied)
+        ));
         assert!(!tail.to_string().contains("helper-in-task-worktree"));
         assert!(!tail.to_string().contains("provider-history"));
         let _ = std::fs::remove_dir_all(root);

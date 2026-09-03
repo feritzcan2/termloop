@@ -456,6 +456,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v44_to_v45_value(&mut value)?;
             migrate_v45_to_v46_value(&mut value)?;
             migrate_v46_to_v47_value(&mut value)?;
+            migrate_v47_to_v48_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -467,6 +468,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v44_to_v45_value(&mut value)?;
             migrate_v45_to_v46_value(&mut value)?;
             migrate_v46_to_v47_value(&mut value)?;
+            migrate_v47_to_v48_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -477,6 +479,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v44_to_v45_value(&mut value)?;
             migrate_v45_to_v46_value(&mut value)?;
             migrate_v46_to_v47_value(&mut value)?;
+            migrate_v47_to_v48_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -486,6 +489,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         45 => {
             migrate_v45_to_v46_value(&mut value)?;
             migrate_v46_to_v47_value(&mut value)?;
+            migrate_v47_to_v48_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -494,6 +498,15 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         }
         46 => {
             migrate_v46_to_v47_value(&mut value)?;
+            migrate_v47_to_v48_value(&mut value)?;
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
+        47 => {
+            migrate_v47_to_v48_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -1019,6 +1032,11 @@ fn migrate_v45_to_v46_without_automation(state: &mut CurrentState) {
 
 fn migrate_v46_to_v47_without_automation(state: &mut CurrentState) {
     debug_assert!(state.project_task_automation_configurations.is_empty());
+    state.schema_version = 47;
+    migrate_v47_to_v48(state);
+}
+
+fn migrate_v47_to_v48(state: &mut CurrentState) {
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
 
@@ -1221,6 +1239,15 @@ fn migrate_v46_to_v47_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                 );
         }
     }
+    object.insert("schema_version".into(), serde_json::json!(47));
+    Ok(())
+}
+
+fn migrate_v47_to_v48_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    object.insert("task_branch_sets".into(), serde_json::json!([]));
     object.insert(
         "schema_version".into(),
         serde_json::json!(CURRENT_SCHEMA_VERSION),

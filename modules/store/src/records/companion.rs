@@ -2,6 +2,8 @@ use termloop_domain::{
     COMPANION_TRANSCRIPT_HARD_BYTES, COMPANION_TRANSCRIPT_HARD_MESSAGES, CompanionMessage,
 };
 
+use std::collections::BTreeSet;
+
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
 impl Store {
@@ -29,8 +31,21 @@ impl Store {
 
     pub fn append_companion_message(
         &mut self,
+        authority: &CoreWriteAuthority,
+        message: CompanionMessage,
+    ) -> Result<CompanionMessage, StoreError> {
+        self.append_companion_message_and_dismiss_routine_findings(authority, message, &[])
+    }
+
+    /// Appends one visible Project message and removes the exact current
+    /// Routine findings it disposes in the same durable commit. Core owns the
+    /// policy that decides which message kinds may dismiss findings; Store
+    /// owns only the all-or-nothing current-state replacement.
+    pub fn append_companion_message_and_dismiss_routine_findings(
+        &mut self,
         _authority: &CoreWriteAuthority,
         message: CompanionMessage,
+        routine_finding_ids: &[String],
     ) -> Result<CompanionMessage, StoreError> {
         if !message.is_valid()
             || !self
@@ -72,8 +87,55 @@ impl Store {
         {
             return Err(StoreError::CompanionTranscriptQuotaExceeded);
         }
-        let previous = self.state.clone();
-        self.state.companion_messages.push(message.clone());
+
+        let unique_finding_ids = routine_finding_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if unique_finding_ids.len() != routine_finding_ids.len() {
+            return Err(StoreError::ConstraintViolation);
+        }
+        if !routine_finding_ids.is_empty() {
+            let referenced_finding_ids = message
+                .refs
+                .as_ref()
+                .into_iter()
+                .flat_map(|refs| refs.all_routine_finding_ids())
+                .collect::<BTreeSet<_>>();
+            if referenced_finding_ids != unique_finding_ids {
+                return Err(StoreError::ConstraintViolation);
+            }
+        }
+        let matching_findings = self
+            .state
+            .tracker_configurations
+            .iter()
+            .filter(|configuration| configuration.project_id == message.project_id)
+            .flat_map(|configuration| configuration.pending_routine_findings.iter())
+            .filter(|finding| unique_finding_ids.contains(finding.id.as_str()))
+            .count();
+        if matching_findings != routine_finding_ids.len() {
+            return Err(StoreError::ConstraintViolation);
+        }
+
+        let mut next = self.state.clone();
+        next.companion_messages.push(message.clone());
+        for configuration in next
+            .tracker_configurations
+            .iter_mut()
+            .filter(|configuration| configuration.project_id == message.project_id)
+        {
+            let before = configuration.pending_routine_findings.len();
+            configuration
+                .pending_routine_findings
+                .retain(|finding| !unique_finding_ids.contains(finding.id.as_str()));
+            if configuration.pending_routine_findings.len() != before {
+                configuration.updated_at_epoch_ms = message.created_at_epoch_ms;
+            }
+        }
+        crate::validation::validate_current_state(&next)
+            .map_err(|_| StoreError::ConstraintViolation)?;
+        let previous = std::mem::replace(&mut self.state, next);
         self.commit_or_restore(previous)?;
         Ok(message)
     }

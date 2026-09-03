@@ -77,6 +77,50 @@ fn absent_and_current_configuration_results_are_strict() {
         "steward.configurationGet",
         &json!({"configuration":null,"defaultSystemPrompt":"PM","supervisorAvailability":"available","stateRevision":3})
     ));
+    let protected_prompt = "p".repeat(32 * 1024);
+    assert!(validate_method_result(
+        "steward.configurationGet",
+        &json!({
+            "configuration":null,
+            "defaultSystemPrompt":protected_prompt,
+            "promptContext":{
+                "initialPrompt":"Activate the persistent Steward.",
+                "instructionsPrompt":"You are a PM. Keep updates concise.",
+                "instructionDelivery":"codexDeveloperInstructions",
+                "protectedPrompt":protected_prompt,
+                "wakePrompt":"Inspect current Project activity."
+            },
+            "supervisorAvailability":"available",
+            "presence":{
+                "lastActivityAtEpochMs":null,
+                "activeCommandLabel":null,
+                "pendingProposal":false
+            },
+            "stateRevision":3
+        })
+    ));
+    let oversized_protected_prompt = "p".repeat((32 * 1024) + 1);
+    assert!(!validate_method_result(
+        "steward.configurationGet",
+        &json!({
+            "configuration":null,
+            "defaultSystemPrompt":oversized_protected_prompt,
+            "promptContext":{
+                "initialPrompt":"Activate the persistent Steward.",
+                "instructionsPrompt":"You are a PM. Keep updates concise.",
+                "instructionDelivery":"codexDeveloperInstructions",
+                "protectedPrompt":"You are a PM.",
+                "wakePrompt":"Inspect current Project activity."
+            },
+            "supervisorAvailability":"available",
+            "presence":{
+                "lastActivityAtEpochMs":null,
+                "activeCommandLabel":null,
+                "pendingProposal":false
+            },
+            "stateRevision":3
+        })
+    ));
     assert!(validate_method_result(
         "steward.configurationSet",
         &json!({

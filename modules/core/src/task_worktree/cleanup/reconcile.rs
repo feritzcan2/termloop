@@ -22,7 +22,17 @@ impl TaskWorktreeCleanupRecoveryPlan {
         let runner =
             GitRunner::discover_with_timeout(termloop_gitio::CLEANUP_GIT_SUBPROCESS_DEADLINE)
                 .map_err(map_git_observation_error)?;
-        let facts = observe_cleanup_facts(&runner, &self.proof)?;
+        let facts = observe_cleanup_facts(
+            &runner,
+            &self.proof,
+            Some(
+                self.operation
+                    .baseline
+                    .checkout_branch_ref
+                    .as_deref()
+                    .unwrap_or(&self.operation.baseline.branch_ref),
+            ),
+        )?;
         Ok(ObservedTaskWorktreeCleanup {
             expected_task_archived_at_epoch_ms: self.expected_task_archived_at_epoch_ms,
             operation_id: self.operation.operation_id,

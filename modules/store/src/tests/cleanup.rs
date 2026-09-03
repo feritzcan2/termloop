@@ -19,6 +19,7 @@ fn cleanup_operation(
             worktree_path: proof.registered_worktree_path.clone(),
             registered_worktree_path: proof.registered_worktree_path.clone(),
             branch_ref: proof.branch_ref.clone(),
+            checkout_branch_ref: None,
             head_oid: "b".repeat(40),
         },
         stage: WorktreeCleanupStage::Reserved,
@@ -132,6 +133,7 @@ fn destructive_cleanup_journal_accepts_initialized_submodule_content() {
     );
     let mut operation = cleanup_operation("task-submodule", "cleanup-submodule", &proof, 20);
     operation.cleanup_mode = WorktreeCleanupMode::DiscardCheckoutContent;
+    operation.baseline.checkout_branch_ref = Some("refs/heads/feature/alternate-submodule".into());
     operation.acknowledged_content_blockers = vec![
         WorktreeCleanupBlocker::TrackedChanges,
         WorktreeCleanupBlocker::StagedChanges,
@@ -147,6 +149,15 @@ fn destructive_cleanup_journal_accepts_initialized_submodule_content() {
         BeginCleanupOutcome::Started(_)
     ));
     drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(
+        reopened.cleanup_operations()[0]
+            .baseline
+            .checkout_branch_ref
+            .as_deref(),
+        Some("refs/heads/feature/alternate-submodule")
+    );
+    drop(reopened);
     let _ = std::fs::remove_file(path);
 }
 
