@@ -163,7 +163,7 @@ bundle_fixture_root="$(mktemp -d)"
 fixture_pid=""
 identity_fixture_supervisor_pid=""
 development_signing_identity=""
-if [[ "$(uname -s)" == "Darwin" ]]; then
+if [[ "$(uname -s)" == "Darwin" && "${TERMLOOP_DEV_CODE_SIGN_IDENTITY:-}" != "-" ]]; then
   development_signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | \
     awk '/"Apple Development: / { print $2; exit }')"
 fi
