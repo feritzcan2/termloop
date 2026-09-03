@@ -6,6 +6,43 @@ import path from "node:path";
 const MAX_DEVICES = 8;
 const TOKEN_MAX = 256;
 const DEFAULT_DESKTOP_ACTIVE_MS = 2 * 60 * 1000;
+const DEFAULT_DEVICE_NOTIFICATION_PREFERENCES = Object.freeze({
+  enabled: true,
+  agentNeedsInput: true,
+  agentReadyForReview: true,
+  stewardMessages: true,
+  playSound: true,
+});
+
+export const defaultPushNotificationPreferences = Object.freeze({
+  version: 1,
+  mobile: DEFAULT_DEVICE_NOTIFICATION_PREFERENCES,
+  watch: DEFAULT_DEVICE_NOTIFICATION_PREFERENCES,
+});
+
+export function pushNotificationPreferencesOf(value) {
+  if (value?.version !== 1) return undefined;
+  const mobile = deviceNotificationPreferencesOf(value.mobile);
+  const watch = deviceNotificationPreferencesOf(value.watch);
+  return mobile === undefined || watch === undefined
+    ? undefined
+    : { version: 1, mobile, watch };
+}
+
+export function pushDeliveryOptions(preferences, bundleId, notificationKind) {
+  const target = typeof bundleId === "string" && bundleId.endsWith(".watch")
+    ? preferences.watch
+    : preferences.mobile;
+  const kindEnabled = notificationKind === "needsInput"
+    ? target.agentNeedsInput
+    : notificationKind === "needsReview"
+      ? target.agentReadyForReview
+      : target.stewardMessages;
+  return {
+    enabled: target.enabled && kindEnabled,
+    playSound: target.playSound,
+  };
+}
 
 export function attentionTransitions(previous, statuses, sessions) {
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
@@ -71,13 +108,13 @@ export function upsertPushDevice(current, candidate, now = Date.now()) {
   return { version: 1, devices: [device, ...devices].slice(0, MAX_DEVICES) };
 }
 
-export function apnsPayload(notification, connectionId) {
+export function apnsPayload(notification, connectionId, options = {}) {
   const isStewardDecision = notification.kind === "stewardProposal"
     || notification.kind === "stewardSuggestion";
   return {
     aps: {
       alert: { title: notification.title, body: notification.body },
-      sound: "default",
+      ...((options.playSound ?? true) ? { sound: "default" } : {}),
       badge: 1,
       category: notificationCategory(notification.kind),
       // Decisions stay visually separate from ordinary Stew chat so a later
@@ -103,6 +140,22 @@ export function apnsPayload(notification, connectionId) {
     chatProjectId: notification.chatProjectId ?? null,
     stewardMessageId: notification.stewardMessageId ?? null,
     stewardMessageKind: notification.stewardMessageKind ?? null,
+  };
+}
+
+function deviceNotificationPreferencesOf(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (typeof value.enabled !== "boolean"
+    || typeof value.agentNeedsInput !== "boolean"
+    || typeof value.agentReadyForReview !== "boolean"
+    || typeof value.stewardMessages !== "boolean"
+    || typeof value.playSound !== "boolean") return undefined;
+  return {
+    enabled: value.enabled,
+    agentNeedsInput: value.agentNeedsInput,
+    agentReadyForReview: value.agentReadyForReview,
+    stewardMessages: value.stewardMessages,
+    playSound: value.playSound,
   };
 }
 

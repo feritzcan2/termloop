@@ -64,11 +64,25 @@ describe("SettingsDialog", () => {
 
     await act(async () => foreground?.click());
     expect(saveNotificationPreferences).toHaveBeenCalledWith({
-      enabled: true,
+      ...defaultNotificationPreferences,
       notifyWhenFocused: true,
-      playSound: true,
     });
     expect(foreground?.getAttribute("aria-checked")).toBe("true");
+
+    const mobileReview = container.querySelector<HTMLButtonElement>('[aria-label="iPhone: Agent ready for review"]');
+    const watchSteward = container.querySelector<HTMLButtonElement>('[aria-label="Apple Watch: Steward messages and approvals"]');
+    expect(mobileReview?.getAttribute("aria-checked")).toBe("true");
+    expect(watchSteward?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => mobileReview?.click());
+    expect(saveNotificationPreferences).toHaveBeenLastCalledWith({
+      ...defaultNotificationPreferences,
+      notifyWhenFocused: true,
+      mobile: {
+        ...defaultNotificationPreferences.mobile,
+        agentReadyForReview: false,
+      },
+    });
+    expect(mobileReview?.getAttribute("aria-checked")).toBe("false");
   });
 
   it("opens the existing server controls inside the Settings dialog", async () => {
