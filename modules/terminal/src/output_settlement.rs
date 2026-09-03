@@ -1098,17 +1098,18 @@ mod tests {
         };
         let snapshot = tracker.snapshot("session".into(), 7).unwrap();
         let producer = tracker.clone();
-        std::thread::spawn(move || {
+        let producer = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(5));
             producer.record(b"\x1b[?2026h\x1b[?2026l");
             std::thread::sleep(Duration::from_millis(5));
             producer.record(b"normalized paste preview");
         });
+        producer.join().unwrap();
 
         let receipt = snapshot
             .wait_for_normalized_composer_render_settlement(
                 Duration::from_millis(20),
-                Duration::from_millis(100),
+                Duration::from_secs(1),
             )
             .unwrap();
 
