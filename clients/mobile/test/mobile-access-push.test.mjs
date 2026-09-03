@@ -154,10 +154,19 @@ describe("mobile APNs attention projection", () => {
     expect(preferences).toBeDefined();
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsInput"))
       .toEqual({ enabled: true, playSound: true });
+    expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsInput", { macActive: true }))
+      .toEqual({ enabled: false, playSound: true });
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsReview"))
       .toEqual({ enabled: false, playSound: true });
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile.watch", "stewardProposal"))
       .toEqual({ enabled: false, playSound: false });
+
+    const activeWatch = pushNotificationPreferencesOf({
+      ...preferences,
+      watch: { ...preferences.watch, notifyWhenMacActive: true, stewardMessages: true },
+    });
+    expect(pushDeliveryOptions(activeWatch, "ai.termloop.mobile.watch", "stewardProposal", { macActive: true }))
+      .toEqual({ enabled: true, playSound: false });
 
     const silent = apnsPayload({
       kind: "needsInput",

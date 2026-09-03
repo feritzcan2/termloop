@@ -265,6 +265,14 @@ function RemoteNotificationSection({
         change={(checked) => void update(target, "enabled", checked)}
       />
       <SettingsSwitch
+        accessibleName={`${deviceName}: Send while this Mac is active`}
+        checked={preferences.notifyWhenMacActive}
+        disabled={saving || !preferences.enabled}
+        title="Send while this Mac is active"
+        description="Also send push notifications while keyboard or mouse activity is detected on this Mac."
+        change={(checked) => void update(target, "notifyWhenMacActive", checked)}
+      />
+      <SettingsSwitch
         accessibleName={`${deviceName}: Agent needs input`}
         checked={preferences.agentNeedsInput}
         disabled={saving || !preferences.enabled}

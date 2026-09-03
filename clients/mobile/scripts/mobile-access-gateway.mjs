@@ -1151,6 +1151,7 @@ function startAttentionMonitor() {
   let initialized = false;
   let previous = new Map();
   let pending = new Map();
+  let deliveredAttention = new Map();
   let stewardSequences = new Map();
   // Per-device APNs acceptance is retained only while its exact decision is
   // pending. A Watch registering after the proposal was created still receives
@@ -1179,8 +1180,6 @@ function startAttentionMonitor() {
     deliveredStewardDecisions = new Map(
       [...deliveredStewardDecisions].filter(([messageId]) => pendingDecisionIds.has(messageId)),
     );
-    // Steward is the user's wrist control plane. Unlike terminal attention,
-    // these notifications are never suppressed while the Mac is active.
     const notifications = new Map();
     for (const notification of stewardChanges.notifications) {
       notifications.set(notification.stewardMessageId ?? `${notification.sessionId}:${notification.kind}`, notification);
@@ -1188,16 +1187,17 @@ function startAttentionMonitor() {
     for (const notification of pendingDecisions) {
       notifications.set(notification.stewardMessageId, notification);
     }
+    const macActive = notifications.size > 0 && await desktopRecentlyActive();
     for (const notification of notifications.values()) {
       if (pendingDecisionIds.has(notification.stewardMessageId)) {
         const deliveredDevices = deliveredStewardDecisions.get(notification.stewardMessageId) ?? new Set();
-        const acceptedDevices = await deliverPush(notification, deliveredDevices);
+        const acceptedDevices = await deliverPush(notification, deliveredDevices, { macActive });
         deliveredStewardDecisions.set(
           notification.stewardMessageId,
           new Set([...deliveredDevices, ...acceptedDevices]),
         );
       } else {
-        await deliverPush(notification);
+        await deliverPush(notification, new Set(), { macActive });
       }
     }
     lastStewardPollAt = Date.now();
@@ -1216,12 +1216,30 @@ function startAttentionMonitor() {
         pending.set(notification.sessionId, notification);
       }
       pending = retainCurrentAttention(pending, statuses);
-      if (!(await desktopRecentlyActive())) {
+      deliveredAttention = new Map(
+        [...deliveredAttention].filter(([sessionId]) => pending.has(sessionId)),
+      );
+      if (pending.size > 0) {
+        const macActive = await desktopRecentlyActive();
         for (const notification of pending.values()) {
+          const deliveredDevices = deliveredAttention.get(notification.sessionId) ?? new Set();
           const preview = await readTerminalNotificationPreview(runtime, notification);
-          await deliverPush(withNotificationPreview(notification, preview));
+          const acceptedDevices = await deliverPush(
+            withNotificationPreview(notification, preview),
+            deliveredDevices,
+            { macActive },
+          );
+          if (macActive) {
+            deliveredAttention.set(
+              notification.sessionId,
+              new Set([...deliveredDevices, ...acceptedDevices]),
+            );
+          }
         }
-        pending.clear();
+        if (!macActive) {
+          pending.clear();
+          deliveredAttention.clear();
+        }
       }
     }
     previous = nextStatusMap(statuses);
@@ -1260,7 +1278,7 @@ function desktopRecentlyActive() {
   });
 }
 
-async function deliverPush(notification, skipDeviceTokens = new Set()) {
+async function deliverPush(notification, skipDeviceTokens = new Set(), context = {}) {
   let provider;
   try { provider = await loadApnsProvider(config.push.apnsConfigFile); } catch { return new Set(); }
   const [current, preferences] = await Promise.all([
@@ -1275,7 +1293,7 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
       retained.push(device);
       continue;
     }
-    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind);
+    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind, context);
     if (!delivery.enabled) {
       retained.push(device);
       continue;
