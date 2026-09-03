@@ -43,6 +43,8 @@ const MAX_RECONNECT_MS = 30_000;
 const RECONNECT_STALLED_MS = 15_000;
 const STABLE_CONNECTION_MS = 30_000;
 const ONLINE_ACTIVITY_PUBLISH_MS = 5_000;
+const INITIAL_ATTACH_RETRY_MS = 100;
+const MAX_ATTACH_RETRY_MS = 1_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
 const MAX_PENDING_INPUT_RECEIPTS = 128;
 /// Older daemons have no replay-complete metadata. Their 16 KiB replay frames can be
@@ -72,6 +74,8 @@ interface TerminalSubscription {
   lastInboundSequence: bigint;
   attachedCount: number;
   awaitingAck: boolean;
+  attachRetryMs: number;
+  attachRetryTimer: ReturnType<typeof setTimeout> | undefined;
   detached: boolean;
   replayChunks: Uint8Array[];
   replayBytes: number;
@@ -158,12 +162,12 @@ export class MobileConnectionCoordinator {
     void this.ensureConnected().catch(() => this.scheduleReconnect("subscriptionConnectFailed"));
     return () => {
       this.invalidationListeners.delete(listener);
+      this.stopReconnectIfIdle();
     };
   }
 
   subscribeStatus(listener: (status: "online" | "offline") => void): () => void {
     this.statusListeners.add(listener);
-    void this.ensureConnected().catch(() => this.scheduleReconnect("statusConnectFailed"));
     return () => this.statusListeners.delete(listener);
   }
 
@@ -202,6 +206,8 @@ export class MobileConnectionCoordinator {
       lastInboundSequence: 0n,
       attachedCount: 0,
       awaitingAck: false,
+      attachRetryMs: INITIAL_ATTACH_RETRY_MS,
+      attachRetryTimer: undefined,
       detached: false,
       replayChunks: [],
       replayBytes: 0,
@@ -297,19 +303,20 @@ export class MobileConnectionCoordinator {
       this.reconnectTimer = undefined;
     }
     this.reconnectDelay = MIN_RECONNECT_MS;
-    if (!reconnect) this.clearReconnectCycle();
+    const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
+    if (!shouldReconnect) this.clearReconnectCycle();
     const generation = this.generation;
     const socket = this.physical;
     if (socket === undefined && this.connecting === undefined && !this.ready) {
-      if (reconnect) {
+      if (shouldReconnect) {
         this.beginReconnectCycle("clientResume");
         void this.ensureConnected().catch(() => this.scheduleReconnect("clientResumeFailed"));
       }
       return;
     }
-    this.handleDisconnected(generation, "clientReset", reconnect);
+    this.handleDisconnected(generation, "clientReset", shouldReconnect);
     socket?.close();
-    if (reconnect) {
+    if (shouldReconnect) {
       void this.ensureConnected().catch(() => this.scheduleReconnect("clientResumeFailed"));
     }
   }
@@ -333,6 +340,7 @@ export class MobileConnectionCoordinator {
     socket?.close();
     for (const subscription of this.subscriptions.values()) {
       subscription.detached = true;
+      this.clearAttachmentRetry(subscription);
       this.clearReplay(subscription);
       subscription.onEvent({ type: "state", state: "connectionLost" });
       subscription.firstReject?.(new Error("Connection closed."));
@@ -611,6 +619,8 @@ export class MobileConnectionCoordinator {
       return;
     }
     if (frame.kind === KIND_ACK) {
+      this.clearAttachmentRetry(subscription);
+      subscription.attachRetryMs = INITIAL_ATTACH_RETRY_MS;
       const replay = decodeReplayAck(frame.payload);
       if (replay !== undefined) {
         subscription.replayExpectedFrames = replay.frameCount;
@@ -650,6 +660,15 @@ export class MobileConnectionCoordinator {
         this.reportTerminal(subscription, "input_refused", {
           frameSequence: frame.sequence.toString(),
           inputBytes: pendingInput.inputBytes,
+        });
+        return;
+      }
+      if (subscription.awaitingAck) {
+        subscription.awaitingAck = false;
+        const retryDelayMs = this.scheduleAttachmentRetry(subscription);
+        this.reportTerminal(subscription, "attachment_refused", {
+          errorBytes: frame.payload.byteLength,
+          retryDelayMs,
         });
         return;
       }
@@ -697,6 +716,7 @@ export class MobileConnectionCoordinator {
   private sendAttach(subscription: TerminalSubscription): void {
     const socket = this.openSocket();
     if (socket === undefined || subscription.detached || subscription.awaitingAck) return;
+    this.clearAttachmentRetry(subscription);
     subscription.awaitingAck = true;
     subscription.lastInboundSequence = 0n;
     this.clearReplay(subscription);
@@ -708,6 +728,23 @@ export class MobileConnectionCoordinator {
       replayRequestPayload(),
     ));
     this.reportTerminal(subscription, "attach_sent", { transportGeneration: this.generation });
+  }
+
+  private scheduleAttachmentRetry(subscription: TerminalSubscription): number | undefined {
+    if (subscription.detached || subscription.attachRetryTimer !== undefined) return undefined;
+    const delayMs = subscription.attachRetryMs;
+    subscription.attachRetryMs = Math.min(MAX_ATTACH_RETRY_MS, delayMs * 2);
+    subscription.attachRetryTimer = setTimeout(() => {
+      subscription.attachRetryTimer = undefined;
+      if (this.subscriptions.get(subscription.key) !== subscription || subscription.detached) return;
+      this.sendAttach(subscription);
+    }, delayMs);
+    return delayMs;
+  }
+
+  private clearAttachmentRetry(subscription: TerminalSubscription): void {
+    if (subscription.attachRetryTimer !== undefined) clearTimeout(subscription.attachRetryTimer);
+    subscription.attachRetryTimer = undefined;
   }
 
   private forceReconnect(subscription: TerminalSubscription): Promise<void> {
@@ -737,6 +774,7 @@ export class MobileConnectionCoordinator {
     subscription.detached = true;
     this.rejectInputReceipts(subscription, waiterError);
     this.subscriptions.delete(subscription.key);
+    this.clearAttachmentRetry(subscription);
     this.clearReplay(subscription);
     subscription.firstReject?.(waiterError);
     subscription.firstResolve = undefined;
@@ -759,6 +797,7 @@ export class MobileConnectionCoordinator {
       activeSubscriptions: this.subscriptions.size,
       attachedCount: subscription.attachedCount,
     });
+    this.stopReconnectIfIdle();
   }
 
   private invalidateTransport(reason: string): void {
@@ -770,7 +809,9 @@ export class MobileConnectionCoordinator {
 
   private handleDisconnected(generation: number, reason: string, reconnect = true): void {
     if (generation !== this.generation) return;
-    if (reconnect) this.beginReconnectCycle(reason);
+    const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
+    if (shouldReconnect) this.beginReconnectCycle(reason);
+    else this.clearReconnectCycle();
     this.cancelConnecting?.(new Error("Mobile transport disconnected."));
     this.cancelConnecting = undefined;
     this.generation += 1;
@@ -793,6 +834,7 @@ export class MobileConnectionCoordinator {
     }
     for (const subscription of this.subscriptions.values()) {
       subscription.awaitingAck = false;
+      this.clearAttachmentRetry(subscription);
       this.clearReplay(subscription);
       subscription.onEvent({ type: "state", state: "connectionLost" });
     }
@@ -805,12 +847,15 @@ export class MobileConnectionCoordinator {
       invalidationSubscribers: this.invalidationListeners.size,
     });
     this.publishStatus("offline");
-    if (reconnect) this.scheduleReconnect(reason);
+    if (shouldReconnect) this.scheduleReconnect(reason);
   }
 
   private scheduleReconnect(reason: string): void {
-    if (this.stopped || this.reconnectTimer !== undefined
-      || this.subscriptions.size + this.invalidationListeners.size + this.statusListeners.size === 0) return;
+    if (this.stopped || this.reconnectTimer !== undefined) return;
+    if (!this.hasActiveReconnectDemand()) {
+      this.stopReconnectIfIdle();
+      return;
+    }
     this.beginReconnectCycle(reason);
     const delayMs = this.reconnectDelay;
     this.reconnectDelay = Math.min(MAX_RECONNECT_MS, this.reconnectDelay * 2);
@@ -839,7 +884,7 @@ export class MobileConnectionCoordinator {
   }
 
   private beginReconnectCycle(reason: string): void {
-    if (this.reconnectStartedAtEpochMs !== undefined) return;
+    if (!this.hasActiveReconnectDemand() || this.reconnectStartedAtEpochMs !== undefined) return;
     this.reconnectStartedAtEpochMs = Date.now();
     this.reconnectAttempt = 0;
     this.diagnostics.report("connection", "reconnect_cycle_started", {
@@ -852,7 +897,11 @@ export class MobileConnectionCoordinator {
     if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
     this.reconnectStallTimer = setTimeout(() => {
       this.reconnectStallTimer = undefined;
-      if (this.stopped || this.ready || this.reconnectStartedAtEpochMs === undefined) return;
+      if (this.stopped || this.ready || this.reconnectStartedAtEpochMs === undefined
+        || !this.hasActiveReconnectDemand()) {
+        this.clearReconnectCycle();
+        return;
+      }
       this.diagnostics.report("connection", "reconnect_stalled", {
         connectionId: this.connection.id,
         generation: this.generation,
@@ -885,6 +934,18 @@ export class MobileConnectionCoordinator {
     this.reconnectStallTimer = undefined;
     this.reconnectStartedAtEpochMs = undefined;
     this.reconnectAttempt = 0;
+  }
+
+  private hasActiveReconnectDemand(): boolean {
+    return this.subscriptions.size + this.invalidationListeners.size > 0;
+  }
+
+  private stopReconnectIfIdle(): void {
+    if (this.hasActiveReconnectDemand()) return;
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    this.reconnectDelay = MIN_RECONNECT_MS;
+    this.clearReconnectCycle();
   }
 
   private openSocket(): DataSocket | undefined {
