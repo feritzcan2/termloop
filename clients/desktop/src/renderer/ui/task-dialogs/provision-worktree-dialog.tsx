@@ -10,12 +10,14 @@ import {
   worktreePathParent,
 } from "../worktree-path-suggestion.js";
 
-export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, rememberedParentPath, rememberParentPath, listBranches, close, provision }: {
+export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, rememberedParentPath, rememberParentPath, rememberedBaseRef, rememberBaseRef, listBranches, close, provision }: {
   task: Task;
   projectId: string | undefined;
   repositoryPath: string;
   rememberedParentPath: string | undefined;
   rememberParentPath(parentPath: string): void;
+  rememberedBaseRef: string | undefined;
+  rememberBaseRef(baseRef: string): void;
   listBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   close(): void;
   provision(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
@@ -62,10 +64,12 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
       const sortedBranches = branchSelection.branches;
       setLocalBranches(sortedBranches);
       setBranchesTruncated(result.truncated);
-      const preferredBase = sortedBranches[0];
-      setBaseRef((selected) => sortedBranches.some((branch) => branch.exact_ref === selected)
-        ? selected
-        : preferredBase?.exact_ref ?? "");
+      setBaseRef((selected) => {
+        if (sortedBranches.some((branch) => branch.exact_ref === selected)) return selected;
+        const remembered = sortedBranches.find((branch) => branch.exact_ref === rememberedBaseRef);
+        if (remembered) return remembered.exact_ref;
+        return sortedBranches[0]?.exact_ref ?? "";
+      });
       setExistingBranchName((selected) => {
         const requiredBranch = task.branch?.name;
         if (requiredBranch) return requiredBranch;
@@ -83,7 +87,7 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
       setBranchesError(loadError instanceof Error ? loadError.message : "Local branches could not be loaded.");
     });
     return () => { current = false; };
-  }, [listBranches, projectId, task.branch]);
+  }, [listBranches, projectId, rememberedBaseRef, task.branch]);
   useEffect(() => {
     const previousBranchName = previousBranchNameRef.current;
     setDestinationPath((currentPath) => updateWorktreeDestinationBranch(
@@ -178,7 +182,7 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
           {branchMode === "create" ? (
             <>
               <label htmlFor="worktree-base-ref">Base branch</label>
-              <select id="worktree-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); setError(undefined); }}>
+              <select id="worktree-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); rememberBaseRef(event.target.value); setError(undefined); }}>
                 {selectionUnavailable ? <option value="">{branchPlaceholder}</option> : null}
                 {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.exact_ref}</option>)}
               </select>

@@ -1448,6 +1448,56 @@ function typeInto(element: HTMLInputElement | HTMLTextAreaElement, value: string
 }
 
 describe("Task rail create flow", () => {
+  it("remembers the selected base branch across restarts and worktree-create dialogs", async () => {
+    const task: Task = { ...worktreeLessTask(), branch: null };
+    const listProjectLocalBranches = vi.fn(async () => ({
+      repository_root: "/repository",
+      branches: [
+        { name: "main", exact_ref: "refs/heads/main" },
+        { name: "develop", exact_ref: "refs/heads/develop" },
+      ],
+      truncated: false,
+    }));
+    const props = {
+      ...railProps({ task }),
+      listProjectLocalBranches,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    let root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, props)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create Task"]')!.click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const createBase = container.querySelector<HTMLSelectElement>("#create-base-ref")!;
+    expect(createBase.value).toBe("refs/heads/main");
+    await act(async () => {
+      createBase.value = "refs/heads/develop";
+      createBase.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(createBase.value).toBe("refs/heads/develop");
+
+    /// Remounting represents a renderer/application restart: the next dialog
+    /// must recover the Project-scoped choice from client-local storage.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(TaskRail, props)));
+    await act(async () => container.querySelector<HTMLButtonElement>(".task-next-step.optional")!.click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const branchMode = container.querySelector<HTMLSelectElement>("#worktree-branch-mode")!;
+    await act(async () => {
+      branchMode.value = "create";
+      branchMode.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLSelectElement>("#worktree-base-ref")?.value)
+      .toBe("refs/heads/develop");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("opens the Create Task dialog when the tab bar asks for it and keeps no title row", async () => {
     const container = document.createElement("div");
     document.body.append(container);

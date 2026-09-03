@@ -781,9 +781,6 @@ export function DesktopApp() {
         return;
       }
       if (disposed) return;
-      if (presentationStore.getState().selectedProjectId === undefined && projectionStore.getSnapshot().projects.length === 0) {
-        presentationStore.getState().openProjectDialog();
-      }
     };
     const handleProfileRefreshFailure = (profileId: string, error: unknown) => {
       if (controlErrorIsServiceBusy(error)) {
