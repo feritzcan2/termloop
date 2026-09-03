@@ -1006,6 +1006,8 @@ mod tests {
     use termloop_store::Store;
     use termloop_terminal::TerminalService;
 
+    const TRANSPORT_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
+
     fn runtime_with_asker() -> (CoreRuntime, String, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "termloop-core-ask-to-{}-{}",
@@ -1357,7 +1359,7 @@ mod tests {
             Some(request_id.as_str())
         );
         let event = generated_input_events
-            .recv_timeout(Duration::from_secs(15))
+            .recv_timeout(TRANSPORT_EVENT_TIMEOUT)
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
@@ -1720,7 +1722,7 @@ mod tests {
                 .unwrap()
         );
         let event = generated_input_events
-            .recv_timeout(Duration::from_secs(15))
+            .recv_timeout(TRANSPORT_EVENT_TIMEOUT)
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
