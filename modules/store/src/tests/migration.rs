@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn schema_48_adds_no_inferred_project_task_automation_base_ref() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-migration-automation-base-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 48,
+            "revision": 2,
+            "projects": [{"id":"project-1","name":"Demo","folder_path":"/tmp/demo"}],
+            "project_task_automation_configurations": [{
+                "projectId": "project-1",
+                "createWorktree": true,
+                "worktreePrefix": "termloop",
+                "agentId": null,
+                "model": null,
+                "permission": null,
+                "reasoning": null,
+                "kickoffMessage": null
+            }],
+            "sessions": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store.project_task_automation_configurations()[0].base_ref,
+        None
+    );
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        persisted["project_task_automation_configurations"][0]["baseRef"],
+        serde_json::Value::Null
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn schema_47_adds_no_inferred_task_branch_membership() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-migration-task-branches-{}-{}.json",
@@ -1413,6 +1457,7 @@ fn v42_migration_lifts_unanimous_source_task_automation_to_the_project() {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1511,6 +1556,7 @@ fn v44_migration_adds_safe_task_agent_launch_defaults() {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1661,6 +1707,7 @@ fn v42_migration_preserves_legacy_default_automation_fields() {
             project_id: "project-1".into(),
             create_worktree: false,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: None,
             model: None,
             permission: None,

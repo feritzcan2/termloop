@@ -116,9 +116,12 @@ static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
+    regex::Regex::new("^refs/remotes/[^/]+/.+").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
@@ -177,14 +180,15 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         }
         "^https?://" => CONTRACT_PATTERN_29.is_match(text),
         "^refs/heads/" => CONTRACT_PATTERN_30.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_31.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_32.is_match(text),
+        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_31.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_32.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_33.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:67d273d5ace9ae60fbcb79f0af74e4955e0818df2fdf230ea6d2f896cd7f2078";
+    "sha256:973bed4a3b28ec642d6db4064885623889f621f97ae35356abc850bf1528ca6a";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1011,6 +1015,8 @@ pub struct ProjectTaskAutomationConfigurationDto {
     pub create_worktree: bool,
     #[serde(rename = "worktreePrefix")]
     pub worktree_prefix: String,
+    #[serde(rename = "baseRef", deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -1043,6 +1049,8 @@ pub struct ProjectTaskAutomationSetParams {
     pub create_worktree: bool,
     #[serde(rename = "worktreePrefix")]
     pub worktree_prefix: String,
+    #[serde(rename = "baseRef", deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -1133,9 +1141,18 @@ pub struct LocalBranchDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct RemoteBranchDto {
+    pub name: String,
+    pub exact_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectLocalBranchListResult {
     pub repository_root: String,
     pub branches: Vec<LocalBranchDto>,
+    pub base_branches: Vec<RemoteBranchDto>,
+    pub base_branches_truncated: bool,
     pub truncated: bool,
 }
 
@@ -2825,6 +2842,8 @@ pub struct TaskCreateParams {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub worktree_prefix: Option<String>,
+    #[serde(rename = "baseRef", deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -6325,6 +6344,8 @@ pub struct TaskSourceCandidateImportParams {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub worktree_prefix: Option<String>,
+    #[serde(rename = "baseRef", deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -9227,6 +9248,13 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                         && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
                 })
             })
+            && object.get("baseRef").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 1024
+                        && contract_pattern_matches("^refs/remotes/[^/]+/.+", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9260,6 +9288,7 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                     "projectId",
                     "createWorktree",
                     "worktreePrefix",
+                    "baseRef",
                     "agentId",
                     "model",
                     "permission",
@@ -9355,6 +9384,13 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                         && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
                 })
             })
+            && object.get("baseRef").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 1024
+                        && contract_pattern_matches("^refs/remotes/[^/]+/.+", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9394,6 +9430,7 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                     "projectId",
                     "createWorktree",
                     "worktreePrefix",
+                    "baseRef",
                     "agentId",
                     "model",
                     "permission",
@@ -9403,7 +9440,15 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 ]
                 .contains(&key.as_str())
             })
-    }) && ((!(value.as_object().is_some_and(|object| {
+    }) && (!(value.as_object().is_some_and(|object| {
+        object
+            .get("createWorktree")
+            .is_some_and(|field| field == &serde_json::json!(true))
+    })) || (value.as_object().is_some_and(|object| {
+        object
+            .get("baseRef")
+            .is_none_or(|field| field.as_str().is_some_and(|text| true))
+    }))) && ((!(value.as_object().is_some_and(|object| {
         object
             .get("agentId")
             .is_some_and(|field| field.as_str().is_some_and(|text| true))
@@ -9697,6 +9742,33 @@ fn validate_local_branch_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_remote_branch_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 3 && text.chars().count() <= 1024)
+        }) && object.get("exact_ref").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 16
+                    && text.chars().count() <= 1024
+                    && contract_pattern_matches("^refs/remotes/[^/]+/.+", text)
+            })
+        }) && object
+            .keys()
+            .all(|key| ["name", "exact_ref"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_project_local_branch_list_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -9709,12 +9781,29 @@ fn validate_project_local_branch_list_result(value: &Value) -> bool {
                         && items.iter().all(|item| validate_local_branch_dto(item))
                 })
             })
+            && object.get("base_branches").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 512
+                        && json_array_unique(items)
+                        && items.iter().all(|item| validate_remote_branch_dto(item))
+                })
+            })
+            && object
+                .get("base_branches_truncated")
+                .is_some_and(|field| field.is_boolean())
             && object
                 .get("truncated")
                 .is_some_and(|field| field.is_boolean())
-            && object
-                .keys()
-                .all(|key| ["repository_root", "branches", "truncated"].contains(&key.as_str()))
+            && object.keys().all(|key| {
+                [
+                    "repository_root",
+                    "branches",
+                    "base_branches",
+                    "base_branches_truncated",
+                    "truncated",
+                ]
+                .contains(&key.as_str())
+            })
     })
 }
 
@@ -13667,6 +13756,13 @@ fn validate_task_create_params(value: &Value) -> bool {
                         && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
                 }) || field.is_null())
             })
+            && object.get("baseRef").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 1024
+                        && contract_pattern_matches("^refs/remotes/[^/]+/.+", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -13702,6 +13798,7 @@ fn validate_task_create_params(value: &Value) -> bool {
                     "brief",
                     "worktreeIntent",
                     "worktreePrefix",
+                    "baseRef",
                     "agentId",
                     "model",
                     "permission",
@@ -13721,7 +13818,9 @@ fn validate_task_create_params(value: &Value) -> bool {
                     && text.chars().count() <= 32
                     && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
             })
-        })
+        }) && object
+            .get("baseRef")
+            .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")
@@ -13730,6 +13829,9 @@ fn validate_task_create_params(value: &Value) -> bool {
         object
             .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("baseRef")
+                .is_none_or(|field| field == &serde_json::json!(null))
     }))))
         && ((!(value.as_object().is_some_and(|object| {
             object
@@ -23483,6 +23585,13 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                         && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
                 }) || field.is_null())
             })
+            && object.get("baseRef").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 1024
+                        && contract_pattern_matches("^refs/remotes/[^/]+/.+", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -23520,6 +23629,7 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     "expectedRevision",
                     "worktreeIntent",
                     "worktreePrefix",
+                    "baseRef",
                     "agentId",
                     "model",
                     "permission",
@@ -23539,7 +23649,9 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     && text.chars().count() <= 32
                     && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
             })
-        })
+        }) && object
+            .get("baseRef")
+            .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")
@@ -23548,6 +23660,9 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
         object
             .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("baseRef")
+                .is_none_or(|field| field == &serde_json::json!(null))
     }))))
         && ((!(value.as_object().is_some_and(|object| {
             object

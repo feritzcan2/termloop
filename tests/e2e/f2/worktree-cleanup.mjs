@@ -49,6 +49,7 @@ git(repository, ["commit", "-m", "fixture"], {
   GIT_AUTHOR_DATE: "2001-01-01T00:00:00Z",
   GIT_COMMITTER_DATE: "2001-01-01T00:00:00Z",
 });
+git(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
 
 const evidence = {
   schema: destructiveAcceptance ? "f2-destructive-worktree-cleanup-v2" : "f2-worktree-cleanup-v2",
@@ -134,6 +135,13 @@ try {
       title: `Cleanup ${index}`,
       brief: index === 5 ? "Shown cleanup fixture" : null,
       worktreeIntent: "none",
+      worktreePrefix: null,
+      baseRef: null,
+      agentId: null,
+      model: null,
+      permission: null,
+      reasoning: null,
+      kickoffMessage: null,
     });
     const destination = path.join(temporary, `worktree-${index}`);
     await call(record, "task.provisionWorktree", {
@@ -143,7 +151,7 @@ try {
       destinationPath: destination,
       branchName: `feature/cleanup-${index}`,
       branchMode: "create",
-      baseRef: "refs/heads/main",
+      baseRef: "refs/remotes/origin/main",
     });
     tasks.push(task);
     worktrees.push(destination);

@@ -42,7 +42,9 @@ pub use mutation::{GitReflogMessage, RefRecoveryFacts, ReflogEntry};
 pub use pre_image::{PreImageContent, PreImageObservation, PreImageRevision};
 pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;
-pub use repository::{GitRefName, HeadState, LocalBranchList, ObjectId, RepositoryFacts};
+pub use repository::{
+    GitRefName, HeadState, LocalBranchList, ObjectId, RemoteBranchList, RepositoryFacts,
+};
 pub use worktree::{GitText, RegisteredPathState, WorktreeCheckout, WorktreeFacts, WorktreeMarker};
 pub use worktree_branches::{
     WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT, WorktreeBranchEvidence, WorktreeBranchObservation,
