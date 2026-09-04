@@ -7,8 +7,6 @@ import type {
   PlaybookPipelineDraftDto,
   PlaybookUpdateParams,
   PlaybookUpdateResult,
-  RoutineKind,
-  RoutineActionHandling,
   StewardAgentId,
 } from "@termloop/contract/current";
 
@@ -27,8 +25,7 @@ export type PlaybookUpdateOutcome =
 export const PLAYBOOK_MILESTONES_MAX = 24;
 export const PLAYBOOK_ENTRY_ID_MAX_BYTES = 64;
 export const PLAYBOOK_TITLE_MAX_BYTES = 120;
-export const PLAYBOOK_CONDITION_MAX_BYTES = 600;
-export const PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES = 8192;
+export const PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES = 9216;
 export const PLAYBOOK_APPROVER_MAX_BYTES = 120;
 export const PLAYBOOK_PIPELINE_NAME_MAX_BYTES = 120;
 export const PLAYBOOK_SAVED_PIPELINES_MAX = 16;
@@ -64,15 +61,9 @@ export function playbookRelativeMinutes(milliseconds: number): string {
 /** A station on the board before it is complete: every step names the Routine
     that checks it, and `null` is the honest "not picked yet" the wire type
     cannot express. */
-export type PlaybookMilestoneDraft = Omit<PlaybookMilestoneDto, "routineId"> & {
+export type PlaybookMilestoneDraft = Omit<PlaybookMilestoneDto, "routineId" | "workerId"> & {
   routineId: string | null;
-  /** Template-owned instructions survive until the first atomic Save. Loaded
-      checks resolve these fields from their internal Routine projection. */
-  checkKind?: RoutineKind;
-  checkInstructions?: string;
-  checkStewardInstructions?: string;
-  checkActionHandling?: RoutineActionHandling;
-  checkWorkerId?: string | null;
+  workerId: string | null;
 };
 
 export type PlaybookPipelineEditorDraft = {
@@ -87,21 +78,6 @@ export type PlaybookDraft = {
   /** The Project's other pipelines, kept whole. Switching parks the active one
       here rather than discarding it, so every path stays reachable. */
   savedPipelines: PlaybookPipelineEditorDraft[];
-};
-
-/** What the pipeline needs to know about this Project's Routines. */
-export type PlaybookRoutineSummary = {
-  id: string;
-  kind: RoutineKind;
-  name: string;
-  enabled: boolean;
-  prompt: string;
-  stewardInstructions: string;
-  actionHandling: RoutineActionHandling;
-  workerId: string;
-  /** True for an on-demand Routine — one a Playbook step owns. A scheduled
-      Routine brings work in and is never swept as a step's leftover. */
-  stepChecker: boolean;
 };
 
 const ENTRY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -121,14 +97,15 @@ function requiredTextIssues(value: string, maxBytes: number, field: string): str
   return issues;
 }
 
-function conditionIssues(value: string): string[] {
+function multilineInstructionIssues(value: string, field: string, required: boolean): string[] {
   const issues: string[] = [];
-  if (utf8ByteLength(value) > PLAYBOOK_CONDITION_MAX_BYTES) {
-    issues.push(`Condition is too long (max ${PLAYBOOK_CONDITION_MAX_BYTES} bytes).`);
+  if (required && !value.trim()) issues.push(`${field} is required.`);
+  if (utf8ByteLength(value) > PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES) {
+    issues.push(`${field} is too long (max ${PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES} bytes).`);
   }
-  if (value !== "" && !value.trim()) issues.push("Condition cannot be only whitespace.");
+  if (!required && value !== "" && !value.trim()) issues.push(`${field} cannot be only whitespace.`);
   if (CONTROL_CHARACTERS_EXCEPT_NEWLINE.test(value)) {
-    issues.push("Condition allows line breaks but no other control characters.");
+    issues.push(`${field} allows line breaks but no other control characters.`);
   }
   return issues;
 }
@@ -140,7 +117,7 @@ function entryIdIssues(id: string): string[] {
 export type PlaybookMilestoneFieldIssues = Readonly<{
   id: readonly string[];
   title: readonly string[];
-  condition: readonly string[];
+  completeWhen: readonly string[];
   retry: readonly string[];
   gate: readonly string[];
   approver: readonly string[];
@@ -158,30 +135,11 @@ export function playbookMilestoneFieldIssues(
   }
   const gate: string[] = [];
   let approver: string[] = [];
-  const instructions: string[] = [];
-  const checkInstructions = milestone.checkInstructions ?? "";
-  if (utf8ByteLength(checkInstructions) > PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES) {
-    instructions.push(`Instructions are too long (max ${PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES} bytes).`);
-  }
-  if (checkInstructions !== "" && !checkInstructions.trim()) {
-    instructions.push("Instructions cannot be only whitespace.");
-  }
-  if (CONTROL_CHARACTERS_EXCEPT_NEWLINE.test(checkInstructions)) {
-    instructions.push("Instructions allow line breaks but no other control characters.");
-  }
-  const stewardInstructions = milestone.checkStewardInstructions ?? "";
-  if (utf8ByteLength(stewardInstructions) > PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES) {
-    instructions.push(`Steward instructions are too long (max ${PLAYBOOK_CHECK_INSTRUCTIONS_MAX_BYTES} bytes).`);
-  }
-  if (stewardInstructions !== "" && !stewardInstructions.trim()) {
-    instructions.push("Steward instructions cannot be only whitespace.");
-  }
-  if (CONTROL_CHARACTERS_EXCEPT_NEWLINE.test(stewardInstructions)) {
-    instructions.push("Steward instructions allow line breaks but no other control characters.");
-  }
-  if ((milestone.checkActionHandling ?? "off") !== "off" && !stewardInstructions.trim()) {
-    instructions.push("Steward instructions are required when waiting may cause an action.");
-  }
+  const instructions = multilineInstructionIssues(
+    milestone.whileWaiting.instructions,
+    "While-waiting instructions",
+    milestone.whileWaiting.mode !== "off",
+  );
   if (milestone.gate === "human") {
     if (milestone.approver === null) approver = ["A human gate names its approver."];
     else approver = requiredTextIssues(milestone.approver, PLAYBOOK_APPROVER_MAX_BYTES, "Approver");
@@ -191,7 +149,7 @@ export function playbookMilestoneFieldIssues(
   return {
     id: entryIdIssues(milestone.id),
     title: requiredTextIssues(milestone.title, PLAYBOOK_TITLE_MAX_BYTES, "Title"),
-    condition: conditionIssues(milestone.condition),
+    completeWhen: multilineInstructionIssues(milestone.completeWhen, "Completion rule", true),
     retry,
     gate,
     approver,
@@ -204,7 +162,7 @@ export function playbookMilestoneIssues(milestone: PlaybookMilestoneDraft): stri
   return [
     ...issues.id,
     ...issues.title,
-    ...issues.condition,
+    ...issues.completeWhen,
     ...issues.retry,
     ...issues.gate,
     ...issues.approver,
@@ -245,25 +203,9 @@ export function playbookDraftIsValid(draft: PlaybookDraft): boolean {
       .every((milestone) => playbookMilestoneIssues(milestone).length === 0);
 }
 
-/** The saved document as a local draft, check intent resolved from the live
-    Routine projections. */
-export function playbookDraftFromDto(
-  playbook: PlaybookDto | null,
-  routines: readonly PlaybookRoutineSummary[] = [],
-): PlaybookDraft {
-  const milestoneDraft = (milestone: PlaybookMilestoneDto): PlaybookMilestoneDraft => {
-    const routine = routines.find((candidate) => candidate.id === milestone.routineId);
-    return {
-      ...milestone,
-      ...(routine === undefined ? {} : {
-        checkKind: routine.kind,
-        checkInstructions: routine.prompt,
-        checkStewardInstructions: routine.stewardInstructions,
-        checkActionHandling: routine.actionHandling,
-        checkWorkerId: routine.workerId,
-      }),
-    };
-  };
+/** Copies the saved flat document into independently editable local state. */
+export function playbookDraftFromDto(playbook: PlaybookDto | null): PlaybookDraft {
+  const milestoneDraft = (milestone: PlaybookMilestoneDto): PlaybookMilestoneDraft => ({ ...milestone });
   return {
     activePipelineName: playbook?.activePipelineName ?? "",
     milestones: playbook?.milestones.map(milestoneDraft) ?? [],
@@ -370,60 +312,42 @@ export function changeMilestoneRetryAt(
     Project with no saved Playbook is offered this rather than given it:
     adopting a template installs one completion Routine per stage and writes
     the document atomically. Merely seeing the offer writes nothing. */
+function templateMilestone(
+  id: string,
+  title: string,
+  completeWhen: string,
+  retryDelaySeconds = PLAYBOOK_DEFAULT_RETRY_DELAY_SECONDS,
+  approver: string | null = null,
+  whileWaiting: PlaybookMilestoneDto["whileWaiting"] = { mode: "off", instructions: "" },
+): PlaybookMilestoneDraft {
+  return {
+    id,
+    title,
+    gate: approver === null ? "automatic" : "human",
+    routineId: null,
+    retryDelaySeconds,
+    completeWhen,
+    whileWaiting,
+    workerId: null,
+    approver,
+  };
+}
+
 export const PLAYBOOK_STARTER: PlaybookDraft = {
   activePipelineName: "Ship to production",
   savedPipelines: [],
   milestones: [
-    {
-      id: "agent-working",
-      title: "Agent is working",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "runtime",
-      retryDelaySeconds: 600,
-      condition: "An agent is running in the Task's worktree.",
-      approver: null,
-    },
-    {
-      id: "pr-opened",
-      title: "Pull request opened",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "A pull request exists for the Task branch.",
-      approver: null,
-    },
-    {
-      id: "ci-green",
-      title: "Required CI checks passed",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "Required checks pass on the Task branch head.",
-      approver: null,
-    },
-    {
-      id: "review-approved",
-      title: "Review approved",
-      gate: "human",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 1800,
-      condition: "The pull request carries an approving review from the named person.",
-      approver: "you",
-    },
-    {
-      id: "deployed",
-      title: "Deployed to production",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "delivery",
-      retryDelaySeconds: 3600,
-      condition: "The deployed commit matches the Task branch head.",
-      approver: null,
-    },
+    templateMilestone("agent-working", "Agent is working", "An agent is running in the Task's worktree."),
+    templateMilestone("pr-opened", "Pull request opened", "A pull request exists for the Task branch."),
+    templateMilestone("ci-green", "Required CI checks passed", "Required checks pass on the Task branch head."),
+    templateMilestone(
+      "review-approved",
+      "Review approved",
+      "The pull request carries an approving review from the named person.",
+      1800,
+      "you",
+    ),
+    templateMilestone("deployed", "Deployed to production", "The deployed commit matches the Task branch head.", 3600),
   ],
 };
 
@@ -443,128 +367,35 @@ export const PLAYBOOK_DEV_TO_PRODUCTION: PlaybookDraft = {
   activePipelineName: "Dev PR to production",
   savedPipelines: [],
   milestones: [
-    {
-      id: "code-finished",
-      title: "Code implementation completed",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "runtime",
-      retryDelaySeconds: 600,
-      condition: "The agent has stopped working and the Task branch carries its commits.",
-      approver: null,
-    },
-    {
-      id: "dev-pr-opened",
-      title: "Development pull request opened",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "A pull request from the Task branch into dev exists.",
-      approver: null,
-    },
-    {
-      id: "dev-pr-approved",
-      title: "Development pull request approved",
-      gate: "human",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 1800,
-      condition: "The dev pull request carries your own approving review.",
-      approver: "you",
-    },
-    {
-      id: "review-requested",
-      title: "Review requested from Nurguyl",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "slack",
-      retryDelaySeconds: 1800,
-      condition: "A Slack message asks Nurguyl to review this Task's dev pull request.",
-      approver: null,
-    },
-    {
-      id: "dev-pr-merged",
-      title: "Development pull request merged",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "The dev pull request is merged, not just approved.",
-      approver: null,
-    },
-    {
-      id: "master-pr-opened",
-      title: "Master pull request opened",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "A pull request from dev into master exists and contains this Task's commits.",
-      approver: null,
-    },
-    {
-      id: "master-pr-sent",
-      title: "Master review requested from RELEASE-APPROVER",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 1800,
-      condition: "The master pull request requests a review from RELEASE-APPROVER.",
-      approver: null,
-    },
-    {
-      id: "master-pr-merged",
-      title: "Master pull request merged",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "ciPr",
-      retryDelaySeconds: 600,
-      condition: "The master pull request is merged.",
-      approver: null,
-    },
-    {
-      id: "master-deployed",
-      title: "Deployed to production",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "delivery",
-      retryDelaySeconds: 3600,
-      condition: "The commit running in production contains this Task's change.",
-      approver: null,
-    },
-    {
-      id: "logs-clean",
-      title: "Post-deployment logs remain clean",
-      gate: "automatic",
-      routineId: null,
-      checkKind: "delivery",
-      // The last stage can become incomplete by finding an error, so it keeps
-      // looking for a while rather than deciding early.
-      retryDelaySeconds: 3600,
-      condition:
-        "No new error relating to this feature has appeared in the production logs since the deploy.",
-      approver: null,
-    },
+    templateMilestone("code-finished", "Code implementation completed", "The agent has stopped working and the Task branch carries its commits."),
+    templateMilestone("dev-pr-opened", "Development pull request opened", "A pull request from the Task branch into dev exists."),
+    templateMilestone(
+      "dev-pr-approved",
+      "Development pull request approved",
+      "The dev pull request carries your own approving review.",
+      1800,
+      "you",
+    ),
+    templateMilestone(
+      "review-requested",
+      "Review requested",
+      "A visible message asks REVIEWER to review this Task's development pull request.",
+      1800,
+      null,
+      {
+        mode: "ask",
+        instructions: "When the development pull request exists and no request is visible, offer to have the existing Task Agent send one concise request to REVIEWER through an available Project communication tool. Do not choose a different recipient or destination silently.",
+      },
+    ),
+    templateMilestone("dev-pr-merged", "Development pull request merged", "The dev pull request is merged, not just approved."),
+    templateMilestone("master-pr-opened", "Master pull request opened", "A pull request from dev into master exists and contains this Task's commits."),
+    templateMilestone("master-pr-sent", "Master review requested from RELEASE-APPROVER", "The master pull request requests a review from RELEASE-APPROVER.", 1800),
+    templateMilestone("master-pr-merged", "Master pull request merged", "The master pull request is merged."),
+    templateMilestone("master-deployed", "Deployed to production", "The commit running in production contains this Task's change.", 3600),
+    // The last stage can become incomplete by finding an error, so it keeps
+    // looking for a while rather than deciding early.
+    templateMilestone("logs-clean", "Post-deployment logs remain clean", "No new error relating to this feature has appeared in the production logs since the deploy.", 3600),
   ],
-};
-
-/** The one stage on this path that performs work before evaluating completion.
-    Everything else on the board is decided by looking; this one becomes true
-    only once the Routine sends the request. */
-export const PLAYBOOK_DEV_TO_PRODUCTION_INSTRUCTIONS: Readonly<Record<string, string>> = {
-  "review-requested": [
-    "Ask Nurguyl on Slack to review the dev pull request for each Task listed,",
-    "unless that Task has already been asked about — one request per Task, never",
-    "a reminder every run. Write the message yourself: name the Task, link its",
-    "pull request, and say what changed in one line. Never paste provider content",
-    "or anything from the diff.",
-    "",
-    "Then evaluate completion from Slack itself: `passed` for a Task whose review",
-    "request you can see in the conversation, `waiting` for one you could not send",
-    "and why. If Slack is not reachable from this Worker, report that as a Routine",
-    "problem rather than reporting a verdict for anyone.",
-  ].join("\n"),
 };
 
 export function playbookDevToProductionDraft(): PlaybookDraft {
@@ -582,10 +413,6 @@ export type PlaybookTemplate = {
   name: string;
   summary: string;
   draft(): PlaybookDraft;
-  /** Instructions for the Routine behind one stage, by milestone id. A stage
-      that only has to be observed needs none. A stage that performs work
-      before it can complete says so here, and the user can edit it later. */
-  routineInstructions?: Readonly<Record<string, string>>;
 };
 
 /** What a Project can start from. Each entry is one real delivery path; a
@@ -601,9 +428,8 @@ export const PLAYBOOK_TEMPLATES: readonly PlaybookTemplate[] = [
     id: "dev-pr-to-production",
     name: "Dev PR to production",
     summary:
-      "A dev PR you approve, a review Nurguyl is asked for on Slack, then a master PR for RELEASE-APPROVER, and the logs are watched after it deploys.",
+      "A development PR you approve, a visible request to REVIEWER, then a master PR for RELEASE-APPROVER, followed by a production log check.",
     draft: playbookDevToProductionDraft,
-    routineInstructions: PLAYBOOK_DEV_TO_PRODUCTION_INSTRUCTIONS,
   },
 ];
 
@@ -617,11 +443,7 @@ export function playbookTemplateDraft(
     ...draft,
     milestones: draft.milestones.map((milestone) => ({
       ...milestone,
-      checkKind: playbookStepRoutineKind(milestone),
-      checkInstructions: template.routineInstructions?.[milestone.id] ?? "",
-      checkStewardInstructions: "",
-      checkActionHandling: "off",
-      checkWorkerId: null,
+      workerId: null,
     })),
   };
 }
@@ -634,41 +456,16 @@ export type PlaybookSaveDecision =
     check intent; Core owns identity reuse, replacement, and cleanup. */
 export function playbookMilestonesForWire(
   milestones: readonly PlaybookMilestoneDraft[],
-  routines: readonly PlaybookRoutineSummary[] = [],
 ): PlaybookMilestoneDraftDto[] {
-  return milestones.map((milestone) => {
-    const routine = milestone.routineId === null
-      ? undefined
-      : routines.find((candidate) => candidate.id === milestone.routineId);
-    const {
-      routineId: _routineId,
-      checkKind,
-      checkInstructions,
-      checkStewardInstructions,
-      checkActionHandling,
-      checkWorkerId,
-      ...document
-    } = milestone;
-    return {
-      ...document,
-      check: {
-        kind: checkKind ?? routine?.kind ?? playbookStepRoutineKind(milestone),
-        instructions: checkInstructions ?? routine?.prompt ?? "",
-        stewardInstructions: checkStewardInstructions ?? routine?.stewardInstructions ?? "",
-        actionHandling: checkActionHandling ?? routine?.actionHandling ?? "off",
-        workerId: checkWorkerId ?? routine?.workerId ?? null,
-      },
-    };
-  });
+  return milestones.map(({ routineId: _routineId, ...milestone }) => milestone);
 }
 
 function playbookPipelinesForWire(
   pipelines: readonly PlaybookPipelineEditorDraft[],
-  routines: readonly PlaybookRoutineSummary[],
 ): PlaybookPipelineDraftDto[] {
   return pipelines.map((pipeline) => ({
     name: pipeline.name,
-    milestones: playbookMilestonesForWire(pipeline.milestones, routines),
+    milestones: playbookMilestonesForWire(pipeline.milestones),
   }));
 }
 
@@ -680,7 +477,6 @@ export function resolvePlaybookSave(
   draft: PlaybookDraft,
   basePlaybookRevision: number,
   latest: PlaybookGetResult,
-  routines: readonly PlaybookRoutineSummary[],
   workerId: string | null,
   preferredWorkerAgentId: StewardAgentId,
 ): PlaybookSaveDecision {
@@ -690,20 +486,14 @@ export function resolvePlaybookSave(
     params: {
       projectId,
       activePipelineName: draft.activePipelineName,
-      milestones: playbookMilestonesForWire(draft.milestones, routines),
-      savedPipelines: playbookPipelinesForWire(draft.savedPipelines, routines),
+      milestones: playbookMilestonesForWire(draft.milestones),
+      savedPipelines: playbookPipelinesForWire(draft.savedPipelines),
       workerId,
       preferredWorkerAgentId,
       expectedPlaybookRevision: basePlaybookRevision,
       expectedRevision: latest.stateRevision,
     },
   };
-}
-
-/** Templates retain their source classification; a step created by the user
-    stays generic. Prose is a label, so it never silently selects capability. */
-export function playbookStepRoutineKind(milestone: PlaybookMilestoneDraft): RoutineKind {
-  return milestone.checkKind ?? "custom";
 }
 
 /** A refused document comes back named only by the field the daemon rejected —

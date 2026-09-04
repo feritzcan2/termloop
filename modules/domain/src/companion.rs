@@ -14,7 +14,10 @@ pub const WORKER_PING_INTERVAL_MAX_SECONDS: u64 = 24 * 60 * 60;
 pub const WORKER_PROMPT_MAX_BYTES: usize = 16 * 1024;
 pub const WORKER_SYSTEM_PROMPT_MAX_BYTES: usize = 16 * 1024;
 pub const STEWARD_SYSTEM_PROMPT_MAX_BYTES: usize = 16 * 1024;
-pub const TRACKER_PROMPT_MAX_BYTES: usize = 8 * 1024;
+// Legacy Playbook snapshots stored an 8 KiB Worker prompt and a separate
+// applicability condition. The current completion rule combines both, so keep
+// enough room to migrate every formerly valid single-step rule without loss.
+pub const TRACKER_PROMPT_MAX_BYTES: usize = 9 * 1024;
 pub const TRACKER_SCHEDULE_MIN_SECONDS: u64 = 60;
 pub const TRACKER_SCHEDULE_MAX_SECONDS: u64 = 24 * 60 * 60;
 pub const TRACKER_REPORT_MAX_BYTES: usize = 48 * 1024;
@@ -220,17 +223,6 @@ impl StewardConversationRef {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TrackerKind {
-    Slack,
-    Jira,
-    Runtime,
-    Delivery,
-    CiPr,
-    Custom,
-}
-
 /// How a Routine's runs are started. A scheduled Routine keeps its own cadence
 /// and brings work in; an on-demand Routine runs only when a pipeline step asks
 /// it to check one Task, so `schedule_interval_seconds` carries no cadence for
@@ -311,7 +303,6 @@ impl PendingRoutineFinding {
 pub struct TrackerConfiguration {
     pub id: String,
     pub project_id: String,
-    pub kind: TrackerKind,
     #[serde(default)]
     pub trigger_mode: RoutineTriggerMode,
     pub name: String,
@@ -639,7 +630,6 @@ mod tests {
         let mut configuration = TrackerConfiguration {
             id: "tracker-1".into(),
             project_id: "project-1".into(),
-            kind: TrackerKind::Slack,
             trigger_mode: RoutineTriggerMode::Schedule,
             name: "Slack actions".into(),
             prompt: "Use the Slack connector to inspect #product and report to the Steward.".into(),
@@ -684,7 +674,6 @@ mod tests {
         let configuration = TrackerConfiguration {
             id: "routine-step".into(),
             project_id: "project-1".into(),
-            kind: TrackerKind::CiPr,
             trigger_mode: RoutineTriggerMode::OnDemand,
             name: "PR ready".into(),
             prompt: "Inspect the pull request and report whether the stage passed.".into(),

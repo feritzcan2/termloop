@@ -30,8 +30,9 @@ fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
     assert!(!MCP_INTERACTIVE_TOOLS.contains(&"steward_system_prompt_update"));
     assert!(MCP_WORKER_TOOLS.contains(&"worker_get_next_routine"));
     assert!(!MCP_WORKER_TOOLS.contains(&"send_to_agent"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_complete_routine"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_report_routine_problem"));
+    assert!(MCP_WORKER_TOOLS.contains(&"worker_complete_assignment"));
+    assert!(!MCP_WORKER_TOOLS.contains(&"worker_complete_routine"));
+    assert!(!MCP_WORKER_TOOLS.contains(&"worker_report_routine_problem"));
     assert_eq!(
         MCP_HELPER_TOOLS,
         ["ask_to", "send_to_agent", "reply_to_request"]

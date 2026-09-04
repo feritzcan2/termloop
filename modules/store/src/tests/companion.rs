@@ -5,7 +5,7 @@ use termloop_domain::{
     PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict, ProcessDescriptor,
     ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling, RoutineTriggerMode,
     SessionKind, SessionRecord, StewardAgentId, StewardConfiguration, TaskStatus,
-    TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    TrackerConfiguration, WorkerConfiguration,
 };
 
 #[test]
@@ -113,7 +113,6 @@ fn companion_message_and_finding_dismissal_commit_atomically() {
             TrackerConfiguration {
                 id: "routine-1".into(),
                 project_id: "project-a".into(),
-                kind: TrackerKind::CiPr,
                 trigger_mode: RoutineTriggerMode::Schedule,
                 name: "Pull request".into(),
                 prompt: "Read the current pull request state.".into(),
@@ -431,7 +430,6 @@ fn worker_owns_session_and_tracker_only_references_worker() {
             TrackerConfiguration {
                 id: "tracker-1".into(),
                 project_id: "project-a".into(),
-                kind: TrackerKind::Slack,
                 trigger_mode: RoutineTriggerMode::Schedule,
                 name: "Slack actions".into(),
                 prompt: "Use the Slack connector to inspect #product.".into(),
@@ -551,7 +549,6 @@ fn project_accepts_more_than_the_legacy_sixteen_routines() {
                 TrackerConfiguration {
                     id: format!("routine-{index}"),
                     project_id: "project-a".into(),
-                    kind: TrackerKind::Custom,
                     trigger_mode: RoutineTriggerMode::Schedule,
                     name: format!("Routine {index}"),
                     prompt: "Inspect one configured source and report factual evidence.".into(),
@@ -600,7 +597,6 @@ fn tracker_rejects_missing_or_cross_project_worker() {
         TrackerConfiguration {
             id: "tracker-1".into(),
             project_id: "project-a".into(),
-            kind: TrackerKind::Runtime,
             trigger_mode: RoutineTriggerMode::Schedule,
             name: "Runtime".into(),
             prompt: "Inspect the configured log connector and report failures.".into(),
@@ -761,7 +757,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         .push(TrackerConfiguration {
             id: "routine-a".into(),
             project_id: "project-a".into(),
-            kind: TrackerKind::CiPr,
             trigger_mode: RoutineTriggerMode::OnDemand,
             name: "CI is green".into(),
             prompt: "Check CI for the focused Task.".into(),
@@ -787,7 +782,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         gate: PlaybookGateKind::Automatic,
         routine_id: "routine-a".into(),
         retry_delay_seconds: 60,
-        condition: String::new(),
         approver: None,
     };
     store

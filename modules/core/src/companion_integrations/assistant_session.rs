@@ -9,7 +9,6 @@ use std::path::Path;
 use serde_json::{Value, json, to_value};
 use termloop_domain::{
     ProcessDescriptor, ResumeProvider, ResumeRef, SessionKind, SessionRecord, StewardAgentId,
-    TrackerKind,
 };
 use termloop_terminal::PtySpawnSpec;
 
@@ -278,12 +277,11 @@ pub fn compose_steward_wake(
 }
 
 pub fn compose_tracker_wake(
-    kind: TrackerKind,
     check_id: &str,
     prompt: &str,
 ) -> Result<termloop_invocation::AssistantWakeMessage, CoreError> {
     termloop_invocation::assistant_wake_message(
-        tracker_role(kind),
+        termloop_invocation::ExecutorRole::Routine,
         termloop_invocation::AssistantWakeReason::ScheduledCheck,
         Some(check_id),
         Some(prompt),
@@ -298,6 +296,21 @@ pub fn compose_worker_routine_wake() -> Result<termloop_invocation::AssistantWak
         termloop_invocation::AssistantWakeReason::ScheduledCheck,
         None,
         None,
+    )
+    .map_err(|error| CoreError::Terminal(error.to_string()))
+}
+
+pub fn compose_worker_routine_assignment_wake(
+    check_id: &str,
+    assignment: &serde_json::Value,
+) -> Result<termloop_invocation::AssistantWakeMessage, CoreError> {
+    let assignment = serde_json::to_string(assignment)
+        .map_err(|error| CoreError::Terminal(error.to_string()))?;
+    termloop_invocation::assistant_wake_message(
+        termloop_invocation::ExecutorRole::Worker,
+        termloop_invocation::AssistantWakeReason::ScheduledCheck,
+        Some(check_id),
+        Some(&assignment),
     )
     .map_err(|error| CoreError::Terminal(error.to_string()))
 }
@@ -863,6 +876,7 @@ impl CoreRuntime {
                 submission,
             },
         );
+        self.acknowledge_worker_wake_delivery(wake);
         Ok(session_id)
     }
 
@@ -895,17 +909,6 @@ fn agent_name(agent_id: StewardAgentId) -> &'static str {
     match agent_id {
         StewardAgentId::Claude => "claude",
         StewardAgentId::Codex => "codex",
-    }
-}
-
-pub fn tracker_role(kind: TrackerKind) -> termloop_invocation::ExecutorRole {
-    match kind {
-        TrackerKind::Slack => termloop_invocation::ExecutorRole::SlackTracker,
-        TrackerKind::Jira => termloop_invocation::ExecutorRole::JiraTracker,
-        TrackerKind::Runtime => termloop_invocation::ExecutorRole::RuntimeTracker,
-        TrackerKind::Delivery => termloop_invocation::ExecutorRole::DeliveryTracker,
-        TrackerKind::CiPr => termloop_invocation::ExecutorRole::CiPrTracker,
-        TrackerKind::Custom => termloop_invocation::ExecutorRole::CustomTracker,
     }
 }
 
@@ -1258,7 +1261,6 @@ mod tests {
         assert!(!steward.is_same_steward_wake("project", 3, 14, "steward", 7));
 
         let worker_submission = compose_tracker_wake(
-            TrackerKind::Custom,
             "0123456789abcdef0123456789abcdef",
             "Inspect the configured condition.",
         )
@@ -1277,17 +1279,32 @@ mod tests {
     #[test]
     fn worker_assignment_wake_contains_exact_visible_tracker_instructions_and_enter() {
         let prompt = "Use the Slack connector to inspect #product and report to the Steward.";
-        let wake = compose_tracker_wake(
-            TrackerKind::Slack,
-            "0123456789abcdef0123456789abcdef",
-            prompt,
-        )
-        .unwrap();
+        let wake = compose_tracker_wake("0123456789abcdef0123456789abcdef", prompt).unwrap();
         assert!(
             wake.delivered_preview()
                 .contains("Exact configured Task instructions")
         );
         assert!(wake.delivered_preview().contains(prompt));
+        assert_eq!(wake.terminal_submission().submit_input(), b"\r");
+    }
+
+    #[test]
+    fn persistent_worker_wake_delivers_the_claimed_assignment_directly() {
+        let assignment = json!({
+            "status": "assigned",
+            "routine": {"id":"routine-1", "instructions":"Inspect the live provider."},
+            "step": {"milestoneId":"review", "tasks":[{"taskId":"task-1"}]}
+        });
+        let wake =
+            compose_worker_routine_assignment_wake("0123456789abcdef0123456789abcdef", &assignment)
+                .unwrap();
+        let delivered = wake.delivered_preview();
+
+        assert!(delivered.contains("Exact assigned Routine"));
+        assert!(delivered.contains("do not call get-next first"));
+        assert!(delivered.contains("worker_complete_assignment"));
+        assert!(delivered.contains("\"milestoneId\":\"review\""));
+        assert!(delivered.contains("\"taskId\":\"task-1\""));
         assert_eq!(wake.terminal_submission().submit_input(), b"\r");
     }
 }

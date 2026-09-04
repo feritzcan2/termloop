@@ -1,6 +1,6 @@
 use termloop_domain::{
     AgentConversationReadiness, AgentConversationReadinessRecord, ResumeFailureReason,
-    ResumeProvider, SessionKind, TrackerKind,
+    ResumeProvider, SessionKind,
 };
 
 use super::validation::validate_current_state;
@@ -15,6 +15,10 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         .and_then(serde_json::Value::as_u64)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| StoreError::Io("state schema version is missing or invalid".into()))?;
+    if schema_version < CURRENT_SCHEMA_VERSION {
+        merge_legacy_playbook_conditions(&mut value)?;
+        remove_retired_mcp_tool_description_overrides(&mut value)?;
+    }
     match schema_version {
         1 => {
             add_legacy_generation_fields(&mut value)?;
@@ -458,6 +462,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v46_to_v47_value(&mut value)?;
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -471,6 +476,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v46_to_v47_value(&mut value)?;
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -483,6 +489,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v46_to_v47_value(&mut value)?;
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -494,6 +501,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v46_to_v47_value(&mut value)?;
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -504,6 +512,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v46_to_v47_value(&mut value)?;
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -513,6 +522,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         47 => {
             migrate_v47_to_v48_value(&mut value)?;
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -521,6 +531,15 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         }
         48 => {
             migrate_v48_to_v49_value(&mut value)?;
+            migrate_v49_to_v50_value(&mut value)?;
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
+        49 => {
+            migrate_v49_to_v50_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -820,14 +839,15 @@ fn migrate_v26_to_v27(state: &mut CurrentState) {
             .nth(2)
             .expect("retired Jira prompt has metadata and instructions")
             .trim();
-    let current_jira_prompt = include_str!("../../../resources/prompts/builtin.tracker.jira.md")
-        .splitn(3, "\n\n")
-        .nth(2)
-        .expect("current Jira prompt has metadata and instructions")
-        .trim();
+    let current_jira_prompt =
+        include_str!("../../../resources/prompts/retired/builtin.tracker.jira.v5.md")
+            .splitn(3, "\n\n")
+            .nth(2)
+            .expect("current Jira prompt has metadata and instructions")
+            .trim();
 
     for routine in &mut state.tracker_configurations {
-        if routine.kind != TrackerKind::Jira || routine.prompt != retired_jira_prompt {
+        if routine.prompt != retired_jira_prompt {
             continue;
         }
         routine.prompt = current_jira_prompt.to_owned();
@@ -1059,6 +1079,13 @@ fn migrate_v48_to_v49(state: &mut CurrentState) {
     for configuration in &mut state.project_task_automation_configurations {
         configuration.base_ref = None;
     }
+    state.schema_version = 49;
+    migrate_v49_to_v50(state);
+}
+
+fn migrate_v49_to_v50(state: &mut CurrentState) {
+    // `kind` is already ignored while deserializing legacy Routine records.
+    // Persisting schema 50 writes the provider-neutral shape back out.
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
 
@@ -1294,10 +1321,156 @@ fn migrate_v48_to_v49_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                 .insert("baseRef".into(), serde_json::Value::Null);
         }
     }
+    object.insert("schema_version".into(), serde_json::json!(49));
+    Ok(())
+}
+
+fn migrate_v49_to_v50_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    if let Some(configurations) = object
+        .get_mut("tracker_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for configuration in configurations {
+            configuration
+                .as_object_mut()
+                .ok_or_else(|| StoreError::Io("tracker configuration must be an object".into()))?
+                .remove("kind");
+        }
+    }
     object.insert(
         "schema_version".into(),
         serde_json::json!(CURRENT_SCHEMA_VERSION),
     );
+    Ok(())
+}
+
+fn remove_retired_mcp_tool_description_overrides(
+    value: &mut serde_json::Value,
+) -> Result<bool, StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    let Some(overrides) = object
+        .get_mut("mcp_tool_description_overrides")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(false);
+    };
+    let previous_len = overrides.len();
+    overrides.retain(|value| {
+        !matches!(
+            value.get("tool").and_then(serde_json::Value::as_str),
+            Some(
+                "pull_request_read"
+                    | "worker_complete_routine"
+                    | "worker_task_complete"
+                    | "worker_report_routine_problem"
+                    | "worker_task_problem"
+                    | "worker_report_step_verdicts"
+            )
+        )
+    });
+    Ok(overrides.len() != previous_len)
+}
+
+fn merge_legacy_playbook_conditions(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    let mut legacy_conditions = std::collections::BTreeMap::<String, Vec<String>>::new();
+    if let Some(playbooks) = object
+        .get_mut("playbook_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for playbook in playbooks {
+            let playbook = playbook
+                .as_object_mut()
+                .ok_or_else(|| StoreError::Io("playbook configuration must be an object".into()))?;
+            collect_legacy_milestone_conditions(
+                playbook.get_mut("milestones"),
+                &mut legacy_conditions,
+            )?;
+            if let Some(pipelines) = playbook
+                .get_mut("savedPipelines")
+                .and_then(serde_json::Value::as_array_mut)
+            {
+                for pipeline in pipelines {
+                    let pipeline = pipeline.as_object_mut().ok_or_else(|| {
+                        StoreError::Io("saved Playbook pipeline must be an object".into())
+                    })?;
+                    collect_legacy_milestone_conditions(
+                        pipeline.get_mut("milestones"),
+                        &mut legacy_conditions,
+                    )?;
+                }
+            }
+        }
+    }
+    if let Some(configurations) = object
+        .get_mut("tracker_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for configuration in configurations {
+            let configuration = configuration
+                .as_object_mut()
+                .ok_or_else(|| StoreError::Io("tracker configuration must be an object".into()))?;
+            let routine_id = configuration
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let Some(conditions) = legacy_conditions.get(routine_id) else {
+                continue;
+            };
+            let prompt = configuration
+                .get("prompt")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| StoreError::Io("tracker prompt must be a string".into()))?;
+            let conditions = conditions.join("\n");
+            let merged = if prompt.trim().is_empty() {
+                conditions
+            } else {
+                format!("{}\n\nApplies when: {conditions}", prompt.trim())
+            };
+            configuration.insert("prompt".into(), serde_json::Value::String(merged));
+        }
+    }
+    Ok(())
+}
+
+fn collect_legacy_milestone_conditions(
+    milestones: Option<&mut serde_json::Value>,
+    conditions_by_routine: &mut std::collections::BTreeMap<String, Vec<String>>,
+) -> Result<(), StoreError> {
+    let Some(milestones) = milestones.and_then(serde_json::Value::as_array_mut) else {
+        return Ok(());
+    };
+    for milestone in milestones {
+        let milestone = milestone
+            .as_object_mut()
+            .ok_or_else(|| StoreError::Io("Playbook milestone must be an object".into()))?;
+        let condition = milestone
+            .remove("condition")
+            .and_then(|value| value.as_str().map(str::trim).map(str::to_owned))
+            .filter(|value| !value.is_empty());
+        let Some(condition) = condition else {
+            continue;
+        };
+        let routine_id = milestone
+            .get("routineId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                StoreError::Io("Playbook milestone routineId must be a string".into())
+            })?;
+        let conditions = conditions_by_routine
+            .entry(routine_id.to_owned())
+            .or_default();
+        if !conditions.contains(&condition) {
+            conditions.push(condition);
+        }
+    }
     Ok(())
 }
 

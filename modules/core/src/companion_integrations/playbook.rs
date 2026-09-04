@@ -7,12 +7,12 @@
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json, to_value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use termloop_domain::{
     PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
     RoutineActionHandling, RoutineTriggerMode, StewardAgentId, StewardConfiguration,
-    TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration, WorkerConfiguration,
 };
 use termloop_store::PlaybookApply;
 
@@ -42,20 +42,18 @@ pub(crate) struct PlaybookMilestoneDraft {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) gate: PlaybookGateKind,
-    pub(crate) check: PlaybookStepCheckDraft,
+    pub(crate) complete_when: String,
+    pub(crate) while_waiting: PlaybookWhileWaitingDraft,
+    pub(crate) worker_id: Option<String>,
     pub(crate) retry_delay_seconds: u64,
-    pub(crate) condition: String,
     pub(crate) approver: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PlaybookStepCheckDraft {
-    pub(crate) kind: TrackerKind,
+pub(crate) struct PlaybookWhileWaitingDraft {
+    pub(crate) mode: RoutineActionHandling,
     pub(crate) instructions: String,
-    pub(crate) steward_instructions: String,
-    pub(crate) action_handling: RoutineActionHandling,
-    pub(crate) worker_id: Option<String>,
 }
 
 impl CoreRuntime {
@@ -248,7 +246,7 @@ impl CoreRuntime {
             }
             let current = current.as_ref().ok_or(CoreError::NotFound)?;
             return Ok(json!({
-                "playbook": playbook_projection(current)?,
+                "playbook": playbook_projection(current, self.store.tracker_configurations())?,
                 "workerId": worker_id,
                 "stateRevision": self.store.revision(),
             }));
@@ -297,7 +295,7 @@ impl CoreRuntime {
             self.tracker_runtime.cancel_tracker_check(&routine_id);
         }
         Ok(json!({
-            "playbook": playbook_projection(&configuration)?,
+            "playbook": playbook_projection(&configuration, self.store.tracker_configurations())?,
             "workerId": worker_id,
             "stateRevision": self.store.revision(),
         }))
@@ -431,7 +429,7 @@ impl CoreRuntime {
     fn playbook_value(&self, project_id: &str) -> Result<Value, CoreError> {
         self.store
             .playbook_for_project(project_id)
-            .map(playbook_projection)
+            .map(|playbook| playbook_projection(playbook, self.store.tracker_configurations()))
             .transpose()
             .map(|playbook| playbook.unwrap_or(Value::Null))
     }
@@ -477,7 +475,6 @@ fn materialize_pipeline(
     let mut changed = false;
     for draft in drafts {
         let worker_id = draft
-            .check
             .worker_id
             .as_deref()
             .or(default_worker_id)
@@ -485,11 +482,9 @@ fn materialize_pipeline(
         if !eligible_worker_ids.contains(worker_id) {
             return Err(CoreError::AgentCapabilityUnproven);
         }
-        let prompt = step_check_prompt(&draft.check.instructions)?;
-        let steward_instructions = step_steward_instructions(
-            &draft.check.steward_instructions,
-            draft.check.action_handling,
-        )?;
+        let prompt = step_check_prompt(&draft.complete_when)?;
+        let steward_instructions =
+            step_steward_instructions(&draft.while_waiting.instructions, draft.while_waiting.mode)?;
         let name = bounded_check_name(&draft.title);
         let current_milestone = current_steps.get(&(pipeline_name.to_owned(), draft.id.clone()));
         let reusable = current_milestone.and_then(|milestone| {
@@ -497,15 +492,13 @@ fn materialize_pipeline(
             (milestone.title == draft.title
                 && milestone.gate == draft.gate
                 && milestone.retry_delay_seconds == draft.retry_delay_seconds
-                && milestone.condition == draft.condition
                 && milestone.approver == draft.approver
                 && routine.project_id == project_id
                 && routine.trigger_mode == RoutineTriggerMode::OnDemand
-                && routine.kind == draft.check.kind
                 && routine.name == name
                 && routine.prompt == prompt
                 && routine.steward_instructions == steward_instructions
-                && routine.action_handling == draft.check.action_handling
+                && routine.action_handling == draft.while_waiting.mode
                 && routine.worker_id == worker_id
                 && !reused_ids.contains(&routine.id))
             .then_some(routine)
@@ -539,7 +532,6 @@ fn materialize_pipeline(
                 TrackerConfiguration {
                     id: routine_id,
                     project_id: project_id.to_owned(),
-                    kind: draft.check.kind,
                     trigger_mode: RoutineTriggerMode::OnDemand,
                     name,
                     prompt,
@@ -552,7 +544,7 @@ fn materialize_pipeline(
                     context_revision: 1,
                     recent_source_keys: Vec::new(),
                     related_task_ids: Vec::new(),
-                    action_handling: draft.check.action_handling,
+                    action_handling: draft.while_waiting.mode,
                     pending_routine_findings: Vec::new(),
                     last_check_started_at_epoch_ms: None,
                     last_attempt_at_epoch_ms: None,
@@ -569,7 +561,6 @@ fn materialize_pipeline(
             gate: draft.gate,
             routine_id,
             retry_delay_seconds: draft.retry_delay_seconds,
-            condition: draft.condition.clone(),
             approver: draft.approver.clone(),
         });
     }
@@ -611,15 +602,66 @@ fn bounded_check_name(title: &str) -> String {
     value
 }
 
-fn playbook_projection(configuration: &PlaybookConfiguration) -> Result<Value, CoreError> {
-    to_value(configuration).map_err(|error| CoreError::Store(error.to_string()))
+fn playbook_projection(
+    configuration: &PlaybookConfiguration,
+    routines: &[TrackerConfiguration],
+) -> Result<Value, CoreError> {
+    let milestone = |value: &PlaybookMilestone| -> Result<Value, CoreError> {
+        let routine = routines
+            .iter()
+            .find(|routine| {
+                routine.id == value.routine_id && routine.project_id == configuration.project_id
+            })
+            .ok_or_else(|| CoreError::Store("Playbook Routine is missing".into()))?;
+        Ok(json!({
+            "id": value.id,
+            "title": value.title,
+            "gate": value.gate,
+            "routineId": value.routine_id,
+            "retryDelaySeconds": value.retry_delay_seconds,
+            "completeWhen": routine.prompt,
+            "whileWaiting": {
+                "mode": routine.action_handling,
+                "instructions": routine.steward_instructions,
+            },
+            "workerId": routine.worker_id,
+            "approver": value.approver,
+        }))
+    };
+    let milestones = configuration
+        .milestones
+        .iter()
+        .map(milestone)
+        .collect::<Result<Vec<_>, _>>()?;
+    let saved_pipelines = configuration
+        .saved_pipelines
+        .iter()
+        .map(|pipeline| {
+            Ok(json!({
+                "name": pipeline.name,
+                "milestones": pipeline
+                    .milestones
+                    .iter()
+                    .map(milestone)
+                    .collect::<Result<Vec<_>, CoreError>>()?,
+            }))
+        })
+        .collect::<Result<Vec<_>, CoreError>>()?;
+    Ok(json!({
+        "projectId": configuration.project_id,
+        "revision": configuration.revision,
+        "activePipelineName": configuration.active_pipeline_name,
+        "milestones": milestones,
+        "savedPipelines": saved_pipelines,
+        "updatedAtEpochMs": configuration.updated_at_epoch_ms,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use termloop_domain::{
-        PlaybookGateKind, RoutineTriggerMode, StewardAgentId, TrackerConfiguration, TrackerKind,
+        PlaybookGateKind, RoutineTriggerMode, StewardAgentId, TrackerConfiguration,
         WorkerConfiguration,
     };
     use termloop_store::{Store, issue_core_write_authority_for_composition};
@@ -661,15 +703,10 @@ mod tests {
             "id": "pr-approved",
             "title": "PR approved",
             "gate": "human",
-            "check": {
-                "kind": "ciPr",
-                "instructions": "Check the Task's pull request.",
-                "stewardInstructions": "",
-                "actionHandling": "off",
-                "workerId": "worker-1"
-            },
             "retryDelaySeconds": 600,
-            "condition": "PR review projection shows an approval.",
+            "completeWhen": "PR review projection shows an approval.",
+            "whileWaiting": {"mode":"off","instructions":""},
+            "workerId": "worker-1",
             "approver": "ferit"
         })
     }
@@ -681,7 +718,9 @@ mod tests {
             "gate": "human",
             "routineId": "routine-pr",
             "retryDelaySeconds": 600,
-            "condition": "PR review projection shows an approval.",
+            "completeWhen": "Check the Task's pull request.",
+            "whileWaiting": {"mode":"off","instructions":""},
+            "workerId": "worker-1",
             "approver": "ferit"
         })
     }
@@ -740,7 +779,6 @@ mod tests {
                 TrackerConfiguration {
                     id: "routine-pr".into(),
                     project_id: project_id.to_owned(),
-                    kind: TrackerKind::CiPr,
                     trigger_mode: RoutineTriggerMode::OnDemand,
                     name: "PR checker".into(),
                     prompt: "Check the Task's pull request.".into(),
@@ -827,7 +865,7 @@ mod tests {
             )
             .unwrap();
         let mut milestone = milestone_value();
-        milestone["check"]["workerId"] = Value::Null;
+        milestone["workerId"] = Value::Null;
 
         runtime
             .update_playbook(
@@ -924,7 +962,7 @@ mod tests {
                 let mut milestone = milestone_value();
                 milestone["id"] = json!(format!("stage-{index}"));
                 milestone["title"] = json!(format!("Stage {index}"));
-                milestone["check"]["workerId"] = Value::Null;
+                milestone["workerId"] = Value::Null;
                 milestone
             })
             .collect::<Vec<_>>();
@@ -1042,10 +1080,10 @@ mod tests {
         ));
         let mut renamed = milestone_value();
         renamed["title"] = json!("Is the PR approved?");
-        renamed["check"]["stewardInstructions"] = json!(
+        renamed["whileWaiting"]["instructions"] = json!(
             "If approval is still missing, propose asking the named approver and ask Ferit whether to send it."
         );
-        renamed["check"]["actionHandling"] = json!("ask");
+        renamed["whileWaiting"]["mode"] = json!("ask");
         let replaced = apply_playbook(
             &mut runtime,
             json!({
@@ -1222,7 +1260,7 @@ mod tests {
         // An actionable waiting policy is incomplete unless the Steward knows
         // what bounded response it may offer or perform.
         let mut missing_steward_policy = milestone_value();
-        missing_steward_policy["check"]["actionHandling"] = json!("ask");
+        missing_steward_policy["whileWaiting"]["mode"] = json!("ask");
         assert!(matches!(
             apply_playbook(
                 &mut runtime,

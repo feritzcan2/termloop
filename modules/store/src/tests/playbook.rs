@@ -2,7 +2,7 @@ use super::*;
 use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
     PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling,
-    RoutineTriggerMode, StewardAgentId, StewardConfiguration, TrackerConfiguration, TrackerKind,
+    RoutineTriggerMode, StewardAgentId, StewardConfiguration, TrackerConfiguration,
     WorkerConfiguration,
 };
 
@@ -67,7 +67,6 @@ fn step_routine(project_id: &str, id: &str) -> TrackerConfiguration {
     TrackerConfiguration {
         id: id.into(),
         project_id: project_id.into(),
-        kind: TrackerKind::CiPr,
         trigger_mode: RoutineTriggerMode::OnDemand,
         name: "PR checker".into(),
         prompt: "Look at the Task's pull request and report whether it is approved.".into(),
@@ -101,7 +100,6 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             gate: PlaybookGateKind::Human,
             routine_id: "routine-pr".into(),
             retry_delay_seconds: 600,
-            condition: "PR review projection shows an approval.".into(),
             approver: Some("ferit".into()),
         }],
         updated_at_epoch_ms: 1,
@@ -745,7 +743,7 @@ fn answer(task_id: &str, verdict: PlaybookStepVerdict) -> PlaybookStepProgress {
         decided_at_epoch_ms: 10,
         next_attempt_at_epoch_ms: match verdict {
             PlaybookStepVerdict::Passed => None,
-            PlaybookStepVerdict::Waiting => Some(610),
+            PlaybookStepVerdict::Waiting | PlaybookStepVerdict::Blocked => Some(610),
         },
     }
 }

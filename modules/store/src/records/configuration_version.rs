@@ -307,15 +307,16 @@ pub(crate) fn record_routine_version(
         target_id: Some(configuration.id.clone()),
     };
     let content = serde_json::to_string(&json!({
-        "kind": configuration.kind,
         "triggerMode": configuration.trigger_mode,
         "name": configuration.name,
-        "prompt": configuration.prompt,
-        "stewardInstructions": configuration.steward_instructions,
+        "instructions": configuration.prompt,
+        "whileWaiting": {
+            "mode": configuration.action_handling,
+            "instructions": configuration.steward_instructions,
+        },
         "workerId": configuration.worker_id,
         "enabled": configuration.enabled,
         "scheduleIntervalSeconds": configuration.schedule_interval_seconds,
-        "actionHandling": configuration.action_handling,
     }))
     .expect("Routine configuration snapshot serializes");
     record_version(
@@ -410,15 +411,13 @@ fn playbook_milestone_snapshot(
         "id": milestone.id,
         "title": milestone.title,
         "gate": milestone.gate,
-        "check": {
-            "kind": routine.kind,
-            "instructions": routine.prompt,
-            "stewardInstructions": routine.steward_instructions,
-            "actionHandling": routine.action_handling,
-            "workerId": routine.worker_id,
+        "completeWhen": routine.prompt,
+        "whileWaiting": {
+            "mode": routine.action_handling,
+            "instructions": routine.steward_instructions,
         },
+        "workerId": routine.worker_id,
         "retryDelaySeconds": milestone.retry_delay_seconds,
-        "condition": milestone.condition,
         "approver": milestone.approver,
     })
 }

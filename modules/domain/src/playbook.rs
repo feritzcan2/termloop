@@ -11,7 +11,6 @@
 pub const PLAYBOOK_MILESTONES_MAX: usize = 24;
 pub const PLAYBOOK_ENTRY_ID_MAX_BYTES: usize = 64;
 pub const PLAYBOOK_TITLE_MAX_BYTES: usize = 120;
-pub const PLAYBOOK_CONDITION_MAX_BYTES: usize = 600;
 pub const PLAYBOOK_APPROVER_MAX_BYTES: usize = 120;
 pub const PLAYBOOK_ROUTINE_ID_MAX_BYTES: usize = 64;
 pub const PLAYBOOK_PIPELINE_NAME_MAX_BYTES: usize = 120;
@@ -45,9 +44,6 @@ pub struct PlaybookMilestone {
     pub routine_id: String,
     /// How long to wait before evaluating an incomplete Task again.
     pub retry_delay_seconds: u64,
-    /// Advisory description of the evidence that proves this milestone.
-    #[serde(default)]
-    pub condition: String,
     /// Human gates only: who may satisfy the gate. Advisory identity text;
     /// enforcement stays with the Steward's built-in gate rules.
     #[serde(default)]
@@ -94,6 +90,9 @@ pub enum PlaybookStepVerdict {
     Passed,
     /// The Routine looked and could not prove it yet.
     Waiting,
+    /// The Routine could not inspect a required source or execute its check.
+    /// This never advances the Task and remains distinct from ordinary waiting.
+    Blocked,
 }
 
 /// One Task's current verdict for one stage of the pipeline it is walking.
@@ -166,7 +165,9 @@ impl PlaybookStepProgress {
                 // A passed step is never evaluated again, so a retry time on
                 // one would let the engine act on it twice.
                 PlaybookStepVerdict::Passed => self.next_attempt_at_epoch_ms.is_none(),
-                PlaybookStepVerdict::Waiting => self.next_attempt_at_epoch_ms.is_some(),
+                PlaybookStepVerdict::Waiting | PlaybookStepVerdict::Blocked => {
+                    self.next_attempt_at_epoch_ms.is_some()
+                }
             }
     }
 }
@@ -187,7 +188,6 @@ impl PlaybookMilestone {
                 .contains(&self.retry_delay_seconds)
             && valid_entry_id(&self.id)
             && valid_required_text(&self.title, PLAYBOOK_TITLE_MAX_BYTES)
-            && valid_optional_text(&self.condition, PLAYBOOK_CONDITION_MAX_BYTES)
             && match (&self.gate, &self.approver) {
                 (PlaybookGateKind::Human, Some(approver)) => {
                     valid_required_text(approver, PLAYBOOK_APPROVER_MAX_BYTES)
@@ -280,7 +280,6 @@ mod tests {
             gate: PlaybookGateKind::Human,
             routine_id: "routine-pr".into(),
             retry_delay_seconds: 600,
-            condition: "PR review projection shows an approval.".into(),
             approver: Some("ferit".into()),
         }
     }
@@ -477,16 +476,5 @@ mod tests {
         let mut human_without_approver = playbook();
         human_without_approver.milestones[0].approver = None;
         assert!(!human_without_approver.is_valid());
-    }
-
-    #[test]
-    fn multiline_condition_is_allowed_but_other_controls_are_not() {
-        let mut multiline = playbook();
-        multiline.milestones[0].condition = "line one\nline two".into();
-        assert!(multiline.is_valid());
-
-        let mut control = playbook();
-        control.milestones[0].condition = "bad\u{7}value".into();
-        assert!(!control.is_valid());
     }
 }

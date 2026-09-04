@@ -4,6 +4,7 @@ import { ACCESS_PROTOCOL_IDENTITY, EVENTS, METHODS, CONTRACT_IDENTITY, READ_ONLY
 
 test("generated validator rejects cross-provider Git-host identities", () => {
   const result = [{
+    usage: "displayOnly",
     task_id: "task", branch_name: "feature", repository_provider: "azureDevOps",
     repository_host: "dev.azure.com", repository_owner: "fiber-teams",
     repository_project: "Fiber Tests", repository_name: "widget", quality: "matches",

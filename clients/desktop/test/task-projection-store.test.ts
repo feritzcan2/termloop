@@ -41,6 +41,7 @@ function task(id: string, sequence: number): Task {
 
 function gitHost(taskId: string, generation: number): GitHostProjection {
   return {
+    usage: "displayOnly",
     task_id: taskId,
     branch_name: "feature",
     repository_provider: "github",

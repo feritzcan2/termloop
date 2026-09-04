@@ -14,16 +14,16 @@ const worker: WorkerConfigurationDto = {
 };
 
 const routine: RoutineConfigurationDto = {
-  id: "routine-review", projectId: "project-1", workerId: worker.id, kind: "ciPr",
-  triggerMode: "onDemand", name: "Work ready for review", prompt: "Inspect the pull request.",
-  stewardInstructions: "", enabled: true, scheduleIntervalSeconds: 60, generation: 1,
+  id: "routine-review", projectId: "project-1", workerId: worker.id,
+  triggerMode: "onDemand", name: "Work ready for review", instructions: "Inspect the pull request.",
+  whileWaiting: { mode: "off", instructions: "" }, enabled: true, scheduleIntervalSeconds: 60, generation: 1,
   contextMarkdown: "", contextRevision: 0, recentSourceKeys: [], relatedTaskIds: [],
-  actionHandling: "off", pendingRoutineFindings: [], lastCheckStartedAtEpochMs: null,
+  pendingRoutineFindings: [], lastCheckStartedAtEpochMs: null,
   lastSuccessfulReportAtEpochMs: null, lastAttemptAtEpochMs: 1, updatedAtEpochMs: 1,
 };
 
 const attention: RoutineHealthDto = {
-  routineId: routine.id, generation: 1, kind: routine.kind, triggerMode: routine.triggerMode,
+  routineId: routine.id, generation: 1, triggerMode: routine.triggerMode,
   name: routine.name, contextMarkdown: "", contextRevision: 0, relatedTaskIds: [],
   state: "attention", checkId: null, deadlineEpochMs: null, pingSent: false,
   pendingTrigger: false, attentionMessage: "Azure DevOps authentication is unavailable.",
@@ -52,7 +52,8 @@ function props(): ComponentProps<typeof AssistantRail> {
         projectId: "project-1", revision: 1, activePipelineName: "Delivery",
         milestones: [{
           id: "review", title: routine.name, gate: "automatic", routineId: routine.id,
-          retryDelaySeconds: 300, condition: "A pull request is ready.", approver: null,
+          retryDelaySeconds: 300, completeWhen: "A pull request is ready.",
+          whileWaiting: routine.whileWaiting, workerId: worker.id, approver: null,
         }],
         savedPipelines: [], updatedAtEpochMs: 1,
       },
