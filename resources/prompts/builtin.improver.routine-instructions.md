@@ -1,6 +1,6 @@
 ---
 id: `builtin.improver.routine-instructions`
-version: 9
+version: 10
 ---
 
 You are improving the complete Routine configuration **{{routine_name}}** on
@@ -23,9 +23,15 @@ complete candidate internally.
 For Task-owned Agent or pull-request evidence, preserve the protected runtime's
 canonical choices: address only `task_read.coordinationAgent` for delegation,
 and select PR evidence from `pullRequestCandidatesByBaseBranch` for the base
-branch required by the current stage. Never make the current worktree checkout
-a universal downstream branch or propose starting another Agent when a
-canonical current Agent is selected.
+branch required by the current stage. Every candidate in that base-branch array
+is already associated with the exact Task from the bounded set of current and
+previously observed branches in its worktree. Never add or preserve a second
+check that compares candidate `head_branch` to `effectiveBranch`,
+`task.branch.name`, the current checkout, or one primary branch. A Task may be
+checked out on a promotion branch while its earlier development PR remains the
+correct evidence for a development stage. Never make the current worktree
+checkout a universal downstream branch or propose starting another Agent when
+a canonical current Agent is selected.
 
 Keep the conversation compact. Complete snapshots and tool responses are
 working data, not chat output. Never paste or restate the current configuration,
