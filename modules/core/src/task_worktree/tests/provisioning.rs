@@ -24,7 +24,7 @@ fn worktree_provisioning_is_durable_and_completed_retries_do_not_write() {
         "destinationPath": destination,
         "branchName": "feature/provision",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     });
     let result = fixture
         .runtime
@@ -86,13 +86,43 @@ fn fresh_existing_destination_is_rejected_before_journaling() {
         "destinationPath": destination,
         "branchName": "feature/existing-destination",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     }));
     assert!(matches!(error, Err(CoreError::WorktreePathConflict)));
     assert_eq!(fixture.runtime.state_revision(), revision);
     assert!(fixture.runtime.store.provisioning_operations().is_empty());
     assert!(fixture.runtime.store.managed_worktrees().is_empty());
     let _ = std::fs::remove_dir_all(destination);
+}
+
+#[test]
+fn fresh_branch_creation_rejects_a_local_base_ref_before_journaling() {
+    let mut fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&runner, &fixture.project_directory)
+        .unwrap();
+    let task = fixture.create_task("Reject local base", Value::Null);
+    let destination = fixture
+        .project_directory
+        .with_file_name(format!("local-base-worktree-{}", Uuid::new_v4()));
+    let revision = fixture.runtime.state_revision();
+
+    assert!(matches!(
+        fixture.runtime.provision_task_worktree(json!({
+            "operationId": Uuid::new_v4().to_string(),
+            "taskId": task["id"],
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": "feature/local-base",
+            "branchMode": "create",
+            "baseRef": "refs/heads/main",
+        })),
+        Err(CoreError::InvalidParams(ref field)) if field == "baseRef"
+    ));
+    assert_eq!(fixture.runtime.state_revision(), revision);
+    assert!(fixture.runtime.store.provisioning_operations().is_empty());
+    assert!(fixture.runtime.store.managed_worktrees().is_empty());
+    assert!(!destination.exists());
 }
 
 #[test]
@@ -115,7 +145,7 @@ fn symbolic_head_branch_name_is_rejected_before_ref_or_journal_creation() {
             "destinationPath": destination,
             "branchName": "HEAD",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         })),
         Err(CoreError::InvalidParams(ref field)) if field == "branchName"
     ));
@@ -149,7 +179,7 @@ fn concurrent_same_spec_returns_the_current_running_projection() {
         "destinationPath": destination,
         "branchName": "feature/coalesced",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     });
     let observed = fixture
         .runtime
@@ -203,7 +233,7 @@ fn provisioning_overlap_uses_filesystem_identity_for_symlinked_registered_checko
             "destinationPath": destination,
             "branchName": "feature/symlinked-holder",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }))
         .unwrap();
     // Relocate the registered checkout and leave a symlink at the recorded
@@ -237,7 +267,7 @@ fn provisioning_overlap_uses_filesystem_identity_for_symlinked_registered_checko
             "destinationPath": relocated.join("nested-worktree"),
             "branchName": "feature/nested-contender",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }),
         &task,
         &fixture.project_directory,
@@ -266,7 +296,7 @@ fn provisioning_overlap_falls_back_to_recorded_paths_for_missing_checkouts() {
             "destinationPath": destination,
             "branchName": "feature/missing-holder",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }))
         .unwrap();
     // A registered-but-deleted checkout has no canonical identity; the overlap
@@ -290,7 +320,7 @@ fn provisioning_overlap_falls_back_to_recorded_paths_for_missing_checkouts() {
             "destinationPath": recorded,
             "branchName": "feature/recorded-contender",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }),
         &task,
         &fixture.project_directory,
@@ -410,7 +440,7 @@ fn provisioning_branch_reservation_blocks_a_second_destination() {
             "destinationPath": second_destination,
             "branchName": "feature/shared-reservation",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }))
         .unwrap();
     let observed = plan.observe().unwrap();

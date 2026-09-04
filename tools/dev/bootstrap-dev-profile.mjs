@@ -37,6 +37,7 @@ try {
       brief: null,
       worktreeIntent: "none",
       worktreePrefix: null,
+      baseRef: null,
       agentId: null,
       model: null,
       permission: null,

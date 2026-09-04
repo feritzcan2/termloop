@@ -8,7 +8,7 @@ import type {
 import type { Session, Task } from "../model.js";
 import { basename, sessionLabel } from "../model.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
-import { sortLocalBranches, suggestedBranchName, worktreeDestination, worktreePathParent } from "./worktree-path-suggestion.js";
+import { sortLocalBranches, sortRemoteBranches, suggestedBranchName, worktreeDestination, worktreePathParent } from "./worktree-path-suggestion.js";
 
 const NEW_TASK_VALUE = "__new_task__";
 
@@ -135,10 +135,11 @@ export function SessionRelocationDialog({
     setError(undefined);
     try {
       const repositoryPath = taskCreation.repositoryPath.trim();
-      const localBranches = sortLocalBranches((await taskCreation.listBranches(taskCreation.projectId)).branches);
-      const baseRef = localBranches[0]?.exact_ref;
+      const branchProjection = await taskCreation.listBranches(taskCreation.projectId);
+      const localBranches = sortLocalBranches(branchProjection.branches);
+      const baseRef = sortRemoteBranches(branchProjection.base_branches)[0]?.exact_ref;
       if (!baseRef) {
-        setError("This repository has no local branch to create the Task worktree from.");
+        setError("This repository has no remote-tracking branch to create the Task worktree from. Fetch a remote branch first.");
         return;
       }
       const proposedBranch = suggestedBranchName(title, "task") || `task/${globalThis.crypto.randomUUID().slice(0, 4)}`;

@@ -62,7 +62,15 @@ pub struct LocalBranchList {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteBranchList {
+    pub branches: Vec<GitRefName>,
+    pub truncated: bool,
+}
+
 const MAX_LOCAL_BRANCHES: usize = 512;
+const MAX_REMOTE_BRANCHES: usize = 512;
+const MAX_REMOTE_BRANCH_RECORDS: usize = 1025;
 
 pub(crate) struct RepositoryIdentityFacts {
     requested_path: PathBuf,
@@ -235,6 +243,24 @@ impl GitRunner {
         parse_local_branches(&outcome.stdout)
     }
 
+    pub fn list_remote_branches(
+        &self,
+        repository_path: &Path,
+    ) -> Result<RemoteBranchList, GitError> {
+        let outcome = self.checked(
+            GitOperation::ListRemoteBranches,
+            repository_path,
+            [
+                "for-each-ref",
+                "--sort=refname",
+                "--count=1025",
+                "--format=%(refname)",
+                "refs/remotes/",
+            ],
+        )?;
+        parse_remote_branches(&outcome.stdout)
+    }
+
     fn ref_exists(&self, repository_path: &Path, reference: &GitRefName) -> Result<bool, GitError> {
         let reference =
             termloop_platform::os_string_from_process_bytes(reference.as_bytes().to_vec())
@@ -377,6 +403,64 @@ fn parse_local_branches(bytes: &[u8]) -> Result<LocalBranchList, GitError> {
     let truncated = branches.len() > MAX_LOCAL_BRANCHES;
     branches.truncate(MAX_LOCAL_BRANCHES);
     Ok(LocalBranchList {
+        branches,
+        truncated,
+    })
+}
+
+fn parse_remote_branches(bytes: &[u8]) -> Result<RemoteBranchList, GitError> {
+    if bytes.is_empty() {
+        return Ok(RemoteBranchList {
+            branches: Vec::new(),
+            truncated: false,
+        });
+    }
+    if !bytes.ends_with(b"\n") {
+        return Err(GitError::ParseFailed {
+            operation: GitOperation::ListRemoteBranches,
+        });
+    }
+
+    let records = bytes[..bytes.len() - 1]
+        .split(|byte| *byte == b'\n')
+        .collect::<Vec<_>>();
+    let output_truncated = records.len() == MAX_REMOTE_BRANCH_RECORDS;
+    let mut branches = Vec::new();
+    for record in records {
+        let record = strip_git_line_cr(record);
+        let reference =
+            GitRefName::from_bytes(record.to_vec()).map_err(|_| GitError::ParseFailed {
+                operation: GitOperation::ListRemoteBranches,
+            })?;
+        let suffix =
+            reference
+                .as_bytes()
+                .strip_prefix(b"refs/remotes/")
+                .ok_or(GitError::ParseFailed {
+                    operation: GitOperation::ListRemoteBranches,
+                })?;
+        let Some(separator) = suffix.iter().position(|byte| *byte == b'/') else {
+            return Err(GitError::ParseFailed {
+                operation: GitOperation::ListRemoteBranches,
+            });
+        };
+        let branch = &suffix[separator + 1..];
+        if branch.is_empty() {
+            return Err(GitError::ParseFailed {
+                operation: GitOperation::ListRemoteBranches,
+            });
+        }
+        // Remote HEAD is a symbolic convenience ref, not a selectable branch.
+        if branch == b"HEAD" {
+            continue;
+        }
+        branches.push(reference);
+    }
+    branches.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    branches.dedup();
+    let truncated = output_truncated || branches.len() > MAX_REMOTE_BRANCHES;
+    branches.truncate(MAX_REMOTE_BRANCHES);
+    Ok(RemoteBranchList {
         branches,
         truncated,
     })
@@ -554,6 +638,45 @@ mod tests {
                 parse_local_branches(output),
                 Err(GitError::ParseFailed {
                     operation: GitOperation::ListLocalBranches
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn remote_branch_parser_is_exact_bounded_and_omits_symbolic_head() {
+        let mut output = b"refs/remotes/origin/HEAD\nrefs/remotes/origin/development\nrefs/remotes/upstream/main\n".to_vec();
+        let parsed = parse_remote_branches(&output).unwrap();
+        assert_eq!(parsed.branches.len(), 2);
+        assert_eq!(
+            parsed.branches[0].as_bytes(),
+            b"refs/remotes/origin/development"
+        );
+        assert_eq!(parsed.branches[1].as_bytes(), b"refs/remotes/upstream/main");
+        assert!(!parsed.truncated);
+
+        output.clear();
+        for index in 0..=MAX_REMOTE_BRANCHES {
+            output.extend_from_slice(format!("refs/remotes/origin/branch-{index:03}\n").as_bytes());
+        }
+        let parsed = parse_remote_branches(&output).unwrap();
+        assert_eq!(parsed.branches.len(), MAX_REMOTE_BRANCHES);
+        assert!(parsed.truncated);
+    }
+
+    #[test]
+    fn remote_branch_parser_rejects_partial_or_non_remote_refs() {
+        for output in [
+            b"refs/remotes/origin/main".as_slice(),
+            b"refs/heads/main\n",
+            b"refs/remotes/origin\n",
+            b"refs/remotes/origin/main~1\n",
+            b"\n",
+        ] {
+            assert!(matches!(
+                parse_remote_branches(output),
+                Err(GitError::ParseFailed {
+                    operation: GitOperation::ListRemoteBranches
                 })
             ));
         }

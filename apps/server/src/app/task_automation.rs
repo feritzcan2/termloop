@@ -13,6 +13,7 @@ pub(super) struct TaskAutomationAction {
     title: String,
     create_worktree: bool,
     worktree_prefix: String,
+    base_ref: Option<String>,
     agent_id: Option<String>,
     model: Option<String>,
     permission: Option<String>,
@@ -23,6 +24,7 @@ pub(super) struct TaskAutomationAction {
 pub(super) struct TaskAutomationSelection {
     pub(super) worktree_intent: protocol::TaskCreateWorktreeIntent,
     pub(super) worktree_prefix: Option<String>,
+    pub(super) base_ref: Option<String>,
     pub(super) agent_id: Option<String>,
     pub(super) model: Option<String>,
     pub(super) permission: Option<String>,
@@ -36,6 +38,7 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
     let selection = TaskAutomationSelection {
         worktree_intent: params.worktree_intent.clone(),
         worktree_prefix: params.worktree_prefix.clone(),
+        base_ref: params.base_ref.clone(),
         agent_id: params.agent_id.clone(),
         model: params.model.clone(),
         permission: params.permission.clone(),
@@ -113,6 +116,7 @@ pub(super) async fn auto_import_after_refresh(
                     TaskAutomationSelection {
                         worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
                         worktree_prefix: None,
+                        base_ref: None,
                         agent_id: None,
                         model: None,
                         permission: None,
@@ -186,14 +190,23 @@ fn action_from_task(
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::Store("created Task projection has no title".into()))?;
-    let (create_worktree, worktree_prefix, agent_id, model, permission, reasoning, kickoff_message) =
-        effective_settings(configuration, selection)?;
+    let (
+        create_worktree,
+        worktree_prefix,
+        base_ref,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    ) = effective_settings(configuration, selection)?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
         project_id: configuration.project_id.clone(),
         title: title.to_owned(),
         create_worktree,
         worktree_prefix,
+        base_ref,
         agent_id,
         model,
         permission,
@@ -209,6 +222,7 @@ fn effective_settings(
     let TaskAutomationSelection {
         worktree_intent,
         worktree_prefix,
+        base_ref,
         agent_id,
         model,
         permission,
@@ -218,33 +232,41 @@ fn effective_settings(
     match (
         worktree_intent,
         worktree_prefix,
+        base_ref,
         agent_id,
         model,
         permission,
         reasoning,
         kickoff_message,
     ) {
-        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None, None) => Ok((
-            configuration.create_worktree,
-            configuration.worktree_prefix.clone(),
-            configuration.agent_id.clone(),
-            configuration.model.clone(),
-            configuration.permission.clone(),
-            configuration.reasoning.clone(),
-            configuration.kickoff_message.clone(),
-        )),
-        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None, None) => Ok((
-            false,
-            configuration.worktree_prefix.clone(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        )),
+        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None, None, None) => {
+            Ok((
+                configuration.create_worktree,
+                configuration.worktree_prefix.clone(),
+                configuration.base_ref.clone(),
+                configuration.agent_id.clone(),
+                configuration.model.clone(),
+                configuration.permission.clone(),
+                configuration.reasoning.clone(),
+                configuration.kickoff_message.clone(),
+            ))
+        }
+        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None, None, None) => {
+            Ok((
+                false,
+                configuration.worktree_prefix.clone(),
+                configuration.base_ref.clone(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+        }
         (
             protocol::TaskCreateWorktreeIntent::Provision,
             Some(worktree_prefix),
+            Some(base_ref),
             agent_id,
             model,
             permission,
@@ -255,6 +277,7 @@ fn effective_settings(
                 project_id: configuration.project_id.clone(),
                 create_worktree: true,
                 worktree_prefix: worktree_prefix.trim().to_owned(),
+                base_ref: Some(base_ref.trim().to_owned()),
                 agent_id: agent_id.map(|value| value.trim().to_owned()),
                 model: model.map(|value| value.trim().to_owned()),
                 permission: permission.map(|value| value.trim().to_owned()),
@@ -267,6 +290,7 @@ fn effective_settings(
             Ok((
                 true,
                 selection.worktree_prefix,
+                selection.base_ref,
                 selection.agent_id,
                 selection.model,
                 selection.permission,
@@ -281,6 +305,7 @@ fn effective_settings(
 type EffectiveTaskAutomation = (
     bool,
     String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -337,7 +362,7 @@ async fn provision_worktree(
         "branchMode": if branch_exists { "existing" } else { "create" },
     });
     if !branch_exists {
-        params["baseRef"] = json!(select_base_ref(&branches)?);
+        params["baseRef"] = json!(select_base_ref(&branches, action.base_ref.as_deref())?);
     }
     super::control::provision_task_worktree(params, state).await?;
     Ok(())
@@ -416,12 +441,32 @@ async fn launch_agent(
     Ok(())
 }
 
-fn select_base_ref(branches: &Value) -> Result<String, CoreError> {
-    let observed = observed_branch_refs(branches).collect::<Vec<_>>();
+fn select_base_ref(branches: &Value, configured: Option<&str>) -> Result<String, CoreError> {
+    let observed = observed_base_refs(branches).collect::<Vec<_>>();
+    if let Some(configured) = configured {
+        return Ok(configured.to_owned());
+    }
     ["development", "develop", "dev", "main", "master"]
         .into_iter()
-        .map(|name| format!("refs/heads/{name}"))
-        .find(|candidate| observed.iter().any(|observed| observed == candidate))
+        .filter_map(|preferred_name| {
+            observed
+                .iter()
+                .find(|reference| {
+                    reference
+                        .strip_prefix("refs/remotes/origin/")
+                        .is_some_and(|branch| branch == preferred_name)
+                })
+                .or_else(|| {
+                    observed.iter().find(|reference| {
+                        reference
+                            .strip_prefix("refs/remotes/")
+                            .and_then(|remote_branch| remote_branch.split_once('/'))
+                            .is_some_and(|(_, branch)| branch == preferred_name)
+                    })
+                })
+                .map(|reference| (*reference).to_owned())
+        })
+        .next()
         .or_else(|| observed.first().map(|reference| (*reference).to_owned()))
         .ok_or_else(|| CoreError::InvalidParams("baseRef".into()))
 }
@@ -429,6 +474,15 @@ fn select_base_ref(branches: &Value) -> Result<String, CoreError> {
 fn observed_branch_refs(projection: &Value) -> impl Iterator<Item = &str> {
     projection
         .get("branches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|branch| branch.get("exact_ref").and_then(Value::as_str))
+}
+
+fn observed_base_refs(projection: &Value) -> impl Iterator<Item = &str> {
+    projection
+        .get("base_branches")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -450,18 +504,30 @@ mod tests {
     #[test]
     fn deterministic_names_are_bounded_and_base_selection_prefers_integration_branches() {
         let branches = json!({
-            "branches": [
-                { "exact_ref": "refs/heads/main" },
-                { "exact_ref": "refs/heads/development" }
+            "base_branches": [
+                { "exact_ref": "refs/remotes/origin/main" },
+                { "exact_ref": "refs/remotes/origin/development" }
             ]
         });
         assert_eq!(
-            select_base_ref(&branches).unwrap(),
-            "refs/heads/development"
+            select_base_ref(&branches, None).unwrap(),
+            "refs/remotes/origin/development"
         );
         assert_eq!(
-            select_base_ref(&json!({ "branches": [{ "exact_ref": "refs/heads/trunk" }] })).unwrap(),
-            "refs/heads/trunk"
+            select_base_ref(
+                &json!({ "base_branches": [{ "exact_ref": "refs/remotes/upstream/trunk" }] }),
+                None,
+            )
+            .unwrap(),
+            "refs/remotes/upstream/trunk"
+        );
+        assert_eq!(
+            select_base_ref(&branches, Some("refs/remotes/origin/main")).unwrap(),
+            "refs/remotes/origin/main"
+        );
+        assert_eq!(
+            select_base_ref(&branches, Some("refs/remotes/origin/missing")).unwrap(),
+            "refs/remotes/origin/missing"
         );
     }
 
@@ -471,6 +537,7 @@ mod tests {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "feature".into(),
+            base_ref: Some("refs/remotes/origin/development".into()),
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
@@ -483,6 +550,7 @@ mod tests {
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
                     worktree_prefix: None,
+                    base_ref: None,
                     agent_id: None,
                     model: None,
                     permission: None,
@@ -494,6 +562,7 @@ mod tests {
             (
                 true,
                 "feature".into(),
+                Some("refs/remotes/origin/development".into()),
                 Some("codex".into()),
                 Some("gpt-5.6-sol".into()),
                 Some("bypassPermissions".into()),
@@ -507,6 +576,7 @@ mod tests {
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::None,
                     worktree_prefix: None,
+                    base_ref: None,
                     agent_id: None,
                     model: None,
                     permission: None,
@@ -515,7 +585,16 @@ mod tests {
                 },
             )
             .unwrap(),
-            (false, "feature".into(), None, None, None, None, None)
+            (
+                false,
+                "feature".into(),
+                Some("refs/remotes/origin/development".into()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
         );
         assert_eq!(
             effective_settings(
@@ -523,6 +602,7 @@ mod tests {
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::Provision,
                     worktree_prefix: Some("custom".into()),
+                    base_ref: Some("refs/remotes/upstream/main".into()),
                     agent_id: Some("claude".into()),
                     model: Some("sonnet".into()),
                     permission: Some("plan".into()),
@@ -534,6 +614,7 @@ mod tests {
             (
                 true,
                 "custom".into(),
+                Some("refs/remotes/upstream/main".into()),
                 Some("claude".into()),
                 Some("sonnet".into()),
                 Some("plan".into()),

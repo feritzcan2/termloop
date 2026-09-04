@@ -632,6 +632,7 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
                 super::super::task_automation::TaskAutomationSelection {
                     worktree_intent: params.worktree_intent,
                     worktree_prefix: params.worktree_prefix,
+                    base_ref: params.base_ref,
                     agent_id: params.agent_id,
                     model: params.model,
                     permission: params.permission,

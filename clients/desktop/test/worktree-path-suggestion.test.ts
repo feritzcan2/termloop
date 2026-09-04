@@ -4,6 +4,7 @@ import {
   localBranchesForTaskBinding,
   selectedWorktreeParent,
   sortLocalBranches,
+  sortRemoteBranches,
   suggestedBranchName,
   updateWorktreeDestinationBranch,
   worktreeDestination,
@@ -111,5 +112,23 @@ describe("local branch ordering", () => {
       "deleted-task-branch",
       false,
     )).toMatchObject({ requiredBranchMissing: true });
+  });
+});
+
+describe("remote base branch ordering", () => {
+  it("floats integration branches and prefers origin", () => {
+    const branch = (name: string) => ({ name, exact_ref: `refs/remotes/${name}` });
+    const sorted = sortRemoteBranches([
+      branch("upstream/development"),
+      branch("origin/main"),
+      branch("origin/development"),
+      branch("origin/feature/zeta"),
+    ]);
+    expect(sorted.map((entry) => entry.name)).toEqual([
+      "origin/development",
+      "upstream/development",
+      "origin/main",
+      "origin/feature/zeta",
+    ]);
   });
 });

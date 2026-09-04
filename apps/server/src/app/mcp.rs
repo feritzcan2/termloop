@@ -465,8 +465,11 @@ async fn tool_call_inner(
                     "title": params.title,
                     "brief": params.brief,
                     "worktreeIntent": "inherit",
+                    "worktreePrefix": null,
+                    "baseRef": null,
                     "agentId": null,
                     "model": null,
+                    "permission": null,
                     "reasoning": null,
                     "kickoffMessage": null,
                 }),
@@ -1160,6 +1163,7 @@ async fn steward_task_command(
             super::task_automation::TaskAutomationSelection {
                 worktree_intent,
                 worktree_prefix: None,
+                base_ref: None,
                 agent_id,
                 model: None,
                 permission: None,
@@ -2268,7 +2272,6 @@ mod tests {
             projection["evidenceSemantics"]["pullRequest"],
             "providerProjectionUseExactHeadBaseMergeCommitAndFreshness"
         );
-
         let fallback = task_read_projection(
             json!({ "id": "task-2", "branch": { "name": "termloop/fallback" } }),
             json!([]),
