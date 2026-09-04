@@ -135,6 +135,7 @@ describe("mobile APNs attention projection", () => {
       body: "Mobile notifications",
     }, "mac_1");
     expect(payload).toMatchObject({ connectionId: "mac_1", sessionId: session.id, projectId: "prj_1" });
+    expect(payload.body).toMatchObject({ connectionId: "mac_1", sessionId: session.id, projectId: "prj_1" });
     expect(JSON.stringify(payload)).not.toContain("terminal");
   });
 

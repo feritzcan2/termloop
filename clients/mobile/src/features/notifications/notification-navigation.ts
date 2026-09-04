@@ -39,6 +39,18 @@ export function notificationDestination(data: unknown): NotificationDestination 
   };
 }
 
+/// Expo Notifications exposes Expo-shaped remote data through `content.data`,
+/// while direct APNs custom fields remain available on the push trigger payload.
+/// Accept either representation so notification taps survive both delivery paths.
+export function notificationDestinationFromRemote(
+  contentData: unknown,
+  trigger: unknown,
+): NotificationDestination | undefined {
+  const contentDestination = notificationDestination(contentData);
+  if (contentDestination !== undefined) return contentDestination;
+  return isRecord(trigger) ? notificationDestination(trigger.payload) : undefined;
+}
+
 /// The entity projection is stronger evidence than a possibly stale push hint. When
 /// projections are still loading, a known hint (or the only paired Mac) lets the user
 /// continue immediately instead of stranding the tap on Home.

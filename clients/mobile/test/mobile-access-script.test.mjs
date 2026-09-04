@@ -124,6 +124,11 @@ fi
       "ai.termloop.mobile-access.6343ac534b7a01f6.plist",
     )).mode & 0o777).toBe(0o644);
     expect(statSync(path.join(state, "gateway.json")).mode & 0o777).toBe(0o600);
+    const initialGatewayConfig = JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"));
+    expect(initialGatewayConfig.pushRelayUrl)
+      .toBe("https://push.termloop.ai");
+    expect(initialGatewayConfig.pushRelayInstallationId).toMatch(/^[a-f0-9]{32}$/);
+    expect(initialGatewayConfig.pushRelayToken).toMatch(/^[a-f0-9]{64}$/);
 
     // A gateway that fails while the phone cannot reach it has to leave a trace,
     // so the job's output must land in an owner-only file rather than /dev/null.
@@ -149,6 +154,9 @@ fi
     const repeatedPayload = JSON.parse(repeated.split("\n")[0].slice("TLMP1:".length));
     expect(repeatedPayload.controlToken).toBe(payload.controlToken);
     expect(repeatedPayload.terminalToken).toBe(payload.terminalToken);
+    const repeatedGatewayConfig = JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"));
+    expect(repeatedGatewayConfig.pushRelayInstallationId).toBe(initialGatewayConfig.pushRelayInstallationId);
+    expect(repeatedGatewayConfig.pushRelayToken).toBe(initialGatewayConfig.pushRelayToken);
     const recordedLaunchCalls = readFileSync(launchCalls, "utf8").split("\n");
     expect(recordedLaunchCalls.filter((call) => call.startsWith("bootstrap "))).toHaveLength(1);
     expect(recordedLaunchCalls.filter((call) => call.startsWith("kickstart "))).toHaveLength(0);
@@ -160,8 +168,12 @@ fi
     expect(readFileSync(gatewayLog, "utf8")).toBe("first run crashed here\n");
     expect(statSync(gatewayLog).mode & 0o777).toBe(0o600);
 
-    // Reconciliation uses only enrolled state and the source artifact. A missing
-    // daemon discovery file and an unavailable Tailscale command do not matter.
+    // Reconciliation upgrades a legacy enrolled config without needing daemon
+    // discovery or Tailscale, then remains stable on every later launch.
+    delete repeatedGatewayConfig.pushRelayUrl;
+    delete repeatedGatewayConfig.pushRelayInstallationId;
+    delete repeatedGatewayConfig.pushRelayToken;
+    writeFileSync(path.join(state, "gateway.json"), JSON.stringify(repeatedGatewayConfig));
     const beforeReconcileCalls = serviceMutationCalls(readFileSync(launchCalls, "utf8"));
     const reconcile = await execFile(process.execPath, [
       path.resolve("scripts/mobile-access.mjs"),
@@ -173,8 +185,25 @@ fi
       "--test-platform",
       "--skip-gateway-wait",
     ], { cwd: path.resolve("."), env: environment, encoding: "utf8" });
-    expect(JSON.parse(reconcile.stdout)).toMatchObject({ status: "current", buildId: installManifest.buildId });
-    expect(serviceMutationCalls(readFileSync(launchCalls, "utf8"))).toEqual(beforeReconcileCalls);
+    expect(JSON.parse(reconcile.stdout)).toMatchObject({ status: "configUpdated", buildId: installManifest.buildId });
+    const reconciledConfig = JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"));
+    expect(reconciledConfig.pushRelayInstallationId).toMatch(/^[a-f0-9]{32}$/);
+    expect(reconciledConfig.pushRelayToken).toMatch(/^[a-f0-9]{64}$/);
+    const afterReconcileCalls = serviceMutationCalls(readFileSync(launchCalls, "utf8"));
+    expect(afterReconcileCalls).not.toEqual(beforeReconcileCalls);
+
+    const settledReconcile = await execFile(process.execPath, [
+      path.resolve("scripts/mobile-access.mjs"),
+      "--reconcile",
+      "--state-dir", state,
+      "--launch-agent-dir", launchAgentDirectory,
+      "--launchctl-bin", launchctl,
+      "--platform", "darwin",
+      "--test-platform",
+      "--skip-gateway-wait",
+    ], { cwd: path.resolve("."), env: environment, encoding: "utf8" });
+    expect(JSON.parse(settledReconcile.stdout)).toMatchObject({ status: "current" });
+    expect(serviceMutationCalls(readFileSync(launchCalls, "utf8"))).toEqual(afterReconcileCalls);
 
     // launchd runs its own copy of a loaded job, so an install that changes the
     // plist has to unregister the earlier generation instead of only restarting
