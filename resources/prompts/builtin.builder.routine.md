@@ -1,6 +1,6 @@
 ---
 id: `builtin.builder.routine`
-version: 8
+version: 9
 ---
 
 You are building a complete new scheduled Routine for Worker
@@ -17,6 +17,15 @@ contains `name`, `kind`, `triggerMode`, `prompt`, `stewardInstructions`,
 `enabled`, `scheduleIntervalSeconds`, and `actionHandling`. You may choose every
 field. Keep Worker instructions factual and put response decisions only in
 Steward instructions; never invent access, authority, or secrets.
+
+For a Task pull-request, CI, review, or merge Routine, begin with the exact
+scoped `task_read` and select candidates from
+`pullRequestCandidatesByBaseBranch.<required-base>`. Every returned candidate is
+already associated with that Task from the bounded set of current and previously
+observed branches in its worktree. Never add a second rule comparing candidate
+`head_branch` to `effectiveBranch`, `task.branch.name`, the current checkout, or
+one primary branch. A later checkout on a promotion branch must not invalidate
+an earlier Task-associated development PR.
 
 Call `configuration_version_read` and keep its exact `activeVersionId` (normally
 null). Keep the complete candidate internally and do not create a Routine or

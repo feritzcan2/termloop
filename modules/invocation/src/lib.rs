@@ -97,7 +97,7 @@ const IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.worker-instructions",
-    version: 7,
+    version: 8,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.worker-instructions.md"
     ),
@@ -105,7 +105,7 @@ const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 9,
+    version: 10,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -113,13 +113,13 @@ const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
-    version: 8,
+    version: 9,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.routine.md"),
 };
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 17,
+    version: 18,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 23,
+    version: 24,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4071,6 +4071,66 @@ mod tests {
     }
 
     #[test]
+    fn configuration_improvers_preserve_all_task_worktree_branches_for_pr_stages() {
+        let targets = [
+            (
+                ImproverTarget::WorkerInstructions {
+                    worker_id: "wkr-1",
+                    worker_name: "Delivery Worker",
+                    built_in_instructions: "Protected Worker behavior.",
+                    routine_summary: r#"{"routines":[]}"#,
+                    max_bytes: 16_384,
+                },
+                8,
+            ),
+            (
+                ImproverTarget::RoutineInstructions {
+                    routine_id: "rtn-1",
+                    routine_name: "PR approved",
+                    worker_name: "Delivery Worker",
+                    built_in_instructions: "Protected Routine behavior.",
+                    max_bytes: 8_192,
+                },
+                10,
+            ),
+            (
+                ImproverTarget::RoutineBuilder {
+                    project_name: "Nucleus",
+                    worker_id: "wkr-1",
+                    worker_name: "Delivery Worker",
+                    routine_summary: r#"{"routines":[]}"#,
+                },
+                9,
+            ),
+            (
+                ImproverTarget::Playbook {
+                    project_name: "Nucleus",
+                },
+                18,
+            ),
+        ];
+
+        for (target, expected_version) in targets {
+            let template_ref = target.template_ref();
+            let launch = prompt_improver_launch(target);
+            let delivered = launch.delivered_prompt().unwrap();
+            assert_eq!(launch.provenance().template_version, expected_version);
+            assert!(
+                delivered.contains("pullRequestCandidatesByBaseBranch"),
+                "missing candidate projection rule in {template_ref}"
+            );
+            assert!(
+                delivered.contains("previously") && delivered.contains("observed"),
+                "missing branch history rule in {template_ref}"
+            );
+            assert!(
+                delivered.contains("`head_branch` to `effectiveBranch`"),
+                "missing no-recomparison rule in {template_ref}"
+            );
+        }
+    }
+
+    #[test]
     fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() {
         let target = ImproverTarget::Playbook {
             project_name: "Nucleus",
@@ -4079,8 +4139,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 17);
-        assert_eq!(launch.provenance().template_version, 17);
+        assert_eq!(template.version, 18);
+        assert_eq!(launch.provenance().template_version, 18);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -6185,7 +6245,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 23);
+        assert_eq!(worker.provenance().template_version, 24);
         assert!(
             worker
                 .authored_preview()
@@ -6222,6 +6282,16 @@ mod tests {
             worker
                 .authored_preview()
                 .contains("`pullRequestCandidatesByBaseBranch.development`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("Do not re-prove that association")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("a development candidate from an earlier Task-associated")
         );
         assert!(
             worker
