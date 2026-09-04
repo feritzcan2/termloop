@@ -15,8 +15,8 @@ use termloop_contract::current::{
     McpStewardTaskAgentStartParams, McpStewardTaskCreateParams, McpStewardTaskIdParams,
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
     McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
-    RoutineFindingResolveParams, SendToAgentParams, WorkerRoutineCompleteParams,
-    WorkerRoutineProblemParams, WorkerStepVerdictsParams, WorkerTaskAgentRequestParams,
+    RoutineFindingResolveParams, SendToAgentParams, WorkerAssignmentCompleteParams,
+    WorkerAssignmentStatus, WorkerTaskAgentRequestParams,
 };
 use tokio::time::{Duration, Instant};
 
@@ -384,14 +384,6 @@ async fn tool_call_inner(
         ),
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
-            "pull_request_read",
-        )
-        | (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "pull_request_read",
-        ) => read_pull_requests(project_id, state).await,
-        (
-            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "steward_suggest",
         ) => steward_suggest(project_id, principal.session_id(), arguments, state).await,
         (
@@ -564,21 +556,8 @@ async fn tool_call_inner(
         ) => worker_get_next_routine(project_id, principal.session_id(), state).await,
         (
             termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "worker_complete_routine",
-        ) => worker_complete_routine(project_id, principal.session_id(), arguments, state).await,
-        (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "worker_report_routine_problem",
-        ) => {
-            worker_report_routine_problem(project_id, principal.session_id(), arguments, state)
-                .await
-        }
-        (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "worker_report_step_verdicts",
-        ) => {
-            worker_report_step_verdicts(project_id, principal.session_id(), arguments, state).await
-        }
+            "worker_complete_assignment",
+        ) => worker_complete_assignment(project_id, principal.session_id(), arguments, state).await,
         _ => Err(termloop_core::CoreError::CapabilityDenied),
     };
     match result {
@@ -752,28 +731,6 @@ async fn read_tasks(
         None
     };
 
-    // Fail before provider or Git work when the exact Task is not in the
-    // authenticated Project. Each observation path revalidates its own Task
-    // binding again before committing or returning evidence.
-    state
-        .core
-        .lock()
-        .await
-        .task_projection_for_executor(project_id, &task_id)?;
-    let task_ids = vec![task_id.clone()];
-    let (branch_commits, pull_requests) = tokio::join!(
-        super::control::task_branch_commit_summary_list(
-            json!({ "projectId": project_id, "taskIds": task_ids.clone() }),
-            state,
-        ),
-        super::control::git_host_pull_request_list(
-            json!({ "projectId": project_id, "taskIds": task_ids }),
-            state,
-        ),
-    );
-    let branch_commits = branch_commits?;
-    let pull_requests = pull_requests?;
-
     let (task, agent_statuses, coordination_agent) = {
         let core = state.core.lock().await;
         if let Some((_, _, capability)) = worker_claim.as_ref() {
@@ -812,114 +769,17 @@ async fn read_tasks(
 
     text_result(Ok(task_read_projection(
         task,
-        branch_commits,
-        pull_requests,
         agent_statuses,
         coordination_agent,
     )))
 }
 
-fn task_read_projection(
-    task: Value,
-    branch_commits: Value,
-    pull_requests: Value,
-    agent_statuses: Value,
-    coordination_agent: Value,
-) -> Value {
-    let effective_branch = task
-        .get("worktree_health")
-        .and_then(|health| health.get("checked_out_branch"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            task.get("branch")
-                .and_then(|branch| branch.get("name"))
-                .and_then(Value::as_str)
-        });
-    let pull_request = pull_requests
-        .as_array()
-        .and_then(|items| items.first())
-        .cloned();
-    let pull_request_candidates_by_base_branch = pull_request
-        .as_ref()
-        .map(pull_request_candidates_by_base_branch)
-        .unwrap_or_else(|| json!({}));
+fn task_read_projection(task: Value, agent_statuses: Value, coordination_agent: Value) -> Value {
     json!({
         "task": task,
-        "effectiveBranch": effective_branch,
-        "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
-        "pullRequest": pull_request,
-        "pullRequestCandidatesByBaseBranch": pull_request_candidates_by_base_branch,
         "agentStatuses": agent_statuses,
         "coordinationAgent": coordination_agent,
-        "evidenceSemantics": {
-            "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
-            "effectiveBranch": "currentCheckoutConvenienceNotUniversalDeliveryIdentity",
-            "branchCommitSummary": "boundedGitObservationBranchDivergedIsNotTaskOwnedWork",
-            "pullRequest": "providerProjectionUseExactHeadBaseMergeCommitAndFreshness",
-            "pullRequestCandidatesByBaseBranch": "sameExactTaskProviderMatchesGroupedForStageSpecificSelectionCurrentCheckoutDoesNotInvalidateAMatchingPullRequest",
-            "agentStatus": "runtimeObservation",
-            "coordinationAgent": "canonicalCurrentTaskAgentForWorkerAndStewardCoordination",
-            "agentPlan": "agentReportedClaimNotIndependentlyVerified",
-        },
     })
-}
-
-fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Value {
-    let mut groups = std::collections::BTreeMap::<String, Vec<Value>>::new();
-    for candidate in pull_request
-        .get("matches")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let Some(base_branch) = candidate.get("base_branch").and_then(Value::as_str) else {
-            continue;
-        };
-        groups
-            .entry(base_branch.to_owned())
-            .or_default()
-            .push(candidate.clone());
-    }
-    Value::Object(
-        groups
-            .into_iter()
-            .map(|(base_branch, matches)| (base_branch, Value::Array(matches)))
-            .collect(),
-    )
-}
-
-async fn read_pull_requests(
-    project_id: &str,
-    state: &AppState,
-) -> Result<Value, termloop_core::CoreError> {
-    let tasks = state
-        .core
-        .lock()
-        .await
-        .list_tasks_current(json!({ "projectId": project_id }))?;
-    let task_ids = task_ids_from_list(&tasks);
-    if task_ids.is_empty() {
-        return Ok(json!({ "content": "[]" }));
-    }
-    text_result(
-        super::control::git_host_pull_request_list(
-            json!({ "projectId": project_id, "taskIds": task_ids }),
-            state,
-        )
-        .await,
-    )
-}
-
-fn task_ids_from_list(tasks: &Value) -> Vec<String> {
-    tasks
-        .get("items")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|task| task.get("id").and_then(Value::as_str))
-        .take(40)
-        .map(str::to_owned)
-        .collect()
 }
 
 async fn read_task_agent_transcript_tail(
@@ -1356,7 +1216,7 @@ async fn worker_get_next_routine(
     text_result(Ok(claim.result))
 }
 
-fn worker_claim_invalidation_topics(result: &Value) -> Vec<ProjectionTopic> {
+pub(super) fn worker_claim_invalidation_topics(result: &Value) -> Vec<ProjectionTopic> {
     result
         .get("step")
         .is_some_and(Value::is_object)
@@ -1393,17 +1253,136 @@ fn claimed_check(
     Ok(capability)
 }
 
-async fn worker_complete_routine(
+async fn worker_complete_assignment(
     project_id: &str,
     session_id: &str,
     arguments: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let params: WorkerRoutineCompleteParams =
+    let params: WorkerAssignmentCompleteParams =
         serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
     let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
+    let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
+
+    if let Some(task_id) = focused_task_id {
+        if params.expected_context_revision.is_some()
+            || params.context_markdown.is_some()
+            || params.summary.is_some()
+            || params
+                .source_references
+                .as_ref()
+                .is_some_and(|references| !references.is_empty())
+            || params
+                .findings
+                .as_ref()
+                .is_some_and(|findings| !findings.is_empty())
+            || params
+                .related_task_ids
+                .as_ref()
+                .is_some_and(|task_ids| !task_ids.is_empty())
+        {
+            return Err(termloop_core::CoreError::TrackerReportInvalid);
+        }
+        let task_read_completed =
+            state
+                .tracker_report_capabilities
+                .lock()
+                .ok()
+                .is_some_and(|mut capabilities| {
+                    capabilities.task_was_read(
+                        session_id,
+                        &params.check_id,
+                        &task_id,
+                        super::current_epoch_ms(),
+                    )
+                });
+        if !task_read_completed {
+            return Err(termloop_core::CoreError::TrackerReportInvalid);
+        }
+        let verdict = match params.status {
+            WorkerAssignmentStatus::Satisfied => {
+                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed
+            }
+            WorkerAssignmentStatus::Pending => {
+                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting
+            }
+            WorkerAssignmentStatus::Blocked => {
+                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked
+            }
+        };
+        let result = state.core.lock().await.report_worker_step_verdicts(
+            &capability,
+            vec![
+                termloop_core::companion_integrations::playbook_runtime::WorkerStepVerdict {
+                    task_id,
+                    verdict,
+                    evidence: params.evidence,
+                },
+            ],
+            termloop_platform::generate_opaque_id(),
+            super::current_epoch_ms(),
+        );
+        let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
+        if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
+            capabilities.revoke_check(session_id, &capability.check_id);
+        }
+        let wake_reason = step_verdict_wake(&result);
+        finish_routine_report_for(
+            project_id,
+            state,
+            wake_reason,
+            vec![ProjectionTopic::Routine, ProjectionTopic::Playbook],
+        )
+        .await;
+        return Ok(json!({ "status": "completed" }));
+    }
+
+    if params.status == WorkerAssignmentStatus::Blocked {
+        if params.expected_context_revision.is_some()
+            || params.context_markdown.is_some()
+            || params.summary.is_some()
+            || params
+                .findings
+                .as_ref()
+                .is_some_and(|findings| !findings.is_empty())
+            || params
+                .related_task_ids
+                .as_ref()
+                .is_some_and(|task_ids| !task_ids.is_empty())
+        {
+            return Err(termloop_core::CoreError::TrackerReportInvalid);
+        }
+        let result = state.core.lock().await.report_worker_routine_problem(
+            &capability,
+            params.evidence,
+            params.source_references.unwrap_or_default(),
+            termloop_platform::generate_opaque_id(),
+            super::current_epoch_ms(),
+        );
+        let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
+        if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
+            capabilities.revoke_check(session_id, &capability.check_id);
+        }
+        finish_routine_report(project_id, state, routine_finding_wake(&result)).await;
+        return Ok(json!({ "status": "completed" }));
+    }
+
+    let expected_context_revision = params
+        .expected_context_revision
+        .ok_or_else(|| termloop_core::CoreError::InvalidParams("expectedContextRevision".into()))?;
+    let context_markdown = params
+        .context_markdown
+        .ok_or_else(|| termloop_core::CoreError::InvalidParams("contextMarkdown".into()))?;
+    if params
+        .source_references
+        .as_ref()
+        .is_some_and(|references| !references.is_empty())
+    {
+        return Err(termloop_core::CoreError::TrackerReportInvalid);
+    }
     let findings = params
         .findings
+        .unwrap_or_default()
         .into_iter()
         .map(|finding| {
             termloop_core::companion_integrations::tracker_runtime::WorkerRoutineFinding {
@@ -1418,11 +1397,11 @@ async fn worker_complete_routine(
         .collect();
     let result = state.core.lock().await.complete_worker_routine(
         &capability,
-        params.expected_context_revision,
-        params.context_markdown,
-        params.update_summary,
+        expected_context_revision,
+        context_markdown,
+        params.summary,
         findings,
-        params.related_task_ids,
+        params.related_task_ids.unwrap_or_default(),
         termloop_platform::generate_opaque_id(),
         super::current_epoch_ms(),
     );
@@ -1441,93 +1420,6 @@ fn worker_routine_completion_status(result: &Value) -> &'static str {
     } else {
         "completed"
     }
-}
-
-async fn worker_report_routine_problem(
-    project_id: &str,
-    session_id: &str,
-    arguments: Value,
-    state: &AppState,
-) -> Result<Value, termloop_core::CoreError> {
-    let params: WorkerRoutineProblemParams =
-        serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
-    let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
-    let result = state.core.lock().await.report_worker_routine_problem(
-        &capability,
-        params.message,
-        params.source_references,
-        termloop_platform::generate_opaque_id(),
-        super::current_epoch_ms(),
-    );
-    let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
-    if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
-        capabilities.revoke_check(session_id, &capability.check_id);
-    }
-    finish_routine_report(project_id, state, routine_finding_wake(&result)).await;
-    Ok(json!({ "status": "problemReported" }))
-}
-
-/// A step Routine reports completion for its one focused Task at this stage.
-/// Only a passed verdict moves that Task along the board. A current unresolved
-/// waiting finding wakes the Steward unless an already-visible proposal owns
-/// that decision, so a prior Steward no-op cannot strand the Task forever.
-async fn worker_report_step_verdicts(
-    project_id: &str,
-    session_id: &str,
-    arguments: Value,
-    state: &AppState,
-) -> Result<Value, termloop_core::CoreError> {
-    let params: WorkerStepVerdictsParams =
-        serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
-    let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
-    let task_read_completed =
-        state
-            .tracker_report_capabilities
-            .lock()
-            .ok()
-            .is_some_and(|mut capabilities| {
-                params.verdicts.iter().all(|verdict| {
-                    capabilities.task_was_read(
-                        session_id,
-                        &params.check_id,
-                        &verdict.task_id,
-                        super::current_epoch_ms(),
-                    )
-                })
-            });
-    if !task_read_completed {
-        return Err(termloop_core::CoreError::TrackerReportInvalid);
-    }
-    let verdicts = params
-        .verdicts
-        .into_iter()
-        .map(
-            |verdict| termloop_core::companion_integrations::playbook_runtime::WorkerStepVerdict {
-                task_id: verdict.task_id,
-                passed: verdict.passed,
-                evidence: verdict.evidence,
-            },
-        )
-        .collect();
-    let result = state.core.lock().await.report_worker_step_verdicts(
-        &capability,
-        verdicts,
-        termloop_platform::generate_opaque_id(),
-        super::current_epoch_ms(),
-    );
-    let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
-    if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
-        capabilities.revoke_check(session_id, &capability.check_id);
-    }
-    let wake_reason = step_verdict_wake(&result);
-    finish_routine_report_for(
-        project_id,
-        state,
-        wake_reason,
-        vec![ProjectionTopic::Routine, ProjectionTopic::Playbook],
-    )
-    .await;
-    Ok(json!({ "status": "verdictsRecorded" }))
 }
 
 fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
@@ -1985,8 +1877,8 @@ mod tests {
         assert!(!tool_names(&asker).contains(&"playbook_read"));
         assert!(!tool_names(&helper).contains(&"task_set_steward_brief"));
         assert!(!tool_names(&steward).contains(&"ask_to"));
-        assert!(!tool_names(&steward).contains(&"worker_complete_routine"));
-        assert!(tool_names(&worker).contains(&"worker_complete_routine"));
+        assert!(!tool_names(&steward).contains(&"worker_complete_assignment"));
+        assert!(tool_names(&worker).contains(&"worker_complete_assignment"));
         let task_read = worker
             .iter()
             .find(|tool| tool["name"] == "task_read")
@@ -2005,7 +1897,9 @@ mod tests {
         assert!(tool_names(&worker).contains(&"task_agent_request"));
         assert!(!tool_names(&steward).contains(&"task_agent_request"));
         assert!(!tool_names(&worker).contains(&"send_to_agent"));
-        assert!(tool_names(&worker).contains(&"worker_report_routine_problem"));
+        assert!(!tool_names(&worker).contains(&"worker_complete_routine"));
+        assert!(!tool_names(&worker).contains(&"worker_report_routine_problem"));
+        assert!(!tool_names(&worker).contains(&"worker_report_step_verdicts"));
         assert!(!tool_names(&worker).contains(&"ask_to"));
         assert!(!tool_names(&worker).contains(&"task_create"));
         assert!(!tool_names(&worker).contains(&"task_agent_start"));
@@ -2226,21 +2120,13 @@ mod tests {
     }
 
     #[test]
-    fn scoped_task_read_combines_task_owned_delivery_evidence() {
+    fn scoped_task_read_contains_only_task_owned_identity_and_coordination() {
         let projection = task_read_projection(
             json!({
                 "id": "task-1",
                 "branch": { "name": "termloop/exact" },
                 "worktree_health": { "checked_out_branch": "termloop/current" }
             }),
-            json!([{ "task_id": "task-1", "count": 2, "freshness": "fresh" }]),
-            json!([{
-                "taskId": "task-1",
-                "matches": [
-                    { "number": 43, "base_branch": "master" },
-                    { "number": 42, "base_branch": "development" }
-                ]
-            }]),
             json!([{ "sessionId": "agent-1", "status": "idle" }]),
             json!({
                 "state": "selected",
@@ -2251,58 +2137,17 @@ mod tests {
         );
         assert_eq!(projection["task"]["id"], "task-1");
         assert_eq!(projection["task"]["branch"]["name"], "termloop/exact");
-        assert_eq!(projection["effectiveBranch"], "termloop/current");
-        assert_eq!(projection["branchCommitSummary"]["count"], 2);
-        assert_eq!(projection["pullRequest"]["matches"][0]["number"], 43);
-        assert_eq!(
-            projection["pullRequestCandidatesByBaseBranch"]["development"][0]["number"],
-            42
-        );
-        assert_eq!(
-            projection["pullRequestCandidatesByBaseBranch"]["master"][0]["number"],
-            43
-        );
         assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
         assert_eq!(projection["coordinationAgent"]["sessionId"], "agent-1");
-        assert_eq!(
-            projection["evidenceSemantics"]["agentPlan"],
-            "agentReportedClaimNotIndependentlyVerified"
-        );
-        assert_eq!(
-            projection["evidenceSemantics"]["pullRequest"],
-            "providerProjectionUseExactHeadBaseMergeCommitAndFreshness"
-        );
+        assert_eq!(projection.as_object().unwrap().len(), 3);
         let fallback = task_read_projection(
             json!({ "id": "task-2", "branch": { "name": "termloop/fallback" } }),
             json!([]),
-            json!([]),
-            json!([]),
             json!({ "state": "none", "sessionId": null }),
         );
-        assert_eq!(fallback["effectiveBranch"], "termloop/fallback");
-        let unavailable = task_read_projection(
-            json!({ "id": "task-3" }),
-            json!([]),
-            json!([]),
-            json!([]),
-            json!({ "state": "none", "sessionId": null }),
-        );
-        assert!(unavailable["effectiveBranch"].is_null());
-        assert!(unavailable["branchCommitSummary"].is_null());
-        assert!(unavailable["pullRequest"].is_null());
-        assert_eq!(unavailable["pullRequestCandidatesByBaseBranch"], json!({}));
-    }
-
-    #[test]
-    fn pull_request_reads_take_ids_from_the_current_paginated_task_shape() {
-        assert_eq!(
-            task_ids_from_list(&json!({
-                "items": [{ "id": "task-1" }, { "id": "task-2" }],
-                "next_cursor": null,
-            })),
-            ["task-1", "task-2"]
-        );
-        assert!(task_ids_from_list(&json!([])).is_empty());
+        assert_eq!(fallback["task"]["branch"]["name"], "termloop/fallback");
+        assert!(fallback.get("pullRequest").is_none());
+        assert!(fallback.get("branchCommitSummary").is_none());
     }
 
     #[tokio::test]

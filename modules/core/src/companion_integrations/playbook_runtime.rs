@@ -14,11 +14,12 @@ use std::collections::HashMap;
 use crate::{CoreError, CoreRuntime};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+pub use termloop_domain::PlaybookStepVerdict;
 use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookMilestone, PlaybookPosition,
-    PlaybookStepProgress, PlaybookStepVerdict, ROUTINE_PENDING_FINDINGS_MAX,
-    ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, RoutineActionHandling, TaskRecord,
-    TaskStatus, TrackerConfiguration, TrackerReport, TrackerReportKind, pipeline_position,
+    PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX, ROUTINE_RECENT_SOURCE_KEYS_MAX,
+    ROUTINE_RELATED_TASKS_MAX, RoutineActionHandling, TaskRecord, TaskStatus, TrackerConfiguration,
+    TrackerReport, TrackerReportKind, pipeline_position,
 };
 
 /// One Task standing at a question, and when it may be asked about again.
@@ -47,7 +48,7 @@ pub struct PlaybookStepAssignment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerStepVerdict {
     pub task_id: String,
-    pub passed: bool,
+    pub verdict: PlaybookStepVerdict,
     pub evidence: String,
 }
 
@@ -367,16 +368,15 @@ impl CoreRuntime {
                     if milestone.routine_id != configuration.id {
                         return Some(false);
                     }
-                    if super::tracker_runtime::is_worker_problem_source_key(
-                        configuration.kind,
-                        &finding.source_key,
-                    ) {
+                    if super::tracker_runtime::is_worker_problem_source_key(&finding.source_key) {
                         return Some(true);
                     }
                     let answer = standing.answer_for(&milestone.id)?;
                     Some(
-                        answer.verdict == PlaybookStepVerdict::Waiting
-                            && answer.evidence == finding.evidence,
+                        matches!(
+                            answer.verdict,
+                            PlaybookStepVerdict::Waiting | PlaybookStepVerdict::Blocked
+                        ) && answer.evidence == finding.evidence,
                     )
                 }
                 PlaybookPosition::Done => None,
@@ -435,21 +435,19 @@ impl CoreRuntime {
                 task_id: verdict.task_id.clone(),
                 milestone_id: assignment.milestone.id.clone(),
                 routine_id: assignment.milestone.routine_id.clone(),
-                verdict: if verdict.passed {
-                    PlaybookStepVerdict::Passed
-                } else {
-                    PlaybookStepVerdict::Waiting
-                },
+                verdict: verdict.verdict,
                 evidence: evidence.to_owned(),
                 decided_at_epoch_ms: completed_at_epoch_ms,
-                next_attempt_at_epoch_ms: (!verdict.passed).then(|| {
-                    completed_at_epoch_ms.saturating_add(
-                        assignment
-                            .milestone
-                            .retry_delay_seconds
-                            .saturating_mul(1_000),
-                    )
-                }),
+                next_attempt_at_epoch_ms: (verdict.verdict != PlaybookStepVerdict::Passed).then(
+                    || {
+                        completed_at_epoch_ms.saturating_add(
+                            assignment
+                                .milestone
+                                .retry_delay_seconds
+                                .saturating_mul(1_000),
+                        )
+                    },
+                ),
             });
         }
         let mut new_pending_findings = Vec::new();
@@ -462,7 +460,6 @@ impl CoreRuntime {
                 continue;
             }
             let source_key = step_waiting_source_key(
-                configuration.kind,
                 &assignment.milestone.id,
                 &answer.task_id,
                 &answer.evidence,
@@ -565,10 +562,10 @@ impl CoreRuntime {
             format!(
                 "- {} {}: {}",
                 answer.task_id,
-                if answer.verdict == PlaybookStepVerdict::Passed {
-                    "passed"
-                } else {
-                    "waiting"
+                match answer.verdict {
+                    PlaybookStepVerdict::Passed => "passed",
+                    PlaybookStepVerdict::Waiting => "pending",
+                    PlaybookStepVerdict::Blocked => "blocked",
                 },
                 answer.evidence,
             )
@@ -611,11 +608,16 @@ impl CoreRuntime {
         self.finish_worker_step_check(capability, completed_at_epoch_ms, &configuration);
         self.push_runtime_report(report);
         let still_waiting = answers.len() - passed.len();
+        let blocked = answers
+            .iter()
+            .filter(|answer| answer.verdict == PlaybookStepVerdict::Blocked)
+            .count();
         Ok(json!({
             "status": "verdictsRecorded",
             "milestoneId": assignment.milestone.id,
             "passedCount": passed.len(),
             "waitingCount": still_waiting,
+            "blockedCount": blocked,
             "newPendingFindingCount": new_pending_findings.len(),
             "stewardReviewRequired": steward_review_required,
             "stateRevision": self.store.revision(),
@@ -703,12 +705,7 @@ impl CoreRuntime {
     }
 }
 
-fn step_waiting_source_key(
-    kind: termloop_domain::TrackerKind,
-    milestone_id: &str,
-    task_id: &str,
-    evidence: &str,
-) -> String {
+fn step_waiting_source_key(milestone_id: &str, task_id: &str, evidence: &str) -> String {
     let mut digest = Sha256::new();
     for part in [milestone_id, task_id, evidence] {
         digest.update(part.as_bytes());
@@ -720,10 +717,7 @@ fn step_waiting_source_key(
         use std::fmt::Write as _;
         write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
     }
-    format!(
-        "{}step-waiting:{hex}",
-        super::tracker_runtime::routine_source_prefix(kind)
-    )
+    format!("step-waiting:{hex}")
 }
 
 #[cfg(test)]
@@ -733,7 +727,7 @@ mod tests {
     use termloop_domain::{
         AgentLaunchSelection, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
         ProcessDescriptor, RoutineTriggerMode, SessionKind, SessionRecord, StewardAgentId,
-        TaskRecord, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+        TaskRecord, TrackerConfiguration, WorkerConfiguration,
     };
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
@@ -747,7 +741,6 @@ mod tests {
             gate: PlaybookGateKind::Automatic,
             routine_id: routine_id.into(),
             retry_delay_seconds: retry,
-            condition: String::new(),
             approver: None,
         }
     }
@@ -844,7 +837,6 @@ mod tests {
                     TrackerConfiguration {
                         id: routine_id.into(),
                         project_id: project_id.clone(),
-                        kind: TrackerKind::CiPr,
                         trigger_mode: RoutineTriggerMode::OnDemand,
                         name: routine_id.into(),
                         prompt: "Answer the pipeline question for the focused Task.".into(),
@@ -989,7 +981,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "This answer was claimed before the reset.".into(),
                 }],
                 "stale-position-report".into(),
@@ -1065,7 +1057,7 @@ mod tests {
                 &old_capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "This answer belongs to the replaced step.".into(),
                 }],
                 "stale-old-step-report".into(),
@@ -1145,7 +1137,7 @@ mod tests {
                 &old_capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "This answer belongs to the former focused Task.".into(),
                 }],
                 "stale-task-1-report".into(),
@@ -1173,7 +1165,7 @@ mod tests {
         assert!(claim.result["step"].get("question").is_none());
         assert_eq!(
             claim.result["step"]["finishWith"],
-            "worker_report_step_verdicts"
+            "worker_complete_assignment"
         );
         assert_eq!(
             claim.result["step"]["tasks"]
@@ -1198,7 +1190,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "PR #12 is open against main.".into(),
                 }],
                 "report-1".into(),
@@ -1240,7 +1232,7 @@ mod tests {
                 &next.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "The deployed commit matches task-1 HEAD.".into(),
                 }],
                 "report-2".into(),
@@ -1286,7 +1278,7 @@ mod tests {
                 &next.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "Deployed commit matches the branch head.".into(),
                 }],
                 "report-2".into(),
@@ -1302,7 +1294,7 @@ mod tests {
                 &final_claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-2".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "Deployed commit matches the branch head.".into(),
                 }],
                 "report-3".into(),
@@ -1339,7 +1331,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "No branch pushed yet.".into(),
                 }],
                 "report-1".into(),
@@ -1358,7 +1350,7 @@ mod tests {
                 &switched.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-2".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "No branch pushed yet.".into(),
                 }],
                 "report-2".into(),
@@ -1388,7 +1380,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "Still nothing pushed.".into(),
                 }],
                 "report-3".into(),
@@ -1498,7 +1490,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-missing".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "Invented.".into(),
                 }],
                 "report-1".into(),
@@ -1513,7 +1505,7 @@ mod tests {
                 &capability,
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "   ".into(),
                 }],
                 "report-1".into(),
@@ -1573,7 +1565,7 @@ mod tests {
                 &claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "No matching pull-request approval is visible.".into(),
                 }],
                 "report-1".into(),
@@ -1584,9 +1576,9 @@ mod tests {
         assert_eq!(first["stewardReviewRequired"], true);
         let findings = runtime.read_routine_findings(&project_id).unwrap();
         assert_eq!(findings["routines"][0]["routineId"], "routine-pr");
-        assert_eq!(findings["routines"][0]["actionHandling"], "ask");
+        assert_eq!(findings["routines"][0]["whileWaiting"]["mode"], "ask");
         assert_eq!(
-            findings["routines"][0]["stewardInstructions"],
+            findings["routines"][0]["whileWaiting"]["instructions"],
             "If review is still missing, consider asking the configured reviewer."
         );
         let first_finding_id = findings["routines"][0]["findings"][0]["id"]
@@ -1603,7 +1595,7 @@ mod tests {
                 &changed_claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "The PR exists, but its required reviewer has not approved it."
                         .into(),
                 }],
@@ -1639,7 +1631,7 @@ mod tests {
                 &duplicate_claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "The PR exists, but its required reviewer has not approved it."
                         .into(),
                 }],
@@ -1679,7 +1671,7 @@ mod tests {
                 &proposed_claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "The PR exists, but its required reviewer has not approved it."
                         .into(),
                 }],
@@ -1698,7 +1690,7 @@ mod tests {
                 &passed_claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: true,
+                    verdict: PlaybookStepVerdict::Passed,
                     evidence: "The required approval is now visible.".into(),
                 }],
                 "report-5".into(),
@@ -1710,6 +1702,53 @@ mod tests {
         assert_eq!(
             runtime.read_routine_findings(&project_id).unwrap()["routines"],
             json!([])
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn blocked_step_outcome_stays_current_for_steward_follow_up() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let mut routine = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|routine| routine.id == "routine-pr")
+            .cloned()
+            .unwrap();
+        routine.action_handling = termloop_domain::RoutineActionHandling::Ask;
+        routine.steward_instructions = "Offer to restore the missing provider access.".into();
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_tracker_configuration(&runtime.write_authority, routine, revision)
+            .unwrap();
+
+        let claim = runtime
+            .claim_next_worker_routine(&project_id, "worker-session", "blocked-1".into(), NOW)
+            .unwrap();
+        let completed = runtime
+            .report_worker_step_verdicts(
+                &claim.capability.unwrap(),
+                vec![WorkerStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict: PlaybookStepVerdict::Blocked,
+                    evidence: "The required provider connector is unavailable.".into(),
+                }],
+                "blocked-report".into(),
+                NOW + 1_000,
+            )
+            .unwrap();
+
+        assert_eq!(completed["passedCount"], 0);
+        assert_eq!(completed["blockedCount"], 1);
+        assert_eq!(completed["stewardReviewRequired"], true);
+        let findings = runtime.read_routine_findings(&project_id).unwrap();
+        assert_eq!(findings["routines"][0]["whileWaiting"]["mode"], "ask");
+        assert_eq!(
+            findings["routines"][0]["findings"][0]["evidence"],
+            "The required provider connector is unavailable."
         );
 
         std::fs::remove_dir_all(root).ok();
@@ -1818,7 +1857,7 @@ mod tests {
                 &claim.capability.unwrap(),
                 vec![WorkerStepVerdict {
                     task_id: "task-1".into(),
-                    passed: false,
+                    verdict: PlaybookStepVerdict::Waiting,
                     evidence: "Approval is absent.".into(),
                 }],
                 "report-1".into(),

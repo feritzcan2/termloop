@@ -7,7 +7,6 @@ import {
   capabilityCopy,
   capabilityMark,
   companionSupervisorCopy,
-  defaultRoutineParams,
   mergeCompanionMessages,
   pendingCompanionProposalId,
   actionableCompanionSuggestionId,
@@ -115,8 +114,8 @@ describe("Steward capability presentation", () => {
 
   it("reads Playbook policy for active and kept step Routines", () => {
     const configured = {
-      milestones: [{ routineId: "active", retryDelaySeconds: 300, condition: "Active evidence" }],
-      savedPipelines: [{ name: "Kept", milestones: [{ routineId: "kept", retryDelaySeconds: 1800, condition: "Kept evidence" }] }],
+      milestones: [{ routineId: "active", retryDelaySeconds: 300, completeWhen: "Active evidence" }],
+      savedPipelines: [{ name: "Kept", milestones: [{ routineId: "kept", retryDelaySeconds: 1800, completeWhen: "Kept evidence" }] }],
     } as Parameters<typeof playbookRoutineRetryDelaySeconds>[0];
     expect(playbookRoutineRetryDelaySeconds(configured, "active")).toBe(300);
     expect(playbookRoutineRetryDelaySeconds(configured, "kept")).toBe(1800);
@@ -158,12 +157,12 @@ describe("Steward capability presentation", () => {
 
   it("explains a Routine as Worker observation, completion, Steward response, and permission", () => {
     const routine = {
-      id: "routine-1", projectId: "project-1", workerId: "worker-1", kind: "custom",
-      triggerMode: "onDemand", name: "Release verified", prompt: "Inspect the release.",
-      stewardInstructions: "Consider notifying the owner.", enabled: true,
+      id: "routine-1", projectId: "project-1", workerId: "worker-1",
+      triggerMode: "onDemand", name: "Release verified", instructions: "Inspect the release.",
+      whileWaiting: { mode: "ask", instructions: "Consider notifying the owner." }, enabled: true,
       scheduleIntervalSeconds: 60, generation: 1, contextMarkdown: "", contextRevision: 1,
       recentSourceKeys: [], relatedTaskIds: [], lastCheckStartedAtEpochMs: null,
-      actionHandling: "ask", pendingRoutineFindings: [], lastAttemptAtEpochMs: null,
+      pendingRoutineFindings: [], lastAttemptAtEpochMs: null,
       lastSuccessfulReportAtEpochMs: null, updatedAtEpochMs: 1,
     } satisfies RoutineConfigurationDto;
     const markup = renderToStaticMarkup(createElement(RoutineContextEditor, {
@@ -250,7 +249,7 @@ describe("Steward capability presentation", () => {
   it("keeps first-run Playbook guidance after the pipeline status strip is removed", () => {
     const withSteps = {
       projectId: "project-1", revision: 1, activePipelineName: "Delivery",
-      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, condition: "CI green", approver: null }],
+      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, workerId: "worker-1", approver: null }],
       savedPipelines: [], updatedAtEpochMs: 1,
     } satisfies PlaybookDto;
 
@@ -263,20 +262,18 @@ describe("Steward capability presentation", () => {
     const base = {
       id: "routine-1",
       projectId: "project-1",
-      kind: "slack",
       triggerMode: "schedule",
       name: "Slack",
       workerId: "worker-1",
       enabled: false,
       scheduleIntervalSeconds: 300,
-      prompt: "Visible prompt",
-      stewardInstructions: "Review new findings.",
+      instructions: "Visible prompt",
+      whileWaiting: { mode: "off", instructions: "Review new findings." },
       generation: 2,
       contextMarkdown: "",
       contextRevision: 1,
       recentSourceKeys: [],
       relatedTaskIds: [],
-      actionHandling: "off",
       pendingRoutineFindings: [],
       lastCheckStartedAtEpochMs: null,
       lastAttemptAtEpochMs: null,
@@ -290,13 +287,13 @@ describe("Steward capability presentation", () => {
 
   it("updates only visible Routine instructions and preserves its other configuration", () => {
     const routine = {
-      id: "routine-1", projectId: "project-1", workerId: "worker-1", kind: "custom",
+      id: "routine-1", projectId: "project-1", workerId: "worker-1",
       triggerMode: "schedule",
-      name: "Customer pulse", prompt: "Old instructions", enabled: true,
-      stewardInstructions: "Old response instructions",
+      name: "Customer pulse", instructions: "Old instructions", enabled: true,
+      whileWaiting: { mode: "ask", instructions: "Old response instructions" },
       scheduleIntervalSeconds: 2700, generation: 1, contextMarkdown: "", contextRevision: 1,
       recentSourceKeys: [], relatedTaskIds: [], lastCheckStartedAtEpochMs: null,
-      actionHandling: "ask", pendingRoutineFindings: [],
+      pendingRoutineFindings: [],
       lastAttemptAtEpochMs: null, lastSuccessfulReportAtEpochMs: null, updatedAtEpochMs: 1,
     } satisfies RoutineConfigurationDto;
     expect(routineInstructionsUpdateParams(routine, "New instructions", 9)).toEqual({
@@ -304,11 +301,10 @@ describe("Steward capability presentation", () => {
       triggerMode: "schedule",
       workerId: "worker-1",
       name: "Customer pulse",
-      prompt: "New instructions",
-      stewardInstructions: "Old response instructions",
+      instructions: "New instructions",
+      whileWaiting: { mode: "ask", instructions: "Old response instructions" },
       enabled: true,
       scheduleIntervalSeconds: 2700,
-      actionHandling: "ask",
       expectedRevision: 9,
     });
     expect(routineActionHandlingUpdateParams(routine, "auto", 10)).toEqual({
@@ -316,11 +312,10 @@ describe("Steward capability presentation", () => {
       triggerMode: "schedule",
       workerId: "worker-1",
       name: "Customer pulse",
-      prompt: "Old instructions",
-      stewardInstructions: "Old response instructions",
+      instructions: "Old instructions",
+      whileWaiting: { mode: "auto", instructions: "Old response instructions" },
       enabled: true,
       scheduleIntervalSeconds: 2700,
-      actionHandling: "auto",
       expectedRevision: 10,
     });
     expect(routineStewardInstructionsUpdateParams(routine, "New response instructions", 11)).toEqual({
@@ -328,11 +323,10 @@ describe("Steward capability presentation", () => {
       triggerMode: "schedule",
       workerId: "worker-1",
       name: "Customer pulse",
-      prompt: "Old instructions",
-      stewardInstructions: "New response instructions",
+      instructions: "Old instructions",
+      whileWaiting: { mode: "ask", instructions: "New response instructions" },
       enabled: true,
       scheduleIntervalSeconds: 2700,
-      actionHandling: "ask",
       expectedRevision: 11,
     });
 
@@ -342,11 +336,10 @@ describe("Steward capability presentation", () => {
       triggerMode: "onDemand",
       workerId: "worker-1",
       name: "Customer pulse",
-      prompt: "Old instructions",
-      stewardInstructions: "Old response instructions",
+      instructions: "Old instructions",
+      whileWaiting: { mode: "auto", instructions: "Old response instructions" },
       enabled: true,
       scheduleIntervalSeconds: 2700,
-      actionHandling: "auto",
       expectedRevision: 12,
     });
   });
@@ -461,18 +454,6 @@ describe("Steward capability presentation", () => {
     expect(routineTimeCopy(1_000)).not.toBe("Never");
   });
 
-  it("creates the bounded Jira synchronizer default without enabling it", () => {
-    expect(defaultRoutineParams("project-1", "worker-1", "jira", 7)).toEqual({
-      projectId: "project-1",
-      workerId: "worker-1",
-      kind: "jira",
-      triggerMode: "schedule",
-      name: "Jira issue synchronizer",
-      scheduleIntervalSeconds: 900,
-      actionHandling: "off",
-      expectedRevision: 7,
-    });
-  });
 });
 
 describe("Retiring the Routine behind a question the board dropped", () => {

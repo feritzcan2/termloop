@@ -31,7 +31,7 @@ describe("MCP settings presentation", () => {
     expect(MCP_STEWARD_TOOLS).toContain("task_create");
     expect(MCP_STEWARD_TOOLS).toContain("task_delete");
     expect(MCP_STEWARD_TOOLS).toContain("agent_message_send");
-    expect(MCP_WORKER_TOOLS).toContain("worker_report_routine_problem");
+    expect(MCP_WORKER_TOOLS).toContain("worker_complete_assignment");
   });
 
 });

@@ -412,25 +412,26 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
 }
 
 #[test]
-fn routine_create_accepts_built_in_and_custom_kinds() {
-    for (kind, name) in [
-        ("jira", "Jira issue synchronizer"),
-        ("custom", "Customer pulse"),
-    ] {
-        assert!(validate_method_params(
-            "routine.configurationCreate",
-            &serde_json::json!({
-                "projectId": "project-1",
-                "workerId": "worker-1",
-                "kind": kind,
-                "triggerMode": "schedule",
-                "name": name,
-                "scheduleIntervalSeconds": 900,
-                "actionHandling": "off",
-                "expectedRevision": 7
-            })
-        ));
-    }
+fn routine_create_is_provider_neutral() {
+    let params = serde_json::json!({
+        "projectId": "project-1",
+        "workerId": "worker-1",
+        "triggerMode": "schedule",
+        "name": "Customer pulse",
+        "scheduleIntervalSeconds": 900,
+        "whileWaiting": {"mode":"off", "instructions":""},
+        "expectedRevision": 7
+    });
+    assert!(validate_method_params(
+        "routine.configurationCreate",
+        &params
+    ));
+    let mut classified = params;
+    classified["kind"] = serde_json::json!("jira");
+    assert!(!validate_method_params(
+        "routine.configurationCreate",
+        &classified
+    ));
 }
 
 #[test]

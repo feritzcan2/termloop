@@ -15,7 +15,7 @@ import type {
   PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
 } from "@termloop/contract/current";
-import { assistantInitialView, defaultAssistantLaunchSelection, defaultRoutineParams, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
+import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
@@ -24,8 +24,6 @@ import { routineDisplayStatus, statusExplanation } from "./assistant-status.js";
 import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } from "./companion-chat.js";
 
 export { assistantInstructionsEditableSuffix };
-
-export { defaultRoutineParams };
 
 type AssistantReasoning = QuickActionReasoning;
 type AssistantPermission = WorkerConfigurationDto["permission"];
@@ -206,7 +204,7 @@ export function upsertRoutineConfiguration(current: readonly RoutineConfiguratio
 }
 export function routineInstructionsUpdateParams(
   routine: RoutineConfigurationDto,
-  prompt: string,
+  instructions: string,
   expectedRevision: number,
 ): RoutineConfigurationUpdateParams {
   return {
@@ -214,11 +212,10 @@ export function routineInstructionsUpdateParams(
     triggerMode: routine.triggerMode,
     workerId: routine.workerId,
     name: routine.name,
-    prompt,
-    stewardInstructions: routine.stewardInstructions,
+    instructions,
+    whileWaiting: routine.whileWaiting,
     enabled: routine.enabled,
     scheduleIntervalSeconds: routine.scheduleIntervalSeconds,
-    actionHandling: routine.actionHandling,
     expectedRevision,
   };
 }
@@ -228,18 +225,18 @@ export function routineStewardInstructionsUpdateParams(
   expectedRevision: number,
 ): RoutineConfigurationUpdateParams {
   return {
-    ...routineInstructionsUpdateParams(routine, routine.prompt, expectedRevision),
-    stewardInstructions,
+    ...routineInstructionsUpdateParams(routine, routine.instructions, expectedRevision),
+    whileWaiting: { ...routine.whileWaiting, instructions: stewardInstructions },
   };
 }
 export function routineActionHandlingUpdateParams(
   routine: RoutineConfigurationDto,
-  actionHandling: RoutineConfigurationDto["actionHandling"],
+  actionHandling: RoutineConfigurationDto["whileWaiting"]["mode"],
   expectedRevision: number,
 ): RoutineConfigurationUpdateParams {
   return {
-    ...routineInstructionsUpdateParams(routine, routine.prompt, expectedRevision),
-    actionHandling,
+    ...routineInstructionsUpdateParams(routine, routine.instructions, expectedRevision),
+    whileWaiting: { ...routine.whileWaiting, mode: actionHandling },
   };
 }
 export function workerInstructionsUpdateParams(
@@ -293,7 +290,7 @@ export function playbookRoutineCompletionEvidence(
   playbook: PlaybookDto | null,
   routineId: string,
 ): string | undefined {
-  return playbookRoutineStep(playbook, routineId)?.condition;
+  return playbookRoutineStep(playbook, routineId)?.completeWhen;
 }
 
 function playbookRoutineStep(
@@ -834,16 +831,16 @@ export function RoutineContextEditor(props: {
   setupImprovement(): void;
   runNow(): Promise<void>;
   save(contextMarkdown: string): Promise<void>;
-  saveInstructions(prompt: string): Promise<void>;
+  saveInstructions(instructions: string): Promise<void>;
   saveStewardInstructions(instructions: string): Promise<void>;
-  saveActionHandling(actionHandling: RoutineConfigurationDto["actionHandling"]): Promise<void>;
+  saveActionHandling(actionHandling: RoutineConfigurationDto["whileWaiting"]["mode"]): Promise<void>;
   reload(): Promise<void>;
 }) {
   const [context, setContext] = useState(props.routine.contextMarkdown);
-  const [instructions, setInstructions] = useState(props.routine.prompt);
-  const [stewardInstructions, setStewardInstructions] = useState(props.routine.stewardInstructions);
-  useEffect(() => { setInstructions(props.routine.prompt); }, [props.routine.prompt]);
-  useEffect(() => { setStewardInstructions(props.routine.stewardInstructions); }, [props.routine.stewardInstructions]);
+  const [instructions, setInstructions] = useState(props.routine.instructions);
+  const [stewardInstructions, setStewardInstructions] = useState(props.routine.whileWaiting.instructions);
+  useEffect(() => { setInstructions(props.routine.instructions); }, [props.routine.instructions]);
+  useEffect(() => { setStewardInstructions(props.routine.whileWaiting.instructions); }, [props.routine.whileWaiting.instructions]);
   const contextByteLength = new TextEncoder().encode(context).length;
   const instructionsByteLength = new TextEncoder().encode(instructions).length;
   const stewardInstructionsByteLength = new TextEncoder().encode(stewardInstructions).length;
@@ -890,7 +887,7 @@ export function RoutineContextEditor(props: {
           <ConfigurationVersions controller={improver} reload={props.reload} />
           <div className="ap-editor-head">
             <label htmlFor="routine-instructions">Describe the sources to inspect and the facts to report.</label>
-            <small>{instructionsByteLength} / 8192 bytes</small>
+            <small>{instructionsByteLength} / 9216 bytes</small>
           </div>
           <textarea id="routine-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)}
             aria-label="What the Worker should look for" spellCheck />
@@ -900,7 +897,7 @@ export function RoutineContextEditor(props: {
               label={promptImprovementActionLabel("routineInstructions")}
               start={() => void improver.start()} setup={props.setupImprovement} />
             <button type="button" className="ap-btn primary"
-              disabled={props.busy || !instructions.trim() || instructionsByteLength > 8192 || instructions === props.routine.prompt}
+              disabled={props.busy || !instructions.trim() || instructionsByteLength > 9216 || instructions === props.routine.instructions}
               onClick={() => void props.saveInstructions(instructions)}>Save Worker instructions</button>
           </div>
         </div>
@@ -912,7 +909,7 @@ export function RoutineContextEditor(props: {
             <label htmlFor="routine-steward-instructions">{props.routine.triggerMode === "onDemand"
               ? "Describe the response options when this step is still waiting."
               : "Describe the response options when the Worker reports something new."}</label>
-            <small>{stewardInstructionsByteLength} / 8192 bytes</small>
+            <small>{stewardInstructionsByteLength} / 9216 bytes</small>
           </div>
           <p className="ap-hint">Only the Steward receives these instructions. The Worker cannot see them or use them to recommend an action.{props.routine.triggerMode === "onDemand" ? " Repeated identical waiting evidence is ignored." : ""}</p>
           <textarea id="routine-steward-instructions" value={stewardInstructions}
@@ -920,7 +917,7 @@ export function RoutineContextEditor(props: {
             aria-label="What the Steward should consider doing" spellCheck />
           <div className="ap-actions">
             <button type="button" className="ap-btn primary"
-              disabled={props.busy || stewardInstructionsByteLength > 8192 || stewardInstructions === props.routine.stewardInstructions}
+              disabled={props.busy || stewardInstructionsByteLength > 9216 || stewardInstructions === props.routine.whileWaiting.instructions}
               onClick={() => void props.saveStewardInstructions(stewardInstructions)}>Save Steward instructions</button>
           </div>
         </div>
@@ -930,17 +927,17 @@ export function RoutineContextEditor(props: {
           <span className="ap-label">How may the Steward handle an action?</span>
           <div className="pb-segmented" aria-label="Routine action handling">
             {(["off", "ask", "auto"] as const).map((mode) => <button key={mode} type="button"
-              className={props.routine.actionHandling === mode ? "selected" : ""}
-              disabled={props.busy} onClick={() => mode !== props.routine.actionHandling && void props.saveActionHandling(mode)}>
+              className={props.routine.whileWaiting.mode === mode ? "selected" : ""}
+              disabled={props.busy} onClick={() => mode !== props.routine.whileWaiting.mode && void props.saveActionHandling(mode)}>
               {mode === "off" ? "Record only" : mode === "ask" ? "Ask me" : "Auto if allowed"}
             </button>)}
           </div>
         </div>
-        <p className="ap-hint">{props.routine.actionHandling === "off"
+        <p className="ap-hint">{props.routine.whileWaiting.mode === "off"
           ? props.routine.triggerMode === "onDemand"
             ? "Keep the waiting evidence, but do not wake the Steward to decide an action."
             : "Keep the finding, but do not wake the Steward to decide an action."
-          : props.routine.actionHandling === "ask"
+          : props.routine.whileWaiting.mode === "ask"
             ? "The Steward decides whether a response is useful, then asks you before acting."
             : "The Steward may act only when the instructions above clearly authorize the exact response. Anything ambiguous still asks you first."}</p>
       </div>

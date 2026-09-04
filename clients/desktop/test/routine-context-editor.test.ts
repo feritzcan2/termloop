@@ -9,12 +9,12 @@ import type { PromptImprovement } from "../src/renderer/ui/PromptImprovement.js"
 
 function routine(id = "routine-1"): RoutineConfigurationDto {
   return {
-    id, projectId: "project-1", workerId: "worker-1", kind: "custom",
-    triggerMode: "schedule", name: "Release memory", prompt: "Inspect the release.",
-    stewardInstructions: "", enabled: true, scheduleIntervalSeconds: 300,
+    id, projectId: "project-1", workerId: "worker-1",
+    triggerMode: "schedule", name: "Release memory", instructions: "Inspect the release.",
+    whileWaiting: { mode: "off", instructions: "" }, enabled: true, scheduleIntervalSeconds: 300,
     generation: 1, contextMarkdown: "# Current\nKeep this until cleared.", contextRevision: 2,
     recentSourceKeys: ["custom:release:1"], relatedTaskIds: [],
-    actionHandling: "off", pendingRoutineFindings: [], lastCheckStartedAtEpochMs: null,
+    pendingRoutineFindings: [], lastCheckStartedAtEpochMs: null,
     lastAttemptAtEpochMs: null, lastSuccessfulReportAtEpochMs: null, updatedAtEpochMs: 1,
   };
 }

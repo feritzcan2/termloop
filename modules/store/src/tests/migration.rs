@@ -1746,6 +1746,82 @@ fn v42_migration_does_not_broaden_conflicting_source_automation() {
     let _ = std::fs::remove_file(path);
 }
 
+#[test]
+fn legacy_migrations_remove_routine_kind_and_preserve_playbook_conditions() {
+    let legacy_prompt = "x".repeat(8 * 1024);
+    let legacy_condition = "y".repeat(termloop_domain::PLAYBOOK_EVIDENCE_MAX_BYTES);
+    let expected_prompt = format!("{legacy_prompt}\n\nApplies when: {legacy_condition}");
+    for schema_version in [41, 49] {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-store-routine-kind-v{schema_version}-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+            "schema_version": schema_version,
+            "revision": 7,
+            "projects": [{"id":"project-1","name":"Project","folder_path":"/tmp/project"}],
+            "sessions": [],
+            "mcp_tool_description_overrides": [
+                {"tool":"ask_to","description":"Keep this override."},
+                {"tool":"worker_report_step_verdicts","description":"Remove this override."}
+            ],
+            "worker_configurations": [{
+                "id":"worker-1", "projectId":"project-1", "name":"Worker 1",
+                "agentId":"codex", "model":"gpt-5.6-luna", "permission":"bypassPermissions",
+                "reasoning":"medium", "enabled":false, "pingIntervalSeconds":60,
+                "workerPrompt":"", "systemPrompt":"", "executorSessionId":null,
+                "generation":1, "updatedAtEpochMs":1
+            }],
+            "tracker_configurations": [{
+                "id":"routine-1", "projectId":"project-1", "workerId":"worker-1",
+                "kind":"ciPr", "triggerMode":"onDemand", "name":"Check review",
+                "prompt":legacy_prompt, "stewardInstructions":"",
+                "enabled":false, "scheduleIntervalSeconds":300, "generation":1,
+                "contextMarkdown":"", "contextRevision":1, "recentSourceKeys":[],
+                "relatedTaskIds":[], "actionHandling":"off", "pendingRoutineFindings":[],
+                "lastCheckStartedAtEpochMs":null, "lastAttemptAtEpochMs":null,
+                "lastSuccessfulReportAtEpochMs":null, "updatedAtEpochMs":1
+            }],
+            "playbook_configurations": [{
+                "projectId":"project-1", "revision":1,
+                "activePipelineName":"Delivery", "milestones":[{
+                    "id":"review", "title":"Review approved", "gate":"automatic",
+                    "routineId":"routine-1", "retryDelaySeconds":300,
+                    "condition":legacy_condition, "approver":null
+                }],
+                "savedPipelines":[], "updatedAtEpochMs":1
+            }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.tracker_configurations()[0].name, "Check review");
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+        assert!(persisted["tracker_configurations"][0].get("kind").is_none());
+        assert_eq!(
+            persisted["mcp_tool_description_overrides"],
+            serde_json::json!([{"tool":"ask_to","description":"Keep this override."}])
+        );
+        assert_eq!(
+            persisted["tracker_configurations"][0]["prompt"],
+            expected_prompt
+        );
+        assert!(
+            persisted["playbook_configurations"][0]["milestones"][0]
+                .get("condition")
+                .is_none()
+        );
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 fn legacy_task_source(
     id: &str,
     create_worktree: bool,

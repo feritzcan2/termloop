@@ -14,12 +14,10 @@ import {
   assistantSelectionMatches,
   customRoutineParams,
   defaultAssistantLaunchSelection,
-  defaultRoutineParams,
   isAssistantSession,
   moveTaskToPlaybookStepAndCheck,
   openCheckingWorkerTerminal,
   persistentAssistantIsActive,
-  ROUTINE_CATALOG,
   routineCatalogRows,
   playbookStepBoard,
   playbookBuilderFocusSession,
@@ -30,7 +28,6 @@ import {
   stewardEnableOfferVisible,
   stepRoutineCadence,
   stepRoutineTimingLabel,
-  routinePresetKey,
   routineTimingLabel,
   workerPingIntervalLabel,
   workerPingIntervalSeconds,
@@ -369,33 +366,14 @@ describe("Assistant rail Session classification", () => {
     )).toBe(true);
   });
 
-  it("creates sidebar routines with the bounded defaults and without enabling them", () => {
-    expect(ROUTINE_CATALOG.map(({ kind }) => kind)).toEqual(["slack", "jira", "runtime", "delivery", "ciPr"]);
-    expect(defaultRoutineParams("project-1", "worker-1", "slack", 3)).toEqual({
-      projectId: "project-1",
-      workerId: "worker-1",
-      kind: "slack",
-      triggerMode: "schedule",
-      name: "Slack follow-ups",
-      scheduleIntervalSeconds: 300,
-      actionHandling: "off",
-      expectedRevision: 3,
-    });
-    expect(defaultRoutineParams("project-1", "worker-1", "jira", 3).scheduleIntervalSeconds).toBe(900);
-    expect(defaultRoutineParams("project-1", "worker-1", "runtime", 3).name).toBe("Runtime monitoring");
-    expect(defaultRoutineParams("project-1", "worker-1", "delivery", 3).name).toBe("Delivery monitoring");
-    expect(defaultRoutineParams("project-1", "worker-1", "ciPr", 3).name).toBe("CI & pull requests");
-  });
-
-  it("creates a named custom Routine instead of reusing a built-in type", () => {
+  it("creates a named provider-neutral Routine", () => {
     expect(customRoutineParams("project-1", "worker-1", "  Customer pulse  ", 45, 8)).toEqual({
       projectId: "project-1",
       workerId: "worker-1",
-      kind: "custom",
       triggerMode: "schedule",
       name: "Customer pulse",
       scheduleIntervalSeconds: 2700,
-      actionHandling: "off",
+      whileWaiting: { mode: "off", instructions: "" },
       expectedRevision: 8,
     });
   });
@@ -430,43 +408,34 @@ describe("Assistant rail Session classification", () => {
     )).toBe(false);
   });
 
-  it("keeps every created Routine visible and lets a virtual preset be dismissed", () => {
-    const routine = (id: string, kind: RoutineConfigurationDto["kind"] = "slack") => ({
+  it("keeps every created scheduled Routine visible without virtual provider presets", () => {
+    const routine = (id: string, workerId = "worker-1") => ({
       id,
-      workerId: "worker-1",
-      kind,
+      workerId,
+      triggerMode: "schedule",
       name: id,
       scheduleIntervalSeconds: 300,
     } as Parameters<typeof routineCatalogRows>[1][number]);
-    expect(routineCatalogRows("worker-1", [routine("slack-1"), routine("slack-2"), routine("My custom check", "custom")], new Set())
-      .map((row) => row.routine?.id ?? row.preset.kind))
-      .toEqual(["slack-1", "slack-2", "jira", "runtime", "delivery", "ciPr", "My custom check"]);
-    expect(routineCatalogRows(
-      "worker-1",
-      [],
-      new Set([routinePresetKey("worker-1", "jira")]),
-    ).map((row) => row.preset.kind)).toEqual(["slack", "runtime", "delivery", "ciPr"]);
+    expect(routineCatalogRows("worker-1", [routine("first"), routine("second"), routine("other", "worker-2")])
+      .map(({ id }) => id))
+      .toEqual(["first", "second"]);
   });
 
   it("keeps the pipeline's yes/no Routines out of the scheduled catalog", () => {
     const routine = (
       id: string,
-      kind: RoutineConfigurationDto["kind"] = "ciPr",
       triggerMode: RoutineConfigurationDto["triggerMode"] = "schedule",
     ) => ({
-      id, workerId: "worker-1", kind, triggerMode, name: id, scheduleIntervalSeconds: 300,
+      id, workerId: "worker-1", triggerMode, name: id, scheduleIntervalSeconds: 300,
     } as Parameters<typeof routineCatalogRows>[1][number]);
     const all = [
-      routine("Slack follow-ups", "slack"),
-      routine("Is a PR open?", "ciPr", "onDemand"),
-      routine("Is CI green?", "ciPr", "onDemand"),
-      routine("Is it deployed?", "delivery", "onDemand"),
+      routine("Project follow-ups"),
+      routine("Is a PR open?", "onDemand"),
+      routine("Is CI green?", "onDemand"),
+      routine("Is it deployed?", "onDemand"),
     ];
-    // An on-demand Routine is a question on the board, so it never stands in
-    // for the scheduled preset of its kind — the "CI & pull requests" suggestion
-    // is still on offer.
-    expect(routineCatalogRows("worker-1", all, new Set()).map((row) => row.routine?.id ?? row.preset.kind))
-      .toEqual(["Slack follow-ups", "jira", "runtime", "delivery", "ciPr"]);
+    expect(routineCatalogRows("worker-1", all).map(({ id }) => id))
+      .toEqual(["Project follow-ups"]);
   });
 
   it("shows the Playbook cadence instead of the step Routine's padding interval", () => {

@@ -1828,7 +1828,6 @@
         "agent_status_read",
         "task_agent_transcript_tail_read",
         "task_agent_request",
-        "pull_request_read",
         "routine_report_read",
         "companion_transcript_read",
         "steward_system_prompt_read",
@@ -1846,9 +1845,7 @@
         "routine_finding_read",
         "routine_finding_resolve",
         "worker_get_next_routine",
-        "worker_complete_routine",
-        "worker_report_routine_problem",
-        "worker_report_step_verdicts",
+        "worker_complete_assignment",
         "playbook_read",
         "task_set_steward_brief",
         "configuration_version_read",
@@ -1933,8 +1930,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 33,
-          "maxItems": 33,
+          "minItems": 30,
+          "maxItems": 30,
           "uniqueItems": true
         }
       }
@@ -10274,6 +10271,7 @@
       "additionalProperties": false,
       "required": [
         "task_id",
+        "usage",
         "branch_name",
         "repository_provider",
         "repository_host",
@@ -10291,6 +10289,10 @@
         "last_attempt_observed_at_epoch_ms"
       ],
       "properties": {
+        "usage": {
+          "description": "This cached projection is for UI presentation only and must never satisfy a delivery gate.",
+          "const": "displayOnly"
+        },
         "task_id": {
           "type": "string",
           "minLength": 1
@@ -13248,19 +13250,6 @@
         }
       }
     },
-    "routineKind": {
-      "x-codegen": true,
-      "x-codegen-name": "RoutineKind",
-      "type": "string",
-      "enum": [
-        "slack",
-        "jira",
-        "runtime",
-        "delivery",
-        "ciPr",
-        "custom"
-      ]
-    },
     "routineTriggerMode": {
       "x-codegen": true,
       "x-codegen-name": "RoutineTriggerMode",
@@ -13279,6 +13268,21 @@
         "ask",
         "auto"
       ]
+    },
+    "routineWhileWaitingDto": {
+      "x-codegen": true,
+      "x-codegen-name": "RoutineWhileWaitingDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "instructions"],
+      "properties": {
+        "mode": { "$ref": "#/$defs/routineActionHandling" },
+        "instructions": {
+          "type": "string",
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
+        }
+      }
     },
     "pendingRoutineFindingDto": {
       "x-codegen": true,
@@ -13863,11 +13867,10 @@
         "id",
         "projectId",
         "workerId",
-        "kind",
         "triggerMode",
         "name",
-        "prompt",
-        "stewardInstructions",
+        "instructions",
+        "whileWaiting",
         "enabled",
         "scheduleIntervalSeconds",
         "generation",
@@ -13875,7 +13878,6 @@
         "contextRevision",
         "recentSourceKeys",
         "relatedTaskIds",
-        "actionHandling",
         "pendingRoutineFindings",
         "lastCheckStartedAtEpochMs",
         "lastSuccessfulReportAtEpochMs",
@@ -13897,9 +13899,6 @@
           "minLength": 1,
           "maxLength": 64
         },
-        "kind": {
-          "$ref": "#/$defs/routineKind"
-        },
         "triggerMode": {
           "$ref": "#/$defs/routineTriggerMode"
         },
@@ -13909,17 +13908,13 @@
           "maxLength": 80,
           "x-utf8-max-bytes": 80
         },
-        "prompt": {
+        "instructions": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
         },
-        "stewardInstructions": {
-          "type": "string",
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
-        },
+        "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
         "enabled": {
           "type": "boolean"
         },
@@ -13962,9 +13957,6 @@
           },
           "maxItems": 16,
           "uniqueItems": true
-        },
-        "actionHandling": {
-          "$ref": "#/$defs/routineActionHandling"
         },
         "pendingRoutineFindings": {
           "type": "array",
@@ -14042,21 +14034,17 @@
       "additionalProperties": false,
       "required": [
         "projectId",
-        "kind",
         "triggerMode",
         "name",
         "workerId",
         "scheduleIntervalSeconds",
-        "actionHandling",
+        "whileWaiting",
         "expectedRevision"
       ],
       "properties": {
         "projectId": {
           "type": "string",
           "minLength": 1
-        },
-        "kind": {
-          "$ref": "#/$defs/routineKind"
         },
         "triggerMode": {
           "$ref": "#/$defs/routineTriggerMode"
@@ -14077,21 +14065,13 @@
           "minimum": 60,
           "maximum": 86400
         },
-        "actionHandling": {
-          "$ref": "#/$defs/routineActionHandling"
-        },
-        "prompt": {
-          "description": "Optional complete Worker observation instructions for an agent-built Routine. Omitted creates use the kind's built-in instructions.",
+        "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
+        "instructions": {
+          "description": "Optional complete Worker observation instructions for an agent-built Routine. Omitted creates use the generic Routine instructions.",
           "type": "string",
           "minLength": 1,
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
-        },
-        "stewardInstructions": {
-          "description": "Optional Steward response policy for an agent-built Routine.",
-          "type": "string",
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
         },
         "expectedRevision": {
           "type": "integer",
@@ -14108,11 +14088,10 @@
         "routineId",
         "triggerMode",
         "name",
-        "prompt",
-        "stewardInstructions",
+        "instructions",
+        "whileWaiting",
         "workerId",
         "scheduleIntervalSeconds",
-        "actionHandling",
         "expectedRevision",
         "enabled"
       ],
@@ -14131,17 +14110,13 @@
           "maxLength": 80,
           "x-utf8-max-bytes": 80
         },
-        "prompt": {
+        "instructions": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
         },
-        "stewardInstructions": {
-          "type": "string",
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
-        },
+        "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
         "workerId": {
           "type": "string",
           "minLength": 1,
@@ -14151,9 +14126,6 @@
           "type": "integer",
           "minimum": 60,
           "maximum": 86400
-        },
-        "actionHandling": {
-          "$ref": "#/$defs/routineActionHandling"
         },
         "expectedRevision": {
           "type": "integer",
@@ -14280,7 +14252,7 @@
       "required": [
         "routineId",
         "generation",
-        "kind",
+        "triggerMode",
         "name",
         "contextMarkdown",
         "contextRevision",
@@ -14304,9 +14276,6 @@
         "generation": {
           "type": "integer",
           "minimum": 1
-        },
-        "kind": {
-          "$ref": "#/$defs/routineKind"
         },
         "triggerMode": {
           "$ref": "#/$defs/routineTriggerMode"
@@ -14572,7 +14541,9 @@
         "gate",
         "routineId",
         "retryDelaySeconds",
-        "condition",
+        "completeWhen",
+        "whileWaiting",
+        "workerId",
         "approver"
       ],
       "properties": {
@@ -14603,10 +14574,17 @@
           "maximum": 86400,
           "x-rust-type": "u64"
         },
-        "condition": {
+        "completeWhen": {
           "type": "string",
-          "maxLength": 600,
-          "x-utf8-max-bytes": 600
+          "minLength": 1,
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
+        },
+        "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         },
         "approver": {
           "type": [
@@ -14619,45 +14597,6 @@
         }
       }
     },
-    "playbookStepCheckDraftDto": {
-      "x-codegen": true,
-      "x-codegen-name": "PlaybookStepCheckDraftDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "instructions",
-        "stewardInstructions",
-        "actionHandling",
-        "workerId"
-      ],
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/routineKind"
-        },
-        "instructions": {
-          "type": "string",
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
-        },
-        "stewardInstructions": {
-          "type": "string",
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
-        },
-        "actionHandling": {
-          "$ref": "#/$defs/routineActionHandling"
-        },
-        "workerId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 64
-        }
-      }
-    },
     "playbookMilestoneDraftDto": {
       "x-codegen": true,
       "x-codegen-name": "PlaybookMilestoneDraftDto",
@@ -14667,9 +14606,10 @@
         "id",
         "title",
         "gate",
-        "check",
+        "completeWhen",
+        "whileWaiting",
+        "workerId",
         "retryDelaySeconds",
-        "condition",
         "approver"
       ],
       "properties": {
@@ -14689,19 +14629,23 @@
         "gate": {
           "$ref": "#/$defs/playbookGateKind"
         },
-        "check": {
-          "$ref": "#/$defs/playbookStepCheckDraftDto"
+        "completeWhen": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 9216,
+          "x-utf8-max-bytes": 9216
+        },
+        "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
+        "workerId": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64
         },
         "retryDelaySeconds": {
           "type": "integer",
           "minimum": 60,
           "maximum": 86400,
           "x-rust-type": "u64"
-        },
-        "condition": {
-          "type": "string",
-          "maxLength": 600,
-          "x-utf8-max-bytes": 600
         },
         "approver": {
           "type": [
@@ -14817,7 +14761,8 @@
       "type": "string",
       "enum": [
         "passed",
-        "waiting"
+        "waiting",
+        "blocked"
       ]
     },
     "playbookStepProgressDto": {

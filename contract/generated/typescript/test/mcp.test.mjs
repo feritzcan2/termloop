@@ -35,8 +35,7 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(MCP_WORKER_TOOLS.includes("task_agent_request"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_request"));
   assert.ok(!MCP_WORKER_TOOLS.includes("send_to_agent"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_routine"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_report_routine_problem"));
+  assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_assignment"));
   assert.ok(!MCP_WORKER_TOOLS.includes("task_create"));
   assert.ok(MCP_TOOLS.every((tool) => !METHODS.includes(tool)));
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.message.maxLength, 32768);

@@ -217,12 +217,17 @@ impl CoreRuntime {
                     .find(|worker| worker.id == routine.worker_id)
                     .map(|worker| worker.name.clone())
                     .unwrap_or_else(|| "this Project's Worker".into());
-                bindings.built_in_instructions =
-                    termloop_invocation::tracker_assignment_prompt(routine_role(&routine))
-                        .map_err(|error| CoreError::Terminal(error.to_string()))?
-                        .delivered_preview()
-                        .trim()
-                        .to_owned();
+                bindings.built_in_instructions = termloop_invocation::tracker_assignment_prompt(
+                    if routine.trigger_mode.is_scheduled() {
+                        termloop_invocation::ExecutorRole::Routine
+                    } else {
+                        termloop_invocation::ExecutorRole::StepCheckTracker
+                    },
+                )
+                .map_err(|error| CoreError::Terminal(error.to_string()))?
+                .delivered_preview()
+                .trim()
+                .to_owned();
             }
             AssistantPromptSurface::RoutineBuilder => {
                 let worker = self.owned_worker_configuration(
@@ -297,23 +302,17 @@ impl CoreRuntime {
                 json!({
                     "id": routine.id,
                     "name": routine.name,
-                    "kind": routine.kind,
                     "triggerMode": routine.trigger_mode,
                     "enabled": routine.enabled,
                     "scheduleIntervalSeconds": routine.schedule_interval_seconds,
-                    "actionHandling": routine.action_handling,
+                    "whileWaiting": {
+                        "mode": routine.action_handling,
+                        "instructions": routine.steward_instructions,
+                    },
                 })
             })
             .collect::<Vec<_>>();
         serde_json::to_string_pretty(&json!({ "routines": routines }))
             .expect("Routine inventory serializes")
-    }
-}
-
-fn routine_role(routine: &TrackerConfiguration) -> termloop_invocation::ExecutorRole {
-    if routine.trigger_mode.is_scheduled() {
-        super::assistant_session::tracker_role(routine.kind)
-    } else {
-        termloop_invocation::ExecutorRole::StepCheckTracker
     }
 }

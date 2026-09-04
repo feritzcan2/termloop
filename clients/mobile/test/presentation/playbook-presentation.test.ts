@@ -29,7 +29,9 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     gate: "automatic",
     routineId: "routine-code",
     retryDelaySeconds: 600,
-    condition: "The Task branch has commits.",
+    completeWhen: "The Task branch has commits.",
+    whileWaiting: { mode: "off", instructions: "" },
+    workerId: "worker-1",
     approver: null,
     ...overrides,
   };
