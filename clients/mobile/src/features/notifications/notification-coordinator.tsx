@@ -8,7 +8,7 @@ import { Platform } from "react-native";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import {
-  notificationDestination,
+  notificationDestinationFromRemote,
   notificationRoute,
   resolveNotificationConnectionId,
   type NotificationDestination,
@@ -82,7 +82,10 @@ export function NotificationCoordinator() {
       const identifier = response.notification.request.identifier;
       if (handledResponse.current === identifier) return;
       handledResponse.current = identifier;
-      const destination = notificationDestination(response.notification.request.content.data);
+      const destination = notificationDestinationFromRemote(
+        response.notification.request.content.data,
+        response.notification.request.trigger,
+      );
       mobileDiagnostics.report("notification", destination === undefined ? "response_rejected" : "response_received", {
         hasDestination: destination !== undefined,
         hasConnectionHint: destination?.connectionId !== undefined,

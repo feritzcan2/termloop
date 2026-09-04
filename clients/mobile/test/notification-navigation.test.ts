@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   notificationDestination,
+  notificationDestinationFromRemote,
   notificationRoute,
   resolveNotificationConnectionId,
 } from "../src/features/notifications/notification-navigation";
@@ -28,6 +29,29 @@ describe("notification navigation", () => {
       .toEqual({ kind: "session", sessionId: "session-codex" });
     expect(notificationDestination({ connectionId: "mac-1", sessionId: "" })).toBeUndefined();
     expect(notificationDestination("session-codex")).toBeUndefined();
+  });
+
+  it("reads direct APNs navigation fields from the push trigger payload", () => {
+    expect(notificationDestinationFromRemote(undefined, {
+      type: "push",
+      payload: {
+        connectionId: "mac-2",
+        sessionId: "session-codex",
+      },
+    })).toEqual({ kind: "session", connectionId: "mac-2", sessionId: "session-codex" });
+  });
+
+  it("prefers Expo-shaped content data over the raw push trigger payload", () => {
+    expect(notificationDestinationFromRemote({
+      connectionId: "mac-1",
+      sessionId: "session-claude",
+    }, {
+      type: "push",
+      payload: {
+        connectionId: "mac-2",
+        sessionId: "session-codex",
+      },
+    })).toEqual({ kind: "session", connectionId: "mac-1", sessionId: "session-claude" });
   });
 
   it("finds the owning Mac from the Session when the push hint is missing or stale", () => {
