@@ -1,0 +1,21 @@
+{
+  "name": "@termloop/mobile-push-relay",
+  "version": "2.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "types": "wrangler types",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.1.3",
+    "@msw/cloudflare": "0.0.1",
+    "@types/node": "26.4.1",
+    "msw": "2.15.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.128.0"
+  }
+}
