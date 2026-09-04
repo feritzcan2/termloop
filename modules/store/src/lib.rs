@@ -55,7 +55,9 @@ use termloop_domain::{
 // Version 47 adds the managed Task branch/worktree prefix. Version 48 adds the
 // bounded current set of branches observed in each managed Task worktree.
 // Version 49 adds the selected remote base ref to Project Task automation.
-const CURRENT_SCHEMA_VERSION: u32 = 49;
+// Version 50 removes the retired Routine provider kind from durable state;
+// capability selection now belongs to the Worker at assignment time.
+const CURRENT_SCHEMA_VERSION: u32 = 50;
 
 pub struct CoreWriteAuthority {
     _private: (),

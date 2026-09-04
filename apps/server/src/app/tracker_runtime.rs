@@ -227,15 +227,59 @@ async fn deliver_due_worker_wake(
     state: &AppState,
     wake: termloop_core::companion_integrations::tracker_runtime::DueWorkerWake,
 ) {
-    let message =
-        match termloop_core::companion_integrations::assistant_session::compose_worker_routine_wake(
-        ) {
-            Ok(message) => message,
-            Err(error) => {
-                tracing::warn!(worker_id = wake.worker_id, %error, "Routine wake composition failed");
-                return;
+    let now = termloop_platform::current_epoch_ms();
+    let claim = {
+        let mut core = state.core.lock().await;
+        core.claim_due_worker_routine(&wake, termloop_platform::generate_opaque_id(), now)
+    };
+    let claim = match claim {
+        Ok(claim) => claim,
+        Err(error) => {
+            tracing::warn!(worker_id = wake.worker_id, %error, "Routine assignment claim failed");
+            state
+                .core
+                .lock()
+                .await
+                .fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+            state.tracker_runtime_wake.notify_one();
+            return;
+        }
+    };
+    let Some(capability) = claim.capability.as_ref() else {
+        return;
+    };
+    let issued = state
+        .tracker_report_capabilities
+        .lock()
+        .ok()
+        .is_some_and(|mut registry| {
+            registry.issue(wake.worker_session_id.clone(), capability.clone(), now)
+        });
+    if !issued {
+        let mut core = state.core.lock().await;
+        core.release_worker_routine_claim(capability);
+        core.fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+        state.tracker_runtime_wake.notify_one();
+        return;
+    }
+    let message = match termloop_core::companion_integrations::assistant_session::compose_worker_routine_assignment_wake(
+        &capability.check_id,
+        &claim.result,
+    ) {
+        Ok(message) => message,
+        Err(error) => {
+            tracing::warn!(worker_id = wake.worker_id, %error, "Routine assignment wake composition failed");
+            if let Ok(mut registry) = state.tracker_report_capabilities.lock() {
+                registry.revoke_check(&wake.worker_session_id, &capability.check_id);
             }
-        };
+            let mut core = state.core.lock().await;
+            core.release_worker_routine_claim(capability);
+            core.fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+            state.tracker_runtime_wake.notify_one();
+            return;
+        }
+    };
+    let invalidation_topics = super::mcp::worker_claim_invalidation_topics(&claim.result);
     // Keep the Core guard out of the `if let` scrutinee. Scrutinee
     // temporaries live through the matching branch, and the failure branch
     // needs to lock Core again to schedule a retry. Leaving the guard in the
@@ -247,15 +291,24 @@ async fn deliver_due_worker_wake(
     };
     if let Err(error) = delivery {
         tracing::warn!(worker_id = wake.worker_id, %error, "Routine wake delivery failed");
+        if let Ok(mut registry) = state.tracker_report_capabilities.lock() {
+            registry.revoke_check(&wake.worker_session_id, &capability.check_id);
+        }
         let retry_at = termloop_platform::current_epoch_ms().saturating_add(WAKE_DELIVERY_RETRY_MS);
-        state
-            .core
-            .lock()
-            .await
-            .fail_worker_wake_delivery(&wake, retry_at);
+        let mut core = state.core.lock().await;
+        core.release_worker_routine_claim(capability);
+        core.fail_worker_wake_delivery(&wake, retry_at);
         state.tracker_runtime_wake.notify_one();
     }
-    publish_tracker_runtime_invalidation(state, state.core.lock().await.state_revision());
+    let state_revision = state.core.lock().await.state_revision();
+    if !invalidation_topics.is_empty() {
+        let _ = state.invalidation_requests.try_send(InvalidationRequest {
+            topics: invalidation_topics,
+            state_revision,
+            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+        });
+    }
+    publish_tracker_runtime_invalidation(state, state_revision);
 }
 
 #[cfg(test)]

@@ -53,7 +53,7 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
     }
     for (const routine of routines.configurations) {
       const prefix = `runtime.routine.${routine.id}`;
-      addRuntime(`${prefix}.instructions`, `${routine.name} · Instructions`, "Routines", routine.prompt, "routine", { editable: true });
+      addRuntime(`${prefix}.instructions`, `${routine.name} · Instructions`, "Routines", routine.instructions, "routine", { editable: true });
       addRuntime(`${prefix}.context`, `${routine.name} · Next-run memory`, "Routines", routine.contextMarkdown, "routine", { editable: true });
     }
     return [...builtIns, ...runtime];
@@ -116,10 +116,9 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
       await sourceApi.routineConfigurationUpdate({
         routineId: routine.id,
         triggerMode: routine.triggerMode,
-        actionHandling: routine.actionHandling,
         name: routine.name,
-        prompt: trimmed,
-        stewardInstructions: routine.stewardInstructions,
+        instructions: trimmed,
+        whileWaiting: routine.whileWaiting,
         workerId: routine.workerId,
         scheduleIntervalSeconds: routine.scheduleIntervalSeconds,
         expectedRevision: current.stateRevision,

@@ -58,6 +58,7 @@ function worktreeLessTask(): Task {
 
 function mergedProjection(task: Task): GitHostProjection {
   return {
+    usage: "displayOnly",
     task_id: task.id,
     branch_name: task.branch?.name ?? null,
     repository_provider: "github",
@@ -762,6 +763,7 @@ describe("Task rail row anatomy", () => {
       },
     };
     const projection: GitHostProjection = {
+      usage: "displayOnly",
       task_id: task.id,
       branch_name: task.branch?.name ?? null,
       repository_provider: null,

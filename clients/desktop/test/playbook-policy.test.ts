@@ -24,7 +24,6 @@ import {
   switchToSavedPipeline,
   truncatePlaybookLabel,
   utf8ByteLength,
-  type PlaybookRoutineSummary,
 } from "../src/renderer/ui/playbook-policy.js";
 
 function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMilestoneDto {
@@ -34,7 +33,12 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     gate: "human",
     routineId: "routine-pr",
     retryDelaySeconds: 600,
-    condition: "PR review projection shows an approval.",
+    completeWhen: "PR review projection shows an approval.",
+    whileWaiting: {
+      mode: "ask",
+      instructions: "Propose asking the reviewer and ask the user whether to send it.",
+    },
+    workerId: "worker-1",
     approver: "ferit",
     ...overrides,
   };
@@ -51,20 +55,6 @@ function playbook(overrides: Partial<PlaybookDto> = {}): PlaybookDto {
     ...overrides,
   };
 }
-
-const routines: PlaybookRoutineSummary[] = [
-  {
-    id: "routine-pr", kind: "ciPr", name: "PR approved", enabled: true,
-    prompt: "Check the approval projection.",
-    stewardInstructions: "Propose asking the reviewer and ask the user whether to send it.",
-    actionHandling: "ask", workerId: "worker-1", stepChecker: true,
-  },
-  {
-    id: "routine-off", kind: "jira", name: "Jira closed", enabled: false,
-    prompt: "Check Jira.", stewardInstructions: "", actionHandling: "off",
-    workerId: "worker-1", stepChecker: true,
-  },
-];
 
 describe("Playbook policy validation", () => {
   it("keeps gate, id, utf8, and retry invariants visible before Save", () => {
@@ -134,46 +124,43 @@ describe("Inline pipeline edits", () => {
 });
 
 describe("Atomic Playbook mutation payload", () => {
-  it("sends check intent and never sends client-owned Routine identity", () => {
-    const draft = playbookDraftFromDto(playbook(), routines);
-    const wire = playbookMilestonesForWire(draft.milestones, routines);
+  it("sends the flat completion policy and never sends client-owned Routine identity", () => {
+    const draft = playbookDraftFromDto(playbook());
+    const wire = playbookMilestonesForWire(draft.milestones);
     expect(wire).toEqual([{
       id: "pr-approved",
       title: "PR approved",
       gate: "human",
-      check: {
-        kind: "ciPr",
-        instructions: "Check the approval projection.",
-        stewardInstructions: "Propose asking the reviewer and ask the user whether to send it.",
-        actionHandling: "ask",
-        workerId: "worker-1",
-      },
       retryDelaySeconds: 600,
-      condition: "PR review projection shows an approval.",
+      completeWhen: "PR review projection shows an approval.",
+      whileWaiting: {
+        mode: "ask",
+        instructions: "Propose asking the reviewer and ask the user whether to send it.",
+      },
+      workerId: "worker-1",
       approver: "ferit",
     }]);
     expect(wire[0]).not.toHaveProperty("routineId");
   });
 
-  it("fills a brand-new check with working defaults and no preparatory write", () => {
+  it("keeps a brand-new step provider-neutral with no preparatory write", () => {
     const wire = playbookMilestonesForWire([{
       id: "ci-green", title: "Is CI green?", gate: "automatic",
-      routineId: null, retryDelaySeconds: 600, condition: "", approver: null,
+      routineId: null, retryDelaySeconds: 600, completeWhen: "Required checks pass.",
+      whileWaiting: { mode: "off", instructions: "" }, workerId: null, approver: null,
     }]);
-    expect(wire[0]?.check).toEqual({
-      kind: "custom",
-      instructions: "",
-      stewardInstructions: "",
-      actionHandling: "off",
+    expect(wire[0]).toMatchObject({
+      completeWhen: "Required checks pass.",
+      whileWaiting: { mode: "off", instructions: "" },
       workerId: null,
     });
   });
 
   it("uses document CAS, refreshes store CAS, and carries Worker policy", () => {
-    const draft = playbookDraftFromDto(playbook(), routines);
+    const draft = playbookDraftFromDto(playbook());
     const decision = resolvePlaybookSave(
       "project-1", draft, 3, { playbook: playbook(), stateRevision: 55 },
-      routines, "worker-1", "codex",
+      "worker-1", "codex",
     );
     expect(decision.kind).toBe("proceed");
     if (decision.kind !== "proceed") return;
@@ -184,29 +171,29 @@ describe("Atomic Playbook mutation payload", () => {
 
     expect(resolvePlaybookSave(
       "project-1", draft, 3, { playbook: playbook({ revision: 4 }), stateRevision: 56 },
-      routines, "worker-1", "codex",
+      "worker-1", "codex",
     )).toEqual({ kind: "conflict" });
   });
 
-  it("copies loaded documents and their check projections independently", () => {
+  it("copies loaded documents and their completion policy independently", () => {
     const source = playbook();
-    const draft = playbookDraftFromDto(source, routines);
+    const draft = playbookDraftFromDto(source);
     draft.milestones[0]!.title = "Changed";
     expect(source.milestones[0]?.title).toBe("PR approved");
-    expect(draft.milestones[0]?.checkInstructions).toBe("Check the approval projection.");
+    expect(draft.milestones[0]?.completeWhen).toBe("PR review projection shows an approval.");
   });
 });
 
 describe("Playbook templates", () => {
-  it("stay local until one atomic Save and retain custom instructions", () => {
+  it("keeps observation and provider-neutral Steward follow-up separate", () => {
     const template = PLAYBOOK_TEMPLATES.find((entry) => entry.id === "dev-pr-to-production")!;
     const draft = playbookTemplateDraft(template);
     expect(draft.milestones.every((entry) => entry.routineId === null)).toBe(true);
-    expect(draft.milestones.find((entry) => entry.id === "review-requested")?.checkInstructions)
-      .toContain("Ask Nurguyl on Slack");
-    expect(draft.milestones.map((entry) => entry.checkKind)).toEqual([
-      "runtime", "ciPr", "ciPr", "slack", "ciPr", "ciPr", "ciPr", "ciPr", "delivery", "delivery",
-    ]);
+    const reviewRequest = draft.milestones.find((entry) => entry.id === "review-requested")!;
+    expect(reviewRequest.completeWhen).toContain("visible message");
+    expect(reviewRequest.whileWaiting.mode).toBe("ask");
+    expect(reviewRequest.whileWaiting.instructions).toContain("existing Task Agent");
+    expect(JSON.stringify(reviewRequest)).not.toMatch(/Slack|Nurguyl/);
   });
 
   it("adopts without provisioning side effects and parks the current board", () => {

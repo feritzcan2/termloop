@@ -97,7 +97,7 @@ const IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.worker-instructions",
-    version: 8,
+    version: 9,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.worker-instructions.md"
     ),
@@ -105,7 +105,7 @@ const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 10,
+    version: 11,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -113,68 +113,44 @@ const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
-    version: 9,
+    version: 10,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.routine.md"),
 };
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 18,
+    version: 19,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 36,
+    version: 37,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 24,
+    version: 25,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
-const SLACK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.slack",
-    version: 6,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.slack.md"),
-};
-
-const JIRA_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.jira",
-    version: 5,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.jira.md"),
-};
-
-const RUNTIME_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.runtime",
-    version: 6,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.runtime.md"),
-};
-
-const DELIVERY_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.delivery",
-    version: 6,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.delivery.md"),
-};
-
-const CI_PR_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.ci-pr",
-    version: 6,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.ci-pr.md"),
+const ROUTINE_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.tracker.routine",
+    version: 2,
+    authored_body: include_str!("../../../resources/prompts/builtin.tracker.routine.md"),
 };
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 8,
+    version: 9,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
-const CUSTOM_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.tracker.custom",
-    version: 4,
-    authored_body: include_str!("../../../resources/prompts/builtin.tracker.custom.md"),
+const TASK_EVIDENCE_POLICY_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.policy.task-evidence",
+    version: 1,
+    authored_body: include_str!("../../../resources/prompts/builtin.policy.task-evidence.md"),
 };
 
 const ASSISTANT_WAKE_TEMPLATE: PromptTemplate = PromptTemplate {
@@ -277,15 +253,11 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE,
         ROUTINE_BUILDER_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
+        TASK_EVIDENCE_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
         WORKER_EXECUTOR_TEMPLATE,
-        SLACK_TRACKER_TEMPLATE,
-        JIRA_TRACKER_TEMPLATE,
-        RUNTIME_TRACKER_TEMPLATE,
-        DELIVERY_TRACKER_TEMPLATE,
-        CI_PR_TRACKER_TEMPLATE,
+        ROUTINE_TRACKER_TEMPLATE,
         STEP_CHECK_TRACKER_TEMPLATE,
-        CUSTOM_TRACKER_TEMPLATE,
         ASSISTANT_WAKE_TEMPLATE,
         ASSISTANT_ACTIVATION_TEMPLATE,
         ASK_TO_HELPER_TEMPLATE,
@@ -712,6 +684,7 @@ impl ImproverTarget<'_> {
                         ("routine_summary", routine_summary),
                         ("max_bytes", &max_bytes.to_string()),
                         ("owner_id", worker_id),
+                        ("task_evidence_policy", task_evidence_policy_body()),
                     ],
                 )
             }
@@ -734,6 +707,7 @@ impl ImproverTarget<'_> {
                         ("built_in_instructions", built_in_instructions),
                         ("owner_id", routine_id),
                         ("max_bytes", &max_bytes.to_string()),
+                        ("task_evidence_policy", task_evidence_policy_body()),
                     ],
                 )
             }
@@ -758,12 +732,19 @@ impl ImproverTarget<'_> {
                         ("project_name", project_name),
                         ("routine_summary", routine_summary),
                         ("worker_id", worker_id),
+                        ("task_evidence_policy", task_evidence_policy_body()),
                     ],
                 )
             }
             Self::Playbook { project_name } => {
                 bounded_binding(project_name, 200)?;
-                bind_ordered(template.authored_body, &[("project_name", project_name)])
+                bind_ordered(
+                    template.authored_body,
+                    &[
+                        ("project_name", project_name),
+                        ("task_evidence_policy", task_evidence_policy_body()),
+                    ],
+                )
             }
         }
     }
@@ -3444,6 +3425,22 @@ fn bind_ordered(authored: &str, bindings: &[(&str, &str)]) -> Result<String, Inv
     Ok(delivered)
 }
 
+fn task_evidence_policy_body() -> &'static str {
+    TASK_EVIDENCE_POLICY_TEMPLATE
+        .authored_body
+        .splitn(3, "\n\n")
+        .nth(2)
+        .expect("Task evidence policy has metadata and instructions")
+        .trim()
+}
+
+fn bind_task_evidence_policy(authored: &str) -> Result<String, InvocationError> {
+    bind_ordered(
+        authored,
+        &[("task_evidence_policy", task_evidence_policy_body())],
+    )
+}
+
 fn bind_ask_to_prompt(
     authored: &str,
     request_id: &str,
@@ -3785,61 +3782,14 @@ mod tests {
     }
 
     #[test]
-    fn custom_routine_has_visible_generic_instructions() {
-        let prompt = tracker_assignment_prompt(ExecutorRole::CustomTracker).unwrap();
-        assert_eq!(prompt.provenance().template_ref, "builtin.tracker.custom");
-        assert_eq!(prompt.provenance().template_version, 4);
-        assert!(prompt.delivered_preview().contains("visible name"));
-        assert!(prompt.delivered_preview().contains("actually exposed"));
-        assert!(
-            prompt
-                .delivered_preview()
-                .contains("does not create access")
-        );
-        assert!(prompt.delivered_preview().contains("`context.md`"));
-        assert!(prompt.delivered_preview().contains("`updateSummary`"));
-        assert!(prompt.delivered_preview().contains("`custom:` source keys"));
-    }
-
-    #[test]
-    fn jira_routine_uses_configured_scope_without_hardcoded_workflow() {
-        let prompt = tracker_assignment_prompt(ExecutorRole::JiraTracker).unwrap();
-        assert_eq!(prompt.provenance().template_ref, "builtin.tracker.jira");
-        assert_eq!(prompt.provenance().template_version, 5);
-        assert!(prompt.delivered_preview().contains("actually exposed"));
-        assert!(prompt.delivered_preview().contains("does not prove access"));
-        assert!(prompt.delivered_preview().contains("editable instructions"));
-        assert!(prompt.delivered_preview().contains("Do not assume"));
-        assert!(prompt.delivered_preview().contains("contextMarkdown"));
-        assert!(
-            prompt
-                .delivered_preview()
-                .contains("jira:<stable-issue-id>:<material-state>")
-        );
-        for hardcoded_assumption in [
-            "currentUser()",
-            "Ready for Development",
-            "last 30 days",
-            "A sprint is never required",
-        ] {
-            assert!(!prompt.delivered_preview().contains(hardcoded_assumption));
-        }
-    }
-
-    #[test]
-    fn tracker_presets_use_exposed_capabilities_without_claiming_connector_access() {
+    fn routines_use_one_provider_neutral_evidence_policy() {
         let cases = [
-            (ExecutorRole::SlackTracker, "builtin.tracker.slack", 6),
-            (ExecutorRole::JiraTracker, "builtin.tracker.jira", 5),
-            (ExecutorRole::RuntimeTracker, "builtin.tracker.runtime", 6),
-            (ExecutorRole::DeliveryTracker, "builtin.tracker.delivery", 6),
-            (ExecutorRole::CiPrTracker, "builtin.tracker.ci-pr", 6),
+            (ExecutorRole::Routine, "builtin.tracker.routine", 2),
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                8,
+                9,
             ),
-            (ExecutorRole::CustomTracker, "builtin.tracker.custom", 4),
         ];
 
         for (role, template_ref, template_version) in cases {
@@ -3847,18 +3797,21 @@ mod tests {
             let delivered = prompt.delivered_preview().replace('\n', " ");
             assert_eq!(prompt.provenance().template_ref, template_ref);
             assert_eq!(prompt.provenance().template_version, template_version);
-            assert!(delivered.contains("actually exposed"), "{template_ref}");
+            assert!(delivered.contains("Worker's cwd or HEAD"), "{template_ref}");
             assert!(
-                delivered.contains("does not prove access")
-                    || delivered.contains("does not create access"),
-                "{template_ref}",
+                delivered.contains("cached UI projection is display-only"),
+                "{template_ref}"
             );
             assert!(
-                delivered.contains("worker_report_routine_problem"),
-                "{template_ref}",
+                delivered.contains("worker_complete_assignment"),
+                "{template_ref}"
             );
+            assert!(delivered.contains("satisfied"), "{template_ref}");
+            assert!(delivered.contains("pending"), "{template_ref}");
+            assert!(delivered.contains("blocked"), "{template_ref}");
             assert!(!delivered.contains("Edit this prompt"), "{template_ref}");
-            assert!(!delivered.contains("already available"), "{template_ref}");
+            assert!(!delivered.contains("Azure"), "{template_ref}");
+            assert!(!delivered.contains("Jira"), "{template_ref}");
         }
     }
 
@@ -4031,7 +3984,7 @@ mod tests {
                 routine_name: "PR approved",
                 worker_name: "Delivery Worker",
                 built_in_instructions: "Protected Routine behavior.",
-                max_bytes: 8_192,
+                max_bytes: 9_216,
             },
             ImproverTarget::RoutineBuilder {
                 project_name: "Nucleus",
@@ -4051,7 +4004,11 @@ mod tests {
             assert!(!delivered.contains("}}"));
             assert!(delivered.contains("configuration_version_read"));
             assert!(delivered.contains("configuration_version_write"));
-            assert!(delivered.contains("Keep the conversation compact."));
+            assert!(
+                delivered
+                    .replace('\n', " ")
+                    .contains("Keep the conversation compact.")
+            );
             assert!(delivered.contains("Never echo the written payload."));
             assert!(!delivered.contains("Current editable instructions:"));
             assert!(!delivered.contains("Current Worker check:"));
@@ -4071,7 +4028,7 @@ mod tests {
     }
 
     #[test]
-    fn configuration_improvers_preserve_all_task_worktree_branches_for_pr_stages() {
+    fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
         let targets = [
             (
                 ImproverTarget::WorkerInstructions {
@@ -4081,7 +4038,7 @@ mod tests {
                     routine_summary: r#"{"routines":[]}"#,
                     max_bytes: 16_384,
                 },
-                8,
+                9,
             ),
             (
                 ImproverTarget::RoutineInstructions {
@@ -4089,9 +4046,9 @@ mod tests {
                     routine_name: "PR approved",
                     worker_name: "Delivery Worker",
                     built_in_instructions: "Protected Routine behavior.",
-                    max_bytes: 8_192,
+                    max_bytes: 9_216,
                 },
-                10,
+                11,
             ),
             (
                 ImproverTarget::RoutineBuilder {
@@ -4100,13 +4057,13 @@ mod tests {
                     worker_name: "Delivery Worker",
                     routine_summary: r#"{"routines":[]}"#,
                 },
-                9,
+                10,
             ),
             (
                 ImproverTarget::Playbook {
                     project_name: "Nucleus",
                 },
-                18,
+                19,
             ),
         ];
 
@@ -4116,16 +4073,24 @@ mod tests {
             let delivered = launch.delivered_prompt().unwrap();
             assert_eq!(launch.provenance().template_version, expected_version);
             assert!(
-                delivered.contains("pullRequestCandidatesByBaseBranch"),
-                "missing candidate projection rule in {template_ref}"
+                delivered.contains("authoritative only for TermLoop-owned Task identity"),
+                "missing Task identity boundary in {template_ref}"
             );
             assert!(
-                delivered.contains("previously") && delivered.contains("observed"),
-                "missing branch history rule in {template_ref}"
+                delivered.contains("cached UI projection is display-only"),
+                "missing display-only cache boundary in {template_ref}"
             );
             assert!(
-                delivered.contains("`head_branch` to `effectiveBranch`"),
-                "missing no-recomparison rule in {template_ref}"
+                delivered.contains("purpose-built connector"),
+                "missing live capability selection in {template_ref}"
+            );
+            assert!(
+                delivered.contains("observed branch family"),
+                "missing multi-branch discovery rule in {template_ref}"
+            );
+            assert!(
+                !delivered.contains("pullRequestCandidatesByBaseBranch"),
+                "retired Core provider projection leaked into {template_ref}"
             );
         }
     }
@@ -4139,8 +4104,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 18);
-        assert_eq!(launch.provenance().template_version, 18);
+        assert_eq!(template.version, 19);
+        assert_eq!(launch.provenance().template_version, 19);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -4157,18 +4122,18 @@ mod tests {
             "\"workerId\"",
             "\"preferredWorkerAgentId\"",
             "Every saved pipeline contains exactly",
-            "Every `check` contains exactly",
+            "`completeWhen`, `whileWaiting`, `workerId`",
             "never send probe",
-            "authenticated scoped",
-            "Project checkout cwd or",
+            "authoritative only for TermLoop-owned Task identity",
+            "Worker's cwd or HEAD",
             "task_agent_request",
             "Worker-to-Agent coordination among the recommended options",
-            "pullRequestCandidatesByBaseBranch",
             "`coordinationAgent` projection",
             "sole authority",
             "never require the Worker to re-prove Agent",
             "Worker to attempt",
-            "ordinary unmet evidence and is `waiting`",
+            "ordinary unmet evidence and is `pending`",
+            "Routines have no provider kind",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -4251,7 +4216,7 @@ mod tests {
                 routine_name: "PR approved",
                 worker_name: "Delivery Worker",
                 built_in_instructions: "Write {{entry_content}} elsewhere.",
-                max_bytes: 8_192,
+                max_bytes: 9_216,
             },
             AgentConversationLaunch::Fresh { resume_ref: None },
             None,
@@ -4777,7 +4742,7 @@ mod tests {
             }
             assert!(worker.initial_input().is_some_and(|input| {
                 input.contains("worker_get_next_routine")
-                    && input.contains("worker_report_step_verdicts")
+                    && input.contains("worker_complete_assignment")
                     && !input.contains("## Configured Worker prompt")
                     && !input.contains("Summarize each Routine in one sentence.")
                     && input.ends_with('\r')
@@ -5958,7 +5923,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 36);
+        assert_eq!(prompt.provenance().template_version, 37);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6203,7 +6168,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v36.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
@@ -6243,98 +6208,58 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
+    fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 24);
-        assert!(
-            worker
-                .authored_preview()
-                .contains("question, goal, activity, approval, or waiting condition")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("complete next-run memory")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("completedContextPreserved")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("exactly one focused Task")
-        );
-        assert!(worker.authored_preview().contains("`step.tasks[0].taskId`"));
-        assert!(
-            worker
-                .authored_preview()
-                .contains("`step.taskRead.arguments`")
-        );
-        assert!(worker.authored_preview().contains("terminal's cwd or HEAD"));
-        assert!(
-            worker
-                .authored_preview()
-                .contains("`pullRequestCandidatesByBaseBranch.<required-base>`")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("`pullRequestCandidatesByBaseBranch.development`")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("Do not re-prove that association")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("a development candidate from an earlier Task-associated")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("`coordinationAgent.state`")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("sole authority\nfor the request target")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("resolve and attempt that exposed capability")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("absence of the outcome is not an access or configuration problem")
-        );
-        assert!(
-            worker
-                .authored_preview()
-                .contains("rejects a step verdict unless")
-        );
-        assert!(worker.authored_preview().contains("self-report"));
-        assert!(worker.authored_preview().contains("`unsupported`"));
+        assert_eq!(worker.provenance().template_version, 25);
+        let worker = worker.authored_preview();
+        assert!(worker.contains("stage title is only a label"));
+        assert!(worker.contains("purpose-built connector"));
+        assert!(worker.contains("cached UI projection is display-only"));
+        assert!(worker.contains("observed branch family"));
+        assert!(worker.contains("worker_complete_assignment"));
+        assert!(worker.contains("`satisfied`"));
+        assert!(worker.contains("`pending`"));
+        assert!(worker.contains("`blocked`"));
+        assert!(worker.contains("task_agent_request"));
+        assert!(!worker.contains("pullRequestCandidatesByBaseBranch"));
+        assert!(!worker.contains("Azure"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 8);
-        assert!(step.delivered_preview().contains("Its `title` is a label"));
+        assert_eq!(step.provenance().template_version, 9);
+        assert!(step.delivered_preview().contains("title is only a label"));
+        assert!(step.delivered_preview().contains("`completeWhen`"));
         assert!(
             step.delivered_preview()
-                .contains("Its `condition` states the")
+                .contains("worker_complete_assignment")
         );
+        assert!(step.delivered_preview().contains("canonical Agent"));
         assert!(
             step.delivered_preview()
-                .contains("exactly one focused Task")
+                .contains("cached UI projection is display-only")
         );
-        assert!(step.delivered_preview().contains("Agent plan completion"));
-        assert!(step.delivered_preview().contains("`notReported`"));
         assert!(!step.delivered_preview().contains("one yes/no question"));
+    }
+
+    #[test]
+    fn direct_worker_wake_accepts_assignment_with_full_routine_memory() {
+        let assignment = format!(
+            r#"{{"status":"assigned","context":{{"markdown":"{}"}}}}"#,
+            "x".repeat(80 * 1024)
+        );
+        let wake = assistant_wake_message(
+            ExecutorRole::Worker,
+            AssistantWakeReason::ScheduledCheck,
+            Some("0123456789abcdef0123456789abcdef"),
+            Some(&assignment),
+        )
+        .unwrap();
+
+        assert!(wake.delivered_preview().contains("Exact assigned Routine"));
+        assert!(
+            wake.delivered_preview()
+                .contains("do not call get-next first")
+        );
+        assert!(wake.delivered_bytes().len() > 64 * 1024);
     }
 
     #[test]

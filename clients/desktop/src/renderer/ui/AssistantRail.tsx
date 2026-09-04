@@ -14,7 +14,6 @@ import {
   resolvePlaybookSave,
   switchToSavedPipeline,
   type PlaybookDraft,
-  type PlaybookRoutineSummary,
   type PlaybookTemplate,
   type PlaybookUpdateOutcome,
 } from "./playbook-policy.js";
@@ -166,20 +165,6 @@ export function workerPingIntervalSeconds(minutes: number): number {
   return minutes * 60;
 }
 
-export function defaultRoutineParams(
-  projectId: string,
-  workerId: string,
-  kind: RoutineConfigurationDto["kind"],
-  expectedRevision: number,
-): RoutineConfigurationCreateParams {
-  const preset = ROUTINE_CATALOG.find((candidate) => candidate.kind === kind);
-  if (!preset) throw new Error(`Unsupported Routine kind: ${kind}`);
-  return {
-    projectId, workerId, kind, triggerMode: "schedule", name: preset.name,
-    scheduleIntervalSeconds: preset.scheduleIntervalSeconds, actionHandling: "off", expectedRevision,
-  };
-}
-
 export function customRoutineParams(
   projectId: string,
   workerId: string,
@@ -190,11 +175,10 @@ export function customRoutineParams(
   return {
     projectId,
     workerId,
-    kind: "custom",
     triggerMode: "schedule",
     name: name.trim(),
     scheduleIntervalSeconds: intervalMinutes * 60,
-    actionHandling: "off",
+    whileWaiting: { mode: "off", instructions: "" },
     expectedRevision,
   };
 }
@@ -217,50 +201,14 @@ export function persistentAssistantIsActive(status: AgentStatus | undefined): bo
     || status?.status === "awaitingInput";
 }
 
-export const ROUTINE_CATALOG = [
-  { kind: "slack", name: "Slack follow-ups", scheduleIntervalSeconds: 300 },
-  { kind: "jira", name: "Jira issue synchronizer", scheduleIntervalSeconds: 900 },
-  { kind: "runtime", name: "Runtime monitoring", scheduleIntervalSeconds: 300 },
-  { kind: "delivery", name: "Delivery monitoring", scheduleIntervalSeconds: 900 },
-  { kind: "ciPr", name: "CI & pull requests", scheduleIntervalSeconds: 300 },
-] as const satisfies readonly {
-  kind: RoutineConfigurationDto["kind"];
-  name: string;
-  scheduleIntervalSeconds: number;
-}[];
-
-type RoutineDefinition = {
-  kind: RoutineConfigurationDto["kind"];
-  name: string;
-  scheduleIntervalSeconds: number;
-};
-export type RoutineCatalogRow = { preset: RoutineDefinition; routine?: RoutineConfigurationDto };
-
-export function routinePresetKey(workerId: string, kind: RoutineConfigurationDto["kind"]): string {
-  return `${workerId}:${kind}`;
-}
-
 /** The Worker's scheduled Routines: the ones that go looking for work on a
     cadence and can open a Task. A Playbook step's on-demand completion Routine
     is listed separately. */
 export function routineCatalogRows(
   workerId: string,
   routines: readonly RoutineConfigurationDto[],
-  dismissedPresetKeys: ReadonlySet<string>,
-): RoutineCatalogRow[] {
-  const scheduled = routines.filter((routine) => routine.workerId === workerId && routine.triggerMode !== "onDemand");
-  const builtInRows = ROUTINE_CATALOG.flatMap((preset) => {
-    const matches = scheduled.filter((routine) => routine.kind === preset.kind);
-    if (matches.length) return matches.map((routine) => ({ preset, routine }));
-    return dismissedPresetKeys.has(routinePresetKey(workerId, preset.kind)) ? [] : [{ preset }];
-  });
-  const customRows = scheduled
-    .filter((routine) => routine.kind === "custom")
-    .map((routine) => ({
-      preset: { kind: routine.kind, name: routine.name, scheduleIntervalSeconds: routine.scheduleIntervalSeconds },
-      routine,
-    }));
-  return [...builtInRows, ...customRows];
+): RoutineConfigurationDto[] {
+  return routines.filter((routine) => routine.workerId === workerId && routine.triggerMode !== "onDemand");
 }
 
 /** A step Routine has no schedule at all: it runs for the one focused Task when
@@ -579,7 +527,6 @@ export function AssistantRail(props: Props) {
   const [restartingSteward, setRestartingSteward] = useState(false);
   const [routineDraft, setRoutineDraft] = useState<{ workerId: string; name: string; intervalMinutes: string }>();
   const [pingDraft, setPingDraft] = useState<{ workerId: string; intervalMinutes: string }>();
-  const [dismissedRoutinePresets, setDismissedRoutinePresets] = useState<ReadonlySet<string>>(() => new Set());
   const [mutatingKey, setMutatingKey] = useState<string>();
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
   const [dropRoutineId, setDropRoutineId] = useState<string>();
@@ -620,7 +567,6 @@ export function AssistantRail(props: Props) {
   useEffect(() => {
     setRoutineDraft(undefined);
     setPingDraft(undefined);
-    setDismissedRoutinePresets(new Set());
     setConfirmingSteward(false);
     setTemplatesRevealed(false);
     setPipelineJustCreated(false);
@@ -836,32 +782,19 @@ export function AssistantRail(props: Props) {
     });
   };
   const toggleRoutine = (
-    worker: WorkerConfigurationDto,
-    preset: RoutineDefinition,
-    routine: RoutineConfigurationDto | undefined,
+    routine: RoutineConfigurationDto,
     enabled: boolean,
-  ) => guard(`routine-${routine?.id ?? `${worker.id}-${preset.kind}`}`, async () => {
-    let current = routine;
-    let expectedRevision = revisions.current.routine;
-    if (!current) {
-      if (!enabled) return;
-      const created = await props.createRoutine(defaultRoutineParams(
-        props.projectId, worker.id, preset.kind, expectedRevision,
-      ));
-      current = created.configuration;
-      expectedRevision = created.stateRevision;
-    }
+  ) => guard(`routine-${routine.id}`, async () => {
     const result = await props.updateRoutine({
-      routineId: current.id,
-      triggerMode: current.triggerMode,
-      workerId: current.workerId,
-      name: current.name,
-      prompt: current.prompt,
-      stewardInstructions: current.stewardInstructions,
+      routineId: routine.id,
+      triggerMode: routine.triggerMode,
+      workerId: routine.workerId,
+      name: routine.name,
+      instructions: routine.instructions,
+      whileWaiting: routine.whileWaiting,
       enabled,
-      scheduleIntervalSeconds: current.scheduleIntervalSeconds,
-      actionHandling: current.actionHandling,
-      expectedRevision,
+      scheduleIntervalSeconds: routine.scheduleIntervalSeconds,
+      expectedRevision: revisions.current.routine,
     });
     setRoutines((values) => [
       ...values.filter((candidate) => candidate.id !== result.configuration.id),
@@ -869,31 +802,8 @@ export function AssistantRail(props: Props) {
     ]);
     revisions.current.routine = result.stateRevision;
   });
-  const openRoutine = (
-    worker: WorkerConfigurationDto,
-    preset: RoutineDefinition,
-    routine: RoutineConfigurationDto | undefined,
-  ) => {
-    if (routine) {
-      props.openDetails({ kind: "routine", routineId: routine.id });
-      return;
-    }
-    const rowKey = `routine-${worker.id}-${preset.kind}`;
-    guard(rowKey, async () => {
-      // A catalog suggestion is not durable yet. Materialize it in the same
-      // disabled state shown by the rail, then open its editor; navigation
-      // must not silently start scheduled work.
-      const created = await props.createRoutine(defaultRoutineParams(
-        props.projectId,
-        worker.id,
-        preset.kind,
-        revisions.current.routine,
-      ));
-      setRoutines((values) => [...values, created.configuration]);
-      revisions.current.routine = created.stateRevision;
-      props.openDetails({ kind: "routine", routineId: created.configuration.id });
-    });
-  };
+  const openRoutine = (routine: RoutineConfigurationDto) =>
+    props.openDetails({ kind: "routine", routineId: routine.id });
   const createRoutine = (draft: NonNullable<typeof routineDraft>) => {
     const name = draft.name.trim();
     const intervalMinutes = Number(draft.intervalMinutes);
@@ -915,28 +825,17 @@ export function AssistantRail(props: Props) {
       ));
       setRoutines((values) => [...values, result.configuration]);
       revisions.current.routine = result.stateRevision;
-      setDismissedRoutinePresets((current) => {
-        const next = new Set(current);
-        next.delete(routinePresetKey(draft.workerId, "custom"));
-        return next;
-      });
       setRoutineDraft(undefined);
       props.openDetails({ kind: "routine", routineId: result.configuration.id, initialView: "context" });
     });
   };
-  const removeRoutine = (routine: RoutineConfigurationDto | undefined, preset: RoutineDefinition, workerId: string) => {
-    const presetKey = routinePresetKey(workerId, preset.kind);
-    if (!routine) {
-      setDismissedRoutinePresets((current) => new Set(current).add(presetKey));
-      return;
-    }
+  const removeRoutine = (routine: RoutineConfigurationDto) => {
     guard(`routine-${routine.id}`, async () => {
       // One write: the daemon deletes a Routine whatever state it is in, so
       // turning it off first would only widen the window for losing the race.
       const result = await props.deleteRoutine(routine.id, revisions.current.routine);
       setRoutines((values) => values.filter((candidate) => candidate.id !== routine.id));
       revisions.current.routine = result.stateRevision;
-      setDismissedRoutinePresets((current) => new Set(current).add(presetKey));
     });
   };
 
@@ -944,22 +843,11 @@ export function AssistantRail(props: Props) {
      re-read the latest Playbook, apply the one local change, submit against
      the just-read revisions. guard() retries a lost revision race, and the
      mutation function re-derives from the fresh read each attempt. */
-  const routineSummaries = useMemo((): PlaybookRoutineSummary[] => routines.map((routine) => ({
-    id: routine.id,
-    kind: routine.kind,
-    name: routine.name,
-    enabled: routine.enabled,
-    prompt: routine.prompt,
-    stewardInstructions: routine.stewardInstructions,
-    actionHandling: routine.actionHandling,
-    workerId: routine.workerId,
-    stepChecker: routine.triggerMode === "onDemand",
-  })), [routines]);
   const preferredWorkerAgentId: StewardAgentId = capabilityByAgent.get("codex")?.available ? "codex" : "claude";
   const savePlaybook = (key: string, mutate: (draft: PlaybookDraft) => PlaybookDraft | undefined) =>
     guard(key, async () => {
       const latest = await props.getPlaybook();
-      const draft = playbookDraftFromDto(latest.playbook, routineSummaries);
+      const draft = playbookDraftFromDto(latest.playbook);
       const next = mutate(draft);
       if (!next) return;
       const decision = resolvePlaybookSave(
@@ -967,7 +855,6 @@ export function AssistantRail(props: Props) {
         next,
         latest.playbook?.revision ?? 0,
         latest,
-        routineSummaries,
         playbookPipelineWorkerId(latest.playbook, routines, workers) ?? null,
         preferredWorkerAgentId,
       );
@@ -1446,38 +1333,34 @@ export function AssistantRail(props: Props) {
           {/* Scheduled Routines only: the ones that go looking for work on a
               cadence. Playbook step checks live on the pipeline above. */}
           <span className="ar-routines-label">Scheduled checks</span>
-          {routineCatalogRows(worker.id, routines, dismissedRoutinePresets).map(({ preset, routine }) => {
-            const current = routine ? healthByRoutine.get(routine.id) : undefined;
-            const selection = routine ? { kind: "routine" as const, routineId: routine.id } : undefined;
-            const enabled = routine?.enabled ?? false;
-            const rowKey = `routine-${routine?.id ?? `${worker.id}-${preset.kind}`}`;
-            const status = routine
-              ? routineDisplayStatus(routine, current)
-              : undefined;
-            return <div key={routine?.id ?? preset.kind}
-              className={`ar-routine${selection && assistantSelectionMatches(props.selection, selection) ? " selected" : ""}${enabled ? "" : " off"}${routine ? "" : " suggested"}`}
-              title={status ? statusExplanation(status) : "Not created yet — turn it on to create this Routine"}>
+          {routineCatalogRows(worker.id, routines).map((routine) => {
+            const current = healthByRoutine.get(routine.id);
+            const selection = { kind: "routine" as const, routineId: routine.id };
+            const rowKey = `routine-${routine.id}`;
+            const status = routineDisplayStatus(routine, current);
+            return <div key={routine.id}
+              className={`ar-routine${assistantSelectionMatches(props.selection, selection) ? " selected" : ""}${routine.enabled ? "" : " off"}`}
+              title={statusExplanation(status)}>
               <button type="button" className="ar-routine-main" disabled={mutatingKey === rowKey}
-                onClick={() => openRoutine(worker, preset, routine)}>
-                <i className={`ar-pip ${status?.tone ?? "off"}`} aria-hidden="true" />
+                onClick={() => openRoutine(routine)}>
+                <i className={`ar-pip ${status.tone}`} aria-hidden="true" />
                 <span className="ar-copy">
-                  <strong>{routine?.name ?? preset.name}</strong>
-                  <small><span>{routine ? routineTimingLabel(routine, current) : routineIntervalLabel(preset.scheduleIntervalSeconds)}</span></small>
+                  <strong>{routine.name}</strong>
+                  <small><span>{routineTimingLabel(routine, current)}</span></small>
                 </span>
-                {routine ? null : <span className="ar-flag suggested">Suggested</span>}
               </button>
               <span className="ar-routine-actions">
-                {status?.tone === "checking" && worker.executorSessionId ? <button type="button"
+                {status.tone === "checking" && worker.executorSessionId ? <button type="button"
                   className="ar-flag checking actionable"
                   aria-label={`Open ${worker.name} terminal`}
                   title={`Open ${worker.name} terminal`}
                   onClick={() => openCheckingWorkerTerminal(status, worker, props.selectSession, props.openDetails)}>{status.label}</button>
-                  : status ? <span className={`ar-flag ${status.tone}`}>{status.label}</span> : null}
-                {powerSwitch(rowKey, routine?.name ?? preset.name, enabled,
-                  (next) => toggleRoutine(worker, preset, routine, next))}
-                <button type="button" className="ar-routine-remove" aria-label={`Remove ${routine?.name ?? preset.name}`}
-                  title={`Remove ${routine?.name ?? preset.name}`} disabled={mutatingKey === rowKey}
-                  onClick={() => removeRoutine(routine, preset, worker.id)}><Icon name="close" /></button>
+                  : <span className={`ar-flag ${status.tone}`}>{status.label}</span>}
+                {powerSwitch(rowKey, routine.name, routine.enabled,
+                  (next) => toggleRoutine(routine, next))}
+                <button type="button" className="ar-routine-remove" aria-label={`Remove ${routine.name}`}
+                  title={`Remove ${routine.name}`} disabled={mutatingKey === rowKey}
+                  onClick={() => removeRoutine(routine)}><Icon name="close" /></button>
               </span>
             </div>;
           })}

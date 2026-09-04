@@ -10,8 +10,7 @@ use termloop_domain::{
     ROUTINE_FINDING_SUMMARY_MAX_BYTES, ROUTINE_PENDING_FINDINGS_MAX,
     ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, ROUTINE_SOURCE_KEY_MAX_BYTES,
     RoutineActionHandling, TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
-    TRACKER_REPORTS_PER_PROJECT_MAX, TrackerConfiguration, TrackerKind, TrackerReport,
-    TrackerReportKind,
+    TRACKER_REPORTS_PER_PROJECT_MAX, TrackerConfiguration, TrackerReport, TrackerReportKind,
 };
 
 const CHECK_DEADLINE_MAX_MS: u64 = 10 * 60 * 1_000;
@@ -393,8 +392,8 @@ impl CoreRuntime {
         Ok(())
     }
 
-    /// Produces at most one wake per ready Worker. Routine selection and claim
-    /// issuance happen later inside the authenticated Worker MCP call.
+    /// Produces at most one wake per ready Worker. The server claims the exact
+    /// assignment immediately before composing and delivering that wake.
     pub fn admit_due_worker_wakes(&mut self, now_epoch_ms: u64) -> Vec<DueWorkerWake> {
         self.initialize_routine_schedules();
         let busy_workers = self.busy_worker_ids();
@@ -666,6 +665,38 @@ impl CoreRuntime {
         })
     }
 
+    /// Claims the exact due assignment before its scheduled wake is delivered.
+    /// The pending wake stays live until terminal delivery succeeds so a failed
+    /// submission can release the claim and retry without losing work.
+    pub fn claim_due_worker_routine(
+        &mut self,
+        wake: &DueWorkerWake,
+        check_id: String,
+        now_epoch_ms: u64,
+    ) -> Result<WorkerRoutineClaim, CoreError> {
+        if !self.worker_wake_is_current(wake) {
+            return Err(CoreError::TrackerReportStale);
+        }
+        let pending = self
+            .tracker_runtime
+            .pending_worker_wakes
+            .get(&wake.worker_id)
+            .cloned()
+            .ok_or(CoreError::TrackerReportStale)?;
+        let claim = self.claim_next_worker_routine(
+            &wake.project_id,
+            &wake.worker_session_id,
+            check_id,
+            now_epoch_ms,
+        )?;
+        if claim.capability.is_some() {
+            self.tracker_runtime
+                .pending_worker_wakes
+                .insert(wake.worker_id.clone(), pending);
+        }
+        Ok(claim)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn complete_worker_routine(
         &mut self,
@@ -698,7 +729,6 @@ impl CoreRuntime {
         {
             return Err(CoreError::InvalidParams("routineContext".into()));
         }
-        let expected_prefix = routine_source_prefix(configuration.kind);
         let mut finding_ids = Vec::with_capacity(findings.len());
         let mut finding_keys = Vec::with_capacity(findings.len());
         for finding in &findings {
@@ -713,7 +743,6 @@ impl CoreRuntime {
                 created_at_epoch_ms: completed_at_epoch_ms,
             };
             if !value.is_valid()
-                || !finding.source_key.starts_with(expected_prefix)
                 || !valid_source_key(&finding.source_key)
                 || finding.summary.trim().is_empty()
                 || finding.summary.len() > ROUTINE_FINDING_SUMMARY_MAX_BYTES
@@ -954,7 +983,6 @@ impl CoreRuntime {
             .unwrap_or(0)
             .to_string();
         let source_key = worker_problem_source_key(
-            configuration.kind,
             &configuration.id,
             &problem_episode,
             &message,
@@ -1302,6 +1330,12 @@ impl CoreRuntime {
         }
     }
 
+    pub(crate) fn acknowledge_worker_wake_delivery(&mut self, wake: &DueWorkerWake) {
+        self.tracker_runtime
+            .pending_worker_wakes
+            .remove(&wake.worker_id);
+    }
+
     pub fn list_tracker_runtime(&self, params: Value) -> Result<Value, CoreError> {
         let project_id = required_string(&params, "projectId")?;
         if !self.project_exists(&project_id) {
@@ -1318,7 +1352,6 @@ impl CoreRuntime {
                 json!({
                     "routineId": configuration.id,
                     "generation": configuration.generation,
-                    "kind": configuration.kind,
                     "name": configuration.name,
                     "contextMarkdown": configuration.context_markdown,
                     "contextRevision": configuration.context_revision,
@@ -1575,7 +1608,6 @@ fn assigned_routine_result(
         "routine": {
             "id": routine.id,
             "name": routine.name,
-            "kind": routine.kind,
             "instructions": routine.prompt,
             "scheduleIntervalSeconds": routine.schedule_interval_seconds,
         },
@@ -1600,10 +1632,10 @@ fn assigned_routine_result(
             "milestoneId": step.milestone.id,
             "title": step.milestone.title,
             "gate": step.milestone.gate,
-            "condition": step.milestone.condition,
+            "completeWhen": routine.prompt,
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
-            "finishWith": "worker_report_step_verdicts",
+            "finishWith": "worker_complete_assignment",
             "taskRead": {
                 "requiredBeforeVerdict": true,
                 "tool": "task_read",
@@ -1631,23 +1663,11 @@ fn assigned_routine_result(
     result
 }
 
-pub(crate) fn routine_source_prefix(kind: TrackerKind) -> &'static str {
-    match kind {
-        TrackerKind::Slack => "slack:",
-        TrackerKind::Jira => "jira:",
-        TrackerKind::Runtime => "runtime:",
-        TrackerKind::Delivery => "delivery:",
-        TrackerKind::CiPr => "ci-pr:",
-        TrackerKind::Custom => "custom:",
-    }
-}
-
-pub(crate) fn is_worker_problem_source_key(kind: TrackerKind, value: &str) -> bool {
-    value.starts_with(&format!("{}worker-problem:", routine_source_prefix(kind)))
+pub(crate) fn is_worker_problem_source_key(value: &str) -> bool {
+    value.starts_with("worker-problem:")
 }
 
 fn worker_problem_source_key(
-    kind: TrackerKind,
     routine_id: &str,
     episode: &str,
     message: &str,
@@ -1670,7 +1690,7 @@ fn worker_problem_source_key(
         use std::fmt::Write as _;
         write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
     }
-    format!("{}worker-problem:{hex}", routine_source_prefix(kind))
+    format!("worker-problem:{hex}")
 }
 
 fn truncate_utf8(value: &str, max_bytes: usize) -> String {
@@ -1806,7 +1826,6 @@ mod tests {
                             char::from(b'a' + u8::try_from(index).unwrap())
                         ),
                         project_id: project_id.clone(),
-                        kind: TrackerKind::Slack,
                         trigger_mode: RoutineTriggerMode::Schedule,
                         name: format!("Routine {index}"),
                         prompt: "Inspect Slack and update the visible context.".into(),
@@ -1930,9 +1949,12 @@ mod tests {
         assert_eq!(wakes.len(), 1);
         assert_eq!(wakes[0].worker_id, "worker-1");
         let claimed = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "due".into(), 60_000)
+            .claim_due_worker_routine(&wakes[0], "due".into(), 60_000)
             .unwrap();
         assert_eq!(claimed.capability.unwrap().tracker_id, "routine-a");
+        assert!(runtime.worker_wake_is_current(&wakes[0]));
+        runtime.acknowledge_worker_wake_delivery(&wakes[0]);
+        assert!(!runtime.worker_wake_is_current(&wakes[0]));
 
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
@@ -2263,7 +2285,7 @@ mod tests {
             after_restart["health"][0]["contextRevision"],
             action["contextRevision"]
         );
-        assert_eq!(after_restart["health"][0]["kind"], "slack");
+        assert!(after_restart["health"][0].get("kind").is_none());
         assert_eq!(after_restart["health"][0]["name"], "Routine 0");
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
@@ -2377,7 +2399,7 @@ mod tests {
             .unwrap();
         assert_eq!(pending["routines"][0]["findings"][0]["id"], "finding-1");
         assert_eq!(
-            pending["routines"][0]["stewardInstructions"],
+            pending["routines"][0]["whileWaiting"]["instructions"],
             "When a review request is absent, propose asking the assigned reviewer."
         );
         runtime.observe_steward_idle("steward-session", 1);
@@ -2742,10 +2764,9 @@ mod tests {
     }
 
     #[test]
-    fn custom_routine_preserves_its_name_and_accepts_only_custom_source_keys() {
+    fn routine_preserves_its_name_and_accepts_provider_neutral_source_keys() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let mut custom = runtime.store.tracker_configurations()[0].clone();
-        custom.kind = TrackerKind::Custom;
         custom.name = "Weekly customer pulse".into();
         custom.prompt = "Use the visible name and context as the bounded recurring check.".into();
         runtime
@@ -2757,28 +2778,8 @@ mod tests {
             .claim_next_worker_routine(&project_id, "worker-session", "check-custom".into(), 500)
             .unwrap();
         assert_eq!(claim.result["routine"]["name"], "Weekly customer pulse");
-        assert_eq!(claim.result["routine"]["kind"], "custom");
+        assert!(claim.result["routine"].get("kind").is_none());
         let capability = claim.capability.unwrap();
-        assert!(matches!(
-            runtime.complete_worker_routine(
-                &capability,
-                1,
-                String::new(),
-                None,
-                vec![WorkerRoutineFinding {
-                    id: "bad-finding".into(),
-                    source_key: "slack:C123:1".into(),
-                    summary: "Wrong namespace".into(),
-                    evidence: "The source key uses the Slack namespace.".into(),
-                    source_references: vec![],
-                    related_task_ids: vec![],
-                }],
-                vec![],
-                "bad-report".into(),
-                550,
-            ),
-            Err(CoreError::TrackerReportInvalid)
-        ));
         runtime
             .complete_worker_routine(
                 &capability,
@@ -2787,7 +2788,7 @@ mod tests {
                 Some("Customer pulse check completed.".into()),
                 vec![WorkerRoutineFinding {
                     id: "custom-finding".into(),
-                    source_key: "custom:customer-pulse:2026-W33".into(),
+                    source_key: "observed:customer-pulse:2026-W33".into(),
                     summary: "No new escalations".into(),
                     evidence: "The inspected customer pulse contains no escalation.".into(),
                     source_references: vec![],
@@ -2804,13 +2805,12 @@ mod tests {
     }
 
     #[test]
-    fn custom_routine_creation_uses_the_visible_generic_prompt() {
+    fn routine_creation_uses_the_visible_provider_neutral_prompt() {
         let (mut runtime, root, project_id) = runtime_with_routines(0);
         let created = runtime
             .create_tracker_configuration(
                 "custom-routine".into(),
                 &project_id,
-                "custom",
                 RoutineTriggerMode::Schedule,
                 "Customer pulse".into(),
                 "worker-1".into(),
@@ -2822,14 +2822,14 @@ mod tests {
                 500,
             )
             .unwrap();
-        assert_eq!(created["configuration"]["kind"], "custom");
+        assert!(created["configuration"].get("kind").is_none());
         assert_eq!(created["configuration"]["name"], "Customer pulse");
         assert_eq!(created["configuration"]["enabled"], false);
         assert!(
-            created["configuration"]["prompt"]
+            created["configuration"]["instructions"]
                 .as_str()
                 .unwrap()
-                .contains("visible name")
+                .contains("exact configured instructions")
         );
 
         drop(runtime);

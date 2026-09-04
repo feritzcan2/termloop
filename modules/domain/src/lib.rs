@@ -40,12 +40,12 @@ pub use project_task_automation::{
 mod playbook;
 mod task_source;
 pub use playbook::{
-    PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_CONDITION_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES,
-    PLAYBOOK_EVIDENCE_MAX_BYTES, PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES,
-    PLAYBOOK_RETRY_DELAY_MAX_SECONDS, PLAYBOOK_RETRY_DELAY_MIN_SECONDS,
-    PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX, PLAYBOOK_TITLE_MAX_BYTES,
-    PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline, PlaybookPosition,
-    PlaybookStepProgress, PlaybookStepVerdict, pipeline_position,
+    PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES, PLAYBOOK_EVIDENCE_MAX_BYTES,
+    PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES, PLAYBOOK_RETRY_DELAY_MAX_SECONDS,
+    PLAYBOOK_RETRY_DELAY_MIN_SECONDS, PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX,
+    PLAYBOOK_TITLE_MAX_BYTES, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
+    PlaybookPipeline, PlaybookPosition, PlaybookStepProgress, PlaybookStepVerdict,
+    pipeline_position,
 };
 pub use task_source::{
     TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,
@@ -69,7 +69,7 @@ pub use companion::{
     StewardConfiguration, StewardConversationRef, TRACKER_NAME_MAX_BYTES, TRACKER_PROMPT_MAX_BYTES,
     TRACKER_REPORT_MAX_BYTES, TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
     TRACKER_REPORTS_PER_PROJECT_MAX, TRACKER_SCHEDULE_MAX_SECONDS, TRACKER_SCHEDULE_MIN_SECONDS,
-    TrackerConfiguration, TrackerKind, TrackerReport, TrackerReportKind, WORKER_NAME_MAX_BYTES,
+    TrackerConfiguration, TrackerReport, TrackerReportKind, WORKER_NAME_MAX_BYTES,
     WORKER_PROMPT_MAX_BYTES, WORKER_SYSTEM_PROMPT_MAX_BYTES, WORKERS_PER_PROJECT_MAX,
     WorkerConfiguration, companion_transcript_bytes,
 };
@@ -99,8 +99,6 @@ pub enum McpToolName {
     TaskAgentTranscriptTailRead,
     #[serde(rename = "task_agent_request")]
     TaskAgentRequest,
-    #[serde(rename = "pull_request_read")]
-    PullRequestRead,
     #[serde(rename = "routine_report_read", alias = "tracker_report_read")]
     RoutineReportRead,
     #[serde(rename = "companion_transcript_read")]
@@ -139,15 +137,8 @@ pub enum McpToolName {
         alias = "worker_ready"
     )]
     WorkerGetNextRoutine,
-    #[serde(rename = "worker_complete_routine", alias = "worker_task_complete")]
-    WorkerCompleteRoutine,
-    #[serde(
-        rename = "worker_report_routine_problem",
-        alias = "worker_task_problem"
-    )]
-    WorkerReportRoutineProblem,
-    #[serde(rename = "worker_report_step_verdicts")]
-    WorkerReportStepVerdicts,
+    #[serde(rename = "worker_complete_assignment")]
+    WorkerCompleteAssignment,
     #[serde(rename = "playbook_read")]
     PlaybookRead,
     #[serde(rename = "task_set_steward_brief")]
@@ -159,7 +150,7 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 30] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -168,7 +159,6 @@ impl McpToolName {
         Self::AgentStatusRead,
         Self::TaskAgentTranscriptTailRead,
         Self::TaskAgentRequest,
-        Self::PullRequestRead,
         Self::RoutineReportRead,
         Self::CompanionTranscriptRead,
         Self::StewardSystemPromptRead,
@@ -186,9 +176,7 @@ impl McpToolName {
         Self::RoutineFindingRead,
         Self::RoutineFindingResolve,
         Self::WorkerGetNextRoutine,
-        Self::WorkerCompleteRoutine,
-        Self::WorkerReportRoutineProblem,
-        Self::WorkerReportStepVerdicts,
+        Self::WorkerCompleteAssignment,
         Self::PlaybookRead,
         Self::TaskSetStewardBrief,
         Self::ConfigurationVersionRead,
@@ -205,7 +193,6 @@ impl McpToolName {
             Self::AgentStatusRead => "agent_status_read",
             Self::TaskAgentTranscriptTailRead => "task_agent_transcript_tail_read",
             Self::TaskAgentRequest => "task_agent_request",
-            Self::PullRequestRead => "pull_request_read",
             Self::RoutineReportRead => "routine_report_read",
             Self::CompanionTranscriptRead => "companion_transcript_read",
             Self::StewardSystemPromptRead => "steward_system_prompt_read",
@@ -223,9 +210,7 @@ impl McpToolName {
             Self::RoutineFindingRead => "routine_finding_read",
             Self::RoutineFindingResolve => "routine_finding_resolve",
             Self::WorkerGetNextRoutine => "worker_get_next_routine",
-            Self::WorkerCompleteRoutine => "worker_complete_routine",
-            Self::WorkerReportRoutineProblem => "worker_report_routine_problem",
-            Self::WorkerReportStepVerdicts => "worker_report_step_verdicts",
+            Self::WorkerCompleteAssignment => "worker_complete_assignment",
             Self::PlaybookRead => "playbook_read",
             Self::TaskSetStewardBrief => "task_set_steward_brief",
             Self::ConfigurationVersionRead => "configuration_version_read",
@@ -247,7 +232,6 @@ impl std::str::FromStr for McpToolName {
             "agent_status_read" => Ok(Self::AgentStatusRead),
             "task_agent_transcript_tail_read" => Ok(Self::TaskAgentTranscriptTailRead),
             "task_agent_request" => Ok(Self::TaskAgentRequest),
-            "pull_request_read" => Ok(Self::PullRequestRead),
             "routine_report_read" | "tracker_report_read" => Ok(Self::RoutineReportRead),
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
             "steward_system_prompt_read" => Ok(Self::StewardSystemPromptRead),
@@ -269,11 +253,7 @@ impl std::str::FromStr for McpToolName {
             "worker_get_next_routine" | "worker_task_board" | "worker_ready" => {
                 Ok(Self::WorkerGetNextRoutine)
             }
-            "worker_complete_routine" | "worker_task_complete" => Ok(Self::WorkerCompleteRoutine),
-            "worker_report_routine_problem" | "worker_task_problem" => {
-                Ok(Self::WorkerReportRoutineProblem)
-            }
-            "worker_report_step_verdicts" => Ok(Self::WorkerReportStepVerdicts),
+            "worker_complete_assignment" => Ok(Self::WorkerCompleteAssignment),
             "playbook_read" => Ok(Self::PlaybookRead),
             "task_set_steward_brief" => Ok(Self::TaskSetStewardBrief),
             "configuration_version_read" => Ok(Self::ConfigurationVersionRead),
@@ -1425,7 +1405,6 @@ mod tests {
                 "agent_status_read",
                 "task_agent_transcript_tail_read",
                 "task_agent_request",
-                "pull_request_read",
                 "routine_report_read",
                 "companion_transcript_read",
                 "steward_system_prompt_read",
@@ -1443,9 +1422,7 @@ mod tests {
                 "routine_finding_read",
                 "routine_finding_resolve",
                 "worker_get_next_routine",
-                "worker_complete_routine",
-                "worker_report_routine_problem",
-                "worker_report_step_verdicts",
+                "worker_complete_assignment",
                 "playbook_read",
                 "task_set_steward_brief",
                 "configuration_version_read",

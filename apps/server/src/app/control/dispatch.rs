@@ -1124,26 +1124,17 @@ async fn dispatch_inner(
                     request.params,
                 )
                 .expect("validated Routine create params");
-                let kind = match params.kind {
-                    protocol::RoutineKind::Slack => "slack",
-                    protocol::RoutineKind::Jira => "jira",
-                    protocol::RoutineKind::Runtime => "runtime",
-                    protocol::RoutineKind::Delivery => "delivery",
-                    protocol::RoutineKind::CiPr => "ciPr",
-                    protocol::RoutineKind::Custom => "custom",
-                };
                 let mut core = state.core.lock().await;
                 let result = core.create_tracker_configuration(
                     termloop_platform::generate_opaque_id(),
                     &params.project_id,
-                    kind,
                     routine_trigger_mode(params.trigger_mode),
                     params.name,
                     params.worker_id,
                     params.schedule_interval_seconds,
-                    routine_action_handling(params.action_handling),
-                    params.prompt,
-                    params.steward_instructions,
+                    routine_action_handling(params.while_waiting.mode),
+                    params.instructions,
+                    Some(params.while_waiting.instructions),
                     params.expected_revision,
                     current_epoch_ms(),
                 );
@@ -1159,12 +1150,12 @@ async fn dispatch_inner(
                     &params.routine_id,
                     routine_trigger_mode(params.trigger_mode),
                     params.name,
-                    params.prompt,
-                    params.steward_instructions,
+                    params.instructions,
+                    params.while_waiting.instructions,
                     params.worker_id,
                     params.enabled,
                     params.schedule_interval_seconds,
-                    routine_action_handling(params.action_handling),
+                    routine_action_handling(params.while_waiting.mode),
                     params.expected_revision,
                     current_epoch_ms(),
                 );
