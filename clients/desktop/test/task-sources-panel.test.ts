@@ -30,6 +30,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
     projectId: "project-1",
     createWorktree: false,
     worktreePrefix: "termloop",
+    baseRef: null,
     agentId: null,
     model: null,
     permission: null,
@@ -38,17 +39,28 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
   };
   return {
     calls,
+    listProjectBranches: async () => ({
+      repository_root: "/repo",
+      branches: [{ name: "main", exact_ref: "refs/heads/main" }],
+      base_branches: [
+        { name: "origin/development", exact_ref: "refs/remotes/origin/development" },
+        { name: "origin/main", exact_ref: "refs/remotes/origin/main" },
+      ],
+      base_branches_truncated: false,
+      truncated: false,
+    }),
     list: async () => { calls.push("list"); return { sources: state.sources, stateRevision: 9, observationSequence: 7 }; },
     getProjectAutomation: async (projectId) => {
       calls.push(`automationGet:${projectId}`);
       return { configuration: automation(), stateRevision: 4 };
     },
     setProjectAutomation: async (params) => {
-      calls.push(`automationSet:${params.projectId}:${params.createWorktree}:${params.worktreePrefix}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}:${params.expectedRevision}`);
+      calls.push(`automationSet:${params.projectId}:${params.createWorktree}:${params.worktreePrefix}:${params.baseRef ?? "-"}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}:${params.expectedRevision}`);
       state.automation = {
         projectId: params.projectId,
         createWorktree: params.createWorktree,
         worktreePrefix: params.worktreePrefix,
+        baseRef: params.baseRef,
         agentId: params.agentId,
         model: params.model,
         permission: params.permission,
@@ -142,7 +154,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
     refresh: async (params) => { calls.push(`refresh:${params.sourceId}:${params.expectedGeneration}`); return { sourceId: params.sourceId, refreshed: true, failureReason: null, candidateCount: 2, truncated: true, observationSequence: 8 }; },
     listCandidates: async (sourceId) => { calls.push(`candidates:${sourceId}`); return { sourceId, candidates: state.candidates, lastSuccessfulAtEpochMs: 1_000_000, stateRevision: 10, observationSequence: 7 }; },
     importCandidate: async (params) => {
-      calls.push(`import:${params.externalId}:${params.expectedGeneration}:${params.expectedObservationSequence}:${params.expectedRevision}:${params.worktreeIntent}:${params.worktreePrefix ?? "-"}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}`);
+      calls.push(`import:${params.externalId}:${params.expectedGeneration}:${params.expectedObservationSequence}:${params.expectedRevision}:${params.worktreeIntent}:${params.worktreePrefix ?? "-"}:${params.baseRef ?? "-"}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}`);
       state.candidates = state.candidates.map((row) => row.externalId === params.externalId ? { ...row, state: "added", taskId: "task-9" } : row);
       return { task: { id: "task-9", title: "Fix login" } as never, stateRevision: 12 };
     },
@@ -293,13 +305,16 @@ describe("Task Sources panel", () => {
     await act(async () => { (bar.querySelector("button") as HTMLButtonElement).click(); });
     const worktree = bar.querySelector("#project-task-automation-worktree") as HTMLInputElement;
     await act(async () => { worktree.click(); });
+    const baseBranch = bar.querySelector("#project-task-automation-base-ref") as HTMLSelectElement;
+    expect(baseBranch.value).toBe("refs/remotes/origin/development");
+    await setInput("project-task-automation-base-ref", "refs/remotes/origin/main");
     await act(async () => {
       ([...bar.querySelectorAll("button")].find((button) => button.textContent === "Save defaults") as HTMLButtonElement).click();
     });
     await flush();
 
     // Saved as one explicit profile against the revision the page read.
-    expect(api.calls).toContain("automationSet:project-1:true:termloop:-:-:-:-:-:4");
+    expect(api.calls).toContain("automationSet:project-1:true:termloop:refs/remotes/origin/main:-:-:-:-:-:4");
     expect(host.querySelector('[data-testid="project-task-automation-summary"]')?.textContent)
       .toBe("Task and worktree — no agent");
     expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Save defaults");
@@ -359,6 +374,7 @@ describe("Task Sources panel", () => {
         projectId: "project-1",
         createWorktree: true,
         worktreePrefix: "termloop",
+        baseRef: "refs/remotes/origin/development",
         agentId: "codex",
         model: "gpt-5.6-sol",
         permission: "bypassPermissions",
@@ -383,6 +399,7 @@ describe("Task Sources panel", () => {
     expect((options.querySelector("#task-candidate-import-worktree") as HTMLInputElement).checked).toBe(true);
     expect((options.querySelector("#task-candidate-import-start-agent") as HTMLInputElement).checked).toBe(true);
     expect((options.querySelector("#task-candidate-import-worktree-prefix") as HTMLInputElement).value).toBe("termloop");
+    expect((options.querySelector("#task-candidate-import-base-ref") as HTMLSelectElement).value).toBe("refs/remotes/origin/development");
     expect((options.querySelector("#task-candidate-import-agent") as HTMLSelectElement).value).toBe("codex");
     expect((options.querySelector("#task-candidate-import-model") as HTMLSelectElement).value).toBe("gpt-5.6-sol");
     expect((options.querySelector("#task-candidate-import-permission") as HTMLSelectElement).value).toBe("bypassPermissions");
@@ -407,7 +424,7 @@ describe("Task Sources panel", () => {
     await flush();
 
     expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual([
-      "import:10001:3:7:10:provision:feature:claude:default:default:default:message",
+      "import:10001:3:7:10:provision:feature:refs/remotes/origin/development:claude:default:default:default:message",
     ]);
     expect(host.textContent).toContain("ACME-1 is now Task “Fix login”");
     expect(host.querySelector('[aria-label="Import ACME-1 as Task"]')).toBeNull();
@@ -421,6 +438,7 @@ describe("Task Sources panel", () => {
         projectId: "project-1",
         createWorktree: true,
         worktreePrefix: "termloop",
+        baseRef: "refs/remotes/origin/development",
         agentId: "codex",
         model: "gpt-5.6-sol",
         permission: "bypassPermissions",
@@ -444,7 +462,7 @@ describe("Task Sources panel", () => {
     });
     await flush();
     await flush();
-    expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual(["import:10001:3:7:10:none:-:-:-:-:-:-"]);
+    expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual(["import:10001:3:7:10:none:-:-:-:-:-:-:-"]);
 
     // Cancel closes the confirmation without a second command.
     api.calls.length = 0;

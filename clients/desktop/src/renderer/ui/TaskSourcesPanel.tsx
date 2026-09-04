@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import type {
   AgentCapabilityDto,
+  ProjectLocalBranchListResult,
   ProjectTaskAutomationGetResult,
+  RemoteBranchDto,
   TaskSourceCandidateDto,
   TaskSourceCandidateImportParams,
   TaskSourceCandidateImportResult,
@@ -82,11 +84,13 @@ import {
 import { controlErrorMessage } from "../control-error.js";
 import { Icon } from "./Icon.js";
 import { WorktreeAgentChoice, type ProjectTaskAutomationActions } from "./ProjectTaskAutomation.js";
+import { sortRemoteBranches } from "./worktree-path-suggestion.js";
 import { SourceIntakeSettings } from "./task-sources/SourceIntakeSettings.js";
 
 /// Named generated operations the panel may raise. Composition binds them to
 /// the selected Project's connection source; the panel never sees a transport.
 export type TaskSourceActions = ProjectTaskAutomationActions & {
+  listProjectBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   list(projectId: string): Promise<TaskSourceListResult>;
   listBoards(params: TaskSourceBoardListParams): Promise<TaskSourceBoardListResult>;
   listStoredBoards(params: TaskSourceStoredBoardListParams): Promise<TaskSourceBoardListResult>;
@@ -134,6 +138,9 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
   const [automation, setAutomation] = useState<ProjectTaskAutomationGetResult>();
   const [automationError, setAutomationError] = useState<string>();
   const [automationBusy, setAutomationBusy] = useState(false);
+  const [baseBranches, setBaseBranches] = useState<readonly RemoteBranchDto[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+  const [branchesError, setBranchesError] = useState<string>();
   /// One open import confirmation at a time: the explicit one-shot choice for
   /// exactly the candidate the user pressed, prefilled from the Project default.
   const [importChoice, setImportChoice] = useState<{ externalId: string; choice: TaskImportChoice }>();
@@ -182,6 +189,21 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
     }
   }, [props.actions, props.projectId]);
 
+  const loadBranches = useCallback(async () => {
+    setBranchesLoading(true);
+    try {
+      const result = await props.actions.listProjectBranches(props.projectId);
+      if (!alive.current) return;
+      setBaseBranches(sortRemoteBranches(result.base_branches));
+      setBranchesError(undefined);
+    } catch (error) {
+      if (!alive.current) return;
+      setBranchesError(controlErrorMessage(error));
+    } finally {
+      if (alive.current) setBranchesLoading(false);
+    }
+  }, [props.actions, props.projectId]);
+
   /// Project defaults are edited as one launch profile. Keep the editor open
   /// after a rejected save so the user's model, reasoning, and prompt choices
   /// remain visible and recoverable.
@@ -193,6 +215,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
         projectId: props.projectId,
         createWorktree: draft.createWorktree,
         worktreePrefix: draft.worktreePrefix,
+        baseRef: draft.baseRef,
         agentId: draft.agentId,
         model: draft.model,
         permission: draft.permission,
@@ -230,6 +253,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
 
   useEffect(() => { void loadSources(); }, [loadSources, props.refreshToken]);
   useEffect(() => { void loadAutomation(); }, [loadAutomation, props.refreshToken]);
+  useEffect(() => { void loadBranches(); }, [loadBranches, props.refreshToken]);
   useEffect(() => {
     if (selectedSourceId) void loadCandidates(selectedSourceId);
     else setCandidates(undefined);
@@ -405,8 +429,11 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
         error={automationError}
         busy={automationBusy}
         agentCapabilities={props.agentCapabilities}
+        baseBranches={baseBranches}
+        branchesLoading={branchesLoading}
+        branchesError={branchesError}
         save={saveAutomation}
-        reload={() => void loadAutomation()}
+        reload={() => { void loadAutomation(); void loadBranches(); }}
       />
 
       {/* With no source there is nothing to pick between, so the rail stays
@@ -662,10 +689,11 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                             setImportChoice({
                               externalId: candidate.externalId,
                               choice: automation
-                                ? projectTaskAutomationDraftFrom(automation.configuration)
+                                ? projectTaskAutomationDraftFrom(automation.configuration, baseBranches[0]?.exact_ref)
                                 : {
                                   createWorktree: false,
                                   worktreePrefix: DEFAULT_TASK_WORKTREE_PREFIX,
+                                  baseRef: baseBranches[0]?.exact_ref ?? null,
                                   agentId: null,
                                   model: null,
                                   permission: null,
@@ -686,6 +714,9 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                         importing={busy === `import:${candidate.externalId}`}
                         defaultsLoaded={automation !== undefined}
                         agentCapabilities={props.agentCapabilities}
+                        baseBranches={baseBranches}
+                        branchesLoading={branchesLoading}
+                        branchesError={branchesError}
                         change={(choice) => setImportChoice({ externalId: candidate.externalId, choice })}
                         confirm={() => void importCandidate(candidate, selectedSource, confirming)}
                         cancel={() => setImportChoice(undefined)}
@@ -706,22 +737,30 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
 
 /// What every new Task starts with, stated once above the sources that create
 /// them. The complete launch profile opens in place when it is being changed.
-function TaskDefaultsBar({ automation, error, busy, agentCapabilities, save, reload }: {
+function TaskDefaultsBar({ automation, error, busy, agentCapabilities, baseBranches, branchesLoading, branchesError, save, reload }: {
   automation: ProjectTaskAutomationGetResult | undefined;
   error: string | undefined;
   busy: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
+  baseBranches: readonly RemoteBranchDto[];
+  branchesLoading: boolean;
+  branchesError: string | undefined;
   save(draft: ProjectTaskAutomationDraft): Promise<boolean>;
   reload(): void;
 }) {
   const [open, setOpen] = useState(false);
-  const savedDraft = automation ? projectTaskAutomationDraftFrom(automation.configuration) : undefined;
+  const savedDraft = useMemo(
+    () => automation
+      ? projectTaskAutomationDraftFrom(automation.configuration, baseBranches[0]?.exact_ref)
+      : undefined,
+    [automation, baseBranches],
+  );
   const [editingDraft, setEditingDraft] = useState<ProjectTaskAutomationDraft>();
   useEffect(() => {
     if (!open && savedDraft) setEditingDraft(savedDraft);
-  }, [automation, open]);
+  }, [open, savedDraft]);
   const draft = open ? editingDraft ?? savedDraft : savedDraft;
-  const validationError = editingDraft ? projectTaskAutomationError(editingDraft) : undefined;
+  const validationError = editingDraft ? projectTaskAutomationError(editingDraft, baseBranches) : undefined;
   const changed = Boolean(
     editingDraft
       && automation
@@ -751,6 +790,9 @@ function TaskDefaultsBar({ automation, error, busy, agentCapabilities, save, rel
         value={draft}
         busy={busy}
         agentCapabilities={agentCapabilities}
+        baseBranches={baseBranches}
+        branchesLoading={branchesLoading}
+        branchesError={branchesError}
         worktreeHint="Provision a managed worktree for every new Task."
         agentHint="Launch after the managed worktree becomes ready."
         change={setEditingDraft}
@@ -1126,18 +1168,21 @@ function IntakeFields({ idPrefix, value, activeTaskLimit, busy, change, changeAc
 /// Importing is an explicit act, so the worktree and agent it will produce are
 /// confirmed before the command runs. The options start at the Project default
 /// and are sent as a resolved one-shot selection.
-function CandidateImportOptions({ candidateKey, choice, busy, importing, defaultsLoaded, agentCapabilities, change, confirm, cancel }: {
+function CandidateImportOptions({ candidateKey, choice, busy, importing, defaultsLoaded, agentCapabilities, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
   candidateKey: string;
   choice: TaskImportChoice;
   busy: boolean;
   importing: boolean;
   defaultsLoaded: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
+  baseBranches: readonly RemoteBranchDto[];
+  branchesLoading: boolean;
+  branchesError: string | undefined;
   change(next: TaskImportChoice): void;
   confirm(): void;
   cancel(): void;
 }) {
-  const selectionError = projectTaskAutomationError(choice);
+  const selectionError = projectTaskAutomationError(choice, baseBranches);
   // The wrapper owns the line break inside the candidate row: a max-width on the
   // flex item itself would clamp its basis and keep it on the row's first line.
   return <div className="task-candidate-import-line">
@@ -1152,6 +1197,9 @@ function CandidateImportOptions({ candidateKey, choice, busy, importing, default
       value={choice}
       busy={busy}
       agentCapabilities={agentCapabilities}
+      baseBranches={baseBranches}
+      branchesLoading={branchesLoading}
+      branchesError={branchesError}
       worktreeHint="Provision a managed worktree for this Task."
       agentHint="Launch once the managed worktree is ready."
       change={change}

@@ -1,6 +1,7 @@
 import type {
   AgentCapabilityDto,
   ProjectTaskAutomationConfigurationDto,
+  RemoteBranchDto,
   TaskCreateWorktreeIntent,
 } from "@termloop/contract/current";
 
@@ -12,6 +13,7 @@ const utf8ByteLength = (value: string): number => new TextEncoder().encode(value
 export type ProjectTaskAutomationDraft = {
   createWorktree: boolean;
   worktreePrefix: string;
+  baseRef: string | null;
   agentId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
@@ -29,10 +31,12 @@ export const PROJECT_TASK_AUTOMATION_SCOPE_COPY =
 
 export function projectTaskAutomationDraftFrom(
   configuration: ProjectTaskAutomationConfigurationDto,
+  fallbackBaseRef?: string,
 ): ProjectTaskAutomationDraft {
   return {
     createWorktree: configuration.createWorktree,
     worktreePrefix: configuration.worktreePrefix,
+    baseRef: configuration.baseRef ?? fallbackBaseRef ?? null,
     agentId: configuration.agentId,
     model: configuration.model,
     permission: configuration.permission,
@@ -44,9 +48,18 @@ export function projectTaskAutomationDraftFrom(
 /// Mirrors the generated constraint: an agent can only start inside a worktree,
 /// so a named agent without one is refused next to the control instead of by a
 /// rejected round trip.
-export function projectTaskAutomationError(draft: ProjectTaskAutomationDraft): string | undefined {
+export function projectTaskAutomationError(
+  draft: ProjectTaskAutomationDraft,
+  baseBranches?: readonly RemoteBranchDto[],
+): string | undefined {
   if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(draft.worktreePrefix)) {
     return "Use 1–32 lowercase letters, numbers, or single hyphens for the branch/worktree prefix.";
+  }
+  if (draft.createWorktree && !/^refs\/remotes\/[^/]+\/.+/.test(draft.baseRef ?? "")) {
+    return "Choose a remote base branch for new worktrees.";
+  }
+  if (draft.createWorktree && baseBranches && !baseBranches.some((branch) => branch.exact_ref === draft.baseRef)) {
+    return "The selected remote base branch is no longer available. Choose another branch.";
   }
   if (draft.agentId === null) {
     return draft.model === null && draft.permission === null && draft.reasoning === null && draft.kickoffMessage === null
@@ -73,6 +86,7 @@ export function projectTaskAutomationChanged(
 ): boolean {
   return draft.createWorktree !== configuration.createWorktree
     || draft.worktreePrefix !== configuration.worktreePrefix
+    || draft.baseRef !== configuration.baseRef
     || draft.agentId !== configuration.agentId
     || draft.model !== configuration.model
     || draft.permission !== configuration.permission
@@ -101,6 +115,7 @@ export type TaskImportChoice = ProjectTaskAutomationDraft;
 export function taskCreationIntent(choice: TaskImportChoice): {
   worktreeIntent: TaskCreateWorktreeIntent;
   worktreePrefix: string | null;
+  baseRef: string | null;
   agentId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
@@ -109,8 +124,8 @@ export function taskCreationIntent(choice: TaskImportChoice): {
 } {
   if (!choice.createWorktree || choice.agentId === null) {
     return choice.createWorktree
-      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
-      : { worktreeIntent: "none", worktreePrefix: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
+      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, baseRef: choice.baseRef, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
+      : { worktreeIntent: "none", worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
   }
   if (choice.model === null || choice.permission === null || choice.reasoning === null) {
     throw new Error("An explicit Task Agent selection requires model, permission, and reasoning.");
@@ -118,6 +133,7 @@ export function taskCreationIntent(choice: TaskImportChoice): {
   return {
     worktreeIntent: "provision",
     worktreePrefix: choice.worktreePrefix,
+    baseRef: choice.baseRef,
     agentId: choice.agentId,
     model: choice.model,
     permission: choice.permission,

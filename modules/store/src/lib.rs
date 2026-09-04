@@ -54,7 +54,8 @@ use termloop_domain::{
 // automation launch options. Version 46 adds the permission selection.
 // Version 47 adds the managed Task branch/worktree prefix. Version 48 adds the
 // bounded current set of branches observed in each managed Task worktree.
-const CURRENT_SCHEMA_VERSION: u32 = 48;
+// Version 49 adds the selected remote base ref to Project Task automation.
+const CURRENT_SCHEMA_VERSION: u32 = 49;
 
 pub struct CoreWriteAuthority {
     _private: (),

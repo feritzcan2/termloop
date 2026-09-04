@@ -2218,11 +2218,17 @@
       "x-codegen-name": "ProjectTaskAutomationConfigurationDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
+      "required": ["projectId", "createWorktree", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+        "baseRef": {
+          "anyOf": [
+            { "type": "string", "minLength": 16, "maxLength": 1024, "pattern": "^refs/remotes/[^/]+/.+" },
+            { "type": "null" }
+          ]
+        },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -2277,11 +2283,17 @@
       "x-codegen-name": "ProjectTaskAutomationSetParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
+      "required": ["projectId", "createWorktree", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+        "baseRef": {
+          "anyOf": [
+            { "type": "string", "minLength": 16, "maxLength": 1024, "pattern": "^refs/remotes/[^/]+/.+" },
+            { "type": "null" }
+          ]
+        },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -2300,6 +2312,10 @@
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },
       "allOf": [
+        {
+          "if": { "properties": { "createWorktree": { "const": true } }, "required": ["createWorktree"] },
+          "then": { "properties": { "baseRef": { "type": "string" } } }
+        },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },
           "then": {
@@ -2551,6 +2567,29 @@
         }
       }
     },
+    "remoteBranchDto": {
+      "x-codegen": true,
+      "x-codegen-name": "RemoteBranchDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "exact_ref"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1024
+        },
+        "exact_ref": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 1024,
+          "pattern": "^refs/remotes/[^/]+/.+"
+        }
+      }
+    },
     "projectLocalBranchListResult": {
       "x-codegen": true,
       "x-codegen-name": "ProjectLocalBranchListResult",
@@ -2559,6 +2598,8 @@
       "required": [
         "repository_root",
         "branches",
+        "base_branches",
+        "base_branches_truncated",
         "truncated"
       ],
       "properties": {
@@ -2573,6 +2614,17 @@
           },
           "maxItems": 512,
           "uniqueItems": true
+        },
+        "base_branches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteBranchDto"
+          },
+          "maxItems": 512,
+          "uniqueItems": true
+        },
+        "base_branches_truncated": {
+          "type": "boolean"
         },
         "truncated": {
           "type": "boolean"
@@ -5756,6 +5808,7 @@
         "title",
         "worktreeIntent",
         "worktreePrefix",
+        "baseRef",
         "agentId",
         "model",
         "permission",
@@ -5785,6 +5838,12 @@
         "worktreePrefix": {
           "anyOf": [
             { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+            { "type": "null" }
+          ]
+        },
+        "baseRef": {
+          "anyOf": [
+            { "type": "string", "minLength": 16, "maxLength": 1024, "pattern": "^refs/remotes/[^/]+/.+" },
             { "type": "null" }
           ]
         },
@@ -5819,8 +5878,11 @@
       "allOf": [
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
-          "then": { "properties": { "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" } } },
-          "else": { "properties": { "worktreePrefix": { "const": null } } }
+          "then": { "properties": {
+            "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+            "baseRef": { "type": "string" }
+          } },
+          "else": { "properties": { "worktreePrefix": { "const": null }, "baseRef": { "const": null } } }
         },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },
@@ -13689,7 +13751,7 @@
       "x-codegen-name": "TaskSourceCandidateImportParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
+      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "sourceId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "externalId": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -13700,6 +13762,12 @@
         "worktreePrefix": {
           "anyOf": [
             { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+            { "type": "null" }
+          ]
+        },
+        "baseRef": {
+          "anyOf": [
+            { "type": "string", "minLength": 16, "maxLength": 1024, "pattern": "^refs/remotes/[^/]+/.+" },
             { "type": "null" }
           ]
         },
@@ -13722,8 +13790,11 @@
       "allOf": [
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
-          "then": { "properties": { "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" } } },
-          "else": { "properties": { "worktreePrefix": { "const": null } } }
+          "then": { "properties": {
+            "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
+            "baseRef": { "type": "string" }
+          } },
+          "else": { "properties": { "worktreePrefix": { "const": null }, "baseRef": { "const": null } } }
         },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },

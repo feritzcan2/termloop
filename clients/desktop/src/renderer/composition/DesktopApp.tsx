@@ -2074,6 +2074,7 @@ export function DesktopApp() {
   }, [assistantProjectId, selectedSourceApi]);
   const taskSourceActions: TaskSourceActions = useMemo(() => ({
     list: (projectId: string) => selectedSourceApi.taskSourceList({ projectId }),
+    listProjectBranches: (projectId: string) => selectedSourceApi.projectListLocalBranches(projectId),
     getProjectAutomation: (projectId: string) => selectedSourceApi.projectTaskAutomationGet(projectId),
     setProjectAutomation: selectedSourceApi.projectTaskAutomationSet,
     listBoards: selectedSourceApi.taskSourceBoardList,

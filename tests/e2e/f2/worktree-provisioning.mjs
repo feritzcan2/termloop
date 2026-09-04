@@ -44,6 +44,7 @@ git(repository, ["commit", "--allow-empty", "-m", "fixture"], {
   GIT_AUTHOR_DATE: "2001-01-01T00:00:00Z",
   GIT_COMMITTER_DATE: "2001-01-01T00:00:00Z",
 });
+git(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
 git(repository, ["branch", "checked-out"]);
 git(repository, ["branch", "existing-free"]);
 git(repository, ["worktree", "add", linked, "checked-out"]);
@@ -112,7 +113,7 @@ try {
     destinationPath: destination,
     branchName: "feature/managed",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   };
   await setGitControl("block");
   const firstPromise = controlCall(record, "task.provisionWorktree", params);
@@ -177,7 +178,7 @@ try {
     destinationPath: occupiedDestination,
     branchName: "feature/occupied",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
   assert.equal(occupied.error?.code, "conflict");
   const occupiedTask = (await controlCall(record, "task.list", { projectId: project.id, archiveScope: "active" })).items
@@ -195,7 +196,7 @@ try {
     destinationPath: retryDestination,
     branchName: "feature/retry-managed",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   };
   await setGitControl("block-fail");
   const failedPromise = rawControlCall(record, record.token, "task.provisionWorktree", retryParams);
@@ -230,7 +231,7 @@ try {
     destinationPath: attentionDestination,
     branchName: "feature/attention-managed",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
   assertConflict(attention, {
     kind: "worktreeRecoveryAttention",
@@ -285,9 +286,9 @@ try {
   await uiRow.click({ button: "right" });
   await page.getByRole("menuitem", { name: /Create worktree/ }).click();
   await page.getByLabel("New worktree path").fill(uiDestination);
-  await page.getByLabel("Branch source").selectOption("create");
+  await page.getByLabel("Branch").selectOption("create");
   await page.getByLabel("Branch name").fill("feature/ui");
-  await page.getByLabel("Exact base ref").selectOption("refs/heads/main");
+  await page.getByLabel("Base branch").selectOption("refs/remotes/origin/main");
   await page.getByRole("dialog").getByRole("button", { name: "Create worktree", exact: true }).click();
   await uiRow.locator(".task-branch").getByText("Branch feature/ui", { exact: true }).waitFor();
   assert.match(await uiRow.innerText(), /Visible provisioning brief/);
@@ -310,9 +311,9 @@ try {
   await retryRow.click({ button: "right" });
   await page.getByRole("menuitem", { name: /Create worktree/ }).click();
   await page.getByLabel("New worktree path").fill(retryDestination);
-  await page.getByLabel("Branch source").selectOption("create");
+  await page.getByLabel("Branch").selectOption("create");
   await page.getByLabel("Branch name").fill("feature/retry-managed");
-  await page.getByLabel("Exact base ref").selectOption("refs/heads/main");
+  await page.getByLabel("Base branch").selectOption("refs/remotes/origin/main");
   await page.getByRole("dialog").getByRole("button", { name: "Create worktree", exact: true }).click();
   await retryRow.locator(".task-branch").getByText("Branch feature/retry-managed", { exact: true }).waitFor();
   evidence.checks.rollbackRetrySuccess = true;
@@ -471,7 +472,19 @@ async function indexState(worktrees) {
 }
 
 async function createTask(record, projectId, title, brief = null) {
-  return controlCall(record, "task.create", { projectId, title, brief, worktreeIntent: "none" });
+  return controlCall(record, "task.create", {
+    projectId,
+    title,
+    brief,
+    worktreeIntent: "none",
+    worktreePrefix: null,
+    baseRef: null,
+    agentId: null,
+    model: null,
+    permission: null,
+    reasoning: null,
+    kickoffMessage: null,
+  });
 }
 
 function assertConflict(response, details) {

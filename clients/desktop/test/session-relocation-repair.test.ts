@@ -215,6 +215,8 @@ describe("Session worktree relocation repair routing", () => {
     const listBranches = vi.fn(async () => ({
       repository_root: "/repo",
       branches: [{ name: "main", exact_ref: "refs/heads/main" }],
+      base_branches: [{ name: "origin/main", exact_ref: "refs/remotes/origin/main" }],
+      base_branches_truncated: false,
       truncated: false,
     }));
     const beginProvisioning = vi.fn();
@@ -263,7 +265,7 @@ describe("Session worktree relocation repair routing", () => {
         destinationPath: "/task-inline-relocation_worktree",
         branchName: "task/inline-relocation",
         branchMode: "create",
-        baseRef: "refs/heads/main",
+        baseRef: "refs/remotes/origin/main",
       }),
       "resume",
     );

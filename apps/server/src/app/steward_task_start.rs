@@ -354,24 +354,64 @@ fn select_provisioning_branch(
 }
 
 fn select_base_ref(projection: &Value, requested: Option<&str>) -> Result<String, CoreError> {
-    let observed = observed_branch_refs(projection).collect::<Vec<_>>();
+    let observed = observed_base_refs(projection).collect::<Vec<_>>();
     let observed_branches = observed
         .iter()
-        .filter_map(|branch| branch.strip_prefix("refs/heads/"))
+        .filter_map(|branch| branch.strip_prefix("refs/remotes/"))
         .map(str::to_owned)
         .collect::<Vec<_>>();
     let selected = if let Some(requested) = requested {
-        let requested = requested.strip_prefix("refs/heads/").unwrap_or(requested);
-        let exact = format!("refs/heads/{requested}");
-        observed
-            .iter()
-            .any(|candidate| *candidate == exact)
-            .then_some(exact)
+        let exact = requested
+            .strip_prefix("refs/remotes/")
+            .map(|name| format!("refs/remotes/{name}"))
+            .or_else(|| {
+                requested
+                    .contains('/')
+                    .then(|| format!("refs/remotes/{requested}"))
+            });
+        exact
+            .filter(|exact| observed.iter().any(|candidate| *candidate == exact))
+            .or_else(|| {
+                let origin = format!("refs/remotes/origin/{requested}");
+                observed
+                    .iter()
+                    .any(|candidate| *candidate == origin)
+                    .then_some(origin)
+            })
+            .or_else(|| {
+                observed
+                    .iter()
+                    .find(|candidate| {
+                        candidate
+                            .strip_prefix("refs/remotes/")
+                            .and_then(|name| name.split_once('/'))
+                            .is_some_and(|(_, branch)| branch == requested)
+                    })
+                    .map(|candidate| (*candidate).to_owned())
+            })
     } else {
         ["development", "dev", "main", "master"]
             .into_iter()
-            .map(|name| format!("refs/heads/{name}"))
-            .find(|candidate| observed.iter().any(|observed| observed == candidate))
+            .filter_map(|preferred_name| {
+                let origin = format!("refs/remotes/origin/{preferred_name}");
+                observed
+                    .iter()
+                    .any(|candidate| *candidate == origin)
+                    .then_some(origin)
+                    .or_else(|| {
+                        observed
+                            .iter()
+                            .find(|candidate| {
+                                candidate
+                                    .strip_prefix("refs/remotes/")
+                                    .and_then(|name| name.split_once('/'))
+                                    .is_some_and(|(_, branch)| branch == preferred_name)
+                            })
+                            .map(|candidate| (*candidate).to_owned())
+                    })
+            })
+            .next()
+            .or_else(|| observed.first().map(|candidate| (*candidate).to_owned()))
     };
     selected.ok_or_else(|| base_selection_error(observed_branches))
 }
@@ -379,6 +419,15 @@ fn select_base_ref(projection: &Value, requested: Option<&str>) -> Result<String
 fn observed_branch_refs(projection: &Value) -> impl Iterator<Item = &str> {
     projection
         .get("branches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|branch| branch.get("exact_ref").and_then(Value::as_str))
+}
+
+fn observed_base_refs(projection: &Value) -> impl Iterator<Item = &str> {
+    projection
+        .get("base_branches")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -482,19 +531,27 @@ mod tests {
             "branches": [
                 { "name": "main", "exact_ref": "refs/heads/main" },
                 { "name": "development", "exact_ref": "refs/heads/development" }
+            ],
+            "base_branches": [
+                { "name": "origin/main", "exact_ref": "refs/remotes/origin/main" },
+                { "name": "origin/development", "exact_ref": "refs/remotes/origin/development" }
             ]
         });
         assert_eq!(
             select_base_ref(&projection, None).unwrap(),
-            "refs/heads/development"
+            "refs/remotes/origin/development"
         );
         assert_eq!(
             select_base_ref(&projection, Some("main")).unwrap(),
-            "refs/heads/main"
+            "refs/remotes/origin/main"
         );
         assert_eq!(
-            select_base_ref(&projection, Some("refs/heads/main")).unwrap(),
-            "refs/heads/main"
+            select_base_ref(&projection, Some("origin/main")).unwrap(),
+            "refs/remotes/origin/main"
+        );
+        assert_eq!(
+            select_base_ref(&projection, Some("refs/remotes/origin/main")).unwrap(),
+            "refs/remotes/origin/main"
         );
         let error = select_base_ref(&projection, Some("missing")).unwrap_err();
         assert!(matches!(
@@ -504,7 +561,7 @@ mod tests {
                 suggested_action: TaskAgentStartSuggestedAction::ChooseBaseBranch,
                 ref observed_branches,
                 ..
-            } if observed_branches == &["main", "development"]
+            } if observed_branches == &["origin/main", "origin/development"]
         ));
         assert!(matches!(
             stage_error(
@@ -531,6 +588,9 @@ mod tests {
             "branches": [
                 { "exact_ref": "refs/heads/main" },
                 { "exact_ref": "refs/heads/termloop/fix-task" }
+            ],
+            "base_branches": [
+                { "exact_ref": "refs/remotes/origin/main" }
             ]
         });
         assert_eq!(
@@ -557,7 +617,7 @@ mod tests {
             select_provisioning_branch(None, "termloop/new-task", &projection, None).unwrap(),
             ProvisioningBranch {
                 name: "termloop/new-task".into(),
-                base_ref: Some("refs/heads/main".into()),
+                base_ref: Some("refs/remotes/origin/main".into()),
             }
         );
     }

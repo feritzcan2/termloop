@@ -81,6 +81,7 @@ fn project_task_automation_is_strict_and_revision_checked() {
         &serde_json::json!({
             "projectId":"project-1", "createWorktree":true,
             "worktreePrefix":"termloop",
+            "baseRef":"refs/remotes/origin/development",
             "agentId":"codex", "model":"gpt-5.6-sol",
             "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":"Implement and verify.",
@@ -90,8 +91,19 @@ fn project_task_automation_is_strict_and_revision_checked() {
     assert!(!validate_method_params(
         "project.taskAutomationSet",
         &serde_json::json!({
+            "projectId":"project-1", "createWorktree":true,
+            "worktreePrefix":"termloop", "baseRef":null,
+            "agentId":null, "model":null, "permission":null,
+            "reasoning":null, "kickoffMessage":null,
+            "expectedRevision":1
+        })
+    ));
+    assert!(!validate_method_params(
+        "project.taskAutomationSet",
+        &serde_json::json!({
             "projectId":"project-1", "createWorktree":false,
             "worktreePrefix":"termloop",
+            "baseRef":null,
             "agentId":"codex", "model":"gpt-5.6-sol",
             "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":null,
@@ -321,6 +333,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "brief": null,
             "worktreeIntent": "inherit",
             "worktreePrefix": null,
+            "baseRef": null,
             "agentId": null,
             "model": null,
             "permission": null,
@@ -335,6 +348,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "title": "Build API",
             "worktreeIntent": "provision",
             "worktreePrefix": "termloop",
+            "baseRef": "refs/remotes/origin/development",
             "agentId": null,
             "model": null,
             "permission": null,
@@ -349,6 +363,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "title": "Build API",
             "worktreeIntent": "none",
             "worktreePrefix": null,
+            "baseRef": null,
             "agentId": null,
             "model": "gpt-5.6-sol",
             "permission": null,
@@ -553,7 +568,12 @@ fn generated_method_results_cover_project_task_and_session_wire_shapes() {
                 { "name": "feature/api", "exact_ref": "refs/heads/feature/api" },
                 { "name": "main", "exact_ref": "refs/heads/main" }
             ],
-            "truncated": false
+            "truncated": false,
+            "base_branches": [
+                { "name": "origin/development", "exact_ref": "refs/remotes/origin/development" },
+                { "name": "origin/main", "exact_ref": "refs/remotes/origin/main" }
+            ],
+            "base_branches_truncated": false
         })
     ));
     assert!(!validate_method_result(
@@ -561,7 +581,9 @@ fn generated_method_results_cover_project_task_and_session_wire_shapes() {
         &serde_json::json!({
             "repository_root": "/tmp/demo",
             "branches": [{ "name": "main", "exact_ref": "main" }],
-            "truncated": false
+            "truncated": false,
+            "base_branches": [],
+            "base_branches_truncated": false
         })
     ));
     assert!(validate_method_result(

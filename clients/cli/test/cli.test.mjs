@@ -198,7 +198,7 @@ test("maps explicit Task worktree provisioning parameters", () => {
     "--destination", "/tmp/demo-feature",
     "--branch", "feature/api",
     "--mode", "create",
-    "--base-ref", "refs/heads/main",
+    "--base-ref", "refs/remotes/origin/main",
   ], {});
   assert.equal(methodFor(options.command), "task.provisionWorktree");
   assert.deepEqual(options.params, {
@@ -208,7 +208,7 @@ test("maps explicit Task worktree provisioning parameters", () => {
     destinationPath: "/tmp/demo-feature",
     branchName: "feature/api",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
 });
 

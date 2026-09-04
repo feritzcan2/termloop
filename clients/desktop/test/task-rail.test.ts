@@ -1456,6 +1456,11 @@ describe("Task rail create flow", () => {
         { name: "main", exact_ref: "refs/heads/main" },
         { name: "develop", exact_ref: "refs/heads/develop" },
       ],
+      base_branches: [
+        { name: "origin/main", exact_ref: "refs/remotes/origin/main" },
+        { name: "origin/develop", exact_ref: "refs/remotes/origin/develop" },
+      ],
+      base_branches_truncated: false,
       truncated: false,
     }));
     const props = {
@@ -1471,12 +1476,12 @@ describe("Task rail create flow", () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create Task"]')!.click());
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     const createBase = container.querySelector<HTMLSelectElement>("#create-base-ref")!;
-    expect(createBase.value).toBe("refs/heads/main");
+    expect(createBase.value).toBe("refs/remotes/origin/develop");
     await act(async () => {
-      createBase.value = "refs/heads/develop";
+      createBase.value = "refs/remotes/origin/main";
       createBase.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(createBase.value).toBe("refs/heads/develop");
+    expect(createBase.value).toBe("refs/remotes/origin/main");
 
     /// Remounting represents a renderer/application restart: the next dialog
     /// must recover the Project-scoped choice from client-local storage.
@@ -1491,7 +1496,7 @@ describe("Task rail create flow", () => {
       branchMode.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.querySelector<HTMLSelectElement>("#worktree-base-ref")?.value)
-      .toBe("refs/heads/develop");
+      .toBe("refs/remotes/origin/main");
 
     await act(async () => root.unmount());
     container.remove();
@@ -1527,6 +1532,7 @@ describe("Task rail create flow", () => {
         projectId: "project-1",
         createWorktree: false,
         worktreePrefix: "termloop",
+        baseRef: null,
         agentId: null,
         model: null,
         permission: null,
@@ -1567,6 +1573,7 @@ describe("Task rail create flow", () => {
         projectId: "project-1",
         createWorktree: true,
         worktreePrefix: "feature",
+        baseRef: "refs/remotes/origin/main",
         agentId: "claude",
         model: "opus[1m]",
         permission: "bypassPermissions" as const,
@@ -1580,6 +1587,8 @@ describe("Task rail create flow", () => {
     const listProjectLocalBranches = vi.fn(async () => ({
       repository_root: "/repository",
       branches: [{ name: "main", exact_ref: "refs/heads/main" }],
+      base_branches: [{ name: "origin/main", exact_ref: "refs/remotes/origin/main" }],
+      base_branches_truncated: false,
       truncated: false,
     }));
     const readyTask: Task = {
@@ -1616,7 +1625,7 @@ describe("Task rail create flow", () => {
     expect(container.querySelector<HTMLInputElement>("#create-branch-name")?.value)
       .toBe("feature/fix-login-redirect");
     expect(container.querySelector<HTMLSelectElement>("#create-base-ref")?.value)
-      .toBe("refs/heads/main");
+      .toBe("refs/remotes/origin/main");
 
     const claudeOption = [...container.querySelectorAll<HTMLButtonElement>(".start-chip")]
       .find((option) => option.textContent?.includes("Claude"))!;
@@ -1649,7 +1658,7 @@ describe("Task rail create flow", () => {
       repositoryPath: "/repository",
       branchName: "feature/fix-login-redirect",
       branchMode: "create",
-      baseRef: "refs/heads/main",
+      baseRef: "refs/remotes/origin/main",
       destinationPath: "/feature-fix-login-redirect_worktree",
     });
     expect(container.querySelector('[role="dialog"]')).toBeNull();

@@ -27,7 +27,7 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
             "destinationPath": target,
             "branchName": "feature/relocation",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }))
         .unwrap();
     let source = fixture.project_directory.join("loose-agent");

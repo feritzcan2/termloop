@@ -38,6 +38,7 @@ git(["init", "--initial-branch=main", projectDirectory]);
 git(["-C", projectDirectory, "config", "user.name", "TermLoop Fixture"]);
 git(["-C", projectDirectory, "config", "user.email", "fixture@termloop.invalid"]);
 git(["-C", projectDirectory, "commit", "--allow-empty", "-m", "fixture"]);
+git(["-C", projectDirectory, "update-ref", "refs/remotes/origin/main", "HEAD"]);
 
 const evidence = {
   schema: "f1-agent-fork-v1",
@@ -63,6 +64,13 @@ try {
     title: "Guarded fork",
     brief: null,
     worktreeIntent: "none",
+    worktreePrefix: null,
+    baseRef: null,
+    agentId: null,
+    model: null,
+    permission: null,
+    reasoning: null,
+    kickoffMessage: null,
   });
   await controlCall(record, "task.provisionWorktree", {
     operationId: crypto.randomUUID(),
@@ -71,7 +79,7 @@ try {
     destinationPath: taskWorktreeDirectory,
     branchName: "feature/guarded-fork",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
   const claude = await launchAgent(record, { projectId: project.id, cwd: projectDirectory, agentId: "claude" });
   const codex = await launchAgent(record, { projectId: project.id, cwd: projectDirectory, agentId: "codex" });
