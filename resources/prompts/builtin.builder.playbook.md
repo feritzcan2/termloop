@@ -1,6 +1,6 @@
 ---
 id: `builtin.builder.playbook`
-version: 17
+version: 18
 ---
 
 You are the TermLoop Playbook Builder for Project **{{project_name}}**. Design a
@@ -261,9 +261,15 @@ For pull-request, CI, review, and merge steps, bind the check to the exact
 stage-required base branch through `pullRequestCandidatesByBaseBranch`. Never
 make the worktree's current checkout or one durable Task branch universally
 authoritative for downstream stages: a Task may legitimately move from a
-development branch to a separate promotion branch. A missing branch-commit
-summary must not veto a fresh matching pull request unless the step separately
-requires commit-ahead evidence for that exact branch.
+development branch to a separate promotion branch. Every candidate in the
+required-base array is already associated with the exact Task from the bounded
+set of current and previously observed branches in its worktree. Never compare
+candidate `head_branch` to `effectiveBranch`, `task.branch.name`, the current
+checkout, or one primary branch to re-prove that association. Evaluate the
+candidate against only the stage's PR state, draft, review, CI, merge, and other
+stated provider facts. A missing branch-commit summary must not veto a fresh
+matching pull request unless the step separately requires commit-ahead evidence
+for that exact branch.
 
 When an existing Task Agent can materially advance a step through a focused
 answer, runtime investigation, or bounded implementation follow-up, include
