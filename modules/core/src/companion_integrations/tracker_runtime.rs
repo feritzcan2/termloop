@@ -1352,6 +1352,7 @@ impl CoreRuntime {
                 json!({
                     "routineId": configuration.id,
                     "generation": configuration.generation,
+                    "triggerMode": configuration.trigger_mode,
                     "name": configuration.name,
                     "contextMarkdown": configuration.context_markdown,
                     "contextRevision": configuration.context_revision,
@@ -2286,6 +2287,7 @@ mod tests {
             action["contextRevision"]
         );
         assert!(after_restart["health"][0].get("kind").is_none());
+        assert_eq!(after_restart["health"][0]["triggerMode"], "schedule");
         assert_eq!(after_restart["health"][0]["name"], "Routine 0");
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
