@@ -5,7 +5,6 @@ import {
   PROJECT_CONTROL_PHASES,
   deriveProjectControlSnapshot,
   type ProjectControlAction,
-  type ProjectControlTask,
 } from "../project-control.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { taskSessions } from "./TaskRail.js";
@@ -39,33 +38,6 @@ function actionIcon(action: ProjectControlAction): "agent" | "branch" | "externa
   }
 }
 
-function ProjectControlTaskCard({ item, openTask }: {
-  item: ProjectControlTask;
-  openTask(taskId: string): void;
-}) {
-  const visibleFacts = item.facts.filter((fact) => fact.id !== "checks" && fact.id !== "review").slice(0, 4);
-  return (
-    <button
-      type="button"
-      className={`pc-task phase-${item.phase}`}
-      aria-label={`Open ${item.task.title}`}
-      onClick={() => openTask(item.task.id)}
-    >
-      <span className="pc-task-heading">
-        <strong title={item.task.title}>{item.task.title}</strong>
-        <small>{item.task.jira_url?.slice(item.task.jira_url.lastIndexOf("/") + 1) ?? item.phaseLabel}</small>
-      </span>
-      <span className="pc-facts" aria-label="Current facts">
-        {visibleFacts.map((fact) => (
-          <span key={fact.id} className={`pc-fact ${fact.tone}`} title={fact.detail}>
-            <i aria-hidden="true" />{fact.label}: {fact.value}
-          </span>
-        ))}
-      </span>
-    </button>
-  );
-}
-
 export function ProjectControlRail(props: ProjectControlRailProps) {
   const [busyActionId, setBusyActionId] = useState<string>();
   const [error, setError] = useState<string>();
@@ -81,6 +53,11 @@ export function ProjectControlRail(props: ProjectControlRailProps) {
     () => new Map(snapshot.tasks.map((item) => [item.task.id, item])),
     [snapshot.tasks],
   );
+  const nextAction = snapshot.inbox[0];
+  const laterActions = snapshot.inbox.slice(1);
+  const currentTaskId = nextAction?.taskId
+    ?? snapshot.tasks.find((item) => item.phase !== "done")?.task.id
+    ?? snapshot.tasks[0]?.task.id;
 
   const runAction = async (item: ProjectControlAction) => {
     if (busyActionId || props.disabled) return;
@@ -126,56 +103,68 @@ export function ProjectControlRail(props: ProjectControlRailProps) {
     }
   };
 
+  const renderAction = (item: ProjectControlAction, primary: boolean) => {
+    const task = tasksById.get(item.taskId)?.task;
+    return (
+      <button
+        type="button"
+        className={primary ? "primary" : undefined}
+        aria-label={`${item.label}: ${task?.title ?? "Task"}`}
+        disabled={props.disabled || Boolean(busyActionId)}
+        onClick={() => void runAction(item)}
+      >
+        <Icon name={actionIcon(item)} />
+        <span>
+          <small>{task?.jira_url?.slice(task.jira_url.lastIndexOf("/") + 1) ?? "Task"}</small>
+          <strong>{item.label}</strong>
+          <em title={task?.title}>{task?.title}</em>
+          {primary ? <span className="pc-action-reason">{item.summary}</span> : null}
+        </span>
+        <b>{busyActionId === item.id ? "…" : "›"}</b>
+      </button>
+    );
+  };
+
   return (
     <section className="project-control-rail" aria-label="Project Control">
       <header className="pc-intro">
-        <span className="pc-kicker">Project Control</span>
-        <strong>Current facts, one next action.</strong>
-        <p>No background Agent or editable pipeline. The view is rebuilt from Task, worktree, Agent, commit, and provider facts.</p>
+        <span className="pc-kicker">Control</span>
+        <strong>{snapshot.inbox.length === 0
+          ? "Nothing needs you right now"
+          : `${snapshot.inbox.length} ${snapshot.inbox.length === 1 ? "task needs" : "tasks need"} you`}</strong>
+        <p>{snapshot.inbox.length === 0
+          ? "Work in progress will appear here when it needs a decision."
+          : "Start with the recommendation below. TermLoop will update the list as facts change."}</p>
       </header>
 
-      <section className="pc-inbox" aria-label="Action Inbox">
+      <section className="pc-next" aria-label="Recommended next action">
         <div className="pc-section-heading">
-          <strong>Action Inbox</strong>
-          <span>{snapshot.inbox.length}</span>
+          <strong>Do this next</strong>
         </div>
         {error ? <p className="pc-error" role="alert">{error}</p> : null}
-        {snapshot.inbox.length === 0 ? (
-          <p className="pc-empty">Nothing needs a decision right now.</p>
-        ) : (
-          <ol>
-            {snapshot.inbox.map((action) => {
-              const item = tasksById.get(action.taskId);
-              return (
-                <li key={action.id}>
-                  <button type="button" disabled={props.disabled || Boolean(busyActionId)} onClick={() => void runAction(action)}>
-                    <Icon name={actionIcon(action)} />
-                    <span><strong>{action.label}</strong><small>{item?.task.title}</small><em>{action.summary}</em></span>
-                    <b>{busyActionId === action.id ? "…" : "›"}</b>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        )}
+        {nextAction ? renderAction(nextAction, true) : <p className="pc-empty">You are caught up.</p>}
       </section>
 
-      <div className="pc-phases" aria-label="Delivery phases">
-        {PROJECT_CONTROL_PHASES.map((phase) => {
-          const tasks = snapshot.phases[phase.id];
-          return (
-            <section key={phase.id} className={`pc-phase phase-${phase.id}`} aria-label={`${phase.label} Tasks`}>
-              <div className="pc-section-heading">
-                <strong>{phase.label}</strong>
-                <span>{tasks.length}</span>
-              </div>
-              {tasks.length === 0 ? <i className="pc-phase-empty" aria-hidden="true" /> : tasks.map((item) => (
-                <ProjectControlTaskCard key={item.task.id} item={item} openTask={props.openTask} />
-              ))}
-            </section>
-          );
-        })}
-      </div>
+      {laterActions.length > 0 ? <section className="pc-queue" aria-label="Later actions">
+        <div className="pc-section-heading">
+          <strong>After that</strong>
+          <span>{laterActions.length}</span>
+        </div>
+        <ol>{laterActions.map((action) => <li key={action.id}>{renderAction(action, false)}</li>)}</ol>
+      </section> : null}
+
+      <section className="pc-progress" aria-label="Project status">
+        <div className="pc-section-heading"><strong>Project status</strong></div>
+        <ol>{PROJECT_CONTROL_PHASES.map((phase) => (
+          <li key={phase.id} className={`phase-${phase.id}`}>
+            <strong>{snapshot.phases[phase.id].length}</strong>
+            <span>{phase.label}</span>
+          </li>
+        ))}</ol>
+        <button type="button" onClick={() => currentTaskId && props.openTask(currentTaskId)} disabled={!currentTaskId}>
+          Open current Task details <span aria-hidden="true">›</span>
+        </button>
+      </section>
     </section>
   );
 }

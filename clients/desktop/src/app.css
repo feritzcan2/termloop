@@ -1918,49 +1918,45 @@ button.folder-crumb:hover { background: rgba(255,255,255,.07); color: var(--text
 .ar-add-error { margin: 3px 2px 0; color: #e99ba3; font: 9px/1.4 var(--font-mono); }
 .assistant-empty { margin: 6px 5px 10px; color: var(--sidebar-dimmer); font: 10px/1.5 var(--font-mono); }
 
-/* Project Control is a read model over existing Task and provider facts. Its
-   compact cards deliberately avoid the editable lanes and persistent-agent
-   chrome of the retired Steward surface. */
-.project-control-rail { display: grid; gap: 13px; padding: 5px 9px 18px; color: var(--sidebar-text); }
-.pc-intro { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 7px; background: linear-gradient(145deg, rgba(124,92,255,.09), rgba(255,255,255,.018)); }
-.pc-intro .pc-kicker { color: var(--accent-strong); font: 700 7px/1.2 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
-.pc-intro > strong { font: 650 11px/1.35 var(--font-ui); }
-.pc-intro p { margin: 0; color: var(--sidebar-dim); font: 8px/1.45 var(--font-mono); }
-.pc-inbox, .pc-phase { display: grid; gap: 5px; }
+/* Project Control answers one question first: what needs the user now? */
+.project-control-rail { display: grid; gap: 16px; padding: 7px 11px 20px; color: var(--sidebar-text); }
+.pc-intro { display: grid; gap: 5px; padding: 12px; border: 1px solid rgba(124,92,255,.16); border-radius: 8px; background: linear-gradient(145deg, rgba(124,92,255,.1), rgba(255,255,255,.018)); }
+.pc-intro .pc-kicker { color: var(--accent-strong); font: 750 8px/1.2 var(--font-ui); letter-spacing: .12em; text-transform: uppercase; }
+.pc-intro > strong { font: 680 14px/1.3 var(--font-ui); }
+.pc-intro p { margin: 0; max-width: 42ch; color: var(--sidebar-dim); font: 9px/1.45 var(--font-ui); }
+.pc-next, .pc-queue, .pc-progress { display: grid; gap: 7px; }
 .pc-section-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; color: var(--sidebar-dim); }
-.pc-section-heading strong { font: 700 8px/1.2 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+.pc-section-heading strong { font: 700 8px/1.2 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; }
 .pc-section-heading span { display: grid; min-width: 16px; height: 16px; place-items: center; border-radius: 999px; background: rgba(255,255,255,.05); font: 700 7px/1 var(--font-mono); }
-.pc-inbox ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.pc-inbox li > button { display: grid; grid-template-columns: 19px minmax(0,1fr) 8px; width: 100%; gap: 7px; align-items: center; padding: 7px; border: 1px solid rgba(255,143,107,.19); border-radius: 6px; background: rgba(255,143,107,.045); color: inherit; text-align: left; }
-.pc-inbox li > button:hover:not(:disabled) { border-color: rgba(255,143,107,.42); background: rgba(255,143,107,.085); }
-.pc-inbox li > button:disabled { opacity: .55; }
-.pc-inbox svg { width: 14px; height: 14px; color: var(--agent-status-awaiting); }
-.pc-inbox button > span { display: grid; min-width: 0; grid-template-columns: auto minmax(0,1fr); column-gap: 5px; }
-.pc-inbox button strong, .pc-inbox button small, .pc-inbox button em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-inbox button strong { font: 650 9px/1.25 var(--font-ui); }
-.pc-inbox button small { align-self: end; color: var(--sidebar-dimmer); font: 7.5px/1.25 var(--font-mono); }
-.pc-inbox button em { grid-column: 1 / -1; margin-top: 2px; color: var(--sidebar-dim); font: normal 7.5px/1.3 var(--font-mono); }
-.pc-inbox button > b { color: var(--sidebar-dimmer); font: 600 11px/1 var(--font-ui); }
+.pc-next > button, .pc-queue li > button { display: grid; grid-template-columns: 23px minmax(0,1fr) 10px; width: 100%; gap: 9px; align-items: center; border-radius: 7px; color: inherit; text-align: left; }
+.pc-next > button { padding: 11px 10px; border: 1px solid rgba(255,143,107,.32); background: linear-gradient(135deg, rgba(255,143,107,.11), rgba(255,255,255,.025)); }
+.pc-next > button:hover:not(:disabled) { border-color: rgba(255,143,107,.55); background: rgba(255,143,107,.12); }
+.pc-next svg, .pc-queue svg { width: 15px; height: 15px; color: var(--agent-status-awaiting); }
+.pc-next button > span, .pc-queue button > span { display: grid; min-width: 0; gap: 2px; }
+.pc-next button small, .pc-queue button small { color: var(--sidebar-dimmer); font: 7.5px/1.2 var(--font-mono); }
+.pc-next button strong { font: 680 12px/1.25 var(--font-ui); }
+.pc-next button em, .pc-queue button em { overflow: hidden; color: var(--sidebar-text); font: normal 9px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.pc-next button .pc-action-reason { margin-top: 3px; color: var(--sidebar-dim); font: 8.5px/1.4 var(--font-ui); }
+.pc-next button > b, .pc-queue button > b { color: var(--sidebar-dimmer); font: 600 12px/1 var(--font-ui); }
+.pc-next button:disabled, .pc-queue button:disabled { opacity: .55; }
+.pc-queue ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pc-queue li > button { padding: 7px 8px; border: 1px solid rgba(255,255,255,.06); background: rgba(255,255,255,.025); }
+.pc-queue li > button:hover:not(:disabled) { border-color: rgba(124,92,255,.28); background: var(--hover); }
+.pc-queue button strong { font: 650 9.5px/1.25 var(--font-ui); }
+.pc-queue button span { grid-template-columns: auto minmax(0,1fr); column-gap: 6px; }
+.pc-queue button em { align-self: end; color: var(--sidebar-dim); }
 .pc-empty, .pc-error { margin: 0; padding: 5px 7px; border-radius: 5px; color: var(--sidebar-dimmer); font: 8px/1.4 var(--font-mono); }
 .pc-error { background: rgba(255,92,92,.08); color: #ffabab; }
-.pc-phases { display: grid; gap: 10px; }
-.pc-phase-empty { height: 1px; margin: 0 3px; background: rgba(255,255,255,.035); }
-.pc-task { display: grid; width: 100%; gap: 5px; padding: 7px; border: 1px solid rgba(255,255,255,.055); border-left: 2px solid rgba(255,255,255,.12); border-radius: 6px; background: rgba(255,255,255,.022); color: inherit; text-align: left; }
-.pc-task:hover { border-color: rgba(124,92,255,.28); background: var(--hover); }
-.pc-task.phase-building { border-left-color: var(--state-running); }
-.pc-task.phase-review { border-left-color: var(--agent-status-awaiting); }
-.pc-task.phase-landing { border-left-color: var(--accent-strong); }
-.pc-task.phase-done { border-left-color: var(--state-success); opacity: .66; }
-.pc-task-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; min-width: 0; }
-.pc-task-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 9.5px/1.25 var(--font-ui); }
-.pc-task-heading small { flex: none; color: var(--sidebar-dimmer); font: 7px/1 var(--font-mono); }
-.pc-facts { display: flex; flex-wrap: wrap; gap: 3px; }
-.pc-fact { display: inline-flex; min-width: 0; align-items: center; gap: 3px; padding: 2px 4px; border-radius: 3px; background: rgba(255,255,255,.035); color: var(--sidebar-dim); font: 6.8px/1.2 var(--font-mono); }
-.pc-fact i { width: 4px; height: 4px; flex: none; border-radius: 50%; background: var(--sidebar-dimmer); }
-.pc-fact.active i { background: var(--state-running); }
-.pc-fact.attention i { background: var(--agent-status-awaiting); }
-.pc-fact.unavailable i { background: var(--state-muted); }
-.pc-fact.done i { background: var(--state-success); }
+.pc-progress ol { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pc-progress li { display: grid; min-width: 0; gap: 3px; padding: 7px 3px; border-top: 2px solid rgba(255,255,255,.08); background: rgba(255,255,255,.018); text-align: center; }
+.pc-progress li.phase-building { border-color: var(--state-running); }
+.pc-progress li.phase-review { border-color: var(--agent-status-awaiting); }
+.pc-progress li.phase-landing { border-color: var(--accent-strong); }
+.pc-progress li.phase-done { border-color: var(--state-success); }
+.pc-progress li strong { font: 680 13px/1 var(--font-ui); }
+.pc-progress li span { overflow: hidden; color: var(--sidebar-dimmer); font: 7px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.pc-progress > button { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; border: 1px solid rgba(255,255,255,.055); border-radius: 6px; background: rgba(255,255,255,.02); color: var(--sidebar-dim); font: 600 8.5px/1.2 var(--font-ui); text-align: left; }
+.pc-progress > button:hover:not(:disabled) { border-color: rgba(124,92,255,.28); background: var(--hover); color: var(--sidebar-text); }
 .td-control-phase { padding: 3px 6px; border-radius: 999px; background: rgba(124,92,255,.1); color: var(--accent-strong); font: 700 7px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .td-control-spine { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); margin: 12px 0 10px; padding: 0; list-style: none; }
 .td-control-spine li { position: relative; display: grid; justify-items: center; gap: 5px; color: var(--sidebar-dimmer); font: 650 7px/1.2 var(--font-ui); }
