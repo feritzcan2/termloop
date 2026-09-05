@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  PlaybookDto, PlaybookMilestoneDto, PlaybookRuntimeResult,
-  PlaybookStepProgressDto, PlaybookTaskPositionSetResult,
+  PlaybookDto, PlaybookMilestoneDto, PlaybookGetResult, PlaybookRuntimeResult,
+  PlaybookStepProgressDto, PlaybookTaskPositionSetParams, PlaybookTaskPositionSetResult,
+  RoutineConfigurationListResult, RoutineRunNowResult, RoutineRuntimeListResult,
 } from "@termloop/contract/current";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, Session, Task } from "../model.js";
@@ -15,7 +16,6 @@ import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
 import { TaskBrief } from "./TaskBrief.js";
 import { Icon } from "./Icon.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
-import { PROJECT_CONTROL_PHASES, deriveProjectControlTask } from "../project-control.js";
 
 /* ------------------------------------------------------------- derivation */
 
@@ -184,6 +184,13 @@ export type TaskDetailPanelProps = {
   selectSession(sessionId: string): void;
   openChanges(source: ChangesOpenSource): void;
   openExternal(url: string, runSessionId?: string): Promise<void>;
+  openPlaybook(): void;
+  getPlaybook(): Promise<PlaybookGetResult>;
+  getPlaybookRuntime(): Promise<PlaybookRuntimeResult>;
+  setPlaybookTaskPosition(params: PlaybookTaskPositionSetParams): Promise<PlaybookTaskPositionSetOutcome>;
+  listRoutines(): Promise<RoutineConfigurationListResult>;
+  listRoutineRuntime(): Promise<RoutineRuntimeListResult>;
+  runRoutineNow(routineId: string, taskId?: string): Promise<RoutineRunNowResult>;
   /** Launchers are optional: a host without them (tests, a read-only stage)
       simply shows no Start row. */
   agentCapabilities?: readonly AgentCapabilityDto[] | undefined;
@@ -193,6 +200,119 @@ export type TaskDetailPanelProps = {
 
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const { task } = props;
+  const [playbook, setPlaybook] = useState<PlaybookDto | null>(null);
+  const [runtime, setRuntime] = useState<PlaybookRuntimeResult | null>(null);
+  const [routines, setRoutines] = useState<readonly (TaskStepRoutine & { id: string })[]>([]);
+  const [checkingRoutineIds, setCheckingRoutineIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
+  const [running, setRunning] = useState<string>();
+  const [settingPosition, setSettingPosition] = useState<number>();
+  const [stateRevision, setStateRevision] = useState(0);
+  const [clockNowEpochMs, setClockNowEpochMs] = useState(Date.now);
+  const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
+
+  // The composition layer rebuilds these reads on every one of its renders, so
+  // depending on their identities would refetch the whole page each time an
+  // unrelated projection moved. The page reloads when its own Task changes or
+  // when the daemon says the playbook did — and always through the newest
+  // functions, which the ref holds.
+  const readsRef = useRef(props);
+  readsRef.current = props;
+  // Rounds overlap whenever the daemon answers slower than the projection
+  // moves, and their answers can arrive out of order. Only the newest round may
+  // write state.
+  const loadGeneration = useRef(0);
+  const load = useCallback(async () => {
+    const { getPlaybook, getPlaybookRuntime, listRoutines, listRoutineRuntime } = readsRef.current;
+    const generation = ++loadGeneration.current;
+    try {
+      const [playbookResult, runtimeResult, routineResult, routineRuntimeResult] = await Promise.all([
+        getPlaybook(), getPlaybookRuntime(), listRoutines(), listRoutineRuntime(),
+      ]);
+      if (generation !== loadGeneration.current) return;
+      setPlaybook(playbookResult.playbook);
+      setRuntime(runtimeResult);
+      setStateRevision(Math.max(
+        playbookResult.stateRevision,
+        runtimeResult.stateRevision,
+        routineResult.stateRevision,
+        routineRuntimeResult.stateRevision,
+      ));
+      setRoutines(routineResult.configurations.map(
+        (routine) => ({ id: routine.id, name: routine.name, enabled: routine.enabled }),
+      ));
+      setCheckingRoutineIds(new Set(
+        routineRuntimeResult.health
+          .filter((health) => health.state === "checking")
+          .map((health) => health.routineId),
+      ));
+      setError(undefined);
+    } catch (cause) {
+      if (generation !== loadGeneration.current) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (generation === loadGeneration.current) setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load, task.id, props.refreshToken]);
+
+  const view = useMemo(
+    () => taskPipelineView(playbook, runtime, routines, task.id),
+    [playbook, runtime, routines, task.id],
+  );
+  // Only a live countdown needs a clock, and only while one is actually shown.
+  const counting = view?.placement === "waiting";
+  useEffect(() => {
+    if (props.nowEpochMs !== undefined || !counting) return;
+    const handle = window.setInterval(() => setClockNowEpochMs(Date.now()), 30_000);
+    return () => window.clearInterval(handle);
+  }, [counting, props.nowEpochMs]);
+
+  const checkNow = useCallback(async (routineId: string) => {
+    setRunning(routineId);
+    try {
+      await readsRef.current.runRoutineNow(routineId, task.id);
+      setError(undefined);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRunning(undefined);
+    }
+  }, [load, task.id]);
+
+  const setPosition = useCallback(async (passedMilestoneCount: number) => {
+    const currentPlaybook = playbook;
+    if (!currentPlaybook) return;
+    setSettingPosition(passedMilestoneCount);
+    try {
+      const outcome = await readsRef.current.setPlaybookTaskPosition({
+        projectId: task.project_id,
+        taskId: task.id,
+        passedMilestoneCount,
+        expectedPlaybookRevision: currentPlaybook.revision,
+        expectedRevision: stateRevision,
+      });
+      if (!outcome.ok) {
+        if (outcome.code === "conflict") {
+          await load();
+          setError("The pipeline changed while this page was open. It is refreshed; choose the level again.");
+        } else {
+          setError(outcome.message);
+        }
+        return;
+      }
+      setStateRevision(outcome.result.stateRevision);
+      setError(undefined);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSettingPosition(undefined);
+    }
+  }, [load, playbook, stateRevision, task.id, task.project_id]);
+
   const stage = taskStage(task, false);
   const divergence = taskDivergence(task);
   const effectiveBranch = taskEffectiveBranch(task);
@@ -201,13 +321,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
     ? props.branchCommitSummary.count
     : null;
-  const control = useMemo(() => deriveProjectControlTask({
-    task,
-    gitHostProjection: props.gitHostProjection,
-    branchCommitSummary: props.branchCommitSummary,
-    sessions: props.sessions,
-    statusesById: props.statusesById,
-  }), [props.branchCommitSummary, props.gitHostProjection, props.sessions, props.statusesById, task]);
+  const brief = task.steward_brief_markdown?.trim() ?? "";
   const attention = useMemo(
     () => agentAttention(props.sessions, props.statusesById, props.reviewReadySessionIds),
     [props.sessions, props.statusesById, props.reviewReadySessionIds],
@@ -215,6 +329,10 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const launchers = (props.agentCapabilities ?? []).filter((capability) => capability.available);
   const canLaunch = stage.id === "ready" && (props.launchTerminal || props.launchAgent);
 
+  const cleared = view ? (view.placement === "done" ? view.steps.length : view.passedCount) : 0;
+  const clearedPercent = view && view.steps.length > 0
+    ? Math.round((cleared / view.steps.length) * 100)
+    : 0;
   const firstPullRequest = props.gitHostProjection?.matches[0];
   const openPullRequest = (pullRequest: GitHostProjection["matches"][number]) => props.openChanges({
     kind: "pullRequest",
@@ -278,6 +396,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           onClick={props.close}
         ><Icon name="close" /></button>
       </header>
+      {error ? <p className="ap-error" role="alert">{error}</p> : null}
       <div className="td-body">
         {task.brief?.trim() ? (
           <TaskBrief brief={task.brief} format={task.jira_url ? "jiraWiki" : "plain"} />
@@ -411,29 +530,67 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           />
         </section>
 
-        <section className="td-block td-control" aria-label="Project Control">
+        <section className="td-block td-pipeline" aria-label="Delivery pipeline">
           <div className="td-block-head">
-            <h2>Status</h2>
-            <span className={`td-control-phase phase-${control.phase}`}>{control.phaseLabel}</span>
+            <h2>Pipeline</h2>
+            {view ? <span className="td-progress">{view.pipelineName} · {pipelineProgressLabel(view)}</span> : null}
           </div>
-          <p className="td-note">Updates automatically from the worktree, Agent, commits, and pull request. Nothing runs in the background.</p>
-          <ol className="td-control-spine">
-            {PROJECT_CONTROL_PHASES.map((phase) => {
-              const currentIndex = PROJECT_CONTROL_PHASES.findIndex((candidate) => candidate.id === control.phase);
-              const phaseIndex = PROJECT_CONTROL_PHASES.findIndex((candidate) => candidate.id === phase.id);
-              const state = phase.id === control.phase ? "current" : phaseIndex < currentIndex ? "passed" : "ahead";
-              return <li key={phase.id} className={state} aria-current={state === "current" ? "step" : undefined}>
-                <i aria-hidden="true" />
-                <span>{phase.label}</span>
-              </li>;
-            })}
-          </ol>
-          <dl className="td-control-facts">
-            {control.facts.map((fact) => <div key={fact.id} className={fact.tone} title={fact.detail}>
-              <dt>{fact.label}</dt><dd>{fact.value}</dd>
-            </div>)}
-          </dl>
+          {loading && !view ? <p className="td-note">Reading the pipeline…</p>
+            : view ? <>
+              <div className={`td-meter ${view.placement}`} aria-hidden="true">
+                <i style={{ width: `${clearedPercent}%` }} />
+              </div>
+              {view.placement === "away" ? (
+                <p className="td-note">This Task is {task.status === "closed" ? "closed" : "archived"}, so the pipeline no longer asks about it. Its answers so far are kept below.</p>
+              ) : null}
+              <ol className="td-spine">
+                {view.steps.map((step) => (
+                  <PipelineStep
+                    key={step.milestone.id}
+                    step={step}
+                    nowEpochMs={nowEpochMs}
+                    running={running === step.milestone.routineId
+                      || (runtime?.processingTaskId === task.id
+                        && checkingRoutineIds.has(step.milestone.routineId))}
+                    settingPosition={settingPosition}
+                    controlsBusy={running !== undefined || settingPosition !== undefined}
+                    canSetPosition={view.placement !== "away"}
+                    checkNow={checkNow}
+                    setPosition={setPosition}
+                  />
+                ))}
+                <li className={`td-step terminus ${view.placement === "done" ? "passed" : "ahead"}`}>
+                  <span className="td-node" aria-hidden="true" />
+                  <div className="td-step-body">
+                    <span className="td-terminus">
+                      {view.placement === "done" ? "Done — every stage completed" : "Done"}
+                    </span>
+                    {view.placement !== "away" ? (
+                      <button
+                        type="button"
+                        className="td-set-position"
+                        disabled={settingPosition !== undefined || running !== undefined || view.placement === "done"}
+                        aria-label="Set Task after the final delivery pipeline step"
+                        onClick={() => void setPosition(view.steps.length)}
+                      >{settingPosition === view.steps.length ? "Setting…" : "Mark done"}</button>
+                    ) : null}
+                  </div>
+                </li>
+              </ol>
+            </> : <div className="td-empty">
+              <p>This Project has no delivery pipeline yet, so nothing is tracking this Task from here to done.</p>
+              <button type="button" className="td-open-playbook" onClick={props.openPlaybook}>
+                <Icon name="sparkles" />Build the pipeline
+              </button>
+            </div>}
         </section>
+
+        {brief ? (
+          <details className="td-block td-steward">
+            <summary><h2>Steward brief</h2></summary>
+            <p className="td-prose mono">{brief}</p>
+          </details>
+        ) : null}
       </div>
     </section>
   );

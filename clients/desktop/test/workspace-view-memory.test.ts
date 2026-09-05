@@ -22,17 +22,12 @@ describe("workspace view memory", () => {
     const storage = memoryStorage();
     let memory = readWorkspaceViewMemory(storage);
     memory = rememberWorkspaceView(memory, "project-a", "overview", storage);
-    memory = rememberWorkspaceView(memory, "project-b", "control", storage);
+    memory = rememberWorkspaceView(memory, "project-b", "steward", storage);
 
     expect(workspaceViewForProject(memory, "project-a")).toBe("overview");
-    expect(workspaceViewForProject(memory, "project-b")).toBe("control");
+    expect(workspaceViewForProject(memory, "project-b")).toBe("steward");
     expect(workspaceViewForProject(readWorkspaceViewMemory(storage), "project-a")).toBe("overview");
     expect(workspaceViewForProject(memory, "project-new")).toBe("agents");
-  });
-
-  it("migrates the removed Steward tab to Project Control", () => {
-    const storage = memoryStorage(JSON.stringify({ "project-a": "steward" }));
-    expect(readWorkspaceViewMemory(storage)).toEqual({ "project-a": "control" });
   });
 
   it("ignores malformed Projects and unsupported views", () => {

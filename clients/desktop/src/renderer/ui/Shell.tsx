@@ -43,12 +43,12 @@ import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
 import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
 import { promptImprovementActionLabel, type ConfigurationVersionActions } from "./PromptImprovement.js";
+import { StewardPetHost } from "./StewardPetHost.js";
 import { SessionRelocationDialog } from "./SessionRelocationDialog.js";
 import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog.js";
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
 import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 import { ActiveAgentRail } from "./ActiveAgentRail.js";
-import { ProjectControlRail } from "./ProjectControlRail.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
 import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
@@ -96,7 +96,8 @@ type AssistantActions = Pick<StewardPanelProps,
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
   | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime"
   | "promptImprovement"
-> & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {
+> & Pick<ComponentProps<typeof TaskDetailPanel>, "setPlaybookTaskPosition">
+  & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
@@ -373,11 +374,11 @@ export function stagePageAfterProjectChange(page: StagePage | undefined): StageP
 }
 
 export function shellAssistantStageVisible(
-  _railMode: RailMode,
-  _workspaceView: WorkspaceView,
-  _selection: AssistantSelection | undefined,
+  railMode: RailMode,
+  workspaceView: WorkspaceView,
+  selection: AssistantSelection | undefined,
 ): boolean {
-  return false;
+  return railMode === "workspace" && workspaceView === "steward" && selection !== undefined;
 }
 
 export function shellTerminalOccluded(
@@ -843,12 +844,12 @@ export function Shell(props: ShellProps) {
     ),
     [dismissChanges, dismissStagePages, props.selectSession],
   );
-  /// Legacy assistant editors are retained only for existing settings deep
-  /// links. They never own the replacement Project Control rail.
+  /// Opening any assistant detail implies the Steward view has the rail; every
+  /// entry point (rail rows, pet, draft reveal) shares this one reveal.
   const openAssistant = useCallback(
     (selection: AssistantSelection) => {
       setRailMode("workspace");
-      setWorkspaceView("control");
+      setWorkspaceView("steward");
       setDetailTaskId(undefined);
       setStagePage(undefined);
       dismissChangesBeforeNavigation(dismissChanges, setAssistantSelection, selection);
@@ -859,11 +860,18 @@ export function Shell(props: ShellProps) {
     (mode: Exclude<RailMode, "workspace">) => setRailMode((current) => current === mode ? "workspace" : mode),
     [],
   );
+  const revealStewardRail = useCallback(() => {
+    setRailMode("workspace");
+    setWorkspaceView("steward");
+  }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
-    setAssistantSelection(undefined);
+    if (view === "steward" && !assistantSelection && props.selectedProject) {
+      openAssistant({ kind: "steward" });
+      return;
+    }
     setWorkspaceView(view);
-  }, [setWorkspaceView]);
+  }, [assistantSelection, openAssistant, props.selectedProject, setWorkspaceView]);
   const assistantStageVisible = shellAssistantStageVisible(railMode, workspaceView, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
@@ -1509,24 +1517,43 @@ export function Shell(props: ShellProps) {
               : undefined}
             openExternal={props.openExternal}
           />
-          </WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "control"}>{assistantProjectId ? <ProjectControlRail
-            tasks={props.projectTasks}
-            gitHostProjections={props.gitHostProjections}
-            branchCommitSummaries={props.branchCommitSummaries}
-            sessionsById={sessionsById}
+          </WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "steward"}>{assistantProjectId ? <AssistantRail
+            projectId={assistantProjectId}
+            refreshToken={props.assistantRefreshToken}
+            sessions={props.projectSessions}
             statusesById={statusesById}
-            agentCapabilities={props.agentCapabilities}
+            tasks={props.projectTasks}
+            playbookRuntime={props.playbookRuntime}
             disabled={disabled}
+            selectedSessionId={props.selectedSession?.id}
+            selection={assistantSelection}
+            agentCapabilities={props.agentCapabilities}
+            getSteward={props.assistantActions.getConfiguration}
+            setSteward={props.assistantActions.setConfiguration}
+            deleteSteward={props.assistantActions.deleteConfiguration}
+            listWorkers={props.assistantActions.listWorkers}
+            createWorker={props.assistantActions.createWorker}
+            updateWorker={props.assistantActions.updateWorker}
+            deleteWorker={props.assistantActions.deleteWorker}
+            listRoutines={props.assistantActions.listRoutines}
+            listRuntime={props.assistantActions.listRoutineRuntime}
+            getPlaybook={props.assistantActions.getPlaybook}
+            updatePlaybook={props.assistantActions.updatePlaybook}
+            setPlaybookTaskPosition={props.assistantActions.setPlaybookTaskPosition}
+            runRoutineNow={props.assistantActions.runRoutineNow}
+            createRoutine={props.assistantActions.createRoutine}
+            updateRoutine={props.assistantActions.updateRoutine}
+            deleteRoutine={props.assistantActions.deleteRoutine}
+            improvement={props.assistantActions.promptImprovement}
+            setupPromptImprovement={openPromptImproverSetup}
+            restartWorker={props.assistantActions.restartWorker}
+            restartSteward={props.assistantActions.restartSteward}
+            selectSession={selectAssistantSession}
+            openImproverTerminal={openImproverTerminal}
+            dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
-            prepareWorkspace={(taskId) => {
-              setWorkspaceView("overview");
-              setProvisionRequestedTaskId(taskId);
-            }}
-            selectSession={selectSession}
-            openChanges={(taskId, source) => setChangesPresentation({ kind: "task", taskId, source })}
-            setTaskClosed={props.setTaskClosed}
-            launchTaskAgent={props.launchTaskAgent}
-          /> : <p className="assistant-empty">Select a Project to open Project Control.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "control" ? null : workspaceView === "history" ? <HistoryRail
+            openDetails={openAssistant}
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}
             projectBranch={props.projectWorktreeSummary?.checked_out_branch}
@@ -1570,6 +1597,39 @@ export function Shell(props: ShellProps) {
             overlayContainer={props.overlayContainer}
           /></WorkspaceRailCache> : null}
           <footer className="sidebar-footer">
+            {assistantProjectId ? <StewardPetHost
+              projectId={assistantProjectId}
+              refreshToken={props.assistantRefreshToken}
+              sessions={props.projectSessions}
+              agentStatuses={props.agentStatuses}
+              compact
+              setEnabled={async (enabled) => {
+                const current = await props.assistantActions.getConfiguration();
+                const configuration = current.configuration;
+                if (!configuration) return;
+                await props.assistantActions.setConfiguration(
+                  configuration.agentId,
+                  configuration.model,
+                  configuration.permission,
+                  configuration.reasoning,
+                  enabled,
+                  configuration.systemPrompt,
+                  current.stateRevision,
+                );
+              }}
+              userBusy={false}
+              getSteward={props.assistantActions.getConfiguration}
+              getPresence={props.assistantActions.getPresence}
+              getPlaybook={props.assistantActions.getPlaybook}
+              openPlaybookSetup={openPlaybookBuilder}
+              listTranscript={props.assistantActions.listTranscript}
+              respondToProposal={props.assistantActions.respondToProposal}
+              acceptSuggestion={props.assistantActions.acceptSuggestion}
+              listRuntime={props.assistantActions.listRoutineRuntime}
+              openSteward={() => openAssistant({ kind: "steward", initialView: "terminal" })}
+              dismissUtterance={() => undefined}
+              openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
+            /> : null}
             <div className="sidebar-footer-actions">
               <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
@@ -1625,6 +1685,13 @@ export function Shell(props: ShellProps) {
               selectSession={selectSession}
               openChanges={(source) => setChangesPresentation({ kind: "task", taskId: detailTask.id, source })}
               openExternal={props.openExternal}
+              openPlaybook={revealStewardRail}
+              getPlaybook={props.assistantActions.getPlaybook}
+              getPlaybookRuntime={props.assistantActions.getPlaybookRuntime}
+              setPlaybookTaskPosition={props.assistantActions.setPlaybookTaskPosition}
+              listRoutines={props.assistantActions.listRoutines}
+              listRoutineRuntime={props.assistantActions.listRoutineRuntime}
+              runRoutineNow={props.assistantActions.runRoutineNow}
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
