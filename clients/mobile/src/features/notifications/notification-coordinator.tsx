@@ -128,7 +128,7 @@ export function NotificationCoordinator() {
       return;
     }
 
-    router.replace(notificationRoute(pendingDestination, connectionId));
+    router.push(notificationRoute(pendingDestination, connectionId));
     mobileDiagnostics.report("notification", "route_replaced", {
       connectionId,
       reason: pendingDestination.kind,

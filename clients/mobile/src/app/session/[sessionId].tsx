@@ -372,6 +372,10 @@ export default function SessionRoute() {
       <View style={styles.header}>
         <ScreenHeader
           back="Project"
+          backFallback={{
+            pathname: "/project/[projectId]",
+            params: connectionRouteParams(connections.selectedId, { projectId: session.project_id }),
+          }}
           center={
             <View style={styles.identityZone}>
               <Text style={styles.identity} numberOfLines={1}>{identity}</Text>
@@ -613,7 +617,13 @@ export default function SessionRoute() {
           pathname: "/task/[taskId]/changes",
           params: connectionRouteParams(connections.selectedId, { taskId }),
         })}
-        onDismissed={() => router.back()}
+        onDismissed={() => {
+          if (router.canGoBack()) router.back();
+          else router.replace({
+            pathname: "/project/[projectId]",
+            params: connectionRouteParams(connections.selectedId, { projectId: session.project_id }),
+          });
+        }}
       />
     </Screen>
   );
