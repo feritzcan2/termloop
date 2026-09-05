@@ -1,3 +1,5 @@
+import type { AppearanceTheme } from "../appearance-theme.js";
+
 export type TerminalBufferProbe = {
   lines: number;
   cursorX: number;
@@ -16,6 +18,7 @@ export type TerminalSurface = {
   probe(): TerminalBufferProbe | undefined;
   diagnosticText?(): Promise<string | undefined>;
   setVisible?(visible: boolean): void;
+  setAppearanceTheme?(theme: AppearanceTheme): void;
   dispose(): void;
 };
 

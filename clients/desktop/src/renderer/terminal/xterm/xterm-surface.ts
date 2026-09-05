@@ -6,6 +6,7 @@ import "./ghostty-font.css";
 import type { TerminalBufferProbe, TerminalSurface } from "../surface.js";
 import { clipboardKeyDecision } from "./clipboard.js";
 import { sgrWheelReports, wheelToArrowLines } from "./wheel.js";
+import type { AppearanceTheme } from "../../appearance-theme.js";
 
 let liveWebglContexts = 0;
 let webglContextsCreated = 0;
@@ -22,6 +23,56 @@ const ghosttyFontReady = "fonts" in document
       document.fonts.load(`italic 600 13px ${GHOSTTY_FONT_FAMILY}`),
     ]).catch(() => [])
   : Promise.resolve([]);
+
+export function terminalThemeForAppearance(theme: AppearanceTheme) {
+  return theme === "light" ? {
+    background: "#f9f9f9",
+    foreground: "#2a2c33",
+    cursor: "#555963",
+    cursorAccent: "#ffffff",
+    selectionBackground: "#d9ddf2",
+    selectionForeground: "#20222a",
+    black: "#000000",
+    red: "#de3e35",
+    green: "#3f953a",
+    yellow: "#9a6c16",
+    blue: "#2f5af3",
+    magenta: "#950095",
+    cyan: "#197a73",
+    white: "#bbbbbb",
+    brightBlack: "#5d626b",
+    brightRed: "#c9342d",
+    brightGreen: "#327b2e",
+    brightYellow: "#7c5812",
+    brightBlue: "#244bd5",
+    brightMagenta: "#7f007f",
+    brightCyan: "#14645f",
+    brightWhite: "#ffffff",
+  } : {
+    background: "#282c34",
+    foreground: "#d8dce3",
+    cursor: "#ffffff",
+    cursorAccent: "#282c34",
+    selectionBackground: "#ffffff",
+    selectionForeground: "#282c34",
+    black: "#1d1f21",
+    red: "#cc6666",
+    green: "#b5bd68",
+    yellow: "#f0c674",
+    blue: "#81a2be",
+    magenta: "#b294bb",
+    cyan: "#8abeb7",
+    white: "#c5c8c6",
+    brightBlack: "#666666",
+    brightRed: "#d54e53",
+    brightGreen: "#b9ca4a",
+    brightYellow: "#e7c547",
+    brightBlue: "#7aa6da",
+    brightMagenta: "#c397d8",
+    brightCyan: "#70c0b1",
+    brightWhite: "#eaeaea",
+  };
+}
 
 export class XtermSurface implements TerminalSurface {
   readonly #terminal: Terminal;
@@ -77,30 +128,7 @@ export class XtermSurface implements TerminalSurface {
       // reserving its default 14px scrollbar band as a dead gutter beside the
       // last column; reclaiming that band means replacing fit-addon sizing,
       // which is a separate slice.
-      theme: {
-        background: "#282c34",
-        foreground: "#d8dce3",
-        cursor: "#ffffff",
-        cursorAccent: "#282c34",
-        selectionBackground: "#ffffff",
-        selectionForeground: "#282c34",
-        black: "#1d1f21",
-        red: "#cc6666",
-        green: "#b5bd68",
-        yellow: "#f0c674",
-        blue: "#81a2be",
-        magenta: "#b294bb",
-        cyan: "#8abeb7",
-        white: "#c5c8c6",
-        brightBlack: "#666666",
-        brightRed: "#d54e53",
-        brightGreen: "#b9ca4a",
-        brightYellow: "#e7c547",
-        brightBlue: "#7aa6da",
-        brightMagenta: "#c397d8",
-        brightCyan: "#70c0b1",
-        brightWhite: "#eaeaea",
-      },
+      theme: terminalThemeForAppearance("dark"),
     });
     this.#terminal.loadAddon(this.#fit);
     this.#host.addEventListener("paste", (event) => {
@@ -186,6 +214,10 @@ export class XtermSurface implements TerminalSurface {
       this.#terminal.refresh(0, this.#terminal.rows - 1);
       this.#fitIfVisible();
     });
+  }
+
+  setAppearanceTheme(theme: AppearanceTheme): void {
+    this.#terminal.options.theme = terminalThemeForAppearance(theme);
   }
 
   mount(container: HTMLElement, preferWebgl: boolean): void {

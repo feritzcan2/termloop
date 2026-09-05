@@ -9,12 +9,15 @@ import {
   ConnectionProfilesDialog,
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
+import type { AppearanceTheme } from "../appearance-theme.js";
 
-export type SettingsPage = "notifications" | "servers";
+export type SettingsPage = "appearance" | "notifications" | "servers";
 
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
   close(): void;
   initialPage?: SettingsPage;
+  appearanceTheme: AppearanceTheme;
+  changeAppearanceTheme(theme: AppearanceTheme): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
 };
@@ -22,6 +25,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
 export function SettingsDialog({
   close,
   initialPage = "notifications",
+  appearanceTheme,
+  changeAppearanceTheme,
   loadNotificationPreferences,
   saveNotificationPreferences,
   ...connectionProps
@@ -105,11 +110,14 @@ export function SettingsDialog({
         </header>
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="Settings sections">
+            <button type="button" className={page === "appearance" ? "active" : ""} aria-current={page === "appearance" ? "page" : undefined} onClick={() => setPage("appearance")}>Appearance</button>
             <button type="button" className={page === "notifications" ? "active" : ""} aria-current={page === "notifications" ? "page" : undefined} onClick={() => setPage("notifications")}>Notifications</button>
             <button type="button" className={page === "servers" ? "active" : ""} aria-current={page === "servers" ? "page" : undefined} onClick={() => setPage("servers")}>Servers</button>
           </nav>
           <main className="settings-content">
-            {page === "notifications" ? (
+            {page === "appearance" ? (
+              <AppearanceSettings theme={appearanceTheme} change={changeAppearanceTheme} />
+            ) : page === "notifications" ? (
               <NotificationSettings
                 preferences={preferences}
                 loadingError={loadingError}
@@ -131,6 +139,59 @@ export function SettingsDialog({
         </div>
       </section>
     </div>
+  );
+}
+
+function AppearanceSettings({
+  change,
+  theme,
+}: {
+  change(theme: AppearanceTheme): void;
+  theme: AppearanceTheme;
+}) {
+  return (
+    <section className="appearance-settings" aria-labelledby="appearance-settings-title">
+      <div className="settings-page-header">
+        <h3 id="appearance-settings-title">Appearance</h3>
+        <p>Choose how TermLoop looks on this computer.</p>
+      </div>
+      <div className="appearance-options" role="radiogroup" aria-label="Color theme">
+        <AppearanceOption theme="dark" selected={theme === "dark"} change={change} />
+        <AppearanceOption theme="light" selected={theme === "light"} change={change} />
+      </div>
+      <p className="settings-footnote">The selected theme also applies to terminal panes and is remembered on this computer.</p>
+    </section>
+  );
+}
+
+function AppearanceOption({
+  change,
+  selected,
+  theme,
+}: {
+  change(theme: AppearanceTheme): void;
+  selected: boolean;
+  theme: AppearanceTheme;
+}) {
+  const light = theme === "light";
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={selected ? "appearance-option selected" : "appearance-option"}
+      onClick={() => change(theme)}
+    >
+      <span className={`appearance-preview ${theme}`} aria-hidden="true">
+        <i />
+        <b><em /><em /><em /></b>
+      </span>
+      <span className="appearance-option-copy">
+        <strong>{light ? "Light" : "Dark"}</strong>
+        <small>{light ? "Bright surfaces with dark text." : "Dim surfaces with light text."}</small>
+      </span>
+      <span className="appearance-option-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+    </button>
   );
 }
 

@@ -6,6 +6,10 @@ describe("embedded Ghostty configuration", () => {
     expect(config).toContain("window-vsync = false");
   });
 
+  it("provides matching light and dark terminal themes", () => {
+    expect(config).toContain("theme = light:Atom One Light,dark:Ghostty Default Style Dark");
+  });
+
   it.each([
     "ctrl+tab",
     "ctrl+shift+tab",

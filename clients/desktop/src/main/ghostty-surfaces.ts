@@ -168,6 +168,11 @@ export class GhosttySurfaceManager {
     this.#addon.setSurfaceVisible(surfaceId, visible);
   }
 
+  setColorScheme(surfaceId: number, theme: "dark" | "light"): void {
+    if (!this.#surfaces.has(surfaceId)) return;
+    this.#addon.setSurfaceColorScheme(surfaceId, theme);
+  }
+
   focus(surfaceId: number): void {
     if (!this.#surfaces.has(surfaceId)) return;
     this.#addon.focusSurface(surfaceId);

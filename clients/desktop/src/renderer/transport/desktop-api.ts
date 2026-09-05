@@ -4,6 +4,7 @@ import type { PromptAsset } from "../prompt-settings.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
+import type { AppearanceTheme } from "../appearance-theme.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -222,6 +223,7 @@ export type DesktopApi = {
   ghosttySurfaceWrite(surfaceId: number, data: ArrayBuffer): Promise<void>;
   ghosttySurfaceSetFrame(surfaceId: number, x: number, y: number, width: number, height: number): Promise<{ rows: number; cols: number } | undefined>;
   ghosttySurfaceSetVisible(surfaceId: number, visible: boolean): Promise<void>;
+  ghosttySurfaceSetColorScheme(surfaceId: number, theme: AppearanceTheme): Promise<void>;
   ghosttySurfaceSnapshotText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotImage(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotAndHide(surfaceId: number): Promise<string | undefined>;

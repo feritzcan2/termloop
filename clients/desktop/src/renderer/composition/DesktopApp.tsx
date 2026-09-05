@@ -79,6 +79,7 @@ import {
   connectionProfileIdOf,
 } from "../../connection-scope.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
+import { appearanceTheme, subscribeAppearanceTheme } from "../appearance-theme.js";
 
 type OrdinaryAgentLaunchPreset = {
   model: string;
@@ -126,6 +127,8 @@ const terminalPool = new TerminalPool(
   diagnosticsEnabled,
   (sessionId) => { void pasteImageToSession(sessionId); },
 );
+terminalPool.setAppearanceTheme(appearanceTheme());
+subscribeAppearanceTheme(() => terminalPool.setAppearanceTheme(appearanceTheme()));
 let layoutLoadPromise: Promise<void> | undefined;
 let projectionRefreshCount = 0;
 let taskPatchCount = 0;
