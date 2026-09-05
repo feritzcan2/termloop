@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 
+import { MicrophoneGlyph } from "@/components/microphone-glyph";
 import { StewardVoiceProjectSelector } from "@/components/steward-voice-project-selector";
 import { canSwitchVoiceProject } from "@/presentation/steward-voice-project-selection";
 import type { VoicePhase } from "@/presentation/steward-voice-presentation";
@@ -164,16 +165,6 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
   );
 }
 
-function MicrophoneGlyph({ active = false }: { active?: boolean }) {
-  return (
-    <View style={styles.mic} accessible={false}>
-      <View style={[styles.micCapsule, active && styles.micCapsuleActive]} />
-      <View style={styles.micCradle} />
-      <View style={styles.micStem} />
-    </View>
-  );
-}
-
 function voiceStatus(phase: VoicePhase, durationMs: number): string {
   switch (phase) {
     case "ready": return "Kayda hazır";
@@ -281,20 +272,4 @@ const styles = StyleSheet.create({
     borderColor: color.accentStrong,
   },
   micButtonActive: { backgroundColor: color.danger, borderColor: color.dangerBorder },
-  mic: { width: 20, height: 25, alignItems: "center" },
-  micCapsule: { width: 9, height: 15, borderRadius: 6, borderWidth: 2, borderColor: color.onAccent },
-  micCapsuleActive: { backgroundColor: color.onAccent },
-  micCradle: {
-    position: "absolute",
-    top: 8,
-    width: 16,
-    height: 11,
-    borderBottomWidth: 2,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderColor: color.onAccent,
-    borderBottomLeftRadius: 9,
-    borderBottomRightRadius: 9,
-  },
-  micStem: { width: 2, height: 5, marginTop: 18, backgroundColor: color.onAccent },
 });

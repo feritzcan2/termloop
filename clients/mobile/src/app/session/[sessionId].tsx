@@ -28,12 +28,14 @@ import {
 } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
+import { AgentVoiceButton } from "@/features/terminal/agent-voice-button";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
 import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
 import { clipboardBridge } from "@/platform/clipboard";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { buildProjectSummaries } from "@/presentation/attention-overview";
+import { appendVoiceTranscript } from "@/presentation/agent-composer-voice-presentation";
 import { connectionPresentation } from "@/presentation/connection-presentation";
 import { agentName, basename, sessionLabel, taskIdBySessionId } from "@/presentation/dto-readers";
 import { sessionState } from "@/presentation/session-presentation";
@@ -93,6 +95,7 @@ export default function SessionRoute() {
   const [selectedImage, setSelectedImage] = useState<ComposerImage | undefined>(undefined);
   const [imageAction, setImageAction] = useState<ImageAttachmentSource | undefined>(undefined);
   const [imageSending, setImageSending] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
   const [actionsOpen, setActionsOpen] = useState(false);
   const lastRouteDiagnostic = useRef<string | undefined>(undefined);
@@ -259,7 +262,7 @@ export default function SessionRoute() {
   const dimmed = terminal.buffer.stream === "reconnecting";
 
   const chooseImage = async (source: PickerImageSource) => {
-    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    if (imageAction !== undefined || imageSending || voiceBusy || !terminal.canSend || session.kind !== "Agent") return;
     setImageAction(source);
     try {
       if (source === "camera") {
@@ -297,7 +300,7 @@ export default function SessionRoute() {
   };
 
   const pasteImage = async () => {
-    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    if (imageAction !== undefined || imageSending || voiceBusy || !terminal.canSend || session.kind !== "Agent") return;
     setImageAction("clipboard");
     try {
       const image = await clipboardBridge.pasteImage();
@@ -320,7 +323,7 @@ export default function SessionRoute() {
   };
 
   const chooseImageSource = () => {
-    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    if (imageAction !== undefined || imageSending || voiceBusy || !terminal.canSend || session.kind !== "Agent") return;
     const options = ["Choose from Photos", "Take Photo", "Cancel"];
     const select = (index: number) => {
       if (index === 0) void chooseImage("library");
@@ -343,6 +346,7 @@ export default function SessionRoute() {
   };
 
   const submit = async () => {
+    if (voiceBusy) return;
     if (selectedImage !== undefined) {
       setImageSending(true);
       try {
@@ -512,14 +516,14 @@ export default function SessionRoute() {
                 <View style={styles.imageActions}>
                   <Pressable
                     onPress={chooseImageSource}
-                    disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                    disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
                     accessibilityRole="button"
                     accessibilityLabel={selectedImage === undefined ? "Choose or take an image" : "Replace with a photo"}
-                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending }}
+                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
                     style={({ pressed }) => [
                       styles.attach,
                       pressed && terminal.canSend ? styles.attachPressed : null,
-                      (!terminal.canSend || imageAction !== undefined || imageSending) && styles.attachDisabled,
+                      (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
                     ]}
                   >
                     {imageAction === "library" || imageAction === "camera"
@@ -528,14 +532,14 @@ export default function SessionRoute() {
                   </Pressable>
                   <Pressable
                     onPress={() => void pasteImage()}
-                    disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                    disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
                     accessibilityRole="button"
                     accessibilityLabel={selectedImage === undefined ? "Paste copied image" : "Replace with copied image"}
-                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending }}
+                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
                     style={({ pressed }) => [
                       styles.pasteImage,
                       pressed && terminal.canSend ? styles.attachPressed : null,
-                      (!terminal.canSend || imageAction !== undefined || imageSending) && styles.attachDisabled,
+                      (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
                     ]}
                   >
                     {imageAction === "clipboard"
@@ -560,15 +564,26 @@ export default function SessionRoute() {
                 multiline
                 style={styles.input}
               />
+              {session.kind !== "Agent" ? null : (
+                <AgentVoiceButton
+                  connectionId={connections.selectedId}
+                  disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                  sessionScope={`${connections.selectedId ?? "none"}:${session.id}:${session.runtime_epoch}`}
+                  onBusyChange={setVoiceBusy}
+                  onTranscript={(transcript) => {
+                    setDraft((current) => appendVoiceTranscript(current, transcript));
+                  }}
+                />
+              )}
               <Pressable
                 onPress={() => void submit()}
-                disabled={!terminal.canSend || imageSending || (draft.length === 0 && selectedImage === undefined)}
+                disabled={!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
                 accessibilityRole="button"
                 accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
                 style={({ pressed }) => [
                   styles.send,
                   pressed && styles.sendPressed,
-                  (!terminal.canSend || imageSending || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
+                  (!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
                 ]}
               >
                 {imageSending
