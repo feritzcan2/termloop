@@ -1,43 +1,43 @@
 /// The mobile client's colour and geometry vocabulary.
 ///
-/// Mobile is deliberately light-only. Cool paper surfaces keep dense terminal and
-/// worktree content calm in daylight, while a single indigo accent carries selection
-/// and primary action. Phone-native geometry remains independent from the palette.
+/// Mobile is deliberately light-only. Muted slate surfaces reduce glare while keeping
+/// dense terminal and worktree content readable, and a saturated indigo accent carries
+/// selection and primary action. Phone-native geometry remains independent from the palette.
 
 export const color = {
-  bgApp: "#F7F8FC",
-  bgRaised: "#FFFFFF",
-  bgSidebar: "#F0F2F8",
-  bgHover: "#E7EAF2",
-  /// A quiet code canvas: distinct from cards without becoming a dark island.
-  bgTerminal: "#F3F5F9",
+  bgApp: "#DFE4EC",
+  bgRaised: "#ECEFF4",
+  bgSidebar: "#D4DAE5",
+  bgHover: "#C3CCD9",
+  /// A quiet code canvas: comfortably dimmer than cards without becoming a dark island.
+  bgTerminal: "#D0D7E2",
 
-  border: "#DDE2EC",
-  borderStrong: "#C5CCDA",
-  rule: "rgba(23,32,51,0.10)",
+  border: "#B7C0CF",
+  borderStrong: "#929FB2",
+  rule: "rgba(23,32,51,0.16)",
 
   text: "#172033",
   textSecondary: "#536079",
-  textMuted: "#697386",
+  textMuted: "#596579",
 
-  accent: "#5B4CE2",
-  accentStrong: "#4034B8",
-  accentWash: "rgba(91,76,226,0.10)",
+  accent: "#5140D4",
+  accentStrong: "#382AA6",
+  accentWash: "rgba(81,64,212,0.16)",
 
-  success: "#147A53",
-  successWash: "rgba(20,122,83,0.10)",
-  warning: "#986000",
-  danger: "#BE344B",
+  success: "#0B6845",
+  successWash: "rgba(11,104,69,0.15)",
+  warning: "#7D4D00",
+  danger: "#A7273E",
   dangerBorder: "#E28A99",
-  dangerWash: "rgba(190,52,75,0.10)",
-  attention: "#C04B28",
+  dangerWash: "rgba(167,39,62,0.15)",
+  attention: "#9F3517",
 
-  agentClaude: "#8F48BA",
-  agentCodex: "#1769AA",
+  agentClaude: "#7C3CA3",
+  agentCodex: "#125F9C",
 
   onAccent: "#FFFFFF",
-  shadow: "#16213D",
-  scrim: "rgba(23,32,51,0.34)",
+  shadow: "#10192C",
+  scrim: "rgba(23,32,51,0.42)",
   mediaScrim: "rgba(16,24,40,0.74)",
   onMedia: "#FFFFFF",
 } as const;
@@ -46,22 +46,22 @@ export const color = {
 /// so neither has a colour here — a settled row must not compete with the one row
 /// that is actually waiting on the user.
 export const toneColor = {
-  working: "#147A53",
-  interrupted: "#986000",
-  review: "#1769AA",
-  busy: "#A84F12",
-  attention: "#C04B28",
-  blocked: "#BE344B",
+  working: "#0B6845",
+  interrupted: "#7D4D00",
+  review: "#125F9C",
+  busy: "#8C3E0B",
+  attention: "#9F3517",
+  blocked: "#A7273E",
 } as const;
 
 /** Subtle row fields make live state glanceable without turning the list neon. */
 export const toneWash = {
-  working: "rgba(20,122,83,0.09)",
-  interrupted: "rgba(152,96,0,0.09)",
-  review: "rgba(23,105,170,0.09)",
-  busy: "rgba(168,79,18,0.09)",
-  attention: "rgba(192,75,40,0.10)",
-  blocked: "rgba(190,52,75,0.10)",
+  working: "rgba(11,104,69,0.14)",
+  interrupted: "rgba(125,77,0,0.14)",
+  review: "rgba(18,95,156,0.14)",
+  busy: "rgba(140,62,11,0.14)",
+  attention: "rgba(159,53,23,0.15)",
+  blocked: "rgba(167,39,62,0.15)",
 } as const;
 
 export const radius = {
