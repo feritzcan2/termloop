@@ -13,6 +13,7 @@ import {
   type MobileDiagnosticReporter,
   type MobileDiagnosticValue,
 } from "../../platform/mobile-diagnostics";
+import { GatewayReachabilityError } from "./gateway-compatibility";
 import { MobileControlClient } from "./mobile-control-client";
 import {
   KIND_ACK,
@@ -41,6 +42,8 @@ const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
 const RECONNECT_STALLED_MS = 15_000;
+const PREFLIGHT_STALLED_FAILURES = 3;
+const PREFLIGHT_LATE_SETTLEMENT_OBSERVATION_MS = 5_000;
 const STABLE_CONNECTION_MS = 30_000;
 const ONLINE_ACTIVITY_PUBLISH_MS = 5_000;
 const INITIAL_ATTACH_RETRY_MS = 100;
@@ -103,6 +106,8 @@ interface PendingInputReceipt {
   readonly timeout: ReturnType<typeof setTimeout>;
 }
 
+type TransportPhase = "idle" | "preflight" | "socketConnecting" | "authenticating" | "ready";
+
 let attachmentSequence = 0;
 
 /// One route-independent transport owner per paired Mac.
@@ -135,6 +140,15 @@ export class MobileConnectionCoordinator {
   private readonly invalidationListeners = new Set<(event: ProjectionInvalidation) => void>();
   private readonly statusListeners = new Set<(status: "online" | "offline") => void>();
   private lastOnlineActivityAtEpochMs = 0;
+  private transportPhase: TransportPhase = "idle";
+  private transportPhaseStartedAtEpochMs: number | undefined;
+  private preflightsInFlight = 0;
+  private preflightFailuresSinceReady = 0;
+  private preflightFailureStartedAtEpochMs: number | undefined;
+  private preflightStallReported = false;
+  private lastReadyAtEpochMs: number | undefined;
+  private lastDisconnectAtEpochMs: number | undefined;
+  private lastDisconnectReason: string | undefined;
 
   constructor(
     private readonly connection: SavedConnection,
@@ -304,6 +318,13 @@ export class MobileConnectionCoordinator {
     }
     this.reconnectDelay = MIN_RECONNECT_MS;
     const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
+    this.diagnostics.report("connection", "transport_reset_requested", {
+      connectionId: this.connection.id,
+      reconnect,
+      shouldReconnect,
+      ...this.connectionDiagnosticState(),
+      ...this.diagnostics.correlation(),
+    });
     if (!shouldReconnect) this.clearReconnectCycle();
     const generation = this.generation;
     const socket = this.physical;
@@ -408,7 +429,7 @@ export class MobileConnectionCoordinator {
       connectionId: this.connection.id,
       generation,
       endpoint: websocketEndpointLabel(mobileEndpoint(this.connection.controlUrl)),
-      activeTerminalSubscriptions: this.subscriptions.size,
+      ...this.connectionDiagnosticState(startedAtEpochMs),
     });
     const connecting = this.openPreparedConnection(generation, startedAtEpochMs);
     this.connecting = connecting;
@@ -427,34 +448,95 @@ export class MobileConnectionCoordinator {
   ): Promise<DataSocket> {
     if (this.prepareConnection !== undefined) {
       const preflightStartedAtEpochMs = Date.now();
+      this.preflightsInFlight += 1;
+      this.setTransportPhase(generation, "preflight", preflightStartedAtEpochMs);
       this.diagnostics.report("connection", "preflight_started", {
         connectionId: this.connection.id,
         generation,
+        currentGeneration: this.generation,
+        ...this.connectionDiagnosticState(preflightStartedAtEpochMs),
       });
       try {
         await this.prepareConnection();
       } catch (cause: unknown) {
+        const failedAtEpochMs = Date.now();
+        const attemptSuperseded = generation !== this.generation || this.stopped;
+        const failure = preflightFailureDetails(cause);
+        this.observeTimedOutPreflight(cause, generation, failedAtEpochMs);
+        this.preflightsInFlight = Math.max(0, this.preflightsInFlight - 1);
+        const countsTowardStall = !this.ready;
+        if (countsTowardStall) {
+          this.preflightFailuresSinceReady += 1;
+          this.preflightFailureStartedAtEpochMs ??= preflightStartedAtEpochMs;
+        }
         this.diagnostics.report("connection", "preflight_failed", {
           connectionId: this.connection.id,
           generation,
-          durationMs: Date.now() - preflightStartedAtEpochMs,
+          currentGeneration: this.generation,
+          durationMs: failedAtEpochMs - preflightStartedAtEpochMs,
           causeType: cause instanceof Error ? cause.name : typeof cause,
+          ...failure,
+          attemptSuperseded,
+          countsTowardStall,
+          preflightFailuresSinceReady: this.preflightFailuresSinceReady,
+          preflightFailureElapsedMs: this.preflightFailureStartedAtEpochMs === undefined
+            ? undefined
+            : failedAtEpochMs - this.preflightFailureStartedAtEpochMs,
+          ...this.connectionDiagnosticState(failedAtEpochMs),
         });
+        if (!this.preflightStallReported
+          && this.preflightFailuresSinceReady >= PREFLIGHT_STALLED_FAILURES
+          && this.subscriptions.size > 0) {
+          this.preflightStallReported = true;
+          this.diagnostics.report("connection", "preflight_stalled", {
+            connectionId: this.connection.id,
+            generation,
+            currentGeneration: this.generation,
+            ...failure,
+            attemptSuperseded,
+            preflightFailuresSinceReady: this.preflightFailuresSinceReady,
+            preflightFailureElapsedMs: this.preflightFailureStartedAtEpochMs === undefined
+              ? undefined
+              : failedAtEpochMs - this.preflightFailureStartedAtEpochMs,
+            ...this.connectionDiagnosticState(failedAtEpochMs),
+            ...this.diagnostics.correlation(),
+          });
+        }
+        if (!attemptSuperseded) this.setTransportPhase(generation, "idle", failedAtEpochMs);
         throw cause;
       }
+      const completedAtEpochMs = Date.now();
+      this.preflightsInFlight = Math.max(0, this.preflightsInFlight - 1);
       if (generation !== this.generation || this.stopped) {
+        this.diagnostics.report("connection", "preflight_superseded", {
+          connectionId: this.connection.id,
+          generation,
+          currentGeneration: this.generation,
+          durationMs: completedAtEpochMs - preflightStartedAtEpochMs,
+          stopped: this.stopped,
+          ...this.connectionDiagnosticState(completedAtEpochMs),
+        });
         throw new Error("Mobile connection was superseded.");
       }
       this.diagnostics.report("connection", "preflight_completed", {
         connectionId: this.connection.id,
         generation,
-        durationMs: Date.now() - preflightStartedAtEpochMs,
+        durationMs: completedAtEpochMs - preflightStartedAtEpochMs,
+        ...this.connectionDiagnosticState(completedAtEpochMs),
       });
     }
+    this.setTransportPhase(generation, "socketConnecting");
     let socket: DataSocket;
     try {
       socket = this.socketFactory(mobileEndpoint(this.connection.controlUrl));
     } catch (cause: unknown) {
+      this.diagnostics.report("connection", "socket_factory_failed", {
+        connectionId: this.connection.id,
+        generation,
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+        ...this.connectionDiagnosticState(),
+      });
+      this.setTransportPhase(generation, "idle");
       return Promise.reject(cause);
     }
     this.physical = socket;
@@ -471,6 +553,12 @@ export class MobileConnectionCoordinator {
       };
       const timer = setTimeout(() => {
         if (settled || generation !== this.generation) return;
+        this.diagnostics.report("connection", "connection_timeout", {
+          connectionId: this.connection.id,
+          generation,
+          timeoutMs: CONNECT_TIMEOUT_MS,
+          ...this.connectionDiagnosticState(),
+        });
         fail(new Error("Mobile connection timed out."));
         this.invalidateTransport("authenticationTimeout");
       }, CONNECT_TIMEOUT_MS);
@@ -478,6 +566,7 @@ export class MobileConnectionCoordinator {
       socket.onopen = () => {
         if (generation !== this.generation || this.stopped) return socket.close();
         opened = true;
+        this.setTransportPhase(generation, "authenticating");
         try {
           socket.send(JSON.stringify({
             type: "mobile.authenticate",
@@ -502,6 +591,22 @@ export class MobileConnectionCoordinator {
             const ready = parseReady(event.data);
             if (ready === undefined) throw new Error("Mobile gateway authentication was refused.");
             this.ready = true;
+            this.lastReadyAtEpochMs = Date.now();
+            this.setTransportPhase(generation, "ready", this.lastReadyAtEpochMs);
+            if (this.preflightFailuresSinceReady > 0) {
+              this.diagnostics.report("connection", "preflight_recovered", {
+                connectionId: this.connection.id,
+                generation,
+                failedAttempts: this.preflightFailuresSinceReady,
+                recoveryElapsedMs: this.preflightFailureStartedAtEpochMs === undefined
+                  ? undefined
+                  : this.lastReadyAtEpochMs - this.preflightFailureStartedAtEpochMs,
+                ...this.connectionDiagnosticState(this.lastReadyAtEpochMs),
+              });
+            }
+            this.preflightFailuresSinceReady = 0;
+            this.preflightFailureStartedAtEpochMs = undefined;
+            this.preflightStallReported = false;
             this.inputReceiptSource = ready.inputReceiptSource;
             this.connecting = undefined;
             clearTimeout(timer);
@@ -551,6 +656,8 @@ export class MobileConnectionCoordinator {
           generation,
           opened,
           eventType: event?.type,
+          attemptSuperseded: generation !== this.generation,
+          ...this.connectionDiagnosticState(),
         });
         fail(new Error("Mobile connection failed."));
         this.handleDisconnected(generation, "socketError");
@@ -564,6 +671,8 @@ export class MobileConnectionCoordinator {
           closeReasonLength: event?.reason?.length,
           wasClean: event?.wasClean,
           lifetimeMs: Date.now() - startedAtEpochMs,
+          attemptSuperseded: generation !== this.generation,
+          ...this.connectionDiagnosticState(),
         });
         fail(new Error("Mobile connection closed."));
         this.handleDisconnected(generation, "socketClose");
@@ -796,6 +905,11 @@ export class MobileConnectionCoordinator {
     this.reportTerminal(subscription, event, {
       activeSubscriptions: this.subscriptions.size,
       attachedCount: subscription.attachedCount,
+      ...(event === "attachment_failed" ? {
+        causeType: waiterError.name,
+        generation: this.generation,
+        ...this.connectionDiagnosticState(),
+      } : {}),
     });
     this.stopReconnectIfIdle();
   }
@@ -809,12 +923,18 @@ export class MobileConnectionCoordinator {
 
   private handleDisconnected(generation: number, reason: string, reconnect = true): void {
     if (generation !== this.generation) return;
+    const disconnectedAtEpochMs = Date.now();
+    const diagnosticState = this.connectionDiagnosticState(disconnectedAtEpochMs);
     const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
     if (shouldReconnect) this.beginReconnectCycle(reason);
     else this.clearReconnectCycle();
     this.cancelConnecting?.(new Error("Mobile transport disconnected."));
     this.cancelConnecting = undefined;
     this.generation += 1;
+    this.lastDisconnectAtEpochMs = disconnectedAtEpochMs;
+    this.lastDisconnectReason = reason;
+    this.transportPhase = "idle";
+    this.transportPhaseStartedAtEpochMs = disconnectedAtEpochMs;
     this.ready = false;
     this.inputReceiptSource = undefined;
     this.physical = undefined;
@@ -845,6 +965,7 @@ export class MobileConnectionCoordinator {
       reason,
       activeTerminalSubscriptions: this.subscriptions.size,
       invalidationSubscribers: this.invalidationListeners.size,
+      ...diagnosticState,
     });
     this.publishStatus("offline");
     if (shouldReconnect) this.scheduleReconnect(reason);
@@ -912,6 +1033,7 @@ export class MobileConnectionCoordinator {
         statusSubscribers: this.statusListeners.size,
         socketReadyState: this.physical?.readyState,
         connecting: this.connecting !== undefined,
+        ...this.connectionDiagnosticState(),
         ...this.diagnostics.correlation(),
       });
     }, RECONNECT_STALLED_MS);
@@ -946,6 +1068,80 @@ export class MobileConnectionCoordinator {
     this.reconnectTimer = undefined;
     this.reconnectDelay = MIN_RECONNECT_MS;
     this.clearReconnectCycle();
+  }
+
+  private setTransportPhase(
+    generation: number,
+    phase: TransportPhase,
+    atEpochMs = Date.now(),
+  ): void {
+    if (generation !== this.generation) return;
+    this.transportPhase = phase;
+    this.transportPhaseStartedAtEpochMs = atEpochMs;
+  }
+
+  private observeTimedOutPreflight(
+    cause: unknown,
+    generation: number,
+    failedAtEpochMs: number,
+  ): void {
+    if (!(cause instanceof GatewayReachabilityError) || cause.lateSettlement === undefined) return;
+    let settled = false;
+    void cause.lateSettlement.then((outcome) => {
+      settled = true;
+      this.diagnostics.report("connection", "preflight_request_settled_after_timeout", {
+        connectionId: this.connection.id,
+        generation,
+        currentGeneration: this.generation,
+        settlementDelayMs: Math.max(0, Date.now() - failedAtEpochMs),
+        lateSettlement: outcome.kind,
+        requestCauseType: outcome.kind === "requestRejected" ? outcome.causeType : undefined,
+        httpStatus: outcome.kind === "response" ? outcome.httpStatus : undefined,
+        attemptSuperseded: generation !== this.generation || this.stopped,
+        ...this.connectionDiagnosticState(),
+      });
+    });
+    setTimeout(() => {
+      if (settled) return;
+      this.diagnostics.report("connection", "preflight_request_unsettled_after_timeout", {
+        connectionId: this.connection.id,
+        generation,
+        currentGeneration: this.generation,
+        observationMs: PREFLIGHT_LATE_SETTLEMENT_OBSERVATION_MS,
+        attemptSuperseded: generation !== this.generation || this.stopped,
+        ...this.connectionDiagnosticState(),
+      });
+    }, PREFLIGHT_LATE_SETTLEMENT_OBSERVATION_MS);
+  }
+
+  private connectionDiagnosticState(
+    atEpochMs = Date.now(),
+  ): Readonly<Record<string, MobileDiagnosticValue | undefined>> {
+    return {
+      transportPhase: this.transportPhase,
+      transportPhaseElapsedMs: this.transportPhaseStartedAtEpochMs === undefined
+        ? undefined
+        : Math.max(0, atEpochMs - this.transportPhaseStartedAtEpochMs),
+      ready: this.ready,
+      connecting: this.connecting !== undefined,
+      socketReadyState: this.physical?.readyState,
+      preflightsInFlight: this.preflightsInFlight,
+      preflightFailuresSinceReady: this.preflightFailuresSinceReady,
+      reconnectCycleActive: this.reconnectStartedAtEpochMs !== undefined,
+      reconnectAttempt: this.reconnectAttempt,
+      reconnectTimerPending: this.reconnectTimer !== undefined,
+      activeTerminalSubscriptions: this.subscriptions.size,
+      invalidationSubscribers: this.invalidationListeners.size,
+      statusSubscribers: this.statusListeners.size,
+      routeKind: gatewayRouteKind(this.connection.controlUrl),
+      sinceLastReadyMs: this.lastReadyAtEpochMs === undefined
+        ? undefined
+        : Math.max(0, atEpochMs - this.lastReadyAtEpochMs),
+      sinceLastDisconnectMs: this.lastDisconnectAtEpochMs === undefined
+        ? undefined
+        : Math.max(0, atEpochMs - this.lastDisconnectAtEpochMs),
+      lastDisconnectReason: this.lastDisconnectReason,
+    };
   }
 
   private openSocket(): DataSocket | undefined {
@@ -1184,6 +1380,38 @@ function mobileEndpoint(controlUrl: string): string {
   endpoint.search = "";
   endpoint.hash = "";
   return endpoint.toString();
+}
+
+function preflightFailureDetails(
+  cause: unknown,
+): Readonly<Record<string, MobileDiagnosticValue | undefined>> {
+  if (!(cause instanceof GatewayReachabilityError)) {
+    return { preflightFailureReason: "other" };
+  }
+  return {
+    preflightFailureReason: cause.reason,
+    requestCauseType: cause.requestCauseType,
+    httpStatus: cause.httpStatus,
+  };
+}
+
+function gatewayRouteKind(controlUrl: string): string {
+  try {
+    const hostname = new URL(controlUrl).hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return "loopback";
+    }
+    if (hostname.endsWith(".ts.net")) return "tailnetDns";
+    if (/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./u.test(hostname)) {
+      return "tailnetIpv4";
+    }
+    if (/^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.)/u.test(hostname)) {
+      return "privateIpv4";
+    }
+    return "hostname";
+  } catch {
+    return "invalid";
+  }
 }
 
 function terminalKey(sessionId: string, runtimeEpoch: number): string {
