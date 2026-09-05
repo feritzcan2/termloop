@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     borderColor: color.borderStrong,
     backgroundColor: color.bgApp,
   },
-  optionSelected: { borderColor: color.success, backgroundColor: "#273c35" },
+  optionSelected: { borderColor: color.success, backgroundColor: color.successWash },
   optionText: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
   optionTextSelected: { color: color.success },
   connectionName: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 9, marginTop: 2 },
