@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   rail: { width: NODE, alignItems: "center" },
   railLine: { flex: 1, width: 2, backgroundColor: color.border },
   railLineHidden: { backgroundColor: "transparent" },
-  railLinePassed: { backgroundColor: "rgba(76,201,138,0.35)" },
+  railLinePassed: { backgroundColor: color.success },
   node: {
     width: NODE,
     height: NODE,
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   nodeHuman: { borderRadius: 5 },
-  nodePassed: { backgroundColor: "rgba(76,201,138,0.16)" },
+  nodePassed: { backgroundColor: color.successWash },
   nodeWaiting: { backgroundColor: color.accent },
   nodeAhead: { borderWidth: 1.5, borderColor: color.borderStrong },
   nodeCheck: { color: color.success, fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "800" },

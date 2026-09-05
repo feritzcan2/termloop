@@ -6,7 +6,7 @@
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "scheme": "termloop",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "owner": "feritzcan",
     "runtimeVersion": {
       "policy": "appVersion"
