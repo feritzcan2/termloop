@@ -1918,6 +1918,66 @@ button.folder-crumb:hover { background: rgba(255,255,255,.07); color: var(--text
 .ar-add-error { margin: 3px 2px 0; color: #e99ba3; font: 9px/1.4 var(--font-mono); }
 .assistant-empty { margin: 6px 5px 10px; color: var(--sidebar-dimmer); font: 10px/1.5 var(--font-mono); }
 
+/* Project Control is a read model over existing Task and provider facts. Its
+   compact cards deliberately avoid the editable lanes and persistent-agent
+   chrome of the retired Steward surface. */
+.project-control-rail { display: grid; gap: 13px; padding: 5px 9px 18px; color: var(--sidebar-text); }
+.pc-intro { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 7px; background: linear-gradient(145deg, rgba(124,92,255,.09), rgba(255,255,255,.018)); }
+.pc-intro .pc-kicker { color: var(--accent-strong); font: 700 7px/1.2 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.pc-intro > strong { font: 650 11px/1.35 var(--font-ui); }
+.pc-intro p { margin: 0; color: var(--sidebar-dim); font: 8px/1.45 var(--font-mono); }
+.pc-inbox, .pc-phase { display: grid; gap: 5px; }
+.pc-section-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; color: var(--sidebar-dim); }
+.pc-section-heading strong { font: 700 8px/1.2 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+.pc-section-heading span { display: grid; min-width: 16px; height: 16px; place-items: center; border-radius: 999px; background: rgba(255,255,255,.05); font: 700 7px/1 var(--font-mono); }
+.pc-inbox ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pc-inbox li > button { display: grid; grid-template-columns: 19px minmax(0,1fr) 8px; width: 100%; gap: 7px; align-items: center; padding: 7px; border: 1px solid rgba(255,143,107,.19); border-radius: 6px; background: rgba(255,143,107,.045); color: inherit; text-align: left; }
+.pc-inbox li > button:hover:not(:disabled) { border-color: rgba(255,143,107,.42); background: rgba(255,143,107,.085); }
+.pc-inbox li > button:disabled { opacity: .55; }
+.pc-inbox svg { width: 14px; height: 14px; color: var(--agent-status-awaiting); }
+.pc-inbox button > span { display: grid; min-width: 0; grid-template-columns: auto minmax(0,1fr); column-gap: 5px; }
+.pc-inbox button strong, .pc-inbox button small, .pc-inbox button em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-inbox button strong { font: 650 9px/1.25 var(--font-ui); }
+.pc-inbox button small { align-self: end; color: var(--sidebar-dimmer); font: 7.5px/1.25 var(--font-mono); }
+.pc-inbox button em { grid-column: 1 / -1; margin-top: 2px; color: var(--sidebar-dim); font: normal 7.5px/1.3 var(--font-mono); }
+.pc-inbox button > b { color: var(--sidebar-dimmer); font: 600 11px/1 var(--font-ui); }
+.pc-empty, .pc-error { margin: 0; padding: 5px 7px; border-radius: 5px; color: var(--sidebar-dimmer); font: 8px/1.4 var(--font-mono); }
+.pc-error { background: rgba(255,92,92,.08); color: #ffabab; }
+.pc-phases { display: grid; gap: 10px; }
+.pc-phase-empty { height: 1px; margin: 0 3px; background: rgba(255,255,255,.035); }
+.pc-task { display: grid; width: 100%; gap: 5px; padding: 7px; border: 1px solid rgba(255,255,255,.055); border-left: 2px solid rgba(255,255,255,.12); border-radius: 6px; background: rgba(255,255,255,.022); color: inherit; text-align: left; }
+.pc-task:hover { border-color: rgba(124,92,255,.28); background: var(--hover); }
+.pc-task.phase-building { border-left-color: var(--state-running); }
+.pc-task.phase-review { border-left-color: var(--agent-status-awaiting); }
+.pc-task.phase-landing { border-left-color: var(--accent-strong); }
+.pc-task.phase-done { border-left-color: var(--state-success); opacity: .66; }
+.pc-task-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; min-width: 0; }
+.pc-task-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 9.5px/1.25 var(--font-ui); }
+.pc-task-heading small { flex: none; color: var(--sidebar-dimmer); font: 7px/1 var(--font-mono); }
+.pc-facts { display: flex; flex-wrap: wrap; gap: 3px; }
+.pc-fact { display: inline-flex; min-width: 0; align-items: center; gap: 3px; padding: 2px 4px; border-radius: 3px; background: rgba(255,255,255,.035); color: var(--sidebar-dim); font: 6.8px/1.2 var(--font-mono); }
+.pc-fact i { width: 4px; height: 4px; flex: none; border-radius: 50%; background: var(--sidebar-dimmer); }
+.pc-fact.active i { background: var(--state-running); }
+.pc-fact.attention i { background: var(--agent-status-awaiting); }
+.pc-fact.unavailable i { background: var(--state-muted); }
+.pc-fact.done i { background: var(--state-success); }
+.td-control-phase { padding: 3px 6px; border-radius: 999px; background: rgba(124,92,255,.1); color: var(--accent-strong); font: 700 7px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.td-control-spine { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); margin: 12px 0 10px; padding: 0; list-style: none; }
+.td-control-spine li { position: relative; display: grid; justify-items: center; gap: 5px; color: var(--sidebar-dimmer); font: 650 7px/1.2 var(--font-ui); }
+.td-control-spine li::before { content: ""; position: absolute; top: 4px; right: 50%; width: 100%; height: 1px; background: rgba(255,255,255,.09); }
+.td-control-spine li:first-child::before { display: none; }
+.td-control-spine li i { position: relative; z-index: 1; width: 9px; height: 9px; border: 2px solid var(--bg-elevated); border-radius: 50%; background: var(--state-muted); box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
+.td-control-spine li.passed, .td-control-spine li.current { color: var(--sidebar-text); }
+.td-control-spine li.passed i { background: var(--state-success); }
+.td-control-spine li.current i { background: var(--accent-strong); box-shadow: 0 0 0 2px rgba(124,92,255,.2); }
+.td-control-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px,1fr)); gap: 5px; margin: 0; }
+.td-control-facts > div { display: grid; gap: 2px; padding: 6px 7px; border: 1px solid rgba(255,255,255,.055); border-radius: 5px; background: rgba(255,255,255,.02); }
+.td-control-facts dt { color: var(--sidebar-dimmer); font: 650 7px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; }
+.td-control-facts dd { margin: 0; overflow: hidden; color: var(--sidebar-text); font: 8px/1.25 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.td-control-facts > div.attention { border-color: rgba(255,143,107,.22); }
+.td-control-facts > div.unavailable dd { color: var(--sidebar-dimmer); }
+.td-control-facts > div.done dd { color: var(--state-success); }
+
 /* Detail panel chrome. */
 .ap-header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 13px; padding: 15px 16px 13px 20px; border-bottom: 1px solid var(--border); }
 .ap-heading { display: grid; gap: 3px; min-width: 0; }

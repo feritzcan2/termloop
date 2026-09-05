@@ -2,11 +2,11 @@
 /// user chose; Core owns none of this presentation preference.
 const WORKSPACE_VIEW_KEY = "termloop.workspaceView.v1";
 
-export type WorkspaceView = "overview" | "agents" | "history" | "steward";
+export type WorkspaceView = "overview" | "agents" | "history" | "control";
 export type WorkspaceViewMemory = Readonly<Record<string, WorkspaceView>>;
 
 function isWorkspaceView(value: unknown): value is WorkspaceView {
-  return value === "overview" || value === "agents" || value === "history" || value === "steward";
+  return value === "overview" || value === "agents" || value === "history" || value === "control";
 }
 
 export function readWorkspaceViewMemory(
@@ -19,7 +19,11 @@ export function readWorkspaceViewMemory(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const memory: Record<string, WorkspaceView> = {};
     for (const [projectId, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (projectId && isWorkspaceView(value)) memory[projectId] = value;
+      if (!projectId) continue;
+      // The old Steward tab is retired. Preserve the user's intent to open the
+      // delivery view while moving it onto the deterministic replacement.
+      if (value === "steward") memory[projectId] = "control";
+      else if (isWorkspaceView(value)) memory[projectId] = value;
     }
     return memory;
   } catch {
