@@ -1,7 +1,7 @@
 /// The mobile client's colour and geometry vocabulary.
 ///
 /// Mobile is deliberately light-only. Muted slate surfaces reduce glare while keeping
-/// dense terminal and worktree content readable, and a saturated indigo accent carries
+/// dense terminal and worktree content readable, and a saturated blue accent carries
 /// selection and primary action. Phone-native geometry remains independent from the palette.
 
 export const color = {
@@ -20,9 +20,9 @@ export const color = {
   textSecondary: "#536079",
   textMuted: "#596579",
 
-  accent: "#5140D4",
-  accentStrong: "#382AA6",
-  accentWash: "rgba(81,64,212,0.16)",
+  accent: "#0B609B",
+  accentStrong: "#083D66",
+  accentWash: "rgba(11,96,155,0.16)",
 
   success: "#0B6845",
   successWash: "rgba(11,104,69,0.15)",
@@ -32,8 +32,8 @@ export const color = {
   dangerWash: "rgba(167,39,62,0.15)",
   attention: "#9F3517",
 
-  agentClaude: "#7C3CA3",
-  agentCodex: "#125F9C",
+  agentClaude: "#8C3E0B",
+  agentCodex: "#0B625B",
 
   onAccent: "#FFFFFF",
   shadow: "#10192C",

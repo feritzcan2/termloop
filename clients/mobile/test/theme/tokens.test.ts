@@ -46,7 +46,35 @@ describe("mobile light theme", () => {
     expect(contrastRatio(color.onAccent, color.accent)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(color.onAccent, color.accentStrong)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("keeps the product palette free of purple hues", () => {
+    const palette = [...Object.values(color), ...Object.values(toneColor)];
+    for (const value of palette) {
+      const hue = hueDegrees(value);
+      expect(hue < 250 || hue > 330, `${value} has a purple hue of ${hue}`).toBe(true);
+    }
+  });
 });
+
+function hueDegrees(value: string): number {
+  const hex = /^#([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/i.exec(value);
+  const match = hex ?? /^rgba\((\d+),(\d+),(\d+),/.exec(value);
+  if (match === null) throw new Error(`Expected a hex or rgba colour, received ${value}`);
+  const radix = hex === null ? 10 : 16;
+  const [red = 0, green = 0, blue = 0] = match.slice(1, 4).map((channel) => Number.parseInt(channel, radix));
+  const channels = [red, green, blue].map((channel) => channel / 255);
+  const max = Math.max(...channels);
+  const min = Math.min(...channels);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let hue = max === channels[0]
+    ? ((channels[1] ?? 0) - (channels[2] ?? 0)) / delta
+    : max === channels[1]
+      ? 2 + ((channels[2] ?? 0) - (channels[0] ?? 0)) / delta
+      : 4 + ((channels[0] ?? 0) - (channels[1] ?? 0)) / delta;
+  hue = (hue * 60 + 360) % 360;
+  return hue;
+}
 
 function contrastRatio(first: string, second: string): number {
   const brightest = Math.max(relativeLuminance(first), relativeLuminance(second));
