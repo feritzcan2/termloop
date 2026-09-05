@@ -91,7 +91,7 @@ export default function SessionRoute() {
   const store = useOverview();
   const [draft, setDraft] = useState("");
   const [selectedImage, setSelectedImage] = useState<ComposerImage | undefined>(undefined);
-  const [imagePicking, setImagePicking] = useState(false);
+  const [imageAction, setImageAction] = useState<ImageAttachmentSource | undefined>(undefined);
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -259,8 +259,8 @@ export default function SessionRoute() {
   const dimmed = terminal.buffer.stream === "reconnecting";
 
   const chooseImage = async (source: PickerImageSource) => {
-    if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
-    setImagePicking(true);
+    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    setImageAction(source);
     try {
       if (source === "camera") {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -292,13 +292,13 @@ export default function SessionRoute() {
         cause instanceof Error ? cause.message : "The selected image could not be read.",
       );
     } finally {
-      setImagePicking(false);
+      setImageAction(undefined);
     }
   };
 
   const pasteImage = async () => {
-    if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
-    setImagePicking(true);
+    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    setImageAction("clipboard");
     try {
       const image = await clipboardBridge.pasteImage();
       if (image === null) {
@@ -315,32 +315,30 @@ export default function SessionRoute() {
         cause instanceof Error ? cause.message : "The copied image could not be read.",
       );
     } finally {
-      setImagePicking(false);
+      setImageAction(undefined);
     }
   };
 
   const chooseImageSource = () => {
-    if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
-    const options = ["Paste Copied Image", "Choose from Photos", "Take Photo", "Cancel"];
+    if (imageAction !== undefined || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    const options = ["Choose from Photos", "Take Photo", "Cancel"];
     const select = (index: number) => {
-      if (index === 0) void pasteImage();
-      if (index === 1) void chooseImage("library");
-      if (index === 2) void chooseImage("camera");
+      if (index === 0) void chooseImage("library");
+      if (index === 1) void chooseImage("camera");
     };
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions({
         title: selectedImage === undefined ? "Add an image" : "Replace image",
         message: "Attach one image to your next message.",
         options,
-        cancelButtonIndex: 3,
+        cancelButtonIndex: 2,
       }, select);
       return;
     }
     Alert.alert(selectedImage === undefined ? "Add an image" : "Replace image", "Attach one image to your next message.", [
       { text: options[0], onPress: () => select(0) },
       { text: options[1], onPress: () => select(1) },
-      { text: options[2], onPress: () => select(2) },
-      { text: options[3], style: "cancel" },
+      { text: options[2], style: "cancel" },
     ]);
   };
 
@@ -511,22 +509,40 @@ export default function SessionRoute() {
 
             <View style={styles.composer}>
               {session.kind !== "Agent" ? null : (
-                <Pressable
-                  onPress={chooseImageSource}
-                  disabled={!terminal.canSend || imagePicking || imageSending}
-                  accessibilityRole="button"
-                  accessibilityLabel={selectedImage === undefined ? "Add an image" : "Replace attached image"}
-                  accessibilityState={{ disabled: !terminal.canSend || imagePicking || imageSending }}
-                  style={({ pressed }) => [
-                    styles.attach,
-                    pressed && terminal.canSend ? styles.attachPressed : null,
-                    (!terminal.canSend || imagePicking || imageSending) && styles.attachDisabled,
-                  ]}
-                >
-                  {imagePicking
-                    ? <ActivityIndicator color={color.accentStrong} />
-                    : <Text style={styles.attachGlyph}>+</Text>}
-                </Pressable>
+                <View style={styles.imageActions}>
+                  <Pressable
+                    onPress={chooseImageSource}
+                    disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                    accessibilityRole="button"
+                    accessibilityLabel={selectedImage === undefined ? "Choose or take an image" : "Replace with a photo"}
+                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending }}
+                    style={({ pressed }) => [
+                      styles.attach,
+                      pressed && terminal.canSend ? styles.attachPressed : null,
+                      (!terminal.canSend || imageAction !== undefined || imageSending) && styles.attachDisabled,
+                    ]}
+                  >
+                    {imageAction === "library" || imageAction === "camera"
+                      ? <ActivityIndicator color={color.accentStrong} />
+                      : <Text style={styles.attachGlyph}>+</Text>}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void pasteImage()}
+                    disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                    accessibilityRole="button"
+                    accessibilityLabel={selectedImage === undefined ? "Paste copied image" : "Replace with copied image"}
+                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending }}
+                    style={({ pressed }) => [
+                      styles.pasteImage,
+                      pressed && terminal.canSend ? styles.attachPressed : null,
+                      (!terminal.canSend || imageAction !== undefined || imageSending) && styles.attachDisabled,
+                    ]}
+                  >
+                    {imageAction === "clipboard"
+                      ? <ActivityIndicator color={color.accentStrong} />
+                      : <Text style={styles.pasteImageLabel}>Paste</Text>}
+                  </Pressable>
+                </View>
               )}
               <TextInput
                 value={draft}
@@ -694,6 +710,7 @@ const styles = StyleSheet.create({
   imageAttachmentMeta: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 10.5 },
   removeImage: { width: geometry.touchTarget, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   removeImageGlyph: { color: color.textSecondary, fontSize: 22, lineHeight: 22 },
+  imageActions: { flexDirection: "row", gap: 5 },
   attach: {
     width: geometry.touchTarget,
     height: geometry.touchTarget,
@@ -707,6 +724,18 @@ const styles = StyleSheet.create({
   attachPressed: { backgroundColor: color.bgHover },
   attachDisabled: { opacity: 0.45 },
   attachGlyph: { color: color.textSecondary, fontSize: 24, fontWeight: "500", lineHeight: 25 },
+  pasteImage: {
+    minWidth: 54,
+    height: geometry.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: space.sm,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.bgRaised,
+  },
+  pasteImageLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10.5, fontWeight: "700" },
   input: {
     flex: 1,
     minHeight: terminalGeometry.composerInputMin,
