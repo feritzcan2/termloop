@@ -20,7 +20,7 @@ export function Screen({ children, edges }: PropsWithChildren<{ edges?: readonly
   );
 }
 
-export function ScreenHeader({ title, subtitle, back, backFallback = "/", center, right }: {
+export function ScreenHeader({ title, subtitle, back, backFallback, center, right }: {
   title?: string | undefined;
   subtitle?: string | undefined;
   /// The label the back chevron announces, so a screen reader says where it goes
@@ -38,8 +38,10 @@ export function ScreenHeader({ title, subtitle, back, backFallback = "/", center
       {back === undefined ? null : (
         <Pressable
           onPress={() => {
-            if (backNavigationAction(router.canGoBack()) === "back") router.back();
-            else router.replace(backFallback);
+            const action = backNavigationAction(router.canGoBack(), backFallback !== undefined);
+            if (action === "dismissTo") router.dismissTo(backFallback!);
+            else if (action === "back") router.back();
+            else router.replace("/");
           }}
           accessibilityRole="button"
           accessibilityLabel={`Back to ${back}`}
