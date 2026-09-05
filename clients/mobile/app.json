@@ -25,7 +25,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
         "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
-        "NSMicrophoneUsageDescription": "TermLoop uses the microphone only while recording a voice message for Steward."
+        "NSMicrophoneUsageDescription": "TermLoop uses the microphone only while recording a voice message."
       }
     },
     "android": {
@@ -55,7 +55,7 @@
         "expo-camera",
         {
           "cameraPermission": "Scan a TermLoop pairing QR code or take a photo to send to a TermLoop agent.",
-          "microphonePermission": "TermLoop uses the microphone only while recording a voice message for Steward.",
+          "microphonePermission": "TermLoop uses the microphone only while recording a voice message.",
           "recordAudioAndroid": false
         }
       ],
@@ -69,7 +69,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "TermLoop uses the microphone only while recording a voice message for Steward.",
+          "microphonePermission": "TermLoop uses the microphone only while recording a voice message.",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": true,
           "enableBackgroundPlayback": true

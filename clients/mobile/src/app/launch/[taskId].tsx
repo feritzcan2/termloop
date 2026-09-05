@@ -1,6 +1,17 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 
@@ -20,12 +31,14 @@ import { retainPendingSessionInput } from "@/features/terminal/pending-session-i
 import {
   coerceModel,
   defaultLaunchSelection,
-  firstAvailableAgent,
   launchAgentOptions,
   launchBlockedReason,
   modelLabel,
   permissionLabel,
+  restoreLaunchSelection,
 } from "@/presentation/agent-launch-presentation";
+import { agentLaunchPreferences } from "@/platform/agent-launch-preferences";
+import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { color, radius, space } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
@@ -65,6 +78,7 @@ export default function LaunchRoute() {
   const [inspection, setInspection] = useState<AgentLaunchInspection | undefined>(undefined);
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<"reading" | "choosing" | "previewing" | "launching">("reading");
+  const [launchElapsedSeconds, setLaunchElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -82,8 +96,10 @@ export default function LaunchRoute() {
       try {
         const list = await runtime.agentLaunch.capabilities(connectionId);
         if (cancelled) return;
+        const saved = await agentLaunchPreferences.read().catch(() => undefined);
+        if (cancelled) return;
         setCapabilities(list);
-        setSelection(defaultLaunchSelection(firstAvailableAgent(list) ?? "claude"));
+        setSelection(restoreLaunchSelection(saved, list));
         setStage("choosing");
       } catch (cause) {
         if (cancelled) return;
@@ -93,6 +109,23 @@ export default function LaunchRoute() {
     })();
     return () => { cancelled = true; };
   }, [connectionId, runtime]);
+
+  useEffect(() => {
+    if (selection === undefined) return;
+    void agentLaunchPreferences.write(selection).catch(() => undefined);
+  }, [selection]);
+
+  useEffect(() => {
+    if (stage !== "launching") {
+      setLaunchElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setLaunchElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [stage]);
 
   const blocked = useMemo(() => (task ? launchBlockedReason(task) : undefined), [task]);
   const options = useMemo(() => launchAgentOptions(capabilities ?? []), [capabilities]);
@@ -107,17 +140,18 @@ export default function LaunchRoute() {
     setInspection(undefined);
     setError(undefined);
     setSelection((current) => {
-      if (current === undefined) return current;
+      if (current === undefined || stage !== "choosing") return current;
       if (next.agentId !== undefined && next.agentId !== current.agentId) {
         return defaultLaunchSelection(next.agentId);
       }
       const merged = { ...current, ...next };
       return { ...merged, model: coerceModel(merged.agentId, merged.model, capabilities ?? []) };
     });
-  }, [capabilities]);
+  }, [capabilities, stage]);
 
   const preview = useCallback(async () => {
     if (connectionId === undefined || selection === undefined) return;
+    Keyboard.dismiss();
     setStage("previewing");
     setError(undefined);
     try {
@@ -135,6 +169,7 @@ export default function LaunchRoute() {
 
   const launch = useCallback(async () => {
     if (connectionId === undefined || selection === undefined || inspection === undefined) return;
+    Keyboard.dismiss();
     setStage("launching");
     setError(undefined);
     try {
@@ -192,61 +227,26 @@ export default function LaunchRoute() {
   return (
     <Screen>
       <ScreenHeader back={backLabel} title="Start agent" />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.titleBlock}>
-          <Text style={styles.title} numberOfLines={2}>{project?.name ?? task?.title}</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {project?.folder_path ?? task?.worktree?.path ?? task?.branch?.name ?? "no worktree"}
-          </Text>
-        </View>
+      <KeyboardAvoidingView behavior={keyboardAvoidingBehavior} style={styles.body}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.titleBlock}>
+            <Text style={styles.title} numberOfLines={2}>{project?.name ?? task?.title}</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {project?.folder_path ?? task?.worktree?.path ?? task?.branch?.name ?? "no worktree"}
+            </Text>
+          </View>
 
         {blocked === undefined ? null : <Banner kind="danger" message={blocked} />}
-
-        <Choice
-          label="Agent"
-          options={options.map((option) => ({
-            value: option.agentId,
-            label: `${option.label}${option.version === null ? "" : ` ${option.version}`}${option.integrationLevel === "launchOnly" ? " · launch only" : ""}`,
-            disabled: !option.available,
-          }))}
-          value={selection.agentId}
-          onChange={(value) => change({ agentId: value as AgentLaunchAgentId })}
-        />
-        <Choice
-          label="Model"
-          options={(chosenOption?.models ?? ["default"]).map((model) => ({
-            value: model,
-            label: modelLabel(selection.agentId, model),
-            disabled: false,
-          }))}
-          value={selection.model}
-          onChange={(value) => change({ model: value })}
-        />
-        <Choice
-          label="Permission"
-          options={(chosenOption?.permissions ?? ["default"]).map((permission) => ({
-            value: permission,
-            label: permissionLabel(selection.agentId, permission),
-            disabled: false,
-          }))}
-          value={selection.permission}
-          onChange={(value) => change({ permission: value as AgentLaunchPermission })}
-        />
-        <Choice
-          label="Reasoning"
-          options={(chosenOption?.reasoning ?? ["default"]).map((reasoning) => ({
-            value: reasoning,
-            label: reasoning,
-            disabled: false,
-          }))}
-          value={selection.reasoning}
-          onChange={(value) => change({ reasoning: value as AgentLaunchReasoning })}
-        />
 
         <View style={styles.section}>
           <SectionHeader label="First message · optional" />
           <TextInput
             accessibilityLabel="First message for the new agent"
+            editable={stage === "choosing"}
             multiline
             maxLength={4096}
             value={prompt}
@@ -260,6 +260,51 @@ export default function LaunchRoute() {
             Sent after the agent starts. If delivery fails, it stays ready in the Session message box.
           </Text>
         </View>
+
+        <Choice
+          label="Agent"
+          disabled={stage !== "choosing"}
+          options={options.map((option) => ({
+            value: option.agentId,
+            label: `${option.label}${option.version === null ? "" : ` ${option.version}`}${option.integrationLevel === "launchOnly" ? " · launch only" : ""}`,
+            disabled: !option.available,
+          }))}
+          value={selection.agentId}
+          onChange={(value) => change({ agentId: value as AgentLaunchAgentId })}
+        />
+        <Choice
+          label="Model"
+          disabled={stage !== "choosing"}
+          options={(chosenOption?.models ?? ["default"]).map((model) => ({
+            value: model,
+            label: modelLabel(selection.agentId, model),
+            disabled: false,
+          }))}
+          value={selection.model}
+          onChange={(value) => change({ model: value })}
+        />
+        <Choice
+          label="Permission"
+          disabled={stage !== "choosing"}
+          options={(chosenOption?.permissions ?? ["default"]).map((permission) => ({
+            value: permission,
+            label: permissionLabel(selection.agentId, permission),
+            disabled: false,
+          }))}
+          value={selection.permission}
+          onChange={(value) => change({ permission: value as AgentLaunchPermission })}
+        />
+        <Choice
+          label="Reasoning"
+          disabled={stage !== "choosing"}
+          options={(chosenOption?.reasoning ?? ["default"]).map((reasoning) => ({
+            value: reasoning,
+            label: reasoning,
+            disabled: false,
+          }))}
+          value={selection.reasoning}
+          onChange={(value) => change({ reasoning: value as AgentLaunchReasoning })}
+        />
 
         <View style={styles.section}>
           <SectionHeader label="What your Mac will run" />
@@ -290,30 +335,46 @@ export default function LaunchRoute() {
 
         {error === undefined ? null : <Banner kind="warning" message={error} />}
 
+        {stage !== "launching" ? null : (
+          <View style={styles.launchStatus} accessibilityLiveRegion="polite">
+            <ActivityIndicator color={color.accentStrong} />
+            <View style={styles.launchStatusCopy}>
+              <Text style={styles.launchStatusTitle}>Starting agent · {launchElapsedSeconds}s</Text>
+              <Text style={styles.launchStatusBody}>
+                Launch settings are saved. Your Mac is opening the agent and delivering the first message.
+              </Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.actions}>
           {inspection === undefined ? (
             <PrimaryButton
               label={stage === "previewing" ? "Describing…" : "Describe this launch"}
               disabled={blocked !== undefined || !chosenAvailable || stage !== "choosing"}
+              busy={stage === "previewing"}
               onPress={() => void preview()}
             />
           ) : (
             <PrimaryButton
               label={stage === "launching" ? "Starting…" : prompt.trim() ? "Start and send" : "Start this agent"}
               disabled={stage === "launching"}
+              busy={stage === "launching"}
               onPress={() => void launch()}
             />
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-function Choice({ label, options, value, onChange }: {
+function Choice({ label, options, value, disabled = false, onChange }: {
   label: string;
   options: readonly { value: string; label: string; disabled: boolean }[];
   value: string;
+  disabled?: boolean | undefined;
   onChange: (value: string) => void;
 }) {
   return (
@@ -322,24 +383,25 @@ function Choice({ label, options, value, onChange }: {
       <View style={styles.choiceRow}>
         {options.map((option) => {
           const selected = option.value === value;
+          const optionDisabled = disabled || option.disabled;
           return (
             <Pressable
               key={option.value}
               accessibilityRole="button"
-              accessibilityState={{ selected, disabled: option.disabled }}
+              accessibilityState={{ selected, disabled: optionDisabled }}
               accessibilityLabel={`${label} ${option.label}${option.disabled ? ", unavailable" : ""}`}
-              disabled={option.disabled}
+              disabled={optionDisabled}
               onPress={() => onChange(option.value)}
               style={[
                 styles.choice,
                 selected ? styles.choiceSelected : null,
-                option.disabled ? styles.choiceDisabled : null,
+                optionDisabled ? styles.choiceDisabled : null,
               ]}
             >
               <Text style={[
                 styles.choiceLabel,
                 selected ? styles.choiceLabelSelected : null,
-                option.disabled ? styles.choiceLabelDisabled : null,
+                optionDisabled ? styles.choiceLabelDisabled : null,
               ]}>{option.label}</Text>
             </Pressable>
           );
@@ -360,6 +422,7 @@ function ManifestLine({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   centre: { flex: 1, justifyContent: "center", padding: space.screen },
+  body: { flex: 1 },
   content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
   titleBlock: { gap: space.xs },
   title: { color: color.text, fontSize: 18, fontWeight: "700", lineHeight: 24 },
@@ -398,5 +461,18 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   promptHint: { ...text.muted, paddingHorizontal: 2 },
+  launchStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.accent,
+    backgroundColor: color.accentWash,
+  },
+  launchStatusCopy: { flex: 1, gap: 3 },
+  launchStatusTitle: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
+  launchStatusBody: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   actions: { paddingTop: space.xs },
 });
