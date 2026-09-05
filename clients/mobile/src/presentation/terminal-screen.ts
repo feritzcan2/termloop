@@ -34,9 +34,9 @@ const DEFAULT_BACKGROUND = color.bgTerminal;
 /// a basic ANSI foreground rather than the default text colour.
 const ANSI_16 = [
   "#1F2937", "#B4233A", "#147A53", "#8A5700",
-  "#1769AA", "#8142A5", "#087485", "#596579",
+  "#1769AA", "#93400F", "#087485", "#596579",
   "#667085", "#C53049", "#167B53", "#945D00",
-  "#1B70B4", "#8F49B5", "#08788A", "#344054",
+  "#1B70B4", "#963F0E", "#08788A", "#344054",
 ] as const;
 
 const CUBE_STEPS = [0, 95, 135, 175, 215, 255] as const;
