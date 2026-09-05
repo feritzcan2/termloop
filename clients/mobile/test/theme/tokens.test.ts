@@ -8,10 +8,17 @@ describe("mobile light theme", () => {
     expect(appConfig.expo.userInterfaceStyle).toBe("light");
   });
 
-  it("keeps every application surface in the light luminance range", () => {
+  it("keeps every application surface light without returning to near-white glare", () => {
     for (const surface of [color.bgApp, color.bgRaised, color.bgSidebar, color.bgHover, color.bgTerminal]) {
-      expect(relativeLuminance(surface)).toBeGreaterThan(0.78);
+      expect(relativeLuminance(surface)).toBeGreaterThan(0.58);
+      expect(relativeLuminance(surface)).toBeLessThan(0.9);
     }
+  });
+
+  it("uses a brighter raised surface above the dimmer application canvas", () => {
+    expect(relativeLuminance(color.bgRaised)).toBeGreaterThan(relativeLuminance(color.bgApp));
+    expect(relativeLuminance(color.bgApp)).toBeGreaterThan(relativeLuminance(color.bgSidebar));
+    expect(relativeLuminance(color.bgSidebar)).toBeGreaterThan(relativeLuminance(color.bgHover));
   });
 
   it("keeps small semantic text readable on the application canvas", () => {
