@@ -28,6 +28,8 @@ function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProp
     remove: vi.fn(async () => []),
     setEnabled: vi.fn(async () => []),
     subscribeStatus: vi.fn(() => () => undefined),
+    appearanceTheme: "dark",
+    changeAppearanceTheme: vi.fn(),
     loadNotificationPreferences: vi.fn(async () => ({ ...defaultNotificationPreferences })),
     saveNotificationPreferences: vi.fn(async (value) => value),
     ...overrides,
@@ -107,5 +109,23 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".settings-content")?.textContent).toContain("Your computers");
     expect(container.querySelector(".settings-content")?.textContent).toContain("Share this computer");
     expect(container.querySelector(".server-profiles-layer")).toBeNull();
+  });
+
+  it("offers dark and light appearance choices", async () => {
+    const changeAppearanceTheme = vi.fn();
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "appearance",
+      appearanceTheme: "dark",
+      changeAppearanceTheme,
+    }))));
+
+    const dark = container.querySelector<HTMLButtonElement>('[role="radio"]:first-of-type');
+    const light = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+      .find((option) => option.textContent?.includes("Light"));
+    expect(dark?.getAttribute("aria-checked")).toBe("true");
+    expect(light?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => light?.click());
+    expect(changeAppearanceTheme).toHaveBeenCalledWith("light");
   });
 });

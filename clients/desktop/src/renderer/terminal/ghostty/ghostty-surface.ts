@@ -1,5 +1,6 @@
 import type { GhosttyBridge, GhosttyFrame, GhosttyGrid } from "../../transport/ghostty-bridge.js";
 import type { TerminalBufferProbe, TerminalSurface } from "../surface.js";
+import type { AppearanceTheme } from "../../appearance-theme.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -34,6 +35,7 @@ export class GhosttySurface implements TerminalSurface {
   #snapshot: HTMLElement | undefined;
   #retainedAlternateScreenImage: string | undefined;
   #terminalSequenceTail = "";
+  #appearanceTheme: AppearanceTheme = "dark";
 
   constructor(
     private readonly onInput: (data: string | Uint8Array) => void,
@@ -94,6 +96,11 @@ export class GhosttySurface implements TerminalSurface {
         void this.bridge.setVisible(surfaceId, false);
       }
     });
+  }
+
+  setAppearanceTheme(theme: AppearanceTheme): void {
+    this.#appearanceTheme = theme;
+    if (this.#surfaceId) void this.bridge.setColorScheme(this.#surfaceId, theme).catch(() => {});
   }
 
   write(data: Uint8Array, callback: () => void): void {
@@ -212,12 +219,13 @@ export class GhosttySurface implements TerminalSurface {
   async #ensureCreated(): Promise<number | undefined> {
     if (this.#disposed || this.#failed) return undefined;
     const frame = this.#containerFrame();
-    this.#createPromise ??= this.bridge.create(frame).then((created) => {
+    this.#createPromise ??= this.bridge.create(frame).then(async (created) => {
       if (this.#disposed) {
         void this.bridge.destroy(created.surfaceId);
         return undefined;
       }
       this.#surfaceId = created.surfaceId;
+      await this.bridge.setColorScheme(created.surfaceId, this.#appearanceTheme).catch(() => {});
       this.#removeInputListener = this.bridge.onInput(created.surfaceId, this.onInput);
       this.#removeClosedListener = this.bridge.onClosed(created.surfaceId, () => {
         this.#failed = true;

@@ -29,6 +29,19 @@ describe("Ghostty native host visibility", () => {
     expect(draw).toBeGreaterThan(visibility);
   });
 
+  it("applies light and dark color schemes to live native surfaces", () => {
+    const handler = source.slice(
+      source.indexOf("static Napi::Value SetSurfaceColorScheme"),
+      source.indexOf("static Napi::Value FocusSurface"),
+    );
+
+    expect(handler).toContain("GHOSTTY_COLOR_SCHEME_LIGHT");
+    expect(handler).toContain("GHOSTTY_COLOR_SCHEME_DARK");
+    expect(handler).toContain("ghostty_surface_set_color_scheme(e->surface, scheme)");
+    expect(handler).toContain("ghostty_surface_draw(e->surface)");
+    expect(source).toContain('exports.Set("setSurfaceColorScheme"');
+  });
+
   it("restores Chromium focus before hiding a focused native surface", () => {
     const focusMethods = source.slice(
       source.indexOf("- (void)focusSurface"),
