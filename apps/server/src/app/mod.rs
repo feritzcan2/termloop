@@ -69,10 +69,6 @@ const AGENT_RESTART_HANDOFF_FILE: &str = "agent-restart-handoff.json";
 const AGENT_RESTART_HANDOFF_LIMIT: usize = 64 * 1024;
 const AGENT_RESUME_STALL_FILE: &str = "agent-resume-stall.json";
 const AGENT_RESUME_STALL_LIMIT: usize = 4 * 1024;
-/// Project Control replaces the persistent Steward/Worker/Playbook executor.
-/// Keep legacy contracts readable during the migration, but never launch or
-/// wake their background processes.
-pub(crate) const LEGACY_PROJECT_ASSISTANTS_ENABLED: bool = false;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -523,9 +519,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(reconcile_terminal_activity(state.clone()));
     tokio::spawn(reconcile_claude_interrupts(state.clone()));
     tokio::spawn(keep_awake::supervise(state.clone()));
-    if LEGACY_PROJECT_ASSISTANTS_ENABLED {
-        tokio::spawn(tracker_runtime::run_tracker_deadlines(state.clone()));
-    }
+    tokio::spawn(tracker_runtime::run_tracker_deadlines(state.clone()));
     tokio::spawn(control::run_task_source_deadlines(state.clone()));
     tokio::spawn(reconcile_agent_runtime_signals(
         bridge_agent_runtime_signals(agent_runtime_signals),
@@ -624,50 +618,39 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     state.access_plane.start_if_enabled(state.clone()).await;
 
     tokio::spawn(reconcile_agent_resumes_after_start(state.clone()));
-    let companion_supervisor = if LEGACY_PROJECT_ASSISTANTS_ENABLED {
-        {
-            let core = state.core.lock().await;
-            let project_limit = core.project_count();
-            for wake in core.enabled_steward_wakes() {
-                let reason = companion_supervisor::startup_wake_reason(
-                    core.has_current_routine_findings(&wake.project_id),
-                );
-                state.companion_wakes.enqueue(
-                    wake.project_id,
-                    reason,
-                    wake.generation,
-                    project_limit,
-                );
+    {
+        let core = state.core.lock().await;
+        let project_limit = core.project_count();
+        for wake in core.enabled_steward_wakes() {
+            let reason = companion_supervisor::startup_wake_reason(
+                core.has_current_routine_findings(&wake.project_id),
+            );
+            state
+                .companion_wakes
+                .enqueue(wake.project_id, reason, wake.generation, project_limit);
+        }
+    }
+    let companion_supervisor = tokio::spawn(companion_supervisor::run(
+        state.clone(),
+        termloop_platform::sibling_executable("termloop-companion").ok(),
+        companion_process_directory.clone(),
+        runtime_directory.clone(),
+    ));
+    let workers_to_restart = state.core.lock().await.enabled_worker_ids_needing_launch();
+    for worker_id in workers_to_restart {
+        let worker_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(error) = control::launch_current_worker(&worker_id, &worker_state).await {
+                tracing::warn!(%error, %worker_id, "persistent Worker restart failed");
             }
-        }
-        let handle = tokio::spawn(companion_supervisor::run(
-            state.clone(),
-            termloop_platform::sibling_executable("termloop-companion").ok(),
-            companion_process_directory.clone(),
-            runtime_directory.clone(),
-        ));
-        let workers_to_restart = state.core.lock().await.enabled_worker_ids_needing_launch();
-        for worker_id in workers_to_restart {
-            let worker_state = state.clone();
-            tokio::spawn(async move {
-                if let Err(error) = control::launch_current_worker(&worker_id, &worker_state).await
-                {
-                    tracing::warn!(%error, %worker_id, "persistent Worker restart failed");
-                }
-            });
-        }
-        Some(handle)
-    } else {
-        None
-    };
+        });
+    }
     let server_result = server.await?;
     state.access_plane.shutdown().await;
     server_result?;
     let _ =
         tokio::time::timeout(AGENT_RESUME_SHUTDOWN_TIMEOUT, agent_resume_gates.shutdown()).await;
-    if let Some(companion_supervisor) = companion_supervisor {
-        let _ = tokio::time::timeout(Duration::from_secs(3), companion_supervisor).await;
-    }
+    let _ = tokio::time::timeout(Duration::from_secs(3), companion_supervisor).await;
     // Daemon-owned PTY teardown emits the same EOF signal as a spontaneous
     // process exit. Stop and join the policy reconciler first so shutdown
     // cannot turn resumable agent descriptors into explicit `exited` state.
@@ -1115,13 +1098,11 @@ async fn reconcile_agent_runtime_signals(
                     false
                 }
             };
-            if LEGACY_PROJECT_ASSISTANTS_ENABLED {
-                reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
-            }
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, topic, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
-        if LEGACY_PROJECT_ASSISTANTS_ENABLED && changed && topic == ProjectionTopic::AgentStatus {
+        if changed && topic == ProjectionTopic::AgentStatus {
             // A Worker's turn ending is what makes it wakeable again, and the
             // Routine loop is asleep until told that something moved.
             tracker_runtime_wake.notify_one();
@@ -1182,9 +1163,7 @@ async fn reconcile_generated_input_runtime_events(
                     continue;
                 }
             };
-            if LEGACY_PROJECT_ASSISTANTS_ENABLED {
-                reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
-            }
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
