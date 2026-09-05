@@ -1,9 +1,10 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import type { PropsWithChildren, ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 
 import { useMobileRuntime } from "@/composition/runtime-context";
+import { backNavigationAction } from "@/presentation/back-navigation";
 import { color, geometry, space } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
@@ -19,12 +20,14 @@ export function Screen({ children, edges }: PropsWithChildren<{ edges?: readonly
   );
 }
 
-export function ScreenHeader({ title, subtitle, back, center, right }: {
+export function ScreenHeader({ title, subtitle, back, backFallback = "/", center, right }: {
   title?: string | undefined;
   subtitle?: string | undefined;
   /// The label the back chevron announces, so a screen reader says where it goes
   /// rather than just "back".
   back?: string | undefined;
+  /// Used when an OTA reload or deep link restored this route without history.
+  backFallback?: Href | undefined;
   /// Replaces the title zone entirely — used by the Project selector.
   center?: ReactNode;
   right?: ReactNode;
@@ -34,7 +37,10 @@ export function ScreenHeader({ title, subtitle, back, center, right }: {
     <View style={styles.header}>
       {back === undefined ? null : (
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => {
+            if (backNavigationAction(router.canGoBack()) === "back") router.back();
+            else router.replace(backFallback);
+          }}
           accessibilityRole="button"
           accessibilityLabel={`Back to ${back}`}
           hitSlop={12}

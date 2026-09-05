@@ -70,9 +70,9 @@ export function resolveNotificationConnectionId(
   return scopes.length === 1 ? scopes[0]?.connectionId : undefined;
 }
 
-/// A notification is an explicit navigation intent, so its target replaces the
-/// currently visible route. This avoids React Navigation reusing an older dynamic
-/// Session route with the same route name and stale params.
+/// A notification is an explicit navigation intent. Its exact target is pushed so
+/// Back always has an in-app destination; `push` also creates a fresh dynamic route
+/// rather than reusing an older Session with stale params.
 export function notificationRoute(
   destination: NotificationDestination,
   connectionId: string,
