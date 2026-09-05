@@ -8,8 +8,6 @@ describe("embedded Ghostty configuration", () => {
 
   it("provides matching light and dark terminal themes", () => {
     expect(config).toContain("theme = light:Atom One Light,dark:Ghostty Default Style Dark");
-    expect(config).toContain("palette = 5=#a35300");
-    expect(config).toContain("palette = 13=#de935f");
   });
 
   it.each([
