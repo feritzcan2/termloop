@@ -85,9 +85,9 @@ button.skill-folder-head:hover { color: var(--text-secondary); }
 .skill-chip em { font-style: normal; opacity: .8; }
 .skill-chip.off { border-style: dashed; }
 .skill-chip.off:not(:disabled):hover { border-style: solid; }
-.skill-chip.claude.off:not(:disabled):hover { border-color: rgba(199,140,242,.5); background: rgba(199,140,242,.08); color: light-dark(#79668a, #dcb8f7); }
+.skill-chip.claude.off:not(:disabled):hover { border-color: rgba(224,163,92,.5); background: rgba(224,163,92,.08); color: light-dark(#7d6943, #e1bd79); }
 .skill-chip.codex.off:not(:disabled):hover { border-color: rgba(102,179,255,.5); background: rgba(102,179,255,.08); color: light-dark(#566d84, #a8d4ff); }
-.skill-chip.claude.on, .skill-chip.claude.source { border-color: rgba(199,140,242,.42); background: rgba(199,140,242,.12); color: light-dark(#79668a, #dcb8f7); }
+.skill-chip.claude.on, .skill-chip.claude.source { border-color: rgba(224,163,92,.42); background: rgba(224,163,92,.12); color: light-dark(#7d6943, #e1bd79); }
 .skill-chip.codex.on, .skill-chip.codex.source { border-color: rgba(102,179,255,.42); background: rgba(102,179,255,.11); color: light-dark(#566d84, #a8d4ff); }
 .skill-chip.source { cursor: default; opacity: .8; }
 button.skill-chip.on:not(:disabled):hover { border-color: rgba(225,117,126,.55); background: rgba(225,117,126,.1); color: light-dark(#845d5f, #eda6ac); }
@@ -137,7 +137,7 @@ button.skill-chip.on:not(:disabled):hover { border-color: rgba(225,117,126,.55);
 .context-tree-file-icon { width: 11px; height: 11px; flex: none; color: #7b8588; }
 .context-tree-file-icon.claude { color: light-dark(#8e5e43, #c6845d); }
 .context-tree-file-icon.agents { color: light-dark(#4d7291, #75aedd); }
-.context-tree-file-icon.gemini { color: light-dark(#6f629b, #9b89d8); }
+.context-tree-file-icon.gemini { color: light-dark(#4d7291, #75aedd); }
 .context-tree-file > strong { flex: none; color: var(--text-secondary); font: 650 9.5px/1 var(--font-mono); }
 .context-tree-file:hover > strong, .context-tree-file.selected > strong { color: var(--text); }
 .context-tree-link { display: flex; min-width: 0; align-items: center; gap: 3px; overflow: hidden; color: #667174; font: 8px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
@@ -218,4 +218,4 @@ button.skill-folder-head:hover, button.rail-group-head:hover { color: var(--text
 .rail-row-improve { display: grid; flex: none; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: light-dark(#636b6d, #7f898c); opacity: 0; }
 .rail-row-improve svg { width: 12px; height: 12px; }
 .skill-rail-row:hover .rail-row-improve, .rail-row:hover .rail-row-improve, .rail-row-improve:focus-visible, .skill-rail-row:focus-within .rail-row-improve, .rail-row:focus-within .rail-row-improve { opacity: 1; }
-.rail-row-improve:hover { border-color: rgba(199,140,242,.45); background: rgba(199,140,242,.12); color: light-dark(#79668a, #dcb8f7); }
+.rail-row-improve:hover { border-color: rgba(224,163,92,.45); background: rgba(224,163,92,.12); color: light-dark(#7d6943, #e1bd79); }
