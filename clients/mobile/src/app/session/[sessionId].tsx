@@ -618,8 +618,7 @@ export default function SessionRoute() {
           params: connectionRouteParams(connections.selectedId, { taskId }),
         })}
         onDismissed={() => {
-          if (router.canGoBack()) router.back();
-          else router.replace({
+          router.dismissTo({
             pathname: "/project/[projectId]",
             params: connectionRouteParams(connections.selectedId, { projectId: session.project_id }),
           });
