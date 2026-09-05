@@ -675,6 +675,10 @@ handleIpc("termloop:ghostty-surface-set-visible", (event, surfaceId: unknown, vi
   if (typeof visible !== "boolean") throw new Error("invalidGhosttySurfaceVisibility");
   requireGhosttyManager(event).setVisible(requireSurfaceId(surfaceId), visible);
 });
+handleIpc("termloop:ghostty-surface-set-color-scheme", (event, surfaceId: unknown, theme: unknown) => {
+  if (theme !== "dark" && theme !== "light") throw new Error("invalidGhosttyColorScheme");
+  requireGhosttyManager(event).setColorScheme(requireSurfaceId(surfaceId), theme);
+});
 handleIpc("termloop:ghostty-surface-snapshot-text", (event, surfaceId: unknown) => {
   const text = requireGhosttyManager(event).probeText(requireSurfaceId(surfaceId));
   return text?.slice(0, 262_144);

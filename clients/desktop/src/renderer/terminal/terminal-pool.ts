@@ -10,6 +10,7 @@ import {
 import type { AttachmentEvent } from "../transport/terminal-port.js";
 import type { TerminalBufferProbe, TerminalSurface, TerminalSurfaceFactory } from "./surface.js";
 import { connectionProfileIdOf } from "../../connection-scope.js";
+import type { AppearanceTheme } from "../appearance-theme.js";
 
 export type TerminalAttachmentLike = {
   onEvent(listener: (event: AttachmentEvent) => void): () => void;
@@ -58,6 +59,7 @@ export class TerminalPool {
   readonly #resizeOwnershipListeners = new Set<() => void>();
   #resizeOwnershipRevision = 0;
   #visible = true;
+  #appearanceTheme: AppearanceTheme = "dark";
 
   constructor(
     private readonly surfaceFactory: TerminalSurfaceFactory,
@@ -126,6 +128,7 @@ export class TerminalPool {
         },
         () => this.onImagePaste(entry.session.id),
       );
+      entry.surface.setAppearanceTheme?.(this.#appearanceTheme);
     }
     const mountToken = {};
     entry.mounted = true;
@@ -173,6 +176,12 @@ export class TerminalPool {
         entry.surface?.setVisible?.(visible);
       }
     }
+  }
+
+  setAppearanceTheme(theme: AppearanceTheme): void {
+    if (this.#appearanceTheme === theme) return;
+    this.#appearanceTheme = theme;
+    for (const entry of this.#entries.values()) entry.surface?.setAppearanceTheme?.(theme);
   }
 
   async submitInput(sessionId: string, data: string): Promise<void> {

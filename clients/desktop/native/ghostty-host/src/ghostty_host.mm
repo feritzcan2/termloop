@@ -1043,6 +1043,27 @@ static Napi::Value SetSurfaceVisible(const Napi::CallbackInfo &info) {
   return env.Undefined();
 }
 
+static Napi::Value SetSurfaceColorScheme(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  SurfaceEntry *e =
+      entryForId(info[0].As<Napi::Number>().Uint32Value());
+  if (e == nullptr) return env.Undefined();
+  const std::string theme = info[1].As<Napi::String>();
+  ghostty_color_scheme_e scheme;
+  if (theme == "light") {
+    scheme = GHOSTTY_COLOR_SCHEME_LIGHT;
+  } else if (theme == "dark") {
+    scheme = GHOSTTY_COLOR_SCHEME_DARK;
+  } else {
+    Napi::TypeError::New(env, "theme must be light or dark")
+        .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  ghostty_surface_set_color_scheme(e->surface, scheme);
+  ghostty_surface_draw(e->surface);
+  return env.Undefined();
+}
+
 static Napi::Value FocusSurface(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   SurfaceEntry *e =
@@ -1196,6 +1217,8 @@ static Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setSurfaceFrame", Napi::Function::New(env, SetSurfaceFrame));
   exports.Set("setSurfaceVisible",
               Napi::Function::New(env, SetSurfaceVisible));
+  exports.Set("setSurfaceColorScheme",
+              Napi::Function::New(env, SetSurfaceColorScheme));
   exports.Set("focusSurface", Napi::Function::New(env, FocusSurface));
   exports.Set("surfaceSize", Napi::Function::New(env, SurfaceSize));
   exports.Set("surfacePng", Napi::Function::New(env, SurfacePng));

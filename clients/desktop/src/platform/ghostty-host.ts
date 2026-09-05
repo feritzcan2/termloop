@@ -30,6 +30,7 @@ export type GhosttyHostAddon = {
   }): { id: number; hostFd: number; rows: number; cols: number };
   setSurfaceFrame(id: number, x: number, y: number, width: number, height: number): { rows: number; cols: number };
   setSurfaceVisible(id: number, visible: boolean): void;
+  setSurfaceColorScheme(id: number, theme: "dark" | "light"): void;
   focusSurface(id: number): void;
   surfaceSize(id: number): GhosttySurfaceGrid;
   surfacePng(id: number): Buffer | undefined;
