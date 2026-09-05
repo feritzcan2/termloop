@@ -413,10 +413,10 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
 
         <section className="td-block td-control" aria-label="Project Control">
           <div className="td-block-head">
-            <h2>Project Control</h2>
+            <h2>Status</h2>
             <span className={`td-control-phase phase-${control.phase}`}>{control.phaseLabel}</span>
           </div>
-          <p className="td-note">Derived from current facts. There is no stored lane position or background assistant verdict.</p>
+          <p className="td-note">Updates automatically from the worktree, Agent, commits, and pull request. Nothing runs in the background.</p>
           <ol className="td-control-spine">
             {PROJECT_CONTROL_PHASES.map((phase) => {
               const currentIndex = PROJECT_CONTROL_PHASES.findIndex((candidate) => candidate.id === control.phase);

@@ -51,11 +51,11 @@ export type ProjectControlSnapshot = {
 };
 
 export const PROJECT_CONTROL_PHASES = [
-  { id: "ready", label: "Ready" },
-  { id: "building", label: "Building" },
-  { id: "review", label: "Review" },
-  { id: "landing", label: "Landing" },
-  { id: "done", label: "Done" },
+  { id: "ready", label: "Not started" },
+  { id: "building", label: "In progress" },
+  { id: "review", label: "In review" },
+  { id: "landing", label: "Merged" },
+  { id: "done", label: "Completed" },
 ] as const satisfies readonly { id: ProjectControlPhase; label: string }[];
 
 const pullRequestStateOrder: Readonly<Record<GitHostProjection["matches"][number]["state"], number>> = {
@@ -121,19 +121,19 @@ function action(
 
 function workspaceFact(task: Task): ProjectControlFact {
   if (!task.worktree) {
-    return { id: "workspace", label: "Workspace", value: "not prepared", tone: "attention", detail: "This Task has no managed worktree." };
+    return { id: "workspace", label: "Worktree", value: "Not prepared", tone: "attention", detail: "This Task has no managed worktree." };
   }
   const summary = task.worktree_health?.summary;
   if (!summary) {
-    return { id: "workspace", label: "Workspace", value: "unknown", tone: "unavailable", detail: "Worktree health has not been observed yet." };
+    return { id: "workspace", label: "Worktree", value: "Not checked", tone: "unavailable", detail: "Worktree health has not been observed yet." };
   }
   if (summary === "healthy") {
-    return { id: "workspace", label: "Workspace", value: "healthy", tone: "quiet", detail: "The managed worktree is ready." };
+    return { id: "workspace", label: "Worktree", value: "Ready", tone: "quiet", detail: "The managed worktree is ready." };
   }
   return {
     id: "workspace",
-    label: "Workspace",
-    value: summary,
+    label: "Worktree",
+    value: summary === "attention" ? "Needs attention" : "Not available",
     tone: "attention",
     detail: summary === "attention" ? "The worktree needs attention." : "Worktree health could not be proven.",
   };
@@ -141,20 +141,33 @@ function workspaceFact(task: Task): ProjectControlFact {
 
 function agentFact(session: Session | undefined, status: AgentStatus["status"] | undefined): ProjectControlFact {
   if (!session) {
-    return { id: "agent", label: "Agent", value: "none active", tone: "quiet", detail: "No Agent is currently running in this Task." };
+    return { id: "agent", label: "Agent", value: "No active agent", tone: "quiet", detail: "No Agent is currently running in this Task." };
   }
-  const value = status ?? (session.lifecycle_state === "resuming" ? "resuming" : "status unknown");
+  const rawValue = status ?? (session.lifecycle_state === "resuming" ? "resuming" : "status unknown");
+  const statusLabels: Record<string, string> = {
+    working: "Working",
+    compacting: "Working",
+    awaitingInput: "Needs input",
+    failed: "Failed",
+    interrupted: "Interrupted",
+    idle: "Idle",
+    resuming: "Starting",
+    "status unknown": "Not checked",
+    unknown: "Not checked",
+    exited: "Stopped",
+  };
+  const value = statusLabels[rawValue] ?? rawValue;
   const tone: ProjectControlFactTone = status === "working" || status === "compacting" || session.lifecycle_state === "resuming"
     ? "active"
     : status === "awaitingInput" || status === "failed" || status === "interrupted"
       ? "attention"
       : status ? "quiet" : "unavailable";
-  return { id: "agent", label: "Agent", value, tone, detail: `Session ${session.id} is ${value}.` };
+  return { id: "agent", label: "Agent", value, tone, detail: `Session ${session.id} is ${value.toLowerCase()}.` };
 }
 
 function commitFact(summary: BranchCommitSummary | undefined): ProjectControlFact {
   if (!summary || summary.freshness !== "fresh" || summary.count === null) {
-    return { id: "commits", label: "Commits", value: "unknown", tone: "unavailable", detail: "The branch commit rollup is unavailable or stale." };
+    return { id: "commits", label: "Commits", value: "Not checked", tone: "unavailable", detail: "The branch commit count is unavailable or stale." };
   }
   return {
     id: "commits",
@@ -170,25 +183,25 @@ function pullRequestFacts(
   pullRequest: GitHostProjection["matches"][number] | undefined,
 ): ProjectControlFact[] {
   if (!projection || projection.freshness === "unavailable") {
-    return [{ id: "pullRequest", label: "PR", value: "unavailable", tone: "unavailable", detail: "Pull-request facts could not be observed." }];
+    return [{ id: "pullRequest", label: "Pull request", value: "Not available", tone: "unavailable", detail: "Pull-request facts could not be observed." }];
   }
   if (projection.freshness === "stale") {
-    return [{ id: "pullRequest", label: "PR", value: "stale", tone: "unavailable", detail: "Pull-request facts are being refreshed." }];
+    return [{ id: "pullRequest", label: "Pull request", value: "Refreshing", tone: "unavailable", detail: "Pull-request facts are being refreshed." }];
   }
   if (!pullRequest) {
-    return [{ id: "pullRequest", label: "PR", value: "none", tone: "quiet", detail: "No pull request matches the Task branch." }];
+    return [{ id: "pullRequest", label: "Pull request", value: "No PR", tone: "quiet", detail: "No pull request matches the Task branch." }];
   }
   const activeMatches = projection.matches.filter((candidate) => candidate.state === "open" || candidate.state === "draft");
   const prTone: ProjectControlFactTone = pullRequest.state === "merged" ? "done"
     : pullRequest.state === "closed" || activeMatches.length > 1 ? "attention"
       : "active";
   const prValue = activeMatches.length > 1
-    ? `${activeMatches.length} active matches`
-    : `#${pullRequest.number} ${pullRequest.state}`;
+    ? `${activeMatches.length} possible PRs`
+    : `#${pullRequest.number} · ${pullRequest.state[0]?.toUpperCase()}${pullRequest.state.slice(1)}`;
   return [
     {
       id: "pullRequest",
-      label: "PR",
+      label: "Pull request",
       value: prValue,
       tone: prTone,
       detail: activeMatches.length > 1
@@ -198,7 +211,14 @@ function pullRequestFacts(
     {
       id: "checks",
       label: "CI",
-      value: pullRequest.check_rollup,
+      value: {
+        passing: "Passing",
+        failing: "Failing",
+        pending: "Running",
+        notReported: "Not reported",
+        unsupported: "Open PR to check",
+        unknown: "Unknown",
+      }[pullRequest.check_rollup],
       tone: pullRequest.check_rollup === "passing" ? "done"
         : pullRequest.check_rollup === "pending" ? "active"
           : "attention",
@@ -207,7 +227,13 @@ function pullRequestFacts(
     {
       id: "review",
       label: "Review",
-      value: pullRequest.review_signal,
+      value: {
+        approved: "Approved",
+        changesRequested: "Changes requested",
+        reviewRequired: "Waiting for review",
+        notReported: "Not reported",
+        unknown: "Unknown",
+      }[pullRequest.review_signal],
       tone: pullRequest.review_signal === "approved" ? "done"
         : pullRequest.review_signal === "reviewRequired" ? "active"
           : "attention",
@@ -229,34 +255,39 @@ function actionsFor(
 ): ProjectControlAction[] {
   if (phase === "done") return [];
   if (phase === "landing") {
-    return [action(task.id, factRevision, "closeTask", "Close Task", "The bound pull request is merged; finish the local Task record.", 0)];
+    return [action(task.id, factRevision, "closeTask", "Finish task", "The pull request is merged. Mark this Task complete.", 0)];
   }
   if (phase === "review" && pullRequest) {
     const activeMatches = projection?.matches.filter((candidate) => candidate.state === "open" || candidate.state === "draft") ?? [];
     let summary = "Inspect the pull request and its current provider facts.";
-    if (activeMatches.length > 1) summary = "Several active pull requests match this branch; choose the correct artifact before acting.";
-    else if (pullRequest.merge_conflict !== "noneDetected") summary = `Resolve the ${pullRequest.merge_conflict} merge state.`;
-    else if (pullRequest.check_rollup !== "passing") summary = `Checks are ${pullRequest.check_rollup}; inspect the failing or pending jobs.`;
-    else if (pullRequest.review_signal !== "approved") summary = `Review is ${pullRequest.review_signal}; address the requested review work.`;
+    if (activeMatches.length > 1) summary = "More than one PR matches this branch. Open them and choose the right one.";
+    else if (pullRequest.merge_conflict === "conflicting") summary = "This PR has merge conflicts. Open it to resolve them.";
+    else if (pullRequest.merge_conflict === "policyBlocked") summary = "A repository policy is blocking this PR. Open it to see what is required.";
+    else if (pullRequest.check_rollup === "failing") summary = "Some CI checks failed. Open the PR to see which ones.";
+    else if (pullRequest.check_rollup === "pending") summary = "CI checks are still running. Open the PR for the latest result.";
+    else if (pullRequest.check_rollup === "unsupported" || pullRequest.check_rollup === "notReported" || pullRequest.check_rollup === "unknown") summary = "TermLoop cannot show CI for this PR. Open it to check the current result.";
+    else if (pullRequest.review_signal === "changesRequested") summary = "The reviewer requested changes. Open the PR to see the comments.";
+    else if (pullRequest.review_signal === "reviewRequired") summary = "This PR is waiting for review.";
+    else if (pullRequest.review_signal === "notReported" || pullRequest.review_signal === "unknown") summary = "Open the PR to check its review status.";
     else if (pullRequest.state === "draft") summary = "Checks and review are ready; decide whether to mark the pull request ready.";
     else if (pullRequest.state === "open") summary = "Checks pass and review is approved; the pull request is ready to land.";
     else summary = "The pull request closed without merging; decide whether to reopen or replace it.";
-    return [action(task.id, factRevision, "openPullRequest", "Open PR", summary, 1, { pullRequest })];
+    return [action(task.id, factRevision, "openPullRequest", `Review PR #${pullRequest.number}`, summary, 1, { pullRequest })];
   }
   if (session && (status === "awaitingInput" || status === "failed" || status === "interrupted")) {
-    return [action(task.id, factRevision, "openAgent", "Open Agent", `The Task Agent is ${status}.`, 0, { sessionId: session.id })];
+    return [action(task.id, factRevision, "openAgent", "Agent needs you", status === "awaitingInput" ? "The Agent is waiting for your input." : `The Agent stopped with status: ${status}.`, 0, { sessionId: session.id })];
   }
   if (hasChanges) {
-    return [action(task.id, factRevision, "inspectChanges", "Inspect changes", "The worktree has uncommitted changes.", 2)];
+    return [action(task.id, factRevision, "inspectChanges", "Review local changes", "This Task has uncommitted changes.", 2)];
   }
   if ((commitCount ?? 0) > 0) {
-    return [action(task.id, factRevision, "inspectCommits", "Review commits", "Commits exist but no pull request matches the Task branch yet.", 2)];
+    return [action(task.id, factRevision, "inspectCommits", "Review commits", "This branch has commits but no pull request yet.", 2)];
   }
   if (!task.worktree) {
-    return [action(task.id, factRevision, "prepareWorkspace", "Prepare workspace", "Bind a branch and create a managed worktree.", 1)];
+    return [action(task.id, factRevision, "prepareWorkspace", "Prepare this task", "Create a branch and worktree so work can start.", 1)];
   }
   if (!session) {
-    return [action(task.id, factRevision, "startAgent", "Start Agent", "The Task is ready and no Agent is active.", 3)];
+    return [action(task.id, factRevision, "startAgent", "Start work", "The Task is ready. Start an Agent when you want to work on it.", 3)];
   }
   return [];
 }
@@ -285,7 +316,7 @@ export function deriveProjectControlTask(input: {
   const facts: ProjectControlFact[] = [
     task.jira_url
       ? { id: "issue", label: "Issue", value: task.jira_url.slice(task.jira_url.lastIndexOf("/") + 1), tone: "quiet", detail: "A Jira issue is linked to this Task." }
-      : { id: "issue", label: "Issue", value: "unlinked", tone: "unavailable", detail: "No Jira issue is linked; issue state is explicitly unknown." },
+      : { id: "issue", label: "Issue", value: "Not linked", tone: "unavailable", detail: "No Jira issue is linked; issue state is explicitly unknown." },
     workspaceFact(task),
     agentFact(agent.session, agent.status),
     commitFact(branchCommitSummary),

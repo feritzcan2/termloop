@@ -169,8 +169,8 @@ describe("Project Control reducer", () => {
       branchCommitSummary: { ...commits(0), count: null, freshness: "unavailable" },
     });
 
-    expect(current.facts.find((fact) => fact.id === "issue")).toMatchObject({ value: "unlinked", tone: "unavailable" });
-    expect(current.facts.find((fact) => fact.id === "commits")).toMatchObject({ value: "unknown", tone: "unavailable" });
+    expect(current.facts.find((fact) => fact.id === "issue")).toMatchObject({ value: "Not linked", tone: "unavailable" });
+    expect(current.facts.find((fact) => fact.id === "commits")).toMatchObject({ value: "Not checked", tone: "unavailable" });
     expect(current.primaryAction).toMatchObject({ kind: "openAgent", sessionId: "session-1", priority: 0 });
   });
 
@@ -182,8 +182,8 @@ describe("Project Control reducer", () => {
 
     expect(primaryProjectControlPullRequest(source)?.number).toBe(40);
     const current = deriveProjectControlTask({ task: task(), sessions: [], statusesById: new Map(), gitHostProjection: source, branchCommitSummary: commits(3) });
-    expect(current.facts.find((fact) => fact.id === "pullRequest")).toMatchObject({ value: "2 active matches", tone: "attention" });
-    expect(current.primaryAction?.summary).toContain("Several active pull requests");
+    expect(current.facts.find((fact) => fact.id === "pullRequest")).toMatchObject({ value: "2 possible PRs", tone: "attention" });
+    expect(current.primaryAction?.summary).toContain("More than one PR");
   });
 
   it("orders the Action Inbox by urgency without storing lane positions", () => {
