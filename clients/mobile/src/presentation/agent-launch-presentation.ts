@@ -11,6 +11,25 @@ export function defaultLaunchSelection(agentId: AgentLaunchAgentId): AgentLaunch
   return { agentId, model: "default", permission: "default", reasoning: "default" };
 }
 
+export function restoreLaunchSelection(
+  saved: AgentLaunchSelection | undefined,
+  capabilities: readonly AgentCapabilityDto[],
+): AgentLaunchSelection {
+  const available = capabilities.filter((candidate) => candidate.available);
+  const capability = available.find((candidate) => candidate.agent_id === saved?.agentId)
+    ?? available[0];
+  const agentId = capability?.agent_id ?? saved?.agentId ?? "claude";
+  if (capability === undefined || saved === undefined || saved.agentId !== agentId) {
+    return defaultLaunchSelection(agentId);
+  }
+  return {
+    agentId,
+    model: capability.models.includes(saved.model) ? saved.model : "default",
+    permission: capability.permissions.includes(saved.permission) ? saved.permission : "default",
+    reasoning: capability.reasoning.includes(saved.reasoning) ? saved.reasoning : "default",
+  };
+}
+
 /// A model only exists for the provider that offers it, so switching provider
 /// cannot silently keep a model the new provider has never heard of.
 export function coerceModel(

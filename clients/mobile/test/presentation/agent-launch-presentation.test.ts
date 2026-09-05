@@ -7,6 +7,7 @@ import {
   firstAvailableAgent,
   launchAgentOptions,
   launchBlockedReason,
+  restoreLaunchSelection,
   modelLabel,
   permissionLabel,
 } from "../../src/presentation/agent-launch-presentation";
@@ -75,6 +76,31 @@ describe("the launch choices a phone offers", () => {
     expect(permissionLabel("claude", "default")).toBe("auto");
     expect(permissionLabel("codex", "default")).toBe("default");
     expect(permissionLabel("claude", "bypassPermissions")).toBe("bypass");
+  });
+});
+
+describe("saved launch choices", () => {
+  it("restores supported choices for the same available provider", () => {
+    expect(restoreLaunchSelection({
+      agentId: "codex",
+      model: "gpt-5.6-sol",
+      permission: "plan",
+      reasoning: "high",
+    }, CAPABILITIES)).toEqual({
+      agentId: "codex",
+      model: "gpt-5.6-sol",
+      permission: "plan",
+      reasoning: "high",
+    });
+  });
+
+  it("falls back safely when a saved choice is no longer offered", () => {
+    expect(restoreLaunchSelection({
+      agentId: "missing",
+      model: "old-model",
+      permission: "plan",
+      reasoning: "max",
+    }, CAPABILITIES)).toEqual(defaultLaunchSelection("codex"));
   });
 });
 

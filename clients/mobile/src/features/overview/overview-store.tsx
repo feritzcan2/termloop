@@ -8,6 +8,7 @@ import { reconcileReviewReadySessions, statusMap } from "@/presentation/agent-re
 import { useAppLifecycle } from "@/platform/app-lifecycle";
 import {
   emptyOverviewSnapshot as emptySnapshot,
+  refreshIndicatorForOverviewRead,
   snapshotWhileBackgrounded,
   snapshotWhileUnavailable,
   type ConnectionOverviewSnapshot,
@@ -137,6 +138,7 @@ function ConnectionOverviewLoader({
   const lifecycle = useAppLifecycle();
   const [localReloads, setLocalReloads] = useState(0);
   const previousStatuses = useRef<ReadonlyMap<string, string>>(new Map());
+  const observedRefreshRevision = useRef(refreshRevision);
   const readSequence = useRef(0);
   const activeRead = useRef<number | undefined>(undefined);
   const pendingInvalidation = useRef(false);
@@ -162,11 +164,13 @@ function ConnectionOverviewLoader({
       return;
     }
 
+    const explicitlyRequested = refreshRevision !== observedRefreshRevision.current;
+    observedRefreshRevision.current = refreshRevision;
     updateSnapshot(connectionId, (previous) => ({
       ...(previous ?? emptySnapshot()),
       load: previous?.overview === undefined ? "loading" : "ready",
       error: undefined,
-      refreshing: true,
+      refreshing: refreshIndicatorForOverviewRead(explicitlyRequested, previous),
     }));
     const read = ++readSequence.current;
     activeRead.current = read;

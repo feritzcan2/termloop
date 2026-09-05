@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import type { RowTone } from "@/presentation/tone";
 import { color, geometry, radius, space, toneColor } from "@/theme/tokens";
@@ -154,24 +154,27 @@ export function UnavailableNote({ children }: PropsWithChildren) {
   return <Text style={styles.unavailable}>{children}</Text>;
 }
 
-export function PrimaryButton({ label, onPress, disabled }: {
+export function PrimaryButton({ label, onPress, disabled, busy }: {
   label: string;
   onPress: () => void;
   disabled?: boolean | undefined;
+  busy?: boolean | undefined;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ disabled: disabled === true }}
+      accessibilityState={{ disabled: disabled === true, busy: busy === true }}
       style={({ pressed }) => [
         styles.primary,
         pressed && !disabled ? styles.primaryPressed : null,
-        disabled ? styles.primaryDisabled : null,
+        disabled && !busy ? styles.primaryDisabled : null,
+        busy ? styles.primaryBusy : null,
       ]}
     >
-      <Text style={[styles.primaryLabel, disabled ? styles.primaryLabelDisabled : null]}>
+      {busy ? <ActivityIndicator color={color.onAccent} /> : null}
+      <Text style={[styles.primaryLabel, disabled && !busy ? styles.primaryLabelDisabled : null]}>
         {label}
       </Text>
     </Pressable>
@@ -272,6 +275,8 @@ const styles = StyleSheet.create({
   },
   unavailable: { color: color.textMuted, fontSize: 12, lineHeight: 18 },
   primary: {
+    flexDirection: "row",
+    gap: space.sm,
     minHeight: geometry.touchTarget,
     alignItems: "center",
     justifyContent: "center",
@@ -280,6 +285,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.accent,
   },
   primaryPressed: { backgroundColor: color.accentStrong },
+  primaryBusy: { backgroundColor: color.accentStrong },
   primaryDisabled: { backgroundColor: color.bgHover },
   primaryLabel: {
     color: color.onAccent,

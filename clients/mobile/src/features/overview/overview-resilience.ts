@@ -36,3 +36,14 @@ export function snapshotWhileBackgrounded(
 ): ConnectionOverviewSnapshot {
   return { ...(previous ?? emptyOverviewSnapshot()), refreshing: false };
 }
+
+/// The native pull-to-refresh spinner represents a gesture, not every background
+/// projection read. Foreground recovery and daemon invalidations still refresh the
+/// data, but keeping the gesture spinner active for those reads leaves the list
+/// visibly pulled down if iOS suspends the request again.
+export function refreshIndicatorForOverviewRead(
+  explicitlyRequested: boolean,
+  previous: ConnectionOverviewSnapshot | undefined,
+): boolean {
+  return explicitlyRequested && previous?.overview !== undefined;
+}
