@@ -29,11 +29,17 @@ const allowedStringKeys = new Set([
   "errorCode",
   "event",
   "eventType",
+  "lastDisconnectReason",
+  "lateSettlement",
   "method",
   "mobileAppState",
   "nativeState",
+  "preflightFailureReason",
+  "requestCauseType",
   "reason",
   "receiptSource",
+  "routeKind",
+  "transportPhase",
 ]);
 
 const suppressedControlEvents = new Set(["request_started", "request_sent"]);
@@ -70,7 +76,8 @@ export function mobileSentryDiagnostic(
     message: `mobile.${diagnostic.area}.${diagnostic.event}`,
     level: logLevel(diagnostic.event, diagnostic.details),
     attributes,
-    createsIssue: diagnostic.event === "reconnect_stalled",
+    createsIssue: diagnostic.event === "reconnect_stalled"
+      || diagnostic.event === "preflight_stalled",
   };
 }
 
@@ -111,7 +118,7 @@ function logLevel(
   event: string,
   details: Readonly<Record<string, MobileDiagnosticValue>>,
 ): MobileSentryLogLevel {
-  if (event === "reconnect_stalled"
+  if (event.endsWith("_stalled")
     || event.includes("timeout")
     || event.includes("failed")
     || event.includes("error")
