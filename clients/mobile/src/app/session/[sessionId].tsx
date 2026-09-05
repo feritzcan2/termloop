@@ -2,11 +2,13 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -28,6 +30,7 @@ import { useOverview } from "@/features/overview/overview-store";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
 import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
+import { clipboardBridge } from "@/platform/clipboard";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { buildProjectSummaries } from "@/presentation/attention-overview";
@@ -69,7 +72,16 @@ const keyRow: readonly { key: TerminalKey; glyph: string; name: string }[] = [
   { key: "enter", glyph: "⏎", name: "Enter" },
 ];
 
-type ImageSource = "library" | "camera";
+type PickerImageSource = "library" | "camera";
+type ImageAttachmentSource = PickerImageSource | "clipboard";
+
+interface ComposerImage {
+  uri: string;
+  mediaType: string | null;
+  source: ImageAttachmentSource;
+  width: number;
+  height: number;
+}
 
 export default function SessionRoute() {
   const { sessionId, connectionId } = useLocalSearchParams<{ sessionId: string; connectionId?: string }>();
@@ -78,7 +90,7 @@ export default function SessionRoute() {
   const connections = useConnections();
   const store = useOverview();
   const [draft, setDraft] = useState("");
-  const [selectedImage, setSelectedImage] = useState<ImagePicker.ImagePickerAsset | undefined>(undefined);
+  const [selectedImage, setSelectedImage] = useState<ComposerImage | undefined>(undefined);
   const [imagePicking, setImagePicking] = useState(false);
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
@@ -246,7 +258,7 @@ export default function SessionRoute() {
   const exited = terminal.buffer.stream === "exited" || session.lifecycle_state === "exited";
   const dimmed = terminal.buffer.stream === "reconnecting";
 
-  const chooseImage = async (source: ImageSource) => {
+  const chooseImage = async (source: PickerImageSource) => {
     if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
     setImagePicking(true);
     try {
@@ -264,7 +276,44 @@ export default function SessionRoute() {
       const result = source === "camera"
         ? await ImagePicker.launchCameraAsync(options)
         : await ImagePicker.launchImageLibraryAsync(options);
-      if (!result.canceled) setSelectedImage(result.assets[0]);
+      const asset = result.canceled ? undefined : result.assets[0];
+      if (asset !== undefined) {
+        setSelectedImage({
+          uri: asset.uri,
+          mediaType: asset.mimeType ?? null,
+          source,
+          width: asset.width,
+          height: asset.height,
+        });
+      }
+    } catch (cause: unknown) {
+      Alert.alert(
+        "Could not add image",
+        cause instanceof Error ? cause.message : "The selected image could not be read.",
+      );
+    } finally {
+      setImagePicking(false);
+    }
+  };
+
+  const pasteImage = async () => {
+    if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
+    setImagePicking(true);
+    try {
+      const image = await clipboardBridge.pasteImage();
+      if (image === null) {
+        Alert.alert(
+          "No copied image found",
+          "Copy an image, allow paste access if iOS asks, then try again.",
+        );
+        return;
+      }
+      setSelectedImage({ ...image, source: "clipboard" });
+    } catch (cause: unknown) {
+      Alert.alert(
+        "Could not paste image",
+        cause instanceof Error ? cause.message : "The copied image could not be read.",
+      );
     } finally {
       setImagePicking(false);
     }
@@ -272,10 +321,26 @@ export default function SessionRoute() {
 
   const chooseImageSource = () => {
     if (imagePicking || imageSending || !terminal.canSend || session.kind !== "Agent") return;
-    Alert.alert("Attach a photo", "Send it with your next message to this agent.", [
-      { text: "Take Photo", onPress: () => void chooseImage("camera") },
-      { text: "Photo Library", onPress: () => void chooseImage("library") },
-      { text: "Cancel", style: "cancel" },
+    const options = ["Paste Copied Image", "Choose from Photos", "Take Photo", "Cancel"];
+    const select = (index: number) => {
+      if (index === 0) void pasteImage();
+      if (index === 1) void chooseImage("library");
+      if (index === 2) void chooseImage("camera");
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions({
+        title: selectedImage === undefined ? "Add an image" : "Replace image",
+        message: "Attach one image to your next message.",
+        options,
+        cancelButtonIndex: 3,
+      }, select);
+      return;
+    }
+    Alert.alert(selectedImage === undefined ? "Add an image" : "Replace image", "Attach one image to your next message.", [
+      { text: options[0], onPress: () => select(0) },
+      { text: options[1], onPress: () => select(1) },
+      { text: options[2], onPress: () => select(2) },
+      { text: options[3], style: "cancel" },
     ]);
   };
 
@@ -285,7 +350,7 @@ export default function SessionRoute() {
       try {
         const delivered = await terminal.submitWithImage(draft, {
           uri: selectedImage.uri,
-          mediaType: selectedImage.mimeType ?? null,
+          mediaType: selectedImage.mediaType,
         });
         if (delivered) {
           setDraft("");
@@ -387,8 +452,26 @@ export default function SessionRoute() {
           <>
             {selectedImage === undefined ? null : (
               <View style={styles.imageAttachment}>
-                <Image source={{ uri: selectedImage.uri }} style={styles.imagePreview} />
-                <Text style={styles.imageAttachmentLabel} numberOfLines={1}>Photo attached</Text>
+                <View style={styles.imagePreviewFrame}>
+                  <Image source={{ uri: selectedImage.uri }} style={styles.imagePreview} />
+                  {imageSending ? (
+                    <View style={[StyleSheet.absoluteFill, styles.imageSendingOverlay]}>
+                      <ActivityIndicator color={color.onMedia} />
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.imageAttachmentCopy}>
+                  <Text style={styles.imageAttachmentLabel} numberOfLines={1}>
+                    {selectedImage.source === "clipboard"
+                      ? "Copied image"
+                      : selectedImage.source === "camera" ? "Camera photo" : "Selected from Photos"}
+                  </Text>
+                  <Text style={styles.imageAttachmentMeta} numberOfLines={1}>
+                    {imageSending
+                      ? "Sending image…"
+                      : `${Math.round(selectedImage.width)} × ${Math.round(selectedImage.height)} · Ready to send`}
+                  </Text>
+                </View>
                 <Pressable
                   onPress={() => setSelectedImage(undefined)}
                   disabled={imageSending}
@@ -432,7 +515,7 @@ export default function SessionRoute() {
                   onPress={chooseImageSource}
                   disabled={!terminal.canSend || imagePicking || imageSending}
                   accessibilityRole="button"
-                  accessibilityLabel="Attach a photo"
+                  accessibilityLabel={selectedImage === undefined ? "Add an image" : "Replace attached image"}
                   accessibilityState={{ disabled: !terminal.canSend || imagePicking || imageSending }}
                   style={({ pressed }) => [
                     styles.attach,
@@ -440,7 +523,9 @@ export default function SessionRoute() {
                     (!terminal.canSend || imagePicking || imageSending) && styles.attachDisabled,
                   ]}
                 >
-                  <Text style={styles.attachGlyph}>▧</Text>
+                  {imagePicking
+                    ? <ActivityIndicator color={color.accentStrong} />
+                    : <Text style={styles.attachGlyph}>+</Text>}
                 </Pressable>
               )}
               <TextInput
@@ -449,7 +534,9 @@ export default function SessionRoute() {
                 editable={terminal.canSend}
                 placeholder={
                   terminal.canSend
-                    ? session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
+                    ? selectedImage !== undefined
+                      ? "Add a message (optional)…"
+                      : session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
                     : exited ? "Session ended" : "Reconnecting…"
                 }
                 placeholderTextColor={color.textMuted}
@@ -461,14 +548,16 @@ export default function SessionRoute() {
                 onPress={() => void submit()}
                 disabled={!terminal.canSend || imageSending || (draft.length === 0 && selectedImage === undefined)}
                 accessibilityRole="button"
-                accessibilityLabel="Send"
+                accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
                 style={({ pressed }) => [
                   styles.send,
                   pressed && styles.sendPressed,
                   (!terminal.canSend || imageSending || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
                 ]}
               >
-                <Text style={styles.sendGlyph}>⏎</Text>
+                {imageSending
+                  ? <ActivityIndicator color={color.onAccent} />
+                  : <Text style={styles.sendGlyph}>⏎</Text>}
               </Pressable>
             </View>
           </>
@@ -593,8 +682,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.control,
     backgroundColor: color.accentWash,
   },
-  imagePreview: { width: 36, height: 36, borderRadius: 5, backgroundColor: color.bgHover },
-  imageAttachmentLabel: { flex: 1, color: color.text, fontSize: 12, fontWeight: "600" },
+  imagePreviewFrame: { width: 56, height: 56, borderRadius: 7, overflow: "hidden" },
+  imagePreview: { width: 56, height: 56, backgroundColor: color.bgHover },
+  imageSendingOverlay: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: color.mediaScrim,
+  },
+  imageAttachmentCopy: { flex: 1, gap: 3 },
+  imageAttachmentLabel: { color: color.text, fontSize: 13, fontWeight: "700" },
+  imageAttachmentMeta: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 10.5 },
   removeImage: { width: geometry.touchTarget, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   removeImageGlyph: { color: color.textSecondary, fontSize: 22, lineHeight: 22 },
   attach: {
@@ -609,7 +706,7 @@ const styles = StyleSheet.create({
   },
   attachPressed: { backgroundColor: color.bgHover },
   attachDisabled: { opacity: 0.45 },
-  attachGlyph: { color: color.textSecondary, fontSize: 20, fontWeight: "700" },
+  attachGlyph: { color: color.textSecondary, fontSize: 24, fontWeight: "500", lineHeight: 25 },
   input: {
     flex: 1,
     minHeight: terminalGeometry.composerInputMin,
