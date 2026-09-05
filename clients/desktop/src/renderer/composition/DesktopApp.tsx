@@ -327,18 +327,14 @@ async function refreshSelectedProjectOnce(): Promise<void> {
   let projectWorktreeSummary;
   let runConfigurationResult = { configurations: [] as RunConfigurationDto[], stateRevision: 0 };
   let runRuntimeResult: Awaited<ReturnType<SourceDesktopApi["runRuntimeList"]>> = { runs: [], stateRevision: 0 };
-  let playbookResult: Awaited<ReturnType<SourceDesktopApi["playbookGet"]>> = { playbook: null, stateRevision: 0 };
-  let playbookRuntime: Awaited<ReturnType<SourceDesktopApi["playbookRuntime"]>> | undefined;
   let taskSnapshotReady = false;
   if (taskProjectId) {
     try {
-      [tasks, projectWorktreeSummary, runConfigurationResult, runRuntimeResult, playbookResult, playbookRuntime] = await Promise.all([
+      [tasks, projectWorktreeSummary, runConfigurationResult, runRuntimeResult] = await Promise.all([
         sourceApi.taskList(taskProjectId),
         sourceApi.projectWorktreeSummary(taskProjectId).catch(() => undefined),
         sourceApi.runConfigurationList({ projectId: taskProjectId }),
         sourceApi.runRuntimeList({ projectId: taskProjectId }),
-        sourceApi.playbookGet(taskProjectId),
-        sourceApi.playbookRuntime(taskProjectId),
       ]);
       taskSnapshotReady = true;
     } catch (error) {
@@ -372,9 +368,9 @@ async function refreshSelectedProjectOnce(): Promise<void> {
       runConfigurationResult.configurations,
       runRuntimeResult.runs,
       Math.max(runConfigurationResult.stateRevision, runRuntimeResult.stateRevision),
-      playbookRuntime?.processingTaskId ?? null,
-      playbookResult.playbook,
-      playbookRuntime ?? null,
+      null,
+      null,
+      null,
     );
   }
   const requestedTaskIds = automaticGitHostTaskIds(tasks);
