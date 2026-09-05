@@ -414,8 +414,8 @@ describe("the Task detail page on screen", () => {
       "ahead",
     ]);
     expect(container.querySelector(".td-control-spine .current")?.getAttribute("aria-current")).toBe("step");
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Ready");
-    expect(container.textContent).toContain("There is no stored lane position or background assistant verdict.");
+    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
+    expect(container.textContent).toContain("Updates automatically from the worktree, Agent, commits, and pull request.");
 
     await unmount();
   });
@@ -432,7 +432,7 @@ describe("the Task detail page on screen", () => {
     expect(container.textContent).not.toContain("Ready to run agents");
     // Sections in order of use, one column.
     expect([...container.querySelectorAll(".td-body > .td-block > h2, .td-body > .td-block .td-block-head h2")].map((h) => h.textContent))
-      .toEqual(["Now", "Sessions", "Changes", "Project Control"]);
+      .toEqual(["Now", "Sessions", "Changes", "Status"]);
     expect(container.querySelector(".td-side")).toBeNull();
 
     await unmount();
@@ -538,7 +538,7 @@ describe("the Task detail page on screen", () => {
 
     expect(container.querySelector(".td-meter")).toBeNull();
     expect([...container.querySelectorAll(".td-control-facts dt")].map((item) => item.textContent))
-      .toEqual(["Issue", "Workspace", "Agent", "Commits", "PR"]);
+      .toEqual(["Issue", "Worktree", "Agent", "Commits", "Pull request"]);
 
     await unmount();
   });
@@ -548,9 +548,9 @@ describe("the Task detail page on screen", () => {
 
     const unavailable = [...container.querySelectorAll(".td-control-facts > .unavailable")]
       .map((item) => item.textContent);
-    expect(unavailable).toContain("Issueunlinked");
-    expect(unavailable).toContain("Commitsunknown");
-    expect(unavailable).toContain("PRunavailable");
+    expect(unavailable).toContain("IssueNot linked");
+    expect(unavailable).toContain("CommitsNot checked");
+    expect(unavailable).toContain("Pull requestNot available");
 
     await unmount();
   });
@@ -593,7 +593,7 @@ describe("the Task detail page on screen", () => {
     });
 
     expect(container.querySelector(".td-check-now")).toBeNull();
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Ready");
+    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
 
     await unmount();
   });
@@ -670,7 +670,7 @@ describe("the Task detail page on screen", () => {
     });
 
     expect(container.querySelector(".td-status")?.textContent).toBe("Closed");
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Done");
+    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Completed");
     expect(container.querySelector(".td-check-now")).toBeNull();
     expect([...container.querySelectorAll(".td-control-spine li")].at(-1)?.className).toBe("current");
 
@@ -713,7 +713,7 @@ describe("the retired pipeline's destination", () => {
       runRoutineNow: async () => ({ ok: true }),
     } as never)));
 
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Ready");
+    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
     expect(container.querySelector(".td-step.terminus")).toBeNull();
     expect(container.querySelector(".td-check-now")).toBeNull();
 
