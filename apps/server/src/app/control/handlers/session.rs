@@ -2306,11 +2306,7 @@ async fn run_automatic_resume_lanes(
     trigger: &'static str,
 ) {
     let mut lanes = tokio::task::JoinSet::new();
-    for lane in [
-        termloop_core::AgentResumeLane::Ordinary,
-        termloop_core::AgentResumeLane::Steward,
-        termloop_core::AgentResumeLane::Worker,
-    ] {
+    for &lane in automatic_resume_lanes() {
         let candidates = candidates
             .iter()
             .filter(|candidate| candidate.lane() == lane)
@@ -2329,6 +2325,18 @@ async fn run_automatic_resume_lanes(
         ));
     }
     while lanes.join_next().await.is_some() {}
+}
+
+fn automatic_resume_lanes() -> &'static [termloop_core::AgentResumeLane] {
+    if crate::app::LEGACY_PROJECT_ASSISTANTS_ENABLED {
+        &[
+            termloop_core::AgentResumeLane::Ordinary,
+            termloop_core::AgentResumeLane::Steward,
+            termloop_core::AgentResumeLane::Worker,
+        ][..]
+    } else {
+        &[termloop_core::AgentResumeLane::Ordinary][..]
+    }
 }
 
 async fn run_automatic_resume_lane(
@@ -2617,6 +2625,14 @@ mod tests {
         assert_eq!(MAX_ACTIVE_AGENT_RESUMES, 7);
         assert_eq!(MAX_ACTIVE_STEWARD_RESUMES, 1);
         assert_eq!(MAX_ACTIVE_WORKER_RESUMES, 7);
+    }
+
+    #[test]
+    fn project_control_only_automatically_resumes_ordinary_agents() {
+        assert_eq!(
+            automatic_resume_lanes(),
+            &[termloop_core::AgentResumeLane::Ordinary]
+        );
     }
 
     #[test]

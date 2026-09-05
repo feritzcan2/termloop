@@ -135,7 +135,7 @@ describe("Archived rail visibility", () => {
   it("stays in Tasks because archived Agents live in Session History", () => {
     expect(archivedRailVisible(true, "overview")).toBe(true);
     expect(archivedRailVisible(true, "agents")).toBe(false);
-    expect(archivedRailVisible(true, "steward")).toBe(false);
+    expect(archivedRailVisible(true, "control")).toBe(false);
     expect(archivedRailVisible(false, "agents")).toBe(false);
   });
 });

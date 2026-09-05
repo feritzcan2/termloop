@@ -91,13 +91,13 @@ describe("Shell navigation from the changes editor", () => {
     ]);
   });
 
-  it("shows assistant pages only in the Steward view so other views reveal the selected terminal", () => {
+  it("never lets a legacy assistant page cover the Project Control or terminal stage", () => {
     const selection = { kind: "steward", initialView: "builder" } as const;
-    expect(shellAssistantStageVisible("workspace", "steward", selection)).toBe(true);
+    expect(shellAssistantStageVisible("workspace", "control", selection)).toBe(false);
     expect(shellAssistantStageVisible("workspace", "overview", selection)).toBe(false);
     expect(shellAssistantStageVisible("workspace", "agents", selection)).toBe(false);
-    expect(shellAssistantStageVisible("skills", "steward", selection)).toBe(false);
-    expect(shellAssistantStageVisible("workspace", "steward", undefined)).toBe(false);
+    expect(shellAssistantStageVisible("skills", "control", selection)).toBe(false);
+    expect(shellAssistantStageVisible("workspace", "control", undefined)).toBe(false);
   });
 });
 
