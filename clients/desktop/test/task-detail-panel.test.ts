@@ -402,20 +402,24 @@ describe("the Task detail page on screen", () => {
     };
   }
 
-  it("shows the fixed five phases with only the current fact-derived phase open", async () => {
+  it("grades the ladder so the standing question is the only open card", async () => {
     const { container, unmount } = await mount();
 
-    const steps = [...container.querySelectorAll(".td-control-spine li")];
+    const steps = [...container.querySelectorAll(".td-step")];
     expect(steps.map((step) => step.className)).toEqual([
-      "current",
-      "ahead",
-      "ahead",
-      "ahead",
-      "ahead",
+      "td-step passed",
+      "td-step waiting",
+      "td-step ahead",
+      // The destination is the last station on the same spine, still ahead.
+      "td-step terminus ahead",
     ]);
-    expect(container.querySelector(".td-control-spine .current")?.getAttribute("aria-current")).toBe("step");
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
-    expect(container.textContent).toContain("Updates automatically from the worktree, Agent, commits, and pull request.");
+    expect(container.querySelector(".td-step.waiting")?.getAttribute("aria-current")).toBe("step");
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 2 of 3");
+    expect(container.querySelector(".td-step.waiting .td-evidence")?.textContent)
+      .toBe("No review request seen in the channel.");
+    expect(container.querySelector(".td-step.waiting .td-timing")?.textContent)
+      .toBe("next check in 12m");
 
     await unmount();
   });
@@ -432,7 +436,7 @@ describe("the Task detail page on screen", () => {
     expect(container.textContent).not.toContain("Ready to run agents");
     // Sections in order of use, one column.
     expect([...container.querySelectorAll(".td-body > .td-block > h2, .td-body > .td-block .td-block-head h2")].map((h) => h.textContent))
-      .toEqual(["Now", "Sessions", "Changes", "Status"]);
+      .toEqual(["Now", "Sessions", "Changes", "Pipeline"]);
     expect(container.querySelector(".td-side")).toBeNull();
 
     await unmount();
@@ -533,55 +537,74 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("shows each current fact without manufacturing a completion percentage", async () => {
+  it("measures how much of the ladder is already behind the Task", async () => {
     const { container, unmount } = await mount();
 
-    expect(container.querySelector(".td-meter")).toBeNull();
-    expect([...container.querySelectorAll(".td-control-facts dt")].map((item) => item.textContent))
-      .toEqual(["Issue", "Worktree", "Agent", "Commits", "Pull request"]);
+    // Standing at step 2 of 3 means exactly one question is answered.
+    expect(container.querySelector<HTMLElement>(".td-meter i")?.style.width).toBe("33%");
 
     await unmount();
   });
 
-  it("marks missing external observations as unavailable facts", async () => {
+  it("names who answers each question, and warns where nobody can", async () => {
     const { container, unmount } = await mount();
 
-    const unavailable = [...container.querySelectorAll(".td-control-facts > .unavailable")]
-      .map((item) => item.textContent);
-    expect(unavailable).toContain("IssueNot linked");
-    expect(unavailable).toContain("CommitsNot checked");
-    expect(unavailable).toContain("Pull requestNot available");
+    expect(container.querySelector(".td-step.waiting .td-answers")?.textContent)
+      .toBe("Checked by Slack review request");
+    // A stage still ahead names its judge too, because a Routine that is
+    // switched off will never move this Task and that is worth knowing early.
+    const ahead = container.querySelector(".td-step.ahead .td-answers");
+    expect(ahead?.textContent).toBe("Deployment watch is off");
+    expect(ahead?.className).toContain("blocked");
 
     await unmount();
   });
 
-  it("does not expose legacy Routine evidence or controls", async () => {
+  it("keeps a cleared question's recorded answer one hover away", async () => {
     const { container, unmount } = await mount();
 
-    expect(container.querySelector(".td-step")).toBeNull();
-    expect(container.querySelector(".td-evidence")).toBeNull();
-    expect(container.querySelector(".td-check-now")).toBeNull();
-    expect(container.querySelector(".td-set-position")).toBeNull();
+    // The sentence itself is the evidence; it is never handed to a tooltip.
+    // A cleared rung is one line; its whole recorded answer rides on the row
+    // tooltip rather than spending a paragraph on a settled question.
+    expect(container.querySelector(".td-step.passed .td-evidence")).toBeNull();
+    expect(container.querySelector(".td-step.passed")?.getAttribute("title"))
+      .toBe("Branch has 3 commits and no agent is working.");
 
     await unmount();
   });
 
-  it("never runs a legacy Routine from the fact-based detail page", async () => {
+  it("runs the standing step's Routine on demand and reloads what it answered", async () => {
     const asked: Array<[string, string | undefined]> = [];
+    let evidence = "No review request seen in the channel.";
     const { container, unmount } = await mount({
       runRoutineNow: async (routineId: string, taskId?: string) => {
         asked.push([routineId, taskId]);
+        evidence = "Asked Nurguyl to review the dev pull request.";
         return { ok: true };
       },
+      getPlaybookRuntime: async () => runtime([
+        runtimeStep({ progress: [progress()] }),
+        runtimeStep({
+          milestoneId: "review-requested",
+          routineId: "routine-review",
+          waitingTaskIds: ["task-1"],
+          progress: [progress({ verdict: "waiting", evidence, nextAttemptAtEpochMs: NOW + 720_000 })],
+          nextAttemptAtEpochMs: NOW + 720_000,
+        }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
     });
 
-    expect(container.querySelector(".td-check-now")).toBeNull();
-    expect(asked).toEqual([]);
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-check-now")!.click());
+
+    expect(asked).toEqual([["routine-review", "task-1"]]);
+    expect(container.querySelector(".td-step.waiting .td-evidence")?.textContent)
+      .toBe("Asked Nurguyl to review the dev pull request.");
 
     await unmount();
   });
 
-  it("ignores legacy Worker claims", async () => {
+  it("shows an externally claimed standing Routine as checking", async () => {
     const { container, unmount } = await mount({
       getPlaybookRuntime: async () => standingRuntime("task-1"),
       listRoutineRuntime: async () => ({
@@ -592,13 +615,15 @@ describe("the Task detail page on screen", () => {
       }),
     });
 
-    expect(container.querySelector(".td-check-now")).toBeNull();
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
+    const button = container.querySelector<HTMLButtonElement>(".td-check-now")!;
+    expect(button.textContent).toBe("Checking…");
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Slack review request is checking this step now");
 
     await unmount();
   });
 
-  it("never writes a manual pipeline position", async () => {
+  it("sets the Task to any question and can reset it to the start", async () => {
     const requested: number[] = [];
     let passedCount = 1;
     let stateRevision = 12;
@@ -627,39 +652,53 @@ describe("the Task detail page on screen", () => {
       },
     });
 
-    expect(container.querySelector(".td-set-position")).toBeNull();
-    expect(requested).toEqual([]);
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[aria-label="Set Task at delivery pipeline step 3"]',
+    )!.click());
+    expect(requested).toEqual([2]);
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 3 of 3");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[aria-label="Set Task at delivery pipeline step 1"]',
+    )!.click());
+    expect(requested).toEqual([2, 0]);
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 1 of 3");
 
     await unmount();
   });
 
-  it("does not call the retired Routine endpoint", async () => {
-    let called = false;
+  it("says the daemon's own refusal instead of failing silently", async () => {
     const { container, unmount } = await mount({
-      runRoutineNow: async () => { called = true; throw new Error("retired endpoint called"); },
+      runRoutineNow: async () => { throw new Error("no Task is waiting at this pipeline step right now"); },
     });
 
-    expect(called).toBe(false);
-    expect(container.querySelector(".ap-error")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-check-now")!.click());
+
+    expect(container.querySelector(".ap-error")?.textContent)
+      .toBe("no Task is waiting at this pipeline step right now");
 
     await unmount();
   });
 
-  it("shows Project Control without offering a Playbook builder", async () => {
+  it("offers to build a pipeline when the Project has none", async () => {
     let opened = 0;
     const { container, unmount } = await mount({
       getPlaybook: async () => ({ playbook: null, stateRevision: 12 }),
       openPlaybook: () => { opened += 1; },
     });
 
-    expect(container.querySelector(".td-control")).not.toBeNull();
-    expect(container.querySelector(".td-open-playbook")).toBeNull();
-    expect(opened).toBe(0);
+    expect(container.querySelector(".td-spine")).toBeNull();
+    expect(container.querySelector(".td-empty")?.textContent)
+      .toContain("no delivery pipeline yet");
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-open-playbook")!.click());
+    expect(opened).toBe(1);
 
     await unmount();
   });
 
-  it("derives Done directly from the closed Task fact", async () => {
+  it("explains why a closed Task has left the pipeline", async () => {
     const { container, unmount } = await mount({
       task: detailTask({ status: "closed" }),
       getPlaybookRuntime: async () => runtime([
@@ -670,16 +709,17 @@ describe("the Task detail page on screen", () => {
     });
 
     expect(container.querySelector(".td-status")?.textContent).toBe("Closed");
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Completed");
+    expect(container.querySelector(".td-pipeline .td-note")?.textContent).toContain("closed");
     expect(container.querySelector(".td-check-now")).toBeNull();
-    expect([...container.querySelectorAll(".td-control-spine li")].at(-1)?.className).toBe("current");
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · 1 of 3 cleared");
 
     await unmount();
   });
 });
 
-describe("the retired pipeline's destination", () => {
-  it("does not override current Task facts with old completion rows", async () => {
+describe("the pipeline's destination", () => {
+  it("lights the destination only once every question is answered", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -713,8 +753,11 @@ describe("the retired pipeline's destination", () => {
       runRoutineNow: async () => ({ ok: true }),
     } as never)));
 
-    expect(container.querySelector(".td-control-phase")?.textContent).toBe("Not started");
-    expect(container.querySelector(".td-step.terminus")).toBeNull();
+    const terminus = container.querySelector(".td-step.terminus")!;
+    expect(terminus.className).toBe("td-step terminus passed");
+    expect(terminus.querySelector(".td-terminus")?.textContent)
+      .toBe("Done — every stage completed");
+    expect(terminus.querySelector<HTMLButtonElement>(".td-set-position")?.disabled).toBe(true);
     expect(container.querySelector(".td-check-now")).toBeNull();
 
     await act(async () => root.unmount());
@@ -723,8 +766,8 @@ describe("the retired pipeline's destination", () => {
   });
 });
 
-describe("what makes the fact-based page read the daemon again", () => {
-  it("never reads the retired Playbook endpoints", async () => {
+describe("what makes the page read the daemon again", () => {
+  it("reloads on a playbook invalidation, not on every parent render", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -753,12 +796,12 @@ describe("what makes the fact-based page read the daemon again", () => {
     } as never)));
 
     await render(0);
-    expect(reads).toBe(0);
+    expect(reads).toBe(1);
     await render(0);
     await render(0);
-    expect(reads).toBe(0);
+    expect(reads).toBe(1);
     await render(1);
-    expect(reads).toBe(0);
+    expect(reads).toBe(2);
 
     await act(async () => root.unmount());
     container.remove();

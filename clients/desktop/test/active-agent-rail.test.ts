@@ -754,7 +754,7 @@ describe("Workspace view switch", () => {
     }));
     expect(markup).toContain('aria-label="All active agents view"');
     expect(markup).toContain('aria-label="Tasks and Sessions view"');
-    expect(markup).toContain('aria-label="Project Control view"');
+    expect(markup).toContain('aria-label="Project Steward view"');
     expect(markup).not.toContain('class="selected"');
     expect(markup).not.toContain('aria-selected="true"');
     // Launch actions follow the underlying view, so the bar keeps its shape.
@@ -773,17 +773,17 @@ describe("Workspace view switch", () => {
     expect(markup).toContain('aria-pressed="true"');
   });
 
-  it("gives Project Control its own peer tab and parks the launch actions there", () => {
+  it("gives the Steward its own peer tab and parks the launch actions there", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
-      view: "control",
+      view: "steward",
       disabled: false,
       select: () => {},
       launchTerminal: async () => {},
       launchAgent: async () => {},
     }));
-    expect(markup).toContain('aria-label="Project Control view"');
-    expect(markup).toContain('aria-selected="true" class="selected" title="Project Control"');
-    // Launching terminals is a workspace action; Project Control is a read model.
+    expect(markup).toContain('aria-label="Project Steward view"');
+    expect(markup).toContain('aria-selected="true" class="selected" title="Project Steward and Playbook"');
+    // Launching terminals is a workspace action; the Steward view has its own.
     expect(markup).not.toContain('class="workspace-launch-actions"');
   });
 
