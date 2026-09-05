@@ -29,14 +29,14 @@ export const SCREEN_MAX_ROWS = 4800;
 const DEFAULT_FOREGROUND = color.text;
 const DEFAULT_BACKGROUND = color.bgTerminal;
 
-/// The 16 ANSI slots, sized for `bgTerminal` rather than for a white terminal. Slot 0
-/// is lifted well off black: a TUI that paints "black" text would otherwise write
-/// invisible characters onto a dark surface, which reads as missing output.
+/// The 16 ANSI slots are tuned for the light terminal canvas. Both the dark and light
+/// named slots retain enough contrast to remain legible when command-line tools choose
+/// a basic ANSI foreground rather than the default text colour.
 const ANSI_16 = [
-  "#5c6370", "#e06c75", "#98c379", "#d19a66",
-  "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
-  "#7f848e", "#ff7b86", "#b6e3a0", "#e5c07b",
-  "#82c8ff", "#e39ef7", "#71d3e0", "#e6e6e6",
+  "#1F2937", "#B4233A", "#147A53", "#8A5700",
+  "#1769AA", "#8142A5", "#087485", "#596579",
+  "#667085", "#C53049", "#167B53", "#945D00",
+  "#1B70B4", "#8F49B5", "#08788A", "#344054",
 ] as const;
 
 const CUBE_STEPS = [0, 95, 135, 175, 215, 255] as const;
