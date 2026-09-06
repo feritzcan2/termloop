@@ -28,38 +28,21 @@ impl Store {
             .steward_configurations
             .iter()
             .any(|configuration| configuration.executor_session_id.as_deref() == Some(session_id));
-        let is_worker = self
-            .state
-            .worker_configurations
-            .iter()
-            .any(|configuration| configuration.executor_session_id.as_deref() == Some(session_id));
-        if !is_steward && !is_worker {
+        if !is_steward {
             return Err(StoreError::ConstraintViolation);
         }
         let previous = self.state.clone();
-        if is_steward {
-            let project_id = self.state.sessions[session_index].project_id.clone();
-            let configuration = self
-                .state
-                .steward_configurations
-                .iter_mut()
-                .find(|configuration| {
-                    configuration.project_id == project_id
-                        && configuration.executor_session_id.as_deref() == Some(session_id)
-                })
-                .ok_or(StoreError::ConstraintViolation)?;
-            configuration.executor_session_id = None;
-        } else {
-            let configuration = self
-                .state
-                .worker_configurations
-                .iter_mut()
-                .find(|configuration| {
-                    configuration.executor_session_id.as_deref() == Some(session_id)
-                })
-                .ok_or(StoreError::ConstraintViolation)?;
-            configuration.executor_session_id = None;
-        }
+        let project_id = self.state.sessions[session_index].project_id.clone();
+        let configuration = self
+            .state
+            .steward_configurations
+            .iter_mut()
+            .find(|configuration| {
+                configuration.project_id == project_id
+                    && configuration.executor_session_id.as_deref() == Some(session_id)
+            })
+            .ok_or(StoreError::ConstraintViolation)?;
+        configuration.executor_session_id = None;
         super::agent_plan::remove_agent_plans_for_sessions(&mut self.state, [session_id]);
         self.state.sessions.remove(session_index);
         remove_agent_conversation_readiness(&mut self.state, [session_id]);
@@ -189,11 +172,6 @@ impl Store {
         session.lifecycle_state = "exited".into();
         session.resume_failure = None;
         for configuration in &mut self.state.steward_configurations {
-            if configuration.executor_session_id.as_deref() == Some(session_id) {
-                configuration.executor_session_id = None;
-            }
-        }
-        for configuration in &mut self.state.worker_configurations {
             if configuration.executor_session_id.as_deref() == Some(session_id) {
                 configuration.executor_session_id = None;
             }
@@ -680,12 +658,6 @@ impl Store {
             .steward_configurations
             .iter()
             .filter_map(|configuration| configuration.executor_session_id.clone())
-            .chain(
-                self.state
-                    .worker_configurations
-                    .iter()
-                    .filter_map(|configuration| configuration.executor_session_id.clone()),
-            )
             .collect::<std::collections::HashSet<_>>();
         let mut obsolete_assistant_session_ids = Vec::new();
         let mut retired_run_session_ids = Vec::new();
@@ -709,7 +681,6 @@ impl Store {
                     .as_deref()
                     .is_some_and(|template| {
                         template == "builtin.steward.executor"
-                            || template == "builtin.worker.executor"
                     });
             if legacy_assistant_template && !configured_assistant {
                 session.lifecycle_state = "exited".into();
@@ -788,7 +759,6 @@ impl Store {
                             Some(
                                 "builtin.assistant.activation"
                                     | "builtin.steward.executor"
-                                    | "builtin.worker.executor"
                             )
                         )
             })
@@ -799,12 +769,6 @@ impl Store {
             .steward_configurations
             .iter()
             .filter_map(|configuration| configuration.executor_session_id.as_ref())
-            .chain(
-                self.state
-                    .worker_configurations
-                    .iter()
-                    .filter_map(|configuration| configuration.executor_session_id.as_ref()),
-            )
             .filter(|session_id| !current_session_ids.contains(session_id.as_str()))
             .cloned()
             .collect::<Vec<_>>();
@@ -835,7 +799,7 @@ pub(super) fn clear_ask_to_continuations_for_session(
     changed
 }
 
-/// Removes persistent Steward/Worker executor Session descriptors that no
+/// Removes persistent Steward executor Session descriptors that no
 /// configuration references anymore. TermLoop stores current assistant state,
 /// not execution history: once the executor pointer moves to a replacement or
 /// the configuration is disabled or deleted, the old descriptor is debris.
@@ -847,12 +811,6 @@ pub(super) fn remove_obsolete_assistant_sessions(state: &mut crate::CurrentState
         .steward_configurations
         .iter()
         .filter_map(|configuration| configuration.executor_session_id.clone())
-        .chain(
-            state
-                .worker_configurations
-                .iter()
-                .filter_map(|configuration| configuration.executor_session_id.clone()),
-        )
         .collect::<std::collections::HashSet<_>>();
     let removed_session_ids = state
         .sessions
@@ -861,7 +819,7 @@ pub(super) fn remove_obsolete_assistant_sessions(state: &mut crate::CurrentState
             session.kind == SessionKind::Agent
                 && matches!(
                     session.process.template_ref.as_deref(),
-                    Some("builtin.steward.executor" | "builtin.worker.executor")
+                    Some("builtin.steward.executor")
                 )
                 && session.archived_at_epoch_ms.is_none()
                 && !referenced.contains(&session.id)
@@ -935,16 +893,6 @@ pub(super) fn clear_executor_session_references<'a>(
         .collect::<std::collections::HashSet<_>>();
     let mut changed = false;
     for configuration in &mut state.steward_configurations {
-        if configuration
-            .executor_session_id
-            .as_deref()
-            .is_some_and(|session_id| session_ids.contains(session_id))
-        {
-            configuration.executor_session_id = None;
-            changed = true;
-        }
-    }
-    for configuration in &mut state.worker_configurations {
         if configuration
             .executor_session_id
             .as_deref()

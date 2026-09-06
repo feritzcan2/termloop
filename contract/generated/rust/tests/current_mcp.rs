@@ -1,7 +1,7 @@
 use serde_json::json;
 use termloop_contract::current::{
     MCP_HELPER_TOOLS, MCP_IMPROVER_TOOLS, MCP_INTERACTIVE_TOOLS, MCP_STEWARD_TOOLS,
-    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, MCP_WORKER_TOOLS, METHODS, McpToolError,
+    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError,
     validate_mcp_tool_params, validate_mcp_tool_result,
 };
 
@@ -22,17 +22,14 @@ fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
     assert!(MCP_STEWARD_TOOLS.contains(&"task_set_jira_url"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_system_prompt_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_system_prompt_update"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"steward_system_prompt_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_suggest"));
     assert!(MCP_STEWARD_TOOLS.contains(&"routine_finding_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"routine_finding_resolve"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"steward_system_prompt_update"));
     assert!(!MCP_INTERACTIVE_TOOLS.contains(&"steward_system_prompt_update"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_get_next_routine"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"send_to_agent"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_complete_assignment"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"worker_complete_routine"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"worker_report_routine_problem"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"steward_next_assignment"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"steward_complete_assignment"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"task_agent_transcript_tail_read"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"task_agent_request"));
     assert_eq!(
         MCP_HELPER_TOOLS,
         ["ask_to", "send_to_agent", "reply_to_request"]

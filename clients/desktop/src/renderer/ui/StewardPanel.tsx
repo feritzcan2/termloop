@@ -3,14 +3,11 @@ import type {
   AgentCapabilityDto, AssistantPromptContextDto, CompanionMessageDto, CompanionTranscriptAppendResult,
   CompanionProposalDecision, CompanionProposalRespondResult, CompanionSuggestionAcceptResult,
   CompanionTranscriptClearResult,
-  CompanionTranscriptListResult, StewardAgentId,
+  CompanionTranscriptListResult, StewardAgentId, StewardConfigurationDto,
   StewardConfigurationGetResult, StewardConfigurationSetResult, RoutineConfigurationCreateParams,
   RoutineConfigurationDeleteResult, RoutineConfigurationDto, RoutineConfigurationListResult,
   RoutineConfigurationMutationResult, RoutineConfigurationUpdateParams, RoutineHealthDto,
   RoutineReportDto, RoutineRuntimeListResult,
-  WorkerConfigurationCreateParams, WorkerConfigurationDeleteResult, WorkerConfigurationDto,
-  WorkerConfigurationListResult, WorkerConfigurationMutationResult, WorkerConfigurationUpdateParams,
-  WorkerPromptContextDto,
   RoutineRunNowResult,
   PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
@@ -26,7 +23,7 @@ import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } f
 export { assistantInstructionsEditableSuffix };
 
 type AssistantReasoning = QuickActionReasoning;
-type AssistantPermission = WorkerConfigurationDto["permission"];
+type AssistantPermission = StewardConfigurationDto["permission"];
 
 export type StewardPanelProps = {
   projectId: string; projectName: string; selection: AssistantSelection; refreshToken: number;
@@ -41,10 +38,6 @@ export type StewardPanelProps = {
   respondToProposal(proposalMessageId: string, decision: CompanionProposalDecision): Promise<CompanionProposalRespondResult>;
   acceptSuggestion(suggestionMessageId: string): Promise<CompanionSuggestionAcceptResult>;
   clearTranscript(expectedRevision: number): Promise<CompanionTranscriptClearResult>;
-  listWorkers(): Promise<WorkerConfigurationListResult>;
-  createWorker(params: WorkerConfigurationCreateParams): Promise<WorkerConfigurationMutationResult>;
-  updateWorker(params: WorkerConfigurationUpdateParams): Promise<WorkerConfigurationMutationResult>;
-  deleteWorker(workerId: string, expectedRevision: number): Promise<WorkerConfigurationDeleteResult>;
   listRoutines(): Promise<RoutineConfigurationListResult>;
   createRoutine(params: RoutineConfigurationCreateParams): Promise<RoutineConfigurationMutationResult>;
   updateRoutine(params: RoutineConfigurationUpdateParams): Promise<RoutineConfigurationMutationResult>;
@@ -86,19 +79,19 @@ export function assistantRefusalMessage(cause: unknown): string {
 }
 
 /** How many times a write may re-cite the revision before giving up. The
-    revision is global, so a Worker ping, a Routine finishing, or the Steward
+    revision is global, so a Routine finishing or the Steward
     writing moves it — none of which has anything to do with the change being
     made. One retry loses that race often enough to surface as a failure the
     user cannot act on, and each extra attempt costs one read. */
 const REVISION_ATTEMPTS = 4;
 
 /** The store revision a write cites can move for reasons the user never caused:
-    enabling a Worker launches its Session, and the daemon's own write lands
+    enabling the Steward launches its Session, and the daemon's own write lands
     between two of our calls. The intent has not changed — only the ticket — so
     a lost race is answered by reading the current revision and trying again.
     Anything else is a real failure and is left to the caller. This matters most
-    in a chain like adopting a template, where stopping halfway would leave a
-    Worker with no Routines and no document. */
+    in a chain like adopting a template, where stopping halfway would leave
+    provisioned Routines with no document. */
 export async function withCurrentRevision<T>(
   cited: number,
   readRevision: () => Promise<number>,
@@ -139,35 +132,15 @@ export async function retireStepRoutine(
   }
 }
 
-/** The Worker a pipeline already runs in: whichever one owns the Routine the
-    Playbook's first question names. A Project can hold several Workers, and a
-    question added later belongs beside the ones already there rather than
-    wherever the sidebar happens to list first. */
-export function playbookPipelineWorkerId(
-  playbook: PlaybookDto | null,
-  routines: readonly RoutineConfigurationDto[],
-  workers: readonly WorkerConfigurationDto[],
-): string | undefined {
-  for (const milestone of playbook?.milestones ?? []) {
-    const routine = routines.find((candidate) => candidate.id === milestone.routineId);
-    if (routine) return routine.workerId;
-  }
-  return workers.find((worker) => worker.enabled)?.id;
-}
-
 export function stewardPanelIdentity(projectId: string, selection: AssistantSelection = { kind: "steward" }): string {
   if (selection.kind === "steward") return `${projectId}:steward`;
-  return `${projectId}:${selection.kind}:${selection.kind === "worker" ? selection.workerId : selection.routineId}`;
+  return `${projectId}:routine:${selection.routineId}`;
 }
 export function assistantTerminalSessionId(
   selection: AssistantSelection,
   steward: StewardConfigurationGetResult["configuration"],
-  workers: readonly WorkerConfigurationDto[],
 ): string | null {
   if (selection.kind === "steward") return steward?.executorSessionId ?? null;
-  if (selection.kind === "worker") {
-    return workers.find((worker) => worker.id === selection.workerId)?.executorSessionId ?? null;
-  }
   return null;
 }
 export function mergeCompanionMessages(current: readonly CompanionMessageDto[], incoming: readonly CompanionMessageDto[]): CompanionMessageDto[] {
@@ -210,7 +183,6 @@ export function routineInstructionsUpdateParams(
   return {
     routineId: routine.id,
     triggerMode: routine.triggerMode,
-    workerId: routine.workerId,
     name: routine.name,
     instructions,
     whileWaiting: routine.whileWaiting,
@@ -239,46 +211,6 @@ export function routineActionHandlingUpdateParams(
     whileWaiting: { ...routine.whileWaiting, mode: actionHandling },
   };
 }
-export function workerInstructionsUpdateParams(
-  worker: WorkerConfigurationDto,
-  instructions: string,
-  expectedRevision: number,
-): WorkerConfigurationUpdateParams {
-  return {
-    workerId: worker.id,
-    name: worker.name,
-    agentId: worker.agentId,
-    model: worker.model,
-    permission: worker.permission,
-    reasoning: worker.reasoning,
-    enabled: worker.enabled,
-    pingIntervalSeconds: worker.pingIntervalSeconds,
-    workerPrompt: "",
-    systemPrompt: instructions,
-    expectedRevision,
-  };
-}
-
-export function workerHeartbeatUpdateParams(
-  worker: WorkerConfigurationDto,
-  pingIntervalSeconds: number,
-  expectedRevision: number,
-): WorkerConfigurationUpdateParams {
-  return {
-    workerId: worker.id,
-    name: worker.name,
-    agentId: worker.agentId,
-    model: worker.model,
-    permission: worker.permission,
-    reasoning: worker.reasoning,
-    enabled: worker.enabled,
-    pingIntervalSeconds,
-    workerPrompt: worker.workerPrompt,
-    systemPrompt: worker.systemPrompt,
-    expectedRevision,
-  };
-}
-
 export function playbookRoutineRetryDelaySeconds(
   playbook: PlaybookDto | null,
   routineId: string,
@@ -319,8 +251,8 @@ export function stewardReplyAvailabilityCopy(enabled: boolean, capability: Assis
 export function companionSupervisorCopy(value: StewardConfigurationGetResult["supervisorAvailability"]): string {
   return value === "available" ? "Companion online" : value === "starting" ? "Companion starting…" : "Companion unavailable";
 }
-export function routineProblemRecoveryCopy(workerName?: string): string {
-  return `Fixed it? Restart ${workerName ?? "the Worker"} from the sidebar.`;
+export function routineProblemRecoveryCopy(): string {
+  return "Fixed it? Restart the Project Steward from the sidebar.";
 }
 export function routineTimeCopy(value: number | null): string {
   return value === null ? "Never" : new Date(value).toLocaleString();
@@ -342,7 +274,6 @@ export function assistantTabs(
     ...(hasPlaybookBuilder ? [["builder", "Builder"]] as const : []),
     ["configuration", "Config"],
   ];
-  if (kind === "worker") return [["terminal", "Terminal"], ["configuration", "Config"]];
   return [["context", "Context"]];
 }
 export function StewardPanel(props: StewardPanelProps) {
@@ -352,19 +283,15 @@ export function StewardPanel(props: StewardPanelProps) {
   const [stewardPromptContext, setStewardPromptContext] = useState<AssistantPromptContextDto>();
   const [stewardRevision, setStewardRevision] = useState(0);
   const [messages, setMessages] = useState<CompanionMessageDto[]>([]); const [draft, setDraft] = useState("");
-  const [workers, setWorkers] = useState<WorkerConfigurationDto[]>([]); const [workerRevision, setWorkerRevision] = useState(0);
-  const [workerPromptContexts, setWorkerPromptContexts] = useState<WorkerPromptContextDto[]>([]);
   const [routines, setRoutines] = useState<RoutineConfigurationDto[]>([]); const [routineRevision, setRoutineRevision] = useState(0);
   const [playbook, setPlaybook] = useState<PlaybookDto | null>(null);
   const [reports, setReports] = useState<RoutineReportDto[]>([]);
   const [routineHealth, setRoutineHealth] = useState<RoutineHealthDto[]>([]);
   const [busy, setBusy] = useState(false);
-  const selectedWorkerId = props.selection.kind === "worker" ? props.selection.workerId : undefined;
   const selectedRoutineId = props.selection.kind === "routine" ? props.selection.routineId : undefined;
-  const selectedWorker = selectedWorkerId ? workers.find((worker) => worker.id === selectedWorkerId) : undefined;
   const selectedRoutine = selectedRoutineId ? routines.find((routine) => routine.id === selectedRoutineId) : undefined;
   const selectedRoutineHealth = selectedRoutineId ? routineHealth.find((health) => health.routineId === selectedRoutineId) : undefined;
-  const sessionId = assistantTerminalSessionId(props.selection, steward, workers);
+  const sessionId = assistantTerminalSessionId(props.selection, steward);
   const openTerminalRef = useRef(props.openTerminal);
   useEffect(() => { openTerminalRef.current = props.openTerminal; }, [props.openTerminal]);
   // Provisioning a Playbook's step Routines issues several creates inside one
@@ -381,13 +308,12 @@ export function StewardPanel(props: StewardPanelProps) {
   const load = async () => {
     const generation = ++loadGeneration.current;
     try {
-      const [configuration, transcript, workerList, routineList, runtime, playbookResult] = await Promise.all([
-        props.getConfiguration(), props.listTranscript(), props.listWorkers(), props.listRoutines(), props.listRoutineRuntime(), props.getPlaybook(),
+      const [configuration, transcript, routineList, runtime, playbookResult] = await Promise.all([
+        props.getConfiguration(), props.listTranscript(), props.listRoutines(), props.listRoutineRuntime(), props.getPlaybook(),
       ]);
       if (generation !== loadGeneration.current) return;
       setSteward(configuration.configuration); setStewardPromptContext(configuration.promptContext); setStewardRevision(configuration.stateRevision);
       setMessages(transcript.messages);
-      setWorkers(workerList.configurations); setWorkerPromptContexts(workerList.promptContexts); setWorkerRevision(workerList.stateRevision);
       setRoutines(routineList.configurations); setRoutineRevision(routineList.stateRevision);
       setPlaybook(playbookResult.playbook);
       setReports(runtime.reports); setRoutineHealth(runtime.health); setLoading(false); setError(undefined);
@@ -398,7 +324,7 @@ export function StewardPanel(props: StewardPanelProps) {
   };
   useEffect(() => { void load(); }, [props.projectId, props.refreshToken]);
   useEffect(() => { setView(assistantInitialView(props.selection)); }, [props.selection.kind, props.selection.initialView,
-    props.selection.kind === "worker" ? props.selection.workerId : props.selection.kind === "routine" ? props.selection.routineId : "steward"]);
+    props.selection.kind === "routine" ? props.selection.routineId : "steward"]);
   const previousPlaybookBuilderSessionId = useRef(props.playbookBuilderSessionId);
   useEffect(() => {
     const previous = previousPlaybookBuilderSessionId.current;
@@ -510,7 +436,7 @@ export function StewardPanel(props: StewardPanelProps) {
     </div>
   </section>;
 
-  const assistantEnabled = props.selection.kind === "steward" ? steward?.enabled === true : selectedWorker?.enabled === true;
+  const assistantEnabled = steward?.enabled === true;
   const terminal = sessionId ? props.renderTerminal(sessionId) : <Empty text={assistantEnabled
     ? "This assistant is restarting. Its terminal will appear automatically."
     : "Enable and save this assistant to start its persistent terminal."} />;
@@ -630,68 +556,13 @@ export function StewardPanel(props: StewardPanelProps) {
   const playbookBuilderTerminal = props.playbookBuilderSessionId
     ? props.renderTerminal(props.playbookBuilderSessionId)
     : <Empty text="Start the Pipeline Builder from the sidebar editor." />;
-  const selectedWorkerPromptContext = selectedWorker
-    ? workerPromptContexts.find((context) => context.workerId === selectedWorker.id)
-    : undefined;
-  const workerConfiguration = selectedWorker && selectedWorkerPromptContext ? <section className="ap-config">
-    <ConfigIntroduction role="Worker" />
-    <AssistantLaunchSettings role="Worker" agentId={selectedWorker.agentId} model={selectedWorker.model}
-      permission={selectedWorker.permission} reasoning={selectedWorker.reasoning} busy={busy} save={(model, permission, reasoning) => run(async () => {
-        const result = await props.updateWorker({
-          workerId: selectedWorker.id, name: selectedWorker.name, agentId: selectedWorker.agentId,
-          model, permission, reasoning, enabled: selectedWorker.enabled,
-          pingIntervalSeconds: selectedWorker.pingIntervalSeconds,
-          workerPrompt: selectedWorker.workerPrompt, systemPrompt: selectedWorker.systemPrompt,
-          expectedRevision: workerRevision,
-        });
-        setWorkers((current) => current.map((worker) => worker.id === selectedWorker.id ? result.configuration : worker));
-        setWorkerRevision(result.stateRevision);
-      })} />
-    <WorkerHeartbeatSettings intervalSeconds={selectedWorker.pingIntervalSeconds} busy={busy}
-      save={(pingIntervalSeconds) => run(async () => {
-        const result = await props.updateWorker(workerHeartbeatUpdateParams(
-          selectedWorker,
-          pingIntervalSeconds,
-          workerRevision,
-        ));
-        setWorkers((current) => current.map((worker) => worker.id === selectedWorker.id ? result.configuration : worker));
-        setWorkerRevision(result.stateRevision);
-      })} />
-    <WorkerSystemPromptCard context={selectedWorkerPromptContext} busy={busy} improvement={props.promptImprovement}
-      setupImprovement={() => props.setupPromptImprovement({ surface: "workerInstructions", ownerId: selectedWorkerPromptContext.workerId })}
-      reload={() => run(async () => {
-        const refreshed = await props.listWorkers();
-        setWorkers(refreshed.configurations);
-        setWorkerPromptContexts(refreshed.promptContexts);
-        setWorkerRevision(refreshed.stateRevision);
-      })}
-      save={(instructions) => run(async () => {
-      await props.updateWorker(workerInstructionsUpdateParams(
-        selectedWorker,
-        instructions,
-        workerRevision,
-      ));
-      const refreshed = await props.listWorkers();
-      setWorkers(refreshed.configurations);
-      setWorkerPromptContexts(refreshed.promptContexts);
-      setWorkerRevision(refreshed.stateRevision);
-    })} />
-    <WakePromptDetails context={selectedWorkerPromptContext} role="Worker" />
-  </section> : <Empty text="Worker prompt context is unavailable." />;
-
-  const routineWorker = selectedRoutine ? workers.find((worker) => worker.id === selectedRoutine.workerId) : undefined;
-  const headerAgentId = props.selection.kind === "steward" ? steward?.agentId ?? null
-    : props.selection.kind === "worker" ? selectedWorker?.agentId ?? null
-    : routineWorker?.agentId ?? null;
+  const headerAgentId = steward?.agentId ?? null;
   const headerTitle = props.selection.kind === "steward" ? "Project Steward"
-    : props.selection.kind === "worker" ? selectedWorker?.name ?? "Worker"
     : selectedRoutine?.name ?? "Routine";
   const agentDisplayName = headerAgentId === "claude" ? "Claude" : headerAgentId === "codex" ? "Codex" : null;
   const headerSubtitle = props.selection.kind === "steward"
     ? (steward && agentDisplayName ? `${agentDisplayName} · Project coordinator` : "Not configured")
-    : props.selection.kind === "worker"
-      ? (agentDisplayName ? `${agentDisplayName} · Worker` : "Worker")
-      : selectedRoutine ? `${routineWorker?.name ?? "Worker"} · ${selectedRoutineRetryDelaySeconds === undefined
+    : selectedRoutine ? `Project Steward · ${selectedRoutineRetryDelaySeconds === undefined
         ? "On demand"
         : `${routineIntervalLabel(selectedRoutineRetryDelaySeconds)} while waiting`}` : "Routine";
 
@@ -711,7 +582,6 @@ export function StewardPanel(props: StewardPanelProps) {
     {error ? <p className="ap-error">{error}</p> : null}
     <div className={`ap-body${view === "terminal" || view === "builder" || (props.selection.kind === "steward" && view === "chat") ? " terminal-active" : ""}`}>{loading ? <Empty text="Loading…" />
       : props.selection.kind === "routine" ? context
-      : props.selection.kind === "worker" ? view === "terminal" ? terminal : workerConfiguration
       : view === "builder" ? playbookBuilderTerminal
       : view === "configuration" ? stewardConfiguration : stewardWorkspace}</div>
   </section>;
@@ -719,7 +589,7 @@ export function StewardPanel(props: StewardPanelProps) {
 
 function Empty({ text }: { text: string }) { return <p className="ap-empty">{text}</p>; }
 
-function ConfigIntroduction({ role }: { role: "Steward" | "Worker" }) {
+function ConfigIntroduction({ role }: { role: "Steward" }) {
   return <header className="ap-config-intro">
     <span>Visible prompt pipeline</span>
     <h2>{role} configuration</h2>
@@ -728,7 +598,7 @@ function ConfigIntroduction({ role }: { role: "Steward" | "Worker" }) {
 }
 
 function AssistantLaunchSettings(props: {
-  role: "Steward" | "Worker";
+  role: "Steward";
   agentId: StewardAgentId;
   model: string;
   permission: AssistantPermission;
@@ -768,35 +638,6 @@ function AssistantLaunchSettings(props: {
   </section>;
 }
 
-function WorkerHeartbeatSettings(props: {
-  intervalSeconds: number;
-  busy: boolean;
-  save(intervalSeconds: number): Promise<void>;
-}) {
-  const [minutes, setMinutes] = useState(String(props.intervalSeconds / 60));
-  useEffect(() => { setMinutes(String(props.intervalSeconds / 60)); }, [props.intervalSeconds]);
-  const parsedMinutes = Number(minutes);
-  const valid = Number.isInteger(parsedMinutes) && parsedMinutes >= 1 && parsedMinutes <= 1440;
-  const intervalSeconds = valid ? parsedMinutes * 60 : 0;
-  return <section className="ap-form ap-heartbeat-settings">
-    <div className="ap-editor">
-      <div className="ap-editor-head"><label htmlFor="worker-heartbeat-minutes">Worker heartbeat</label><small>Runtime cadence</small></div>
-      <p className="ap-hint">How often an idle Worker wakes to claim due scheduled Routines and Playbook step checks.</p>
-      <div className="ap-launch-fields ap-heartbeat-fields">
-        <label>Every
-          <span className="ap-heartbeat-input"><input id="worker-heartbeat-minutes" type="number" min={1} max={1440} step={1}
-            aria-label="Worker heartbeat interval in minutes" value={minutes} disabled={props.busy}
-            onChange={(event) => setMinutes(event.target.value)} /><small>minutes</small></span>
-        </label>
-      </div>
-      {!valid ? <p className="ap-problem">Choose 1 minute to 24 hours.</p> : null}
-      <div className="ap-actions"><button type="button" className="ap-btn primary"
-        disabled={props.busy || !valid || intervalSeconds === props.intervalSeconds}
-        onClick={() => void props.save(intervalSeconds)}>Save heartbeat</button></div>
-    </div>
-  </section>;
-}
-
 function permissionLabel(agentId: StewardAgentId, permission: AssistantPermission): string {
   if (agentId === "claude" && permission === "bypassPermissions") return "auto";
   if (permission === "default") return "ask";
@@ -805,7 +646,7 @@ function permissionLabel(agentId: StewardAgentId, permission: AssistantPermissio
   return permission;
 }
 
-function WakePromptDetails(props: { context: AssistantPromptContextDto | WorkerPromptContextDto; role: "Steward" | "Worker" }) {
+function WakePromptDetails(props: { context: AssistantPromptContextDto; role: "Steward" }) {
   return <section className="ap-prompt-projections" aria-label={`${props.role} delivered prompt context`}>
     <details className="ap-details" open>
       <summary>Initial activation · terminal input</summary>
@@ -878,11 +719,11 @@ export function RoutineContextEditor(props: {
       </div>
       {props.stepRetryDelaySeconds !== undefined ? <div className="ap-section ap-completion-evidence">
         <span className="ap-label">When is this Playbook step complete?</span>
-        <p>{props.completionEvidence?.trim() || "Use the Worker instructions below to define how completion is verified."}</p>
-        <small>This completion rule comes from the Playbook step. The Worker uses it together with the instructions below.</small>
+        <p>{props.completionEvidence?.trim() || "Use the verification instructions below to define how completion is proven."}</p>
+        <small>This completion rule comes from the Playbook step. The Steward verifies it with the instructions below.</small>
       </div> : null}
       <details className="ap-details ap-instructions-details" open>
-        <summary>What should the Worker look for?</summary>
+        <summary>What should the Steward verify?</summary>
         <div className="ap-instructions-editor">
           <ConfigurationVersions controller={improver} reload={props.reload} />
           <div className="ap-editor-head">
@@ -890,15 +731,15 @@ export function RoutineContextEditor(props: {
             <small>{instructionsByteLength} / 9216 bytes</small>
           </div>
           <textarea id="routine-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)}
-            aria-label="What the Worker should look for" spellCheck />
+            aria-label="What the Steward should verify" spellCheck />
           <div className="ap-actions">
             <PromptImproveButton improvement={props.improvement} busy={props.busy || improver.busy}
-              title="Start an agent that improves the Worker's evidence check and the Steward's response policy together for you to approve"
+              title="Start an agent that improves the Steward's evidence check and response policy together for you to approve"
               label={promptImprovementActionLabel("routineInstructions")}
               start={() => void improver.start()} setup={props.setupImprovement} />
             <button type="button" className="ap-btn primary"
               disabled={props.busy || !instructions.trim() || instructionsByteLength > 9216 || instructions === props.routine.instructions}
-              onClick={() => void props.saveInstructions(instructions)}>Save Worker instructions</button>
+              onClick={() => void props.saveInstructions(instructions)}>Save verification instructions</button>
           </div>
         </div>
       </details>
@@ -908,10 +749,10 @@ export function RoutineContextEditor(props: {
           <div className="ap-editor-head">
             <label htmlFor="routine-steward-instructions">{props.routine.triggerMode === "onDemand"
               ? "Describe the response options when this step is still waiting."
-              : "Describe the response options when the Worker reports something new."}</label>
+              : "Describe the response options when the Steward finds something new."}</label>
             <small>{stewardInstructionsByteLength} / 9216 bytes</small>
           </div>
-          <p className="ap-hint">Only the Steward receives these instructions. The Worker cannot see them or use them to recommend an action.{props.routine.triggerMode === "onDemand" ? " Repeated identical waiting evidence is ignored." : ""}</p>
+          <p className="ap-hint">These instructions tell the Steward how to advance the Task after verification. Repeated identical waiting evidence is ignored.</p>
           <textarea id="routine-steward-instructions" value={stewardInstructions}
             onChange={(event) => setStewardInstructions(event.target.value)}
             aria-label="What the Steward should consider doing" spellCheck />
@@ -945,16 +786,16 @@ export function RoutineContextEditor(props: {
         {props.routine.recentSourceKeys.length ? <ul>{props.routine.recentSourceKeys.map((sourceKey) => <li key={sourceKey}><code>{sourceKey}</code></li>)}</ul> : <p className="ap-hint">No processed sources.</p>}
       </details>
       {props.reports.some((report) => report.kind === "problem") ? <p className="ap-problem">{routineProblemRecoveryCopy()}</p> : null}
-      <div className="ap-editor ap-routine-worker-context">
+      <div className="ap-editor ap-routine-context-memory">
         <div className="ap-editor-head">
-          <label htmlFor="routine-context-markdown">Worker Context</label>
+          <label htmlFor="routine-context-markdown">Routine memory</label>
           <small>Auto-managed · Revision {props.routine.contextRevision} · {contextByteLength} / 32768 bytes</small>
         </div>
         <p className="ap-hint">{props.routine.contextMarkdown
-          ? "This current-state snapshot is the complete memory delivered with this Routine. The Worker refreshes it after successful runs; it is not a transcript or activity history."
-          : "No context has been saved yet. The Worker fills this after a successful run; you can also add a starting snapshot here."}</p>
+          ? "This current-state snapshot is the complete memory delivered with this Routine. The Steward refreshes it after successful runs; it is not a transcript or activity history."
+          : "No context has been saved yet. The Steward fills this after a successful run; you can also add a starting snapshot here."}</p>
         <textarea id="routine-context-markdown" value={context} maxLength={32768}
-          placeholder="No Worker Context yet."
+          placeholder="No Routine memory yet."
           onChange={(event) => setContext(event.target.value)} aria-label="Routine next-run memory" spellCheck />
         <div className="ap-actions">
           <button type="button" className="ap-btn" disabled={props.busy || !props.routine.contextMarkdown}
@@ -1017,50 +858,6 @@ export function StewardSystemPromptCard(props: {
         <button type="button" className="ap-btn primary"
           disabled={props.busy || currentInstructions === undefined || byteLength > 16384 || unchanged}
           onClick={() => void props.save(instructions.trim())}>Save &amp; restart Steward</button>
-      </div>
-    </div>
-  </section>;
-}
-
-function WorkerSystemPromptCard(props: {
-  context: WorkerPromptContextDto;
-  busy: boolean;
-  improvement?: PromptImprovement | undefined;
-  setupImprovement(): void;
-  save(instructions: string): Promise<void>;
-  reload(): Promise<void>;
-}) {
-  const [instructions, setInstructions] = useState(props.context.instructionsPrompt);
-  useEffect(() => { setInstructions(props.context.instructionsPrompt); }, [props.context.instructionsPrompt]);
-  const byteLength = new TextEncoder().encode(instructions).length;
-  const editableSuffix = assistantInstructionsEditableSuffix(instructions, props.context.protectedPrompt);
-  const editableByteLength = editableSuffix === undefined ? Number.POSITIVE_INFINITY : new TextEncoder().encode(editableSuffix).length;
-  const unchanged = instructions.trim() === props.context.instructionsPrompt.trim();
-  const improver = usePromptImprovement(props.improvement, { surface: "workerInstructions", ownerId: props.context.workerId });
-  return <section className="ap-form">
-    <ConfigurationVersions controller={improver} reload={props.reload} />
-    <div className="ap-editor ap-composed-prompt ap-single-instructions-editor">
-      <div className="ap-editor-head">
-        <label htmlFor="worker-system-instructions">Worker system instructions</label>
-        <small>{instructionDeliveryLabel(props.context.instructionDelivery)}</small>
-      </div>
-      <p className="ap-hint">This is the complete TermLoop instruction document installed through the provider&apos;s native instruction channel. Edit Routine handling and general Worker behavior together; the required runtime contract at its beginning must remain present.</p>
-      <textarea id="worker-system-instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)}
-        aria-label="Worker system instructions" spellCheck />
-      <div className="ap-editor-foot">
-        <small>{byteLength} bytes total · {Number.isFinite(editableByteLength) ? editableByteLength : "—"} / 16384 editable bytes</small>
-        {editableSuffix === undefined ? <span className="ap-problem">Keep the required runtime beginning intact.</span> : null}
-      </div>
-      <div className="ap-actions">
-        <PromptImproveButton improvement={props.improvement} busy={props.busy || improver.busy}
-          title="Start an agent that reads this Worker's Routines and reports and proposes shared instructions for you to approve"
-          label={promptImprovementActionLabel("workerInstructions")}
-          start={() => void improver.start()} setup={props.setupImprovement} />
-        <button type="button" className="ap-btn" disabled={props.busy || instructions.trim() === props.context.protectedPrompt.trim()}
-          onClick={() => setInstructions(props.context.protectedPrompt)}>Reset Worker instructions</button>
-        <button type="button" className="ap-btn primary"
-          disabled={props.busy || editableSuffix === undefined || editableByteLength > 16384 || unchanged}
-          onClick={() => editableSuffix !== undefined && void props.save(editableSuffix)}>Save &amp; restart Worker</button>
       </div>
     </div>
   </section>;

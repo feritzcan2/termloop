@@ -38,7 +38,6 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
       mode: "ask",
       instructions: "Propose asking the reviewer and ask the user whether to send it.",
     },
-    workerId: "worker-1",
     approver: "ferit",
     ...overrides,
   };
@@ -137,7 +136,6 @@ describe("Atomic Playbook mutation payload", () => {
         mode: "ask",
         instructions: "Propose asking the reviewer and ask the user whether to send it.",
       },
-      workerId: "worker-1",
       approver: "ferit",
     }]);
     expect(wire[0]).not.toHaveProperty("routineId");
@@ -147,31 +145,28 @@ describe("Atomic Playbook mutation payload", () => {
     const wire = playbookMilestonesForWire([{
       id: "ci-green", title: "Is CI green?", gate: "automatic",
       routineId: null, retryDelaySeconds: 600, completeWhen: "Required checks pass.",
-      whileWaiting: { mode: "off", instructions: "" }, workerId: null, approver: null,
+      whileWaiting: { mode: "off", instructions: "" }, approver: null,
     }]);
     expect(wire[0]).toMatchObject({
       completeWhen: "Required checks pass.",
       whileWaiting: { mode: "off", instructions: "" },
-      workerId: null,
     });
   });
 
-  it("uses document CAS, refreshes store CAS, and carries Worker policy", () => {
+  it("uses document CAS and refreshes store CAS", () => {
     const draft = playbookDraftFromDto(playbook());
     const decision = resolvePlaybookSave(
       "project-1", draft, 3, { playbook: playbook(), stateRevision: 55 },
-      "worker-1", "codex",
     );
     expect(decision.kind).toBe("proceed");
     if (decision.kind !== "proceed") return;
     expect(decision.params.expectedPlaybookRevision).toBe(3);
     expect(decision.params.expectedRevision).toBe(55);
-    expect(decision.params.workerId).toBe("worker-1");
-    expect(decision.params.preferredWorkerAgentId).toBe("codex");
+    expect(decision.params).not.toHaveProperty("workerId");
+    expect(decision.params).not.toHaveProperty("preferredWorkerAgentId");
 
     expect(resolvePlaybookSave(
       "project-1", draft, 3, { playbook: playbook({ revision: 4 }), stateRevision: 56 },
-      "worker-1", "codex",
     )).toEqual({ kind: "conflict" });
   });
 

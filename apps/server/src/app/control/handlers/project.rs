@@ -116,7 +116,6 @@ pub(in crate::app::control) async fn delete_project(
             ProjectionTopic::AgentStatus,
             ProjectionTopic::Companion,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
             ProjectionTopic::TaskSource,
             ProjectionTopic::Run,

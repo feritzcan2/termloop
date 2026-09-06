@@ -14,7 +14,7 @@ const settings: McpToolSettingsResult = {
   tools: [
     { name: "ask_to", title: "Ask another agent", canonicalDescription: "Canonical", effectiveDescription: "Ask another agent for help.", customized: true, roles: ["interactive"] },
     { name: "reply_to_request", title: "Reply to a request", canonicalDescription: "Canonical", effectiveDescription: "Answer the agent that asked.", customized: false, roles: ["helper"] },
-    { name: "project_read", title: "Read the Project", canonicalDescription: "Canonical", effectiveDescription: "Read Project projections.", customized: false, roles: ["steward", "worker"] },
+    { name: "project_read", title: "Read the Project", canonicalDescription: "Canonical", effectiveDescription: "Read Project projections.", customized: false, roles: ["steward"] },
   ],
 };
 

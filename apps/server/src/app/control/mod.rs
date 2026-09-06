@@ -28,7 +28,6 @@ pub(in crate::app) use dispatch::apply_configuration_plan;
 use dispatch::{DispatchOutcome, PostResponseAction, dispatch};
 use errors::error_response;
 pub(super) use handlers::git_host_pull_request_list_background;
-pub(super) use handlers::launch_current_worker;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
 pub(in crate::app) use handlers::{
     launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
@@ -39,7 +38,7 @@ pub(in crate::app) use task_source::{
 };
 
 // A complete Playbook replacement can carry 24 active steps plus bounded saved
-// pipelines, with separate Worker and Steward instructions on every step. Keep
+// pipelines, with completion and waiting instructions on every step. Keep
 // the transport bounded, but large enough for the schema's maximum ordinary
 // ASCII document instead of silently rejecting valid Builder output at 64 KiB.
 pub(in crate::app) const MAX_CONTROL_MESSAGE: usize = 8 * 1024 * 1024;
@@ -341,7 +340,7 @@ pub(in crate::app) async fn control_socket(
                     Ok(payload) => payload,
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         ProjectionInvalidatedPayload {
-                            topics: vec![ProjectionTopic::Project, ProjectionTopic::Task, ProjectionTopic::Session, ProjectionTopic::AgentStatus, ProjectionTopic::GitHost, ProjectionTopic::BranchCommit, ProjectionTopic::Companion, ProjectionTopic::Steward, ProjectionTopic::Worker, ProjectionTopic::Routine, ProjectionTopic::KeepAwake],
+                            topics: vec![ProjectionTopic::Project, ProjectionTopic::Task, ProjectionTopic::Session, ProjectionTopic::AgentStatus, ProjectionTopic::GitHost, ProjectionTopic::BranchCommit, ProjectionTopic::Companion, ProjectionTopic::Steward, ProjectionTopic::Routine, ProjectionTopic::KeepAwake],
                             state_revision: state.core_projection.state_revision(),
                             observation_sequence: state.core_projection.observation_sequence(),
                             entity_scopes: None,
@@ -623,7 +622,6 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "agent.statusList"
             | "mcp.toolSettingsGet"
             | "steward.configurationGet"
-            | "worker.configurationList"
             | "runConfiguration.list"
             | "run.runtimeList"
             | "routine.configurationList"
@@ -774,7 +772,6 @@ mod tests {
                 "mode": "ask",
                 "instructions": "s".repeat(8_192)
             },
-            "workerId": null,
             "retryDelaySeconds": 60,
             "approver": "a".repeat(120)
         });
@@ -790,8 +787,6 @@ mod tests {
                 "activePipelineName": "Active pipeline",
                 "milestones": saved_pipeline["milestones"].clone(),
                 "savedPipelines": vec![saved_pipeline; 16],
-                "workerId": null,
-                "preferredWorkerAgentId": "codex",
                 "expectedPlaybookRevision": 1,
                 "expectedRevision": 1
             }

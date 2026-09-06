@@ -174,7 +174,6 @@ fn role_summary(roles: &[protocol::McpToolRole]) -> String {
             protocol::McpToolRole::Interactive => "interactive Sessions",
             protocol::McpToolRole::Helper => "Ask-To helpers",
             protocol::McpToolRole::Steward => "the Project Steward",
-            protocol::McpToolRole::Worker => "Workers",
             protocol::McpToolRole::Improver => "Improve Agents",
         })
         .collect();

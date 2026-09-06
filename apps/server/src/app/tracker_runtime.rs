@@ -192,7 +192,7 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
                             changed: false,
                         }
                     });
-                    let due = core.admit_due_worker_wakes(now);
+                    let due = core.admit_due_steward_wakes(now);
                     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
                         capabilities.retain_current(&core, now);
                     }
@@ -202,7 +202,7 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
                     publish_tracker_runtime_invalidation(&state, state_revision);
                 }
                 for wake in due {
-                    deliver_due_worker_wake(&state, wake).await;
+                    deliver_due_steward_wake(&state, wake).await;
                 }
             }
             _ = state.tracker_runtime_wake.notified() => {}
@@ -214,7 +214,7 @@ fn publish_tracker_runtime_invalidation(state: &AppState, state_revision: u64) {
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![
             ProjectionTopic::Routine,
-            ProjectionTopic::Worker,
+            ProjectionTopic::Steward,
             ProjectionTopic::Session,
             ProjectionTopic::AgentStatus,
         ],
@@ -223,24 +223,28 @@ fn publish_tracker_runtime_invalidation(state: &AppState, state_revision: u64) {
     });
 }
 
-async fn deliver_due_worker_wake(
+async fn deliver_due_steward_wake(
     state: &AppState,
-    wake: termloop_core::companion_integrations::tracker_runtime::DueWorkerWake,
+    wake: termloop_core::companion_integrations::tracker_runtime::DueStewardWake,
 ) {
     let now = termloop_platform::current_epoch_ms();
+    let check_id = termloop_platform::generate_opaque_id();
     let claim = {
         let mut core = state.core.lock().await;
-        core.claim_due_worker_routine(&wake, termloop_platform::generate_opaque_id(), now)
+        core.claim_due_steward_routine(&wake, check_id.clone(), now)
     };
     let claim = match claim {
         Ok(claim) => claim,
         Err(error) => {
-            tracing::warn!(worker_id = wake.worker_id, %error, "Routine assignment claim failed");
+            tracing::warn!(project_id = wake.project_id, %error, "Steward assignment claim failed");
             state
                 .core
                 .lock()
                 .await
-                .fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+                .fail_steward_assignment_delivery(
+                    &wake,
+                    now.saturating_add(WAKE_DELIVERY_RETRY_MS),
+                );
             state.tracker_runtime_wake.notify_one();
             return;
         }
@@ -253,33 +257,39 @@ async fn deliver_due_worker_wake(
         .lock()
         .ok()
         .is_some_and(|mut registry| {
-            registry.issue(wake.worker_session_id.clone(), capability.clone(), now)
+            registry.issue(wake.steward_session_id.clone(), capability.clone(), now)
         });
     if !issued {
         let mut core = state.core.lock().await;
-        core.release_worker_routine_claim(capability);
-        core.fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+        core.release_steward_routine_claim(capability);
+        core.fail_steward_assignment_delivery(
+            &wake,
+            now.saturating_add(WAKE_DELIVERY_RETRY_MS),
+        );
         state.tracker_runtime_wake.notify_one();
         return;
     }
-    let message = match termloop_core::companion_integrations::assistant_session::compose_worker_routine_assignment_wake(
+    let message = match termloop_core::companion_integrations::assistant_session::compose_steward_assignment_wake(
         &capability.check_id,
         &claim.result,
     ) {
         Ok(message) => message,
         Err(error) => {
-            tracing::warn!(worker_id = wake.worker_id, %error, "Routine assignment wake composition failed");
+            tracing::warn!(project_id = wake.project_id, %error, "Steward assignment wake composition failed");
             if let Ok(mut registry) = state.tracker_report_capabilities.lock() {
-                registry.revoke_check(&wake.worker_session_id, &capability.check_id);
+                registry.revoke_check(&wake.steward_session_id, &capability.check_id);
             }
             let mut core = state.core.lock().await;
-            core.release_worker_routine_claim(capability);
-            core.fail_worker_wake_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
+            core.release_steward_routine_claim(capability);
+            core.fail_steward_assignment_delivery(
+                &wake,
+                now.saturating_add(WAKE_DELIVERY_RETRY_MS),
+            );
             state.tracker_runtime_wake.notify_one();
             return;
         }
     };
-    let invalidation_topics = super::mcp::worker_claim_invalidation_topics(&claim.result);
+    let invalidation_topics = super::mcp::routine_claim_invalidation_topics(&claim.result);
     // Keep the Core guard out of the `if let` scrutinee. Scrutinee
     // temporaries live through the matching branch, and the failure branch
     // needs to lock Core again to schedule a retry. Leaving the guard in the
@@ -287,17 +297,17 @@ async fn deliver_due_worker_wake(
     // wake cannot be delivered.
     let delivery = {
         let mut core = state.core.lock().await;
-        core.deliver_worker_routine_wake(&wake, &message)
+        core.deliver_steward_assignment_wake(&wake, &check_id, &message)
     };
     if let Err(error) = delivery {
-        tracing::warn!(worker_id = wake.worker_id, %error, "Routine wake delivery failed");
+        tracing::warn!(project_id = wake.project_id, %error, "Steward wake delivery failed");
         if let Ok(mut registry) = state.tracker_report_capabilities.lock() {
-            registry.revoke_check(&wake.worker_session_id, &capability.check_id);
+            registry.revoke_check(&wake.steward_session_id, &capability.check_id);
         }
         let retry_at = termloop_platform::current_epoch_ms().saturating_add(WAKE_DELIVERY_RETRY_MS);
         let mut core = state.core.lock().await;
-        core.release_worker_routine_claim(capability);
-        core.fail_worker_wake_delivery(&wake, retry_at);
+        core.release_steward_routine_claim(capability);
+        core.fail_steward_assignment_delivery(&wake, retry_at);
         state.tracker_runtime_wake.notify_one();
     }
     let state_revision = state.core.lock().await.state_revision();

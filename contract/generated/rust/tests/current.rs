@@ -415,7 +415,6 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
 fn routine_create_is_provider_neutral() {
     let params = serde_json::json!({
         "projectId": "project-1",
-        "workerId": "worker-1",
         "triggerMode": "schedule",
         "name": "Customer pulse",
         "scheduleIntervalSeconds": 900,
@@ -431,69 +430,6 @@ fn routine_create_is_provider_neutral() {
     assert!(!validate_method_params(
         "routine.configurationCreate",
         &classified
-    ));
-}
-
-#[test]
-fn worker_ping_interval_and_editable_prompts_are_required_and_bounded() {
-    let update = serde_json::json!({
-        "workerId": "worker-1",
-        "name": "Worker 1",
-        "agentId": "codex",
-        "model": "gpt-5.6-sol",
-        "permission": "bypassPermissions",
-        "reasoning": "high",
-        "enabled": true,
-        "pingIntervalSeconds": 60,
-        "workerPrompt": "Handle each Routine carefully.",
-        "systemPrompt": "Answer briefly.",
-        "expectedRevision": 3
-    });
-    assert!(validate_method_params(
-        "worker.configurationUpdate",
-        &update
-    ));
-    let mut missing = update.clone();
-    missing
-        .as_object_mut()
-        .unwrap()
-        .remove("pingIntervalSeconds");
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &missing
-    ));
-    let mut too_fast = update;
-    too_fast["pingIntervalSeconds"] = serde_json::json!(59);
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &too_fast
-    ));
-    let mut missing_prompt = serde_json::json!({
-        "workerId": "worker-1",
-        "name": "Worker 1",
-        "agentId": "codex",
-        "model": "default",
-        "permission": "default",
-        "reasoning": "default",
-        "enabled": true,
-        "pingIntervalSeconds": 60,
-        "workerPrompt": "",
-        "systemPrompt": "",
-        "expectedRevision": 3
-    });
-    missing_prompt
-        .as_object_mut()
-        .unwrap()
-        .remove("workerPrompt");
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &missing_prompt
-    ));
-    let mut oversized = missing_prompt;
-    oversized["workerPrompt"] = serde_json::json!("ş".repeat(8_193));
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &oversized
     ));
 }
 

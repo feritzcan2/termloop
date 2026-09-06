@@ -4,7 +4,6 @@ use termloop_domain::{
     ImproverSessionTarget, ImproverSessionTargetKind, McpToolDescription, RoutineActionHandling,
     RoutineTriggerMode, RunConfiguration, RunConfigurationEnvVar, RunConfigurationKind,
     RunSetupPolicy, StewardAgentId, StewardConfiguration, TrackerConfiguration,
-    WorkerConfiguration,
 };
 
 use crate::companion_integrations::playbook::{PlaybookMilestoneDraft, PlaybookPipelineDraft};
@@ -26,26 +25,11 @@ struct StewardSnapshot {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct WorkerSnapshot {
-    name: String,
-    agent_id: StewardAgentId,
-    model: String,
-    permission: String,
-    reasoning: String,
-    enabled: bool,
-    ping_interval_seconds: u64,
-    worker_prompt: String,
-    system_prompt: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RoutineSnapshot {
     trigger_mode: RoutineTriggerMode,
     name: String,
     instructions: String,
     while_waiting: RoutineWhileWaitingSnapshot,
-    worker_id: String,
     enabled: bool,
     schedule_interval_seconds: u64,
 }
@@ -63,8 +47,6 @@ struct PlaybookSnapshot {
     active_pipeline_name: String,
     milestones: Vec<PlaybookMilestoneDraft>,
     saved_pipelines: Vec<PlaybookPipelineDraft>,
-    worker_id: Option<String>,
-    preferred_worker_agent_id: StewardAgentId,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -172,7 +154,6 @@ impl TryFrom<LegacyRoutineSnapshot> for RoutineSnapshot {
                 mode: value.action_handling,
                 instructions: value.steward_instructions,
             },
-            worker_id: value.worker_id,
             enabled: value.enabled,
             schedule_interval_seconds: value.schedule_interval_seconds,
         })
@@ -212,7 +193,6 @@ impl TryFrom<LegacyPlaybookMilestoneDraft> for PlaybookMilestoneDraft {
                 mode: value.check.action_handling,
                 instructions: value.check.steward_instructions,
             },
-            worker_id: value.check.worker_id,
             retry_delay_seconds: value.retry_delay_seconds,
             approver: value.approver,
         })
@@ -255,8 +235,6 @@ impl TryFrom<LegacyPlaybookSnapshot> for PlaybookSnapshot {
                     })
                 })
                 .collect::<Result<_, CoreError>>()?,
-            worker_id: value.worker_id,
-            preferred_worker_agent_id: value.preferred_worker_agent_id,
         })
     }
 }
@@ -285,7 +263,6 @@ pub struct ConfigurationApplicationPlan {
 #[derive(Debug, Default)]
 pub struct ConfigurationApplicationEffects {
     pub retired_session_ids: Vec<String>,
-    pub launch_worker_id: Option<String>,
     pub steward_configuration_changed: bool,
     pub tracker_runtime_changed: bool,
 }
@@ -540,40 +517,6 @@ impl CoreRuntime {
                 }
                 plan.target.clone()
             }
-            ImproverSessionTargetKind::WorkerInstructions => {
-                let snapshot: WorkerSnapshot = parse_snapshot(&plan.content)?;
-                let worker_id = plan
-                    .target
-                    .target_id
-                    .as_deref()
-                    .ok_or_else(|| CoreError::InvalidParams("targetId".into()))?;
-                let previous_session_id = self.worker_executor_session_id(worker_id);
-                self.update_worker_configuration(
-                    worker_id,
-                    snapshot.name,
-                    agent_wire(snapshot.agent_id),
-                    snapshot.model,
-                    snapshot.permission,
-                    snapshot.reasoning,
-                    snapshot.enabled,
-                    snapshot.ping_interval_seconds,
-                    snapshot.worker_prompt,
-                    snapshot.system_prompt,
-                    self.store.revision(),
-                    availability,
-                    created_at_epoch_ms,
-                )?;
-                let retained = self.worker_executor_session_id(worker_id);
-                if previous_session_id != retained
-                    && let Some(session_id) = previous_session_id
-                {
-                    effects.retired_session_ids.push(session_id);
-                }
-                if snapshot.enabled && retained.is_none() {
-                    effects.launch_worker_id = Some(worker_id.to_owned());
-                }
-                plan.target.clone()
-            }
             ImproverSessionTargetKind::RoutineInstructions => {
                 let snapshot: RoutineSnapshot = parse_snapshot(&plan.content)?;
                 let routine_id = plan
@@ -592,18 +535,12 @@ impl CoreRuntime {
             }
             ImproverSessionTargetKind::RoutineBuilder => {
                 let snapshot: NewRoutineSnapshot = parse_snapshot(&plan.content)?;
-                let worker_id = plan
-                    .target
-                    .target_id
-                    .as_deref()
-                    .ok_or_else(|| CoreError::InvalidParams("targetId".into()))?;
                 let routine_id = termloop_platform::generate_opaque_id();
                 let routine = RoutineSnapshot {
                     trigger_mode: snapshot.trigger_mode,
                     name: snapshot.name,
                     instructions: snapshot.instructions,
                     while_waiting: snapshot.while_waiting,
-                    worker_id: worker_id.to_owned(),
                     enabled: snapshot.enabled,
                     schedule_interval_seconds: snapshot.schedule_interval_seconds,
                 };
@@ -637,19 +574,15 @@ impl CoreRuntime {
                         "activePipelineName": snapshot.active_pipeline_name,
                         "milestones": snapshot.milestones,
                         "savedPipelines": snapshot.saved_pipelines,
-                        "workerId": snapshot.worker_id,
-                        "preferredWorkerAgentId": snapshot.preferred_worker_agent_id,
                         "expectedPlaybookRevision": current.map_or(0, |value| value.revision),
                         "expectedRevision": self.store.revision(),
                     }),
-                    termloop_platform::generate_opaque_id(),
                     (0..routine_capacity)
                         .map(|_| termloop_platform::generate_opaque_id())
                         .collect(),
-                    availability == AssistantAvailability::Proven,
                     created_at_epoch_ms,
                 )?;
-                effects.launch_worker_id = result["workerId"].as_str().map(ToOwned::to_owned);
+                let _ = result;
                 effects.tracker_runtime_changed = true;
                 effects.steward_configuration_changed = !steward_was_enabled
                     && self
@@ -735,9 +668,6 @@ impl CoreRuntime {
             })
             .cloned()
             .ok_or(CoreError::NotFound)?;
-        if current.enabled && current.worker_id != snapshot.worker_id {
-            return Err(CoreError::TrackerRuntimeActive);
-        }
         let mut candidate = routine_candidate(
             routine_id,
             project_id,
@@ -772,21 +702,18 @@ impl CoreRuntime {
         updated_at_epoch_ms: u64,
     ) -> Result<(), CoreError> {
         if candidate.enabled {
-            let worker = self
+            let steward = self
                 .store
-                .worker_configurations()
+                .steward_configurations()
                 .iter()
-                .find(|worker| {
-                    worker.id == candidate.worker_id && worker.project_id == candidate.project_id
-                })
+                .find(|steward| steward.project_id == candidate.project_id)
                 .ok_or(CoreError::NotFound)?;
-            if !worker.enabled || worker.executor_session_id.is_none() {
+            if !steward.enabled {
                 return Err(CoreError::AgentCapabilityUnproven);
             }
         }
         let routine_id = candidate.id.clone();
         let enabled = candidate.enabled;
-        let worker_id = candidate.worker_id.clone();
         self.store
             .set_tracker_configuration(&self.write_authority, candidate, self.store.revision())
             .map_err(store_error)?;
@@ -794,8 +721,6 @@ impl CoreRuntime {
         if enabled {
             self.tracker_runtime
                 .schedule_tracker_now(&routine_id, updated_at_epoch_ms);
-            self.tracker_runtime
-                .schedule_worker_ping_now(&worker_id, updated_at_epoch_ms);
         }
         Ok(())
     }
@@ -841,46 +766,6 @@ impl CoreRuntime {
                 }
                 serialize(&snapshot)
             }
-            ImproverSessionTargetKind::WorkerInstructions => {
-                let snapshot: WorkerSnapshot =
-                    serde_json::from_str(content).map_err(|_| invalid())?;
-                let worker_id = target.target_id.as_deref().ok_or_else(invalid)?;
-                let current = self
-                    .store
-                    .worker_configurations()
-                    .iter()
-                    .find(|configuration| {
-                        configuration.id == worker_id && configuration.project_id == project_id
-                    })
-                    .ok_or(CoreError::NotFound)?;
-                termloop_invocation::validate_agent_configuration(
-                    agent_wire(snapshot.agent_id),
-                    &snapshot.model,
-                    &snapshot.permission,
-                    &snapshot.reasoning,
-                )
-                .map_err(|_| invalid())?;
-                let candidate = WorkerConfiguration {
-                    id: current.id.clone(),
-                    project_id: project_id.to_owned(),
-                    name: snapshot.name.clone(),
-                    agent_id: snapshot.agent_id,
-                    model: snapshot.model.clone(),
-                    permission: snapshot.permission.clone(),
-                    reasoning: snapshot.reasoning.clone(),
-                    enabled: snapshot.enabled,
-                    ping_interval_seconds: snapshot.ping_interval_seconds,
-                    worker_prompt: snapshot.worker_prompt.clone(),
-                    system_prompt: snapshot.system_prompt.clone(),
-                    executor_session_id: current.executor_session_id.clone(),
-                    generation: current.generation,
-                    updated_at_epoch_ms: current.updated_at_epoch_ms,
-                };
-                if !candidate.is_valid() {
-                    return Err(invalid());
-                }
-                serialize(&snapshot)
-            }
             ImproverSessionTargetKind::RoutineInstructions => {
                 let snapshot = parse_routine_snapshot(content)?;
                 let routine_id = target.target_id.as_deref().ok_or_else(invalid)?;
@@ -899,7 +784,6 @@ impl CoreRuntime {
                     name: snapshot.name.clone(),
                     prompt: snapshot.instructions.clone(),
                     steward_instructions: snapshot.while_waiting.instructions.clone(),
-                    worker_id: snapshot.worker_id.clone(),
                     enabled: snapshot.enabled,
                     schedule_interval_seconds: snapshot.schedule_interval_seconds,
                     generation: current.generation,
@@ -914,11 +798,7 @@ impl CoreRuntime {
                     last_successful_report_at_epoch_ms: current.last_successful_report_at_epoch_ms,
                     updated_at_epoch_ms: current.updated_at_epoch_ms,
                 };
-                if !candidate.is_valid()
-                    || !self.store.worker_configurations().iter().any(|worker| {
-                        worker.id == snapshot.worker_id && worker.project_id == project_id
-                    })
-                {
+                if !candidate.is_valid() {
                     return Err(invalid());
                 }
                 serialize(&snapshot)
@@ -935,13 +815,6 @@ impl CoreRuntime {
                     || snapshot.milestones.len() > 24
                     || snapshot.saved_pipelines.len() > 16
                     || milestone_count > 24 * 17
-                    || snapshot.worker_id.as_deref().is_some_and(|worker_id| {
-                        !self
-                            .store
-                            .worker_configurations()
-                            .iter()
-                            .any(|worker| worker.id == worker_id && worker.project_id == project_id)
-                    })
                 {
                     return Err(invalid());
                 }
@@ -982,15 +855,6 @@ impl CoreRuntime {
             }
             ImproverSessionTargetKind::RoutineBuilder => {
                 let snapshot = parse_new_routine_snapshot(content)?;
-                let worker_id = target.target_id.as_deref().ok_or_else(invalid)?;
-                if !self
-                    .store
-                    .worker_configurations()
-                    .iter()
-                    .any(|worker| worker.id == worker_id && worker.project_id == project_id)
-                {
-                    return Err(CoreError::NotFound);
-                }
                 let candidate = TrackerConfiguration {
                     id: "candidate".into(),
                     project_id: project_id.to_owned(),
@@ -998,7 +862,6 @@ impl CoreRuntime {
                     name: snapshot.name.clone(),
                     prompt: snapshot.instructions.clone(),
                     steward_instructions: snapshot.while_waiting.instructions.clone(),
-                    worker_id: worker_id.to_owned(),
                     enabled: snapshot.enabled,
                     schedule_interval_seconds: snapshot.schedule_interval_seconds,
                     generation: 1,
@@ -1096,7 +959,6 @@ fn routine_candidate(
         name: snapshot.name.clone(),
         prompt: snapshot.instructions.clone(),
         steward_instructions: snapshot.while_waiting.instructions.clone(),
-        worker_id: snapshot.worker_id.clone(),
         enabled: snapshot.enabled,
         schedule_interval_seconds: snapshot.schedule_interval_seconds,
         generation,
@@ -1135,7 +997,6 @@ pub(crate) fn target_from_wire(params: &Value) -> Result<ImproverSessionTarget, 
 pub fn target_kind_wire(kind: ImproverSessionTargetKind) -> &'static str {
     match kind {
         ImproverSessionTargetKind::StewardInstructions => "stewardInstructions",
-        ImproverSessionTargetKind::WorkerInstructions => "workerInstructions",
         ImproverSessionTargetKind::RoutineInstructions => "routineInstructions",
         ImproverSessionTargetKind::RoutineBuilder => "routineBuilder",
         ImproverSessionTargetKind::Playbook => "playbook",
@@ -1150,7 +1011,6 @@ pub fn target_kind_wire(kind: ImproverSessionTargetKind) -> &'static str {
 fn target_kind_from_wire(value: &str) -> Option<ImproverSessionTargetKind> {
     Some(match value {
         "stewardInstructions" => ImproverSessionTargetKind::StewardInstructions,
-        "workerInstructions" => ImproverSessionTargetKind::WorkerInstructions,
         "routineInstructions" => ImproverSessionTargetKind::RoutineInstructions,
         "routineBuilder" => ImproverSessionTargetKind::RoutineBuilder,
         "playbook" => ImproverSessionTargetKind::Playbook,

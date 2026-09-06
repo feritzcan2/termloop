@@ -1,4 +1,4 @@
-//! Persistent lightweight Steward/Worker Session composition.
+//! Persistent lightweight Project Steward Session composition.
 //!
 //! These assistants use the ordinary provider executable and PTY path. Core
 //! binds the exact current configuration to one Session and is the only caller
@@ -20,17 +20,11 @@ pub enum PersistentAssistantIdentity {
         project_id: String,
         generation: u64,
     },
-    Worker {
-        project_id: String,
-        worker_id: String,
-        generation: u64,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersistentAssistantFreshStart {
     Steward { project_id: String },
-    Worker { worker_id: String },
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +36,6 @@ pub struct PersistentAssistantTarget {
     pub reasoning: String,
     pub cwd: String,
     pub system_prompt: Option<String>,
-    pub worker_prompt: Option<String>,
 }
 
 pub struct PersistentAssistantLaunchPlan {
@@ -153,9 +146,10 @@ pub(crate) enum PendingAssistantWakeDelivery {
         submission: termloop_invocation::GeneratedTerminalSubmission,
         confirmation_queued: bool,
     },
-    Worker {
-        worker_id: String,
-        worker_generation: u64,
+    StewardAssignment {
+        project_id: String,
+        generation: u64,
+        check_id: String,
         session_id: String,
         runtime_epoch: u64,
         submission: termloop_invocation::GeneratedTerminalSubmission,
@@ -165,13 +159,16 @@ pub(crate) enum PendingAssistantWakeDelivery {
 impl PendingAssistantWakeDelivery {
     pub(crate) fn session_id(&self) -> &str {
         match self {
-            Self::Steward { session_id, .. } | Self::Worker { session_id, .. } => session_id,
+            Self::Steward { session_id, .. } | Self::StewardAssignment { session_id, .. } => {
+                session_id
+            }
         }
     }
 
     pub(crate) fn runtime_epoch(&self) -> u64 {
         match self {
-            Self::Steward { runtime_epoch, .. } | Self::Worker { runtime_epoch, .. } => {
+            Self::Steward { runtime_epoch, .. }
+            | Self::StewardAssignment { runtime_epoch, .. } => {
                 *runtime_epoch
             }
         }
@@ -179,7 +176,8 @@ impl PendingAssistantWakeDelivery {
 
     pub(crate) fn submission(&self) -> &termloop_invocation::GeneratedTerminalSubmission {
         match self {
-            Self::Steward { submission, .. } | Self::Worker { submission, .. } => submission,
+            Self::Steward { submission, .. }
+            | Self::StewardAssignment { submission, .. } => submission,
         }
     }
 
@@ -208,23 +206,26 @@ impl PendingAssistantWakeDelivery {
         )
     }
 
-    fn is_same_worker_wake(
+    fn is_same_steward_assignment(
         &self,
-        worker_id: &str,
-        worker_generation: u64,
+        project_id: &str,
+        generation: u64,
+        check_id: &str,
         session_id: &str,
         runtime_epoch: u64,
     ) -> bool {
         matches!(
             self,
-            Self::Worker {
-                worker_id: pending_worker_id,
-                worker_generation: pending_worker_generation,
+            Self::StewardAssignment {
+                project_id: pending_project_id,
+                generation: pending_generation,
+                check_id: pending_check_id,
                 session_id: pending_session_id,
                 runtime_epoch: pending_runtime_epoch,
                 ..
-            } if pending_worker_id == worker_id
-                && *pending_worker_generation == worker_generation
+            } if pending_project_id == project_id
+                && *pending_generation == generation
+                && pending_check_id == check_id
                 && pending_session_id == session_id
                 && *pending_runtime_epoch == runtime_epoch
         )
@@ -276,38 +277,14 @@ pub fn compose_steward_wake(
     .map_err(|error| CoreError::Terminal(error.to_string()))
 }
 
-pub fn compose_tracker_wake(
-    check_id: &str,
-    prompt: &str,
-) -> Result<termloop_invocation::AssistantWakeMessage, CoreError> {
-    termloop_invocation::assistant_wake_message(
-        termloop_invocation::ExecutorRole::Routine,
-        termloop_invocation::AssistantWakeReason::ScheduledCheck,
-        Some(check_id),
-        Some(prompt),
-    )
-    .map_err(|error| CoreError::Terminal(error.to_string()))
-}
-
-pub fn compose_worker_routine_wake() -> Result<termloop_invocation::AssistantWakeMessage, CoreError>
-{
-    termloop_invocation::assistant_wake_message(
-        termloop_invocation::ExecutorRole::Worker,
-        termloop_invocation::AssistantWakeReason::ScheduledCheck,
-        None,
-        None,
-    )
-    .map_err(|error| CoreError::Terminal(error.to_string()))
-}
-
-pub fn compose_worker_routine_assignment_wake(
+pub fn compose_steward_assignment_wake(
     check_id: &str,
     assignment: &serde_json::Value,
 ) -> Result<termloop_invocation::AssistantWakeMessage, CoreError> {
     let assignment = serde_json::to_string(assignment)
         .map_err(|error| CoreError::Terminal(error.to_string()))?;
     termloop_invocation::assistant_wake_message(
-        termloop_invocation::ExecutorRole::Worker,
+        termloop_invocation::ExecutorRole::Steward,
         termloop_invocation::AssistantWakeReason::ScheduledCheck,
         Some(check_id),
         Some(&assignment),
@@ -341,7 +318,7 @@ impl CoreRuntime {
     /// True only while invocation-owned initial input is waiting for the
     /// synchronous provider SessionStart hook response to leave the daemon.
     /// This applies uniformly to ordinary Agents, Improvers, helpers, Stewards,
-    /// and Workers; feature identity never selects terminal sequencing policy.
+    /// and Stewards; feature identity never selects terminal sequencing policy.
     pub fn pending_generated_input_after_hook_response(&self, session_id: &str) -> bool {
         self.agent_observations
             .get(session_id)
@@ -384,26 +361,13 @@ impl CoreRuntime {
         if !transport.mcp_http_supported(&target.agent_id) {
             return Err(CoreError::AgentUnsupported);
         }
-        let role = match &target.identity {
-            PersistentAssistantIdentity::Steward { .. } => {
-                termloop_invocation::ExecutorRole::Steward
-            }
-            PersistentAssistantIdentity::Worker { .. } => termloop_invocation::ExecutorRole::Worker,
-        };
+        let role = termloop_invocation::ExecutorRole::Steward;
         let mcp_role = match &target.identity {
             PersistentAssistantIdentity::Steward { project_id, .. } => {
                 crate::session_launch::AgentMcpRole::Steward {
                     project_id: project_id.clone(),
                 }
             }
-            PersistentAssistantIdentity::Worker {
-                project_id,
-                worker_id,
-                ..
-            } => crate::session_launch::AgentMcpRole::Worker {
-                project_id: project_id.clone(),
-                worker_id: worker_id.clone(),
-            },
         };
         let mcp_token = termloop_platform::generate_capability_token();
         let observation_token = transport
@@ -440,7 +404,6 @@ impl CoreRuntime {
                 reasoning: &target.reasoning,
                 role,
                 system_prompt: target.system_prompt.as_deref(),
-                worker_prompt: target.worker_prompt.as_deref(),
                 cwd: &target.cwd,
                 conversation,
                 observation,
@@ -448,15 +411,7 @@ impl CoreRuntime {
                     endpoint: &transport.mcp_endpoint,
                     token: &mcp_token,
                     claude_config_path: &transport.claude_mcp_config_path,
-                    profile: match role {
-                        termloop_invocation::ExecutorRole::Steward => {
-                            termloop_invocation::AgentMcpProfile::Steward
-                        }
-                        termloop_invocation::ExecutorRole::Worker => {
-                            termloop_invocation::AgentMcpProfile::Worker
-                        }
-                        _ => unreachable!("persistent assistant role was validated"),
-                    },
+                    profile: termloop_invocation::AgentMcpProfile::Steward,
                 },
             },
         )
@@ -505,40 +460,6 @@ impl CoreRuntime {
             reasoning: configuration.reasoning.clone(),
             cwd: project.folder_path.clone(),
             system_prompt: Some(configuration.system_prompt.clone()),
-            worker_prompt: None,
-        })
-    }
-
-    pub fn request_persistent_worker_launch(
-        &self,
-        worker_id: &str,
-    ) -> Option<PersistentAssistantTarget> {
-        let configuration = self
-            .store
-            .worker_configurations()
-            .iter()
-            .find(|configuration| configuration.id == worker_id)?;
-        if !configuration.enabled || configuration.executor_session_id.is_some() {
-            return None;
-        }
-        let project = self
-            .store
-            .projects()
-            .iter()
-            .find(|project| project.id == configuration.project_id)?;
-        Some(PersistentAssistantTarget {
-            identity: PersistentAssistantIdentity::Worker {
-                project_id: configuration.project_id.clone(),
-                worker_id: worker_id.to_owned(),
-                generation: configuration.generation,
-            },
-            agent_id: agent_name(configuration.agent_id).into(),
-            model: configuration.model.clone(),
-            permission: configuration.permission.clone(),
-            reasoning: configuration.reasoning.clone(),
-            cwd: project.folder_path.clone(),
-            system_prompt: Some(configuration.system_prompt.clone()),
-            worker_prompt: Some(configuration.worker_prompt.clone()),
         })
     }
 
@@ -587,21 +508,8 @@ impl CoreRuntime {
             .map(|configuration| PersistentAssistantFreshStart::Steward {
                 project_id: configuration.project_id.clone(),
             });
-        let worker = self
-            .store
-            .worker_configurations()
-            .iter()
-            .find(|configuration| {
-                configuration.enabled
-                    && configuration.executor_session_id.as_deref() == Some(session_id)
-                    && configuration.project_id == session.project_id
-            })
-            .map(|configuration| PersistentAssistantFreshStart::Worker {
-                worker_id: configuration.id.clone(),
-            });
-        let target = match (steward, worker) {
-            (Some(target), None) | (None, Some(target)) => target,
-            _ => return Ok(None),
+        let Some(target) = steward else {
+            return Ok(None);
         };
 
         self.release_agent_terminal_hold(session_id)?;
@@ -645,22 +553,7 @@ impl CoreRuntime {
         }
         let pending_generated_input = initial_input_submission;
         let template = launch.provenance().clone();
-        let session_name = match &target.identity {
-            PersistentAssistantIdentity::Steward { .. } => "Project Steward".to_owned(),
-            PersistentAssistantIdentity::Worker { worker_id, .. } => match self
-                .store
-                .worker_configurations()
-                .iter()
-                .find(|configuration| configuration.id == *worker_id)
-                .map(|configuration| configuration.name.clone())
-            {
-                Some(name) => name,
-                None => {
-                    mcp_authorizer.remove_provisional(&session_id, runtime_epoch);
-                    return Err(CoreError::NotFound);
-                }
-            },
-        };
+        let session_name = "Project Steward".to_owned();
         let session = SessionRecord {
             launch_selection: termloop_domain::AgentLaunchSelection::new(
                 &target.model,
@@ -700,20 +593,6 @@ impl CoreRuntime {
                     &self.write_authority,
                     session,
                     project_id,
-                    *generation,
-                    updated_at_epoch_ms,
-                )
-                .map(to_value),
-            PersistentAssistantIdentity::Worker {
-                worker_id,
-                generation,
-                ..
-            } => self
-                .store
-                .attach_worker_executor_session(
-                    &self.write_authority,
-                    session,
-                    worker_id,
                     *generation,
                     updated_at_epoch_ms,
                 )
@@ -821,26 +700,27 @@ impl CoreRuntime {
         Ok(StewardWakeAdmission::Admitted)
     }
 
-    pub fn deliver_worker_routine_wake(
+    pub fn deliver_steward_assignment_wake(
         &mut self,
-        wake: &super::tracker_runtime::DueWorkerWake,
+        wake: &super::tracker_runtime::DueStewardWake,
+        check_id: &str,
         message: &termloop_invocation::AssistantWakeMessage,
     ) -> Result<String, CoreError> {
-        if !self.worker_wake_is_current(wake) {
+        if !self.steward_assignment_is_current(wake) {
             return Err(CoreError::TrackerReportStale);
         }
-        let worker = self
+        let steward = self
             .store
-            .worker_configurations()
+            .steward_configurations()
             .iter()
-            .find(|worker| worker.id == wake.worker_id)
+            .find(|steward| steward.project_id == wake.project_id)
             .ok_or(CoreError::NotFound)?;
-        if worker.generation != wake.worker_generation
-            || worker.executor_session_id.as_deref() != Some(wake.worker_session_id.as_str())
+        if steward.generation != wake.steward_generation
+            || steward.executor_session_id.as_deref() != Some(wake.steward_session_id.as_str())
         {
             return Err(CoreError::TrackerReportStale);
         }
-        let session_id = worker
+        let session_id = steward
             .executor_session_id
             .clone()
             .ok_or(CoreError::NotFound)?;
@@ -854,9 +734,10 @@ impl CoreRuntime {
         self.prune_stale_pending_assistant_wake_deliveries();
         if let Some(pending) = self.pending_assistant_wake_deliveries.get(&session_id) {
             return pending
-                .is_same_worker_wake(
-                    &wake.worker_id,
-                    wake.worker_generation,
+                .is_same_steward_assignment(
+                    &wake.project_id,
+                    wake.steward_generation,
+                    check_id,
                     &session_id,
                     runtime_epoch,
                 )
@@ -868,15 +749,16 @@ impl CoreRuntime {
         self.prune_stale_pending_assistant_wake_deliveries();
         self.pending_assistant_wake_deliveries.insert(
             session_id.clone(),
-            PendingAssistantWakeDelivery::Worker {
-                worker_id: wake.worker_id.clone(),
-                worker_generation: wake.worker_generation,
+            PendingAssistantWakeDelivery::StewardAssignment {
+                project_id: wake.project_id.clone(),
+                generation: wake.steward_generation,
+                check_id: check_id.to_owned(),
                 session_id: session_id.clone(),
                 runtime_epoch,
                 submission,
             },
         );
-        self.acknowledge_worker_wake_delivery(wake);
+        self.acknowledge_steward_assignment_delivery(wake);
         Ok(session_id)
     }
 
@@ -900,8 +782,7 @@ impl CoreRuntime {
 
 fn project_id(identity: &PersistentAssistantIdentity) -> &str {
     match identity {
-        PersistentAssistantIdentity::Steward { project_id, .. }
-        | PersistentAssistantIdentity::Worker { project_id, .. } => project_id,
+        PersistentAssistantIdentity::Steward { project_id, .. } => project_id,
     }
 }
 
@@ -950,7 +831,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_steward_and_worker_resumes_retire_only_after_ownership_is_safe() {
+    fn failed_steward_resume_retires_only_after_ownership_is_safe() {
         let path = std::env::temp_dir().join(format!(
             "termloop-core-assistant-fresh-fallback-{}-{}.json",
             std::process::id(),
@@ -986,40 +867,11 @@ mod tests {
             })
             .unwrap();
         runtime
-            .create_worker_configuration(
-                "worker-1".into(),
-                &project_id,
-                "Worker".into(),
-                "codex",
-                true,
-                "default".into(),
-                "bypassPermissions".into(),
-                "default".into(),
-                60,
-                String::new(),
-                String::new(),
-                runtime.state_revision(),
-                AssistantAvailability::Proven,
-                2,
-            )
-            .unwrap();
-
-        runtime
             .store
             .attach_steward_executor_session(
                 &runtime.write_authority,
                 assistant_session("steward-failed", &project_id, &folder),
                 &project_id,
-                1,
-                3,
-            )
-            .unwrap();
-        runtime
-            .store
-            .attach_worker_executor_session(
-                &runtime.write_authority,
-                assistant_session("worker-failed", &project_id, &folder),
-                "worker-1",
                 1,
                 3,
             )
@@ -1032,29 +884,12 @@ mod tests {
                 termloop_domain::ResumeFailureReason::ProviderHistoryDamaged,
             )
             .unwrap();
-        runtime
-            .store
-            .mark_session_resume_failed(
-                &runtime.write_authority,
-                "worker-failed",
-                termloop_domain::ResumeFailureReason::ResumeRejected,
-            )
-            .unwrap();
-
         assert_eq!(
             runtime
                 .retire_failed_persistent_assistant_for_fresh_start("steward-failed")
                 .unwrap(),
             Some(PersistentAssistantFreshStart::Steward {
                 project_id: project_id.clone(),
-            })
-        );
-        assert_eq!(
-            runtime
-                .retire_failed_persistent_assistant_for_fresh_start("worker-failed")
-                .unwrap(),
-            Some(PersistentAssistantFreshStart::Worker {
-                worker_id: "worker-1".into(),
             })
         );
         assert!(
@@ -1064,15 +899,10 @@ mod tests {
         );
         assert!(
             runtime
-                .request_persistent_worker_launch("worker-1")
-                .is_some()
-        );
-        assert!(
-            runtime
                 .store
                 .sessions()
                 .iter()
-                .all(|session| !matches!(session.id.as_str(), "steward-failed" | "worker-failed"))
+                .all(|session| session.id != "steward-failed")
         );
 
         runtime
@@ -1260,49 +1090,24 @@ mod tests {
         assert!(steward.is_same_steward_wake("project", 3, 13, "steward", 7));
         assert!(!steward.is_same_steward_wake("project", 3, 14, "steward", 7));
 
-        let worker_submission = compose_tracker_wake(
-            "0123456789abcdef0123456789abcdef",
-            "Inspect the configured condition.",
-        )
-        .unwrap()
-        .terminal_submission();
-        let worker = PendingAssistantWakeDelivery::Worker {
-            worker_id: "worker".into(),
-            worker_generation: 5,
-            session_id: "worker-session".into(),
-            runtime_epoch: 9,
-            submission: worker_submission,
-        };
-        assert!(worker.is_same_worker_wake("worker", 5, "worker-session", 9));
-        assert!(!worker.is_same_worker_wake("worker", 5, "worker-session", 10));
-    }
-    #[test]
-    fn worker_assignment_wake_contains_exact_visible_tracker_instructions_and_enter() {
-        let prompt = "Use the Slack connector to inspect #product and report to the Steward.";
-        let wake = compose_tracker_wake("0123456789abcdef0123456789abcdef", prompt).unwrap();
-        assert!(
-            wake.delivered_preview()
-                .contains("Exact configured Task instructions")
-        );
-        assert!(wake.delivered_preview().contains(prompt));
-        assert_eq!(wake.terminal_submission().submit_input(), b"\r");
     }
 
     #[test]
-    fn persistent_worker_wake_delivers_the_claimed_assignment_directly() {
+    fn persistent_steward_wake_delivers_the_claimed_assignment_directly() {
         let assignment = json!({
             "status": "assigned",
             "routine": {"id":"routine-1", "instructions":"Inspect the live provider."},
             "step": {"milestoneId":"review", "tasks":[{"taskId":"task-1"}]}
         });
-        let wake =
-            compose_worker_routine_assignment_wake("0123456789abcdef0123456789abcdef", &assignment)
-                .unwrap();
+        let wake = compose_steward_assignment_wake(
+            "0123456789abcdef0123456789abcdef",
+            &assignment,
+        )
+        .unwrap();
         let delivered = wake.delivered_preview();
 
         assert!(delivered.contains("Exact assigned Routine"));
-        assert!(delivered.contains("do not call get-next first"));
-        assert!(delivered.contains("worker_complete_assignment"));
+        assert!(delivered.contains("steward_complete_assignment"));
         assert!(delivered.contains("\"milestoneId\":\"review\""));
         assert!(delivered.contains("\"taskId\":\"task-1\""));
         assert_eq!(wake.terminal_submission().submit_input(), b"\r");

@@ -319,7 +319,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
             SessionRecord {
                 launch_selection: Default::default(),
                 id: "stale-assistant".into(),
-                project_id,
+                project_id: project_id.clone(),
                 name: Some("Stale Steward".into()),
                 kind: SessionKind::Agent,
                 process: ProcessDescriptor {
@@ -1517,9 +1517,9 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
 }
 
 #[tokio::test]
-async fn worker_activation_waits_for_post_hook_and_confirms_once() {
+async fn steward_activation_waits_for_post_hook_and_confirms_once() {
     let root = std::env::temp_dir().join(format!(
-        "termloop-core-worker-activation-{}-{}",
+        "termloop-core-steward-activation-{}-{}",
         std::process::id(),
         Uuid::new_v4()
     ));
@@ -1537,7 +1537,7 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     let project_id = runtime
         .handle(
             "project.create",
-            json!({"name":"Worker activation","folderPath":root}),
+            json!({"name":"Steward activation","folderPath":root}),
         )
         .unwrap()["id"]
         .as_str()
@@ -1545,19 +1545,15 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .to_owned();
     runtime
         .store
-        .set_worker_configuration(
+        .set_steward_configuration(
             &runtime.write_authority,
-            termloop_domain::WorkerConfiguration {
-                id: "worker-1".into(),
+            termloop_domain::StewardConfiguration {
                 project_id: project_id.clone(),
-                name: "Activation Worker".into(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),
                 permission: "default".into(),
                 reasoning: "default".into(),
                 enabled: true,
-                ping_interval_seconds: 60,
-                worker_prompt: String::new(),
                 system_prompt: String::new(),
                 executor_session_id: None,
                 generation: 1,
@@ -1568,13 +1564,13 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     runtime
         .store
-        .attach_worker_executor_session(
+        .attach_steward_executor_session(
             &runtime.write_authority,
             SessionRecord {
                 launch_selection: Default::default(),
-                id: "worker-activation".into(),
-                project_id,
-                name: Some("Activation Worker".into()),
+                id: "steward-activation".into(),
+                project_id: project_id.clone(),
+                name: Some("Activation Steward".into()),
                 kind: SessionKind::Agent,
                 process: ProcessDescriptor {
                     program: "claude".into(),
@@ -1598,28 +1594,28 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
                 resume_launch_guard: None,
                 resume_failure: None,
             },
-            "worker-1",
+            &project_id,
             1,
             1,
         )
         .unwrap();
     runtime.agent_observations.insert(
-        "worker-activation".into(),
+        "steward-activation".into(),
         crate::AgentObservationCapability {
-            token: Some("worker-token".into()),
+            token: Some("steward-token".into()),
             runtime_epoch: 9,
             last_signal: None,
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             observation: None,
             pending_generated_input: Some(crate::test_generated_terminal_submission(
-                "Activate this Worker",
+                "Activate this Steward",
             )),
         },
     );
     terminal
         .spawn(PtySpawnSpec {
-            session_id: "worker-activation".into(),
+            session_id: "steward-activation".into(),
             runtime_epoch: 9,
             program: std::env::current_exe()
                 .unwrap()
@@ -1636,13 +1632,13 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
                 .with_explicit("TERMLOOP_TEST_PENDING_INITIAL_INPUT", "1")
                 .with_explicit(
                     "TERMLOOP_TEST_EXPECTED_INITIAL_INPUT",
-                    "Activate this Worker",
+                    "Activate this Steward",
                 )
                 .with_explicit("TERMLOOP_TEST_DELAY_COMPOSER_RENDER", "1"),
             recent_output_replay: false,
         })
         .unwrap();
-    let mut output = terminal.subscribe("worker-activation", 9).unwrap();
+    let mut output = terminal.subscribe("steward-activation", 9).unwrap();
     let mut bytes = Vec::new();
     let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -1650,7 +1646,7 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1664,8 +1660,8 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
 
     runtime
         .record_agent_observation(
-            "worker-token",
-            "worker-activation",
+            "steward-token",
+            "steward-activation",
             "SessionStart",
             None,
             None,
@@ -1673,22 +1669,22 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             1,
         )
         .unwrap();
-    assert!(runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(runtime.pending_generated_input_after_hook_response("steward-activation"));
     assert!(
         runtime
-            .deliver_pending_generated_input_after_hook_response("worker-activation")
+            .deliver_pending_generated_input_after_hook_response("steward-activation")
             .unwrap()
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !String::from_utf8_lossy(&bytes)
-            .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Worker")
+            .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Steward")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1700,26 +1696,26 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "worker fixture did not render paste; state={:?} failure={:?} output={}",
-            runtime.generated_input_delivery_state("worker-activation", 9),
-            runtime.generated_input_delivery_failure("worker-activation", 9),
+            "steward fixture did not render paste; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("steward-activation", 9),
+            runtime.generated_input_delivery_failure("steward-activation", 9),
             bounded_headless_fixture_output(&bytes),
         )
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::WritingPaste),
         "a synchronized frame must not release submit before the composer render marker"
     );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !String::from_utf8_lossy(&bytes)
-            .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Worker")
+            .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Steward")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1731,9 +1727,9 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "worker fixture did not receive submit; state={:?} failure={:?} output={}",
-            runtime.generated_input_delivery_state("worker-activation", 9),
-            runtime.generated_input_delivery_failure("worker-activation", 9),
+            "steward fixture did not receive submit; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("steward-activation", 9),
+            runtime.generated_input_delivery_failure("steward-activation", 9),
             bounded_headless_fixture_output(&bytes),
         )
     });
@@ -1743,15 +1739,15 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     assert!(runtime.record_generated_input_runtime_event(event).unwrap());
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::AwaitingProviderAck)
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
 
     runtime
         .record_agent_observation(
-            "worker-token",
-            "worker-activation",
+            "steward-token",
+            "steward-activation",
             "UserPromptSubmit",
             None,
             None,
@@ -1760,11 +1756,11 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         )
         .unwrap();
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::Confirmed)
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
-    let _ = terminal.terminate("worker-activation");
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
+    let _ = terminal.terminate("steward-activation");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -4794,8 +4790,6 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         mcp_token: None,
         mcp_role: None,
         agent_profile_ref: None,
-        worker_prompt: None,
-        worker_system_prompt: None,
         steward_system_prompt: None,
         mcp_authorizer: runtime.mcp_authorizer.clone(),
         observation_transport: {

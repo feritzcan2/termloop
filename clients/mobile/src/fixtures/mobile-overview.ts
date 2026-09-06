@@ -223,7 +223,6 @@ export const fixturePlaybook: PlaybookDto = {
       retryDelaySeconds: 600,
       completeWhen: "The Task branch has commits and no agent is still working.",
       whileWaiting: { mode: "off", instructions: "" },
-      workerId: "worker-1",
       approver: null,
     },
     {
@@ -234,7 +233,6 @@ export const fixturePlaybook: PlaybookDto = {
       retryDelaySeconds: 900,
       completeWhen: "A reviewer agent has reported on the branch diff.",
       whileWaiting: { mode: "off", instructions: "" },
-      workerId: "worker-1",
       approver: null,
     },
     {
@@ -245,7 +243,6 @@ export const fixturePlaybook: PlaybookDto = {
       retryDelaySeconds: 720,
       completeWhen: "A review request naming this pull request exists.",
       whileWaiting: { mode: "ask", instructions: "Offer to request review." },
-      workerId: "worker-1",
       approver: null,
     },
     {
@@ -256,7 +253,6 @@ export const fixturePlaybook: PlaybookDto = {
       retryDelaySeconds: 0,
       completeWhen: "The named reviewer explicitly approves the pull request.",
       whileWaiting: { mode: "off", instructions: "" },
-      workerId: "worker-1",
       approver: "Nurguyl",
     },
     {
@@ -267,7 +263,6 @@ export const fixturePlaybook: PlaybookDto = {
       retryDelaySeconds: 1800,
       completeWhen: "The deploy pipeline reports the merge commit as live.",
       whileWaiting: { mode: "off", instructions: "" },
-      workerId: "worker-1",
       approver: null,
     },
   ],

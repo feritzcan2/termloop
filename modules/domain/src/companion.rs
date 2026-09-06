@@ -5,16 +5,9 @@ pub const COMPANION_TRANSCRIPT_SOFT_BYTES: usize = 40 * 1024 * 1024;
 pub const COMPANION_TRANSCRIPT_HARD_BYTES: usize = 50 * 1024 * 1024;
 pub const COMPANION_TRANSCRIPT_HARD_MESSAGES: usize = 10_000;
 pub const COMPANION_TRANSCRIPT_SOFT_MESSAGES: usize = 8_000;
-pub const WORKERS_PER_PROJECT_MAX: usize = 8;
 pub const TRACKER_NAME_MAX_BYTES: usize = 80;
-pub const WORKER_NAME_MAX_BYTES: usize = 80;
-pub const WORKER_PING_INTERVAL_DEFAULT_SECONDS: u64 = 60;
-pub const WORKER_PING_INTERVAL_MIN_SECONDS: u64 = 60;
-pub const WORKER_PING_INTERVAL_MAX_SECONDS: u64 = 24 * 60 * 60;
-pub const WORKER_PROMPT_MAX_BYTES: usize = 16 * 1024;
-pub const WORKER_SYSTEM_PROMPT_MAX_BYTES: usize = 16 * 1024;
 pub const STEWARD_SYSTEM_PROMPT_MAX_BYTES: usize = 16 * 1024;
-// Legacy Playbook snapshots stored an 8 KiB Worker prompt and a separate
+// Legacy Playbook snapshots stored an 8 KiB verification prompt and a separate
 // applicability condition. The current completion rule combines both, so keep
 // enough room to migrate every formerly valid single-step rule without loss.
 pub const TRACKER_PROMPT_MAX_BYTES: usize = 9 * 1024;
@@ -170,42 +163,6 @@ pub struct StewardConfiguration {
     pub updated_at_epoch_ms: u64,
 }
 
-/// One persistent Project-scoped assistant terminal which can execute several
-/// Tracker assignments sequentially.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkerConfiguration {
-    pub id: String,
-    pub project_id: String,
-    pub name: String,
-    pub agent_id: StewardAgentId,
-    #[serde(default = "default_assistant_launch_option")]
-    pub model: String,
-    #[serde(default = "default_assistant_launch_option")]
-    pub permission: String,
-    #[serde(default = "default_assistant_launch_option")]
-    pub reasoning: String,
-    pub enabled: bool,
-    #[serde(default = "default_worker_ping_interval_seconds")]
-    pub ping_interval_seconds: u64,
-    /// Editable instructions for handling Routine assignments. The protected
-    /// built-in Worker runtime remains invocation-owned and is composed first.
-    #[serde(default)]
-    pub worker_prompt: String,
-    /// Editable general behavior and style instructions. Invocation composes
-    /// these after the Worker prompt so they take precedence among editable
-    /// fields without replacing the protected built-in runtime.
-    #[serde(default)]
-    pub system_prompt: String,
-    pub executor_session_id: Option<String>,
-    pub generation: u64,
-    pub updated_at_epoch_ms: u64,
-}
-
-const fn default_worker_ping_interval_seconds() -> u64 {
-    WORKER_PING_INTERVAL_DEFAULT_SECONDS
-}
-
 fn default_assistant_launch_option() -> String {
     "default".to_owned()
 }
@@ -247,7 +204,7 @@ impl RoutineTriggerMode {
 }
 
 /// Whether a scheduled Routine's new factual findings should be reviewed by the
-/// Steward. The Worker never recommends or selects the resulting action.
+/// Steward. Verification never recommends or selects the resulting action.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RoutineActionHandling {
@@ -306,7 +263,7 @@ pub struct TrackerConfiguration {
     #[serde(default)]
     pub trigger_mode: RoutineTriggerMode,
     pub name: String,
-    /// User-visible instructions delivered to the Worker for every check.
+    /// User-visible instructions delivered to the Steward for every check.
     #[serde(default)]
     pub prompt: String,
     /// User-visible response guidance delivered only to the Steward when it
@@ -314,9 +271,6 @@ pub struct TrackerConfiguration {
     /// from this Routine.
     #[serde(default)]
     pub steward_instructions: String,
-    /// The persistent Worker terminal which executes this assignment.
-    #[serde(default)]
-    pub worker_id: String,
     pub enabled: bool,
     pub schedule_interval_seconds: u64,
     pub generation: u64,
@@ -402,7 +356,6 @@ impl TrackerConfiguration {
     pub fn is_valid(&self) -> bool {
         !self.id.trim().is_empty()
             && !self.project_id.trim().is_empty()
-            && !self.worker_id.trim().is_empty()
             && !self.name.trim().is_empty()
             && self.name.len() <= TRACKER_NAME_MAX_BYTES
             && !self.prompt.trim().is_empty()
@@ -449,25 +402,6 @@ fn bounded_unique_values(values: &[String], max_items: usize, max_bytes: usize) 
                 && value.len() <= max_bytes
                 && !values[index + 1..].contains(value)
         })
-}
-
-impl WorkerConfiguration {
-    pub fn is_valid(&self) -> bool {
-        !self.id.trim().is_empty()
-            && !self.project_id.trim().is_empty()
-            && !self.name.trim().is_empty()
-            && self.name.len() <= WORKER_NAME_MAX_BYTES
-            && valid_assistant_launch_option(&self.model)
-            && valid_assistant_permission(&self.permission)
-            && valid_assistant_launch_option(&self.reasoning)
-            && (WORKER_PING_INTERVAL_MIN_SECONDS..=WORKER_PING_INTERVAL_MAX_SECONDS)
-                .contains(&self.ping_interval_seconds)
-            && self.worker_prompt.len() <= WORKER_PROMPT_MAX_BYTES
-            && (self.worker_prompt.is_empty() || !self.worker_prompt.trim().is_empty())
-            && self.system_prompt.len() <= WORKER_SYSTEM_PROMPT_MAX_BYTES
-            && (self.system_prompt.is_empty() || !self.system_prompt.trim().is_empty())
-            && self.generation > 0
-    }
 }
 
 impl StewardConfiguration {
@@ -634,7 +568,6 @@ mod tests {
             name: "Slack actions".into(),
             prompt: "Use the Slack connector to inspect #product and report to the Steward.".into(),
             steward_instructions: String::new(),
-            worker_id: "worker-1".into(),
             enabled: false,
             schedule_interval_seconds: 300,
             generation: 1,
@@ -679,7 +612,6 @@ mod tests {
             prompt: "Inspect the pull request and report whether the stage passed.".into(),
             steward_instructions: "If it remains waiting, consider asking the owner for review."
                 .into(),
-            worker_id: "worker-1".into(),
             enabled: true,
             schedule_interval_seconds: 300,
             generation: 2,
@@ -706,31 +638,4 @@ mod tests {
         assert!(configuration.is_valid());
     }
 
-    #[test]
-    fn worker_editable_prompts_are_optional_bounded_current_state() {
-        let mut configuration = WorkerConfiguration {
-            id: "worker-1".into(),
-            project_id: "project-1".into(),
-            name: "Worker 1".into(),
-            agent_id: StewardAgentId::Codex,
-            model: "default".into(),
-            permission: "bypassPermissions".into(),
-            reasoning: "default".into(),
-            enabled: false,
-            ping_interval_seconds: WORKER_PING_INTERVAL_DEFAULT_SECONDS,
-            worker_prompt: String::new(),
-            system_prompt: "Be concise.".into(),
-            executor_session_id: None,
-            generation: 1,
-            updated_at_epoch_ms: 1,
-        };
-        assert!(configuration.is_valid());
-        configuration.permission = "unbounded-provider-mode".into();
-        assert!(!configuration.is_valid());
-        configuration.permission = "bypassPermissions".into();
-        configuration.worker_prompt = " ".into();
-        assert!(!configuration.is_valid());
-        configuration.worker_prompt = "x".repeat(WORKER_PROMPT_MAX_BYTES + 1);
-        assert!(!configuration.is_valid());
-    }
 }
