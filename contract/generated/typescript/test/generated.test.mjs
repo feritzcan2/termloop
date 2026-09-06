@@ -53,8 +53,19 @@ test("generated current contract surface is stable", () => {
   assert.match(CONTRACT_IDENTITY, /^sha256:[0-9a-f]{64}$/);
   assert.match(ACCESS_PROTOCOL_IDENTITY, /^sha256:[0-9a-f]{64}$/);
   const contextBankMethods = METHODS.filter((method) => method.startsWith("contextBank."));
-  assert.deepEqual(METHODS.filter((method) => !method.startsWith("contextBank.")), ["system.version","system.capabilities","system.ping","system.defaultProjectsRoot","system.browseDirectory","attachment.beginUpload","system.shutdown","system.keepAwake.get","system.keepAwake.set","access.status","access.enable","access.disable","access.pairCreate","access.deviceList","access.deviceRevoke","control.subscribe","control.cancel","mcp.toolSettingsGet","mcp.toolDescriptionUpdate","mcp.toolDescriptionReset","skill.catalogGet","skill.deploymentSet","skill.definitionGet","skill.definitionSave","skill.definitionCreate","project.create","project.list","project.taskAutomationGet","project.taskAutomationSet","project.worktreeSummary","project.worktreeChangeList","project.worktreeDiff","project.worktreePreImage","project.listLocalBranches","project.updateDetails","project.delete","task.create","task.list","task.inspectArchive","task.archive","task.abandonArchive","task.restore","task.archivedContext","task.worktreeChangeList","task.worktreeDiff","task.worktreePreImage","task.branchCommitSummaryList","task.branchCommitList","task.branchCommitChangeList","task.branchCommitDiff","task.bindBranch","task.provisionWorktree","task.inspectWorktreeRepair","task.inspectWorktreeCleanup","task.repairWorktree","task.cleanupWorktree","task.forgetStaleWorktree","task.discardStaleWorktree","task.dismissWorktreeRepair","task.dismissWorktreeProvisioning","task.rename","task.updateBrief","task.updateDeveloperNotes","task.close","task.finalizeClosedWorktreeRemoval","task.reopen","task.delete","task.deleteArchived","task.launchTerminal","task.previewAgent","task.launchAgent","task.startRun","task.restartRun","project.startRun","project.restartRun","session.launchTerminal","session.previewAgent","session.launchAgent","session.forkAgent","session.repairProviderHistory","session.historyList","session.historyPreview","session.previewHistoryResumeAgent","session.resumeHistoryAgent","session.requestAskTo","session.requestHandoverTo","session.pasteImage","quickAction.preview","quickAction.launch","session.list","session.listArchived","session.listDeleted","session.inspectArchive","session.archive","session.restoreArchived","session.deleteArchived","session.restoreDeleted","session.rename","session.terminate","session.previewResumeAgent","session.resumeAgent","session.restartAgent","session.previewRelocateAgentToTask","session.relocateAgentToTask","session.previewRelocateAgentToProject","session.relocateAgentToProject","session.restartAgentsForClientLaunch","session.close","agent.capabilityList","agent.statusList","agent.observe","steward.configurationGet","steward.configurationSet","steward.configurationDelete","worker.configurationList","worker.configurationCreate","worker.configurationUpdate","worker.configurationDelete","runConfiguration.list","runConfiguration.create","runConfiguration.update","runConfiguration.delete","runConfiguration.improvePreview","runConfiguration.improveLaunch","assistantPrompt.improvePreview","assistantPrompt.improveLaunch","settings.improvePreview","settings.improveLaunch","configuration.versionList","configuration.versionRestore","run.runtimeList","routine.configurationList","routine.configurationCreate","routine.configurationUpdate","routine.contextUpdate","routine.configurationDelete","routine.runtimeList","routine.runNow","taskSource.list","taskSource.boardList","taskSource.boardListStored","taskSource.statusList","taskSource.statusListStored","taskSource.create","taskSource.update","taskSource.credentialsSet","taskSource.delete","taskSource.refresh","taskSource.candidateList","taskSource.candidateImport","taskSource.candidateIgnore","taskSource.candidateUnignore","playbook.get","playbook.update","playbook.taskPositionSet","playbook.runtime","companion.transcriptAppend","companion.proposalRespond","companion.suggestionAccept","companion.transcriptList","companion.transcriptClear","companion.wakeNext","companion.stewardWake","voice.settingsGet","voice.credentialsSet","gitHost.pullRequestList","gitHost.pullRequestChangeList","gitHost.pullRequestDiff"]);
+  assert.deepEqual(METHODS.filter((method) => !method.startsWith("contextBank.") && !method.startsWith("project.architecture")), ["system.version","system.capabilities","system.ping","system.defaultProjectsRoot","system.browseDirectory","attachment.beginUpload","system.shutdown","system.keepAwake.get","system.keepAwake.set","access.status","access.enable","access.disable","access.pairCreate","access.deviceList","access.deviceRevoke","control.subscribe","control.cancel","mcp.toolSettingsGet","mcp.toolDescriptionUpdate","mcp.toolDescriptionReset","skill.catalogGet","skill.deploymentSet","skill.definitionGet","skill.definitionSave","skill.definitionCreate","project.create","project.list","project.taskAutomationGet","project.taskAutomationSet","project.worktreeSummary","project.worktreeChangeList","project.worktreeDiff","project.worktreePreImage","project.listLocalBranches","project.updateDetails","project.delete","task.create","task.list","task.inspectArchive","task.archive","task.abandonArchive","task.restore","task.archivedContext","task.worktreeChangeList","task.worktreeDiff","task.worktreePreImage","task.branchCommitSummaryList","task.branchCommitList","task.branchCommitChangeList","task.branchCommitDiff","task.bindBranch","task.provisionWorktree","task.inspectWorktreeRepair","task.inspectWorktreeCleanup","task.repairWorktree","task.cleanupWorktree","task.forgetStaleWorktree","task.discardStaleWorktree","task.dismissWorktreeRepair","task.dismissWorktreeProvisioning","task.rename","task.updateBrief","task.updateDeveloperNotes","task.close","task.finalizeClosedWorktreeRemoval","task.reopen","task.delete","task.deleteArchived","task.launchTerminal","task.previewAgent","task.launchAgent","task.startRun","task.restartRun","project.startRun","project.restartRun","session.launchTerminal","session.previewAgent","session.launchAgent","session.forkAgent","session.repairProviderHistory","session.historyList","session.historyPreview","session.previewHistoryResumeAgent","session.resumeHistoryAgent","session.requestAskTo","session.requestHandoverTo","session.pasteImage","quickAction.preview","quickAction.launch","session.list","session.listArchived","session.listDeleted","session.inspectArchive","session.archive","session.restoreArchived","session.deleteArchived","session.restoreDeleted","session.rename","session.terminate","session.previewResumeAgent","session.resumeAgent","session.restartAgent","session.previewRelocateAgentToTask","session.relocateAgentToTask","session.previewRelocateAgentToProject","session.relocateAgentToProject","session.restartAgentsForClientLaunch","session.close","agent.capabilityList","agent.statusList","agent.observe","steward.configurationGet","steward.configurationSet","steward.configurationDelete","worker.configurationList","worker.configurationCreate","worker.configurationUpdate","worker.configurationDelete","runConfiguration.list","runConfiguration.create","runConfiguration.update","runConfiguration.delete","runConfiguration.improvePreview","runConfiguration.improveLaunch","assistantPrompt.improvePreview","assistantPrompt.improveLaunch","settings.improvePreview","settings.improveLaunch","configuration.versionList","configuration.versionRestore","run.runtimeList","routine.configurationList","routine.configurationCreate","routine.configurationUpdate","routine.contextUpdate","routine.configurationDelete","routine.runtimeList","routine.runNow","taskSource.list","taskSource.boardList","taskSource.boardListStored","taskSource.statusList","taskSource.statusListStored","taskSource.create","taskSource.update","taskSource.credentialsSet","taskSource.delete","taskSource.refresh","taskSource.candidateList","taskSource.candidateImport","taskSource.candidateIgnore","taskSource.candidateUnignore","playbook.get","playbook.update","playbook.taskPositionSet","playbook.runtime","companion.transcriptAppend","companion.proposalRespond","companion.suggestionAccept","companion.transcriptList","companion.transcriptClear","companion.wakeNext","companion.stewardWake","voice.settingsGet","voice.credentialsSet","gitHost.pullRequestList","gitHost.pullRequestChangeList","gitHost.pullRequestDiff"]);
   assert.deepEqual(contextBankMethods, ["contextBank.catalogGet", "contextBank.fileGet", "contextBank.fileSave", "contextBank.siblingConflictResolve"]);
+  const architectureMethods = METHODS.filter((method) => method.startsWith("project.architecture"));
+  assert.deepEqual(architectureMethods, [
+    "project.architectureSummary",
+    "project.architectureGraph",
+    "project.architectureNode",
+    "project.architectureRefresh",
+  ]);
+  for (const method of architectureMethods) {
+    assert.ok(!READ_ONLY_METHODS.includes(method));
+    assert.ok(!COMPANION_METHODS.includes(method));
+  }
   assert.deepEqual(METHODS.slice(25, 29), contextBankMethods);
   assert.deepEqual(EVENTS, ["projection.invalidated"]);
   assert.ok(READ_ONLY_METHODS.includes("control.subscribe"));
@@ -175,6 +186,53 @@ test("remote skill creation is bounded and full-control only", () => {
     skills: [], warnings: [], projectIncluded: false, projectName: null,
     providerSnapshotIncluded: false, managerAvailable: true,
   }), true);
+});
+
+test("architecture projections are strict, bounded, and full-control only", () => {
+  const node = {
+    id: "src/app.ts:App",
+    label: "App",
+    kind: "type",
+    file_type: "typescript",
+    source_file: "src/app.ts",
+    source_location: "12",
+    community: 1,
+    community_name: "Application",
+    fan_in: 4,
+    fan_out: 8,
+    degree: 12,
+    risk_score: 72.5,
+    neighbor_community_count: 3,
+  };
+  const summary = {
+    project_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    status: "ready",
+    engine_available: true,
+    built_at_commit: "abc123",
+    current_commit: "abc123",
+    node_count: 1,
+    edge_count: 0,
+    community_count: 1,
+    hotspots: [node],
+    warning: null,
+  };
+  assert.equal(validateMethodResult("project.architectureGraph", {
+    summary,
+    nodes: [node],
+    edges: [],
+    truncated: false,
+  }), true);
+  assert.equal(validateMethodResult("project.architectureGraph", {
+    summary,
+    nodes: [{ ...node, risk_score: 101 }],
+    edges: [],
+    truncated: false,
+  }), false);
+  for (const method of METHODS.filter((candidate) => candidate.startsWith("project.architecture"))) {
+    assert.ok(!READ_ONLY_METHODS.includes(method));
+    assert.ok(!COMPANION_METHODS.includes(method));
+  }
+  assert.ok(controlRequestTimeoutMs("project.architectureRefresh") > 15 * 60_000);
 });
 
 test("Context Bank projections are strict, bounded, and full-control only", () => {
