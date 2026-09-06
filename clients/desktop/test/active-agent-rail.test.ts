@@ -793,19 +793,6 @@ describe("Workspace view switch", () => {
     expect(markup).not.toContain('class="workspace-launch-actions"');
   });
 
-  it("gives the architecture map a peer tab without terminal launch controls", () => {
-    const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
-      view: "map",
-      disabled: false,
-      select: () => {},
-      launchTerminal: async () => {},
-      launchAgent: async () => {},
-    }));
-    expect(markup).toContain('aria-label="Project architecture map"');
-    expect(markup).toContain('aria-selected="true" class="selected" title="Architecture map"');
-    expect(markup).not.toContain('class="workspace-launch-actions"');
-  });
-
   it("names the dev server offer beside the launchers until a Project has one", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
       view: "overview",

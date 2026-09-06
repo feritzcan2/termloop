@@ -136,11 +136,6 @@ import type {
   ProjectWorktreeDiffResult,
   ProjectWorktreePreImageResult,
   ProjectWorktreeSummaryDto,
-  ProjectArchitectureSummaryDto,
-  ProjectArchitectureGraphParams,
-  ProjectArchitectureGraphResult,
-  ProjectArchitectureNodeParams,
-  ProjectArchitectureNodeResult,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
@@ -257,10 +252,6 @@ export type DesktopApi = {
   contextBankSiblingConflictResolve(params: ContextBankSiblingConflictResolveParams): Promise<ContextBankCatalogResult>;
   projectList(): Promise<Project[]>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
-  projectArchitectureSummary(projectId: string): Promise<ProjectArchitectureSummaryDto>;
-  projectArchitectureGraph(params: ProjectArchitectureGraphParams): Promise<ProjectArchitectureGraphResult>;
-  projectArchitectureNode(params: ProjectArchitectureNodeParams): Promise<ProjectArchitectureNodeResult>;
-  projectArchitectureRefresh(projectId: string): Promise<ProjectArchitectureSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   projectWorktreeDiff(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreeDiffResult>;
   projectWorktreePreImage(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreePreImageResult>;
