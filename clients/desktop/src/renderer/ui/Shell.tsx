@@ -370,10 +370,10 @@ export type StagePage =
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
-  | { kind: "taskSources" };
+  | { kind: "taskSettings" };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
-  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources"
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings"
     ? undefined
     : page;
 }
@@ -1074,8 +1074,8 @@ export function Shell(props: ShellProps) {
       disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
     },
     {
-      id: "view.taskSources", title: "Tasks", detail: "What a new Task starts with, the Jira sources, and the issues waiting to import.", group: "Session", keywords: ["jira", "import", "issues", "sync", "worktree", "automation"],
-      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSources" }),
+      id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
+      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSettings" }),
     },
     ...props.projectSessions.map((session): ShellCommand => ({
       id: `session.focus.${session.id}`,
@@ -1366,8 +1366,8 @@ export function Shell(props: ShellProps) {
                 : workspaceView === "agents"
                   ? { label: agentSearchOpen ? "Close agent search" : "Search active agents", icon: "search", pressed: agentSearchOpen, run: () => setAgentSearchOpen((open) => !open) }
                   : undefined}
-            secondaryAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
-              ? { label: "Tasks", icon: "task", pressed: stagePage?.kind === "taskSources", run: () => openStagePage({ kind: "taskSources" }) }
+            settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
+              ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
           <div className="sidebar-scroll">
@@ -1734,7 +1734,7 @@ export function Shell(props: ShellProps) {
               error={mcpLibrary.error}
               loaded={Boolean(mcpLibrary.value)}
               close={() => setStagePage(undefined)}
-            />) : stagePage?.kind === "taskSources" && props.selectedProject ? <TaskSourcesPanel
+            />) : stagePage?.kind === "taskSettings" && props.selectedProject ? <TaskSourcesPanel
               key={props.selectedProject.id}
               projectId={props.selectedProject.id}
               projectName={props.selectedProject.name}
@@ -1841,7 +1841,7 @@ export function Shell(props: ShellProps) {
               ))}
             </div>
             <div className="project-menu-divider" role="separator" />
-            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSources" }); }}><Icon name="task" /><span className="project-menu-label">Tasks</span></button>
+            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSettings" }); }}><Icon name="settings" /><span className="project-menu-label">Task Settings</span></button>
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setEditProjectOpen(true); }}><Icon name="edit" /><span className="project-menu-label">Edit Project</span></button>
             <button type="button" role="menuitem" className="danger" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setDeleteProjectOpen(true); }}><Icon name="trash" /><span className="project-menu-label">Delete Project</span></button>
           </div>
