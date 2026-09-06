@@ -2519,12 +2519,14 @@ button.history-row-main { cursor: pointer; }
 .workspace-view-label { font: 600 9.5px/1 var(--font-ui); }
 .workspace-view-attention { width: 6px; height: 6px; border-radius: 999px; background: var(--agent-status-awaiting); box-shadow: 0 0 0 2px rgba(255,143,107,.18); }
 /* The selected view's one action sits right after the tabs; the rails below
-   carry no title row, so Create Task and agent search live here. */
+   carry no title row, so Create Task and agent search live here. A settings
+   destination, when present, owns the far edge of the row. */
 .workspace-view-action { display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--sidebar-dim); }
 .workspace-view-action:hover:not(:disabled), .workspace-view-action:focus-visible { outline: 0; border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--sidebar-text); }
 .workspace-view-action[aria-pressed="true"] { background: rgba(102,179,255,.14); color: light-dark(#5f6e7d, #c4e2ff); }
 .workspace-view-action:disabled { opacity: .45; }
 .workspace-view-action svg { width: 13px; height: 13px; }
+.workspace-view-action.settings { margin-left: auto; opacity: .8; }
 
 /* Create-Task dialog: the worktree plan is one card — branch, base, and folder
    as hairline rows of a single object — with a switch to skip it and one quiet
@@ -2897,7 +2899,6 @@ button.history-row-main { cursor: pointer; }
 .task-candidate-actions { display: flex; flex: none; align-items: center; gap: 6px; }
 .task-candidate-actions .primary-button, .task-candidate-actions .secondary-button { height: 24px; padding: 0 8px; font-size: 10px; }
 .task-candidate-readonly { color: var(--text-muted); font-size: 9.5px; font-style: italic; }
-.workspace-view-action.secondary { opacity: .8; }
 .task-source-advanced { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,.11); }
 .task-source-advanced > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; padding: 8px 10px; color: var(--text-secondary); font-size: 10.5px; font-weight: 600; cursor: pointer; list-style: none; user-select: none; }
 .task-source-advanced > summary::-webkit-details-marker { display: none; }

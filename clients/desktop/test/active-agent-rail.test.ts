@@ -726,6 +726,25 @@ describe("Workspace view switch", () => {
     expect(renderToStaticMarkup(createElement(WorkspaceViewSwitch, base))).not.toContain("workspace-view-action");
   });
 
+  it("keeps Task Settings at the far edge after Create Task", () => {
+    const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
+      view: "overview",
+      disabled: false,
+      select: () => {},
+      launchTerminal: async () => {},
+      launchAgent: async () => {},
+      viewAction: { label: "Create Task", icon: "add", run: () => {} },
+      settingsAction: { label: "Task Settings", icon: "settings", run: () => {}, pressed: true },
+    }));
+    const createTask = markup.indexOf('aria-label="Create Task"');
+    const taskSettings = markup.indexOf('aria-label="Task Settings"');
+    expect(createTask).toBeGreaterThan(-1);
+    expect(taskSettings).toBeGreaterThan(createTask);
+    expect(markup).toContain('class="workspace-view-action settings"');
+    expect(markup).toContain('title="Task Settings"');
+    expect(markup).toContain('aria-pressed="true"');
+  });
+
   it("stacks the view row above the launch row instead of sharing one line", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
       view: "overview",

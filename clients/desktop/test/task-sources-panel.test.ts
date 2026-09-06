@@ -295,11 +295,11 @@ describe("Task Sources panel", () => {
     await render(api, { agentCapabilities: [fullAgentCapability("codex")] });
     await flush();
 
-    // One page: the rule reads as a sentence and is not a second destination.
+    // One settings page: the rule reads as a sentence above its Task Sources.
     const bar = host.querySelector('section[aria-label="New Task defaults"]') as HTMLElement;
     expect(bar.querySelector('[data-testid="project-task-automation-summary"]')?.textContent)
       .toBe("Task only — no worktree, no agent");
-    expect(host.textContent).not.toContain("Task settings");
+    expect(host.querySelector('section[aria-label="Task Settings"]')).not.toBeNull();
     expect(bar.querySelector("#project-task-automation-worktree")).toBeNull();
 
     await act(async () => { (bar.querySelector("button") as HTMLButtonElement).click(); });
