@@ -17,12 +17,7 @@ fn architecture_surface_is_strict_bounded_and_full_control_only() {
     }
     assert!(validate_method_params(
         "project.architectureGraph",
-        &serde_json::json!({
-            "projectId":"project-1",
-            "communityKey":"n:106",
-            "depth":2,
-            "limit":240
-        })
+        &serde_json::json!({"projectId":"project-1", "depth":2, "limit":240})
     ));
     assert!(!validate_method_params(
         "project.architectureGraph",
@@ -53,13 +48,6 @@ fn architecture_surface_is_strict_bounded_and_full_control_only() {
         "node_count":1,
         "edge_count":0,
         "community_count":1,
-        "communities":[{
-            "key":"n:1",
-            "name":"Application",
-            "node_count":1,
-            "risk_score":72.5
-        }],
-        "community_catalog_truncated":false,
         "hotspots":[node.clone()],
         "warning":null
     });

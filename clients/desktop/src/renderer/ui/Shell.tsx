@@ -1573,7 +1573,7 @@ export function Shell(props: ShellProps) {
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "map" ? <div className="architecture-sidebar-note">
             <Icon name="branch" />
             <strong>Architecture map</strong>
-            <p>Graphify extracts code locally. Vendored and generated code is excluded; risk combines fan-in, fan-out and cross-area reach.</p>
+            <p>Graphify extracts code locally. Node risk combines fan-in, fan-out and cross-community reach.</p>
           </div> : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}

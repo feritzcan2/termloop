@@ -188,7 +188,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:8cf68e470f436c91129bd12b49674158c074db4cfb17066214ae90d3f796e200";
+    "sha256:3f423d0f744cf5f7cca1f617ebe6dcd699a4566aade9333fe32562503b86685c";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -4555,20 +4555,9 @@ pub struct ProjectArchitectureSummaryDto {
     pub node_count: u64,
     pub edge_count: u64,
     pub community_count: u64,
-    pub communities: Vec<ProjectArchitectureCommunityDto>,
-    pub community_catalog_truncated: bool,
     pub hotspots: Vec<ProjectArchitectureNodeDto>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub warning: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ProjectArchitectureCommunityDto {
-    pub key: String,
-    pub name: String,
-    pub node_count: u64,
-    pub risk_score: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -4578,8 +4567,6 @@ pub struct ProjectArchitectureGraphParams {
     pub project_id: String,
     #[serde(rename = "centerNodeId", skip_serializing_if = "Option::is_none")]
     pub center_node_id: Option<String>,
-    #[serde(rename = "communityKey", skip_serializing_if = "Option::is_none")]
-    pub community_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depth: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -18774,17 +18761,6 @@ fn validate_project_architecture_summary_dto(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number >= 0_u64))
                 })
             })
-            && object.get("communities").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 2000
-                        && items
-                            .iter()
-                            .all(|item| validate_project_architecture_community_dto(item))
-                })
-            })
-            && object
-                .get("community_catalog_truncated")
-                .is_some_and(|field| field.is_boolean())
             && object.get("hotspots").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 50
@@ -18809,47 +18785,11 @@ fn validate_project_architecture_summary_dto(value: &Value) -> bool {
                     "node_count",
                     "edge_count",
                     "community_count",
-                    "communities",
-                    "community_catalog_truncated",
                     "hotspots",
                     "warning",
                 ]
                 .contains(&key.as_str())
             })
-    })
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_project_architecture_community_dto(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object.get("key").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 2 && text.chars().count() <= 130)
-        }) && object.get("name").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 512)
-        }) && object.get("node_count").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
-            })
-        }) && object.get("risk_score").is_some_and(|field| {
-            field
-                .as_f64()
-                .is_some_and(|number| number.is_finite() && (0_f64..=100_f64).contains(&number))
-        }) && object
-            .keys()
-            .all(|key| ["key", "name", "node_count", "risk_score"].contains(&key.as_str()))
     })
 }
 
@@ -18872,11 +18812,6 @@ fn validate_project_architecture_graph_params(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
             })
-            && object.get("communityKey").is_none_or(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 2 && text.chars().count() <= 130)
-            })
             && object.get("depth").is_none_or(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -18891,16 +18826,9 @@ fn validate_project_architecture_graph_params(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number <= 500_u64))
                 })
             })
-            && object.keys().all(|key| {
-                [
-                    "projectId",
-                    "centerNodeId",
-                    "communityKey",
-                    "depth",
-                    "limit",
-                ]
-                .contains(&key.as_str())
-            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "centerNodeId", "depth", "limit"].contains(&key.as_str()))
     })
 }
 
