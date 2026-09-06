@@ -14,6 +14,12 @@ fn quick_action_surface_is_strict_and_full_control_only() {
     });
     let digest = format!("sha256:{}", "0".repeat(64));
     assert!(validate_method_params("quickAction.preview", &params));
+    let mut profile = params.clone();
+    profile["templateRef"] =
+        serde_json::json!("builtin.agent-profile.scattered-orchestration-finder");
+    assert!(validate_method_params("quickAction.preview", &profile));
+    profile["templateRef"] = serde_json::json!("builtin.agent-profile.Invalid");
+    assert!(!validate_method_params("quickAction.preview", &profile));
     let mut gemini = params.clone();
     gemini["agentId"] = serde_json::json!("gemini");
     gemini["model"] = serde_json::json!("flash");
@@ -57,6 +63,44 @@ fn quick_action_surface_is_strict_and_full_control_only() {
     assert!(METHODS.contains(&"quickAction.launch"));
     assert!(!READ_ONLY_METHODS.contains(&"quickAction.preview"));
     assert!(!READ_ONLY_METHODS.contains(&"quickAction.launch"));
+}
+
+#[test]
+fn agent_profile_catalog_is_strict_and_read_only() {
+    use termloop_contract::current::{
+        AgentProfileListResult, COMPANION_METHODS, METHODS, READ_ONLY_METHODS,
+        validate_method_result,
+    };
+
+    assert!(validate_method_params(
+        "agent.profileList",
+        &serde_json::json!({})
+    ));
+    let result = serde_json::json!([{
+        "id":"builtin.agent-profile.scattered-orchestration-finder",
+        "name":"Scattered Orchestration Finder",
+        "description":"Find write-side orchestration drift across owners.",
+        "category":"Architecture",
+        "version":1,
+        "permission":"plan",
+        "read_only":true,
+        "user_invocable":true,
+        "agent_ids":["claude","codex"]
+    }]);
+    assert!(validate_method_result("agent.profileList", &result));
+    let profiles: AgentProfileListResult = serde_json::from_value(result.clone()).unwrap();
+    assert_eq!(profiles[0].permission, "plan");
+    assert!(profiles[0].read_only);
+
+    let oversized = serde_json::Value::Array(vec![result[0].clone(); 65]);
+    assert!(!validate_method_result("agent.profileList", &oversized));
+
+    let mut extra = result;
+    extra[0]["instructions"] = serde_json::json!("private prompt");
+    assert!(!validate_method_result("agent.profileList", &extra));
+    assert!(METHODS.contains(&"agent.profileList"));
+    assert!(READ_ONLY_METHODS.contains(&"agent.profileList"));
+    assert!(COMPANION_METHODS.contains(&"agent.profileList"));
 }
 
 #[test]

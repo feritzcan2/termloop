@@ -144,6 +144,8 @@ import type {
   TaskBranchCommitChangeListResult,
   TaskBranchCommitDiffResult,
   QuickActionPreviewResult,
+  QuickActionParams,
+  AgentProfileDto,
   AgentLaunchPreviewResult,
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
@@ -316,6 +318,7 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentProfileList(): Promise<AgentProfileDto[]>;
   stewardConfigurationGet(projectId: string): Promise<StewardConfigurationGetResult>;
   stewardConfigurationSet(params: StewardConfigurationSetParams): Promise<StewardConfigurationSetResult>;
   stewardConfigurationDelete(params: StewardConfigurationDeleteParams): Promise<StewardConfigurationDeleteResult>;
@@ -374,8 +377,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;

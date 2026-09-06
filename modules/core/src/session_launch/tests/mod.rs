@@ -2957,6 +2957,181 @@ fn quick_action_preview_is_project_scoped_and_matches_versioned_delivery() {
 }
 
 #[test]
+fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-agent-profile-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let profile_ref = "builtin.agent-profile.scattered-orchestration-finder";
+    let params = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "high", "templateRef": profile_ref,
+        "bindings": { "prompt": "Inspect session launch ownership" }, "attachments": []
+    });
+
+    let catalog = runtime.agent_profile_list();
+    assert_eq!(catalog.as_array().unwrap().len(), 4);
+    assert_eq!(catalog[0]["permission"], "plan");
+    assert_eq!(catalog[0]["read_only"], true);
+
+    let preview = runtime.preview_quick_action(params.clone()).unwrap();
+    assert_eq!(preview["template_ref"], profile_ref);
+    assert_eq!(preview["template_version"], 1);
+    assert_eq!(
+        preview["manifest"]["provenance"]["template_ref"],
+        profile_ref
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["kind"],
+        "firstMessage"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][1]["kind"],
+        "providerInstructions"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][1]["delivery"],
+        "codexDeveloperInstructions"
+    );
+    let mut launch_params = params.clone();
+    launch_params["launchTicket"] = preview["launch_ticket"].clone();
+    let plan = runtime.take_quick_action_launch(launch_params).unwrap();
+    assert_eq!(
+        plan.prepared_launch
+            .as_ref()
+            .unwrap()
+            .provenance()
+            .template_ref,
+        profile_ref
+    );
+    assert_eq!(
+        super::launch_session_name(&plan).as_deref(),
+        Some("Scattered Orchestration Finder · Inspect session launch ownership")
+    );
+
+    let mut write_permission = params;
+    write_permission["permission"] = Value::String("acceptEdits".into());
+    assert!(matches!(
+        runtime.plan_quick_action_launch(write_permission),
+        Err(CoreError::InvalidParams(field)) if field == "permission"
+    ));
+    let mut unknown_profile = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.agent-profile.not-in-the-catalog",
+        "bindings": { "prompt": "Inspect this" }, "attachments": []
+    });
+    assert!(matches!(
+        runtime.plan_quick_action_launch(unknown_profile.clone()),
+        Err(CoreError::InvalidParams(field)) if field == "templateRef"
+    ));
+    unknown_profile["templateRef"] = Value::String(profile_ref.into());
+    unknown_profile["agentId"] = Value::String("gemini".into());
+    assert!(matches!(
+        runtime.plan_quick_action_launch(unknown_profile),
+        Err(CoreError::AgentUnsupported)
+    ));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn agent_profile_resume_preview_reapplies_profile_without_a_first_message() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-core-agent-profile-resume-{}-{}.json",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let profile_ref = "builtin.agent-profile.scattered-orchestration-finder";
+    store
+        .insert_session(
+            &authority,
+            SessionRecord {
+                launch_selection: termloop_domain::AgentLaunchSelection::new(
+                    "default", "plan", "high",
+                ),
+                id: "profile-agent".into(),
+                project_id: "project-1".into(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "claude".into(),
+                    args: vec![],
+                    cwd:
+                        termloop_platform::canonical_existing_directory_path(&std::env::temp_dir())
+                            .unwrap()
+                            .to_string_lossy()
+                            .into_owned(),
+                    agent_id: Some("claude".into()),
+                    template_ref: Some(profile_ref.into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "exited".into(),
+                runtime_epoch: 2,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(
+                    ResumeProvider::Claude,
+                    Uuid::new_v4().to_string(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+            },
+        )
+        .unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 3).unwrap();
+    let mut transport = crate::test_agent_observation_transport(std::env::temp_dir());
+    transport.agents.remove("codex");
+    transport
+        .agents
+        .get_mut("claude")
+        .unwrap()
+        .mcp_http_supported = false;
+    runtime.configure_agent_observations(transport);
+
+    let preview = runtime
+        .preview_agent_resume(json!({ "sessionId": "profile-agent" }))
+        .unwrap();
+    assert_eq!(
+        preview["manifest"]["provenance"]["template_ref"],
+        profile_ref
+    );
+    assert_eq!(
+        preview["manifest"]["transport"]["kind"],
+        "claudeAppendedSystemPrompt"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["kind"],
+        "providerInstructions"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["delivery"],
+        "claudeAppendedSystemPrompt"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn quick_action_preview_ticket_binds_the_exact_image_attachment() {
     let root = std::env::temp_dir().join(format!(
         "termloop-core-quick-action-image-{}-{}",
@@ -4618,6 +4793,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         observation_token: None,
         mcp_token: None,
         mcp_role: None,
+        agent_profile_ref: None,
         worker_prompt: None,
         worker_system_prompt: None,
         steward_system_prompt: None,

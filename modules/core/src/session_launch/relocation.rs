@@ -677,6 +677,7 @@ impl CoreRuntime {
             mcp_role: Some(preview.mcp_role),
             worker_prompt: None,
             worker_system_prompt: None,
+            agent_profile_ref: None,
             steward_system_prompt: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,

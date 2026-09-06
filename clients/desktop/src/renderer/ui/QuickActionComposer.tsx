@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { AgentCapabilityDto, QuickActionPreviewResult } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { Project } from "../model.js";
 import {
@@ -21,6 +21,7 @@ import { requireQuickActionPreview } from "../quick-action-result.js";
 export const QUICK_ACTION_MODELS = QUICK_ACTION_AGENT_MODELS;
 export const QUICK_ACTION_PERMISSIONS = QUICK_ACTION_AGENT_PERMISSIONS;
 export const QUICK_ACTION_REASONING = QUICK_ACTION_AGENT_REASONING;
+export const FREE_PROMPT_TEMPLATE_REF: QuickActionParams["templateRef"] = "builtin.quick-action.free-prompt";
 
 const modelLabel = (agentId: AgentId, model: string) => agentId === "claude" ? ({
   default: "Default (recommended)",
@@ -46,22 +47,31 @@ const ChevronDown = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M
 const FolderGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.9 4.3c0-.6.4-1 1-1h3l1.3 1.5h5c.5 0 1 .4 1 1v6c0 .6-.5 1-1 1H2.9c-.6 0-1-.4-1-1V4.3Z" /></svg>;
 const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.1 2.7a1.7 1.7 0 0 1 3.4 0v1h2.3c.4 0 .7.3.7.7v2.3h1a1.7 1.7 0 0 1 0 3.4h-1v2.3c0 .4-.3.7-.7.7H9.5v-1a1.7 1.7 0 0 0-3.4 0v1H3.8a.7.7 0 0 1-.7-.7V4.4c0-.4.3-.7.7-.7h2.3v-1Z" /></svg>;
 
-export function QuickActionComposer({ projects, selectedProject, capabilities, initialAgent, pasteImage, restoreImage, discardImage, preview, launch, close }: {
+const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
+  profile.agent_ids.includes(capability.agent_id) && capability.permissions.includes(profile.permission);
+
+export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, initialAgent, pasteImage, restoreImage, discardImage, preview, launch, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   capabilities: readonly AgentCapabilityDto[];
+  profiles: readonly AgentProfileDto[];
   initialAgent?: AgentId;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardImage(attachmentId: string): Promise<void>;
-  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
+  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
   close(): void;
 }) {
+  const [templateRef, setTemplateRef] = useState<QuickActionParams["templateRef"]>(FREE_PROMPT_TEMPLATE_REF);
+  const selectedProfile = profiles.find((profile) => profile.id === templateRef);
   const availableCapabilities = useMemo(() => capabilities
     .filter((capability) => capability.available && capability.quick_action_supported), [capabilities]);
+  const launchableProfiles = useMemo(() => profiles.filter((profile) => profile.user_invocable
+    && availableCapabilities.some((capability) => profileSupportsCapability(profile, capability))), [availableCapabilities, profiles]);
   const availableAgents = useMemo(() => availableCapabilities
-    .map((capability) => capability.agent_id as AgentId), [availableCapabilities]);
+    .filter((capability) => !selectedProfile || profileSupportsCapability(selectedProfile, capability))
+    .map((capability) => capability.agent_id as AgentId), [availableCapabilities, selectedProfile]);
   const capabilityByAgent = useMemo(() => new Map(availableCapabilities
     .map((capability) => [capability.agent_id, capability] as const)), [availableCapabilities]);
   const memory = useMemo(readQuickActionMemory, []);
@@ -98,7 +108,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
   const priorAgentRef = useRef(agentId);
   const selectedCapability = capabilityByAgent.get(agentId);
   const models = selectedCapability?.models ?? ["default"];
-  const permissions = selectedCapability?.permissions ?? ["default"];
+  const permissions = selectedProfile ? [selectedProfile.permission] : selectedCapability?.permissions ?? ["default"];
   const reasoningOptions = selectedCapability?.reasoning ?? ["default"];
   const attachmentIds = useMemo(() => attachment ? [attachment.id] : [], [attachment]);
 
@@ -132,17 +142,17 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
     const preset = memory.presets[agentId];
     const capability = capabilityByAgent.get(agentId);
     setModel(preset?.model && capability?.models.includes(preset.model) ? preset.model : "default");
-    setPermission(preset?.permission && capability?.permissions.includes(preset.permission)
-      ? preset.permission : defaultAgentPermission(agentId));
+    setPermission(selectedProfile?.permission ?? (preset?.permission && capability?.permissions.includes(preset.permission)
+      ? preset.permission : defaultAgentPermission(agentId)));
     setReasoning(preset?.reasoning && capability?.reasoning.includes(preset.reasoning)
       ? preset.reasoning : "default");
     setPreviewResult(undefined);
-  }, [agentId, capabilityByAgent, memory.presets]);
+  }, [agentId, capabilityByAgent, memory.presets, selectedProfile]);
   useEffect(() => {
     if (!projectId || !prompt || !attachmentReady) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
     let live = true;
     const timer = window.setTimeout(() => {
-      void preview(projectId, agentId, model, permission, reasoning, prompt, attachmentIds)
+      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)
         .then((value) => {
           const result = requireQuickActionPreview(value);
           if (live) { setPreviewResult(result); setError(undefined); }
@@ -150,16 +160,16 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
         .catch((cause) => { if (live) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [agentId, attachmentIds, attachmentReady, model, permission, preview, projectId, prompt, reasoning]);
+  }, [agentId, attachmentIds, attachmentReady, model, permission, preview, projectId, prompt, reasoning, templateRef]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!projectId || !prompt || !attachmentReady || running) return;
     setRunning(true);
     try {
-      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, prompt, attachmentIds));
+      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds));
       setPreviewResult(inspected);
-      const message = await launch(projectId, agentId, model, permission, reasoning, prompt, attachmentIds, inspected.launch_ticket);
+      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket);
       if (message) setError(message); else {
         rememberQuickActionRun(projectId, agentId, { model, permission, reasoning });
         close();
@@ -205,6 +215,22 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
     setPreviewResult(undefined);
     await discardImage(current.id);
   };
+  const selectTemplate = (nextTemplateRef: QuickActionParams["templateRef"]) => {
+    const profile = profiles.find((candidate) => candidate.id === nextTemplateRef);
+    setTemplateRef(nextTemplateRef);
+    if (profile) {
+      setPermission(profile.permission);
+      if (!selectedCapability || !profileSupportsCapability(profile, selectedCapability)) {
+        const nextAgent = availableCapabilities.find((capability) => profileSupportsCapability(profile, capability));
+        if (nextAgent) setAgentId(nextAgent.agent_id as AgentId);
+      }
+    } else {
+      const preset = memory.presets[agentId];
+      setPermission(preset?.permission && selectedCapability?.permissions.includes(preset.permission)
+        ? preset.permission : defaultAgentPermission(agentId));
+    }
+    setPreviewResult(undefined);
+  };
 
   return (
     <div className="quick-action-layer" onKeyDown={keyDown}>
@@ -212,7 +238,13 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
       <form className={`quick-action${advancedOpen || error ? " advanced-open" : ""}`} role="dialog" aria-modal="true" aria-labelledby="quick-action-title" onSubmit={submit}>
         <header className="quick-action-header">
           <div className="quick-action-kind-slot">
-            <div className="quick-action-kind"><span aria-hidden="true">✎</span><strong id="quick-action-title">Free prompt</strong><i /><small>default</small><b><ChevronDown /></b></div>
+            <div className="quick-action-kind" title={selectedProfile?.description}>
+              <span aria-hidden="true">{selectedProfile ? "◎" : "✎"}</span><strong id="quick-action-title">{selectedProfile?.name ?? "Free prompt"}</strong><i /><small>{selectedProfile?.category ?? "default"}</small><b><ChevronDown /></b>
+              <select aria-label="Agent profile" value={templateRef} onChange={(event) => selectTemplate(event.target.value as QuickActionParams["templateRef"])}>
+                <option value={FREE_PROMPT_TEMPLATE_REF}>Free prompt</option>
+                {launchableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.category}</option>)}
+              </select>
+            </div>
           </div>
           <label>Run in:
             <select aria-label="Run in Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
@@ -229,8 +261,8 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
           </div>
         </div>
         <main className="quick-action-body">
-          <label htmlFor="quick-action-prompt">Prompt</label>
-          <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder="What would you like to run? Paste an image with ⌘V." spellCheck={false} />
+          <label htmlFor="quick-action-prompt">{selectedProfile ? "Scope / task" : "Prompt"}</label>
+          <textarea ref={promptRef} id="quick-action-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onPaste={(event) => { void paste(event); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) { event.preventDefault(); void submit(); } }} placeholder={selectedProfile?.description ?? "What would you like to run? Paste an image with ⌘V."} spellCheck={false} />
           {attachment ? <div className="quick-action-attachment">
             <img src={attachment.previewDataUrl} alt="Pasted Quick Action attachment" />
             <span><strong>Image</strong><small>{attachment.width}×{attachment.height} · {formatBytes(attachment.byteLength)}</small></span>
@@ -239,7 +271,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, i
         </main>
         <div className="quick-action-options">
           <label className="agent"><span>AGENT</span><em aria-hidden="true">{agentId}</em><select aria-label="Agent" value={agentId} onChange={(event) => setAgentId(event.target.value as AgentId)}>{availableAgents.map((agent) => <option key={agent} value={agent}>{agent}</option>)}</select></label>
-          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
+          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined} title={selectedProfile?.read_only ? "Permission is fixed by this read-only profile." : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} disabled={selectedProfile?.read_only} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
           <label><span>MODEL</span><em aria-hidden="true">{modelLabel(agentId, model)}</em><select aria-label="Model" value={model} onChange={(event) => setModel(event.target.value)}>{models.map((value) => <option key={value} value={value}>{modelLabel(agentId, value)}</option>)}</select></label>
           <label><span>REASON</span><em aria-hidden="true">{reasoning}</em><select aria-label="Reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value as Reasoning)}>{reasoningOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           {memory.presets[agentId] ? <small>restored from last run</small> : null}
