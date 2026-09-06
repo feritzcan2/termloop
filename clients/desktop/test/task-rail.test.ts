@@ -484,7 +484,8 @@ describe("Task rail agent attention", () => {
     const markup = renderRail({ sessions: [working], statuses: [status] });
 
     expect(markup).toContain('class="agent-todo-count"');
-    expect(markup).toContain('>1/3</span>');
+    expect(markup).toContain('class="agent-todo-progress">1/3</span>');
+    expect(markup).toContain('class="agent-todo-dismiss-glyph" aria-hidden="true">×</span>');
     expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
     expect(markup).toContain("Inspect the flow");
     expect(markup).toContain("Render the current plan");
@@ -497,7 +498,7 @@ describe("Task rail agent attention", () => {
       plan: { ...status.plan!, steps: status.plan!.steps.map((step) => ({ ...step, status: "completed" as const })) },
     };
     expect(renderRail({ sessions: [working], statuses: [done] })).toContain('class="agent-todo-count done"');
-    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('>3/3</span>');
+    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('class="agent-todo-progress">3/3</span>');
     expect(renderRail({ sessions: [working], statuses: [done], selectedSessionId: working.id })).toContain('class="agent-todo-count done"');
   });
 

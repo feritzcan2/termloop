@@ -384,7 +384,8 @@ describe("Active Agent rail", () => {
     ));
 
     expect(markup).toContain('class="agent-todo-count"');
-    expect(markup).toContain('>1/2</span>');
+    expect(markup).toContain('class="agent-todo-progress">1/2</span>');
+    expect(markup).toContain('class="agent-todo-dismiss-glyph" aria-hidden="true">×</span>');
     expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
     expect(markup).toContain("Persist the plan");
     expect(markup).toContain("Render Active Agents");
@@ -396,7 +397,7 @@ describe("Active Agent rail", () => {
       props([{ ...planning, lifecycle_state: "resuming" }], [planningStatus], new Set()),
     ));
     expect(resumingMarkup).toContain('class="agent-todo-count"');
-    expect(resumingMarkup).toContain('>1/2</span>');
+    expect(resumingMarkup).toContain('class="agent-todo-progress">1/2</span>');
 
     const completedStatus: AgentStatus = {
       ...planningStatus,
@@ -410,7 +411,7 @@ describe("Active Agent rail", () => {
       props([planning], [completedStatus], new Set()),
     ));
     expect(unselectedCompleted).toContain('class="agent-todo-count done"');
-    expect(unselectedCompleted).toContain('>2/2</span>');
+    expect(unselectedCompleted).toContain('class="agent-todo-progress">2/2</span>');
     const selectedCompleted = renderToStaticMarkup(createElement(
       ActiveAgentRail,
       props([planning], [completedStatus], new Set(), planning),
