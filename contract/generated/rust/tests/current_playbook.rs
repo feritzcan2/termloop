@@ -1,8 +1,7 @@
 use serde_json::json;
 use termloop_contract::current::{
-    COMPANION_METHODS, MCP_STEWARD_TOOLS, MCP_WORKER_TOOLS, METHODS, READ_ONLY_METHODS,
-    validate_mcp_tool_params, validate_mcp_tool_result, validate_method_params,
-    validate_method_result,
+    COMPANION_METHODS, MCP_STEWARD_TOOLS, METHODS, READ_ONLY_METHODS, validate_mcp_tool_params,
+    validate_mcp_tool_result, validate_method_params, validate_method_result,
 };
 
 fn milestone() -> serde_json::Value {
@@ -17,7 +16,6 @@ fn milestone() -> serde_json::Value {
             "mode": "ask",
             "instructions": "Propose asking the reviewer and ask the user whether to send it."
         },
-        "workerId": "worker-1",
         "approver": "ferit"
     })
 }
@@ -32,7 +30,6 @@ fn milestone_draft() -> serde_json::Value {
             "mode": "ask",
             "instructions": "If approval is still missing, propose asking the reviewer and ask the user whether to send it."
         },
-        "workerId": "worker-1",
         "retryDelaySeconds": 600,
         "approver": "ferit"
     })
@@ -92,8 +89,6 @@ fn playbook_surface_is_strict_and_scoped() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [milestone_draft()],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -111,8 +106,6 @@ fn playbook_surface_is_strict_and_scoped() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [human_without_approver],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -128,8 +121,6 @@ fn playbook_surface_is_strict_and_scoped() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [automatic],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -145,8 +136,6 @@ fn playbook_surface_is_strict_and_scoped() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [bad_id],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 1,
             "expectedRevision": 4
         })
@@ -160,8 +149,6 @@ fn playbook_surface_is_strict_and_scoped() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [],
-            "workerId": null,
-            "preferredWorkerAgentId": "codex",
             "rules": [{"id": "deploy-watch"}],
             "expectedPlaybookRevision": 1,
             "expectedRevision": 4
@@ -186,7 +173,7 @@ fn playbook_surface_is_strict_and_scoped() {
     ));
     assert!(validate_method_result(
         "playbook.update",
-        &json!({"playbook": playbook, "workerId": "worker-1", "stateRevision": 9})
+        &json!({"playbook": playbook, "stateRevision": 9})
     ));
     assert!(!validate_method_result(
         "playbook.update",
@@ -198,8 +185,6 @@ fn playbook_surface_is_strict_and_scoped() {
 fn playbook_and_brief_tools_are_steward_only_and_strict() {
     assert!(MCP_STEWARD_TOOLS.contains(&"playbook_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"task_set_steward_brief"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"playbook_read"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"task_set_steward_brief"));
 
     assert!(validate_mcp_tool_params("playbook_read", &json!({})));
     assert!(!validate_mcp_tool_params(
@@ -277,8 +262,6 @@ fn playbook_step_carries_its_completion_policy_and_retry_delay() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [without_check],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -295,8 +278,6 @@ fn playbook_step_carries_its_completion_policy_and_retry_delay() {
                 "activePipelineName": "Ship to production",
                 "savedPipelines": [],
                 "milestones": [out_of_range],
-                "workerId": "worker-1",
-                "preferredWorkerAgentId": "codex",
                 "expectedPlaybookRevision": 0,
                 "expectedRevision": 4
             })
@@ -313,8 +294,6 @@ fn playbook_step_carries_its_completion_policy_and_retry_delay() {
             "activePipelineName": "Ship to production",
             "savedPipelines": [],
             "milestones": [step_with_sensor],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -328,7 +307,6 @@ fn routine_trigger_mode_is_a_closed_wire_choice() {
             "routine.configurationCreate",
             &json!({
                 "projectId": "project-1",
-                "workerId": "worker-1",
                 "triggerMode": mode,
                 "name": "PR checker",
                 "scheduleIntervalSeconds": 900,
@@ -341,7 +319,6 @@ fn routine_trigger_mode_is_a_closed_wire_choice() {
         "routine.configurationCreate",
         &json!({
             "projectId": "project-1",
-            "workerId": "worker-1",
             "triggerMode": "whenever",
             "name": "PR checker",
             "scheduleIntervalSeconds": 900,
@@ -364,8 +341,6 @@ fn a_playbook_keeps_the_pipelines_it_is_not_walking() {
             "activePipelineName": "Ship to production",
             "milestones": [milestone_draft()],
             "savedPipelines": [kept],
-            "workerId": "worker-1",
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 1,
             "expectedRevision": 4
         })
@@ -380,8 +355,6 @@ fn a_playbook_keeps_the_pipelines_it_is_not_walking() {
             "projectId": "project-1",
             "milestones": [],
             "savedPipelines": [],
-            "workerId": null,
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -393,8 +366,6 @@ fn a_playbook_keeps_the_pipelines_it_is_not_walking() {
             "activePipelineName": "",
             "milestones": [],
             "savedPipelines": [],
-            "workerId": null,
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -406,8 +377,6 @@ fn a_playbook_keeps_the_pipelines_it_is_not_walking() {
             "activePipelineName": "Ship to production",
             "milestones": [],
             "savedPipelines": [{"name": "Code review"}],
-            "workerId": null,
-            "preferredWorkerAgentId": "codex",
             "expectedPlaybookRevision": 0,
             "expectedRevision": 4
         })
@@ -509,15 +478,14 @@ fn the_board_reads_where_every_task_is_standing() {
 }
 
 #[test]
-fn a_step_check_uses_the_single_worker_assignment_outcome() {
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_complete_assignment"));
-    assert!(!MCP_STEWARD_TOOLS.contains(&"worker_complete_assignment"));
+fn a_step_check_uses_the_single_steward_assignment_outcome() {
+    assert!(MCP_STEWARD_TOOLS.contains(&"steward_complete_assignment"));
     // MCP-only tools never enter the control method enum.
-    assert!(!METHODS.contains(&"worker_complete_assignment"));
+    assert!(!METHODS.contains(&"steward_complete_assignment"));
 
     for status in ["satisfied", "pending", "blocked"] {
         assert!(validate_mcp_tool_params(
-            "worker_complete_assignment",
+            "steward_complete_assignment",
             &json!({
                 "checkId": "check-1",
                 "status": status,
@@ -537,7 +505,7 @@ fn a_step_check_uses_the_single_worker_assignment_outcome() {
     });
     with_task["taskId"] = json!("task-1");
     assert!(!validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &with_task
     ));
 
@@ -547,13 +515,13 @@ fn a_step_check_uses_the_single_worker_assignment_outcome() {
         json!({"checkId":"check-1", "evidence":"Seen.", "sourceReferences":[], "findings":[], "relatedTaskIds":[]}),
     ] {
         assert!(!validate_mcp_tool_params(
-            "worker_complete_assignment",
+            "steward_complete_assignment",
             &incomplete
         ));
     }
 
     assert!(validate_mcp_tool_result(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({"status": "completed"})
     ));
 }

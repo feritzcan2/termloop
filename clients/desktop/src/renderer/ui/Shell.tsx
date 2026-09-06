@@ -97,7 +97,6 @@ import {
 type AssistantActions = Pick<StewardPanelProps,
   | "getConfiguration" | "setConfiguration" | "listTranscript" | "appendMessage"
   | "respondToProposal" | "acceptSuggestion" | "clearTranscript"
-  | "listWorkers" | "createWorker" | "updateWorker" | "deleteWorker"
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
   | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime"
   | "promptImprovement"
@@ -106,7 +105,6 @@ type AssistantActions = Pick<StewardPanelProps,
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
-  restartWorker(workerId: string): Promise<string | null>;
 };
 
 type ImproverSetup =
@@ -1542,10 +1540,6 @@ export function Shell(props: ShellProps) {
             getSteward={props.assistantActions.getConfiguration}
             setSteward={props.assistantActions.setConfiguration}
             deleteSteward={props.assistantActions.deleteConfiguration}
-            listWorkers={props.assistantActions.listWorkers}
-            createWorker={props.assistantActions.createWorker}
-            updateWorker={props.assistantActions.updateWorker}
-            deleteWorker={props.assistantActions.deleteWorker}
             listRoutines={props.assistantActions.listRoutines}
             listRuntime={props.assistantActions.listRoutineRuntime}
             getPlaybook={props.assistantActions.getPlaybook}
@@ -1557,7 +1551,6 @@ export function Shell(props: ShellProps) {
             deleteRoutine={props.assistantActions.deleteRoutine}
             improvement={props.assistantActions.promptImprovement}
             setupPromptImprovement={openPromptImproverSetup}
-            restartWorker={props.assistantActions.restartWorker}
             restartSteward={props.assistantActions.restartSteward}
             selectSession={selectAssistantSession}
             openImproverTerminal={openImproverTerminal}

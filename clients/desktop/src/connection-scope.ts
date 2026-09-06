@@ -95,7 +95,6 @@ const UNRELATED_IDENTIFIER_KEYS = new Set([
   "agent_id",
   "agentId",
   "targetAgentId",
-  "preferredWorkerAgentId",
   "providerModelId",
   "deviceId",
   "clientLaunchId",

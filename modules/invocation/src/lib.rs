@@ -26,7 +26,7 @@ pub use assistant::{
     ProvenancedPrompt, assistant_activation_message, assistant_wake_message,
     default_assistant_launch_selection, default_steward_system_prompt,
     editable_steward_system_prompt, editable_steward_system_prompt_from_effective,
-    effective_steward_system_prompt, effective_worker_prompt, executor_prompt,
+    effective_steward_system_prompt, executor_prompt,
     resolved_steward_system_prompt, tracker_assignment_prompt,
 };
 
@@ -98,17 +98,9 @@ const IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE: PromptTemplate = PromptTemplate {
     ),
 };
 
-const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.improver.worker-instructions",
-    version: 9,
-    authored_body: include_str!(
-        "../../../resources/prompts/builtin.improver.worker-instructions.md"
-    ),
-};
-
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 11,
+    version: 12,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -116,37 +108,31 @@ const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
-    version: 10,
+    version: 11,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.routine.md"),
 };
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 19,
+    version: 20,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 37,
+    version: 38,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
-};
-
-const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.worker.executor",
-    version: 25,
-    authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
 const ROUTINE_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.routine",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.routine.md"),
 };
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 9,
+    version: 10,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -256,13 +242,11 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         IMPROVER_SKILL_DEFINITION_TEMPLATE,
         IMPROVER_PROMPT_ASSET_TEMPLATE,
         IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE,
-        IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE,
         IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE,
         ROUTINE_BUILDER_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
         TASK_EVIDENCE_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
-        WORKER_EXECUTOR_TEMPLATE,
         ROUTINE_TRACKER_TEMPLATE,
         STEP_CHECK_TRACKER_TEMPLATE,
         ASSISTANT_WAKE_TEMPLATE,
@@ -699,34 +683,21 @@ pub enum ImproverTarget<'a> {
         built_in_instructions: &'a str,
         max_bytes: usize,
     },
-    /// One Worker's editable instructions, which apply to every Routine that
-    /// Worker runs.
-    WorkerInstructions {
-        worker_id: &'a str,
-        worker_name: &'a str,
-        built_in_instructions: &'a str,
-        /// One line per Routine this Worker runs, so the improver can tell a
-        /// shared convention from a single check's detail.
-        routine_summary: &'a str,
-        max_bytes: usize,
-    },
     /// One Routine's editable instructions — the surface that says where the
     /// answer to its recurring question actually comes from.
     RoutineInstructions {
         routine_id: &'a str,
         routine_name: &'a str,
-        worker_name: &'a str,
+        project_name: &'a str,
         /// The built-in prompt for this Routine's kind.
         built_in_instructions: &'a str,
         max_bytes: usize,
     },
-    /// A new scheduled Routine under one exact Worker. The Builder proposes
-    /// both the Worker's factual observation and the Steward's independent
+    /// A new scheduled Routine for one exact Project. The Builder proposes
+    /// both the factual observation and the Steward's response
     /// response policy; no Routine exists until the user accepts it.
     RoutineBuilder {
         project_name: &'a str,
-        worker_id: &'a str,
-        worker_name: &'a str,
         routine_summary: &'a str,
     },
     /// The Project's delivery Playbook Builder. Its authenticated MCP profile
@@ -753,7 +724,6 @@ impl ImproverTarget<'_> {
             Self::RunConfiguration { .. } => "builtin.improver.run-configuration",
             Self::NewRunConfiguration { .. } => "builtin.improver.run-configuration-new",
             Self::StewardInstructions { .. } => "builtin.improver.steward-instructions",
-            Self::WorkerInstructions { .. } => "builtin.improver.worker-instructions",
             Self::RoutineInstructions { .. } => "builtin.improver.routine-instructions",
             Self::RoutineBuilder { .. } => "builtin.builder.routine",
             Self::Playbook { .. } => "builtin.builder.playbook",
@@ -853,45 +823,22 @@ impl ImproverTarget<'_> {
                     ],
                 )
             }
-            Self::WorkerInstructions {
-                worker_id,
-                worker_name,
-                built_in_instructions,
-                routine_summary,
-                max_bytes,
-            } => {
-                bounded_binding(worker_id, 64)?;
-                bounded_binding(worker_name, 200)?;
-                bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
-                bounded_document(routine_summary, false, PROMPT_DOCUMENT_MAX_BYTES)?;
-                bind_ordered(
-                    template.authored_body,
-                    &[
-                        ("worker_name", worker_name),
-                        ("built_in_instructions", built_in_instructions),
-                        ("routine_summary", routine_summary),
-                        ("max_bytes", &max_bytes.to_string()),
-                        ("owner_id", worker_id),
-                        ("task_evidence_policy", task_evidence_policy_body()),
-                    ],
-                )
-            }
             Self::RoutineInstructions {
                 routine_id,
                 routine_name,
-                worker_name,
+                project_name,
                 built_in_instructions,
                 max_bytes,
             } => {
                 bounded_binding(routine_id, 64)?;
                 bounded_binding(routine_name, 200)?;
-                bounded_binding(worker_name, 200)?;
+                bounded_binding(project_name, 200)?;
                 bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
                 bind_ordered(
                     template.authored_body,
                     &[
                         ("routine_name", routine_name),
-                        ("worker_name", worker_name),
+                        ("project_name", project_name),
                         ("built_in_instructions", built_in_instructions),
                         ("owner_id", routine_id),
                         ("max_bytes", &max_bytes.to_string()),
@@ -901,13 +848,9 @@ impl ImproverTarget<'_> {
             }
             Self::RoutineBuilder {
                 project_name,
-                worker_id,
-                worker_name,
                 routine_summary,
             } => {
                 bounded_binding(project_name, 200)?;
-                bounded_binding(worker_id, 64)?;
-                bounded_binding(worker_name, 200)?;
                 bounded_embedded_document(
                     routine_summary,
                     false,
@@ -916,10 +859,8 @@ impl ImproverTarget<'_> {
                 bind_ordered(
                     template.authored_body,
                     &[
-                        ("worker_name", worker_name),
                         ("project_name", project_name),
                         ("routine_summary", routine_summary),
-                        ("worker_id", worker_id),
                         ("task_evidence_policy", task_evidence_policy_body()),
                     ],
                 )
@@ -944,9 +885,9 @@ impl ImproverTarget<'_> {
 /// somewhere other than TermLoop's own bounded state.
 const PROMPT_DOCUMENT_MAX_BYTES: usize = 64 * 1024;
 
-/// A Routine Builder receives one serialized inventory for every Routine on a
-/// Worker. The inventory can legitimately exceed the per-document limit when
-/// a Worker owns several fully configured Routines. Keep enough headroom for
+/// A Routine Builder receives one serialized inventory for every Routine in a
+/// Project. The inventory can legitimately exceed the per-document limit when
+/// a Project owns several fully configured Routines. Keep enough headroom for
 /// the authored prompt inside the terminal input ceiling.
 const ROUTINE_BUILDER_SUMMARY_MAX_BYTES: usize = 160 * 1024;
 
@@ -2103,7 +2044,6 @@ pub enum AgentMcpProfile {
     Interactive,
     Improver,
     Steward,
-    Worker,
     Helper,
 }
 
@@ -2120,7 +2060,6 @@ pub struct PersistentAssistantLaunch<'a> {
     pub reasoning: &'a str,
     pub role: ExecutorRole,
     pub system_prompt: Option<&'a str>,
-    pub worker_prompt: Option<&'a str>,
     pub cwd: &'a str,
     pub conversation: AgentConversationLaunch<'a>,
     pub observation: Option<AgentObservationLaunch<'a>>,
@@ -2790,40 +2729,22 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
     .map(ResolvedLaunchManifest::into_payload)
 }
 
-/// Resolves a persistent Steward or Worker through the same inspected manifest
+/// Resolves a persistent Steward through the same inspected manifest
 /// used by ordinary interactive Agents. The authenticated HTTP MCP principal,
 /// not prompt text or provider argv, fixes the role-specific tool catalog.
 pub fn persistent_assistant_agent(
     configuration: PersistentAssistantLaunch<'_>,
 ) -> Result<LaunchPayload, InvocationError> {
-    if !matches!(
-        configuration.role,
-        ExecutorRole::Steward | ExecutorRole::Worker
-    ) {
+    if configuration.role != ExecutorRole::Steward {
         return Err(InvocationError::InvalidAssistantConfiguration);
     }
     let instruction_template = configuration.role.template();
     assistant::validate_template_asset(instruction_template)?;
-    let (provider_instructions, bindings) = match (
-        configuration.role,
-        configuration.worker_prompt,
-        configuration.system_prompt,
-    ) {
-        (ExecutorRole::Steward, None, Some(prompt)) if prompt.len() <= 16 * 1024 => (
+    let (provider_instructions, bindings) = match configuration.system_prompt {
+        Some(prompt) if prompt.len() <= 16 * 1024 => (
             assistant::effective_steward_system_prompt(prompt),
             vec![("systemPrompt".into(), prompt.trim().to_owned())],
         ),
-        (ExecutorRole::Worker, Some(worker_prompt), Some(system_prompt))
-            if worker_prompt.len() <= 16 * 1024 && system_prompt.len() <= 16 * 1024 =>
-        {
-            (
-                assistant::effective_worker_prompt(worker_prompt, system_prompt),
-                vec![
-                    ("workerPrompt".into(), worker_prompt.trim().to_owned()),
-                    ("systemPrompt".into(), system_prompt.trim().to_owned()),
-                ],
-            )
-        }
         _ => return Err(InvocationError::InvalidAssistantConfiguration),
     };
     validate_agent_configuration(

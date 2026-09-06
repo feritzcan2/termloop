@@ -237,10 +237,6 @@ pub enum AgentMcpRole {
     Steward {
         project_id: String,
     },
-    Worker {
-        project_id: String,
-        worker_id: String,
-    },
     Helper {
         request_id: Option<String>,
     },
@@ -250,7 +246,6 @@ pub enum AgentMcpRole {
 pub enum AgentResumeLane {
     Ordinary,
     Steward,
-    Worker,
 }
 
 impl AgentMcpRole {
@@ -259,7 +254,6 @@ impl AgentMcpRole {
             Self::Interactive => termloop_invocation::AgentMcpProfile::Interactive,
             Self::Improver { .. } => termloop_invocation::AgentMcpProfile::Improver,
             Self::Steward { .. } => termloop_invocation::AgentMcpProfile::Steward,
-            Self::Worker { .. } => termloop_invocation::AgentMcpProfile::Worker,
             Self::Helper { .. } => termloop_invocation::AgentMcpProfile::Helper,
         }
     }
@@ -267,7 +261,6 @@ impl AgentMcpRole {
     fn resume_lane(&self) -> AgentResumeLane {
         match self {
             Self::Steward { .. } => AgentResumeLane::Steward,
-            Self::Worker { .. } => AgentResumeLane::Worker,
             Self::Interactive | Self::Improver { .. } | Self::Helper { .. } => {
                 AgentResumeLane::Ordinary
             }
@@ -936,7 +929,7 @@ impl CoreRuntime {
     /// caller's own permission selection and no `bypassPermissions`. A
     /// every improver receives the same target-bound immutable-version profile.
     /// It works in the Project's own checkout because
-    /// deciding what a Steward, Worker, or Routine should be told means reading
+    /// deciding what a Steward or Routine should be told means reading
     /// this repository. Every fact it is given — the built-in part it may not
     /// change and the current editable value — is resolved here
     /// from durable state and rendered by `invocation`, so the client cannot
@@ -972,9 +965,6 @@ impl CoreRuntime {
                 target_kind: match bindings.surface() {
                     crate::AssistantPromptSurface::StewardInstructions => {
                         ImproverSessionTargetKind::StewardInstructions
-                    }
-                    crate::AssistantPromptSurface::WorkerInstructions => {
-                        ImproverSessionTargetKind::WorkerInstructions
                     }
                     crate::AssistantPromptSurface::RoutineInstructions => {
                         ImproverSessionTargetKind::RoutineInstructions
@@ -2109,7 +2099,6 @@ fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarg
     if let Some(surface) = plan.improver_prompt_surface.as_deref() {
         let target_kind = match surface {
             "stewardInstructions" => ImproverSessionTargetKind::StewardInstructions,
-            "workerInstructions" => ImproverSessionTargetKind::WorkerInstructions,
             "routineInstructions" => ImproverSessionTargetKind::RoutineInstructions,
             "routineBuilder" => ImproverSessionTargetKind::RoutineBuilder,
             "playbook" => ImproverSessionTargetKind::Playbook,
