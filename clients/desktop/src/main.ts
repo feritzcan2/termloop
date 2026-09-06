@@ -1477,6 +1477,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         addon,
         window,
         path.join(directory, "ghostty-embedded.conf"),
+        path.join(directory, "ghostty-light.conf"),
       );
       effectiveTerminalRenderer = "ghostty";
     }

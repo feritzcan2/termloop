@@ -32,6 +32,7 @@
 
 static ghostty_app_t g_app = nullptr;
 static ghostty_config_t g_config = nullptr;
+static ghostty_config_t g_light_config = nullptr;
 static Napi::ThreadSafeFunction *g_surfaceClosed = nullptr;
 static Napi::ThreadSafeFunction *g_surfaceConsumed = nullptr;
 static Napi::ThreadSafeFunction *g_shellShortcut = nullptr;
@@ -856,8 +857,12 @@ static Napi::Value InitApp(const Napi::CallbackInfo &info) {
     return env.Undefined();
   }
 
-  // Deterministic config: do NOT load the user's Ghostty config files.
+  // Deterministic configs: do NOT load the user's Ghostty config files. The
+  // dark config remains Ghostty's original embedded default; light-only color
+  // overrides live in a second config so switching back cannot alter dark mode.
   g_config = ghostty_config_new();
+  std::string configFile;
+  std::string lightConfigFile;
   if (info.Length() > 0 && info[0].IsObject()) {
     Napi::Object opts = info[0].As<Napi::Object>();
     if (opts.Has("onSurfaceClosed") && opts.Get("onSurfaceClosed").IsFunction()) {
@@ -879,8 +884,11 @@ static Napi::Value InitApp(const Napi::CallbackInfo &info) {
               "GhosttyShellShortcut", 0, 1));
     }
     if (opts.Has("configFile")) {
-      std::string path = opts.Get("configFile").As<Napi::String>();
-      ghostty_config_load_file(g_config, path.c_str());
+      configFile = opts.Get("configFile").As<Napi::String>();
+      ghostty_config_load_file(g_config, configFile.c_str());
+    }
+    if (opts.Has("lightConfigFile")) {
+      lightConfigFile = opts.Get("lightConfigFile").As<Napi::String>();
     }
   }
   ghostty_config_finalize(g_config);
@@ -891,6 +899,30 @@ static Napi::Value InitApp(const Napi::CallbackInfo &info) {
     const std::string message = diagnostic.message
         ? std::string("invalid embedded Ghostty config: ") + diagnostic.message
         : "invalid embedded Ghostty config";
+    ghostty_config_free(g_config);
+    g_config = nullptr;
+    Napi::Error::New(env, message).ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  g_light_config = ghostty_config_new();
+  if (!configFile.empty()) {
+    ghostty_config_load_file(g_light_config, configFile.c_str());
+  }
+  if (!lightConfigFile.empty()) {
+    ghostty_config_load_file(g_light_config, lightConfigFile.c_str());
+  }
+  ghostty_config_finalize(g_light_config);
+  const uint32_t lightDiagnosticCount =
+      ghostty_config_diagnostics_count(g_light_config);
+  if (lightDiagnosticCount > 0) {
+    const ghostty_diagnostic_s diagnostic =
+        ghostty_config_get_diagnostic(g_light_config, 0);
+    const std::string message = diagnostic.message
+        ? std::string("invalid embedded Ghostty light config: ") + diagnostic.message
+        : "invalid embedded Ghostty light config";
+    ghostty_config_free(g_light_config);
+    g_light_config = nullptr;
     ghostty_config_free(g_config);
     g_config = nullptr;
     Napi::Error::New(env, message).ThrowAsJavaScriptException();
@@ -1049,17 +1081,24 @@ static Napi::Value SetSurfaceColorScheme(const Napi::CallbackInfo &info) {
       entryForId(info[0].As<Napi::Number>().Uint32Value());
   if (e == nullptr) return env.Undefined();
   const std::string theme = info[1].As<Napi::String>();
-  ghostty_color_scheme_e scheme;
+  ghostty_config_t config;
   if (theme == "light") {
-    scheme = GHOSTTY_COLOR_SCHEME_LIGHT;
+    config = g_light_config;
+    e->view.layer.backgroundColor =
+        [NSColor colorWithSRGBRed:0.976 green:0.976 blue:0.976 alpha:1.0]
+            .CGColor;
   } else if (theme == "dark") {
-    scheme = GHOSTTY_COLOR_SCHEME_DARK;
+    config = g_config;
+    e->view.layer.backgroundColor =
+        [NSColor colorWithSRGBRed:0.157 green:0.173 blue:0.204 alpha:1.0]
+            .CGColor;
   } else {
     Napi::TypeError::New(env, "theme must be light or dark")
         .ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  ghostty_surface_set_color_scheme(e->surface, scheme);
+  if (config == nullptr) return env.Undefined();
+  ghostty_surface_update_config(e->surface, config);
   ghostty_surface_draw(e->surface);
   return env.Undefined();
 }
@@ -1207,6 +1246,10 @@ static void CleanupAddon() {
   if (g_config != nullptr) {
     ghostty_config_free(g_config);
     g_config = nullptr;
+  }
+  if (g_light_config != nullptr) {
+    ghostty_config_free(g_light_config);
+    g_light_config = nullptr;
   }
 }
 

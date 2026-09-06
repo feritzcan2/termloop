@@ -6,12 +6,11 @@ import { describe, expect, it } from "vitest";
 const paletteSources = [
   "../src/app.css",
   "../src/skills.css",
-  "../src/renderer/terminal/xterm/xterm-surface.ts",
-  "../src/assets/ghostty-embedded.conf",
+  "../src/assets/ghostty-light.conf",
 ];
 
 describe("desktop color palette", () => {
-  it("does not expose purple or magenta color values", async () => {
+  it("does not expose purple or magenta in the app or light terminal", async () => {
     const offenders: string[] = [];
 
     for (const source of paletteSources) {
