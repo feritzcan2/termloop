@@ -385,8 +385,9 @@ describe("Active Agent rail", () => {
 
     expect(markup).toContain('class="agent-todo-count"');
     expect(markup).toContain('>1/2</span>');
-    expect(markup).toContain("✓ Persist the plan");
-    expect(markup).toContain("→ Render Active Agents");
+    expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
+    expect(markup).toContain("Persist the plan");
+    expect(markup).toContain("Render Active Agents");
     expect(markup).not.toContain("Keep one current projection.");
     expect(markup).not.toContain("<details");
 
