@@ -238,7 +238,7 @@ const AGENT_TASK_KICKOFF_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.task-workflow",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.task-workflow.md"),
 };
 
@@ -3176,6 +3176,7 @@ fn compose_task_kickoff(
 
 /// Composes the visible first message for a saved workflow coordinator.
 pub fn task_workflow_prompt(
+    execution_id: &str,
     task_id: &str,
     title: &str,
     brief: Option<&str>,
@@ -3183,7 +3184,17 @@ pub fn task_workflow_prompt(
     goal: &str,
     workflow: &termloop_domain::WorkflowConfiguration,
 ) -> Result<AskToTerminalPrompt, InvocationError> {
-    let composed = compose_task_workflow(task_id, title, brief, jira_url, goal, workflow)?;
+    let composed = compose_task_workflow(
+        execution_id,
+        task_id,
+        title,
+        brief,
+        jira_url,
+        goal,
+        workflow,
+        0,
+        1,
+    )?;
     terminal_prompt(
         composed.template,
         composed.bindings,
@@ -3198,6 +3209,7 @@ pub fn task_agent_with_workflow_for_managed_worktree_conversation(
     model: &str,
     permission: &str,
     reasoning: &str,
+    execution_id: &str,
     task_id: &str,
     title: &str,
     brief: Option<&str>,
@@ -3209,7 +3221,17 @@ pub fn task_agent_with_workflow_for_managed_worktree_conversation(
     mcp: Option<AgentMcpLaunch<'_>>,
 ) -> Result<LaunchPayload, InvocationError> {
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
-    let composed = compose_task_workflow(task_id, title, brief, jira_url, goal, workflow)?;
+    let composed = compose_task_workflow(
+        execution_id,
+        task_id,
+        title,
+        brief,
+        jira_url,
+        goal,
+        workflow,
+        0,
+        1,
+    )?;
     resolve_launch_manifest_with_codex_project_trust(
         agent_id,
         cwd,
@@ -3226,13 +3248,17 @@ pub fn task_agent_with_workflow_for_managed_worktree_conversation(
     .map(ResolvedLaunchManifest::into_payload)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compose_task_workflow(
+    execution_id: &str,
     task_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
     goal: &str,
     workflow: &termloop_domain::WorkflowConfiguration,
+    current_step_index: usize,
+    review_cycle: u8,
 ) -> Result<ComposedTaskKickoff, InvocationError> {
     use std::fmt::Write as _;
 
@@ -3269,11 +3295,39 @@ fn compose_task_workflow(
         writeln!(workflow_steps, "   Instructions: {}", step.instructions)
             .map_err(|_| InvocationError::InvalidPromptBinding)?;
     }
+    let current_step = workflow
+        .steps
+        .get(current_step_index)
+        .ok_or(InvocationError::InvalidPromptBinding)?;
+    let step_kind = match current_step.kind {
+        termloop_domain::WorkflowStepKind::Discuss => "DISCUSS",
+        termloop_domain::WorkflowStepKind::Implement => "IMPLEMENT",
+        termloop_domain::WorkflowStepKind::Review => "REVIEW",
+        termloop_domain::WorkflowStepKind::Fix => "FIX",
+    };
+    let step_action = match current_step.kind {
+        termloop_domain::WorkflowStepKind::Discuss => {
+            "Use `workflow_delegate` once with the exact question and context the configured discussion participant needs. TermLoop chooses that participant. When its answer arrives, incorporate the advice, then call `workflow_step_complete` with outcome `completed`."
+        }
+        termloop_domain::WorkflowStepKind::Review => {
+            "Use `workflow_delegate` once with a concrete request to review the current work. TermLoop chooses and, when configured, reuses the exact participant conversation. When its answer arrives, call `workflow_step_complete` with outcome `approved` if no actionable change remains, or `changesRequested` if the Fix step must address findings."
+        }
+        termloop_domain::WorkflowStepKind::Implement => {
+            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed`."
+        }
+        termloop_domain::WorkflowStepKind::Fix => {
+            "Address the actionable findings collected in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed`. TermLoop will either re-run the review steps or finish at the configured cycle limit."
+        }
+    };
     let review_cycles = workflow.max_review_cycles.to_string();
-    if task_id.trim().is_empty()
+    let review_cycle = review_cycle.to_string();
+    let step_number = (current_step_index + 1).to_string();
+    let step_count = workflow.steps.len().to_string();
+    if execution_id.trim().is_empty()
+        || task_id.trim().is_empty()
         || title.trim().is_empty()
         || goal.trim().is_empty()
-        || goal.len() > 8_192
+        || goal.len() > termloop_domain::WORKFLOW_GOAL_MAX_BYTES
         || !workflow.is_valid()
         || jira_url.is_some_and(|jira_url| jira_url.trim().is_empty() || jira_url.len() > 2_048)
         || [
@@ -3284,6 +3338,9 @@ fn compose_task_workflow(
             workflow.name.as_str(),
             goal,
             workflow_steps.as_str(),
+            current_step.title.as_str(),
+            current_step.instructions.as_str(),
+            step_action,
         ]
         .iter()
         .any(|value| {
@@ -3311,7 +3368,15 @@ fn compose_task_workflow(
         ("jira_context", jira_context.as_str()),
         ("brief_context", brief_context.as_str()),
         ("workflow_steps", workflow_steps.as_str()),
+        ("step_number", step_number.as_str()),
+        ("step_count", step_count.as_str()),
+        ("step_kind", step_kind),
+        ("step_title", current_step.title.as_str()),
+        ("review_cycle", review_cycle.as_str()),
         ("max_review_cycles", review_cycles.as_str()),
+        ("step_instructions", current_step.instructions.as_str()),
+        ("execution_id", execution_id),
+        ("step_action", step_action),
     ];
     let delivered_prompt = bind_ordered(message_template, &delivered_bindings)?;
     Ok(ComposedTaskKickoff {
@@ -3333,6 +3398,37 @@ fn compose_task_workflow(
             .collect(),
         delivered_prompt,
     })
+}
+
+/// Composes the next Core-owned step as one visible generated terminal input.
+#[allow(clippy::too_many_arguments)]
+pub fn task_workflow_step_prompt(
+    execution_id: &str,
+    task_id: &str,
+    title: &str,
+    brief: Option<&str>,
+    jira_url: Option<&str>,
+    goal: &str,
+    workflow: &termloop_domain::WorkflowConfiguration,
+    current_step_index: usize,
+    review_cycle: u8,
+) -> Result<AskToTerminalPrompt, InvocationError> {
+    let composed = compose_task_workflow(
+        execution_id,
+        task_id,
+        title,
+        brief,
+        jira_url,
+        goal,
+        workflow,
+        current_step_index,
+        review_cycle,
+    )?;
+    terminal_prompt(
+        composed.template,
+        composed.bindings,
+        composed.delivered_prompt,
+    )
 }
 
 /// Composes the initial visible assignment for one managed Task Agent. The
@@ -6762,6 +6858,7 @@ mod tests {
             updated_at_epoch_ms: 1,
         };
         let prompt = task_workflow_prompt(
+            "workflow-execution-1",
             "task-123",
             "Fix OAuth callback",
             Some("Reproduce the redirect failure."),
@@ -6774,7 +6871,7 @@ mod tests {
             prompt.provenance().template_ref,
             "builtin.agent.task-workflow"
         );
-        assert_eq!(prompt.provenance().template_version, 2);
+        assert_eq!(prompt.provenance().template_version, 3);
         assert!(prompt.delivered_prompt().contains("1. DISCUSS"));
         assert!(prompt.delivered_prompt().contains("2. IMPLEMENT"));
         assert!(prompt.delivered_prompt().contains("3. REVIEW"));
@@ -6790,8 +6887,23 @@ mod tests {
                 .delivered_prompt()
                 .contains("reuse helper from step `discuss`")
         );
-        assert!(prompt.delivered_prompt().contains("`ask_to`"));
-        assert!(prompt.delivered_prompt().contains("at most 2 review cycle"));
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Current step: 1/5 — DISCUSS")
+        );
+        assert!(prompt.delivered_prompt().contains("`workflow_delegate`"));
+        assert!(prompt.delivered_prompt().contains("Review cycle: 1/2"));
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Execution: workflow-execution-1")
+        );
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Do not execute a later step early")
+        );
         assert_eq!(
             prompt.bindings().find(|(name, _)| *name == "workflow_id"),
             Some(("workflow_id", "workflow-1"))
@@ -6803,6 +6915,7 @@ mod tests {
             "gpt-5.6-sol",
             "acceptEdits",
             "high",
+            "workflow-execution-1",
             "task-123",
             "Fix OAuth callback",
             None,

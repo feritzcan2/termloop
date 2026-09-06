@@ -3,7 +3,10 @@
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use termloop_domain::{AgentLaunchSelection, WorkflowConfiguration, WorkflowStep};
+use termloop_domain::{
+    AgentLaunchSelection, WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase,
+    WorkflowStep,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,8 +34,16 @@ impl CoreRuntime {
             .filter(|configuration| configuration.project_id == project_id)
             .map(workflow_configuration_json)
             .collect::<Vec<_>>();
+        let executions = self
+            .store
+            .workflow_executions()
+            .iter()
+            .filter(|execution| execution.project_id == project_id)
+            .map(|execution| workflow_execution_json(self, execution))
+            .collect::<Vec<_>>();
         Ok(json!({
             "configurations": configurations,
+            "executions": executions,
             "stateRevision": self.store.revision(),
         }))
     }
@@ -162,6 +173,60 @@ impl CoreRuntime {
             .cloned()
             .ok_or(CoreError::NotFound)
     }
+
+    pub(crate) fn cancel_workflow_execution(&mut self, params: Value) -> Result<Value, CoreError> {
+        let execution_id = required_string(&params, "executionId")?;
+        let expected_revision = params
+            .get("expectedRevision")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| CoreError::InvalidParams("expectedRevision".into()))?;
+        let removed = self
+            .store
+            .cancel_workflow_execution(&self.write_authority, &execution_id, expected_revision)
+            .map_err(store_error)?;
+        Ok(json!({
+            "executionId": removed.id,
+            "cancelled": true,
+            "stateRevision": self.store.revision(),
+        }))
+    }
+}
+
+pub(crate) fn workflow_execution_json(
+    runtime: &CoreRuntime,
+    execution: &WorkflowExecution,
+) -> Value {
+    let coordinator_state = runtime
+        .store
+        .sessions()
+        .iter()
+        .find(|session| session.id == execution.coordinator_session_id)
+        .map(|session| session.lifecycle_state.as_str());
+    let status = if execution.phase == WorkflowExecutionPhase::Completed {
+        "completed"
+    } else if matches!(coordinator_state, Some("running" | "resuming")) {
+        "running"
+    } else {
+        "paused"
+    };
+    json!({
+        "id": execution.id,
+        "projectId": execution.project_id,
+        "taskId": execution.task_id,
+        "workflowId": execution.configuration.id,
+        "workflowGeneration": execution.configuration.generation,
+        "workflowName": execution.configuration.name,
+        "goal": execution.goal,
+        "coordinatorSessionId": execution.coordinator_session_id,
+        "currentStepIndex": execution.current_step_index,
+        "reviewCycle": execution.review_cycle,
+        "maxReviewCycles": execution.configuration.max_review_cycles,
+        "phase": execution.phase,
+        "status": status,
+        "steps": execution.configuration.steps,
+        "startedAtEpochMs": execution.started_at_epoch_ms,
+        "updatedAtEpochMs": execution.updated_at_epoch_ms,
+    })
 }
 
 fn parse_workflow_input(mut params: Value) -> Result<WorkflowConfigurationInput, CoreError> {

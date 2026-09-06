@@ -26,9 +26,9 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorkerConfiguration, WorkflowConfiguration, WorktreeCleanupOperation, WorktreeCleanupReceipt,
-    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
-    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    WorkerConfiguration, WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation,
+    WorktreeCleanupReceipt, WorktreeProvisioningOperation, WorktreeRepairOperation,
+    WorktreeRepairReceipt, WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -57,8 +57,9 @@ use termloop_domain::{
 // Version 49 adds the selected remote base ref to Project Task automation.
 // Version 50 removes the retired Routine provider kind from durable state;
 // capability selection now belongs to the Worker at assignment time. Version
-// 51 adds Project-scoped workflow configurations; executions remain Sessions.
-const CURRENT_SCHEMA_VERSION: u32 = 51;
+// 51 adds Project-scoped workflow configurations. Version 52 adds one bounded
+// current Core-managed workflow execution per Task, without attempt history.
+const CURRENT_SCHEMA_VERSION: u32 = 52;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -131,6 +132,8 @@ struct CurrentState {
     #[serde(default)]
     workflow_configurations: Vec<WorkflowConfiguration>,
     #[serde(default)]
+    workflow_executions: Vec<WorkflowExecution>,
+    #[serde(default)]
     configuration_versions: Vec<ConfigurationVersion>,
     #[serde(default)]
     configuration_version_selections: Vec<ConfigurationVersionSelection>,
@@ -183,6 +186,7 @@ impl Default for CurrentState {
             worker_configurations: vec![],
             run_configurations: vec![],
             workflow_configurations: vec![],
+            workflow_executions: vec![],
             configuration_versions: vec![],
             configuration_version_selections: vec![],
             run_setup_marks: vec![],

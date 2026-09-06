@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { Task, WorkflowConfiguration } from "../src/renderer/model.js";
+import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
 import {
   TaskWorkflowLaunchers,
   initialWorkflowSteps,
@@ -63,6 +63,25 @@ const workflow: WorkflowConfiguration = {
   updatedAtEpochMs: 1,
 };
 
+const execution: WorkflowExecution = {
+  id: "workflow-execution-1",
+  projectId: "project-1",
+  taskId: "task-1",
+  workflowId: workflow.id,
+  workflowGeneration: workflow.generation,
+  workflowName: workflow.name,
+  goal: "Build a reusable workflow system.",
+  coordinatorSessionId: "coordinator-1",
+  currentStepIndex: 2,
+  reviewCycle: 1,
+  maxReviewCycles: workflow.maxReviewCycles,
+  phase: "awaitingHelper",
+  status: "running",
+  steps: workflow.steps,
+  startedAtEpochMs: 1,
+  updatedAtEpochMs: 2,
+};
+
 describe("Task workflow editor", () => {
   it("creates stable unique step ids inside the bounded linear workflow", () => {
     expect(nextStepId("discuss", [{ id: "discuss-1" }, { id: "review-1" }])).toBe("discuss-2");
@@ -94,6 +113,7 @@ describe("Task workflow editor", () => {
       projectId: task.project_id,
       task,
       configurations: [workflow],
+      executions: [],
       stateRevision: 4,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
@@ -102,6 +122,7 @@ describe("Task workflow editor", () => {
       save: vi.fn(),
       remove: vi.fn(),
       launch: vi.fn(),
+      cancel: vi.fn(),
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
@@ -115,6 +136,7 @@ describe("Task workflow editor", () => {
       projectId: task.project_id,
       task,
       configurations: [workflow],
+      executions: [],
       stateRevision: 4,
       agentCapabilities: [fullAgentCapability("codex", { available: false })],
       launchable: true,
@@ -123,9 +145,33 @@ describe("Task workflow editor", () => {
       save: vi.fn(),
       remove: vi.fn(),
       launch: vi.fn(),
+      cancel: vi.fn(),
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
     expect(markup).not.toContain("disabled");
+  });
+
+  it("shows the Core-owned current step and prevents a second workflow on the same Task", () => {
+    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
+      projectId: task.project_id,
+      task,
+      configurations: [workflow],
+      executions: [execution],
+      stateRevision: 5,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      launchable: true,
+      overlayContainer: undefined,
+      overlayVisibilityChanged: vi.fn(),
+      save: vi.fn(),
+      remove: vi.fn(),
+      launch: vi.fn(),
+      cancel: vi.fn(),
+    }));
+
+    expect(markup).toContain('aria-label="Open Discuss, build, review workflow progress"');
+    expect(markup).toContain("3/3");
+    expect(markup).toContain("Finish or stop Discuss, build, review first");
+    expect(markup).toContain("disabled");
   });
 });

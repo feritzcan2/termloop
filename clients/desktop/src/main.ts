@@ -967,6 +967,11 @@ handleIpc(
     controlCall("workflow.configurationDelete", params),
 );
 handleIpc(
+  "termloop:workflow-execution-cancel",
+  (_event, params: import("@termloop/contract/current").WorkflowExecutionCancelParams) =>
+    controlCall("workflow.executionCancel", params),
+);
+handleIpc(
   "termloop:run-configuration-improve-preview",
   (_event, params: import("@termloop/contract/current").RunConfigurationImprovePreviewParams) =>
     controlCall("runConfiguration.improvePreview", params),

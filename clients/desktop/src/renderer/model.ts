@@ -7,6 +7,7 @@ import type {
   RunConfigurationDto,
   RunRuntimeEntryDto,
   WorkflowConfigurationDto,
+  WorkflowExecutionDto,
   TaskDto,
   TaskWorktreeChangeEntryDto,
   TaskWorktreeCleanupBlocker,
@@ -23,6 +24,7 @@ export type Session = SessionDto & ConnectionScope;
 export type RunConfiguration = RunConfigurationDto;
 export type RunRuntime = RunRuntimeEntryDto;
 export type WorkflowConfiguration = WorkflowConfigurationDto;
+export type WorkflowExecution = WorkflowExecutionDto;
 export type AgentStatus = AgentStatusDto & ConnectionScope;
 export type Task = TaskDto & ConnectionScope;
 export type GitHostProjection = GitHostTaskProjectionDto;

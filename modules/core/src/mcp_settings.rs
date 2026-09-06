@@ -228,6 +228,9 @@ mod tests {
                             McpToolName::AskTo | McpToolName::SendToAgent => {
                                 vec![McpToolRole::Interactive, McpToolRole::Improver]
                             }
+                            McpToolName::WorkflowDelegate | McpToolName::WorkflowStepComplete => {
+                                vec![McpToolRole::Interactive]
+                            }
                             McpToolName::PlaybookRead => {
                                 vec![McpToolRole::Steward]
                             }

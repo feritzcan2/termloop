@@ -7,7 +7,15 @@ use termloop_contract::current::{
 
 #[test]
 fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
-    assert_eq!(MCP_INTERACTIVE_TOOLS, ["ask_to", "send_to_agent"]);
+    assert_eq!(
+        MCP_INTERACTIVE_TOOLS,
+        [
+            "ask_to",
+            "send_to_agent",
+            "workflow_delegate",
+            "workflow_step_complete"
+        ]
+    );
     assert_eq!(
         MCP_IMPROVER_TOOLS,
         [
