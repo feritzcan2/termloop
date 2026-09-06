@@ -265,8 +265,11 @@ export type CallArgs<M extends Method> = M extends MethodsWithEmptyParams
   : [params: ParamsFor<M>];
 const CONTROL_REQUEST_TIMEOUT_MS = 12_000;
 const LONG_RUNNING_REQUEST_TIMEOUT_MS = 300_000;
+const ARCHITECTURE_REFRESH_TIMEOUT_MS = 16 * 60_000;
 export function controlRequestTimeoutMs(method: Method): number {
-  return method === "task.cleanupWorktree" || method === "task.discardStaleWorktree" || method === "session.relocateAgentToTask" || method === "session.relocateAgentToProject" || method === "taskSource.boardList" || method === "taskSource.boardListStored" || method === "taskSource.statusList" || method === "taskSource.statusListStored" || method === "taskSource.refresh" || method === "playbook.update"
+  return method === "project.architectureRefresh"
+    ? ARCHITECTURE_REFRESH_TIMEOUT_MS
+    : method === "task.cleanupWorktree" || method === "task.discardStaleWorktree" || method === "session.relocateAgentToTask" || method === "session.relocateAgentToProject" || method === "taskSource.boardList" || method === "taskSource.boardListStored" || method === "taskSource.statusList" || method === "taskSource.statusListStored" || method === "taskSource.refresh" || method === "playbook.update"
     ? LONG_RUNNING_REQUEST_TIMEOUT_MS
     : CONTROL_REQUEST_TIMEOUT_MS;
 }
@@ -676,7 +679,17 @@ function rustConstraintInline(node, value) {
     }
     return `${value}.as_number().is_some_and(|number| ${checks.map((check) => `(${check})`).join(" && ")})`;
   }
-  if (node.type === "number") return `${value}.is_number()`;
+  if (node.type === "number") {
+    const checks = ["number.is_finite()"];
+    if (node.minimum !== undefined && node.maximum !== undefined) {
+      checks.push(`(${node.minimum}_f64..=${node.maximum}_f64).contains(&number)`);
+    } else if (node.minimum !== undefined) {
+      checks.push(`number >= ${node.minimum}_f64`);
+    } else if (node.maximum !== undefined) {
+      checks.push(`number <= ${node.maximum}_f64`);
+    }
+    return `${value}.as_f64().is_some_and(|number| ${checks.join(" && ")})`;
+  }
   if (node.type === "string" || node.pattern !== undefined) {
     const checks = [];
     if (node.minLength !== undefined) checks.push(`text.chars().count() >= ${node.minLength}`);
@@ -748,7 +761,12 @@ function typeScriptConstraint(node, value) {
     if (node.maximum !== undefined) checks.push(`${value} <= ${node.maximum}`);
     return `(${checks.join(" && ")})`;
   }
-  if (node.type === "number") return `typeof ${value} === "number" && Number.isFinite(${value})`;
+  if (node.type === "number") {
+    const checks = [`typeof ${value} === "number"`, `Number.isFinite(${value})`];
+    if (node.minimum !== undefined) checks.push(`${value} >= ${node.minimum}`);
+    if (node.maximum !== undefined) checks.push(`${value} <= ${node.maximum}`);
+    return checks.join(" && ");
+  }
   if (node.type === "string" || node.pattern !== undefined) {
     const checks = [`typeof ${value} === "string"`];
     if (node.minLength !== undefined) checks.push(`[...${value}].length >= ${node.minLength}`);
