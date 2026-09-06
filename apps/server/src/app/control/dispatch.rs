@@ -32,17 +32,15 @@ use super::handlers::{
     preview_assistant_prompt_improver, preview_quick_action, preview_relocate_agent_session,
     preview_relocate_agent_to_project, preview_resume_agent_session,
     preview_run_configuration_improver, preview_session_history_resume, preview_settings_improver,
-    preview_task_agent_session, project_architecture_graph, project_architecture_node,
-    project_architecture_refresh, project_architecture_summary, project_list_local_branches,
-    project_worktree_change_list, project_worktree_diff, project_worktree_pre_image,
-    project_worktree_summary, provision_task_worktree, relocate_agent_session,
-    repair_provider_history, repair_task_worktree, resolve_context_bank_sibling_conflict,
-    resolve_stale_task_worktree, restart_agent_session, restart_agents_for_client_launch,
-    restore_deleted_session, resume_agent_session, save_context_bank_file, save_skill_definition,
-    session_history_preview, set_skill_deployment, set_steward_configuration,
-    task_branch_commit_change_list, task_branch_commit_diff, task_branch_commit_list,
-    task_branch_commit_summary_list, task_worktree_change_list, task_worktree_diff,
-    task_worktree_pre_image, terminate_session, update_worker_configuration,
+    preview_task_agent_session, project_list_local_branches, project_worktree_change_list,
+    project_worktree_diff, project_worktree_pre_image, project_worktree_summary,
+    provision_task_worktree, relocate_agent_session, repair_provider_history, repair_task_worktree,
+    resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
+    restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
+    save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
+    set_steward_configuration, task_branch_commit_change_list, task_branch_commit_diff,
+    task_branch_commit_list, task_branch_commit_summary_list, task_worktree_change_list,
+    task_worktree_diff, task_worktree_pre_image, terminate_session, update_worker_configuration,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -1532,14 +1530,6 @@ async fn dispatch_inner(
             }
             "project.listLocalBranches" => project_list_local_branches(request.params, state).await,
             "project.worktreeSummary" => project_worktree_summary(request.params, state).await,
-            "project.architectureSummary" => {
-                project_architecture_summary(request.params, state).await
-            }
-            "project.architectureGraph" => project_architecture_graph(request.params, state).await,
-            "project.architectureNode" => project_architecture_node(request.params, state).await,
-            "project.architectureRefresh" => {
-                project_architecture_refresh(request.params, state).await
-            }
             "project.worktreeChangeList" => {
                 project_worktree_change_list(request.params, state).await
             }

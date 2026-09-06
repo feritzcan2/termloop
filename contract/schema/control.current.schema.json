@@ -319,38 +319,6 @@
         "$ref": "#/$defs/projectWorktreeSummaryDto"
       }
     },
-    "project.architectureSummary": {
-      "params": {
-        "$ref": "#/$defs/projectIdParams"
-      },
-      "result": {
-        "$ref": "#/$defs/projectArchitectureSummaryDto"
-      }
-    },
-    "project.architectureGraph": {
-      "params": {
-        "$ref": "#/$defs/projectArchitectureGraphParams"
-      },
-      "result": {
-        "$ref": "#/$defs/projectArchitectureGraphResult"
-      }
-    },
-    "project.architectureNode": {
-      "params": {
-        "$ref": "#/$defs/projectArchitectureNodeParams"
-      },
-      "result": {
-        "$ref": "#/$defs/projectArchitectureNodeResult"
-      }
-    },
-    "project.architectureRefresh": {
-      "params": {
-        "$ref": "#/$defs/projectIdParams"
-      },
-      "result": {
-        "$ref": "#/$defs/projectArchitectureSummaryDto"
-      }
-    },
     "project.worktreeChangeList": {
       "params": {
         "$ref": "#/$defs/projectIdParams"
@@ -1463,10 +1431,6 @@
         "project.taskAutomationGet",
         "project.taskAutomationSet",
         "project.worktreeSummary",
-        "project.architectureSummary",
-        "project.architectureGraph",
-        "project.architectureNode",
-        "project.architectureRefresh",
         "project.worktreeChangeList",
         "project.worktreeDiff",
         "project.worktreePreImage",
@@ -9883,149 +9847,6 @@
           "type": "string",
           "minLength": 1
         }
-      }
-    },
-    "projectArchitectureStatus": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureStatus",
-      "type": "string",
-      "enum": [
-        "unavailable",
-        "missing",
-        "ready",
-        "stale",
-        "invalid",
-        "failed"
-      ]
-    },
-    "projectArchitectureNodeDto": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureNodeDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "label",
-        "kind",
-        "file_type",
-        "source_file",
-        "source_location",
-        "community",
-        "community_name",
-        "fan_in",
-        "fan_out",
-        "degree",
-        "risk_score",
-        "neighbor_community_count"
-      ],
-      "properties": {
-        "id": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "label": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "file_type": { "anyOf": [{ "type": "string", "maxLength": 64 }, { "type": "null" }] },
-        "source_file": { "anyOf": [{ "type": "string", "maxLength": 4096 }, { "type": "null" }] },
-        "source_location": { "anyOf": [{ "type": "string", "maxLength": 1024 }, { "type": "null" }] },
-        "community": { "anyOf": [{ "type": "integer" }, { "type": "string", "maxLength": 128 }, { "type": "null" }] },
-        "community_name": { "anyOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }] },
-        "fan_in": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "fan_out": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "degree": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "risk_score": { "type": "number", "minimum": 0, "maximum": 100 },
-        "neighbor_community_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
-      }
-    },
-    "projectArchitectureEdgeDto": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureEdgeDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["source", "target", "relation", "confidence", "confidence_score"],
-      "properties": {
-        "source": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "target": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "relation": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "confidence": { "type": "string", "enum": ["extracted", "inferred", "ambiguous", "unknown"] },
-        "confidence_score": { "anyOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }] }
-      }
-    },
-    "projectArchitectureSummaryDto": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureSummaryDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "project_id",
-        "status",
-        "engine_available",
-        "built_at_commit",
-        "current_commit",
-        "node_count",
-        "edge_count",
-        "community_count",
-        "hotspots",
-        "warning"
-      ],
-      "properties": {
-        "project_id": { "type": "string", "minLength": 1 },
-        "status": { "$ref": "#/$defs/projectArchitectureStatus" },
-        "engine_available": { "type": "boolean" },
-        "built_at_commit": { "anyOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
-        "current_commit": { "anyOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
-        "node_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "edge_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "community_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
-        "hotspots": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/projectArchitectureNodeDto" } },
-        "warning": { "anyOf": [{ "type": "string", "maxLength": 1024 }, { "type": "null" }] }
-      }
-    },
-    "projectArchitectureGraphParams": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureGraphParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["projectId"],
-      "properties": {
-        "projectId": { "type": "string", "minLength": 1 },
-        "centerNodeId": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "depth": { "type": "integer", "minimum": 1, "maximum": 3 },
-        "limit": { "type": "integer", "minimum": 20, "maximum": 500 }
-      }
-    },
-    "projectArchitectureGraphResult": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureGraphResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["summary", "nodes", "edges", "truncated"],
-      "properties": {
-        "summary": { "$ref": "#/$defs/projectArchitectureSummaryDto" },
-        "nodes": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/projectArchitectureNodeDto" } },
-        "edges": { "type": "array", "maxItems": 4000, "items": { "$ref": "#/$defs/projectArchitectureEdgeDto" } },
-        "truncated": { "type": "boolean" }
-      }
-    },
-    "projectArchitectureNodeParams": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureNodeParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["projectId", "nodeId"],
-      "properties": {
-        "projectId": { "type": "string", "minLength": 1 },
-        "nodeId": { "type": "string", "minLength": 1, "maxLength": 1024 }
-      }
-    },
-    "projectArchitectureNodeResult": {
-      "x-codegen": true,
-      "x-codegen-name": "ProjectArchitectureNodeResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["summary", "node", "connections", "truncated"],
-      "properties": {
-        "summary": { "$ref": "#/$defs/projectArchitectureSummaryDto" },
-        "node": { "$ref": "#/$defs/projectArchitectureNodeDto" },
-        "connections": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/projectArchitectureEdgeDto" } },
-        "truncated": { "type": "boolean" }
       }
     },
     "projectDeleteResult": {
