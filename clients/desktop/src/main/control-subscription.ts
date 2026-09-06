@@ -104,7 +104,7 @@ export class ControlSubscription {
         token: config.token,
         method: "control.subscribe",
         params: {
-          topics: ["project", "task", "session", "agentStatus", "gitHost", "branchCommit", "companion", "steward", "worker", "routine", "keepAwake"],
+          topics: ["project", "task", "session", "agentStatus", "gitHost", "branchCommit", "companion", "steward", "routine", "keepAwake"],
           ...(this.#projectIds.length > 0 ? { projectIds: this.#projectIds } : {}),
         },
       }));
