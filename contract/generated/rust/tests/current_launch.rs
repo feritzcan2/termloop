@@ -35,28 +35,40 @@ fn quick_action_surface_is_strict_and_full_control_only() {
         "quickAction.preview",
         &serde_json::json!({"prompt":"raw"})
     ));
-    assert!(validate_method_result(
-        "quickAction.preview",
-        &serde_json::json!({
-        "agent_id":"codex", "model":"gpt-5.6-sol", "permission":"plan", "reasoning":"high",
-        "template_ref":"builtin.quick-action.free-prompt",
-            "template_version":2, "delivery":"terminalInput", "delivered_preview":"Review this diff", "launch_ticket":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "manifest": {
-                "digest":digest,
-                "target":{"agent_id":"codex","executable":"codex","model":"gpt-5.6-sol","permission":"plan","reasoning":"high","cwd":"/tmp/project","conversation":"fresh"},
-                "provenance":{"template_ref":"builtin.quick-action.free-prompt","template_version":2,"authored_digest":digest,"delivered_digest":digest},
-                "content_parts":[{"id":"first-message","kind":"firstMessage","source":"template","scope":"launch","delivery":"terminalInput","content":"Review this diff","byte_length":16,"digest":digest}],
-                "transport":{"kind":"terminalInput","delivered_content":"Review this diff","byte_length":16,"digest":digest},
-                "arguments":[{
-                    "position":1,
-                    "display":"<redacted Quick Action image path>",
-                    "visibility":"redacted",
-                    "classification":"sensitivePath",
-                    "purpose":"Quick Action image attachment"
-                }],"environment":[],"generated_files":[],"limitations":[]
-            }
-        })
-    ));
+    let mut preview = serde_json::json!({
+    "agent_id":"codex", "model":"gpt-5.6-sol", "permission":"plan", "reasoning":"high",
+    "template_ref":"builtin.quick-action.free-prompt",
+        "template_version":2, "delivery":"terminalInput", "delivered_preview":"Review this diff", "launch_ticket":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest": {
+            "digest":digest,
+            "target":{"agent_id":"codex","executable":"codex","model":"gpt-5.6-sol","permission":"plan","reasoning":"high","cwd":"/tmp/project","conversation":"fresh"},
+            "provenance":{"template_ref":"builtin.quick-action.free-prompt","template_version":2,"authored_digest":digest,"delivered_digest":digest},
+            "content_parts":[{"id":"first-message","kind":"firstMessage","source":"template","scope":"launch","delivery":"terminalInput","content":"Review this diff","byte_length":16,"digest":digest}],
+            "transport":{"kind":"terminalInput","delivered_content":"Review this diff","byte_length":16,"digest":digest},
+            "arguments":[{
+                "position":1,
+                "display":"<redacted Quick Action image path>",
+                "visibility":"redacted",
+                "classification":"sensitivePath",
+                "purpose":"Quick Action image attachment"
+            }],"environment":[],"generated_files":[],"limitations":[]
+        }
+    });
+    assert!(validate_method_result("quickAction.preview", &preview));
+
+    preview["template_ref"] =
+        serde_json::json!("builtin.agent-profile.scattered-orchestration-finder");
+    preview["template_version"] = serde_json::json!(1);
+    preview["manifest"]["provenance"]["template_ref"] = preview["template_ref"].clone();
+    preview["manifest"]["provenance"]["template_version"] = serde_json::json!(1);
+    preview["manifest"]["arguments"][0]["display"] = "x".repeat(4_237).into();
+    assert!(validate_method_result("quickAction.preview", &preview));
+
+    preview["manifest"]["arguments"][0]["display"] = "x".repeat(524_288).into();
+    assert!(validate_method_result("quickAction.preview", &preview));
+
+    preview["manifest"]["arguments"][0]["display"] = "x".repeat(524_289).into();
+    assert!(!validate_method_result("quickAction.preview", &preview));
     let mut launch_params = params.clone();
     launch_params["launchTicket"] = serde_json::Value::String("a".repeat(64));
     assert!(validate_method_params("quickAction.launch", &launch_params));
