@@ -9962,6 +9962,8 @@
         "node_count",
         "edge_count",
         "community_count",
+        "communities",
+        "community_catalog_truncated",
         "hotspots",
         "warning"
       ],
@@ -9974,8 +9976,23 @@
         "node_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
         "edge_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
         "community_count": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
+        "communities": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/projectArchitectureCommunityDto" } },
+        "community_catalog_truncated": { "type": "boolean" },
         "hotspots": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/projectArchitectureNodeDto" } },
         "warning": { "anyOf": [{ "type": "string", "maxLength": 1024 }, { "type": "null" }] }
+      }
+    },
+    "projectArchitectureCommunityDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectArchitectureCommunityDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "node_count", "risk_score"],
+      "properties": {
+        "key": { "type": "string", "minLength": 2, "maxLength": 130 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "node_count": { "type": "integer", "minimum": 1, "x-rust-type": "u64" },
+        "risk_score": { "type": "number", "minimum": 0, "maximum": 100 }
       }
     },
     "projectArchitectureGraphParams": {
@@ -9987,6 +10004,7 @@
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "centerNodeId": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "communityKey": { "type": "string", "minLength": 2, "maxLength": 130 },
         "depth": { "type": "integer", "minimum": 1, "maximum": 3 },
         "limit": { "type": "integer", "minimum": 20, "maximum": 500 }
       }

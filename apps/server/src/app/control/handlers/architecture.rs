@@ -33,9 +33,16 @@ pub(in crate::app) async fn project_architecture_graph(
     };
     let depth = params.depth.unwrap_or(2) as usize;
     let limit = params.limit.unwrap_or(240) as usize;
-    tokio::task::spawn_blocking(move || plan.graph(params.center_node_id.as_deref(), depth, limit))
-        .await
-        .map_err(|error| CoreError::Store(format!("Architecture graph worker failed: {error}")))?
+    tokio::task::spawn_blocking(move || {
+        plan.graph(
+            params.center_node_id.as_deref(),
+            params.community_key.as_deref(),
+            depth,
+            limit,
+        )
+    })
+    .await
+    .map_err(|error| CoreError::Store(format!("Architecture graph worker failed: {error}")))?
 }
 
 pub(in crate::app) async fn project_architecture_node(
