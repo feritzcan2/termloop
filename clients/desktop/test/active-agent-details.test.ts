@@ -95,12 +95,15 @@ describe("Active Agent inline todos", () => {
 
     const row = () => container!.querySelector<HTMLButtonElement>(`[data-session-id="${agent.id}"]`);
     const count = () => container!.querySelector<HTMLElement>(".agent-todo-count");
+    const tooltip = () => container!.querySelector<HTMLElement>(".agent-todo-tooltip");
     expect(count()?.textContent).toBe("1/2");
-    expect(count()?.title).toContain("Todos · 1/2 complete");
-    expect(count()?.title).toContain("✓ Inspect the idle agent");
-    expect(count()?.title).toContain("○ Finish the remaining work");
+    expect(count()?.title).toBe("");
+    expect(tooltip()?.getAttribute("role")).toBe("tooltip");
+    expect(tooltip()?.textContent).toContain("Todos1/2 complete");
+    expect(tooltip()?.textContent).toContain("Inspect the idle agent");
+    expect(tooltip()?.textContent).toContain("Finish the remaining work");
     expect(container.querySelector("details")).toBeNull();
-    expect(container.textContent).not.toContain("Finish the remaining work");
+    expect(container.querySelector(".session-state-line")?.textContent).toBe("1/2Codexdetail-worktree");
 
     await act(async () => row()?.click());
     expect(row()?.getAttribute("aria-pressed")).toBe("true");
