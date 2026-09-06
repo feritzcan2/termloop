@@ -29,6 +29,14 @@ pub use run_configuration::{
     RunConfigurationKind, RunSetupMark, RunSetupPolicy,
 };
 
+mod workflow;
+pub use workflow::{
+    WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WORKFLOW_ID_MAX_BYTES, WORKFLOW_NAME_MAX_BYTES,
+    WORKFLOW_REVIEW_CYCLES_MAX, WORKFLOW_STEP_ID_MAX_BYTES, WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES,
+    WORKFLOW_STEP_TITLE_MAX_BYTES, WORKFLOW_STEPS_MAX, WorkflowConfiguration, WorkflowStep,
+    WorkflowStepKind,
+};
+
 mod companion;
 
 mod project_task_automation;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
-import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
+import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration } from "../model.js";
 import { basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
 import { agentActivityPriority } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
@@ -19,7 +19,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -132,6 +132,8 @@ export type ShellProps = {
   gitHostProjections: readonly GitHostProjection[];
   branchCommitSummaries: readonly BranchCommitSummary[];
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   playbookRuntime: PlaybookRuntimeResult | null;
@@ -273,12 +275,15 @@ export type ShellProps = {
   launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
+  launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   settingsImprovement: ConfigurationVersionActions & {
     start(target: SettingsImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
   };
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
+  saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
+  deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   launchProjectRun(projectId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
@@ -1421,6 +1426,8 @@ export function Shell(props: ShellProps) {
             gitHostProjections={props.gitHostProjections}
             branchCommitSummaries={props.branchCommitSummaries}
             runConfigurations={props.runConfigurations}
+            workflowConfigurations={props.workflowConfigurations}
+            workflowStateRevision={props.workflowStateRevision}
             runRuntimes={props.runRuntimes}
             runStateRevision={props.runStateRevision}
             sessionsById={sessionsById}
@@ -1457,10 +1464,13 @@ export function Shell(props: ShellProps) {
             agentCapabilities={props.agentCapabilities}
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
+            launchTaskWorkflow={props.launchTaskWorkflow}
             runImprovement={props.runImprovement}
             setupRunImprovement={openRunImproverSetup}
             saveRunConfiguration={props.saveRunConfiguration}
             deleteRunConfiguration={props.deleteRunConfiguration}
+            saveWorkflowConfiguration={props.saveWorkflowConfiguration}
+            deleteWorkflowConfiguration={props.deleteWorkflowConfiguration}
             launchTaskRun={props.launchTaskRun}
             inspectTaskWorktreeRepair={props.inspectTaskWorktreeRepair}
             repairTaskWorktree={props.repairTaskWorktree}

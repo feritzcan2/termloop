@@ -624,6 +624,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "steward.configurationGet"
             | "worker.configurationList"
             | "runConfiguration.list"
+            | "workflow.configurationList"
             | "run.runtimeList"
             | "routine.configurationList"
             | "routine.runtimeList"

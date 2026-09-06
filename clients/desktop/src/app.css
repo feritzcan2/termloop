@@ -658,6 +658,75 @@ button.task-signal.issue:hover { color: var(--warning); }
 .run-chip:hover .run-chip-edit, .run-chip-edit:focus-visible { color: var(--sidebar-dimmer); }
 .run-chip-edit:hover { color: var(--accent-strong); }
 .run-chip-add svg { width: 10px; height: 10px; }
+.workflow-chip .run-chip-start svg { color: light-dark(#697eb0, #88a7e8); }
+.workflow-add { display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 5px 0 3px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9.5px/1 var(--font-ui); }
+.workflow-add:hover { border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--accent-strong); }
+.workflow-add svg { width: 9px; height: 9px; }
+
+/* Workflow templates are linear, but the builder makes participant identity
+   and conversation reuse visible instead of hiding orchestration in prose. */
+.dialog-card.workflow-dialog { width: min(900px,calc(100vw - 40px)); }
+.workflow-dialog .dialog-body { max-height: min(76vh,760px); overflow-y: auto; overscroll-behavior: contain; }
+.workflow-builder-body { padding-top: 14px; }
+.workflow-builder-top { display: grid; grid-template-columns: minmax(220px,1fr) 170px 145px; gap: 10px; padding: 0 1px 14px; border-bottom: 1px solid var(--border); }
+.workflow-builder-top label { margin-top: 0 !important; }
+.workflow-builder-grid { display: grid; grid-template-columns: minmax(290px,340px) minmax(320px,1fr); gap: 14px; margin-top: 14px; align-items: start; }
+.workflow-pipeline { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
+.workflow-pipeline .plan-head { margin: 0 1px 10px; }
+.workflow-steps { display: grid; gap: 7px; }
+.workflow-step-card { position: relative; display: flex; min-height: 56px; overflow: hidden; border: 1px solid var(--border); border-left: 3px solid var(--workflow-tone,#7b8790); border-radius: 8px; background: var(--bg-raised); box-shadow: 0 1px 2px rgba(0,0,0,.04); transition: border-color .12s ease,box-shadow .12s ease,opacity .12s ease; }
+.workflow-step-card.kind-discuss { --workflow-tone: #5a91a8; }
+.workflow-step-card.kind-implement { --workflow-tone: #4d94d8; }
+.workflow-step-card.kind-review { --workflow-tone: #d09555; }
+.workflow-step-card.kind-fix { --workflow-tone: #56a478; }
+.workflow-step-card.selected { border-color: color-mix(in srgb,var(--workflow-tone) 62%,var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb,var(--workflow-tone) 14%,transparent); }
+.workflow-step-card.dragging { z-index: 2; opacity: .48; }
+.workflow-step-select { display: grid; min-width: 0; flex: 1; grid-template-columns: 23px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 8px 5px 8px 9px; border: 0; background: transparent; color: var(--text); text-align: left; }
+.workflow-step-select:hover { background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.025)); }
+.workflow-step-number { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid color-mix(in srgb,var(--workflow-tone) 35%,var(--border)); border-radius: 50%; color: var(--workflow-tone); font: 700 9px/1 var(--font-mono); }
+.workflow-step-copy { display: grid; min-width: 0; gap: 4px; }
+.workflow-step-copy b { overflow: hidden; color: var(--text); font: 650 10.5px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-step-copy small { overflow: hidden; color: var(--text-muted); font: 9px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-kind { display: inline-flex; align-items: center; width: fit-content; padding: 3px 5px; border-radius: 4px; background: color-mix(in srgb,var(--workflow-kind-tone,#7b8790) 13%,transparent); color: var(--workflow-kind-tone,#7b8790); font: 750 7.5px/1 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.workflow-kind.kind-discuss,.workflow-run-node.kind-discuss { --workflow-kind-tone: #5a91a8; }
+.workflow-kind.kind-implement,.workflow-run-node.kind-implement { --workflow-kind-tone: #4d94d8; }
+.workflow-kind.kind-review,.workflow-run-node.kind-review { --workflow-kind-tone: #d09555; }
+.workflow-kind.kind-fix,.workflow-run-node.kind-fix { --workflow-kind-tone: #56a478; }
+.workflow-drag-handle { display: grid; place-items: center; width: 29px; padding: 0; border: 0; border-left: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: grab; touch-action: none; }
+.workflow-drag-handle:active { cursor: grabbing; }
+.workflow-drag-handle:hover,.workflow-drag-handle:focus-visible { background: var(--accent-wash); color: var(--accent-strong); }
+.workflow-drag-handle svg { width: 13px; height: 13px; }
+.workflow-step-lock { display: grid; place-items: center; width: 37px; border-left: 1px solid var(--border); color: var(--text-muted); font: 650 7.5px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.workflow-add-steps { display: flex; gap: 6px; margin-top: 9px; }
+.workflow-add-steps button { display: inline-flex; align-items: center; gap: 5px; }
+.workflow-add-steps svg { width: 11px; height: 11px; }
+.workflow-inspector { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
+.workflow-inspector-head { display: flex; min-height: 57px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--border); background: light-dark(rgba(15,23,42,.018),rgba(255,255,255,.012)); }
+.workflow-inspector-head > div { display: grid; gap: 6px; }
+.workflow-inspector-head h3 { margin: 0; color: var(--text); font: 650 13px/1.2 var(--font-ui); }
+.workflow-inspector-fields { display: grid; padding: 13px; }
+.workflow-inspector-fields > label { margin: 13px 0 6px !important; }
+.workflow-inspector-fields > label:first-child { margin-top: 0 !important; }
+.workflow-inspector-fields .field-help { margin: 6px 1px 0; }
+.workflow-inspector-fields textarea { min-height: 118px; max-height: 240px; }
+.workflow-owned-step { display: flex; align-items: center; gap: 9px; margin-top: 13px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--accent-wash); }
+.workflow-owned-step svg { width: 18px; height: 18px; color: var(--accent-strong); }
+.workflow-owned-step span { display: grid; gap: 3px; }
+.workflow-owned-step b { color: var(--text); font: 650 10.5px/1 var(--font-ui); }
+.workflow-owned-step small { color: var(--text-muted); font: 9px/1.2 var(--font-ui); }
+.workflow-delete { margin-right: auto; }
+.dialog-card.workflow-run-dialog { width: min(540px,calc(100vw - 40px)); }
+.workflow-run-route { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 16px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
+.workflow-run-node { display: inline-flex; align-items: center; gap: 5px; color: var(--workflow-kind-tone,#7b8790); font: 700 8px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.workflow-run-node i { color: var(--text-muted); font-style: normal; }
+.workflow-run-dialog textarea { min-height: 112px; max-height: 260px; }
+.workflow-run-dialog .primary-button { display: inline-flex; align-items: center; gap: 6px; }
+.workflow-run-dialog .primary-button svg { width: 11px; height: 11px; }
+@media (max-width: 760px) {
+  .workflow-builder-top { grid-template-columns: 1fr 1fr; }
+  .workflow-builder-top > div:first-child { grid-column: 1 / -1; }
+  .workflow-builder-grid { grid-template-columns: 1fr; }
+}
 /* The one line a run Session needs beyond its row: where to open it, how to
    restart it, and why it stopped. */
 /* 27px lines the URL up with the Session title above it: 7px row padding, the

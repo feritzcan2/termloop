@@ -100,6 +100,13 @@ import type {
   RunConfigurationListResult,
   RunConfigurationMutationResult,
   RunConfigurationUpdateParams,
+  WorkflowConfigurationCreateParams,
+  WorkflowConfigurationDeleteParams,
+  WorkflowConfigurationDeleteResult,
+  WorkflowConfigurationListParams,
+  WorkflowConfigurationListResult,
+  WorkflowConfigurationMutationResult,
+  WorkflowConfigurationUpdateParams,
   RunRuntimeListParams,
   RunRuntimeListResult,
   ProjectRestartRunParams,
@@ -327,6 +334,10 @@ export type DesktopApi = {
   runConfigurationCreate(params: RunConfigurationCreateParams): Promise<RunConfigurationMutationResult>;
   runConfigurationUpdate(params: RunConfigurationUpdateParams): Promise<RunConfigurationMutationResult>;
   runConfigurationDelete(params: RunConfigurationDeleteParams): Promise<RunConfigurationDeleteResult>;
+  workflowConfigurationList(params: WorkflowConfigurationListParams): Promise<WorkflowConfigurationListResult>;
+  workflowConfigurationCreate(params: WorkflowConfigurationCreateParams): Promise<WorkflowConfigurationMutationResult>;
+  workflowConfigurationUpdate(params: WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationMutationResult>;
+  workflowConfigurationDelete(params: WorkflowConfigurationDeleteParams): Promise<WorkflowConfigurationDeleteResult>;
   runConfigurationImprovePreview(params: RunConfigurationImprovePreviewParams): Promise<RunConfigurationImprovePreviewResult>;
   runConfigurationImproveLaunch(params: RunConfigurationImproveLaunchParams): Promise<RunConfigurationImproveLaunchResult>;
   settingsImprovePreview(params: SettingsImprovePreviewParams): Promise<SettingsImprovePreviewResult>;
@@ -383,6 +394,8 @@ export type DesktopApi = {
   projectRestartRun(params: ProjectRestartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskAgentPreview(taskId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", kickoffMessage?: string): Promise<TaskControlDesktopResult<AgentLaunchPreviewResult>>;
   taskAgentLaunch(taskId: string, agentId: string, launchTicket: string): Promise<TaskControlDesktopResult<Session>>;
+  taskWorkflowPreview(taskId: string, workflowId: string, goal: string): Promise<TaskControlDesktopResult<AgentLaunchPreviewResult>>;
+  taskWorkflowLaunch(taskId: string, workflowId: string, goal: string, launchTicket: string): Promise<TaskControlDesktopResult<Session>>;
   sessionTerminate(sessionId: string): Promise<TaskControlDesktopResult<unknown>>;
   sessionPreviewResumeAgent(sessionId: string): Promise<AgentLaunchPreviewResult>;
   sessionResumeAgent(sessionId: string, launchTicket: string): Promise<Session>;
