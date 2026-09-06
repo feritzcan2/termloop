@@ -23,9 +23,11 @@ describe("workspace view memory", () => {
     let memory = readWorkspaceViewMemory(storage);
     memory = rememberWorkspaceView(memory, "project-a", "overview", storage);
     memory = rememberWorkspaceView(memory, "project-b", "steward", storage);
+    memory = rememberWorkspaceView(memory, "project-map", "map", storage);
 
     expect(workspaceViewForProject(memory, "project-a")).toBe("overview");
     expect(workspaceViewForProject(memory, "project-b")).toBe("steward");
+    expect(workspaceViewForProject(memory, "project-map")).toBe("map");
     expect(workspaceViewForProject(readWorkspaceViewMemory(storage), "project-a")).toBe("overview");
     expect(workspaceViewForProject(memory, "project-new")).toBe("agents");
   });

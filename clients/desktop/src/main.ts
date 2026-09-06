@@ -463,6 +463,22 @@ handleIpc("termloop:project-delete", async (_event, projectId: string) => {
 handleIpc("termloop:project-list-local-branches", (_event, projectId: string) =>
   controlCall("project.listLocalBranches", { projectId }),
 );
+handleIpc("termloop:project-architecture-summary", (_event, projectId: string) =>
+  controlCall("project.architectureSummary", { projectId }),
+);
+handleIpc(
+  "termloop:project-architecture-graph",
+  (_event, params: import("@termloop/contract/current").ProjectArchitectureGraphParams) =>
+    controlCall("project.architectureGraph", params),
+);
+handleIpc(
+  "termloop:project-architecture-node",
+  (_event, params: import("@termloop/contract/current").ProjectArchitectureNodeParams) =>
+    controlCall("project.architectureNode", params),
+);
+handleIpc("termloop:project-architecture-refresh", (_event, projectId: string) =>
+  controlCall("project.architectureRefresh", { projectId }),
+);
 handleIpc("termloop:project-task-automation-get", (_event, projectId: string) =>
   controlCall("project.taskAutomationGet", { projectId }),
 );

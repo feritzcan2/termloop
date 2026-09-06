@@ -52,6 +52,7 @@ import { ActiveAgentRail } from "./ActiveAgentRail.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
 import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
+import { ArchitectureMapPanel, type ArchitectureMapActions } from "./ArchitectureMapPanel.js";
 import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
@@ -137,6 +138,7 @@ export type ShellProps = {
   playbookRuntime: PlaybookRuntimeResult | null;
   projectSessions: readonly Session[];
   projectWorktreeSummary?: ProjectWorktreeSummary | undefined;
+  architectureActions: ArchitectureMapActions;
   selectedProject: Project | undefined;
   selectedSession: Session | undefined;
   layout: ProjectLayout | undefined;
@@ -876,6 +878,11 @@ export function Shell(props: ShellProps) {
   }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
+    if (view === "map") {
+      setDetailTaskId(undefined);
+      setStagePage(undefined);
+      setAssistantSelection(undefined);
+    }
     if (view === "steward" && !assistantSelection && props.selectedProject) {
       openAssistant({ kind: "steward" });
       return;
@@ -988,7 +995,7 @@ export function Shell(props: ShellProps) {
     sidebarDragging,
     sessionDragging,
     mobileConnectOpen,
-  );
+  ) || (railMode === "workspace" && workspaceView === "map");
   useEffect(() => {
     props.setTerminalOccluded(terminalOccluded);
     return () => props.setTerminalOccluded(false);
@@ -1563,7 +1570,11 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             openDetails={openAssistant}
-          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "map" ? <div className="architecture-sidebar-note">
+            <Icon name="branch" />
+            <strong>Architecture map</strong>
+            <p>Graphify extracts code locally. Node risk combines fan-in, fan-out and cross-community reach.</p>
+          </div> : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}
             projectBranch={props.projectWorktreeSummary?.checked_out_branch}
@@ -1655,7 +1666,7 @@ export function Shell(props: ShellProps) {
           draggingChanged={setSidebarDragging}
         />
         <section className="workspace" aria-label="Terminal workspace">
-          {!assistantStageVisible && !detailTask && !stagePage && props.selectedProject ? <SessionTabStrip
+          {!assistantStageVisible && !detailTask && !stagePage && workspaceView !== "map" && props.selectedProject ? <SessionTabStrip
             sessions={props.projectSessions.filter((session) => !isAssistantSession(session))}
             selectedSessionId={props.selectedSession?.id}
             disabled={disabled}
@@ -1663,7 +1674,12 @@ export function Shell(props: ShellProps) {
             launchTerminal={props.launchTerminal}
           /> : null}
           <main className="terminal-stage" aria-label="Terminal panes">
-            {assistantStageVisible && assistantSelection && props.selectedProject ? <StewardPanel
+            {railMode === "workspace" && workspaceView === "map" && props.selectedProject ? <ArchitectureMapPanel
+              key={props.selectedProject.id}
+              projectId={props.selectedProject.id}
+              projectName={props.selectedProject.name}
+              actions={props.architectureActions}
+            /> : assistantStageVisible && assistantSelection && props.selectedProject ? <StewardPanel
               projectId={props.selectedProject.id}
               projectName={props.selectedProject.name}
               selection={assistantSelection}

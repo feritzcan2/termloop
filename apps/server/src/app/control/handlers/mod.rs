@@ -1,3 +1,4 @@
+mod architecture;
 mod context_bank;
 mod git_host;
 mod project;
@@ -9,6 +10,10 @@ mod steward;
 mod worker;
 mod worktree;
 
+pub(super) use architecture::{
+    project_architecture_graph, project_architecture_node, project_architecture_refresh,
+    project_architecture_summary,
+};
 pub(super) use context_bank::{
     get_context_bank_catalog, get_context_bank_file, resolve_context_bank_sibling_conflict,
     save_context_bank_file,
