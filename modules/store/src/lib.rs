@@ -26,7 +26,7 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorkerConfiguration, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorktreeCleanupOperation, WorktreeCleanupReceipt,
     WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
     WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
@@ -55,9 +55,10 @@ use termloop_domain::{
 // Version 47 adds the managed Task branch/worktree prefix. Version 48 adds the
 // bounded current set of branches observed in each managed Task worktree.
 // Version 49 adds the selected remote base ref to Project Task automation.
-// Version 50 removes the retired Routine provider kind from durable state;
-// capability selection now belongs to the Worker at assignment time.
-const CURRENT_SCHEMA_VERSION: u32 = 50;
+// Version 50 removes the retired Routine provider kind from durable state.
+// Version 51 removes persistent Workers and binds Routine execution directly
+// to the Project Steward.
+const CURRENT_SCHEMA_VERSION: u32 = 51;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -123,8 +124,9 @@ struct CurrentState {
     playbook_configurations: Vec<PlaybookConfiguration>,
     #[serde(default)]
     playbook_step_progress: Vec<PlaybookStepProgress>,
-    #[serde(default)]
-    worker_configurations: Vec<WorkerConfiguration>,
+    /// Migration-only input. Schema 51 never writes persistent Worker state.
+    #[serde(default, skip_serializing)]
+    worker_configurations: Vec<serde_json::Value>,
     #[serde(default)]
     run_configurations: Vec<RunConfiguration>,
     #[serde(default)]

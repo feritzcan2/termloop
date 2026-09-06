@@ -70,19 +70,19 @@ export function routineDisplayStatus(
   if (health?.state === "attention") return {
     label: "Attention",
     tone: "attention",
-    reason: health.attentionMessage?.trim() || "The Worker reported a problem while running this Routine.",
-    nextAction: "Fix the reported problem, then restart the Worker.",
+    reason: health.attentionMessage?.trim() || "The Steward reported a problem while running this Routine.",
+    nextAction: "Fix the reported problem, then restart the Steward.",
   };
   if (!routine.enabled) return {
     label: "Off",
     tone: "off",
     reason: "This Routine will not run.",
-    nextAction: "Turn it on when you want the Worker to use it.",
+    nextAction: "Turn it on when you want the Steward to use it.",
   };
   if (health?.state === "checking") return {
     label: "Checking",
     tone: "checking",
-    reason: "The Worker is checking the configured sources now.",
+    reason: "The Steward is checking the configured sources now.",
     nextAction: "Wait for this check to finish.",
   };
   if (health?.state === "overdue" || health?.pendingTrigger) return {
@@ -90,8 +90,8 @@ export function routineDisplayStatus(
     tone: "waiting",
     reason: health.state === "overdue"
       ? "A due check has not completed yet."
-      : "This Routine is waiting for its Worker to claim the next check.",
-    nextAction: "Restart the Worker if it does not recover.",
+      : "This Routine is waiting for its Steward assignment.",
+    nextAction: "Restart the Steward if it does not recover.",
   };
   return {
     label: "Ready",

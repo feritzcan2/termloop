@@ -306,10 +306,6 @@ fn schema_34_assigns_the_new_assistant_permission_defaults() {
         store.steward_configurations()[0].permission,
         "bypassPermissions"
     );
-    assert_eq!(
-        store.worker_configurations()[0].permission,
-        "bypassPermissions"
-    );
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
@@ -317,10 +313,7 @@ fn schema_34_assigns_the_new_assistant_permission_defaults() {
         persisted["steward_configurations"][0]["permission"],
         "bypassPermissions"
     );
-    assert_eq!(
-        persisted["worker_configurations"][0]["permission"],
-        "bypassPermissions"
-    );
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -907,7 +900,7 @@ fn v15_migration_preserves_current_state_and_defaults_agent_launch_selection() {
     assert!(store.companion_messages()[0].refs.is_none());
     assert_eq!(store.steward_configurations()[0].generation, 2);
     assert_eq!(store.steward_configurations()[0].system_prompt, "");
-    assert_eq!(store.worker_configurations()[0].generation, 3);
+    assert!(store.state.worker_configurations.is_empty());
     let worker_task = &store.tracker_configurations()[0];
     assert_eq!(worker_task.prompt, "Inspect #product and report.");
     assert_eq!(worker_task.last_attempt_at_epoch_ms, Some(104));
@@ -1159,7 +1152,7 @@ fn v4_migration_preserves_main_project_task_and_session_state() {
     );
     assert!(store.companion_messages().is_empty());
     assert!(store.steward_configurations().is_empty());
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.tracker_configurations().is_empty());
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -1170,7 +1163,7 @@ fn v4_migration_preserves_main_project_task_and_session_state() {
     assert_eq!(persisted["sessions"][0]["id"], "session-main");
     assert_eq!(persisted["companion_messages"], serde_json::json!([]));
     assert_eq!(persisted["steward_configurations"], serde_json::json!([]));
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     assert_eq!(persisted["tracker_configurations"], serde_json::json!([]));
     let _ = std::fs::remove_file(path);
 }
@@ -1245,7 +1238,7 @@ fn v6_migrates_to_an_empty_tracker_configuration_collection() {
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert_eq!(persisted["tracker_configurations"], serde_json::json!([]));
     assert!(persisted.get("tracker_conversation_refs").is_none());
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -1275,7 +1268,7 @@ fn v7_migration_drops_the_retired_tracker_conversation_collection() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert!(persisted.get("tracker_conversation_refs").is_none());
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -1336,7 +1329,7 @@ fn v10_reset_removes_only_retired_tracker_assistant_state() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.projects().len(), 1);
     assert!(store.tracker_configurations().is_empty());
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.sessions().is_empty());
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -1378,7 +1371,7 @@ fn v11_reset_removes_promptless_workers_and_keeps_ordinary_sessions() {
         ]
     })).unwrap()).unwrap();
     let store = Store::open(&path).unwrap();
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.tracker_configurations().is_empty());
     assert_eq!(store.sessions().len(), 1);
     assert_eq!(store.sessions()[0].id, "ordinary-session");

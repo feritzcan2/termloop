@@ -16,6 +16,9 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| StoreError::Io("state schema version is missing or invalid".into()))?;
     if schema_version < CURRENT_SCHEMA_VERSION {
+        retire_persistent_worker_state(&mut value)?;
+    }
+    if schema_version < CURRENT_SCHEMA_VERSION {
         merge_legacy_playbook_conditions(&mut value)?;
         remove_retired_mcp_tool_description_overrides(&mut value)?;
     }
@@ -546,6 +549,14 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
+        50 => {
+            migrate_v50_to_v51_value(&mut value)?;
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
         CURRENT_SCHEMA_VERSION => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
@@ -954,9 +965,6 @@ fn migrate_v34_to_v35(state: &mut CurrentState) {
     for configuration in &mut state.steward_configurations {
         configuration.permission = "bypassPermissions".into();
     }
-    for configuration in &mut state.worker_configurations {
-        configuration.permission = "bypassPermissions".into();
-    }
     state.schema_version = 35;
     migrate_v35_to_v36(state);
 }
@@ -1086,6 +1094,12 @@ fn migrate_v48_to_v49(state: &mut CurrentState) {
 fn migrate_v49_to_v50(state: &mut CurrentState) {
     // `kind` is already ignored while deserializing legacy Routine records.
     // Persisting schema 50 writes the provider-neutral shape back out.
+    state.schema_version = 50;
+    migrate_v50_to_v51(state);
+}
+
+fn migrate_v50_to_v51(state: &mut CurrentState) {
+    state.worker_configurations.clear();
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
 
@@ -1106,7 +1120,7 @@ fn migrate_v42_to_v43_value(value: &mut serde_json::Value) -> Result<(), StoreEr
             })?;
             let project_id = source
                 .get("projectId")
-                .and_then(serde_json::Value::as_str)
+                .and_then(|value| value.as_str())
                 .ok_or_else(|| StoreError::Io("Task Source projectId is missing".into()))?
                 .to_owned();
             let create_worktree = match source.remove("createWorktree") {
@@ -1340,11 +1354,193 @@ fn migrate_v49_to_v50_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                 .remove("kind");
         }
     }
-    object.insert(
-        "schema_version".into(),
-        serde_json::json!(CURRENT_SCHEMA_VERSION),
-    );
+    object.insert("schema_version".into(), serde_json::json!(50));
+    migrate_v50_to_v51_value(value)
+}
+
+fn migrate_v50_to_v51_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    retire_persistent_worker_state(value)?;
+    value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?
+        .insert(
+            "schema_version".into(),
+            serde_json::json!(CURRENT_SCHEMA_VERSION),
+        );
     Ok(())
+}
+
+/// Removes the retired persistent executor and every current-state reference
+/// that depended on it before schema 51 is decoded into current domain types.
+fn retire_persistent_worker_state(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+
+    let mut retired_session_ids = std::collections::HashSet::<String>::new();
+    if let Some(configurations) = object
+        .get("worker_configurations")
+        .and_then(serde_json::Value::as_array)
+    {
+        retired_session_ids.extend(configurations.iter().filter_map(|configuration| {
+            configuration
+                .get("executorSessionId")
+                .or_else(|| configuration.get("executor_session_id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        }));
+    }
+    object.remove("worker_configurations");
+
+    if let Some(routines) = object
+        .get_mut("tracker_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for routine in routines {
+            if let Some(routine) = routine.as_object_mut() {
+                routine.remove("workerId");
+                routine.remove("worker_id");
+            }
+        }
+    }
+
+    if let Some(sessions) = object
+        .get("sessions")
+        .and_then(serde_json::Value::as_array)
+    {
+        retired_session_ids.extend(sessions.iter().filter_map(|session| {
+            let template = session
+                .get("process")?
+                .get("template_ref")
+                .or_else(|| session.get("process")?.get("templateRef"))?
+                .as_str()?;
+            matches!(
+                template,
+                "builtin.worker.executor" | "builtin.improver.worker-instructions"
+            )
+            .then(|| session.get("id")?.as_str().map(str::to_owned))
+            .flatten()
+        }));
+    }
+
+    if let Some(sessions) = object
+        .get_mut("sessions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        sessions.retain(|session| {
+            session
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|id| !retired_session_ids.contains(id))
+        });
+    }
+    for collection in [
+        "agent_plans",
+        "agent_conversation_readiness",
+        "session_archive_operations",
+        "session_relocation_operations",
+        "session_relocation_receipts",
+    ] {
+        if let Some(records) = object
+            .get_mut(collection)
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            records.retain(|record| {
+                record
+                    .get("session_id")
+                    .or_else(|| record.get("sessionId"))
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(|id| !retired_session_ids.contains(id))
+            });
+        }
+    }
+
+    for collection in ["configuration_versions", "configuration_version_selections"] {
+        if let Some(records) = object
+            .get_mut(collection)
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            records.retain(|record| {
+                !matches!(
+                    configuration_target_kind(record),
+                    Some("WorkerInstructions" | "workerInstructions" | "RoutineBuilder" | "routineBuilder")
+                )
+            });
+        }
+    }
+
+    if let Some(versions) = object
+        .get_mut("configuration_versions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for version in versions {
+            let Some(content) = version
+                .get_mut("content")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            let Ok(mut content) = serde_json::from_str::<serde_json::Value>(&content) else {
+                continue;
+            };
+            remove_worker_snapshot_fields(&mut content);
+            if let Some(slot) = version.get_mut("content") {
+                *slot = serde_json::Value::String(
+                    serde_json::to_string(&content)
+                        .map_err(|error| StoreError::Io(error.to_string()))?,
+                );
+            }
+        }
+    }
+
+    if let Some(overrides) = object
+        .get_mut("mcp_tool_description_overrides")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        overrides.retain(|value| {
+            !matches!(
+                value.get("tool").and_then(serde_json::Value::as_str),
+                Some(
+                    "worker_get_next_routine"
+                        | "worker_complete_assignment"
+                        | "worker_task_board"
+                        | "worker_ready"
+                )
+            )
+        });
+    }
+    Ok(())
+}
+
+fn configuration_target_kind(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("target")
+        .and_then(|target| {
+            target
+                .get("target_kind")
+                .or_else(|| target.get("targetKind"))
+        })
+        .and_then(serde_json::Value::as_str)
+}
+
+fn remove_worker_snapshot_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            object.remove("workerId");
+            object.remove("preferredWorkerAgentId");
+            object.remove("workerPrompt");
+            for value in object.values_mut() {
+                remove_worker_snapshot_fields(value);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_worker_snapshot_fields(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn remove_retired_mcp_tool_description_overrides(

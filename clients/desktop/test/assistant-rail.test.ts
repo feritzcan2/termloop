@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { PlaybookGetResult, PlaybookRuntimeResult, RoutineConfigurationDto, WorkerConfigurationDto } from "@termloop/contract/current";
+import type { PlaybookGetResult, PlaybookRuntimeResult, RoutineConfigurationDto, StewardConfigurationDto } from "@termloop/contract/current";
 import type { AgentStatus, Session, Task } from "../src/renderer/model.js";
 import { assistantRefusalMessage } from "../src/renderer/ui/StewardPanel.js";
 import {
@@ -16,7 +16,7 @@ import {
   defaultAssistantLaunchSelection,
   isAssistantSession,
   moveTaskToPlaybookStepAndCheck,
-  openCheckingWorkerTerminal,
+  openCheckingStewardTerminal,
   persistentAssistantIsActive,
   routineCatalogRows,
   playbookStepBoard,
@@ -29,10 +29,7 @@ import {
   stepRoutineCadence,
   stepRoutineTimingLabel,
   routineTimingLabel,
-  workerPingIntervalLabel,
-  workerPingIntervalSeconds,
   stepRoutineIndex,
-  workerDeletionQuestion,
 } from "../src/renderer/ui/AssistantRail.js";
 import {
   AssistantTaskRow,
@@ -68,10 +65,10 @@ function session(templateRef: string | null): Session {
 
 describe("Assistant rail Session classification", () => {
   it("names everything removed by the Steward reset confirmation", () => {
-    expect(stewardDeletionQuestion(1, 2)).toBe(
-      "Delete the Steward and reset assistants? 1 Worker, 2 Routines, the Playbook, chat, and assistant sessions will be deleted.",
+    expect(stewardDeletionQuestion(2)).toBe(
+      "Delete the Steward and reset assistants? 2 Routines, the Playbook, chat, and assistant sessions will be deleted.",
     );
-    expect(stewardDeletionQuestion(0, 1)).toContain("0 Workers, 1 Routine");
+    expect(stewardDeletionQuestion(1)).toContain("1 Routine");
   });
 
   it("links the live Playbook Builder to its dedicated sidebar row", () => {
@@ -116,22 +113,16 @@ describe("Assistant rail Session classification", () => {
     )?.id).toBe("improver-2");
   });
 
-  it("links the live Routine Builder to its exact Worker", () => {
+  it("links the live Project Routine Builder", () => {
     const builder = {
       ...session("builtin.builder.routine"),
       id: "routine-builder-1",
-      name: "build: Routine for Ship to production",
-      improver_target: { targetKind: "routineBuilder" as const, targetId: "worker-1" },
+      name: "build: Project Routine",
+      improver_target: { targetKind: "routineBuilder" as const, targetId: null },
     };
-    const workers = [{ id: "worker-1", name: "Ship to production" }];
-    expect(routineBuilderSession("project-1", workers[0]!, workers, [builder])?.id)
+    expect(routineBuilderSession("project-1", [builder])?.id)
       .toBe("routine-builder-1");
-    expect(routineBuilderSession(
-      "project-1",
-      { id: "worker-2", name: "Another Worker" },
-      workers,
-      [builder],
-    )).toBeUndefined();
+    expect(routineBuilderSession("another-project", [builder])).toBeUndefined();
   });
 
   it("recovers an unambiguous Routine improver from visible Session provenance", () => {
@@ -181,10 +172,10 @@ describe("Assistant rail Session classification", () => {
     });
   });
 
-  it("shows only persistent Steward and Worker terminals", () => {
+  it("shows only the persistent Steward terminal", () => {
     expect(isAssistantSession(session("builtin.assistant.activation"))).toBe(true);
     expect(isAssistantSession(session("builtin.steward.executor"))).toBe(true);
-    expect(isAssistantSession(session("builtin.worker.executor"))).toBe(true);
+    expect(isAssistantSession(session("builtin.worker.executor"))).toBe(false);
     expect(isAssistantSession(session("builtin.tracker.slack"))).toBe(false);
     expect(isAssistantSession(session("builtin.tracker.runtime"))).toBe(false);
     expect(isAssistantSession(session("builtin.agent.interactive"))).toBe(false);
@@ -195,8 +186,6 @@ describe("Assistant rail Session classification", () => {
     expect(assistantInitialView({ kind: "steward" })).toBe("chat");
     expect(assistantInitialView({ kind: "steward", initialView: "configuration" })).toBe("configuration");
     expect(assistantInitialView({ kind: "steward", initialView: "builder" })).toBe("builder");
-    expect(assistantInitialView({ kind: "worker", workerId: "worker-1" })).toBe("terminal");
-    expect(assistantInitialView({ kind: "worker", workerId: "worker-1", initialView: "configuration" })).toBe("configuration");
     expect(assistantInitialView({ kind: "routine", routineId: "routine-1" })).toBe("context");
     expect(assistantInitialView({ kind: "steward", initialView: "terminal" })).toBe("chat");
   });
@@ -340,7 +329,7 @@ describe("Assistant rail Session classification", () => {
       ok: true as const,
       result: { taskId: "task-1", passedMilestoneCount: 2, stateRevision: 10 },
     }));
-    const runNow = vi.fn(async () => { throw new Error("Worker is busy"); });
+    const runNow = vi.fn(async () => { throw new Error("Steward is busy"); });
 
     await expect(moveTaskToPlaybookStepAndCheck(
       "project-1",
@@ -348,18 +337,14 @@ describe("Assistant rail Session classification", () => {
       2,
       "routine-ci",
       { getPlaybook, setPosition, runNow },
-    )).resolves.toBe("Task moved, but its immediate check could not start: Worker is busy");
+    )).resolves.toBe("Task moved, but its immediate check could not start: Steward is busy");
     expect(setPosition).toHaveBeenCalledOnce();
     expect(runNow).toHaveBeenCalledWith("routine-ci", "task-1");
   });
 
   it("highlights the open assistant detail rather than an unrelated active terminal", () => {
     expect(assistantSelectionMatches({ kind: "steward" }, { kind: "steward", initialView: "terminal" })).toBe(true);
-    expect(assistantSelectionMatches({ kind: "steward" }, { kind: "worker", workerId: "worker-1" })).toBe(false);
-    expect(assistantSelectionMatches(
-      { kind: "worker", workerId: "worker-1" },
-      { kind: "worker", workerId: "worker-2" },
-    )).toBe(false);
+    expect(assistantSelectionMatches({ kind: "steward" }, { kind: "routine", routineId: "routine-1" })).toBe(false);
     expect(assistantSelectionMatches(
       { kind: "routine", routineId: "routine-1" },
       { kind: "routine", routineId: "routine-1", initialView: "context" },
@@ -367,9 +352,8 @@ describe("Assistant rail Session classification", () => {
   });
 
   it("creates a named provider-neutral Routine", () => {
-    expect(customRoutineParams("project-1", "worker-1", "  Customer pulse  ", 45, 8)).toEqual({
+    expect(customRoutineParams("project-1", "  Customer pulse  ", 45, 8)).toEqual({
       projectId: "project-1",
-      workerId: "worker-1",
       triggerMode: "schedule",
       name: "Customer pulse",
       scheduleIntervalSeconds: 2700,
@@ -378,45 +362,41 @@ describe("Assistant rail Session classification", () => {
     });
   });
 
-  it("opens the owning Worker terminal from a Checking Routine status", () => {
+  it("opens the Steward terminal from a Checking Routine status", () => {
     const selected: string[] = [];
     const opened: unknown[] = [];
-    const worker = {
-      id: "worker-1",
-      executorSessionId: "worker-session-1",
-    } as WorkerConfigurationDto;
+    const steward = { executorSessionId: "steward-session-1" } as StewardConfigurationDto;
 
-    expect(openCheckingWorkerTerminal(
+    expect(openCheckingStewardTerminal(
       { label: "Checking", tone: "checking", reason: "Checking now.", nextAction: "Wait for the check." },
-      worker,
+      steward,
       (sessionId) => selected.push(sessionId),
       (selection) => opened.push(selection),
     )).toBe(true);
-    expect(selected).toEqual(["worker-session-1"]);
-    expect(opened).toEqual([{ kind: "worker", workerId: "worker-1", initialView: "terminal" }]);
-    expect(openCheckingWorkerTerminal(
+    expect(selected).toEqual(["steward-session-1"]);
+    expect(opened).toEqual([{ kind: "steward", initialView: "terminal" }]);
+    expect(openCheckingStewardTerminal(
       { label: "Checking", tone: "checking", reason: "Checking now.", nextAction: "Wait for the check." },
-      { ...worker, executorSessionId: null },
+      { ...steward, executorSessionId: null },
       () => undefined,
       () => undefined,
     )).toBe(false);
-    expect(openCheckingWorkerTerminal(
+    expect(openCheckingStewardTerminal(
       { label: "Waiting", tone: "waiting", reason: "Waiting.", nextAction: "Wait for the next schedule." },
-      worker,
+      steward,
       () => undefined,
       () => undefined,
     )).toBe(false);
   });
 
   it("keeps every created scheduled Routine visible without virtual provider presets", () => {
-    const routine = (id: string, workerId = "worker-1") => ({
+    const routine = (id: string) => ({
       id,
-      workerId,
       triggerMode: "schedule",
       name: id,
       scheduleIntervalSeconds: 300,
-    } as Parameters<typeof routineCatalogRows>[1][number]);
-    expect(routineCatalogRows("worker-1", [routine("first"), routine("second"), routine("other", "worker-2")])
+    } as Parameters<typeof routineCatalogRows>[0][number]);
+    expect(routineCatalogRows([routine("first"), routine("second"), routine("other")])
       .map(({ id }) => id))
       .toEqual(["first", "second"]);
   });
@@ -426,15 +406,15 @@ describe("Assistant rail Session classification", () => {
       id: string,
       triggerMode: RoutineConfigurationDto["triggerMode"] = "schedule",
     ) => ({
-      id, workerId: "worker-1", triggerMode, name: id, scheduleIntervalSeconds: 300,
-    } as Parameters<typeof routineCatalogRows>[1][number]);
+      id, triggerMode, name: id, scheduleIntervalSeconds: 300,
+    } as Parameters<typeof routineCatalogRows>[0][number]);
     const all = [
       routine("Project follow-ups"),
       routine("Is a PR open?", "onDemand"),
       routine("Is CI green?", "onDemand"),
       routine("Is it deployed?", "onDemand"),
     ];
-    expect(routineCatalogRows("worker-1", all).map(({ id }) => id))
+    expect(routineCatalogRows(all).map(({ id }) => id))
       .toEqual(["Project follow-ups"]);
   });
 
@@ -489,47 +469,35 @@ describe("Assistant rail Session classification", () => {
   });
 
   it("draws one Project pipeline in board order and trails off-board checks", () => {
-    const worker = (id: string) => ({ id } as WorkerConfigurationDto);
     const routine = (
       id: string,
-      workerId: string,
       triggerMode: RoutineConfigurationDto["triggerMode"] = "onDemand",
-    ) => ({ id, workerId, triggerMode, name: id } as RoutineConfigurationDto);
+    ) => ({ id, triggerMode, name: id } as RoutineConfigurationDto);
     const index = {
       activeRoutineIds: ["r-2", "r-1", "r-gone"],
       keptPipelineByRoutine: new Map([["r-kept", "Dev PR to production"]]),
       retryDelayByRoutine: new Map([["r-1", 600], ["r-2", 1800], ["r-kept", 300]]),
     };
     const board = playbookStepBoard(
-      [worker("worker-1"), worker("worker-2")],
       [
-        routine("r-1", "worker-1"),
-        routine("r-2", "worker-2"),
-        routine("r-kept", "worker-1"),
-        routine("r-orphan", "worker-1"),
-        routine("r-deleted-worker", "worker-3"),
-        routine("scheduled", "worker-1", "schedule"),
+        routine("r-1"),
+        routine("r-2"),
+        routine("r-kept"),
+        routine("r-orphan"),
+        routine("scheduled", "schedule"),
       ],
       index,
     );
-    // Board order wins over Worker grouping, and a step whose Routine is gone
-    // renders nothing rather than a hole; the scheduled Routine stays in the
-    // Worker's own catalog.
+    // Board order wins, and a step whose Routine is gone renders nothing rather
+    // than a hole; the scheduled Routine stays in the Project catalog.
     expect(board.steps.map((node) => node.routine.id)).toEqual(["r-2", "r-1"]);
     expect(board.steps.map((node) => node.step)).toEqual([0, 1]);
-    expect(board.steps.map((node) => node.worker?.id)).toEqual(["worker-2", "worker-1"]);
     expect(board.steps.map((node) => node.retryDelaySeconds)).toEqual([1800, 600]);
     expect(board.offBoard.map((node) => node.routine.id)).toEqual(["r-kept", "r-orphan"]);
     expect(board.offBoard.map((node) => node.keptPipeline)).toEqual(["Dev PR to production", undefined]);
     expect(board.offBoard.every((node) => node.step === undefined)).toBe(true);
     expect(stepRoutineCadence(600)).toBe("every 10m while waiting");
     expect(stepRoutineCadence(undefined)).toBe("runs when a Task is due");
-  });
-
-  it("names what leaves with a Worker before asking the one deletion question", () => {
-    expect(workerDeletionQuestion(0)).toBe("Delete this Worker?");
-    expect(workerDeletionQuestion(1)).toBe("Delete this Worker and its 1 Routine?");
-    expect(workerDeletionQuestion(10)).toBe("Delete this Worker and its 10 Routines?");
   });
 
   it("shows interval plus last and next timing in the sidebar", () => {
@@ -547,11 +515,6 @@ describe("Assistant rail Session classification", () => {
     expect(label).toContain("next");
   });
 
-  it("converts the visible Worker heartbeat setting without changing Routine timing", () => {
-    expect(workerPingIntervalLabel(60)).toBe("Heartbeat · Every 1m");
-    expect(workerPingIntervalLabel(3_600)).toBe("Heartbeat · Every 1h");
-    expect(workerPingIntervalSeconds(15)).toBe(900);
-  });
 });
 
 describe("A refused sidebar change says what the daemon said", () => {

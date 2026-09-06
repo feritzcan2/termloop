@@ -14,7 +14,7 @@ use super::super::super::gates::{
     AGENT_RELOCATION_ATTEMPT_TIMEOUT, AGENT_RESUME_ATTEMPT_TIMEOUT,
     AGENT_RESUME_FINALIZATION_TIMEOUT, AGENT_RESUME_SHUTDOWN_TIMEOUT,
     AGENT_RESUME_STABILITY_WINDOW, FairResumePermit, MAX_ACTIVE_AGENT_RESUMES,
-    MAX_ACTIVE_STEWARD_RESUMES, MAX_ACTIVE_WORKER_RESUMES, ObservationPriority, ResumeGateError,
+    MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
 };
 use super::super::super::invalidation::{
     InvalidationRequest, publish_agent_resume_invalidation, publish_session_invalidation,
@@ -597,7 +597,6 @@ pub(in crate::app) async fn launch_task_session(
         topics: vec![
             ProjectionTopic::Session,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
         ],
         state_revision,
@@ -967,13 +966,12 @@ pub(in crate::app) async fn terminate_session(
     }
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         // Exiting a assistant atomically clears its current
-        // Steward/Worker pointer in Store. Publish every projection changed
+        // Steward pointer in Store. Publish every projection changed
         // by that commit rather than leaving the Project panel stale until an
         // unrelated refresh.
         topics: vec![
             ProjectionTopic::Session,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
         ],
         state_revision,
@@ -2309,7 +2307,6 @@ async fn run_automatic_resume_lanes(
     for lane in [
         termloop_core::AgentResumeLane::Ordinary,
         termloop_core::AgentResumeLane::Steward,
-        termloop_core::AgentResumeLane::Worker,
     ] {
         let candidates = candidates
             .iter()
@@ -2341,7 +2338,6 @@ async fn run_automatic_resume_lane(
     let max_active = match lane {
         termloop_core::AgentResumeLane::Ordinary => MAX_ACTIVE_AGENT_RESUMES,
         termloop_core::AgentResumeLane::Steward => MAX_ACTIVE_STEWARD_RESUMES,
-        termloop_core::AgentResumeLane::Worker => MAX_ACTIVE_WORKER_RESUMES,
     };
     let mut attempts = tokio::task::JoinSet::new();
     loop {
@@ -2510,7 +2506,6 @@ async fn fresh_start_failed_persistent_assistant(session_id: &str, state: &AppSt
             ProjectionTopic::Session,
             ProjectionTopic::AgentStatus,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
         ],
         state_revision: revision,
@@ -2520,9 +2515,6 @@ async fn fresh_start_failed_persistent_assistant(session_id: &str, state: &AppSt
     let fresh = match target {
         termloop_core::companion_integrations::assistant_session::PersistentAssistantFreshStart::Steward { project_id } => {
             super::launch_current_steward(&project_id, state).await.map(|_| ())
-        }
-        termloop_core::companion_integrations::assistant_session::PersistentAssistantFreshStart::Worker { worker_id } => {
-            super::launch_current_worker(&worker_id, state).await
         }
     };
     match fresh {

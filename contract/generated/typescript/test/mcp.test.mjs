@@ -4,7 +4,6 @@ import {
   MCP_INTERACTIVE_TOOLS,
   MCP_IMPROVER_TOOLS,
   MCP_STEWARD_TOOLS,
-  MCP_WORKER_TOOLS,
   MCP_HELPER_TOOLS,
   MCP_TOOL_DEFINITIONS,
   MCP_TOOLS,
@@ -29,14 +28,10 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_worktree_provision"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_launch"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("ask_to"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_get_next_routine"));
-  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_transcript_tail_read"));
-  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
-  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_request"));
-  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_request"));
-  assert.ok(!MCP_WORKER_TOOLS.includes("send_to_agent"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_assignment"));
-  assert.ok(!MCP_WORKER_TOOLS.includes("task_create"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("task_agent_request"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("steward_next_assignment"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("steward_complete_assignment"));
   assert.ok(MCP_TOOLS.every((tool) => !METHODS.includes(tool)));
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.message.maxLength, 32768);
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.conversationId.maxLength, 128);

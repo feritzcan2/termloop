@@ -189,32 +189,19 @@ async function legacyAssistantImproverIdentity(
     targetNameIsUnique: true,
   };
   if (target.surface === "routineBuilder") {
-    try {
-      const configurations = (await sourceApiForProject(projectId).workerConfigurationList({ projectId })).configurations;
-      const worker = configurations.find((candidate) => candidate.id === target.ownerId);
-      if (!worker) return undefined;
-      return {
-        templateRef: "builtin.builder.routine",
-        sessionName: `build: Routine for ${worker.name}`,
-        targetNameIsUnique: configurations.filter((candidate) => candidate.name === worker.name).length === 1,
-      };
-    } catch {
-      return undefined;
-    }
+    return {
+      templateRef: "builtin.builder.routine",
+      sessionName: "build: Project Routine",
+      targetNameIsUnique: true,
+    };
   }
   try {
-    const configurations = target.surface === "workerInstructions"
-      ? (await sourceApiForProject(projectId).workerConfigurationList({ projectId })).configurations
-      : (await sourceApiForProject(projectId).routineConfigurationList({ projectId })).configurations;
+    const configurations = (await sourceApiForProject(projectId).routineConfigurationList({ projectId })).configurations;
     const configuration = configurations.find((candidate) => candidate.id === target.ownerId);
     if (!configuration) return undefined;
     return {
-      templateRef: target.surface === "workerInstructions"
-        ? "builtin.improver.worker-instructions"
-        : "builtin.improver.routine-instructions",
-      sessionName: target.surface === "workerInstructions"
-        ? `improve: ${configuration.name} instructions`
-        : `improve: ${configuration.name}`,
+      templateRef: "builtin.improver.routine-instructions",
+      sessionName: `improve: ${configuration.name}`,
       targetNameIsUnique: configurations.filter((candidate) => candidate.name === configuration.name).length === 1,
     };
   } catch {
@@ -2013,7 +2000,6 @@ export function DesktopApp() {
   const promptImprovement = useMemo(() => {
     const templateRef = (target: AssistantPromptImproverTarget) =>
       target.surface === "stewardInstructions" ? "builtin.improver.steward-instructions" as const
-      : target.surface === "workerInstructions" ? "builtin.improver.worker-instructions" as const
       : target.surface === "routineInstructions" ? "builtin.improver.routine-instructions" as const
       : target.surface === "routineBuilder" ? "builtin.builder.routine" as const
       : "builtin.builder.playbook" as const;

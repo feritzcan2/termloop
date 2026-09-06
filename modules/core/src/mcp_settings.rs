@@ -234,9 +234,6 @@ mod tests {
                             McpToolName::ConfigurationVersionRead
                             | McpToolName::ConfigurationVersionWrite => vec![McpToolRole::Improver],
                             McpToolName::ReplyToRequest => vec![McpToolRole::Helper],
-                            McpToolName::WorkerGetNextRoutine
-                            | McpToolName::WorkerCompleteAssignment
-                            | McpToolName::TaskAgentRequest => vec![McpToolRole::Worker],
                             _ => vec![McpToolRole::Steward],
                         },
                     })

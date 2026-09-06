@@ -1,4 +1,4 @@
-//! Bounded Routine scheduling, one-at-a-time Worker claims, and current reports.
+//! Bounded Routine scheduling, one-at-a-time Steward claims, and current reports.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -35,9 +35,9 @@ struct ActiveTrackerCheck {
     claimed_at_epoch_ms: u64,
     deadline_epoch_ms: u64,
     ping_sent: bool,
-    worker_id: String,
-    worker_generation: u64,
-    worker_session_id: String,
+    project_id: String,
+    steward_generation: u64,
+    steward_session_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -48,8 +48,8 @@ struct TrackerHealth {
 }
 
 #[derive(Debug, Clone)]
-struct PendingWorkerWake {
-    worker_session_id: String,
+struct PendingStewardWake {
+    steward_session_id: String,
     retry_at_epoch_ms: u64,
 }
 
@@ -58,9 +58,7 @@ pub(crate) struct TrackerRuntimeState {
     health: HashMap<String, TrackerHealth>,
     reports: VecDeque<TrackerReport>,
     next_due_epoch_ms: HashMap<String, u64>,
-    ready_worker_sessions: HashMap<String, String>,
-    next_worker_ping_epoch_ms: HashMap<String, u64>,
-    pending_worker_wakes: HashMap<String, PendingWorkerWake>,
+    pending_steward_wakes: HashMap<String, PendingStewardWake>,
     /// What holds a step check back from, or pushes it into, its next run. A
     /// step's due time is otherwise derived entirely from stored verdicts, so
     /// without this a run that answered nothing would be due again the instant
@@ -92,15 +90,13 @@ impl TrackerRuntimeState {
             .is_some_and(|health| health.active.is_some())
     }
 
-    pub(crate) fn cancel_worker_checks(&mut self, worker_id: &str) {
-        self.ready_worker_sessions.remove(worker_id);
-        self.next_worker_ping_epoch_ms.remove(worker_id);
-        self.pending_worker_wakes.remove(worker_id);
+    pub(crate) fn cancel_project_checks(&mut self, project_id: &str) {
+        self.pending_steward_wakes.remove(project_id);
         for health in self.health.values_mut() {
             if health
                 .active
                 .as_ref()
-                .is_some_and(|active| active.worker_id == worker_id)
+                .is_some_and(|active| active.project_id == project_id)
             {
                 health.active = None;
                 health.pending_trigger = false;
@@ -127,35 +123,6 @@ impl TrackerRuntimeState {
             .insert(routine_id.to_owned(), now_epoch_ms);
     }
 
-    pub(crate) fn schedule_worker_ping_now(&mut self, worker_id: &str, now_epoch_ms: u64) {
-        if self.ready_worker_sessions.contains_key(worker_id) {
-            self.next_worker_ping_epoch_ms
-                .insert(worker_id.to_owned(), now_epoch_ms);
-        }
-    }
-
-    pub(crate) fn reschedule_worker_ping(
-        &mut self,
-        worker_id: &str,
-        session_id: Option<&str>,
-        now_epoch_ms: u64,
-        ping_interval_seconds: u64,
-    ) {
-        let Some(session_id) = session_id else {
-            self.next_worker_ping_epoch_ms.remove(worker_id);
-            return;
-        };
-        if self
-            .ready_worker_sessions
-            .get(worker_id)
-            .is_some_and(|ready| ready == session_id)
-        {
-            self.next_worker_ping_epoch_ms.insert(
-                worker_id.to_owned(),
-                now_epoch_ms.saturating_add(ping_interval_seconds.saturating_mul(1_000)),
-            );
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,21 +133,19 @@ pub struct TrackerCheckCapability {
     pub generation: u64,
     pub claimed_at_epoch_ms: u64,
     pub deadline_epoch_ms: u64,
-    pub worker_id: String,
-    pub worker_generation: u64,
-    pub worker_session_id: String,
+    pub steward_generation: u64,
+    pub steward_session_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DueWorkerWake {
+pub struct DueStewardWake {
     pub project_id: String,
-    pub worker_id: String,
-    pub worker_generation: u64,
-    pub worker_session_id: String,
+    pub steward_generation: u64,
+    pub steward_session_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkerRoutineFinding {
+pub struct RoutineFinding {
     pub id: String,
     pub source_key: String,
     pub summary: String,
@@ -190,7 +155,7 @@ pub struct WorkerRoutineFinding {
 }
 
 #[derive(Debug, Clone)]
-pub struct WorkerRoutineClaim {
+pub struct StewardRoutineClaim {
     pub capability: Option<TrackerCheckCapability>,
     pub result: Value,
 }
@@ -314,7 +279,7 @@ impl CoreRuntime {
     /// A scheduled Routine waits out its cadence; a step check's next moment
     /// comes from the verdicts it just recorded, floored so a run that
     /// answered nothing cannot be claimed again in the same instant.
-    pub(crate) fn finish_worker_routine_check(
+    pub(crate) fn finish_steward_routine_check(
         &mut self,
         capability: &TrackerCheckCapability,
         attention_message: Option<String>,
@@ -346,7 +311,7 @@ impl CoreRuntime {
     /// Finishes a valid per-Task step verdict. The verdict itself carries the
     /// Task's retry time, so unlike an unanswered/failed run this must not put
     /// a Routine-wide floor in front of another ready Task at the same step.
-    pub(crate) fn finish_worker_step_check(
+    pub(crate) fn finish_steward_step_check(
         &mut self,
         capability: &TrackerCheckCapability,
         completed_at_epoch_ms: u64,
@@ -363,93 +328,76 @@ impl CoreRuntime {
         )
     }
 
-    /// The first get-next call is also the readiness handshake. Durable
-    /// completion timestamps still govern when each Routine becomes due.
-    fn ready_worker_session(
-        &mut self,
+    fn current_steward(
+        &self,
         project_id: &str,
         session_id: &str,
-        now_epoch_ms: u64,
-    ) -> Result<(), CoreError> {
-        let worker = self
-            .store
-            .worker_configurations()
+    ) -> Result<termloop_domain::StewardConfiguration, CoreError> {
+        self.store
+            .steward_configurations()
             .iter()
-            .find(|worker| {
-                worker.project_id == project_id
-                    && worker.enabled
-                    && worker.executor_session_id.as_deref() == Some(session_id)
+            .find(|steward| {
+                steward.project_id == project_id
+                    && steward.enabled
+                    && steward.executor_session_id.as_deref() == Some(session_id)
             })
-            .ok_or(CoreError::CapabilityDenied)?
-            .clone();
-        self.tracker_runtime
-            .ready_worker_sessions
-            .insert(worker.id.clone(), session_id.to_owned());
-        self.tracker_runtime.next_worker_ping_epoch_ms.insert(
-            worker.id,
-            now_epoch_ms.saturating_add(worker.ping_interval_seconds.saturating_mul(1_000)),
-        );
-        Ok(())
+            .cloned()
+            .ok_or(CoreError::CapabilityDenied)
     }
 
-    /// Produces at most one wake per ready Worker. The server claims the exact
-    /// assignment immediately before composing and delivering that wake.
-    pub fn admit_due_worker_wakes(&mut self, now_epoch_ms: u64) -> Vec<DueWorkerWake> {
+    /// Produces at most one wake per Project Steward, exactly when that
+    /// Project has a due assignment. No periodic assistant ping is involved.
+    pub fn admit_due_steward_wakes(&mut self, now_epoch_ms: u64) -> Vec<DueStewardWake> {
         self.initialize_routine_schedules();
-        let busy_workers = self.busy_worker_ids();
+        let busy_projects = self.busy_project_ids();
+        let stewards = self
+            .store
+            .steward_configurations()
+            .iter()
+            .filter(|steward| steward.enabled && steward.executor_session_id.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
         let mut wakes = Vec::new();
-        for worker in self.store.worker_configurations().iter().filter(|worker| {
-            worker.enabled
-                && worker.executor_session_id.is_some()
-                && !busy_workers.contains(&worker.id)
-        }) {
-            let session_id = worker
+        for steward in stewards {
+            if busy_projects.contains(&steward.project_id) {
+                continue;
+            }
+            let session_id = steward
                 .executor_session_id
                 .as_deref()
                 .expect("filtered above");
-            if self
-                .tracker_runtime
-                .ready_worker_sessions
-                .get(&worker.id)
-                .is_none_or(|ready| ready != session_id)
-            {
-                continue;
-            }
-            let has_enabled_routine = self.store.tracker_configurations().iter().any(|routine| {
+            let has_due_assignment = self.store.tracker_configurations().iter().any(|routine| {
                 routine.enabled
-                    && routine.worker_id == worker.id
-                    && self.routine_has_work(&routine.id)
+                    && routine.project_id == steward.project_id
+                    && self
+                        .tracker_runtime
+                        .next_due_epoch_ms
+                        .get(&routine.id)
+                        .is_some_and(|due| *due <= now_epoch_ms)
             });
-            let ping_is_due = self
-                .tracker_runtime
-                .next_worker_ping_epoch_ms
-                .get(&worker.id)
-                .is_some_and(|due| *due <= now_epoch_ms);
-            // A Worker already working needs no telling. The ping repeats, so
-            // one skipped now is not one lost: it stays due and lands the
-            // moment the turn ends, instead of queueing behind it once a
-            // minute until the Worker surfaces to a stack of them.
-            if !has_enabled_routine || !ping_is_due || self.session_turn_is_running(session_id) {
+            if !has_due_assignment || self.session_turn_is_running(session_id) {
                 continue;
             }
-            if let Some(pending) = self.tracker_runtime.pending_worker_wakes.get(&worker.id)
-                && pending.worker_session_id == session_id
+            if let Some(pending) = self
+                .tracker_runtime
+                .pending_steward_wakes
+                .get(&steward.project_id)
+                && pending.steward_session_id == session_id
                 && pending.retry_at_epoch_ms > now_epoch_ms
             {
                 continue;
             }
-            self.tracker_runtime.pending_worker_wakes.insert(
-                worker.id.clone(),
-                PendingWorkerWake {
-                    worker_session_id: session_id.to_owned(),
+            self.tracker_runtime.pending_steward_wakes.insert(
+                steward.project_id.clone(),
+                PendingStewardWake {
+                    steward_session_id: session_id.to_owned(),
                     retry_at_epoch_ms: now_epoch_ms.saturating_add(WAKE_REDELIVERY_MS),
                 },
             );
-            wakes.push(DueWorkerWake {
-                project_id: worker.project_id.clone(),
-                worker_id: worker.id.clone(),
-                worker_generation: worker.generation,
-                worker_session_id: session_id.to_owned(),
+            wakes.push(DueStewardWake {
+                project_id: steward.project_id,
+                steward_generation: steward.generation,
+                steward_session_id: session_id.to_owned(),
             });
         }
         wakes
@@ -457,45 +405,41 @@ impl CoreRuntime {
 
     pub fn next_tracker_schedule_epoch_ms(&mut self) -> Option<u64> {
         self.initialize_routine_schedules();
-        let busy_workers = self.busy_worker_ids();
-        let mut next = None;
-        for worker in self
+        let busy_projects = self.busy_project_ids();
+        let stewards = self
             .store
-            .worker_configurations()
+            .steward_configurations()
             .iter()
-            .filter(|worker| worker.enabled)
-        {
-            let Some(session_id) = worker.executor_session_id.as_deref() else {
+            .filter(|steward| steward.enabled)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut next = None;
+        for steward in stewards {
+            let Some(session_id) = steward.executor_session_id.as_deref() else {
                 continue;
             };
-            if self
-                .tracker_runtime
-                .ready_worker_sessions
-                .get(&worker.id)
-                .is_none_or(|ready| ready != session_id)
-                || busy_workers.contains(&worker.id)
-                // Nothing is scheduled for a Worker mid-turn, so the loop
-                // sleeps instead of spinning on a ping it would refuse to
-                // admit. The turn ending is what wakes it.
+            if busy_projects.contains(&steward.project_id)
                 || self.session_turn_is_running(session_id)
             {
                 continue;
             }
-            let candidate =
-                if let Some(pending) = self.tracker_runtime.pending_worker_wakes.get(&worker.id) {
-                    Some(pending.retry_at_epoch_ms)
-                } else if self.store.tracker_configurations().iter().any(|routine| {
-                    routine.enabled
-                        && routine.worker_id == worker.id
-                        && self.routine_has_work(&routine.id)
-                }) {
-                    self.tracker_runtime
-                        .next_worker_ping_epoch_ms
-                        .get(&worker.id)
-                        .copied()
-                } else {
-                    None
-                };
+            let candidate = self
+                .tracker_runtime
+                .pending_steward_wakes
+                .get(&steward.project_id)
+                .map(|pending| pending.retry_at_epoch_ms)
+                .or_else(|| {
+                    self.store
+                        .tracker_configurations()
+                        .iter()
+                        .filter(|routine| {
+                            routine.enabled && routine.project_id == steward.project_id
+                        })
+                        .filter_map(|routine| {
+                            self.tracker_runtime.next_due_epoch_ms.get(&routine.id).copied()
+                        })
+                        .min()
+                });
             if let Some(candidate) = candidate {
                 next = Some(next.map_or(candidate, |current: u64| current.min(candidate)));
             }
@@ -503,29 +447,18 @@ impl CoreRuntime {
         next
     }
 
-    pub fn claim_next_worker_routine(
+    pub fn claim_next_steward_routine(
         &mut self,
         project_id: &str,
         session_id: &str,
         check_id: String,
         now_epoch_ms: u64,
-    ) -> Result<WorkerRoutineClaim, CoreError> {
-        self.ready_worker_session(project_id, session_id, now_epoch_ms)?;
-        let worker = self
-            .store
-            .worker_configurations()
-            .iter()
-            .find(|worker| {
-                worker.project_id == project_id
-                    && worker.enabled
-                    && worker.executor_session_id.as_deref() == Some(session_id)
-            })
-            .cloned()
-            .ok_or(CoreError::CapabilityDenied)?;
-        self.tracker_runtime.pending_worker_wakes.remove(&worker.id);
+    ) -> Result<StewardRoutineClaim, CoreError> {
+        let steward = self.current_steward(project_id, session_id)?;
+        self.tracker_runtime.pending_steward_wakes.remove(project_id);
         self.pending_assistant_wake_deliveries.remove(session_id);
 
-        if let Some((routine_id, active)) = self.active_check_for_worker(&worker.id) {
+        if let Some((routine_id, active)) = self.active_check_for_project(project_id) {
             let capability = TrackerCheckCapability {
                 project_id: project_id.to_owned(),
                 tracker_id: routine_id.clone(),
@@ -533,9 +466,8 @@ impl CoreRuntime {
                 generation: active.generation,
                 claimed_at_epoch_ms: active.claimed_at_epoch_ms,
                 deadline_epoch_ms: active.deadline_epoch_ms,
-                worker_id: worker.id.clone(),
-                worker_generation: active.worker_generation,
-                worker_session_id: session_id.to_owned(),
+                steward_generation: active.steward_generation,
+                steward_session_id: session_id.to_owned(),
             };
             let reusable = self
                 .validate_current_check(&capability, now_epoch_ms)
@@ -562,7 +494,7 @@ impl CoreRuntime {
                     }
                 });
             if let Some((routine, step)) = reusable {
-                return Ok(WorkerRoutineClaim {
+                return Ok(StewardRoutineClaim {
                     result: assigned_routine_result(
                         &routine,
                         &capability,
@@ -573,13 +505,9 @@ impl CoreRuntime {
                 });
             }
 
-            // A Playbook edit or explicit Task reset may move the board while
-            // a Worker is checking the previously assigned step. Reports for
-            // that claim are correctly fenced as stale; get-next must not then
-            // replay the same unusable capability forever. Hand the exact
-            // claim back and continue selection below so this call either
-            // issues a fresh check or returns idle.
-            self.release_worker_routine_claim(&capability);
+            // A Playbook edit or Task reset can invalidate an in-flight claim.
+            // Release the exact stale claim before selecting fresh work.
+            self.release_steward_routine_claim(&capability);
         }
 
         self.initialize_routine_schedules();
@@ -587,7 +515,7 @@ impl CoreRuntime {
             .store
             .tracker_configurations()
             .iter()
-            .filter(|routine| routine.enabled && routine.worker_id == worker.id)
+            .filter(|routine| routine.enabled && routine.project_id == project_id)
             .filter_map(|routine| {
                 let due = self
                     .tracker_runtime
@@ -610,11 +538,15 @@ impl CoreRuntime {
             .min_by(|left, right| (left.0, left.1, &left.2).cmp(&(right.0, right.1, &right.2)));
         let Some((_, _, _, routine)) = selected else {
             let next_wake = self
-                .tracker_runtime
-                .next_worker_ping_epoch_ms
-                .get(&worker.id)
-                .copied();
-            return Ok(WorkerRoutineClaim {
+                .store
+                .tracker_configurations()
+                .iter()
+                .filter(|routine| routine.enabled && routine.project_id == project_id)
+                .filter_map(|routine| {
+                    self.tracker_runtime.next_due_epoch_ms.get(&routine.id).copied()
+                })
+                .min();
+            return Ok(StewardRoutineClaim {
                 capability: None,
                 result: json!({
                     "status": "idle",
@@ -632,9 +564,8 @@ impl CoreRuntime {
             generation: routine.generation,
             claimed_at_epoch_ms: now_epoch_ms,
             deadline_epoch_ms: now_epoch_ms.saturating_add(CHECK_DEADLINE_MAX_MS),
-            worker_id: worker.id.clone(),
-            worker_generation: worker.generation,
-            worker_session_id: session_id.to_owned(),
+            steward_generation: steward.generation,
+            steward_session_id: session_id.to_owned(),
         };
         let step = (!routine.trigger_mode.is_scheduled())
             .then(|| self.playbook_step_assignment(&routine.id))
@@ -655,11 +586,11 @@ impl CoreRuntime {
             claimed_at_epoch_ms: capability.claimed_at_epoch_ms,
             deadline_epoch_ms: capability.deadline_epoch_ms,
             ping_sent: false,
-            worker_id: capability.worker_id.clone(),
-            worker_generation: capability.worker_generation,
-            worker_session_id: capability.worker_session_id.clone(),
+            project_id: capability.project_id.clone(),
+            steward_generation: capability.steward_generation,
+            steward_session_id: capability.steward_session_id.clone(),
         });
-        Ok(WorkerRoutineClaim {
+        Ok(StewardRoutineClaim {
             result: assigned_routine_result(&routine, &capability, now_epoch_ms, step.as_ref()),
             capability: Some(capability),
         })
@@ -668,43 +599,43 @@ impl CoreRuntime {
     /// Claims the exact due assignment before its scheduled wake is delivered.
     /// The pending wake stays live until terminal delivery succeeds so a failed
     /// submission can release the claim and retry without losing work.
-    pub fn claim_due_worker_routine(
+    pub fn claim_due_steward_routine(
         &mut self,
-        wake: &DueWorkerWake,
+        wake: &DueStewardWake,
         check_id: String,
         now_epoch_ms: u64,
-    ) -> Result<WorkerRoutineClaim, CoreError> {
-        if !self.worker_wake_is_current(wake) {
+    ) -> Result<StewardRoutineClaim, CoreError> {
+        if !self.steward_assignment_is_current(wake) {
             return Err(CoreError::TrackerReportStale);
         }
         let pending = self
             .tracker_runtime
-            .pending_worker_wakes
-            .get(&wake.worker_id)
+            .pending_steward_wakes
+            .get(&wake.project_id)
             .cloned()
             .ok_or(CoreError::TrackerReportStale)?;
-        let claim = self.claim_next_worker_routine(
+        let claim = self.claim_next_steward_routine(
             &wake.project_id,
-            &wake.worker_session_id,
+            &wake.steward_session_id,
             check_id,
             now_epoch_ms,
         )?;
         if claim.capability.is_some() {
             self.tracker_runtime
-                .pending_worker_wakes
-                .insert(wake.worker_id.clone(), pending);
+                .pending_steward_wakes
+                .insert(wake.project_id.clone(), pending);
         }
         Ok(claim)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn complete_worker_routine(
+    pub fn complete_steward_routine(
         &mut self,
         capability: &TrackerCheckCapability,
         expected_context_revision: u64,
         context_markdown: String,
         update_summary: Option<String>,
-        findings: Vec<WorkerRoutineFinding>,
+        findings: Vec<RoutineFinding>,
         related_task_ids: Vec<String>,
         report_id: String,
         completed_at_epoch_ms: u64,
@@ -714,10 +645,10 @@ impl CoreRuntime {
             return Err(CoreError::RevisionConflict);
         }
         // A user may edit or clear this Routine's visible context while its
-        // Worker is inspecting sources. The findings still belong to the live
+        // Steward is inspecting sources. The findings still belong to the live
         // claimed check, but its replacement Markdown came from an older
         // source document. Preserve the newer user document and finish the
-        // check instead of overwriting it or making the Worker retry forever.
+        // check instead of overwriting it or making the Steward retry forever.
         let context_markdown_applied = configuration.context_revision == expected_context_revision;
         if context_markdown.len() > ROUTINE_CONTEXT_MAX_BYTES
             || update_summary
@@ -900,7 +831,7 @@ impl CoreRuntime {
                 self.store.revision(),
             )
             .map_err(store_error)?;
-        let pending_trigger = self.finish_worker_routine_check(
+        let pending_trigger = self.finish_steward_routine_check(
             capability,
             None,
             completed_at_epoch_ms,
@@ -922,7 +853,7 @@ impl CoreRuntime {
         }))
     }
 
-    pub fn report_worker_routine_problem(
+    pub fn report_steward_routine_problem(
         &mut self,
         capability: &TrackerCheckCapability,
         message: String,
@@ -982,7 +913,7 @@ impl CoreRuntime {
             .last_successful_report_at_epoch_ms
             .unwrap_or(0)
             .to_string();
-        let source_key = worker_problem_source_key(
+        let source_key = routine_problem_source_key(
             &configuration.id,
             &problem_episode,
             &message,
@@ -1073,7 +1004,7 @@ impl CoreRuntime {
                 self.store.revision(),
             )
             .map_err(store_error)?;
-        let pending_trigger = self.finish_worker_routine_check(
+        let pending_trigger = self.finish_steward_routine_check(
             capability,
             Some(message),
             completed_at_epoch_ms,
@@ -1112,29 +1043,27 @@ impl CoreRuntime {
             .get(&capability.tracker_id)
             .and_then(|health| health.active.as_ref())
             .ok_or(CoreError::TrackerReportStale)?;
-        let worker_current = self.store.worker_configurations().iter().any(|worker| {
-            worker.id == capability.worker_id
-                && worker.project_id == capability.project_id
-                && worker.enabled
-                && worker.generation == capability.worker_generation
-                && worker.executor_session_id.as_deref()
-                    == Some(capability.worker_session_id.as_str())
+        let steward_current = self.store.steward_configurations().iter().any(|steward| {
+            steward.project_id == capability.project_id
+                && steward.enabled
+                && steward.generation == capability.steward_generation
+                && steward.executor_session_id.as_deref()
+                    == Some(capability.steward_session_id.as_str())
         });
         if !configuration.enabled
             || configuration.project_id != capability.project_id
             || configuration.generation != capability.generation
-            || configuration.worker_id != capability.worker_id
             || active.check_id != capability.check_id
             || active.generation != capability.generation
             || active.claimed_at_epoch_ms != capability.claimed_at_epoch_ms
-            || active.worker_id != capability.worker_id
-            || active.worker_generation != capability.worker_generation
-            || active.worker_session_id != capability.worker_session_id
+            || active.project_id != capability.project_id
+            || active.steward_generation != capability.steward_generation
+            || active.steward_session_id != capability.steward_session_id
             || completed_at_epoch_ms
                 > active
                     .deadline_epoch_ms
                     .saturating_add(OVERDUE_PING_GRACE_MS)
-            || !worker_current
+            || !steward_current
         {
             return Err(CoreError::TrackerReportStale);
         }
@@ -1266,7 +1195,7 @@ impl CoreRuntime {
         Ok(self.claimed_step_task_id(&capability.tracker_id))
     }
 
-    pub fn release_worker_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
+    pub fn release_steward_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
         let exact_active_claim = self
             .tracker_runtime
             .health
@@ -1277,9 +1206,9 @@ impl CoreRuntime {
                     && active.generation == capability.generation
                     && active.claimed_at_epoch_ms == capability.claimed_at_epoch_ms
                     && active.deadline_epoch_ms == capability.deadline_epoch_ms
-                    && active.worker_id == capability.worker_id
-                    && active.worker_generation == capability.worker_generation
-                    && active.worker_session_id == capability.worker_session_id
+                    && active.project_id == capability.project_id
+                    && active.steward_generation == capability.steward_generation
+                    && active.steward_session_id == capability.steward_session_id
             });
         if !exact_active_claim {
             return false;
@@ -1305,35 +1234,39 @@ impl CoreRuntime {
         true
     }
 
-    pub fn worker_wake_is_current(&self, wake: &DueWorkerWake) -> bool {
-        self.store.worker_configurations().iter().any(|worker| {
-            worker.id == wake.worker_id
-                && worker.project_id == wake.project_id
-                && worker.enabled
-                && worker.generation == wake.worker_generation
-                && worker.executor_session_id.as_deref() == Some(wake.worker_session_id.as_str())
+    pub fn steward_assignment_is_current(&self, wake: &DueStewardWake) -> bool {
+        self.store.steward_configurations().iter().any(|steward| {
+            steward.project_id == wake.project_id
+                && steward.enabled
+                && steward.generation == wake.steward_generation
+                && steward.executor_session_id.as_deref()
+                    == Some(wake.steward_session_id.as_str())
         }) && self
             .tracker_runtime
-            .pending_worker_wakes
-            .get(&wake.worker_id)
-            .is_some_and(|pending| pending.worker_session_id == wake.worker_session_id)
+            .pending_steward_wakes
+            .get(&wake.project_id)
+            .is_some_and(|pending| pending.steward_session_id == wake.steward_session_id)
     }
 
-    pub fn fail_worker_wake_delivery(&mut self, wake: &DueWorkerWake, retry_at_epoch_ms: u64) {
-        if self.worker_wake_is_current(wake)
+    pub fn fail_steward_assignment_delivery(
+        &mut self,
+        wake: &DueStewardWake,
+        retry_at_epoch_ms: u64,
+    ) {
+        if self.steward_assignment_is_current(wake)
             && let Some(pending) = self
                 .tracker_runtime
-                .pending_worker_wakes
-                .get_mut(&wake.worker_id)
+                .pending_steward_wakes
+                .get_mut(&wake.project_id)
         {
             pending.retry_at_epoch_ms = retry_at_epoch_ms;
         }
     }
 
-    pub(crate) fn acknowledge_worker_wake_delivery(&mut self, wake: &DueWorkerWake) {
+    pub(crate) fn acknowledge_steward_assignment_delivery(&mut self, wake: &DueStewardWake) {
         self.tracker_runtime
-            .pending_worker_wakes
-            .remove(&wake.worker_id);
+            .pending_steward_wakes
+            .remove(&wake.project_id);
     }
 
     pub fn list_tracker_runtime(&self, params: Value) -> Result<Value, CoreError> {
@@ -1445,7 +1378,7 @@ impl CoreRuntime {
         if !routine.enabled {
             return Err(CoreError::TrackerReportStale);
         }
-        let worker_id = routine.worker_id.clone();
+        let project_id = routine.project_id.clone();
         let on_demand = !routine.trigger_mode.is_scheduled();
         if task_id.is_some() && !on_demand {
             return Err(CoreError::InvalidParams("taskId".into()));
@@ -1491,8 +1424,6 @@ impl CoreRuntime {
                 },
             );
         }
-        self.tracker_runtime
-            .schedule_worker_ping_now(&worker_id, now_epoch_ms);
         if self.tracker_runtime.tracker_is_active(routine_id) {
             self.tracker_runtime
                 .health
@@ -1502,8 +1433,8 @@ impl CoreRuntime {
         }
         if let Some(pending) = self
             .tracker_runtime
-            .pending_worker_wakes
-            .get_mut(&worker_id)
+            .pending_steward_wakes
+            .get_mut(&project_id)
         {
             pending.retry_at_epoch_ms = now_epoch_ms;
         }
@@ -1517,11 +1448,11 @@ impl CoreRuntime {
             .iter()
             .map(|configuration| configuration.id.as_str())
             .collect::<std::collections::HashSet<_>>();
-        let worker_ids = self
+        let project_ids = self
             .store
-            .worker_configurations()
+            .steward_configurations()
             .iter()
-            .map(|worker| worker.id.as_str())
+            .map(|steward| steward.project_id.as_str())
             .collect::<std::collections::HashSet<_>>();
         self.tracker_runtime
             .health
@@ -1536,28 +1467,22 @@ impl CoreRuntime {
             .step_gate
             .retain(|routine_id, _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
-            .ready_worker_sessions
-            .retain(|worker_id, _| worker_ids.contains(worker_id.as_str()));
-        self.tracker_runtime
-            .next_worker_ping_epoch_ms
-            .retain(|worker_id, _| worker_ids.contains(worker_id.as_str()));
-        self.tracker_runtime
-            .pending_worker_wakes
-            .retain(|worker_id, _| worker_ids.contains(worker_id.as_str()));
+            .pending_steward_wakes
+            .retain(|project_id, _| project_ids.contains(project_id.as_str()));
     }
 
-    fn active_check_for_worker(&self, worker_id: &str) -> Option<(String, ActiveTrackerCheck)> {
+    fn active_check_for_project(&self, project_id: &str) -> Option<(String, ActiveTrackerCheck)> {
         self.tracker_runtime
             .health
             .iter()
             .find_map(|(routine_id, health)| {
                 health.active.as_ref().and_then(|active| {
-                    (active.worker_id == worker_id).then(|| (routine_id.clone(), active.clone()))
+                    (active.project_id == project_id).then(|| (routine_id.clone(), active.clone()))
                 })
             })
     }
 
-    fn busy_worker_ids(&self) -> std::collections::HashSet<String> {
+    fn busy_project_ids(&self) -> std::collections::HashSet<String> {
         self.tracker_runtime
             .health
             .values()
@@ -1565,7 +1490,7 @@ impl CoreRuntime {
                 health
                     .active
                     .as_ref()
-                    .map(|active| active.worker_id.clone())
+                    .map(|active| active.project_id.clone())
             })
             .collect()
     }
@@ -1615,7 +1540,7 @@ fn assigned_routine_result(
         "context": {
             "revision": routine.context_revision,
             "markdown": routine.context_markdown,
-            "evidenceKind": "workerAuthoredMemory",
+            "evidenceKind": "routineMemory",
             "independentlyVerified": false,
             "scanSinceEpochMs": scan_since,
             "lastFinishedAtEpochMs": routine.last_attempt_at_epoch_ms,
@@ -1627,7 +1552,7 @@ fn assigned_routine_result(
     });
     // A step Routine evaluates one stage for a named set of Tasks. It finishes
     // with verdicts rather than findings, so the assignment says so instead of
-    // leaving the Worker to infer it from the trigger mode.
+    // leaving the Steward to infer it from the trigger mode.
     if let Some(step) = step {
         result["step"] = json!({
             "milestoneId": step.milestone.id,
@@ -1636,7 +1561,7 @@ fn assigned_routine_result(
             "completeWhen": routine.prompt,
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
-            "finishWith": "worker_complete_assignment",
+            "finishWith": "steward_complete_assignment",
             "taskRead": {
                 "requiredBeforeVerdict": true,
                 "tool": "task_read",
@@ -1654,7 +1579,7 @@ fn assigned_routine_result(
                         "title": task.title,
                         "dueAtEpochMs": task.due_at_epoch_ms,
                         "lastEvidence": task.last_evidence,
-                        "lastEvidenceKind": "previousWorkerVerdict",
+                        "lastEvidenceKind": "previousStewardVerdict",
                         "lastEvidenceIndependentlyVerified": false,
                     })
                 })
@@ -1664,11 +1589,11 @@ fn assigned_routine_result(
     result
 }
 
-pub(crate) fn is_worker_problem_source_key(value: &str) -> bool {
-    value.starts_with("worker-problem:")
+pub(crate) fn is_routine_problem_source_key(value: &str) -> bool {
+    value.starts_with("routine-problem:")
 }
 
-fn worker_problem_source_key(
+fn routine_problem_source_key(
     routine_id: &str,
     episode: &str,
     message: &str,
@@ -1691,7 +1616,7 @@ fn worker_problem_source_key(
         use std::fmt::Write as _;
         write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
     }
-    format!("worker-problem:{hex}")
+    format!("routine-problem:{hex}")
 }
 
 fn truncate_utf8(value: &str, max_bytes: usize) -> String {
