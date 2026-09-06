@@ -9,7 +9,7 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import {
   notificationDestinationFromRemote,
-  notificationRoute,
+  notificationRouteStack,
   resolveNotificationConnectionId,
   type NotificationDestination,
 } from "@/features/notifications/notification-navigation";
@@ -128,7 +128,13 @@ export function NotificationCoordinator() {
       return;
     }
 
-    router.push(notificationRoute(pendingDestination, connectionId));
+    const routes = notificationRouteStack(pendingDestination, connectionId);
+    if (routes.length === 2) {
+      router.replace(routes[0]);
+      router.push(routes[1]);
+    } else {
+      router.push(routes[0]);
+    }
     mobileDiagnostics.report("notification", "route_replaced", {
       connectionId,
       reason: pendingDestination.kind,
