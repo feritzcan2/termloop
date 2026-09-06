@@ -97,6 +97,7 @@ fn extend_topic_names(topics: &mut BTreeSet<&'static str>, values: Vec<Projectio
             ProjectionTopic::Routine => "routine",
             ProjectionTopic::TaskSource => "taskSource",
             ProjectionTopic::Playbook => "playbook",
+            ProjectionTopic::Workflow => "workflow",
             ProjectionTopic::KeepAwake => "keepAwake",
             ProjectionTopic::Run => "run",
         });
@@ -117,6 +118,7 @@ fn projection_topic(value: &'static str) -> Option<ProjectionTopic> {
         "routine" => Some(ProjectionTopic::Routine),
         "taskSource" => Some(ProjectionTopic::TaskSource),
         "playbook" => Some(ProjectionTopic::Playbook),
+        "workflow" => Some(ProjectionTopic::Workflow),
         "keepAwake" => Some(ProjectionTopic::KeepAwake),
         "run" => Some(ProjectionTopic::Run),
         _ => None,
@@ -206,6 +208,8 @@ pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
         vec![ProjectionTopic::Worker]
     } else if method.starts_with("runConfiguration.") {
         vec![ProjectionTopic::Run]
+    } else if method.starts_with("workflow.configuration") {
+        vec![ProjectionTopic::Workflow]
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
         vec![ProjectionTopic::Routine]
     } else if method.starts_with("playbook.") {
@@ -224,6 +228,7 @@ pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
             ProjectionTopic::Routine,
             ProjectionTopic::Run,
             ProjectionTopic::Playbook,
+            ProjectionTopic::Workflow,
             ProjectionTopic::GitHost,
         ]
     } else if method.starts_with("project.") {

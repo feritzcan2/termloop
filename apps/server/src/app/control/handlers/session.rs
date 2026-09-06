@@ -26,6 +26,13 @@ pub(in crate::app::control) async fn launch_agent_session(
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
     let mut plan = state.core.lock().await.take_agent_launch(params)?;
+    if !state
+        .agent_capabilities
+        .iter()
+        .any(|capability| capability.agent_id == plan.agent_id() && capability.available)
+    {
+        return Err(CoreError::AgentUnsupported);
+    }
     plan = tokio::task::spawn_blocking(move || {
         plan.prepare_runtime();
         plan

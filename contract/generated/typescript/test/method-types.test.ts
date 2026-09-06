@@ -87,6 +87,17 @@ const tasks: Promise<TaskPageDto> = client.call("task.list", {
   projectId: "project-1",
   archiveScope: "active",
 });
+const workflowPreview = client.call("task.previewWorkflow", {
+  taskId: "task-1",
+  workflowId: "workflow-1",
+  goal: "Ship the reusable workflow builder",
+});
+const workflowLaunch = client.call("task.launchWorkflow", {
+  taskId: "task-1",
+  workflowId: "workflow-1",
+  goal: "Ship the reusable workflow builder",
+  launchTicket: "a".repeat(64),
+});
 const archivePreview: Promise<TaskArchivePreviewDto> = client.call("task.inspectArchive", { taskId: "task-1" });
 const archiveResult: Promise<TaskArchiveResultDto> = client.call("task.archive", {
   taskId: "task-1",
@@ -119,6 +130,8 @@ void imagePasted;
 void renamed;
 void createdTask;
 void tasks;
+void workflowPreview;
+void workflowLaunch;
 void archivePreview;
 void archiveResult;
 void restoreResult;
