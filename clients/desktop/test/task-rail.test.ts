@@ -485,9 +485,10 @@ describe("Task rail agent attention", () => {
 
     expect(markup).toContain('class="agent-todo-count"');
     expect(markup).toContain('>1/3</span>');
-    expect(markup).toContain("✓ Inspect the flow");
-    expect(markup).toContain("→ Render the current plan");
-    expect(markup).toContain("○ Run focused tests");
+    expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
+    expect(markup).toContain("Inspect the flow");
+    expect(markup).toContain("Render the current plan");
+    expect(markup).toContain("Run focused tests");
     expect(markup).not.toContain("Keep the rollout exact.");
     expect(markup).not.toContain("<details");
 

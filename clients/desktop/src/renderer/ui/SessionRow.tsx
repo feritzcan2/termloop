@@ -289,20 +289,31 @@ function agentPlanProgress(plan: AgentPlan): { completed: number; total: number 
   };
 }
 
-function agentPlanTooltip(plan: AgentPlan, completed: number): string {
-  const statusMarks = { completed: "✓", inProgress: "→", pending: "○" } as const;
-  return [
-    `Todos · ${completed}/${plan.steps.length} complete`,
-    ...plan.steps.map((step) => `${statusMarks[step.status]} ${step.text}`),
-  ].join("\n");
-}
-
 function AgentTodoCount({ plan }: { plan: AgentPlan }) {
   const progress = agentPlanProgress(plan);
   return <span
     className={`agent-todo-count${progress.completed === progress.total ? " done" : ""}`}
-    title={agentPlanTooltip(plan, progress.completed)}
   >{progress.completed}/{progress.total}</span>;
+}
+
+function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
+  const progress = agentPlanProgress(plan);
+  return <span className="agent-todo-tooltip" role="tooltip">
+    <span className="agent-todo-tooltip-head">
+      <span>Todos</span>
+      <span>{progress.completed}/{progress.total} complete</span>
+    </span>
+    <span className="agent-todo-tooltip-list">
+      {plan.steps.map((step, index) => <span
+        key={`${index}:${step.text}`}
+        className="agent-todo-tooltip-item"
+        data-status={step.status}
+      >
+        <span className="agent-todo-tooltip-mark" aria-hidden="true" />
+        <span>{step.text}</span>
+      </span>)}
+    </span>
+  </span>;
 }
 
 function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, visible, active, runCommand }: {
@@ -348,6 +359,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
       <span className="row-copy">
         <strong className="row-title">{sessionLabel(session)}</strong>
         <span className="session-state-line">
+          {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}
           {improver ? <span className="row-improve-kind">Improver</span> : null}
           {state.label ? <em className={`row-state ${state.tone}`} title={state.summary}>{state.label}</em> : null}
@@ -355,8 +367,8 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
           {run && runCommand
             ? <code className="row-run-command" title={runCommand}>{runCommand}</code>
             : provenance.folder ? <small className="row-subtitle" title={session.process.cwd}>{provenance.folder}</small> : null}
-          {plan ? <AgentTodoCount plan={plan} /> : null}
         </span>
+        {plan ? <AgentTodoTooltip plan={plan} /> : null}
       </span>
       <span className="session-presence">{visible ? <span className="pane-dot" title={active ? "Active pane" : "Visible in layout"} /> : null}</span>
     </>
