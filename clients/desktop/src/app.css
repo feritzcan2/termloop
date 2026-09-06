@@ -1653,9 +1653,8 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .relocation-dialog { width: min(620px, calc(100vw - 32px)); }
 .relocation-dialog-layer { z-index: 69; }
 .relocation-new-task { display: grid; gap: 7px; }
-.relocation-new-task > div { display: flex; gap: 8px; }
-.relocation-new-task input { flex: 1; min-width: 0; }
-.relocation-new-task .secondary-button { white-space: nowrap; }
+.relocation-new-task input { min-width: 0; }
+.relocation-new-task .secondary-button { justify-self: end; white-space: nowrap; }
 .inline-confirm-dialog { width: min(360px, calc(100vw - 32px)); }
 .inline-confirm-dialog .dialog-body { padding: 18px 19px 6px; }
 .inline-confirm-dialog h2 { margin: 0; color: var(--text); font-size: 14px; font-weight: 630; letter-spacing: -.02em; }

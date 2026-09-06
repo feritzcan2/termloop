@@ -73,6 +73,7 @@ describe("Session worktree relocation repair routing", () => {
   let root: Root;
 
   beforeEach(() => {
+    window.localStorage.clear();
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -215,7 +216,10 @@ describe("Session worktree relocation repair routing", () => {
     const listBranches = vi.fn(async () => ({
       repository_root: "/repo",
       branches: [{ name: "main", exact_ref: "refs/heads/main" }],
-      base_branches: [{ name: "origin/main", exact_ref: "refs/remotes/origin/main" }],
+      base_branches: [
+        { name: "origin/main", exact_ref: "refs/remotes/origin/main" },
+        { name: "origin/development", exact_ref: "refs/remotes/origin/development" },
+      ],
       base_branches_truncated: false,
       truncated: false,
     }));
@@ -250,6 +254,13 @@ describe("Session worktree relocation repair routing", () => {
     await act(async () => {
       taskSelect.value = "__new_task__";
       taskSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => undefined);
+    const baseBranch = host.querySelector<HTMLSelectElement>("#relocation-new-task-base-ref")!;
+    expect(baseBranch.value).toBe("refs/remotes/origin/development");
+    await act(async () => {
+      baseBranch.value = "refs/remotes/origin/main";
+      baseBranch.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const titleInput = host.querySelector<HTMLInputElement>("#relocation-new-task-title")!;
     await act(async () => typeInto(titleInput, "Inline relocation"));
