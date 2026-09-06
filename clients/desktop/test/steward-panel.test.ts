@@ -20,11 +20,8 @@ import {
   assistantInstructionsEditableSuffix,
   playbookRoutineCompletionEvidence,
   playbookRoutineRetryDelaySeconds,
-  workerHeartbeatUpdateParams,
-  workerInstructionsUpdateParams,
   upsertRoutineConfiguration,
   routineTimeCopy,
-  playbookPipelineWorkerId,
   isRevisionConflict,
   withCurrentRevision,
   assistantRefusalMessage,
@@ -32,7 +29,7 @@ import {
   RoutineContextEditor,
   StewardSystemPromptCard,
 } from "../src/renderer/ui/StewardPanel.js";
-import type { AssistantPromptContextDto, CompanionMessageDto, PlaybookDto, RoutineConfigurationDto, WorkerConfigurationDto } from "@termloop/contract/current";
+import type { AssistantPromptContextDto, CompanionMessageDto, PlaybookDto, RoutineConfigurationDto } from "@termloop/contract/current";
 import { promptImprovementActionLabel } from "../src/renderer/ui/PromptImprovement.js";
 
 describe("Steward capability presentation", () => {
@@ -41,23 +38,15 @@ describe("Steward capability presentation", () => {
     expect(promptImprovementActionLabel("routineBuilder")).toBe("Add Routine with agent");
     expect(promptImprovementActionLabel("routineInstructions")).toBe("Improve this Routine");
     expect(promptImprovementActionLabel("stewardInstructions")).toBe("Improve Steward defaults");
-    expect(promptImprovementActionLabel("workerInstructions")).toBe("Improve Worker defaults");
   });
 
-  it("binds terminal views only to the exact Steward or Worker Session", () => {
+  it("binds terminal views only to the exact Steward Session", () => {
     const steward = { projectId: "project-1", agentId: "codex", model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high", enabled: true, systemPrompt: "PM", executorSessionId: "steward-session", generation: 1, updatedAtEpochMs: 1 } as const;
-    const workers = [{ id: "worker-1", projectId: "project-1", name: "Worker 1", agentId: "claude", model: "sonnet", permission: "default", reasoning: "medium", enabled: true, pingIntervalSeconds: 60, workerPrompt: "Handle Routines", systemPrompt: "Be concise", executorSessionId: "worker-session", generation: 1, updatedAtEpochMs: 1 }] as const;
-    expect(assistantTerminalSessionId({ kind: "steward" }, steward, workers)).toBe("steward-session");
-    expect(assistantTerminalSessionId({ kind: "worker", workerId: "worker-1" }, steward, workers)).toBe("worker-session");
-    expect(assistantTerminalSessionId({ kind: "worker", workerId: "missing" }, steward, workers)).toBeNull();
-    expect(assistantTerminalSessionId({ kind: "routine", routineId: "routine-1" }, steward, workers)).toBeNull();
+    expect(assistantTerminalSessionId({ kind: "steward" }, steward)).toBe("steward-session");
+    expect(assistantTerminalSessionId({ kind: "routine", routineId: "routine-1" }, steward)).toBeNull();
   });
 
-  it("shows one complete Config surface for each persistent assistant", () => {
-    expect(assistantTabs("worker")).toEqual([
-      ["terminal", "Terminal"],
-      ["configuration", "Config"],
-    ]);
+  it("shows one complete Config surface for the persistent Steward", () => {
     expect(assistantTabs("steward")).toEqual([
       ["chat", "Workspace"],
       ["configuration", "Config"],
@@ -73,43 +62,6 @@ describe("Steward capability presentation", () => {
   it("collapses the Steward panel to the Builder alone before the Playbook exists", () => {
     expect(assistantTabs("steward", true, true)).toEqual([["builder", "Builder"]]);
     expect(assistantTabs("steward", false, true)).toEqual([]);
-    // The lock is the Steward's alone; a Worker panel keeps its surfaces.
-    expect(assistantTabs("worker", false, true)).toEqual([
-      ["terminal", "Terminal"],
-      ["configuration", "Config"],
-    ]);
-  });
-
-  it("consolidates Worker instructions into the single editable document", () => {
-    const worker = {
-      id: "worker-1", projectId: "project-1", name: "Worker 1", agentId: "codex",
-      model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high",
-      enabled: true, pingIntervalSeconds: 300, workerPrompt: "Old worker",
-      systemPrompt: "Old system", executorSessionId: "session-1", generation: 2,
-      updatedAtEpochMs: 1,
-    } satisfies WorkerConfigurationDto;
-    expect(workerInstructionsUpdateParams(worker, "Complete Worker instructions", 12)).toEqual({
-      workerId: "worker-1", name: "Worker 1", agentId: "codex", enabled: true,
-      model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high",
-      pingIntervalSeconds: 300, workerPrompt: "", systemPrompt: "Complete Worker instructions",
-      expectedRevision: 12,
-    });
-  });
-
-  it("updates Worker heartbeat without changing launch or instruction settings", () => {
-    const worker = {
-      id: "worker-1", projectId: "project-1", name: "Worker 1", agentId: "codex",
-      model: "gpt-5.6-luna", permission: "bypassPermissions", reasoning: "medium",
-      enabled: true, pingIntervalSeconds: 60, workerPrompt: "Handle Routines",
-      systemPrompt: "Be concise", executorSessionId: "session-1", generation: 2,
-      updatedAtEpochMs: 1,
-    } satisfies WorkerConfigurationDto;
-    expect(workerHeartbeatUpdateParams(worker, 900, 12)).toEqual({
-      workerId: "worker-1", name: "Worker 1", agentId: "codex", enabled: true,
-      model: "gpt-5.6-luna", permission: "bypassPermissions", reasoning: "medium",
-      pingIntervalSeconds: 900, workerPrompt: "Handle Routines", systemPrompt: "Be concise",
-      expectedRevision: 12,
-    });
   });
 
   it("reads Playbook policy for active and kept step Routines", () => {
@@ -155,9 +107,9 @@ describe("Steward capability presentation", () => {
     expect(markup).toContain("TermLoop instructions");
   });
 
-  it("explains a Routine as Worker observation, completion, Steward response, and permission", () => {
+  it("explains a Routine as Steward verification, completion, response, and permission", () => {
     const routine = {
-      id: "routine-1", projectId: "project-1", workerId: "worker-1",
+      id: "routine-1", projectId: "project-1",
       triggerMode: "onDemand", name: "Release verified", instructions: "Inspect the release.",
       whileWaiting: { mode: "ask", instructions: "Consider notifying the owner." }, enabled: true,
       scheduleIntervalSeconds: 60, generation: 1, contextMarkdown: "", contextRevision: 1,
@@ -182,11 +134,11 @@ describe("Steward capability presentation", () => {
     }));
     expect(markup).toContain("Ready");
     expect(markup).toContain("Next:");
-    expect(markup).toContain("Worker Context");
+    expect(markup).toContain("Routine memory");
     expect(markup).toContain("Auto-managed");
     expect(markup).toContain("Clear memory");
     expect(markup).toContain("Session JSONL");
-    expect(markup).toContain("What should the Worker look for?");
+    expect(markup).toContain("What should the Steward verify?");
     expect(markup).toContain("When is this Playbook step complete?");
     expect(markup).toContain("What should the Steward consider doing?");
     expect(markup).toContain("How may the Steward handle an action?");
@@ -194,7 +146,7 @@ describe("Steward capability presentation", () => {
     expect(markup).toContain("Ask me");
     expect(markup).toContain("Auto if allowed");
     expect(markup).not.toContain("Action handling");
-    expect(markup.lastIndexOf("Worker Context")).toBeGreaterThan(markup.lastIndexOf("Processed sources"));
+    expect(markup.lastIndexOf("Routine memory")).toBeGreaterThan(markup.lastIndexOf("Processed sources"));
   });
 
   it("keeps proven, unavailable, and unproven states distinct", () => {
@@ -218,8 +170,7 @@ describe("Steward capability presentation", () => {
   });
 
   it("tells the user how to recover after fixing an assignment problem", () => {
-    expect(routineProblemRecoveryCopy("Worker 1")).toBe("Fixed it? Restart Worker 1 from the sidebar.");
-    expect(routineProblemRecoveryCopy()).toContain("Restart the Worker");
+    expect(routineProblemRecoveryCopy()).toContain("Restart the Project Steward");
   });
 
   it("keeps panel identity stable across projection invalidations", () => {
@@ -249,7 +200,7 @@ describe("Steward capability presentation", () => {
   it("keeps first-run Playbook guidance after the pipeline status strip is removed", () => {
     const withSteps = {
       projectId: "project-1", revision: 1, activePipelineName: "Delivery",
-      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, workerId: "worker-1", approver: null }],
+      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null }],
       savedPipelines: [], updatedAtEpochMs: 1,
     } satisfies PlaybookDto;
 
@@ -264,7 +215,6 @@ describe("Steward capability presentation", () => {
       projectId: "project-1",
       triggerMode: "schedule",
       name: "Slack",
-      workerId: "worker-1",
       enabled: false,
       scheduleIntervalSeconds: 300,
       instructions: "Visible prompt",
@@ -287,7 +237,7 @@ describe("Steward capability presentation", () => {
 
   it("updates only visible Routine instructions and preserves its other configuration", () => {
     const routine = {
-      id: "routine-1", projectId: "project-1", workerId: "worker-1",
+      id: "routine-1", projectId: "project-1",
       triggerMode: "schedule",
       name: "Customer pulse", instructions: "Old instructions", enabled: true,
       whileWaiting: { mode: "ask", instructions: "Old response instructions" },
@@ -299,7 +249,6 @@ describe("Steward capability presentation", () => {
     expect(routineInstructionsUpdateParams(routine, "New instructions", 9)).toEqual({
       routineId: "routine-1",
       triggerMode: "schedule",
-      workerId: "worker-1",
       name: "Customer pulse",
       instructions: "New instructions",
       whileWaiting: { mode: "ask", instructions: "Old response instructions" },
@@ -310,7 +259,6 @@ describe("Steward capability presentation", () => {
     expect(routineActionHandlingUpdateParams(routine, "auto", 10)).toEqual({
       routineId: "routine-1",
       triggerMode: "schedule",
-      workerId: "worker-1",
       name: "Customer pulse",
       instructions: "Old instructions",
       whileWaiting: { mode: "auto", instructions: "Old response instructions" },
@@ -321,7 +269,6 @@ describe("Steward capability presentation", () => {
     expect(routineStewardInstructionsUpdateParams(routine, "New response instructions", 11)).toEqual({
       routineId: "routine-1",
       triggerMode: "schedule",
-      workerId: "worker-1",
       name: "Customer pulse",
       instructions: "Old instructions",
       whileWaiting: { mode: "ask", instructions: "New response instructions" },
@@ -334,7 +281,6 @@ describe("Steward capability presentation", () => {
     expect(routineActionHandlingUpdateParams(stepRoutine, "auto", 12)).toEqual({
       routineId: "routine-1",
       triggerMode: "onDemand",
-      workerId: "worker-1",
       name: "Customer pulse",
       instructions: "Old instructions",
       whileWaiting: { mode: "auto", instructions: "Old response instructions" },
@@ -416,37 +362,6 @@ describe("Steward capability presentation", () => {
       "Error invoking remote method 'termloop:worker-configuration-delete': "
       + "TermLoopControlError: store failed: constraint violation",
     ))).toBe("The change didn't apply. Try again.");
-  });
-
-  it("adds a later question to the Worker its pipeline already runs in", () => {
-    const workers = [
-      { id: "worker-1", name: "Worker 1", enabled: true },
-      { id: "worker-ship", name: "Ship to production", enabled: true },
-    ] as unknown as Parameters<typeof playbookPipelineWorkerId>[2];
-    const routines = [
-      { id: "routine-step-1", workerId: "worker-ship" },
-      { id: "routine-step-2", workerId: "worker-ship" },
-    ] as unknown as Parameters<typeof playbookPipelineWorkerId>[1];
-    const saved = {
-      milestones: [{ routineId: "routine-step-1" }, { routineId: "routine-step-2" }],
-    } as Parameters<typeof playbookPipelineWorkerId>[0];
-    // The template opened its own Worker, so a question added later belongs
-    // beside the others rather than in whichever Worker the sidebar lists first.
-    expect(playbookPipelineWorkerId(saved, routines, workers)).toBe("worker-ship");
-    // A milestone whose Routine is gone is skipped, not treated as authority.
-    const stale = {
-      milestones: [{ routineId: "routine-gone" }, { routineId: "routine-step-2" }],
-    } as Parameters<typeof playbookPipelineWorkerId>[0];
-    expect(playbookPipelineWorkerId(stale, routines, workers)).toBe("worker-ship");
-    // With no pipeline yet there is nothing to join, so the first enabled
-    // Worker takes it; Core never receives a known-unusable default.
-    expect(playbookPipelineWorkerId(null, routines, workers)).toBe("worker-1");
-    const stoppedFirst = [
-      { id: "worker-off", enabled: false },
-      { id: "worker-on", enabled: true },
-    ] as unknown as Parameters<typeof playbookPipelineWorkerId>[2];
-    expect(playbookPipelineWorkerId(null, routines, stoppedFirst)).toBe("worker-on");
-    expect(playbookPipelineWorkerId(null, [], [])).toBeUndefined();
   });
 
   it("shows a Routine's current run timing without inventing history", () => {

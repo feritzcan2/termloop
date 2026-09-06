@@ -212,9 +212,6 @@ fn generated_mcp_tool_catalog()
             if termloop_contract::current::MCP_STEWARD_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Steward);
             }
-            if termloop_contract::current::MCP_WORKER_TOOLS.contains(&tool_name) {
-                roles.push(termloop_core::McpToolRole::Worker);
-            }
             if termloop_contract::current::MCP_IMPROVER_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Improver);
             }
@@ -636,15 +633,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         companion_process_directory.clone(),
         runtime_directory.clone(),
     ));
-    let workers_to_restart = state.core.lock().await.enabled_worker_ids_needing_launch();
-    for worker_id in workers_to_restart {
-        let worker_state = state.clone();
-        tokio::spawn(async move {
-            if let Err(error) = control::launch_current_worker(&worker_id, &worker_state).await {
-                tracing::warn!(%error, %worker_id, "persistent Worker restart failed");
-            }
-        });
-    }
     let server_result = server.await?;
     state.access_plane.shutdown().await;
     server_result?;
@@ -902,7 +890,6 @@ async fn reconcile_terminal_exits(state: AppState) {
                     ProjectionTopic::Session,
                     ProjectionTopic::AgentStatus,
                     ProjectionTopic::Steward,
-                    ProjectionTopic::Worker,
                     ProjectionTopic::Routine,
                     ProjectionTopic::Run,
                 ],
@@ -1103,7 +1090,7 @@ async fn reconcile_agent_runtime_signals(
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
         if changed && topic == ProjectionTopic::AgentStatus {
-            // A Worker's turn ending is what makes it wakeable again, and the
+            // A Steward's turn ending is what makes it wakeable again, and the
             // Routine loop is asleep until told that something moved.
             tracker_runtime_wake.notify_one();
         }

@@ -7,7 +7,6 @@ import type {
   PlaybookPipelineDraftDto,
   PlaybookUpdateParams,
   PlaybookUpdateResult,
-  StewardAgentId,
 } from "@termloop/contract/current";
 
 /* The Playbook is the user's one advisory delivery-policy document per
@@ -61,9 +60,8 @@ export function playbookRelativeMinutes(milliseconds: number): string {
 /** A station on the board before it is complete: every step names the Routine
     that checks it, and `null` is the honest "not picked yet" the wire type
     cannot express. */
-export type PlaybookMilestoneDraft = Omit<PlaybookMilestoneDto, "routineId" | "workerId"> & {
+export type PlaybookMilestoneDraft = Omit<PlaybookMilestoneDto, "routineId"> & {
   routineId: string | null;
-  workerId: string | null;
 };
 
 export type PlaybookPipelineEditorDraft = {
@@ -247,7 +245,7 @@ export function switchToSavedPipeline(draft: PlaybookDraft, name: string): Playb
     A pipeline is either the one in use or one of the kept ones, so a board
     running this template has nowhere to be parked; switching to what is already
     on screen is not an operation. The name alone does not settle it. A board
-    left empty — every stage gone with the Worker that evaluated them — still
+    left empty — every stage removed — still
     carries the name it was given, and that is precisely the board a user
     rebuilds by adopting the template again. */
 export function boardAlreadyRuns(draft: PlaybookDraft, template: PlaybookTemplate): boolean {
@@ -328,7 +326,6 @@ function templateMilestone(
     retryDelaySeconds,
     completeWhen,
     whileWaiting,
-    workerId: null,
     approver,
   };
 }
@@ -477,8 +474,6 @@ export function resolvePlaybookSave(
   draft: PlaybookDraft,
   basePlaybookRevision: number,
   latest: PlaybookGetResult,
-  workerId: string | null,
-  preferredWorkerAgentId: StewardAgentId,
 ): PlaybookSaveDecision {
   if ((latest.playbook?.revision ?? 0) !== basePlaybookRevision) return { kind: "conflict" };
   return {
@@ -488,8 +483,6 @@ export function resolvePlaybookSave(
       activePipelineName: draft.activePipelineName,
       milestones: playbookMilestonesForWire(draft.milestones),
       savedPipelines: playbookPipelinesForWire(draft.savedPipelines),
-      workerId,
-      preferredWorkerAgentId,
       expectedPlaybookRevision: basePlaybookRevision,
       expectedRevision: latest.stateRevision,
     },

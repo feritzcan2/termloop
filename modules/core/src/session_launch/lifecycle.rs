@@ -476,7 +476,7 @@ impl CoreRuntime {
         // A failed persistent-assistant resume must remain a stopped provider
         // conversation, not turn into an ordinary shell under the same
         // Session id. The exact configuration binding is retained so Retry can
-        // re-derive the Steward/Worker MCP role and resume that conversation.
+        // re-derive the Steward MCP role and resume that conversation.
         if self.session_is_persistent_assistant_executor(session_id) {
             return Ok(());
         }
@@ -704,7 +704,6 @@ pub(super) fn session_projection(
         "improver_target": session.improver_target.as_ref().map(|target| json!({
             "targetKind": match target.target_kind {
                 termloop_domain::ImproverSessionTargetKind::StewardInstructions => "stewardInstructions",
-                termloop_domain::ImproverSessionTargetKind::WorkerInstructions => "workerInstructions",
                 termloop_domain::ImproverSessionTargetKind::RoutineInstructions => "routineInstructions",
                 termloop_domain::ImproverSessionTargetKind::RoutineBuilder => "routineBuilder",
                 termloop_domain::ImproverSessionTargetKind::Playbook => "playbook",

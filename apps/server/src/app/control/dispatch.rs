@@ -20,13 +20,13 @@ use super::super::{AppState, current_epoch_ms};
 use super::errors::{git_observation_error_response, response_conflict, response_error};
 use super::handlers::{
     bind_task_branch, cleanup_task_worktree, close_session, create_skill_definition,
-    create_worker_configuration, delete_project, delete_steward_configuration,
-    delete_worker_configuration, dismiss_task_worktree_provisioning, dismiss_task_worktree_repair,
+    delete_project, delete_steward_configuration, dismiss_task_worktree_provisioning,
+    dismiss_task_worktree_repair,
     fork_agent_session, get_context_bank_catalog, get_context_bank_file, get_skill_catalog,
     get_skill_definition, git_host_pull_request_change_list, git_host_pull_request_diff,
     git_host_pull_request_list, inspect_task_worktree_cleanup, inspect_task_worktree_repair,
-    launch_agent_session, launch_assistant_prompt_improver, launch_current_worker,
-    launch_project_run, launch_quick_action, launch_run_configuration_improver,
+    launch_agent_session, launch_assistant_prompt_improver, launch_project_run, launch_quick_action,
+    launch_run_configuration_improver,
     launch_settings_improver, launch_task_run, launch_task_session, list_deleted_sessions,
     list_session_history, paste_agent_image, preview_agent_session,
     preview_assistant_prompt_improver, preview_quick_action, preview_relocate_agent_session,
@@ -40,7 +40,7 @@ use super::handlers::{
     save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
     set_steward_configuration, task_branch_commit_change_list, task_branch_commit_diff,
     task_branch_commit_list, task_branch_commit_summary_list, task_worktree_change_list,
-    task_worktree_diff, task_worktree_pre_image, terminate_session, update_worker_configuration,
+    task_worktree_diff, task_worktree_pre_image, terminate_session,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -172,9 +172,6 @@ pub(in crate::app) async fn apply_configuration_plan(
         }
         let _ = terminate_session(json!({ "sessionId": session_id }), state).await;
     }
-    if let Some(worker_id) = effects.launch_worker_id {
-        launch_current_worker(&worker_id, state).await?;
-    }
     if effects.tracker_runtime_changed {
         state.tracker_runtime_wake.notify_one();
     }
@@ -185,7 +182,6 @@ pub(in crate::app) async fn apply_configuration_plan(
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
             ProjectionTopic::Playbook,
             ProjectionTopic::Run,
@@ -202,7 +198,6 @@ fn configuration_agent_id(content: &str) -> Option<String> {
     let content = content.parse::<Value>().ok()?;
     content
         .get("agentId")
-        .or_else(|| content.get("preferredWorkerAgentId"))
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
 }
@@ -1062,19 +1057,6 @@ async fn dispatch_inner(
             "steward.configurationDelete" => {
                 delete_steward_configuration(request.params, state).await
             }
-            "worker.configurationList" => {
-                let mut core = state.core.lock().await;
-                core.handle("worker.configurationList", request.params)
-            }
-            "worker.configurationCreate" => {
-                create_worker_configuration(request.params, state).await
-            }
-            "worker.configurationUpdate" => {
-                update_worker_configuration(request.params, state).await
-            }
-            "worker.configurationDelete" => {
-                delete_worker_configuration(request.params, state).await
-            }
             "routine.runNow" => {
                 let params =
                     serde_json::from_value::<protocol::RoutineRunNowParams>(request.params)
@@ -1134,7 +1116,6 @@ async fn dispatch_inner(
                     &params.project_id,
                     routine_trigger_mode(params.trigger_mode),
                     params.name,
-                    params.worker_id,
                     params.schedule_interval_seconds,
                     routine_action_handling(params.while_waiting.mode),
                     params.instructions,
@@ -1156,7 +1137,6 @@ async fn dispatch_inner(
                     params.name,
                     params.instructions,
                     params.while_waiting.instructions,
-                    params.worker_id,
                     params.enabled,
                     params.schedule_interval_seconds,
                     routine_action_handling(params.while_waiting.mode),
@@ -1210,21 +1190,12 @@ async fn dispatch_inner(
                     serde_json::from_value::<protocol::PlaybookUpdateParams>(request.params)
                         .expect("validated Playbook update params");
                 let project_id = params.project_id.clone();
-                let preferred_agent = match params.preferred_worker_agent_id {
-                    protocol::StewardAgentId::Claude => "claude",
-                    protocol::StewardAgentId::Codex => "codex",
-                };
-                let preferred_worker_available =
-                    state.agent_capabilities.iter().any(|capability| {
-                        capability.agent_id == preferred_agent && capability.available
-                    });
                 let routine_capacity = params.milestones.len()
                     + params
                         .saved_pipelines
                         .iter()
                         .map(|pipeline| pipeline.milestones.len())
                         .sum::<usize>();
-                let new_worker_id = termloop_platform::generate_opaque_id();
                 let new_routine_ids = (0..routine_capacity)
                     .map(|_| termloop_platform::generate_opaque_id())
                     .collect::<Vec<_>>();
@@ -1233,9 +1204,7 @@ async fn dispatch_inner(
                 let steward_was_enabled = core.current_enabled_steward_wake(&project_id).is_some();
                 let result = core.update_playbook(
                     serde_json::to_value(params).expect("Playbook update params serialize"),
-                    new_worker_id,
                     new_routine_ids,
-                    preferred_worker_available,
                     current_epoch_ms(),
                 );
                 let state_revision = core.state_revision();
@@ -1247,7 +1216,6 @@ async fn dispatch_inner(
                     let mut topics = vec![
                         ProjectionTopic::Playbook,
                         ProjectionTopic::Routine,
-                        ProjectionTopic::Worker,
                     ];
                     if steward_enabled {
                         topics.push(ProjectionTopic::Steward);
@@ -1258,14 +1226,6 @@ async fn dispatch_inner(
                         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
                     });
                     state.tracker_runtime_wake.notify_one();
-                    if let Some(worker_id) = result
-                        .as_ref()
-                        .ok()
-                        .and_then(|value| value["workerId"].as_str())
-                        && let Err(error) = launch_current_worker(worker_id, state).await
-                    {
-                        tracing::warn!(%error, %worker_id, "Playbook Worker launch needs attention");
-                    }
                     if steward_enabled {
                         super::super::companion_supervisor::enqueue_current_steward_wake(
                             state,
@@ -2128,11 +2088,9 @@ async fn dispatch_inner(
                 ErrorCode::Conflict,
                 "disable and stop the Routine before deleting it",
             ),
-            Err(
-                error @ (termloop_core::CoreError::PlaybookStepRoutineHeld { .. }
-                | termloop_core::CoreError::WorkerRuntimeActive
-                | termloop_core::CoreError::WorkerHasRoutines { .. }),
-            ) => response_error(request.id, ErrorCode::Conflict, &error.to_string()),
+            Err(error @ termloop_core::CoreError::PlaybookStepRoutineHeld { .. }) => {
+                response_error(request.id, ErrorCode::Conflict, &error.to_string())
+            }
             Err(termloop_core::CoreError::TrackerReportStale) => response_error(
                 request.id,
                 ErrorCode::Conflict,

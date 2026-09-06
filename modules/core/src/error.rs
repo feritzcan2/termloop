@@ -113,12 +113,6 @@ pub enum CoreError {
         "this Routine evaluates the \"{step}\" step on the {pipeline} pipeline; remove that step from the Playbook first"
     )]
     PlaybookStepRoutineHeld { step: String, pipeline: String },
-    #[error("turn this Worker off and close its Session before deleting it")]
-    WorkerRuntimeActive,
-    #[error(
-        "this Worker still runs {routines} Routine(s); remove them from the Playbook or delete them first"
-    )]
-    WorkerHasRoutines { routines: usize },
     #[error("Routine check or report is stale")]
     TrackerReportStale,
     #[error("Routine report is invalid")]

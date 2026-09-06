@@ -11,7 +11,6 @@ pub mod steward;
 pub mod tracker;
 pub mod tracker_runtime;
 pub mod transcript;
-pub mod worker;
 mod worktree_branches;
 
 use crate::{CoreError, CoreRuntime};
@@ -111,7 +110,7 @@ pub struct GitHostPullRequestSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct GitHostTaskProjection {
-    /// This cache powers UI affordances only. Worker gates must inspect live
+    /// This cache powers UI affordances only. Steward gates must inspect live
     /// provider truth with the capabilities available in their Session.
     pub usage: &'static str,
     pub task_id: String,

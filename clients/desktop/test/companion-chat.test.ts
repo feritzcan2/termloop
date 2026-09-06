@@ -271,8 +271,8 @@ describe("Playbook current-state strip", () => {
   const playbook = {
     projectId: "project-1", revision: 1, activePipelineName: "Delivery",
     milestones: [
-      { id: "ms-1", title: "Build green", gate: "automatic", routineId: "routine-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, workerId: "worker-1", approver: null },
-      { id: "ms-2", title: "Review approved", gate: "automatic", routineId: "routine-2", retryDelaySeconds: 600, completeWhen: "Approved", whileWaiting: { mode: "off", instructions: "" }, workerId: "worker-1", approver: null },
+      { id: "ms-1", title: "Build green", gate: "automatic", routineId: "routine-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null },
+      { id: "ms-2", title: "Review approved", gate: "automatic", routineId: "routine-2", retryDelaySeconds: 600, completeWhen: "Approved", whileWaiting: { mode: "off", instructions: "" }, approver: null },
     ],
     savedPipelines: [], updatedAtEpochMs: 1,
   } as PlaybookDto;

@@ -33,7 +33,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || companion_records_are_invalid(state)
         || steward_configurations_are_invalid(state)
         || steward_conversation_refs_are_invalid(state)
-        || worker_configurations_are_invalid(state)
+        || !state.worker_configurations.is_empty()
         || run_configurations_are_invalid(state)
         || run_setup_marks_are_invalid(state)
         || configuration_versions_are_invalid(state)
@@ -195,14 +195,7 @@ fn configuration_versions_are_invalid(state: &CurrentState) -> bool {
                 .steward_configurations
                 .iter()
                 .any(|configuration| configuration.project_id == project_id),
-            ImproverSessionTargetKind::WorkerInstructions
-            | ImproverSessionTargetKind::RoutineBuilder => {
-                target.target_id.as_deref().is_some_and(|id| {
-                    state.worker_configurations.iter().any(|configuration| {
-                        configuration.project_id == project_id && configuration.id == id
-                    })
-                })
-            }
+            ImproverSessionTargetKind::RoutineBuilder => true,
             ImproverSessionTargetKind::RoutineInstructions => {
                 target.target_id.as_deref().is_some_and(|id| {
                     state.tracker_configurations.iter().any(|configuration| {
@@ -718,9 +711,6 @@ fn sessions_are_invalid(state: &CurrentState) -> bool {
                 ImproverSessionTargetKind::StewardInstructions => {
                     "builtin.improver.steward-instructions"
                 }
-                ImproverSessionTargetKind::WorkerInstructions => {
-                    "builtin.improver.worker-instructions"
-                }
                 ImproverSessionTargetKind::RoutineInstructions => {
                     "builtin.improver.routine-instructions"
                 }
@@ -908,10 +898,6 @@ fn tracker_configurations_are_invalid(state: &CurrentState) -> bool {
                 || state.tracker_configurations[index + 1..]
                     .iter()
                     .any(|candidate| candidate.id == configuration.id)
-                || !state.worker_configurations.iter().any(|worker| {
-                    worker.id == configuration.worker_id
-                        && worker.project_id == configuration.project_id
-                })
                 || configuration.related_task_ids.iter().any(|task_id| {
                     !state.tasks.iter().any(|task| {
                         task.id == *task_id && task.project_id == configuration.project_id
@@ -924,39 +910,6 @@ fn tracker_configurations_are_invalid(state: &CurrentState) -> bool {
                     .any(|task_id| {
                         !state.tasks.iter().any(|task| {
                             task.id == *task_id && task.project_id == configuration.project_id
-                        })
-                    })
-        })
-}
-
-fn worker_configurations_are_invalid(state: &CurrentState) -> bool {
-    state.projects.iter().any(|project| {
-        state
-            .worker_configurations
-            .iter()
-            .filter(|configuration| configuration.project_id == project.id)
-            .count()
-            > termloop_domain::WORKERS_PER_PROJECT_MAX
-    }) || state
-        .worker_configurations
-        .iter()
-        .enumerate()
-        .any(|(index, configuration)| {
-            !configuration.is_valid()
-                || !state
-                    .projects
-                    .iter()
-                    .any(|project| project.id == configuration.project_id)
-                || state.worker_configurations[index + 1..]
-                    .iter()
-                    .any(|candidate| candidate.id == configuration.id)
-                || configuration
-                    .executor_session_id
-                    .as_ref()
-                    .is_some_and(|session_id| {
-                        !state.sessions.iter().any(|session| {
-                            session.id == *session_id
-                                && session.project_id == configuration.project_id
                         })
                     })
         })

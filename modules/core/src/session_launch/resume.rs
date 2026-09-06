@@ -29,8 +29,6 @@ pub struct AgentResumePlan {
     pub(super) observation_token: Option<String>,
     pub(super) mcp_token: Option<String>,
     pub(super) mcp_role: Option<super::AgentMcpRole>,
-    pub(super) worker_prompt: Option<String>,
-    pub(super) worker_system_prompt: Option<String>,
     pub(super) agent_profile_ref: Option<String>,
     pub(super) steward_system_prompt: Option<String>,
     pub(super) mcp_authorizer: super::McpAuthorizer,
@@ -240,13 +238,6 @@ impl AgentResumePlan {
                 termloop_invocation::ExecutorRole::Steward,
                 termloop_invocation::AgentMcpProfile::Steward,
                 self.steward_system_prompt.as_deref(),
-                None,
-            )),
-            super::AgentMcpRole::Worker { .. } => Some((
-                termloop_invocation::ExecutorRole::Worker,
-                termloop_invocation::AgentMcpProfile::Worker,
-                self.worker_system_prompt.as_deref(),
-                self.worker_prompt.as_deref(),
             )),
             _ => None,
         }) {
@@ -262,7 +253,6 @@ impl AgentResumePlan {
                     reasoning: &self.launch_selection.reasoning,
                     role: role.0,
                     system_prompt: role.2,
-                    worker_prompt: role.3,
                     cwd: &self.cwd,
                     conversation: termloop_invocation::AgentConversationLaunch::Resume {
                         resume_ref: &self.resume_ref,
@@ -583,7 +573,6 @@ impl CoreRuntime {
             session,
             self.store.sessions(),
             self.store.steward_configurations(),
-            self.store.worker_configurations(),
             transport,
         )
     }
@@ -1039,28 +1028,14 @@ impl CoreRuntime {
         let observation_token = (agent_id == "claude")
             .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
         let mcp_role = self.resumed_mcp_role(&session, &transport);
-        let (worker_prompt, worker_system_prompt, steward_system_prompt) = match &mcp_role {
-            Some(super::AgentMcpRole::Worker { worker_id, .. }) => self
-                .store
-                .worker_configurations()
-                .iter()
-                .find(|configuration| configuration.id == *worker_id)
-                .map(|configuration| {
-                    (
-                        Some(configuration.worker_prompt.clone()),
-                        Some(configuration.system_prompt.clone()),
-                        None,
-                    )
-                })
-                .unwrap_or((None, None, None)),
+        let steward_system_prompt = match &mcp_role {
             Some(super::AgentMcpRole::Steward { project_id }) => self
                 .store
                 .steward_configurations()
                 .iter()
                 .find(|configuration| configuration.project_id == *project_id)
-                .map(|configuration| (None, None, Some(configuration.system_prompt.clone())))
-                .unwrap_or((None, None, None)),
-            _ => (None, None, None),
+                .map(|configuration| configuration.system_prompt.clone()),
+            _ => None,
         };
         let mcp_token = mcp_role
             .is_some()
@@ -1114,8 +1089,6 @@ impl CoreRuntime {
                 observation_token,
                 mcp_token,
                 mcp_role,
-                worker_prompt,
-                worker_system_prompt,
                 agent_profile_ref,
                 steward_system_prompt,
                 mcp_authorizer: self.mcp_authorizer.clone(),
@@ -1495,7 +1468,7 @@ impl CoreRuntime {
         const ADMISSION_CAP_PER_LANE: usize = 68;
         let mut by_lane = std::array::from_fn::<
             std::collections::BTreeMap<String, std::collections::VecDeque<AgentResumeCandidate>>,
-            3,
+            2,
             _,
         >(|_| std::collections::BTreeMap::new());
         for session in self.store.sessions().iter().filter(|session| {
@@ -1508,7 +1481,6 @@ impl CoreRuntime {
             let lane_index = match lane {
                 super::AgentResumeLane::Ordinary => 0,
                 super::AgentResumeLane::Steward => 1,
-                super::AgentResumeLane::Worker => 2,
             };
             by_lane[lane_index]
                 .entry(session.project_id.clone())

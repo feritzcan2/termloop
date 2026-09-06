@@ -650,10 +650,6 @@ mod tests {
             AgentMcpRole::Steward {
                 project_id: source_project.clone(),
             },
-            AgentMcpRole::Worker {
-                project_id: source_project.clone(),
-                worker_id: "worker-1".into(),
-            },
         ]
         .into_iter()
         .enumerate()

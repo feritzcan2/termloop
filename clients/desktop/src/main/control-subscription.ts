@@ -162,7 +162,7 @@ export class ControlSubscription {
     this.#retryMs = MIN_RETRY_MS;
     this.onState?.("connected");
     this.onInvalidation({
-      topics: ["project", "task", "session", "agentStatus", "gitHost", "branchCommit", "companion", "steward", "worker", "routine", "keepAwake"],
+      topics: ["project", "task", "session", "agentStatus", "gitHost", "branchCommit", "companion", "steward", "routine", "keepAwake"],
       stateRevision: result.stateRevision,
       observationSequence: result.observationSequence,
     });

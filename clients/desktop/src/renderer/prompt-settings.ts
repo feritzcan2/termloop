@@ -6,7 +6,7 @@ export type PromptAsset = {
   canonicalBody: string;
   effectiveBody: string;
   customized: boolean;
-  source?: "builtIn" | "project" | "worker" | "routine" | "provider";
+  source?: "builtIn" | "project" | "routine" | "provider";
   editable?: boolean;
   resettable?: boolean;
   /// Set only for a prompt this app stores in a file of its own: the exact path
@@ -57,12 +57,12 @@ export function promptKind(prompt: PromptAsset): { label: string; className: str
 }
 
 /// Which Improve-with-agent launch a catalog entry can offer, if any. A stored
-/// built-in prompt is a file the settings improver edits; the Steward, Worker,
-/// and Routine instruction surfaces already have their own improvers; the
+/// built-in prompt is a file the settings improver edits; the Steward and
+/// Routine instruction surfaces already have their own improvers; the
 /// remaining entries are runtime projections nothing may rewrite.
 export type PromptImproveTarget =
   | { kind: "settings"; id: string; name: string; path: string; content: string }
-  | { kind: "assistant"; surface: "stewardInstructions" | "workerInstructions" | "routineInstructions"; ownerId: string | null };
+  | { kind: "assistant"; surface: "stewardInstructions" | "routineInstructions"; ownerId: string | null };
 
 export function promptImproveTarget(prompt: PromptAsset): PromptImproveTarget | undefined {
   if (prompt.source === "builtIn") {
@@ -73,8 +73,6 @@ export function promptImproveTarget(prompt: PromptAsset): PromptImproveTarget | 
   if (prompt.id === "runtime.steward.instructions") {
     return { kind: "assistant", surface: "stewardInstructions", ownerId: null };
   }
-  const worker = prompt.id.match(/^runtime\.worker\.([^.]+)\.instructions$/);
-  if (worker?.[1]) return { kind: "assistant", surface: "workerInstructions", ownerId: worker[1] };
   const routine = prompt.id.match(/^runtime\.routine\.([^.]+)\.instructions$/);
   if (routine?.[1]) return { kind: "assistant", surface: "routineInstructions", ownerId: routine[1] };
   return undefined;

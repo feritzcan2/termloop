@@ -902,26 +902,6 @@ handleIpc(
     controlCall("steward.configurationDelete", params),
 );
 handleIpc(
-  "termloop:worker-configuration-list",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationListParams) =>
-    controlCall("worker.configurationList", params),
-);
-handleIpc(
-  "termloop:worker-configuration-create",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationCreateParams) =>
-    controlCall("worker.configurationCreate", params),
-);
-handleIpc(
-  "termloop:worker-configuration-update",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationUpdateParams) =>
-    controlCall("worker.configurationUpdate", params),
-);
-handleIpc(
-  "termloop:worker-configuration-delete",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationDeleteParams) =>
-    controlCall("worker.configurationDelete", params),
-);
-handleIpc(
   "termloop:run-configuration-list",
   (_event, params: import("@termloop/contract/current").RunConfigurationListParams) =>
     controlCall("runConfiguration.list", params),

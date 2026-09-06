@@ -22,7 +22,6 @@
       "agent.capabilityList",
       "agent.profileList",
       "steward.configurationGet",
-      "worker.configurationList",
       "taskSource.list",
       "taskSource.candidateList",
       "routine.configurationList",
@@ -49,7 +48,6 @@
       "agent.capabilityList",
       "agent.profileList",
       "steward.configurationGet",
-      "worker.configurationList",
       "routine.configurationList",
       "routine.runtimeList",
       "companion.transcriptAppend",
@@ -1025,38 +1023,6 @@
         "$ref": "#/$defs/stewardConfigurationDeleteResult"
       }
     },
-    "worker.configurationList": {
-      "params": {
-        "$ref": "#/$defs/workerConfigurationListParams"
-      },
-      "result": {
-        "$ref": "#/$defs/workerConfigurationListResult"
-      }
-    },
-    "worker.configurationCreate": {
-      "params": {
-        "$ref": "#/$defs/workerConfigurationCreateParams"
-      },
-      "result": {
-        "$ref": "#/$defs/workerConfigurationMutationResult"
-      }
-    },
-    "worker.configurationUpdate": {
-      "params": {
-        "$ref": "#/$defs/workerConfigurationUpdateParams"
-      },
-      "result": {
-        "$ref": "#/$defs/workerConfigurationMutationResult"
-      }
-    },
-    "worker.configurationDelete": {
-      "params": {
-        "$ref": "#/$defs/workerConfigurationDeleteParams"
-      },
-      "result": {
-        "$ref": "#/$defs/workerConfigurationDeleteResult"
-      }
-    },
     "runConfiguration.list": {
       "params": {
         "$ref": "#/$defs/runConfigurationListParams"
@@ -1530,10 +1496,6 @@
         "steward.configurationGet",
         "steward.configurationSet",
         "steward.configurationDelete",
-        "worker.configurationList",
-        "worker.configurationCreate",
-        "worker.configurationUpdate",
-        "worker.configurationDelete",
         "runConfiguration.list",
         "runConfiguration.create",
         "runConfiguration.update",
@@ -1607,7 +1569,6 @@
         "branchCommit",
         "companion",
         "steward",
-        "worker",
         "routine",
         "taskSource",
         "run",
@@ -1859,8 +1820,8 @@
         "steward_suggest",
         "routine_finding_read",
         "routine_finding_resolve",
-        "worker_get_next_routine",
-        "worker_complete_assignment",
+        "steward_next_assignment",
+        "steward_complete_assignment",
         "playbook_read",
         "task_set_steward_brief",
         "configuration_version_read",
@@ -1875,7 +1836,6 @@
         "interactive",
         "helper",
         "steward",
-        "worker",
         "improver"
       ]
     },
@@ -4864,7 +4824,7 @@
         "runtimeEpochChanged",
         "terminalClosed",
         "submitWriteFailed",
-        "workerUnavailable"
+        "assistantUnavailable"
       ]
     },
     "generatedInputDeliveryCancelCause": {
@@ -5111,7 +5071,6 @@
       "type": "string",
       "enum": [
         "stewardInstructions",
-        "workerInstructions",
         "routineInstructions",
         "routineBuilder",
         "playbook",
@@ -5137,7 +5096,7 @@
           "$ref": "#/$defs/improverSessionTargetKind"
         },
         "targetId": {
-          "description": "Worker, Routine, run configuration, or new-run kind identity; null for Project Steward instructions and the Project Playbook Builder.",
+          "description": "Routine, run configuration, or new-run kind identity; null for Project Steward instructions, the Routine Builder, and the Project Playbook Builder.",
           "type": [
             "string",
             "null"
@@ -11522,54 +11481,6 @@
         }
       }
     },
-    "workerPromptContextDto": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerPromptContextDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workerId",
-        "initialPrompt",
-        "instructionsPrompt",
-        "instructionDelivery",
-        "protectedPrompt",
-        "wakePrompt"
-      ],
-      "properties": {
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "initialPrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 65536
-        },
-        "instructionsPrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 65536
-        },
-        "instructionDelivery": {
-          "type": "string",
-          "enum": [
-            "codexDeveloperInstructions",
-            "claudeAppendedSystemPrompt"
-          ]
-        },
-        "protectedPrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32768
-        },
-        "wakePrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 12288
-        }
-      }
-    },
     "stewardConfigurationGetResult": {
       "x-codegen": true,
       "x-codegen-name": "StewardConfigurationGetResult",
@@ -11711,7 +11622,6 @@
       "required": [
         "projectId",
         "deleted",
-        "deletedWorkers",
         "deletedRoutines",
         "deletedSessions",
         "deletedMessages",
@@ -11725,10 +11635,6 @@
         },
         "deleted": {
           "const": true
-        },
-        "deletedWorkers": {
-          "type": "integer",
-          "minimum": 0
         },
         "deletedRoutines": {
           "type": "integer",
@@ -11744,344 +11650,6 @@
         },
         "playbookDeleted": {
           "type": "boolean"
-        },
-        "stateRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationDto": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "projectId",
-        "name",
-        "agentId",
-        "model",
-        "permission",
-        "reasoning",
-        "enabled",
-        "pingIntervalSeconds",
-        "workerPrompt",
-        "systemPrompt",
-        "executorSessionId",
-        "generation",
-        "updatedAtEpochMs"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80,
-          "x-utf8-max-bytes": 80
-        },
-        "agentId": {
-          "$ref": "#/$defs/stewardAgentId"
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "permission": {
-          "$ref": "#/$defs/assistantPermission"
-        },
-        "reasoning": {
-          "type": "string",
-          "enum": ["default", "low", "medium", "high", "xhigh", "max"]
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "pingIntervalSeconds": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 86400,
-          "description": "How often TermLoop visibly wakes an idle ready Worker to check its due Routine queue."
-        },
-        "workerPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384,
-          "description": "Editable Routine-handling instructions composed after the protected built-in Worker runtime."
-        },
-        "systemPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384,
-          "description": "Editable general Worker behavior instructions. These take precedence over workerPrompt but cannot replace the protected built-in runtime."
-        },
-        "executorSessionId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1
-        },
-        "generation": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "updatedAtEpochMs": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationListParams": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationListParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "workerConfigurationListResult": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationListResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "configurations",
-        "promptContexts",
-        "stateRevision"
-      ],
-      "properties": {
-        "configurations": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/workerConfigurationDto"
-          },
-          "maxItems": 8
-        },
-        "promptContexts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/workerPromptContextDto"
-          },
-          "maxItems": 8
-        },
-        "stateRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationCreateParams": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationCreateParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "projectId",
-        "name",
-        "agentId",
-        "enabled",
-        "model",
-        "permission",
-        "reasoning",
-        "pingIntervalSeconds",
-        "workerPrompt",
-        "systemPrompt",
-        "expectedRevision"
-      ],
-      "properties": {
-        "projectId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80,
-          "x-utf8-max-bytes": 80
-        },
-        "agentId": {
-          "$ref": "#/$defs/stewardAgentId"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "permission": {
-          "$ref": "#/$defs/assistantPermission"
-        },
-        "reasoning": {
-          "type": "string",
-          "enum": ["default", "low", "medium", "high", "xhigh", "max"]
-        },
-        "pingIntervalSeconds": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 86400
-        },
-        "workerPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384
-        },
-        "systemPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384
-        },
-        "expectedRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationUpdateParams": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationUpdateParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workerId",
-        "name",
-        "agentId",
-        "model",
-        "permission",
-        "reasoning",
-        "enabled",
-        "pingIntervalSeconds",
-        "workerPrompt",
-        "systemPrompt",
-        "expectedRevision"
-      ],
-      "properties": {
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80,
-          "x-utf8-max-bytes": 80
-        },
-        "agentId": {
-          "$ref": "#/$defs/stewardAgentId"
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "permission": {
-          "$ref": "#/$defs/assistantPermission"
-        },
-        "reasoning": {
-          "type": "string",
-          "enum": ["default", "low", "medium", "high", "xhigh", "max"]
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "pingIntervalSeconds": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 86400
-        },
-        "workerPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384
-        },
-        "systemPrompt": {
-          "type": "string",
-          "maxLength": 16384,
-          "x-utf8-max-bytes": 16384
-        },
-        "expectedRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationMutationResult": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationMutationResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "configuration",
-        "stateRevision"
-      ],
-      "properties": {
-        "configuration": {
-          "$ref": "#/$defs/workerConfigurationDto"
-        },
-        "stateRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationDeleteParams": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationDeleteParams",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workerId",
-        "expectedRevision"
-      ],
-      "properties": {
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "expectedRevision": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "workerConfigurationDeleteResult": {
-      "x-codegen": true,
-      "x-codegen-name": "WorkerConfigurationDeleteResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workerId",
-        "deleted",
-        "stateRevision"
-      ],
-      "properties": {
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "deleted": {
-          "const": true
         },
         "stateRevision": {
           "type": "integer",
@@ -12496,7 +12064,6 @@
       "type": "string",
       "enum": [
         "stewardInstructions",
-        "workerInstructions",
         "routineInstructions",
         "routineBuilder",
         "playbook",
@@ -12601,7 +12168,6 @@
       "type": "string",
       "enum": [
         "stewardInstructions",
-        "workerInstructions",
         "routineInstructions",
         "routineBuilder",
         "playbook"
@@ -12805,7 +12371,7 @@
     "assistantPromptImproverTarget": {
       "x-codegen": true,
       "x-codegen-name": "AssistantPromptImproverTarget",
-      "description": "The closed selector for one agent-assisted Project surface. Steward instructions and Playbook belong to the Project and carry no owner; a Worker's and a Routine's instructions each name theirs. The daemon refuses a request that fills the wrong slot.",
+      "description": "The closed selector for one agent-assisted Project surface. Steward instructions, the Routine Builder, and Playbook belong to the Project and carry no owner; a Routine's instructions name that Routine. The daemon refuses a request that fills the wrong slot.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -12817,7 +12383,7 @@
           "$ref": "#/$defs/assistantPromptSurface"
         },
         "ownerId": {
-          "description": "The Worker or Routine whose prompt this is, or null for Project-owned Steward instructions and Playbook.",
+          "description": "The Routine whose prompt this is, or null for Project-owned Steward instructions, Routine Builder, and Playbook.",
           "type": [
             "string",
             "null"
@@ -12883,7 +12449,6 @@
           "type": "string",
           "enum": [
             "builtin.improver.steward-instructions",
-            "builtin.improver.worker-instructions",
             "builtin.improver.routine-instructions",
             "builtin.builder.routine",
             "builtin.builder.playbook"
@@ -12950,7 +12515,6 @@
           "type": "string",
           "enum": [
             "builtin.improver.steward-instructions",
-            "builtin.improver.worker-instructions",
             "builtin.improver.routine-instructions",
             "builtin.builder.routine",
             "builtin.builder.playbook"
@@ -13958,7 +13522,6 @@
       "required": [
         "id",
         "projectId",
-        "workerId",
         "triggerMode",
         "name",
         "instructions",
@@ -13985,11 +13548,6 @@
         "projectId": {
           "type": "string",
           "minLength": 1
-        },
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
         },
         "triggerMode": {
           "$ref": "#/$defs/routineTriggerMode"
@@ -14128,7 +13686,6 @@
         "projectId",
         "triggerMode",
         "name",
-        "workerId",
         "scheduleIntervalSeconds",
         "whileWaiting",
         "expectedRevision"
@@ -14147,11 +13704,6 @@
           "maxLength": 80,
           "x-utf8-max-bytes": 80
         },
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
         "scheduleIntervalSeconds": {
           "type": "integer",
           "minimum": 60,
@@ -14159,7 +13711,7 @@
         },
         "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
         "instructions": {
-          "description": "Optional complete Worker observation instructions for an agent-built Routine. Omitted creates use the generic Routine instructions.",
+          "description": "Optional complete observation instructions for an agent-built Routine. Omitted creates use the generic Routine instructions.",
           "type": "string",
           "minLength": 1,
           "maxLength": 9216,
@@ -14182,7 +13734,6 @@
         "name",
         "instructions",
         "whileWaiting",
-        "workerId",
         "scheduleIntervalSeconds",
         "expectedRevision",
         "enabled"
@@ -14209,11 +13760,6 @@
           "x-utf8-max-bytes": 9216
         },
         "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
         "scheduleIntervalSeconds": {
           "type": "integer",
           "minimum": 60,
@@ -14635,7 +14181,6 @@
         "retryDelaySeconds",
         "completeWhen",
         "whileWaiting",
-        "workerId",
         "approver"
       ],
       "properties": {
@@ -14673,11 +14218,6 @@
           "x-utf8-max-bytes": 9216
         },
         "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
-        "workerId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
         "approver": {
           "type": [
             "string",
@@ -14700,7 +14240,6 @@
         "gate",
         "completeWhen",
         "whileWaiting",
-        "workerId",
         "retryDelaySeconds",
         "approver"
       ],
@@ -14728,11 +14267,6 @@
           "x-utf8-max-bytes": 9216
         },
         "whileWaiting": { "$ref": "#/$defs/routineWhileWaitingDto" },
-        "workerId": {
-          "type": ["string", "null"],
-          "minLength": 1,
-          "maxLength": 64
-        },
         "retryDelaySeconds": {
           "type": "integer",
           "minimum": 60,
@@ -15060,8 +14594,6 @@
         "activePipelineName",
         "milestones",
         "savedPipelines",
-        "workerId",
-        "preferredWorkerAgentId",
         "expectedPlaybookRevision",
         "expectedRevision"
       ],
@@ -15089,17 +14621,6 @@
           },
           "maxItems": 16
         },
-        "workerId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "preferredWorkerAgentId": {
-          "$ref": "#/$defs/stewardAgentId"
-        },
         "expectedPlaybookRevision": {
           "type": "integer",
           "minimum": 0,
@@ -15119,20 +14640,11 @@
       "additionalProperties": false,
       "required": [
         "playbook",
-        "workerId",
         "stateRevision"
       ],
       "properties": {
         "playbook": {
           "$ref": "#/$defs/playbookDto"
-        },
-        "workerId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 64
         },
         "stateRevision": {
           "type": "integer",

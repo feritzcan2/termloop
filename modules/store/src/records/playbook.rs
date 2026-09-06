@@ -1,19 +1,16 @@
 use termloop_domain::{
     PlaybookConfiguration, PlaybookStepProgress, StewardConfiguration, TrackerConfiguration,
-    WorkerConfiguration,
 };
 
 use super::super::{CoreWriteAuthority, CurrentState, Store, StoreError};
 
 /// One atomic replacement of the user-owned Playbook and every internal
-/// on-demand check needed to execute it. A Worker may be created in the same
-/// transaction when the Project has no execution capacity yet, and the first
-/// executable Playbook may activate its already-configured Steward.
+/// on-demand check needed to execute it. The first executable Playbook may
+/// activate its already-configured Steward in the same transaction.
 #[derive(Debug, Clone)]
 pub struct PlaybookApply {
     pub configuration: PlaybookConfiguration,
     pub steward_configuration: Option<StewardConfiguration>,
-    pub create_worker: Option<WorkerConfiguration>,
     pub upsert_routines: Vec<TrackerConfiguration>,
     pub delete_routine_ids: Vec<String>,
 }
@@ -96,23 +93,6 @@ impl Store {
             );
         }
 
-        if let Some(worker) = apply.create_worker {
-            if next
-                .worker_configurations
-                .iter()
-                .any(|current| current.id == worker.id)
-            {
-                return Err(StoreError::AlreadyExists);
-            }
-            next.worker_configurations.push(worker.clone());
-            super::configuration_version::record_worker_version(
-                &mut next,
-                &worker,
-                None,
-                "Playbook created Worker",
-            );
-        }
-
         let upsert_ids = apply
             .upsert_routines
             .iter()
@@ -171,13 +151,6 @@ impl Store {
                 .playbook_configurations
                 .push(apply.configuration.clone()),
         }
-        super::configuration_version::record_playbook_version(
-            &mut next,
-            &apply.configuration,
-            None,
-            "Playbook saved",
-        );
-
         // Step answers are current state for the active pipeline. Replacing the
         // document retires every answer that the next active pipeline no longer
         // asks, in the same transaction as the checks and document.
@@ -192,6 +165,18 @@ impl Store {
                 || apply.configuration.progress_matches_current_step(progress)
         });
 
+        // The snapshot helpers expect the Playbook-to-Routine relation to have
+        // already passed validation. Validate the candidate before recording
+        // its immutable snapshot so malformed input is rejected, never allowed
+        // to reach that internal invariant.
+        crate::validation::validate_current_state(&next)
+            .map_err(|_| StoreError::ConstraintViolation)?;
+        super::configuration_version::record_playbook_version(
+            &mut next,
+            &apply.configuration,
+            None,
+            "Playbook saved",
+        );
         crate::validation::validate_current_state(&next)
             .map_err(|_| StoreError::ConstraintViolation)?;
         self.state = next;

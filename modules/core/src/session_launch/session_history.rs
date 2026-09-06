@@ -384,13 +384,6 @@ impl CoreRuntime {
             .iter()
             .filter(|configuration| configuration.project_id == project_id)
             .filter_map(|configuration| configuration.executor_session_id.as_deref())
-            .chain(
-                self.store
-                    .worker_configurations()
-                    .iter()
-                    .filter(|configuration| configuration.project_id == project_id)
-                    .filter_map(|configuration| configuration.executor_session_id.as_deref()),
-            )
             .collect::<std::collections::HashSet<_>>();
         let cached = self.session_history.projects.get(project_id);
         let mut sessions = self

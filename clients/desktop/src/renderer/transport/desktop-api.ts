@@ -70,13 +70,6 @@ import type {
   StewardConfigurationDeleteResult,
   StewardConfigurationSetParams,
   StewardConfigurationSetResult,
-  WorkerConfigurationCreateParams,
-  WorkerConfigurationDeleteParams,
-  WorkerConfigurationDeleteResult,
-  WorkerConfigurationListParams,
-  WorkerConfigurationListResult,
-  WorkerConfigurationMutationResult,
-  WorkerConfigurationUpdateParams,
   RunConfigurationCreateParams,
   RunConfigurationDeleteParams,
   RunConfigurationDeleteResult,
@@ -322,10 +315,6 @@ export type DesktopApi = {
   stewardConfigurationGet(projectId: string): Promise<StewardConfigurationGetResult>;
   stewardConfigurationSet(params: StewardConfigurationSetParams): Promise<StewardConfigurationSetResult>;
   stewardConfigurationDelete(params: StewardConfigurationDeleteParams): Promise<StewardConfigurationDeleteResult>;
-  workerConfigurationList(params: WorkerConfigurationListParams): Promise<WorkerConfigurationListResult>;
-  workerConfigurationCreate(params: WorkerConfigurationCreateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationUpdate(params: WorkerConfigurationUpdateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationDelete(params: WorkerConfigurationDeleteParams): Promise<WorkerConfigurationDeleteResult>;
   runConfigurationList(params: RunConfigurationListParams): Promise<RunConfigurationListResult>;
   runConfigurationCreate(params: RunConfigurationCreateParams): Promise<RunConfigurationMutationResult>;
   runConfigurationUpdate(params: RunConfigurationUpdateParams): Promise<RunConfigurationMutationResult>;

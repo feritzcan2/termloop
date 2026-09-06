@@ -5,9 +5,8 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
   const load = async (): Promise<PromptAsset[]> => {
     const builtIns = await desktopApi.promptAssetsGet();
     if (!projectId) return builtIns;
-    const [steward, workers, routines] = await Promise.all([
+    const [steward, routines] = await Promise.all([
       sourceApi.stewardConfigurationGet(projectId),
-      sourceApi.workerConfigurationList({ projectId }),
       sourceApi.routineConfigurationList({ projectId }),
     ]);
     const runtime: PromptAsset[] = [];
@@ -38,19 +37,6 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
       customized: stewardContext.instructionsPrompt.trim() !== stewardContext.protectedPrompt.trim(),
     });
     addRuntime("runtime.steward.wake", "Steward · Wake message", "Steward", stewardContext.wakePrompt, "project");
-    for (const context of workers.promptContexts) {
-      const worker = workers.configurations.find((candidate) => candidate.id === context.workerId);
-      const label = worker?.name ?? context.workerId;
-      const prefix = `runtime.worker.${context.workerId}`;
-      addRuntime(`${prefix}.initial`, `${label} · Activation message`, "Workers", context.initialPrompt, "worker");
-      addRuntime(`${prefix}.protected`, `${label} · Runtime and safety layer`, "Workers", context.protectedPrompt, "worker");
-      addRuntime(`${prefix}.instructions`, `${label} · Effective instructions`, "Workers", context.instructionsPrompt, "worker", {
-        editable: true,
-        canonicalBody: context.protectedPrompt,
-        customized: context.instructionsPrompt.trim() !== context.protectedPrompt.trim(),
-      });
-      addRuntime(`${prefix}.wake`, `${label} · Wake message`, "Workers", context.wakePrompt, "worker");
-    }
     for (const routine of routines.configurations) {
       const prefix = `runtime.routine.${routine.id}`;
       addRuntime(`${prefix}.instructions`, `${routine.name} · Instructions`, "Routines", routine.instructions, "routine", { editable: true });
@@ -85,29 +71,6 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
       });
       return load();
     }
-    if (id.startsWith("runtime.worker.") && id.endsWith(".instructions")) {
-      const workerId = id.slice("runtime.worker.".length, -".instructions".length);
-      const current = await sourceApi.workerConfigurationList({ projectId });
-      const worker = current.configurations.find((candidate) => candidate.id === workerId);
-      const context = current.promptContexts.find((candidate) => candidate.workerId === workerId);
-      if (!worker || !context) throw new Error("Worker prompt context is no longer available.");
-      const suffix = assistantInstructionsEditableSuffix(trimmed, context.protectedPrompt);
-      if (suffix === undefined) throw new Error("The required Worker runtime beginning must remain unchanged.");
-      await sourceApi.workerConfigurationUpdate({
-        workerId: worker.id,
-        name: worker.name,
-        agentId: worker.agentId,
-        model: worker.model,
-        permission: worker.permission,
-        reasoning: worker.reasoning,
-        enabled: worker.enabled,
-        pingIntervalSeconds: worker.pingIntervalSeconds,
-        workerPrompt: "",
-        systemPrompt: suffix,
-        expectedRevision: current.stateRevision,
-      });
-      return load();
-    }
     if (id.startsWith("runtime.routine.") && id.endsWith(".instructions")) {
       const routineId = id.slice("runtime.routine.".length, -".instructions".length);
       const current = await sourceApi.routineConfigurationList({ projectId });
@@ -119,7 +82,6 @@ export function createPromptSettingsActions(projectId: string, sourceApi: Source
         name: routine.name,
         instructions: trimmed,
         whileWaiting: routine.whileWaiting,
-        workerId: routine.workerId,
         scheduleIntervalSeconds: routine.scheduleIntervalSeconds,
         expectedRevision: current.stateRevision,
         enabled: routine.enabled,

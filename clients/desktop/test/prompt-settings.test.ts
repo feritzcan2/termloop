@@ -42,8 +42,6 @@ describe("Prompt catalog presentation", () => {
     expect(promptImproveTarget(asset({ source: "builtIn" }))).toBeUndefined();
     expect(promptImproveTarget(asset({ source: "project", id: "runtime.steward.instructions" })))
       .toEqual({ kind: "assistant", surface: "stewardInstructions", ownerId: null });
-    expect(promptImproveTarget(asset({ source: "worker", id: "runtime.worker.w-1.instructions" })))
-      .toEqual({ kind: "assistant", surface: "workerInstructions", ownerId: "w-1" });
     expect(promptImproveTarget(asset({ source: "routine", id: "runtime.routine.r-9.instructions" })))
       .toEqual({ kind: "assistant", surface: "routineInstructions", ownerId: "r-9" });
     // Runtime projections and provider prompts are nobody's to rewrite.

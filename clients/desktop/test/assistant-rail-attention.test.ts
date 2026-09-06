@@ -3,18 +3,11 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoutineConfigurationDto, RoutineHealthDto, WorkerConfigurationDto, WorkerConfigurationListResult } from "@termloop/contract/current";
+import type { RoutineConfigurationDto, RoutineConfigurationListResult, RoutineHealthDto } from "@termloop/contract/current";
 import { AssistantRail } from "../src/renderer/ui/AssistantRail.js";
 
-const worker: WorkerConfigurationDto = {
-  id: "worker-1", projectId: "project-1", name: "Playbook Worker", agentId: "codex",
-  model: "gpt-5.6-luna", permission: "default", reasoning: "medium", enabled: true,
-  pingIntervalSeconds: 300, workerPrompt: "", systemPrompt: "", executorSessionId: null,
-  generation: 1, updatedAtEpochMs: 1,
-};
-
 const routine: RoutineConfigurationDto = {
-  id: "routine-review", projectId: "project-1", workerId: worker.id,
+  id: "routine-review", projectId: "project-1",
   triggerMode: "onDemand", name: "Work ready for review", instructions: "Inspect the pull request.",
   whileWaiting: { mode: "off", instructions: "" }, enabled: true, scheduleIntervalSeconds: 60, generation: 1,
   contextMarkdown: "", contextRevision: 0, recentSourceKeys: [], relatedTaskIds: [],
@@ -44,7 +37,6 @@ function props(): ComponentProps<typeof AssistantRail> {
       stateRevision: 1, supervisorAvailability: "available",
       presence: { lastActivityAtEpochMs: null, activeCommandLabel: null, pendingProposal: false },
     }),
-    listWorkers: async () => ({ configurations: [worker], promptContexts: [], stateRevision: 1 }),
     listRoutines: async () => ({ configurations: [routine], stateRevision: 1 }),
     listRuntime: async () => ({ health: [attention], reports: [], reportsTruncated: false, stateRevision: 1 }),
     getPlaybook: async () => ({
@@ -53,16 +45,15 @@ function props(): ComponentProps<typeof AssistantRail> {
         milestones: [{
           id: "review", title: routine.name, gate: "automatic", routineId: routine.id,
           retryDelaySeconds: 300, completeWhen: "A pull request is ready.",
-          whileWaiting: routine.whileWaiting, workerId: worker.id, approver: null,
+          whileWaiting: routine.whileWaiting, approver: null,
         }],
         savedPipelines: [], updatedAtEpochMs: 1,
       },
       stateRevision: 1,
     }),
-    setSteward: vi.fn(), deleteSteward: vi.fn(), createWorker: vi.fn(), updateWorker: vi.fn(),
-    deleteWorker: vi.fn(), updatePlaybook: vi.fn(), setPlaybookTaskPosition: vi.fn(),
+    setSteward: vi.fn(), deleteSteward: vi.fn(), updatePlaybook: vi.fn(), setPlaybookTaskPosition: vi.fn(),
     runRoutineNow: vi.fn(), createRoutine: vi.fn(), updateRoutine: vi.fn(), deleteRoutine: vi.fn(),
-    improvement: undefined, setupPromptImprovement: vi.fn(), restartWorker: vi.fn(),
+    improvement: undefined, setupPromptImprovement: vi.fn(),
     restartSteward: vi.fn(), selectSession: vi.fn(), openImproverTerminal: vi.fn(),
     dismissImproverSession: vi.fn(), openTask: vi.fn(), openDetails: vi.fn(),
   } satisfies ComponentProps<typeof AssistantRail>;
@@ -98,38 +89,38 @@ describe("Assistant rail Playbook Routine status", () => {
   });
 
   it("restores each Project immediately while its silent refresh is pending", async () => {
-    let resolveProjectB: ((value: WorkerConfigurationListResult) => void) | undefined;
-    const projectBWorkers = new Promise<WorkerConfigurationListResult>((resolve) => {
+    let resolveProjectB: ((value: RoutineConfigurationListResult) => void) | undefined;
+    const projectBRoutines = new Promise<RoutineConfigurationListResult>((resolve) => {
       resolveProjectB = resolve;
     });
-    const projectBWorker = { ...worker, id: "worker-b", projectId: "project-b", name: "Project B Worker" };
+    const projectBRoutine = { ...routine, id: "routine-b", projectId: "project-b", name: "Project B check" };
 
     await act(async () => {
       root.render(createElement(AssistantRail, props()));
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(host.textContent).toContain("Playbook Worker");
+    expect(host.textContent).toContain("Work ready for review");
 
     await act(async () => root.render(createElement(AssistantRail, {
       ...props(),
       projectId: "project-b",
-      listWorkers: () => projectBWorkers,
+      listRoutines: () => projectBRoutines,
     })));
-    expect(host.textContent).not.toContain("Playbook Worker");
+    expect(host.textContent).not.toContain("Work ready for review");
 
     await act(async () => {
-      resolveProjectB?.({ configurations: [projectBWorker], promptContexts: [], stateRevision: 2 });
-      await projectBWorkers;
+      resolveProjectB?.({ configurations: [projectBRoutine], stateRevision: 2 });
+      await projectBRoutines;
       await Promise.resolve();
     });
-    expect(host.textContent).toContain("Project B Worker");
+    expect(host.textContent).toContain("Project B check");
 
     await act(async () => root.render(createElement(AssistantRail, {
       ...props(),
-      listWorkers: () => new Promise<WorkerConfigurationListResult>(() => undefined),
+      listRoutines: () => new Promise<RoutineConfigurationListResult>(() => undefined),
     })));
-    expect(host.textContent).toContain("Playbook Worker");
-    expect(host.textContent).not.toContain("Project B Worker");
+    expect(host.textContent).toContain("Work ready for review");
+    expect(host.textContent).not.toContain("Project B check");
   });
 });

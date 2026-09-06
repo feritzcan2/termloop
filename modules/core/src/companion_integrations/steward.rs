@@ -403,13 +403,6 @@ impl CoreRuntime {
                 .any(|configuration| {
                     configuration.executor_session_id.as_deref() == Some(target_session_id)
                 })
-            || self
-                .store
-                .worker_configurations()
-                .iter()
-                .any(|configuration| {
-                    configuration.executor_session_id.as_deref() == Some(target_session_id)
-                })
         {
             return Err(CoreError::CapabilityDenied);
         }
@@ -775,13 +768,6 @@ impl CoreRuntime {
             .steward_configurations()
             .iter()
             .any(|configuration| configuration.executor_session_id.as_deref() == Some(session_id))
-            || self
-                .store
-                .worker_configurations()
-                .iter()
-                .any(|configuration| {
-                    configuration.executor_session_id.as_deref() == Some(session_id)
-                })
     }
 
     pub fn steward_executor_session_id(&self, project_id: &str) -> Option<String> {

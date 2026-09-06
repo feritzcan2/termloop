@@ -93,7 +93,6 @@ fn extend_topic_names(topics: &mut BTreeSet<&'static str>, values: Vec<Projectio
             ProjectionTopic::BranchCommit => "branchCommit",
             ProjectionTopic::Companion => "companion",
             ProjectionTopic::Steward => "steward",
-            ProjectionTopic::Worker => "worker",
             ProjectionTopic::Routine => "routine",
             ProjectionTopic::TaskSource => "taskSource",
             ProjectionTopic::Playbook => "playbook",
@@ -113,7 +112,6 @@ fn projection_topic(value: &'static str) -> Option<ProjectionTopic> {
         "branchCommit" => Some(ProjectionTopic::BranchCommit),
         "companion" => Some(ProjectionTopic::Companion),
         "steward" => Some(ProjectionTopic::Steward),
-        "worker" => Some(ProjectionTopic::Worker),
         "routine" => Some(ProjectionTopic::Routine),
         "taskSource" => Some(ProjectionTopic::TaskSource),
         "playbook" => Some(ProjectionTopic::Playbook),
@@ -202,8 +200,6 @@ pub(super) async fn publish_session_invalidation(state: &AppState) {
 pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
     if method.starts_with("steward.configuration") {
         vec![ProjectionTopic::Steward]
-    } else if method.starts_with("worker.configuration") {
-        vec![ProjectionTopic::Worker]
     } else if method.starts_with("runConfiguration.") {
         vec![ProjectionTopic::Run]
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
@@ -220,7 +216,6 @@ pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
             ProjectionTopic::AgentStatus,
             ProjectionTopic::Companion,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
             ProjectionTopic::Run,
             ProjectionTopic::Playbook,
