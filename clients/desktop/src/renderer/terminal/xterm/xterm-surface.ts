@@ -60,7 +60,7 @@ export function terminalThemeForAppearance(theme: AppearanceTheme) {
     green: "#b5bd68",
     yellow: "#f0c674",
     blue: "#81a2be",
-    magenta: "#de935f",
+    magenta: "#b294bb",
     cyan: "#8abeb7",
     white: "#c5c8c6",
     brightBlack: "#666666",
@@ -68,7 +68,7 @@ export function terminalThemeForAppearance(theme: AppearanceTheme) {
     brightGreen: "#b9ca4a",
     brightYellow: "#e7c547",
     brightBlue: "#7aa6da",
-    brightMagenta: "#f0a968",
+    brightMagenta: "#c397d8",
     brightCyan: "#70c0b1",
     brightWhite: "#eaeaea",
   };
