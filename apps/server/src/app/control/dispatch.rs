@@ -1029,6 +1029,10 @@ async fn dispatch_inner(
                     })
                     .collect(),
             )),
+            "agent.profileList" => {
+                let core = state.core.lock().await;
+                Ok(core.agent_profile_list())
+            }
             "steward.configurationGet" => {
                 let mut core = state.core.lock().await;
                 let project_id = request

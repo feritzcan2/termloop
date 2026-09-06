@@ -20,6 +20,7 @@
       "session.list",
       "agent.statusList",
       "agent.capabilityList",
+      "agent.profileList",
       "steward.configurationGet",
       "worker.configurationList",
       "taskSource.list",
@@ -46,6 +47,7 @@
       "session.list",
       "agent.statusList",
       "agent.capabilityList",
+      "agent.profileList",
       "steward.configurationGet",
       "worker.configurationList",
       "routine.configurationList",
@@ -968,6 +970,18 @@
         }
       }
     },
+    "agent.profileList": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+          "$ref": "#/$defs/agentProfileDto"
+        }
+      }
+    },
     "agent.statusList": {
       "params": {
         "$ref": "#/$defs/emptyParams"
@@ -1510,6 +1524,7 @@
         "session.restartAgentsForClientLaunch",
         "session.close",
         "agent.capabilityList",
+        "agent.profileList",
         "agent.statusList",
         "agent.observe",
         "steward.configurationGet",
@@ -6978,7 +6993,10 @@
           ]
         },
         "templateRef": {
-          "const": "builtin.quick-action.free-prompt"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
         },
         "bindings": {
           "type": "object",
@@ -7061,7 +7079,10 @@
           ]
         },
         "templateRef": {
-          "const": "builtin.quick-action.free-prompt"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
         },
         "bindings": {
           "type": "object",
@@ -9370,6 +9391,77 @@
         },
         "native_fork_supported": {
           "type": "boolean"
+        }
+      }
+    },
+    "agentProfileDto": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentProfileDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "category",
+        "version",
+        "permission",
+        "read_only",
+        "user_invocable",
+        "agent_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "user_invocable": {
+          "type": "boolean"
+        },
+        "agent_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+          }
         }
       }
     },

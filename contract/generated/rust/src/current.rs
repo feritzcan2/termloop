@@ -22,106 +22,113 @@ static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> =
 static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> =
+static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[0-9]+$").expect("generated contract pattern"));
-static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z2-9]{4}-[A-Z2-9]{4}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$")
+        .expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/remotes/[^/]+/.+").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
@@ -129,66 +136,72 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
         "\\S" => CONTRACT_PATTERN_0.is_match(text),
         "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" => CONTRACT_PATTERN_1.is_match(text),
-        "^[0-9]+$" => CONTRACT_PATTERN_2.is_match(text),
+        "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$" => {
+            CONTRACT_PATTERN_2.is_match(text)
+        }
+        "^[0-9]+$" => CONTRACT_PATTERN_3.is_match(text),
         "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" => {
-            CONTRACT_PATTERN_3.is_match(text)
+            CONTRACT_PATTERN_4.is_match(text)
         }
-        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_4.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_5.is_match(text),
+        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_5.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_6.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_6.is_match(text)
-        }
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
             CONTRACT_PATTERN_7.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_8.is_match(text),
-        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_12.is_match(text),
-        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_13.is_match(text),
-        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_14.is_match(text),
-        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_16.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_17.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_18.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_19.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_20.is_match(text),
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
+            CONTRACT_PATTERN_8.is_match(text)
+        }
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_13.is_match(text),
+        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_14.is_match(text),
+        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_15.is_match(text),
+        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_17.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_18.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_19.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_20.is_match(text),
+        "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$" => {
             CONTRACT_PATTERN_21.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_22.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_22.is_match(text),
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_23.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_26.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_27.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_28.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_29.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_30.is_match(text),
-        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_31.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_32.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_33.is_match(text),
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_29.is_match(text)
+        }
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_30.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_31.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_32.is_match(text),
+        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_33.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_34.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_35.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:2fee90fc47ad4648fe6c2790983debd466996c51e8e650d80ccefb748532f7cd";
+    "sha256:48f70c0db14b2e0c2364e8c0954504691f24b0635e8211e93fc6a56497c770a6";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -305,6 +318,7 @@ pub const METHODS: &[&str] = &[
     "session.restartAgentsForClientLaunch",
     "session.close",
     "agent.capabilityList",
+    "agent.profileList",
     "agent.statusList",
     "agent.observe",
     "steward.configurationGet",
@@ -381,6 +395,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "session.list",
     "agent.statusList",
     "agent.capabilityList",
+    "agent.profileList",
     "steward.configurationGet",
     "worker.configurationList",
     "taskSource.list",
@@ -404,6 +419,7 @@ pub const COMPANION_METHODS: &[&str] = &[
     "session.list",
     "agent.statusList",
     "agent.capabilityList",
+    "agent.profileList",
     "steward.configurationGet",
     "worker.configurationList",
     "routine.configurationList",
@@ -4198,6 +4214,20 @@ pub struct AgentCapabilityDto {
     pub native_fork_supported: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentProfileDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub version: u64,
+    pub permission: String,
+    pub read_only: bool,
+    pub user_invocable: bool,
+    pub agent_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentForkUnavailableReason {
     #[serde(rename = "sourceNotRunning")]
@@ -7726,6 +7756,8 @@ pub type SessionPreviewRelocateAgentToProjectResult = SessionRelocationPreviewDt
 pub type SessionRelocateAgentToProjectResult = SessionDto;
 pub type AgentCapabilityListParams = EmptyParams;
 pub type AgentCapabilityListResult = Vec<AgentCapabilityDto>;
+pub type AgentProfileListParams = EmptyParams;
+pub type AgentProfileListResult = Vec<AgentProfileDto>;
 pub type AgentStatusListParams = EmptyParams;
 pub type AgentStatusListResult = Vec<AgentStatusDto>;
 pub type StewardConfigurationGetParams = ProjectIdParams;
@@ -7889,6 +7921,7 @@ fn validate_method(value: &Value) -> bool {
             "session.restartAgentsForClientLaunch",
             "session.close",
             "agent.capabilityList",
+            "agent.profileList",
             "agent.statusList",
             "agent.observe",
             "steward.configurationGet",
@@ -15234,70 +15267,7 @@ fn validate_agent_coordination_delivery_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object
-            .get("projectId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object
-                .get("cwd")
-                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object.get("agentId").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    text.chars().count() >= 1
-                        && text.chars().count() <= 64
-                        && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text)
-                })
-            })
-            && object.get("model").is_some_and(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
-            })
-            && object.get("permission").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
-                })
-            })
-            && object.get("reasoning").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
-                })
-            })
-            && object.get("templateRef").is_some_and(|field| {
-                field == &serde_json::json!("builtin.quick-action.free-prompt")
-            })
-            && object.get("bindings").is_some_and(|field| {
-                field.as_object().is_some_and(|object| {
-                    object.get("prompt").is_some_and(|field| {
-                        field.as_str().is_some_and(|text| {
-                            text.chars().count() >= 1 && text.chars().count() <= 32768
-                        })
-                    }) && object.keys().all(|key| ["prompt"].contains(&key.as_str()))
-                })
-            })
-            && object.get("attachments").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 1
-                        && items
-                            .iter()
-                            .all(|item| validate_quick_action_image_attachment(item))
-                })
-            })
-            && object.keys().all(|key| {
-                [
-                    "projectId",
-                    "cwd",
-                    "agentId",
-                    "model",
-                    "permission",
-                    "reasoning",
-                    "templateRef",
-                    "bindings",
-                    "attachments",
-                ]
-                .contains(&key.as_str())
-            })
-    })
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -15310,76 +15280,7 @@ fn validate_quick_action_params(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_launch_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| {
-        object
-            .get("projectId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object
-                .get("cwd")
-                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object.get("agentId").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    text.chars().count() >= 1
-                        && text.chars().count() <= 64
-                        && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text)
-                })
-            })
-            && object.get("model").is_some_and(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
-            })
-            && object.get("permission").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
-                })
-            })
-            && object.get("reasoning").is_some_and(|field| {
-                field.as_str().is_some_and(|text| {
-                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
-                })
-            })
-            && object.get("templateRef").is_some_and(|field| {
-                field == &serde_json::json!("builtin.quick-action.free-prompt")
-            })
-            && object.get("bindings").is_some_and(|field| {
-                field.as_object().is_some_and(|object| {
-                    object.get("prompt").is_some_and(|field| {
-                        field.as_str().is_some_and(|text| {
-                            text.chars().count() >= 1 && text.chars().count() <= 32768
-                        })
-                    }) && object.keys().all(|key| ["prompt"].contains(&key.as_str()))
-                })
-            })
-            && object.get("attachments").is_some_and(|field| {
-                field.as_array().is_some_and(|items| {
-                    items.len() <= 1
-                        && items
-                            .iter()
-                            .all(|item| validate_quick_action_image_attachment(item))
-                })
-            })
-            && object.get("launchTicket").is_some_and(|field| {
-                field
-                    .as_str()
-                    .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
-            })
-            && object.keys().all(|key| {
-                [
-                    "projectId",
-                    "cwd",
-                    "agentId",
-                    "model",
-                    "permission",
-                    "reasoning",
-                    "templateRef",
-                    "bindings",
-                    "attachments",
-                    "launchTicket",
-                ]
-                .contains(&key.as_str())
-            })
-    })
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("launchTicket").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "launchTicket"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -17812,6 +17713,87 @@ fn validate_agent_capability_dto(value: &Value) -> bool {
                     "tracked_helpers_supported",
                     "resume_supported",
                     "native_fork_supported",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_profile_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches(
+                        "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        text,
+                    )
+            })
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 240)
+        }) && object.get("category").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 40)
+        }) && object.get("version").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("permission").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+            })
+        }) && object
+            .get("read_only")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .get("user_invocable")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("agent_ids").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 8
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 64
+                                    && contract_pattern_matches(
+                                        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                                        text,
+                                    )
+                            })
+                        })
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "name",
+                    "description",
+                    "category",
+                    "version",
+                    "permission",
+                    "read_only",
+                    "user_invocable",
+                    "agent_ids",
                 ]
                 .contains(&key.as_str())
             })
@@ -27755,6 +27737,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<AgentCapabilityListParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
         }
+        "agent.profileList" => {
+            serde_json::from_value::<AgentProfileListParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
         "agent.statusList" => {
             serde_json::from_value::<AgentStatusListParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
@@ -28474,6 +28460,12 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
             serde_json::from_value::<AgentCapabilityListResult>(result.clone()).is_ok()
                 && result.as_array().is_some_and(|items| {
                     items.iter().all(|item| validate_agent_capability_dto(item))
+                })
+        }
+        "agent.profileList" => {
+            serde_json::from_value::<AgentProfileListResult>(result.clone()).is_ok()
+                && result.as_array().is_some_and(|items| {
+                    items.len() <= 64 && items.iter().all(|item| validate_agent_profile_dto(item))
                 })
         }
         "agent.statusList" => {

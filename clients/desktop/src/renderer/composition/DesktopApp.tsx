@@ -3,7 +3,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { dismissibleFailedProvisioningOperationId, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, ConfigurationVersionDto, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -610,6 +610,7 @@ export function DesktopApp() {
   // not expose diagnostics in a packaged release.
   const [isPackaged, setIsPackaged] = useState(true);
   const [agentCapabilities, setAgentCapabilities] = useState<AgentCapabilityDto[]>([]);
+  const [agentProfiles, setAgentProfiles] = useState<AgentProfileDto[]>([]);
   const [assistantRefreshToken, setAssistantRefreshToken] = useState(0);
   const [keepAwakeRefreshToken, setKeepAwakeRefreshToken] = useState(0);
   const [taskSourceRefreshToken, setTaskSourceRefreshToken] = useState(0);
@@ -700,11 +701,19 @@ export function DesktopApp() {
   useEffect(() => {
     if (projection.connection !== "connected") {
       setAgentCapabilities([]);
+      setAgentProfiles([]);
       return;
     }
     let active = true;
-    void selectedSourceApi.agentCapabilityList().then((value) => { if (active) setAgentCapabilities(value); }).catch(() => {
+    void selectedSourceApi.agentCapabilityList().then((capabilities) => {
+      if (active) setAgentCapabilities(capabilities);
+    }).catch(() => {
       if (active) setAgentCapabilities([]);
+    });
+    void selectedSourceApi.agentProfileList().then((profiles) => {
+      if (active) setAgentProfiles(profiles);
+    }).catch(() => {
+      if (active) setAgentProfiles([]);
     });
     return () => { active = false; };
   }, [projection.connection, selectedProject?.connectionProfileId]);
@@ -967,10 +976,10 @@ export function DesktopApp() {
       return message;
     }
   }, []);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string) => {
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string) => {
     try {
       const session = requireQuickActionSession(
-        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, prompt, attachmentIds, launchTicket),
+        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket),
         projectId,
       );
       await refreshProjection();
@@ -2200,6 +2209,7 @@ export function DesktopApp() {
       deletingTaskIds={deletingTaskIds}
       agentStatuses={presentedAgentStatuses}
       agentCapabilities={agentCapabilities}
+      agentProfiles={agentProfiles}
       connection={projection.connection}
       connectionMessage={projection.message}
       reconnectSource={async (profileId) => {
@@ -2318,7 +2328,7 @@ export function DesktopApp() {
       loadSessionHistory={loadSessionHistory}
       loadSessionHistoryPreview={loadSessionHistoryPreview}
       resumeHistorySession={resumeHistorySession}
-      previewQuickAction={(projectId, agentId, model, permission, reasoning, prompt, attachmentIds) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, prompt, attachmentIds)}
+      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={(attachmentId) => {
         const identity = connectionAttachmentIdentity(attachmentId);

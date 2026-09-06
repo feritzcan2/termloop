@@ -88,6 +88,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   sessionRestoreDeleted: "termloop:session-restore-deleted",
   agentStatusList: "termloop:agent-status-list",
   agentCapabilityList: "termloop:agent-capability-list",
+  agentProfileList: "termloop:agent-profile-list",
   stewardConfigurationGet: "termloop:steward-configuration-get",
   stewardConfigurationSet: "termloop:steward-configuration-set",
   stewardConfigurationDelete: "termloop:steward-configuration-delete",
