@@ -19,6 +19,7 @@ const GRAPH_BYTES_LIMIT: usize = 128 * 1024 * 1024;
 const SOURCE_NODE_LIMIT: usize = 100_000;
 const SOURCE_EDGE_LIMIT: usize = 500_000;
 const HOTSPOT_LIMIT: usize = 50;
+const COMMUNITY_SUMMARY_LIMIT: usize = 2_000;
 const GRAPH_EDGE_LIMIT: usize = 4_000;
 const NODE_CONNECTION_LIMIT: usize = 256;
 const REFRESH_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -104,6 +105,14 @@ struct ArchitectureEdge {
     confidence_score: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ArchitectureCommunitySummary {
+    key: String,
+    name: String,
+    node_count: u64,
+    risk_score: f64,
+}
+
 struct ArchitectureIndex {
     built_at_commit: Option<String>,
     nodes: Vec<ArchitectureNode>,
@@ -147,9 +156,15 @@ impl ProjectArchitecturePlan {
     pub fn graph(
         &self,
         center_node_id: Option<&str>,
+        community_key: Option<&str>,
         depth: usize,
         limit: usize,
     ) -> Result<Value, CoreError> {
+        if center_node_id.is_some() && community_key.is_some() {
+            return Err(CoreError::InvalidParams(
+                "Architecture graph accepts either a center node or a community, not both".into(),
+            ));
+        }
         let observation = self.read()?;
         let Some(index) = observation.index else {
             return Ok(json!({
@@ -159,7 +174,13 @@ impl ProjectArchitecturePlan {
                 "truncated": false,
             }));
         };
-        index.graph_result(observation.summary, center_node_id, depth, limit)
+        index.graph_result(
+            observation.summary,
+            center_node_id,
+            community_key,
+            depth,
+            limit,
+        )
     }
 
     pub fn node(&self, node_id: &str) -> Result<Value, CoreError> {
@@ -319,10 +340,16 @@ impl ArchitectureIndex {
             return Err(());
         }
         let mut ids = HashMap::with_capacity(source.nodes.len());
+        let mut seen_ids = HashSet::with_capacity(source.nodes.len());
+        let mut excluded_ids = HashSet::new();
         let mut nodes = Vec::with_capacity(source.nodes.len());
         for raw in source.nodes {
-            if !valid_required(&raw.id, 1024) || ids.contains_key(&raw.id) {
+            if !valid_required(&raw.id, 1024) || !seen_ids.insert(raw.id.clone()) {
                 return Err(());
+            }
+            if excluded_source_path(raw.source_file.as_deref()) {
+                excluded_ids.insert(raw.id);
+                continue;
             }
             let label = raw.label.unwrap_or_else(|| raw.id.clone());
             if !valid_required(&label, 512)
@@ -367,6 +394,9 @@ impl ArchitectureIndex {
         let mut cross_community_degree = vec![0_u64; nodes.len()];
         let mut skipped_edges = 0_usize;
         for raw in source.links {
+            if excluded_ids.contains(&raw.source) || excluded_ids.contains(&raw.target) {
+                continue;
+            }
             let (Some(&source_index), Some(&target_index)) =
                 (ids.get(&raw.source), ids.get(&raw.target))
             else {
@@ -444,11 +474,8 @@ impl ArchitectureIndex {
         let mut hotspots = self.nodes.iter().collect::<Vec<_>>();
         hotspots.sort_by(|left, right| hotspot_order(left, right));
         let hotspots = hotspots.into_iter().take(HOTSPOT_LIMIT).collect::<Vec<_>>();
-        let communities = self
-            .nodes
-            .iter()
-            .filter_map(|node| node.community.as_ref())
-            .collect::<HashSet<_>>();
+        let (community_count, communities) = self.community_summaries();
+        let community_catalog_truncated = community_count > communities.len() as u64;
         json!({
             "project_id": project_id,
             "status": status,
@@ -457,23 +484,77 @@ impl ArchitectureIndex {
             "current_commit": current_commit,
             "node_count": self.nodes.len() as u64,
             "edge_count": self.edges.len() as u64,
-            "community_count": communities.len() as u64,
+            "community_count": community_count,
+            "communities": communities,
+            "community_catalog_truncated": community_catalog_truncated,
             "hotspots": hotspots,
             "warning": self.warning,
         })
+    }
+
+    fn community_summaries(&self) -> (u64, Vec<ArchitectureCommunitySummary>) {
+        let mut groups = BTreeMap::<String, (usize, Option<usize>, u64)>::new();
+        for (index, node) in self.nodes.iter().enumerate() {
+            groups
+                .entry(community_key(node.community.as_ref()))
+                .and_modify(|(representative, named, count)| {
+                    *count += 1;
+                    if hotspot_order(node, &self.nodes[*representative]).is_lt() {
+                        *representative = index;
+                    }
+                    if node.community_name.is_some()
+                        && named
+                            .is_none_or(|current| hotspot_order(node, &self.nodes[current]).is_lt())
+                    {
+                        *named = Some(index);
+                    }
+                })
+                .or_insert((index, node.community_name.as_ref().map(|_| index), 1));
+        }
+        let community_count = groups.len() as u64;
+        let mut summaries = groups
+            .into_iter()
+            .map(|(key, (representative_index, named_index, node_count))| {
+                let representative = &self.nodes[representative_index];
+                let named = &self.nodes[named_index.unwrap_or(representative_index)];
+                ArchitectureCommunitySummary {
+                    key,
+                    name: architecture_area_name(named),
+                    node_count,
+                    risk_score: representative.risk_score,
+                }
+            })
+            .collect::<Vec<_>>();
+        summaries.sort_by(|left, right| {
+            right
+                .risk_score
+                .total_cmp(&left.risk_score)
+                .then_with(|| right.node_count.cmp(&left.node_count))
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        summaries.truncate(COMMUNITY_SUMMARY_LIMIT);
+        (community_count, summaries)
     }
 
     fn graph_result(
         &self,
         summary: Value,
         center_node_id: Option<&str>,
+        selected_community: Option<&str>,
         depth: usize,
         limit: usize,
     ) -> Result<Value, CoreError> {
         let limit = limit.clamp(20, 500);
-        let selected = match center_node_id {
-            Some(center) => self.neighborhood(center, depth.clamp(1, 3), limit)?,
-            None => self.overview(limit),
+        let selected = match (center_node_id, selected_community) {
+            (Some(center), None) => self.neighborhood(center, depth.clamp(1, 3), limit)?,
+            (None, Some(community)) => self.community_view(community, limit)?,
+            (None, None) => self.overview(limit),
+            (Some(_), Some(_)) => {
+                return Err(CoreError::InvalidParams(
+                    "Architecture graph accepts either a center node or a community, not both"
+                        .into(),
+                ));
+            }
         };
         let nodes = self
             .nodes
@@ -591,6 +672,62 @@ impl ArchitectureIndex {
         }
         Ok(selected)
     }
+
+    fn community_view(
+        &self,
+        selected_community: &str,
+        limit: usize,
+    ) -> Result<HashSet<String>, CoreError> {
+        let mut members = self
+            .nodes
+            .iter()
+            .filter(|node| community_key(node.community.as_ref()) == selected_community)
+            .collect::<Vec<_>>();
+        if members.is_empty() {
+            return Err(CoreError::NotFound);
+        }
+        members.sort_by(|left, right| hotspot_order(left, right));
+
+        let member_budget = members.len().min((limit * 4 / 5).max(1));
+        let mut selected = members
+            .iter()
+            .take(member_budget)
+            .map(|node| node.id.clone())
+            .collect::<HashSet<_>>();
+        let member_ids = members
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut boundary_ids = HashSet::new();
+        for edge in self
+            .edges
+            .iter()
+            .filter(|edge| !ownership_relation(&edge.relation))
+        {
+            if selected.contains(&edge.source) && !member_ids.contains(edge.target.as_str()) {
+                boundary_ids.insert(edge.target.as_str());
+            }
+            if selected.contains(&edge.target) && !member_ids.contains(edge.source.as_str()) {
+                boundary_ids.insert(edge.source.as_str());
+            }
+        }
+        let mut boundary = self
+            .nodes
+            .iter()
+            .filter(|node| boundary_ids.contains(node.id.as_str()))
+            .collect::<Vec<_>>();
+        boundary.sort_by(|left, right| hotspot_order(left, right));
+        for node in boundary.into_iter().take(limit / 5) {
+            selected.insert(node.id.clone());
+        }
+        for node in members.into_iter().skip(member_budget) {
+            if selected.len() >= limit {
+                break;
+            }
+            selected.insert(node.id.clone());
+        }
+        Ok(selected)
+    }
 }
 
 fn empty_summary(
@@ -609,6 +746,8 @@ fn empty_summary(
         "node_count": 0,
         "edge_count": 0,
         "community_count": 0,
+        "communities": [],
+        "community_catalog_truncated": false,
         "hotspots": [],
         "warning": warning,
     })
@@ -654,13 +793,17 @@ fn normalize_confidence(confidence: Option<&str>) -> String {
 }
 
 fn infer_kind(label: &str, source_file: Option<&str>) -> String {
-    let file_candidate = source_file.unwrap_or(label).to_ascii_lowercase();
+    let label_lower = label.to_ascii_lowercase();
+    let source_basename = source_file
+        .and_then(|source| source.rsplit(['/', '\\']).next())
+        .map(str::to_ascii_lowercase);
     if [
         ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".java", ".kt", ".cs", ".cpp", ".c",
         ".h",
     ]
     .iter()
-    .any(|extension| file_candidate.ends_with(extension))
+    .any(|extension| label_lower.ends_with(extension))
+        || source_basename.as_deref() == Some(label_lower.as_str())
     {
         "file".into()
     } else if label.ends_with("()") {
@@ -680,6 +823,25 @@ fn valid_optional(value: &Option<String>, max: usize) -> bool {
     value
         .as_ref()
         .is_none_or(|value| value.chars().count() <= max)
+}
+
+fn excluded_source_path(source_file: Option<&str>) -> bool {
+    let Some(source_file) = source_file else {
+        return false;
+    };
+    let normalized = source_file.replace('\\', "/").to_ascii_lowercase();
+    let components = normalized
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    components.iter().any(|component| {
+        matches!(
+            *component,
+            ".git" | ".zig-cache" | "node_modules" | "vendor" | "target" | "dist"
+        )
+    }) || components
+        .windows(2)
+        .any(|pair| pair == ["contract", "generated"])
 }
 
 fn log_max(values: impl Iterator<Item = u64>) -> f64 {
@@ -710,6 +872,35 @@ fn community_key(community: Option<&Community>) -> String {
         Some(Community::Text(value)) => format!("s:{value}"),
         None => "z:".into(),
     }
+}
+
+fn architecture_area_name(node: &ArchitectureNode) -> String {
+    if let Some(name) = &node.community_name {
+        return name.clone();
+    }
+    if let Some(source_file) = &node.source_file {
+        let normalized = source_file.replace('\\', "/");
+        let parts = normalized
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>();
+        if let Some(file) = parts.last() {
+            let parent = parts[..parts.len().saturating_sub(1)]
+                .iter()
+                .rev()
+                .copied()
+                .find(|part| {
+                    !matches!(
+                        part.to_ascii_lowercase().as_str(),
+                        "src" | "source" | "lib" | "app"
+                    )
+                });
+            let name =
+                parent.map_or_else(|| (*file).to_owned(), |parent| format!("{parent} / {file}"));
+            return name.chars().take(512).collect();
+        }
+    }
+    node.label.clone()
 }
 
 #[cfg(test)]
@@ -762,9 +953,53 @@ mod tests {
     }
 
     #[test]
+    fn community_graph_includes_members_and_structural_boundary_context() {
+        let index = fixture();
+
+        assert_eq!(
+            index.community_view("n:2", 20).unwrap(),
+            HashSet::from(["a".into(), "b".into()])
+        );
+        assert!(matches!(
+            index.community_view("n:missing", 20),
+            Err(CoreError::NotFound)
+        ));
+    }
+
+    #[test]
     fn duplicate_nodes_make_the_cache_invalid() {
         let duplicate = br#"{"nodes":[{"id":"a"},{"id":"a"}],"links":[]}"#;
         assert!(ArchitectureIndex::parse(duplicate).is_err());
+    }
+
+    #[test]
+    fn kind_inference_does_not_turn_every_symbol_with_a_source_file_into_a_file() {
+        assert_eq!(infer_kind("Shell.tsx", Some("ui/Shell.tsx")), "file");
+        assert_eq!(infer_kind("render()", Some("ui/Shell.tsx")), "function");
+        assert_eq!(infer_kind("Shell", Some("ui/Shell.tsx")), "type");
+    }
+
+    #[test]
+    fn generated_and_vendored_nodes_do_not_pollute_owned_architecture() {
+        let index = ArchitectureIndex::parse(
+            br#"{
+              "nodes":[
+                {"id":"owned","source_file":"modules/core/src/lib.rs"},
+                {"id":"vendored","source_file":"vendor/dependency/src/lib.rs"},
+                {"id":"generated","source_file":"contract/generated/rust/src/current.rs"}
+              ],
+              "links":[
+                {"source":"owned","target":"vendored","relation":"calls"},
+                {"source":"generated","target":"owned","relation":"calls"}
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(index.nodes.len(), 1);
+        assert_eq!(index.nodes[0].id, "owned");
+        assert!(index.edges.is_empty());
+        assert!(index.warning.is_none());
     }
 
     #[test]
@@ -774,5 +1009,20 @@ mod tests {
         index.nodes[1].risk_score = 90.0;
 
         assert_eq!(index.overview(1), HashSet::from(["b".into()]));
+    }
+
+    #[test]
+    fn community_catalog_is_counted_named_and_ranked() {
+        let mut index = fixture();
+        index.nodes[0].source_file = Some("clients/desktop/src/renderer/ui/Shell.tsx".into());
+        let (count, summaries) = index.community_summaries();
+
+        assert_eq!(count, 2);
+        let application = summaries
+            .iter()
+            .find(|community| community.key == "n:1")
+            .unwrap();
+        assert_eq!(application.name, "ui / Shell.tsx");
+        assert_eq!(application.node_count, 2);
     }
 }
