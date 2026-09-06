@@ -86,7 +86,11 @@ interface ComposerImage {
 }
 
 export default function SessionRoute() {
-  const { sessionId, connectionId } = useLocalSearchParams<{ sessionId: string; connectionId?: string }>();
+  const { sessionId, connectionId, projectId: routeProjectId } = useLocalSearchParams<{
+    sessionId: string;
+    connectionId?: string;
+    projectId?: string;
+  }>();
   const router = useRouter();
   const focused = useIsFocused();
   const connections = useConnections();
@@ -116,6 +120,11 @@ export default function SessionRoute() {
   const session = selectingRouteConnection || unresolvedScopedRoute
     ? undefined
     : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
+  const backProjectId = session?.project_id ?? routeProjectId;
+  const backProjectRoute = backProjectId === undefined ? undefined : {
+    pathname: "/project/[projectId]" as const,
+    params: connectionRouteParams(resolvedRouteConnectionId ?? connectionId, { projectId: backProjectId }),
+  };
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
   const changesTaskId = useMemo(() => {
     if (store.overview === undefined || session?.kind !== "Agent") return undefined;
@@ -246,7 +255,12 @@ export default function SessionRoute() {
             );
     return (
       <Screen edges={["top", "bottom"]}>
-        <ScreenHeader back="Project" title="Session" right={<MockBadge />} />
+        <ScreenHeader
+          back="Project"
+          backFallback={backProjectRoute}
+          title="Session"
+          right={<MockBadge />}
+        />
         <View style={styles.centre}>
           {placeholder}
         </View>
@@ -372,10 +386,7 @@ export default function SessionRoute() {
       <View style={styles.header}>
         <ScreenHeader
           back="Project"
-          backFallback={{
-            pathname: "/project/[projectId]",
-            params: connectionRouteParams(connections.selectedId, { projectId: session.project_id }),
-          }}
+          backFallback={backProjectRoute}
           center={
             <View style={styles.identityZone}>
               <Text style={styles.identity} numberOfLines={1}>{identity}</Text>

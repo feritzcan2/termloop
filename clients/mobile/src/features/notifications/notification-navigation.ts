@@ -1,5 +1,10 @@
 export type NotificationDestination =
-  | { readonly kind: "session"; readonly connectionId?: string; readonly sessionId: string }
+  | {
+    readonly kind: "session";
+    readonly connectionId?: string;
+    readonly projectId?: string;
+    readonly sessionId: string;
+  }
   | { readonly kind: "steward"; readonly connectionId?: string; readonly projectId: string };
 
 export interface NotificationConnectionScope {
@@ -11,7 +16,11 @@ export interface NotificationConnectionScope {
 export type NotificationRoute =
   | {
     readonly pathname: "/session/[sessionId]";
-    readonly params: { readonly sessionId: string; readonly connectionId: string };
+    readonly params: {
+      readonly sessionId: string;
+      readonly connectionId: string;
+      readonly projectId?: string;
+    };
   }
   | {
     readonly pathname: "/project/[projectId]";
@@ -23,6 +32,7 @@ export type NotificationRoute =
 export function notificationDestination(data: unknown): NotificationDestination | undefined {
   if (!isRecord(data)) return undefined;
   const connectionId = nonEmptyString(data.connectionId);
+  const projectId = nonEmptyString(data.projectId);
 
   const chatProjectId = nonEmptyString(data.chatProjectId);
   if (chatProjectId !== undefined) return {
@@ -35,6 +45,7 @@ export function notificationDestination(data: unknown): NotificationDestination 
   return sessionId === undefined ? undefined : {
     kind: "session",
     ...(connectionId === undefined ? {} : { connectionId }),
+    ...(projectId === undefined ? {} : { projectId }),
     sessionId,
   };
 }
@@ -80,12 +91,31 @@ export function notificationRoute(
   return destination.kind === "session"
     ? {
       pathname: "/session/[sessionId]",
-      params: { sessionId: destination.sessionId, connectionId },
+      params: {
+        sessionId: destination.sessionId,
+        connectionId,
+        ...(destination.projectId === undefined ? {} : { projectId: destination.projectId }),
+      },
     }
     : {
       pathname: "/project/[projectId]",
       params: { projectId: destination.projectId, connectionId },
     };
+}
+
+/// A notification can launch the app without useful native-stack history. Seed the
+/// owning Project directly beneath an Agent so both the header and iOS back gesture
+/// have the same deterministic destination.
+export function notificationRouteStack(
+  destination: NotificationDestination,
+  connectionId: string,
+): readonly [NotificationRoute] | readonly [NotificationRoute, NotificationRoute] {
+  const target = notificationRoute(destination, connectionId);
+  if (destination.kind !== "session" || destination.projectId === undefined) return [target];
+  return [{
+    pathname: "/project/[projectId]",
+    params: { projectId: destination.projectId, connectionId },
+  }, target];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
