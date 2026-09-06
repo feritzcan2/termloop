@@ -28,8 +28,8 @@ function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProp
     remove: vi.fn(async () => []),
     setEnabled: vi.fn(async () => []),
     subscribeStatus: vi.fn(() => () => undefined),
-    appearanceTheme: "dark",
-    changeAppearanceTheme: vi.fn(),
+    appearancePreference: "system",
+    changeAppearancePreference: vi.fn(),
     loadNotificationPreferences: vi.fn(async () => ({ ...defaultNotificationPreferences })),
     saveNotificationPreferences: vi.fn(async (value) => value),
     ...overrides,
@@ -111,21 +111,23 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".server-profiles-layer")).toBeNull();
   });
 
-  it("offers dark and light appearance choices", async () => {
-    const changeAppearanceTheme = vi.fn();
+  it("offers system, light, and dark appearance choices", async () => {
+    const changeAppearancePreference = vi.fn();
     await act(async () => root.render(createElement(SettingsDialog, props({
       initialPage: "appearance",
-      appearanceTheme: "dark",
-      changeAppearanceTheme,
+      appearancePreference: "system",
+      changeAppearancePreference,
     }))));
 
-    const dark = container.querySelector<HTMLButtonElement>('[role="radio"]:first-of-type');
-    const light = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    const options = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    const system = options.find((option) => option.textContent?.includes("System"));
+    const light = options
       .find((option) => option.textContent?.includes("Light"));
-    expect(dark?.getAttribute("aria-checked")).toBe("true");
+    expect(options).toHaveLength(3);
+    expect(system?.getAttribute("aria-checked")).toBe("true");
     expect(light?.getAttribute("aria-checked")).toBe("false");
 
     await act(async () => light?.click());
-    expect(changeAppearanceTheme).toHaveBeenCalledWith("light");
+    expect(changeAppearancePreference).toHaveBeenCalledWith("light");
   });
 });

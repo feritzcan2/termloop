@@ -79,7 +79,11 @@ import type {
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
 import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
-import { appearanceTheme, setAppearanceTheme, subscribeAppearanceTheme } from "../appearance-theme.js";
+import {
+  appearancePreference,
+  setAppearancePreference,
+  subscribeAppearancePreference,
+} from "../appearance-theme.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
 import {
   SIDEBAR_MIN_WIDTH,
@@ -416,10 +420,10 @@ export function shellNativeOverlayOpen(state: {
 }
 
 export function Shell(props: ShellProps) {
-  const selectedAppearanceTheme = useSyncExternalStore(
-    subscribeAppearanceTheme,
-    appearanceTheme,
-    appearanceTheme,
+  const selectedAppearancePreference = useSyncExternalStore(
+    subscribeAppearancePreference,
+    appearancePreference,
+    appearancePreference,
   );
   const [renameSessionId, setRenameSessionId] = useState<string>();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -1937,8 +1941,8 @@ export function Shell(props: ShellProps) {
       /> : null}
       {settingsPage ? <SettingsDialog
         initialPage={settingsPage}
-        appearanceTheme={selectedAppearanceTheme}
-        changeAppearanceTheme={setAppearanceTheme}
+        appearancePreference={selectedAppearancePreference}
+        changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
         saveNotificationPreferences={props.saveNotificationPreferences}
         list={props.listConnectionProfiles}
