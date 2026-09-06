@@ -7446,8 +7446,9 @@
           "maximum": 127
         },
         "display": {
+          "description": "Complete inspectable CLI argument. Provider instructions are bounded to 64 KiB before any required command-line escaping.",
           "type": "string",
-          "maxLength": 4096
+          "maxLength": 524288
         },
         "visibility": {
           "type": "string",

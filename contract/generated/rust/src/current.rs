@@ -201,7 +201,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:be31d7d9a471fe1af8520b22981b20e2580cca9e7555924df8a998092e3aace8";
+    "sha256:295bc925df5732836f3a4245730d2f307ec94efcedc4fb5f045a84c3a509ff90";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -15515,7 +15515,7 @@ fn validate_inspectable_launch_argument(value: &Value) -> bool {
         }) && object.get("display").is_some_and(|field| {
             field
                 .as_str()
-                .is_some_and(|text| text.chars().count() <= 4096)
+                .is_some_and(|text| text.chars().count() <= 524288)
         }) && object.get("visibility").is_some_and(|field| {
             field
                 .as_str()
