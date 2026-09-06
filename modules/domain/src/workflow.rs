@@ -1,8 +1,9 @@
 //! Pure Project-scoped workflow configuration values.
 //!
 //! A workflow is a small, durable recipe for coordinating ordinary Agent
-//! Sessions. Executions remain normal Sessions; this module intentionally
-//! does not introduce workflow runs, attempts, or execution history.
+//! Sessions. One bounded current execution may be retained per Task so Core
+//! can enforce the next step and conversation reuse across daemon restarts;
+//! completed attempts and execution history are never accumulated.
 
 use crate::{AgentLaunchSelection, agent_id_is_well_formed};
 
@@ -14,6 +15,8 @@ pub const WORKFLOW_STEP_ID_MAX_BYTES: usize = 64;
 pub const WORKFLOW_STEP_TITLE_MAX_BYTES: usize = 120;
 pub const WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES: usize = 4 * 1024;
 pub const WORKFLOW_REVIEW_CYCLES_MAX: u8 = 3;
+pub const WORKFLOW_GOAL_MAX_BYTES: usize = 32 * 1024;
+pub const WORKFLOW_EXECUTION_ID_MAX_BYTES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +141,145 @@ impl WorkflowConfiguration {
                 })
             })
             && self.generation >= 1
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkflowExecutionPhase {
+    AwaitingCoordinator,
+    AwaitingHelper,
+    AwaitingStepCompletion,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowParticipant {
+    pub step_id: String,
+    pub helper_session_id: String,
+}
+
+/// The single current execution snapshot for one Task. It contains routing
+/// state only: provider replies and review text remain in Agent conversations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowExecution {
+    pub id: String,
+    pub project_id: String,
+    pub task_id: String,
+    pub configuration: WorkflowConfiguration,
+    pub goal: String,
+    pub coordinator_session_id: String,
+    pub current_step_index: u8,
+    pub review_cycle: u8,
+    pub phase: WorkflowExecutionPhase,
+    /// The next coordinator prompt is durable work until provider delivery is
+    /// confirmed. A daemon restart may safely resubmit only this exact prompt.
+    #[serde(default)]
+    pub coordinator_prompt_pending: bool,
+    pub current_request_id: Option<String>,
+    pub participants: Vec<WorkflowParticipant>,
+    pub review_changes_requested: bool,
+    pub started_at_epoch_ms: u64,
+    pub updated_at_epoch_ms: u64,
+}
+
+impl WorkflowExecution {
+    pub fn current_step(&self) -> Option<&WorkflowStep> {
+        self.configuration
+            .steps
+            .get(usize::from(self.current_step_index))
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let step_index = usize::from(self.current_step_index);
+        let step_count = self.configuration.steps.len();
+        let active_step_is_valid = self.current_step().is_some_and(|step| match self.phase {
+            WorkflowExecutionPhase::AwaitingCoordinator
+            | WorkflowExecutionPhase::AwaitingStepCompletion => true,
+            WorkflowExecutionPhase::AwaitingHelper => matches!(
+                step.kind,
+                WorkflowStepKind::Discuss | WorkflowStepKind::Review
+            ),
+            WorkflowExecutionPhase::Completed => false,
+        });
+        bounded_slug(&self.id, WORKFLOW_EXECUTION_ID_MAX_BYTES)
+            && !self.project_id.trim().is_empty()
+            && !self.task_id.trim().is_empty()
+            && self.configuration.is_valid()
+            && self.configuration.project_id == self.project_id
+            && bounded_text(&self.goal, WORKFLOW_GOAL_MAX_BYTES)
+            && !self.coordinator_session_id.trim().is_empty()
+            && (1..=self.configuration.max_review_cycles).contains(&self.review_cycle)
+            && (!self.coordinator_prompt_pending
+                || self.phase == WorkflowExecutionPhase::AwaitingCoordinator)
+            && match self.phase {
+                WorkflowExecutionPhase::Completed => {
+                    step_index == step_count && self.current_request_id.is_none()
+                }
+                WorkflowExecutionPhase::AwaitingCoordinator => {
+                    active_step_is_valid && self.current_request_id.is_none()
+                }
+                WorkflowExecutionPhase::AwaitingStepCompletion => {
+                    active_step_is_valid
+                        && self.current_request_id.is_none()
+                        && self.current_step().is_some_and(|step| {
+                            matches!(
+                                step.kind,
+                                WorkflowStepKind::Discuss | WorkflowStepKind::Review
+                            )
+                        })
+                }
+                WorkflowExecutionPhase::AwaitingHelper => {
+                    active_step_is_valid
+                        && self
+                            .current_request_id
+                            .as_deref()
+                            .is_some_and(|request_id| {
+                                !request_id.trim().is_empty() && request_id.len() <= 128
+                            })
+                }
+            }
+            && self.participants.len() <= self.configuration.steps.len()
+            && self
+                .participants
+                .iter()
+                .enumerate()
+                .all(|(index, participant)| {
+                    bounded_slug(&participant.step_id, WORKFLOW_STEP_ID_MAX_BYTES)
+                        && !participant.helper_session_id.trim().is_empty()
+                        && self.configuration.steps.iter().any(|step| {
+                            step.id == participant.step_id
+                                && matches!(
+                                    step.kind,
+                                    WorkflowStepKind::Discuss | WorkflowStepKind::Review
+                                )
+                        })
+                        && !self.participants[index + 1..]
+                            .iter()
+                            .any(|candidate| candidate.step_id == participant.step_id)
+                })
+            && self.configuration.steps.iter().all(|step| {
+                step.reuse_step_id.as_deref().is_none_or(|source_step_id| {
+                    let participant = self
+                        .participants
+                        .iter()
+                        .find(|participant| participant.step_id == step.id);
+                    let source = self
+                        .participants
+                        .iter()
+                        .find(|participant| participant.step_id == source_step_id);
+                    participant.is_none()
+                        || source.is_some_and(|source| {
+                            participant.is_some_and(|participant| {
+                                participant.helper_session_id == source.helper_session_id
+                            })
+                        })
+                })
+            })
+            && self.started_at_epoch_ms > 0
+            && self.updated_at_epoch_ms >= self.started_at_epoch_ms
     }
 }
 
@@ -274,5 +416,40 @@ mod tests {
         let mut value = configuration();
         value.max_review_cycles = 0;
         assert!(!value.is_valid());
+    }
+
+    #[test]
+    fn current_execution_is_bounded_and_reuse_keeps_one_helper_identity() {
+        let configuration = configuration();
+        let mut execution = WorkflowExecution {
+            id: "execution-1".into(),
+            project_id: configuration.project_id.clone(),
+            task_id: "task-1".into(),
+            configuration,
+            goal: "Implement the workflow engine".into(),
+            coordinator_session_id: "coordinator-1".into(),
+            current_step_index: 2,
+            review_cycle: 1,
+            phase: WorkflowExecutionPhase::AwaitingCoordinator,
+            coordinator_prompt_pending: false,
+            current_request_id: None,
+            participants: vec![
+                WorkflowParticipant {
+                    step_id: "discuss".into(),
+                    helper_session_id: "helper-1".into(),
+                },
+                WorkflowParticipant {
+                    step_id: "review".into(),
+                    helper_session_id: "helper-1".into(),
+                },
+            ],
+            review_changes_requested: false,
+            started_at_epoch_ms: 1,
+            updated_at_epoch_ms: 2,
+        };
+        assert!(execution.is_valid());
+
+        execution.participants[1].helper_session_id = "replacement".into();
+        assert!(!execution.is_valid());
     }
 }

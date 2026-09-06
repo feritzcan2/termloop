@@ -26,6 +26,7 @@ pub(in crate::app::control) async fn launch_agent_session(
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
     let mut plan = state.core.lock().await.take_agent_launch(params)?;
+    let workflow_launch = plan.is_workflow_launch();
     if !state
         .agent_capabilities
         .iter()
@@ -50,7 +51,11 @@ pub(in crate::app::control) async fn launch_agent_session(
     tokio::task::spawn_blocking(move || drop(plan));
     if let Ok(value) = &result {
         let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
+            topics: if workflow_launch {
+                vec![ProjectionTopic::Session, ProjectionTopic::Workflow]
+            } else {
+                vec![ProjectionTopic::Session]
+            },
             state_revision,
             observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
         });
@@ -606,6 +611,7 @@ pub(in crate::app) async fn launch_task_session(
             ProjectionTopic::Steward,
             ProjectionTopic::Worker,
             ProjectionTopic::Routine,
+            ProjectionTopic::Workflow,
         ],
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),

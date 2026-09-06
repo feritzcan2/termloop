@@ -991,6 +991,7 @@ async fn dispatch_inner(
                                         if session_changed {
                                             topics.push(ProjectionTopic::Session);
                                         }
+                                        topics.push(ProjectionTopic::Workflow);
                                         let _ = state.invalidation_requests.try_send(
                                             InvalidationRequest {
                                                 topics,
@@ -2027,6 +2028,13 @@ async fn dispatch_inner(
                 request.id,
                 ErrorCode::AgentUnsupported,
                 "agent is not supported",
+            ),
+            Err(termloop_core::CoreError::WorkflowExecutionActive { task_id }) => response_error(
+                request.id,
+                ErrorCode::Conflict,
+                &format!(
+                    "Task {task_id} already has an active workflow; cancel it before starting another"
+                ),
             ),
             Err(termloop_core::CoreError::AgentForkUnavailable { reason }) => {
                 let reason = match reason {

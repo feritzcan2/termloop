@@ -64,6 +64,40 @@
         "openWorldHint": false
       }
     },
+    "workflow_delegate": {
+      "description": "Delegate the current Core-managed workflow DISCUSS or REVIEW step. Supply only the message the configured participant needs. TermLoop Core selects the exact provider and either launches the participant assigned to this step or reuses the conversation declared by the saved workflow; provider and conversation identities are intentionally not caller inputs. Call exactly once for the current helper-owned step, then wait for the answer delivered by TermLoop. This tool is available only to the active workflow coordinator even though it is advertised in the interactive profile.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/workflowDelegateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/askToResult"
+      },
+      "annotations": {
+        "title": "Delegate the current workflow step",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "workflow_step_complete": {
+      "description": "Complete only the current step of the active Core-managed workflow. For DISCUSS, IMPLEMENT, and FIX use completed. For REVIEW use approved when no actionable change remains or changesRequested when the configured Fix step must address findings. Core validates the coordinator, current step, helper-reply delivery, outcome, review cycle, and next transition. After an accepted call, stop the current turn; TermLoop delivers the next step automatically.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/workflowStepCompleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workflowActionResult"
+      },
+      "annotations": {
+        "title": "Complete the current workflow step",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
     "project_read": {
       "description": "Read the current Project identity and folder projection.",
       "role": [
@@ -814,6 +848,49 @@
         "status": {
           "$ref": "#/$defs/replyToRequestStatus"
         }
+      }
+    },
+    "workflowDelegateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowDelegateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      }
+    },
+    "workflowStepOutcome": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepOutcome",
+      "type": "string",
+      "enum": ["completed", "approved", "changesRequested"]
+    },
+    "workflowStepCompleteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepCompleteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/workflowStepOutcome" }
+      }
+    },
+    "workflowActionResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowActionResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionId", "status", "currentStepIndex", "reviewCycle"],
+      "properties": {
+        "executionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "status": { "type": "string", "enum": ["running", "completed", "paused"] },
+        "currentStepIndex": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "reviewCycle": { "type": "integer", "minimum": 1, "maximum": 3 }
       }
     },
     "mcpToolErrorCode": {
