@@ -17,6 +17,7 @@ export type GhosttySurfaceGrid = {
 export type GhosttyHostAddon = {
   initApp(options: {
     configFile?: string;
+    lightConfigFile?: string;
     onSurfaceClosed?(surfaceId: number): void;
     onOutputConsumed?(surfaceId: number, bytes: number): void;
     onShellShortcut?(shortcut: GhosttyShellShortcut): void;
