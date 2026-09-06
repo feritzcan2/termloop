@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  LocalBranchDto,
   ProjectLocalBranchListResult,
+  RemoteBranchDto,
   SessionRelocationBlocker,
   SessionRelocationPreviewDto,
   TaskProvisionWorktreeParams,
 } from "@termloop/contract/current";
 import type { Session, Task } from "../model.js";
 import { basename, sessionLabel } from "../model.js";
+import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import { sortLocalBranches, sortRemoteBranches, suggestedBranchName, worktreeDestination, worktreePathParent } from "./worktree-path-suggestion.js";
 
@@ -66,12 +69,44 @@ export function SessionRelocationDialog({
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [localBranches, setLocalBranches] = useState<readonly LocalBranchDto[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<readonly RemoteBranchDto[]>([]);
+  const [baseRef, setBaseRef] = useState("");
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesError, setBranchesError] = useState<string>();
   const [autoContinueTaskId, setAutoContinueTaskId] = useState<string>();
   const [error, setError] = useState<string>();
   const previewRef = useRef(preview);
   previewRef.current = preview;
   const selectedTask = eligibleTasks.find((task) => task.id === selectedTaskId);
   const blocker = result?.blockers[0];
+
+  const taskCreationProjectId = taskCreation?.projectId;
+  const listTaskCreationBranches = taskCreation?.listBranches;
+  useEffect(() => {
+    if (!newTaskOpen || !taskCreationProjectId || !listTaskCreationBranches) return;
+    let current = true;
+    setBranchesLoading(true);
+    setBranchesError(undefined);
+    void listTaskCreationBranches(taskCreationProjectId).then((projection) => {
+      if (!current) return;
+      const sortedRemoteBranches = sortRemoteBranches(projection.base_branches);
+      setLocalBranches(sortLocalBranches(projection.branches));
+      setRemoteBranches(sortedRemoteBranches);
+      setBaseRef((selected) => {
+        if (sortedRemoteBranches.some((branch) => branch.exact_ref === selected)) return selected;
+        const remembered = sortedRemoteBranches.find(
+          (branch) => branch.exact_ref === readWorktreeBaseRef(taskCreationProjectId),
+        );
+        return remembered?.exact_ref ?? sortedRemoteBranches[0]?.exact_ref ?? "";
+      });
+    }).catch((cause: unknown) => {
+      if (current) setBranchesError(errorMessage(cause));
+    }).finally(() => {
+      if (current) setBranchesLoading(false);
+    });
+    return () => { current = false; };
+  }, [listTaskCreationBranches, newTaskOpen, taskCreationProjectId]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -131,17 +166,26 @@ export function SessionRelocationDialog({
       setError("Enter a Task title.");
       return;
     }
+    if (branchesLoading) {
+      setError("Wait for repository branches to load.");
+      return;
+    }
+    if (branchesError) {
+      setError(branchesError);
+      return;
+    }
+    if (remoteBranches.length === 0) {
+      setError("This repository has no remote-tracking branch to create the Task worktree from. Fetch a remote branch first.");
+      return;
+    }
+    if (!remoteBranches.some((branch) => branch.exact_ref === baseRef)) {
+      setError("Select a remote base branch to start from.");
+      return;
+    }
     setCreatingTask(true);
     setError(undefined);
     try {
       const repositoryPath = taskCreation.repositoryPath.trim();
-      const branchProjection = await taskCreation.listBranches(taskCreation.projectId);
-      const localBranches = sortLocalBranches(branchProjection.branches);
-      const baseRef = sortRemoteBranches(branchProjection.base_branches)[0]?.exact_ref;
-      if (!baseRef) {
-        setError("This repository has no remote-tracking branch to create the Task worktree from. Fetch a remote branch first.");
-        return;
-      }
       const proposedBranch = suggestedBranchName(title, "task") || `task/${globalThis.crypto.randomUUID().slice(0, 4)}`;
       const branchName = localBranches.some((branch) => branch.name === proposedBranch)
         ? `${proposedBranch}-${globalThis.crypto.randomUUID().slice(0, 4)}`
@@ -171,7 +215,7 @@ export function SessionRelocationDialog({
   return (
     <div className="dialog-layer relocation-dialog-layer" onKeyDown={(event) => event.key === "Escape" && close()}>
       <button className="dialog-backdrop" type="button" aria-label={moving ? "Hide Task worktree move" : "Cancel continuing in a Task worktree"} onClick={close} />
-      <section className="dialog-card inline-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="relocation-dialog-title" aria-describedby="relocation-dialog-message" aria-busy={loading || moving}>
+      <section className="dialog-card inline-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="relocation-dialog-title" aria-describedby="relocation-dialog-message" aria-busy={loading || moving || branchesLoading || creatingTask}>
         <div className="dialog-body">
           <h2 id="relocation-dialog-title">Move {sessionLabel(session)} to {selectedTask ? `“${selectedTask.title}”` : "a Task"}?</h2>
           <p id="relocation-dialog-message">The Agent will stop here and continue in the Task worktree.</p>
@@ -192,23 +236,42 @@ export function SessionRelocationDialog({
           {newTaskOpen && !initialTaskId ? (
             <div className="relocation-new-task">
               <label htmlFor="relocation-new-task-title">New Task title</label>
-              <div>
-                <input
-                  id="relocation-new-task-title"
-                  value={newTaskTitle}
-                  maxLength={160}
-                  disabled={moving}
-                  autoFocus
-                  placeholder="What is this work?"
-                  onChange={(event) => { setNewTaskTitle(event.target.value); setError(undefined); }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    void createNewTask();
-                  }}
-                />
-                <button className="secondary-button" type="button" disabled={creatingTask || moving || !newTaskTitle.trim()} onClick={() => void createNewTask()}>{creatingTask ? "Creating…" : "Create & continue"}</button>
-              </div>
+              <input
+                id="relocation-new-task-title"
+                value={newTaskTitle}
+                maxLength={160}
+                disabled={moving}
+                autoFocus
+                placeholder="What is this work?"
+                onChange={(event) => { setNewTaskTitle(event.target.value); setError(undefined); }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  void createNewTask();
+                }}
+              />
+              <label htmlFor="relocation-new-task-base-ref">Base branch</label>
+              <select
+                id="relocation-new-task-base-ref"
+                value={baseRef}
+                disabled={moving || creatingTask || branchesLoading || Boolean(branchesError) || remoteBranches.length === 0}
+                onChange={(event) => {
+                  setBaseRef(event.target.value);
+                  writeWorktreeBaseRef(taskCreation?.projectId, event.target.value);
+                  setError(undefined);
+                }}
+              >
+                {branchesLoading || branchesError || remoteBranches.length === 0
+                  ? <option value="">{branchesLoading ? "Loading branches…" : branchesError ? "Branches unavailable" : "No remote branches"}</option>
+                  : null}
+                {remoteBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
+              </select>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={creatingTask || moving || branchesLoading || Boolean(branchesError) || !newTaskTitle.trim() || !baseRef}
+                onClick={() => void createNewTask()}
+              >{creatingTask ? "Creating…" : "Create & continue"}</button>
               <p className="field-help">Creates the Task, then closes this dialog. Its row shows worktree progress while the Agent waits to move.</p>
             </div>
           ) : null}
