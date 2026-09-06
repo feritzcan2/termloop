@@ -29,17 +29,31 @@ describe("Ghostty native host visibility", () => {
     expect(draw).toBeGreaterThan(visibility);
   });
 
-  it("applies light and dark color schemes to live native surfaces", () => {
+  it("applies separate light and original dark configs to live native surfaces", () => {
     const handler = source.slice(
       source.indexOf("static Napi::Value SetSurfaceColorScheme"),
       source.indexOf("static Napi::Value FocusSurface"),
     );
 
-    expect(handler).toContain("GHOSTTY_COLOR_SCHEME_LIGHT");
-    expect(handler).toContain("GHOSTTY_COLOR_SCHEME_DARK");
-    expect(handler).toContain("ghostty_surface_set_color_scheme(e->surface, scheme)");
+    expect(handler).toContain("config = g_light_config");
+    expect(handler).toContain("config = g_config");
+    expect(handler).toContain("ghostty_surface_update_config(e->surface, config)");
+    expect(handler).not.toContain("ghostty_surface_set_color_scheme");
+    expect(handler).toContain("colorWithSRGBRed:0.976 green:0.976 blue:0.976");
+    expect(handler).toContain("colorWithSRGBRed:0.157 green:0.173 blue:0.204");
     expect(handler).toContain("ghostty_surface_draw(e->surface)");
     expect(source).toContain('exports.Set("setSurfaceColorScheme"');
+  });
+
+  it("loads the light config on top of the original embedded config", () => {
+    const handler = source.slice(
+      source.indexOf("static Napi::Value InitApp"),
+      source.indexOf("static Napi::Value CreateSurface"),
+    );
+
+    expect(handler).toContain('opts.Has("lightConfigFile")');
+    expect(handler).toContain("ghostty_config_load_file(g_light_config, configFile.c_str())");
+    expect(handler).toContain("ghostty_config_load_file(g_light_config, lightConfigFile.c_str())");
   });
 
   it("restores Chromium focus before hiding a focused native surface", () => {
