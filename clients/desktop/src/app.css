@@ -351,8 +351,12 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .row-agent { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--state-ready); text-overflow: ellipsis; white-space: nowrap; }
 .row-agent.agent-claude { color: var(--agent-claude); }
 .row-agent.agent-codex { color: var(--agent-codex); }
-.agent-todo-count { flex: none; order: -1; padding: 1px 4px; border: 1px solid light-dark(rgba(66,111,151,.2), rgba(102,179,255,.22)); border-radius: 4px; color: var(--accent-strong); font: 700 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; cursor: help; }
+.agent-todo-count { display: inline-grid; flex: none; order: -1; min-width: 25px; padding: 1px 4px; place-items: center; border: 1px solid light-dark(rgba(66,111,151,.2), rgba(102,179,255,.22)); border-radius: 4px; color: var(--accent-strong); font: 700 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
 .agent-todo-count.done { border-color: light-dark(rgba(46,125,96,.2), rgba(105,208,166,.2)); color: var(--success); }
+.agent-todo-progress, .agent-todo-dismiss-glyph { grid-area: 1 / 1; transition: opacity .1s ease; }
+.agent-todo-dismiss-glyph { color: var(--sidebar-text); font: 700 12px/.75 var(--font-ui); opacity: 0; }
+.agent-todo-count:hover .agent-todo-progress { opacity: 0; }
+.agent-todo-count:hover .agent-todo-dismiss-glyph { opacity: 1; }
 .agent-todo-tooltip { position: absolute; top: calc(100% - 2px); right: 5px; left: 28px; z-index: 20; display: grid; gap: 7px; padding: 8px 9px; visibility: hidden; border: 1px solid light-dark(rgba(15,23,42,.13), rgba(255,255,255,.13)); border-radius: 7px; background: var(--bg-raised); box-shadow: 0 8px 24px rgba(0,0,0,.28); color: var(--sidebar-dim); opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity .1s ease, transform .1s ease, visibility 0s linear .1s; white-space: normal; }
 .session-row:has(.agent-todo-count:hover), .session-row:has(.session-item:focus-visible) { z-index: 20; }
 .row-copy:has(.agent-todo-count:hover) > .agent-todo-tooltip, .session-item:focus-visible .agent-todo-tooltip { visibility: visible; opacity: 1; transform: translateY(0); transition-delay: .15s, .15s, 0s; }
@@ -365,7 +369,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .agent-todo-tooltip-item[data-status="inProgress"] .agent-todo-tooltip-mark { border-color: var(--state-running); background: var(--state-running); box-shadow: 0 0 0 2px rgba(102,179,255,.12); }
 .agent-todo-tooltip-item[data-status="completed"] { color: var(--sidebar-dimmer); text-decoration: line-through; text-decoration-color: light-dark(rgba(15,23,42,.16), rgba(255,255,255,.16)); }
 .agent-todo-tooltip-item[data-status="completed"] .agent-todo-tooltip-mark { border-color: var(--success); background: var(--success); }
-@media (prefers-reduced-motion: reduce) { .agent-todo-tooltip { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .agent-todo-tooltip, .agent-todo-progress, .agent-todo-dismiss-glyph { transition: none; } }
 .row-actions { position: absolute; top: 50%; right: 8px; z-index: 2; display: flex; gap: 1px; padding-left: 18px; background: linear-gradient(90deg, rgba(36,41,43,0), var(--bg-sidebar) 40%); opacity: 0; pointer-events: none; transform: translateY(-50%); }
 /* Hidden actions must not swallow clicks aimed at the row behind them. */
 .task-row:hover .row-actions, .session-row:hover .row-actions, .row-actions:focus-within { opacity: 1; pointer-events: auto; }

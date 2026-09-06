@@ -158,7 +158,10 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   /// The presence dot reports the raw observed agent status, so it must go quiet
   /// once the lifecycle has moved on and that observation is stale.
   const liveAgentStatus = agentStatusIsLive(session) ? agentStatus : undefined;
-  const plan = agentPlanForRow(session, agentStatus);
+  const currentPlan = agentPlanForRow(session, agentStatus);
+  const currentPlanKey = currentPlan ? `${session.id}:${currentPlan.updatedAtEpochMs}` : undefined;
+  const [dismissedPlanKey, setDismissedPlanKey] = useState<string>();
+  const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
   const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel });
   const planProgress = plan ? agentPlanProgress(plan) : undefined;
   return (
@@ -173,9 +176,18 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       data-session-id={session.id}
-      onPointerDown={(event) => { dragListeners?.onPointerDown?.(event); }}
+      onPointerDown={(event) => {
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]")) return;
+        dragListeners?.onPointerDown?.(event);
+      }}
       title={session.process.cwd}
-      onClick={select}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]") && currentPlanKey) {
+          setDismissedPlanKey(currentPlanKey);
+          return;
+        }
+        select();
+      }}
       onContextMenu={(event: ReactMouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         openMenu(event.clientX, event.clientY, event.currentTarget);
@@ -293,7 +305,11 @@ function AgentTodoCount({ plan }: { plan: AgentPlan }) {
   const progress = agentPlanProgress(plan);
   return <span
     className={`agent-todo-count${progress.completed === progress.total ? " done" : ""}`}
-  >{progress.completed}/{progress.total}</span>;
+    data-agent-todo-dismiss
+  >
+    <span className="agent-todo-progress">{progress.completed}/{progress.total}</span>
+    <span className="agent-todo-dismiss-glyph" aria-hidden="true">×</span>
+  </span>;
 }
 
 function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {

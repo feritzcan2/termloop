@@ -96,22 +96,25 @@ describe("Active Agent inline todos", () => {
     const row = () => container!.querySelector<HTMLButtonElement>(`[data-session-id="${agent.id}"]`);
     const count = () => container!.querySelector<HTMLElement>(".agent-todo-count");
     const tooltip = () => container!.querySelector<HTMLElement>(".agent-todo-tooltip");
-    expect(count()?.textContent).toBe("1/2");
+    expect(count()?.querySelector(".agent-todo-progress")?.textContent).toBe("1/2");
+    expect(count()?.querySelector(".agent-todo-dismiss-glyph")?.textContent).toBe("×");
     expect(count()?.title).toBe("");
     expect(tooltip()?.getAttribute("role")).toBe("tooltip");
     expect(tooltip()?.textContent).toContain("Todos1/2 complete");
     expect(tooltip()?.textContent).toContain("Inspect the idle agent");
     expect(tooltip()?.textContent).toContain("Finish the remaining work");
     expect(container.querySelector("details")).toBeNull();
-    expect(container.querySelector(".session-state-line")?.textContent).toBe("1/2Codexdetail-worktree");
+    expect(container.querySelector(".session-state-line")?.textContent).not.toContain("Finish the remaining work");
 
-    await act(async () => row()?.click());
-    expect(row()?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => count()?.click());
+    expect(count()).toBeNull();
+    expect(tooltip()).toBeNull();
+    expect(row()?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => row()?.click());
     expect(row()?.getAttribute("aria-pressed")).toBe("true");
     expect(row()?.classList.contains("details-expanded")).toBe(false);
     expect(container.querySelector("details")).toBeNull();
-    expect(count()?.textContent).toBe("1/2");
+    expect(count()).toBeNull();
   });
 });
