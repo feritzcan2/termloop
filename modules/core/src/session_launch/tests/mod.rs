@@ -2592,6 +2592,167 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
 }
 
 #[test]
+fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-workflow-launch-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let task = runtime
+        .handle(
+            "task.create",
+            json!({
+                "projectId": project["id"],
+                "title": "Workflow Task",
+                "brief": "Keep the workflow independent from Playbook.",
+                "worktreeIntent": "none"
+            }),
+        )
+        .unwrap();
+    let task_id = task["id"].as_str().unwrap();
+    let create = json!({
+        "projectId": project["id"],
+        "name": "Discuss, build, review",
+        "coordinatorAgentId": "codex",
+        "model": "default",
+        "permission": "acceptEdits",
+        "reasoning": "default",
+        "maxReviewCycles": 2,
+        "steps": [
+            { "id": "discuss", "kind": "discuss", "title": "Discuss", "instructions": "Challenge the approach.", "agentId": "claude", "reuseStepId": null },
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement and verify.", "agentId": null, "reuseStepId": null },
+            { "id": "review-claude", "kind": "review", "title": "Review with context", "instructions": "Review the diff.", "agentId": "claude", "reuseStepId": "discuss" },
+            { "id": "review-codex", "kind": "review", "title": "Independent review", "instructions": "Review the diff independently.", "agentId": "codex", "reuseStepId": null },
+            { "id": "fix", "kind": "fix", "title": "Fix", "instructions": "Apply the combined findings.", "agentId": null, "reuseStepId": null }
+        ],
+        "expectedRevision": runtime.state_revision()
+    });
+    let created = runtime
+        .handle("workflow.configurationCreate", create)
+        .unwrap();
+    let workflow_id = created["configuration"]["id"].as_str().unwrap().to_owned();
+
+    let mut plan = runtime
+        .plan_agent_launch(json!({
+            "projectId": project["id"],
+            "cwd": root,
+            "agentId": "codex",
+            "model": "default",
+            "permission": "acceptEdits",
+            "reasoning": "default"
+        }))
+        .unwrap();
+    plan.task_guard = Some(TaskLaunchGuard {
+        task_id: task_id.into(),
+        managed_worktree_operation_id: task_id.into(),
+        worktree_generation: 1,
+        cwd: root.display().to_string(),
+        repository_common_dir: root.display().to_string(),
+        branch_ref: "refs/heads/termloop/workflow-task".into(),
+    });
+    plan.fork_worktree_observed = true;
+    let plan = runtime
+        .attach_task_workflow(plan, task_id, &workflow_id, "Add reusable agent workflows")
+        .unwrap();
+    assert_eq!(
+        launch_session_name(&plan).as_deref(),
+        Some("Discuss, build, review")
+    );
+    let launch = resolve_interactive_agent_launch(&plan).unwrap();
+    assert_eq!(
+        launch.provenance().template_ref,
+        "builtin.agent.task-workflow"
+    );
+    assert!(launch.initial_input().is_some_and(|input| {
+        input.contains("1. DISCUSS")
+            && input.contains("2. IMPLEMENT")
+            && input.contains("3. REVIEW")
+            && input.contains("4. REVIEW")
+            && input.contains("5. FIX")
+            && input.contains("Goal: Add reusable agent workflows")
+            && input.contains("reuse helper from step `discuss`")
+            && input.contains("`ask_to`")
+    }));
+
+    let mut mismatched_goal_plan = runtime
+        .plan_agent_launch(json!({
+            "projectId": project["id"],
+            "cwd": root,
+            "agentId": "codex",
+            "model": "default",
+            "permission": "acceptEdits",
+            "reasoning": "default"
+        }))
+        .unwrap();
+    mismatched_goal_plan.task_guard = Some(TaskLaunchGuard {
+        task_id: task_id.into(),
+        managed_worktree_operation_id: task_id.into(),
+        worktree_generation: 1,
+        cwd: root.display().to_string(),
+        repository_common_dir: root.display().to_string(),
+        branch_ref: "refs/heads/termloop/workflow-task".into(),
+    });
+    mismatched_goal_plan.fork_worktree_observed = true;
+    let mismatched_goal_plan = runtime
+        .attach_task_workflow(
+            mismatched_goal_plan,
+            task_id,
+            &workflow_id,
+            "Add reusable agent workflows",
+        )
+        .unwrap();
+    let mismatched_goal_preview = runtime
+        .preview_prepared_task_agent_launch(mismatched_goal_plan)
+        .unwrap();
+    let error = match runtime.take_agent_launch(json!({
+        "taskId": task_id,
+        "workflowId": workflow_id,
+        "goal": "A different goal",
+        "launchTicket": mismatched_goal_preview["launch_ticket"]
+    })) {
+        Ok(_) => panic!("workflow preview accepted a different runtime goal"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CoreError::InvalidParams(field) if field == "launchTicket"));
+
+    let preview = runtime.preview_prepared_task_agent_launch(plan).unwrap();
+    let update = json!({
+        "workflowId": workflow_id,
+        "name": "Updated workflow",
+        "coordinatorAgentId": "codex",
+        "model": "default",
+        "permission": "acceptEdits",
+        "reasoning": "default",
+        "maxReviewCycles": 2,
+        "steps": [
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement the updated approach.", "agentId": null, "reuseStepId": null }
+        ],
+        "expectedRevision": runtime.state_revision()
+    });
+    runtime
+        .handle("workflow.configurationUpdate", update)
+        .unwrap();
+    let error = match runtime.take_agent_launch(json!({
+        "taskId": task_id,
+        "workflowId": workflow_id,
+        "goal": "Add reusable agent workflows",
+        "launchTicket": preview["launch_ticket"]
+    })) {
+        Ok(_) => panic!("stale workflow preview was accepted"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CoreError::RevisionConflict));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn codex_trust_requires_an_observed_managed_worktree_guard() {
     let root = std::env::temp_dir().join(format!(
         "termloop-core-codex-managed-trust-{}-{}",

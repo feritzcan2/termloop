@@ -26,7 +26,7 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorkerConfiguration, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorkerConfiguration, WorkflowConfiguration, WorktreeCleanupOperation, WorktreeCleanupReceipt,
     WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
     WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
@@ -56,8 +56,9 @@ use termloop_domain::{
 // bounded current set of branches observed in each managed Task worktree.
 // Version 49 adds the selected remote base ref to Project Task automation.
 // Version 50 removes the retired Routine provider kind from durable state;
-// capability selection now belongs to the Worker at assignment time.
-const CURRENT_SCHEMA_VERSION: u32 = 50;
+// capability selection now belongs to the Worker at assignment time. Version
+// 51 adds Project-scoped workflow configurations; executions remain Sessions.
+const CURRENT_SCHEMA_VERSION: u32 = 51;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -128,6 +129,8 @@ struct CurrentState {
     #[serde(default)]
     run_configurations: Vec<RunConfiguration>,
     #[serde(default)]
+    workflow_configurations: Vec<WorkflowConfiguration>,
+    #[serde(default)]
     configuration_versions: Vec<ConfigurationVersion>,
     #[serde(default)]
     configuration_version_selections: Vec<ConfigurationVersionSelection>,
@@ -179,6 +182,7 @@ impl Default for CurrentState {
             playbook_step_progress: vec![],
             worker_configurations: vec![],
             run_configurations: vec![],
+            workflow_configurations: vec![],
             configuration_versions: vec![],
             configuration_version_selections: vec![],
             run_setup_marks: vec![],

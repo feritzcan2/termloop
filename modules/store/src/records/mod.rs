@@ -16,6 +16,7 @@ pub(crate) mod task_branch;
 mod task_source;
 mod tracker;
 mod worker;
+mod workflow;
 
 pub use playbook::PlaybookApply;
 pub use steward::ProjectAssistantReset;
