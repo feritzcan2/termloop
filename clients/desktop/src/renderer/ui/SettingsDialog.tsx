@@ -9,15 +9,15 @@ import {
   ConnectionProfilesDialog,
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
-import type { AppearanceTheme } from "../appearance-theme.js";
+import type { AppearancePreference } from "../appearance-theme.js";
 
 export type SettingsPage = "appearance" | "notifications" | "servers";
 
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
   close(): void;
   initialPage?: SettingsPage;
-  appearanceTheme: AppearanceTheme;
-  changeAppearanceTheme(theme: AppearanceTheme): void;
+  appearancePreference: AppearancePreference;
+  changeAppearancePreference(preference: AppearancePreference): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
 };
@@ -25,8 +25,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
 export function SettingsDialog({
   close,
   initialPage = "notifications",
-  appearanceTheme,
-  changeAppearanceTheme,
+  appearancePreference,
+  changeAppearancePreference,
   loadNotificationPreferences,
   saveNotificationPreferences,
   ...connectionProps
@@ -116,7 +116,7 @@ export function SettingsDialog({
           </nav>
           <main className="settings-content">
             {page === "appearance" ? (
-              <AppearanceSettings theme={appearanceTheme} change={changeAppearanceTheme} />
+              <AppearanceSettings preference={appearancePreference} change={changeAppearancePreference} />
             ) : page === "notifications" ? (
               <NotificationSettings
                 preferences={preferences}
@@ -144,10 +144,10 @@ export function SettingsDialog({
 
 function AppearanceSettings({
   change,
-  theme,
+  preference,
 }: {
-  change(theme: AppearanceTheme): void;
-  theme: AppearanceTheme;
+  change(preference: AppearancePreference): void;
+  preference: AppearancePreference;
 }) {
   return (
     <section className="appearance-settings" aria-labelledby="appearance-settings-title">
@@ -156,39 +156,44 @@ function AppearanceSettings({
         <p>Choose how TermLoop looks on this computer.</p>
       </div>
       <div className="appearance-options" role="radiogroup" aria-label="Color theme">
-        <AppearanceOption theme="dark" selected={theme === "dark"} change={change} />
-        <AppearanceOption theme="light" selected={theme === "light"} change={change} />
+        <AppearanceOption preference="system" selected={preference === "system"} change={change} />
+        <AppearanceOption preference="light" selected={preference === "light"} change={change} />
+        <AppearanceOption preference="dark" selected={preference === "dark"} change={change} />
       </div>
-      <p className="settings-footnote">The selected theme also applies to terminal panes and is remembered on this computer.</p>
+      <p className="settings-footnote">System follows macOS appearance changes instantly. The resolved theme also applies to terminal panes.</p>
     </section>
   );
 }
 
 function AppearanceOption({
   change,
+  preference,
   selected,
-  theme,
 }: {
-  change(theme: AppearanceTheme): void;
+  change(preference: AppearancePreference): void;
+  preference: AppearancePreference;
   selected: boolean;
-  theme: AppearanceTheme;
 }) {
-  const light = theme === "light";
+  const copy = {
+    system: ["System", "Follow this Mac automatically."],
+    light: ["Light", "Bright surfaces with dark text."],
+    dark: ["Dark", "Dim surfaces with light text."],
+  } satisfies Record<AppearancePreference, [string, string]>;
   return (
     <button
       type="button"
       role="radio"
       aria-checked={selected}
       className={selected ? "appearance-option selected" : "appearance-option"}
-      onClick={() => change(theme)}
+      onClick={() => change(preference)}
     >
-      <span className={`appearance-preview ${theme}`} aria-hidden="true">
+      <span className={`appearance-preview ${preference}`} aria-hidden="true">
         <i />
         <b><em /><em /><em /></b>
       </span>
       <span className="appearance-option-copy">
-        <strong>{light ? "Light" : "Dark"}</strong>
-        <small>{light ? "Bright surfaces with dark text." : "Dim surfaces with light text."}</small>
+        <strong>{copy[preference][0]}</strong>
+        <small>{copy[preference][1]}</small>
       </span>
       <span className="appearance-option-check" aria-hidden="true">{selected ? "✓" : ""}</span>
     </button>
