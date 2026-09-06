@@ -45,7 +45,7 @@ const status: AgentStatus = {
   },
 };
 
-function RailHarness({ taskAttached }: { taskAttached: boolean }) {
+function RailHarness() {
   const [selectedSession, setSelectedSession] = useState<Session | undefined>(undefined);
   const shared = {
     selectedSession,
@@ -65,7 +65,7 @@ function RailHarness({ taskAttached }: { taskAttached: boolean }) {
     sessions: [agent],
     projectFolder: "/repo",
     favoriteSessionIds: new Set<string>(),
-    taskAttachedSessionIds: new Set(taskAttached ? [agent.id] : []),
+    taskAttachedSessionIds: new Set<string>(),
     worktreeChangesBySessionId: new Map(),
     toggleFavoriteSession: () => {},
     openTaskChanges: () => {},
@@ -74,7 +74,7 @@ function RailHarness({ taskAttached }: { taskAttached: boolean }) {
   });
 }
 
-describe("Active Agent repeated-click details", () => {
+describe("Active Agent inline todos", () => {
   let root: Root | undefined;
   let container: HTMLElement | undefined;
 
@@ -86,45 +86,29 @@ describe("Active Agent repeated-click details", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it.each([
-    [false, false],
-    [true, true],
-  ] as const)("opens details with taskAttached=%s and limits Workspace to Task agents", async (taskAttached, showsWorkspace) => {
+  it("keeps repeated row clicks as selection and exposes todo detail only from the inline count", async () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root!.render(createElement(RailHarness, { taskAttached })));
+    await act(async () => root!.render(createElement(RailHarness)));
 
     const row = () => container!.querySelector<HTMLButtonElement>(`[data-session-id="${agent.id}"]`);
-    expect(container.querySelector(".agent-plan")).toBeNull();
+    const count = () => container!.querySelector<HTMLElement>(".agent-todo-count");
+    expect(count()?.textContent).toBe("1/2");
+    expect(count()?.title).toContain("Todos · 1/2 complete");
+    expect(count()?.title).toContain("✓ Inspect the idle agent");
+    expect(count()?.title).toContain("○ Finish the remaining work");
+    expect(container.querySelector("details")).toBeNull();
     expect(container.textContent).not.toContain("Finish the remaining work");
 
     await act(async () => row()?.click());
     expect(row()?.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(".agent-plan")).toBeNull();
-    expect(container.textContent).not.toContain("Finish the remaining work");
 
     await act(async () => row()?.click());
-    const details = container.querySelector<HTMLDetailsElement>(".agent-plan");
-    const detailLabels = [...(details?.querySelectorAll("dt") ?? [])].map((label) => label.textContent);
-    expect(details?.open).toBe(true);
-    expect(row()?.classList.contains("details-expanded")).toBe(true);
-    expect(details?.textContent).not.toContain("Working now.");
-    expect(detailLabels).not.toContain("Agent");
-    expect(details?.textContent).not.toContain("Codex");
-    expect(details?.textContent).toContain("Finish the remaining work");
-    if (showsWorkspace) {
-      expect(detailLabels).toContain("Workspace");
-      expect(details?.textContent).toContain("/repo/detail-worktree");
-    } else {
-      expect(detailLabels).not.toContain("Workspace");
-      expect(details?.textContent).not.toContain("/repo/detail-worktree");
-    }
-    expect(details?.textContent).toContain(agent.id);
-
-    await act(async () => row()?.click());
-    expect(container.querySelector(".agent-plan")).toBeNull();
+    expect(row()?.getAttribute("aria-pressed")).toBe("true");
     expect(row()?.classList.contains("details-expanded")).toBe(false);
+    expect(container.querySelector("details")).toBeNull();
+    expect(count()?.textContent).toBe("1/2");
   });
 });
