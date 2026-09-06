@@ -304,7 +304,6 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
    and outranks the mono facts under it. */
 .row-copy { display: grid; gap: 3px; min-width: 0; container-type: inline-size; }
 .row-title { overflow: hidden; color: inherit; font: 600 12px/1.3 var(--font-ui); letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
-.session-item.details-expanded .row-title { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
 /* Descending urgency, left to right, with a left edge that never moves. The old
    right-aligned tail let the state word slide horizontally with the length of a
    folder name, so it was never twice in the same place. The folder is the only
@@ -352,6 +351,8 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .row-agent { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--state-ready); text-overflow: ellipsis; white-space: nowrap; }
 .row-agent.agent-claude { color: var(--agent-claude); }
 .row-agent.agent-codex { color: var(--agent-codex); }
+.agent-todo-count { flex: none; padding: 1px 4px; border: 1px solid light-dark(rgba(66,111,151,.2), rgba(102,179,255,.22)); border-radius: 4px; color: var(--accent-strong); font: 700 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; cursor: help; }
+.agent-todo-count.done { border-color: light-dark(rgba(46,125,96,.2), rgba(105,208,166,.2)); color: var(--success); }
 .row-actions { position: absolute; top: 50%; right: 8px; z-index: 2; display: flex; gap: 1px; padding-left: 18px; background: linear-gradient(90deg, rgba(36,41,43,0), var(--bg-sidebar) 40%); opacity: 0; pointer-events: none; transform: translateY(-50%); }
 /* Hidden actions must not swallow clicks aimed at the row behind them. */
 .task-row:hover .row-actions, .session-row:hover .row-actions, .row-actions:focus-within { opacity: 1; pointer-events: auto; }
@@ -617,35 +618,6 @@ button.task-signal.issue:hover { color: var(--warning); }
    correct for Task Sessions that do not render a handle. */
 .session-row.task-session.with-drag-handle { grid-template-columns: 13px minmax(0,1fr); }
 .task-session .session-item { min-height: 36px; padding: 3px 7px; grid-template-columns: 14px minmax(0,1fr) 10px; gap: 6px; }
-/* Current agent plans are runtime projections under the exact Session that
-   emitted them. The collapsed summary stays glanceable in a dense rail; the
-   native disclosure keeps the complete checklist keyboard-accessible. */
-/* An agent's plan hangs off its Session row as one quiet subordinate line:
-   chevron, label, completed count, current step. The panel border appears only while
-   open, so a rail full of planning agents stays a rail, not a stack of boxes. */
-.agent-plan { min-width: 0; margin: -1px 7px 3px; border: 1px solid transparent; border-radius: 6px; color: var(--sidebar-dim); }
-.agent-plan[open] { border-color: light-dark(rgba(15,23,42,.055), rgba(255,255,255,.055)); background: light-dark(rgba(15,23,42,.02), rgba(255,255,255,.02)); }
-.agent-plan.nested { margin-left: 16px; }
-.agent-plan summary { display: grid; min-height: 22px; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 10px; padding: 0 7px 0 39px; border-radius: 5px; cursor: pointer; list-style: none; }
-.agent-plan summary:hover { background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); }
-.agent-plan[open] summary:hover { border-radius: 5px 5px 0 0; }
-.agent-plan summary::-webkit-details-marker { display: none; }
-.agent-plan-count { color: var(--accent-strong); font: 700 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
-.agent-plan-label { grid-column: span 2; color: var(--accent-strong); font: 700 9px/1 var(--font-mono); text-transform: uppercase; }
-.agent-plan.done .agent-plan-count { color: var(--success); }
-.agent-plan-current { min-width: 0; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
-.agent-plan p { margin: 0 7px 5px 22px; color: var(--sidebar-dimmer); font: 9.5px/1.35 var(--font-ui); }
-.agent-detail-facts { display: grid; gap: 3px; margin: 0 7px 7px 22px; padding-top: 3px; border-top: 1px solid light-dark(rgba(15,23,42,.045), rgba(255,255,255,.045)); }
-.agent-detail-facts > div { display: grid; min-width: 0; grid-template-columns: 52px minmax(0,1fr); gap: 6px; }
-.agent-detail-facts dt { color: var(--sidebar-dimmer); font: 700 8px/1.4 var(--font-mono); text-transform: uppercase; }
-.agent-detail-facts dd { min-width: 0; margin: 0; overflow: hidden; color: var(--sidebar-dim); font: 9.5px/1.4 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.agent-plan ol { display: grid; gap: 3px; margin: 0; padding: 2px 7px 7px 22px; list-style: none; }
-.agent-plan li { display: grid; min-width: 0; grid-template-columns: 8px minmax(0,1fr); align-items: start; gap: 5px; color: var(--sidebar-dim); font: 10px/1.35 var(--font-ui); }
-.agent-plan-mark { width: 6px; height: 6px; margin-top: 4px; border: 1px solid var(--sidebar-dimmer); border-radius: 50%; }
-.agent-plan li[data-status="inProgress"] { color: var(--sidebar-text); }
-.agent-plan li[data-status="inProgress"] .agent-plan-mark { border-color: var(--state-running); background: var(--state-running); box-shadow: 0 0 0 2px rgba(102,179,255,.12); }
-.agent-plan li[data-status="completed"] { color: var(--sidebar-dimmer); text-decoration: line-through; text-decoration-color: light-dark(rgba(15,23,42,.16), rgba(255,255,255,.16)); }
-.agent-plan li[data-status="completed"] .agent-plan-mark { border-color: var(--success); background: var(--success); }
 /* Launchers are one labelled group rather than three unlabelled glyphs. */
 .task-launch { display: flex; align-items: center; gap: 3px; padding: 3px 0 2px 7px; }
 .task-launch-label { flex: none; margin-right: 2px; color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }

@@ -466,7 +466,7 @@ describe("Task rail agent attention", () => {
     expect(expanded).toContain("task-children");
   });
 
-  it("nests the current structured Agent plan under its Session", () => {
+  it("keeps structured todo progress in the Agent row and details in its tooltip", () => {
     const working = agentSession("planning-agent");
     const status: AgentStatus = {
       ...agentStatus(working.id, "working"),
@@ -483,20 +483,21 @@ describe("Task rail agent attention", () => {
     };
     const markup = renderRail({ sessions: [working], statuses: [status] });
 
-    expect(markup).toContain('class="agent-plan"');
-    expect(markup).toContain('<span class="agent-plan-count">1/3</span>');
-    expect(markup).toContain('title="Render the current plan"');
-    expect(markup).toContain('data-status="completed"');
-    expect(markup).toContain("Keep the rollout exact.");
-    /// The completed count is visible at a glance without a competing progress bar.
-    expect(markup).not.toContain("agent-plan-bar");
+    expect(markup).toContain('class="agent-todo-count"');
+    expect(markup).toContain('>1/3</span>');
+    expect(markup).toContain("✓ Inspect the flow");
+    expect(markup).toContain("→ Render the current plan");
+    expect(markup).toContain("○ Run focused tests");
+    expect(markup).not.toContain("Keep the rollout exact.");
+    expect(markup).not.toContain("<details");
 
     const done: AgentStatus = {
       ...status,
       plan: { ...status.plan!, steps: status.plan!.steps.map((step) => ({ ...step, status: "completed" as const })) },
     };
-    expect(renderRail({ sessions: [working], statuses: [done] })).not.toContain("agent-plan");
-    expect(renderRail({ sessions: [working], statuses: [done], selectedSessionId: working.id })).toContain('class="agent-plan done"');
+    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('class="agent-todo-count done"');
+    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('>3/3</span>');
+    expect(renderRail({ sessions: [working], statuses: [done], selectedSessionId: working.id })).toContain('class="agent-todo-count done"');
   });
 
   it("drops the plan the moment its Session is no longer live", () => {
@@ -510,7 +511,7 @@ describe("Task rail agent attention", () => {
         updatedAtEpochMs: 2,
       },
     };
-    expect(renderRail({ sessions: [stopped], statuses: [status] })).not.toContain("agent-plan");
+    expect(renderRail({ sessions: [stopped], statuses: [status] })).not.toContain("agent-todo-count");
   });
 });
 
