@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
-import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
+import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentAttention, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { integrationTone, taskChangeCount, taskChangeLabel, taskChangedFileLabel, taskDivergence, taskIntegration, taskPrimaryAction, taskRowAccessibleName, taskRowTone, taskStage, type TaskDivergence, type TaskIntegration, type TaskNextStepKind, type TaskSignalTone, type TaskStage } from "../task-presentation.js";
 import { Icon } from "./Icon.js";
@@ -13,7 +13,7 @@ import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
@@ -23,6 +23,7 @@ import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.j
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
+import { TaskWorkflowLaunchers } from "./TaskWorkflows.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { TaskDeveloperNotes } from "./TaskDeveloperNotes.js";
 
@@ -217,6 +218,8 @@ export type TaskRailProps = {
   gitHostProjections: readonly GitHostProjection[];
   branchCommitSummaries: readonly BranchCommitSummary[];
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   sessionsById: ReadonlyMap<string, Session>;
@@ -255,10 +258,13 @@ export type TaskRailProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
+  launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
+  saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
+  deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
   repairTaskWorktree(params: TaskRepairWorktreeParams): Promise<string | undefined>;
@@ -393,6 +399,8 @@ export function TaskRail(props: TaskRailProps) {
       gitHostProjection={gitHostByTask.get(task.id)}
       branchCommitSummary={branchCommitsByTask.get(task.id)}
       runConfigurations={props.runConfigurations}
+      workflowConfigurations={props.workflowConfigurations}
+      workflowStateRevision={props.workflowStateRevision}
       runRuntimes={props.runRuntimes}
       runStateRevision={props.runStateRevision}
       openExternal={props.openExternal}
@@ -417,10 +425,13 @@ export function TaskRail(props: TaskRailProps) {
       agentCapabilities={props.agentCapabilities}
       launchTerminal={props.launchTaskTerminal}
       launchAgent={props.launchTaskAgent}
+      launchWorkflow={props.launchTaskWorkflow}
       runImprovement={props.runImprovement}
       setupRunImprovement={props.setupRunImprovement}
       saveRunConfiguration={props.saveRunConfiguration}
       deleteRunConfiguration={props.deleteRunConfiguration}
+      saveWorkflowConfiguration={props.saveWorkflowConfiguration}
+      deleteWorkflowConfiguration={props.deleteWorkflowConfiguration}
       launchTaskRun={props.launchTaskRun}
       overlayContainer={props.overlayContainer}
       overlayVisibilityChanged={props.overlayVisibilityChanged}
@@ -769,6 +780,8 @@ type TaskGroupProps = {
   gitHostProjection: GitHostProjection | undefined;
   branchCommitSummary: BranchCommitSummary | undefined;
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -793,10 +806,13 @@ type TaskGroupProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTerminal(taskId: string): Promise<string | undefined>;
   launchAgent(taskId: string, agentId: string): Promise<string | undefined>;
+  launchWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
+  saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
+  deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   overlayContainer: Element | undefined;
   overlayVisibilityChanged(visible: boolean): void;
@@ -1259,6 +1275,19 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                   onClick={() => void props.launchAgent(task.id, capability.agent_id)}
                 ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
               ))}
+              <TaskWorkflowLaunchers
+                projectId={task.project_id}
+                task={task}
+                configurations={props.workflowConfigurations}
+                stateRevision={props.workflowStateRevision}
+                agentCapabilities={props.agentCapabilities}
+                launchable={launchable}
+                overlayContainer={props.overlayContainer}
+                overlayVisibilityChanged={props.overlayVisibilityChanged}
+                save={props.saveWorkflowConfiguration}
+                remove={props.deleteWorkflowConfiguration}
+                launch={props.launchWorkflow}
+              />
               <TaskRunLaunchers
                 projectId={task.project_id}
                 task={task}
@@ -1288,6 +1317,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.gitHostProjection === right.gitHostProjection
   && left.branchCommitSummary === right.branchCommitSummary
   && left.runConfigurations === right.runConfigurations
+  && left.workflowConfigurations === right.workflowConfigurations
+  && left.workflowStateRevision === right.workflowStateRevision
   && left.runRuntimes === right.runRuntimes
   && left.runStateRevision === right.runStateRevision
   && left.sessionsById === right.sessionsById

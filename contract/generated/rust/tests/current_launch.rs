@@ -194,6 +194,27 @@ fn task_launch_and_capability_surface_is_generated() {
         "task.launchAgent",
         &serde_json::json!({"taskId":"task-1","agentId":"codex"})
     ));
+    let workflow_preview = serde_json::json!({
+        "taskId":"task-1",
+        "workflowId":"workflow-1",
+        "goal":"Ship the reusable workflow builder"
+    });
+    assert!(validate_method_params(
+        "task.previewWorkflow",
+        &workflow_preview
+    ));
+    let mut missing_goal = workflow_preview.clone();
+    missing_goal.as_object_mut().unwrap().remove("goal");
+    assert!(!validate_method_params(
+        "task.previewWorkflow",
+        &missing_goal
+    ));
+    let mut workflow_launch = workflow_preview;
+    workflow_launch["launchTicket"] = serde_json::json!("a".repeat(64));
+    assert!(validate_method_params(
+        "task.launchWorkflow",
+        &workflow_launch
+    ));
     let capabilities: AgentCapabilityListResult = serde_json::from_value(serde_json::json!([
         {
             "agent_id":"claude", "label":"Claude", "available":true, "version":"1.2.3",

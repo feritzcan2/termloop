@@ -11,6 +11,7 @@ mod run_configuration;
 mod settings_improvement;
 mod skills;
 mod task_source;
+mod workflow;
 pub use run_configuration::RunConfigurationImproverBindings;
 mod runtime;
 pub mod session_launch;

@@ -35,6 +35,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || steward_conversation_refs_are_invalid(state)
         || worker_configurations_are_invalid(state)
         || run_configurations_are_invalid(state)
+        || workflow_configurations_are_invalid(state)
         || run_setup_marks_are_invalid(state)
         || configuration_versions_are_invalid(state)
         || tracker_configurations_are_invalid(state)
@@ -981,6 +982,30 @@ fn run_configurations_are_invalid(state: &CurrentState) -> bool {
                     .iter()
                     .any(|project| project.id == configuration.project_id)
                 || state.run_configurations[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.id == configuration.id)
+        })
+}
+
+fn workflow_configurations_are_invalid(state: &CurrentState) -> bool {
+    state.projects.iter().any(|project| {
+        state
+            .workflow_configurations
+            .iter()
+            .filter(|configuration| configuration.project_id == project.id)
+            .count()
+            > termloop_domain::WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX
+    }) || state
+        .workflow_configurations
+        .iter()
+        .enumerate()
+        .any(|(index, configuration)| {
+            !configuration.is_valid()
+                || !state
+                    .projects
+                    .iter()
+                    .any(|project| project.id == configuration.project_id)
+                || state.workflow_configurations[index + 1..]
                     .iter()
                     .any(|candidate| candidate.id == configuration.id)
         })
