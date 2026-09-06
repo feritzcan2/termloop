@@ -58,16 +58,10 @@
 .architecture-community-list h3 span,
 .architecture-hotspot-list h3 span,
 .architecture-inspector section h3 span { font-family: var(--font-mono); }
-.architecture-community-list button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 4px 7px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 10px; }
-.architecture-community-list > p { margin: -4px 7px 6px; color: var(--text-muted); font-size: 8px; }
+.architecture-community-list button { display: flex; align-items: center; gap: 8px; width: 100%; height: 29px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 10px; }
 .architecture-community-list button:hover,
 .architecture-community-list button.selected { background: var(--hover); color: var(--text); }
 .architecture-community-list i { --community-color: #63b4ec; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--community-color); box-shadow: 0 0 10px color-mix(in srgb, var(--community-color) 45%, transparent); }
-.architecture-community-list button > span { min-width: 0; display: grid; gap: 2px; }
-.architecture-community-list button strong,
-.architecture-community-list button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.architecture-community-list button strong { font-size: 10px; font-weight: 600; }
-.architecture-community-list button small { color: var(--text-muted); font: 8px var(--font-mono); }
 .architecture-community-list i[style*="1"] { --community-color: #9c84e8; }
 .architecture-community-list i[style*="2"] { --community-color: #57c59a; }
 .architecture-community-list i[style*="3"] { --community-color: #e8a14b; }
