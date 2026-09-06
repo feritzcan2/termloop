@@ -20,6 +20,7 @@ export type ArchitectureMapActions = {
 };
 
 type MapScope = "overview" | "hotspots";
+type GraphSelection = { centerNodeId?: string; communityKey?: string };
 
 function statusLabel(status: ProjectArchitectureSummaryDto["status"]): string {
   switch (status) {
@@ -34,10 +35,6 @@ function statusLabel(status: ProjectArchitectureSummaryDto["status"]): string {
 
 function nodeSubtitle(node: ProjectArchitectureNodeDto): string {
   return node.source_file ?? node.kind;
-}
-
-function communityKey(node: ProjectArchitectureNodeDto): string {
-  return node.community === null ? "unassigned" : String(node.community);
 }
 
 export function ArchitectureMapPanel({ projectId, projectName, actions }: {
@@ -58,15 +55,16 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
   const graphRequest = useRef(0);
   const nodeRequest = useRef(0);
 
-  const loadGraph = useCallback(async (centerNodeId?: string) => {
+  const loadGraph = useCallback(async (selection: GraphSelection = {}) => {
     const request = ++graphRequest.current;
     setLoading(true);
     setError(undefined);
     try {
       const next = await actions.loadGraph({
         projectId,
-        limit: centerNodeId ? 220 : 360,
-        ...(centerNodeId ? { centerNodeId, depth: 2 } : {}),
+        limit: selection.centerNodeId ? 220 : 180,
+        ...(selection.centerNodeId ? { centerNodeId: selection.centerNodeId, depth: 2 } : {}),
+        ...(selection.communityKey ? { communityKey: selection.communityKey } : {}),
       });
       if (request !== graphRequest.current) return;
       setGraph(next);
@@ -111,13 +109,13 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
           : { summary: refreshed, nodes: [], edges: [], truncated: false });
         return;
       }
-      await loadGraph();
+      await loadGraph(community ? { communityKey: community } : {});
     } catch {
       setError("Graphify could not refresh this Project.");
     } finally {
       setRefreshing(false);
     }
-  }, [actions, loadGraph, projectId]);
+  }, [actions, community, loadGraph, projectId]);
 
   const hotspotIds = useMemo(
     () => new Set(graph?.summary.hotspots.map((node) => node.id) ?? []),
@@ -127,33 +125,34 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return (graph?.nodes ?? []).filter((node) => {
       if (scope === "hotspots" && !hotspotIds.has(node.id)) return false;
-      if (community !== undefined && communityKey(node) !== community) return false;
       return !normalizedQuery
         || node.label.toLocaleLowerCase().includes(normalizedQuery)
         || node.source_file?.toLocaleLowerCase().includes(normalizedQuery);
     });
-  }, [community, graph?.nodes, hotspotIds, query, scope]);
+  }, [graph?.nodes, hotspotIds, query, scope]);
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEdges = useMemo(
     () => (graph?.edges ?? []).filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)),
     [graph?.edges, visibleIds],
   );
-  const layout = useMemo(() => architectureMapLayout(visibleNodes), [visibleNodes]);
+  const layout = useMemo(
+    () => architectureMapLayout(visibleNodes, 1200, 760, community),
+    [community, visibleNodes],
+  );
   const nodeById = useMemo(
     () => new Map((graph?.nodes ?? []).map((node) => [node.id, node])),
     [graph?.nodes],
   );
   const selectedDetail = selected?.node.id === selectedNodeId ? selected : undefined;
   const selectedNode = selectedDetail?.node ?? (selectedNodeId ? nodeById.get(selectedNodeId) : undefined);
-  const communities = useMemo(() => {
-    const found = new Map<string, string>();
-    for (const node of graph?.nodes ?? []) {
-      const key = communityKey(node);
-      found.set(key, node.community_name ?? (key === "unassigned" ? "Unassigned" : `Community ${key}`));
-    }
-    return [...found.entries()].sort((left, right) => left[1].localeCompare(right[1]));
-  }, [graph?.nodes]);
   const summary = graph?.summary;
+  const visibleCommunities = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const matches = normalizedQuery
+      ? summary?.communities.filter((item) => item.name.toLocaleLowerCase().includes(normalizedQuery)) ?? []
+      : summary?.communities ?? [];
+    return matches.slice(0, normalizedQuery ? 30 : 14);
+  }, [query, summary?.communities]);
 
   return (
     <div className="architecture-map" aria-label={`${projectName} architecture map`}>
@@ -164,18 +163,19 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
         </div>
         <label className="architecture-search">
           <Icon name="search" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find symbol or file" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find symbol, file or area" />
         </label>
         <div className="architecture-scope" role="group" aria-label="Map scope">
-          <button className={scope === "overview" && community === undefined ? "selected" : undefined} onClick={() => { setScope("overview"); setCommunity(undefined); }} type="button">Overview</button>
-          <button className={scope === "hotspots" ? "selected" : undefined} onClick={() => { setScope("hotspots"); setCommunity(undefined); }} type="button">God nodes</button>
+          <button className={scope === "overview" && community === undefined ? "selected" : undefined} onClick={() => { setScope("overview"); setCommunity(undefined); setSelected(undefined); setSelectedNodeId(undefined); void loadGraph(); }} type="button">Overview</button>
+          <button className={scope === "hotspots" ? "selected" : undefined} onClick={() => { setScope("hotspots"); setCommunity(undefined); if (community) void loadGraph(); }} type="button">God nodes</button>
         </div>
         <section className="architecture-community-list">
-          <h3>Communities <span>{communities.length}</span></h3>
-          {communities.map(([key, label]) => (
-            <button className={community === key ? "selected" : undefined} type="button" key={key} onClick={() => { setScope("overview"); setCommunity((current) => current === key ? undefined : key); }}>
-              <i style={{ "--community-index": String(communities.findIndex(([candidate]) => candidate === key) % 8) } as React.CSSProperties} />
-              <span>{label}</span>
+          <h3>High-risk areas <span>{visibleCommunities.length}</span></h3>
+          <p>{query.trim() ? `${visibleCommunities.length} matches` : summary?.community_catalog_truncated ? `Top areas · search ${summary.communities.length} of ${summary.community_count}` : `Top areas · search ${summary?.community_count ?? 0} total`}</p>
+          {visibleCommunities.map(({ key, name, node_count: nodeCount, risk_score: riskScore }, index) => (
+            <button className={community === key ? "selected" : undefined} type="button" key={key} onClick={() => { const next = community === key ? undefined : key; setScope("overview"); setCommunity(next); setQuery(""); setSelected(undefined); setSelectedNodeId(undefined); void loadGraph(next ? { communityKey: next } : {}); }}>
+              <i style={{ "--community-index": String(index % 8) } as React.CSSProperties} />
+              <span><strong>{name}</strong><small>{nodeCount} nodes · {Math.round(riskScore)} risk</small></span>
             </button>
           ))}
         </section>
@@ -214,8 +214,8 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
           {graph && graph.nodes.length > 0 ? <svg viewBox="0 0 1200 760" role="img" aria-label={`Architecture graph with ${visibleNodes.length} visible nodes`}>
             <g transform={`translate(600 380) scale(${zoom}) translate(-600 -380)`}>
               {layout.communityCenters.map((center, index) => <g className="architecture-community" key={center.key}>
-                <circle cx={center.x} cy={center.y} r="138" style={{ "--community-index": String(index % 8) } as React.CSSProperties} />
-                <text x={center.x} y={center.y - 146}>{center.label}</text>
+                <circle cx={center.x} cy={center.y} r={center.radius} style={{ "--community-index": String(index % 8) } as React.CSSProperties} />
+                {(community || layout.communityCenters.length <= 24) ? <text x={center.x} y={center.y - center.radius - 8}>{center.label}</text> : null}
               </g>)}
               <g className="architecture-edges">
                 {visibleEdges.map((edge, index) => {
@@ -258,8 +258,8 @@ export function ArchitectureMapPanel({ projectId, projectName, actions }: {
               return <button type="button" key={`${edge.source}:${edge.target}:${index}`} onClick={() => void selectNode(otherId)}><span>{nodeById.get(otherId)?.label ?? otherId}</span><small>{edge.relation}</small></button>;
             })}
           </section>
-          <button className="architecture-impact" type="button" onClick={() => void loadGraph(selectedNode.id)}><Icon name="focus" />Show impact radius</button>
-          <button className="architecture-overview" type="button" onClick={() => void loadGraph()}>Back to overview</button>
+          <button className="architecture-impact" type="button" onClick={() => { setCommunity(undefined); void loadGraph({ centerNodeId: selectedNode.id }); }}><Icon name="focus" />Show impact radius</button>
+          <button className="architecture-overview" type="button" onClick={() => { setScope("overview"); setCommunity(undefined); void loadGraph(); }}>Back to overview</button>
         </> : <div className="architecture-inspector-empty"><Icon name="branch" /><strong>Select a node</strong><p>Inspect dependency direction, reach and source location.</p></div>}
       </aside>
     </div>
