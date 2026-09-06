@@ -117,7 +117,6 @@ struct AppState {
     health_triggers: mpsc::Sender<HealthTrigger>,
     health_demands: Arc<tokio::sync::Mutex<HealthDemandRegistry>>,
     git_observation_gate: FairObservationGate,
-    architecture_refresh_gate: ArchitectureRefreshGate,
     git_host_query_scheduler: GitHostQueryScheduler,
     repair_request_locks: Arc<StdMutex<HashMap<String, Weak<Mutex<()>>>>>,
     task_source_refresh_locks: Arc<StdMutex<HashMap<String, Weak<Mutex<()>>>>>,
@@ -238,34 +237,6 @@ struct StewardLaunchGate {
 struct StewardLaunchPermit {
     gate: StewardLaunchGate,
     project_id: String,
-}
-
-#[derive(Clone, Default)]
-struct ArchitectureRefreshGate {
-    projects: Arc<StdMutex<HashSet<String>>>,
-}
-
-struct ArchitectureRefreshPermit {
-    gate: ArchitectureRefreshGate,
-    project_id: String,
-}
-
-impl ArchitectureRefreshGate {
-    fn try_admit(&self, project_id: String) -> Option<ArchitectureRefreshPermit> {
-        let inserted = self.projects.lock().ok()?.insert(project_id.clone());
-        inserted.then_some(ArchitectureRefreshPermit {
-            gate: self.clone(),
-            project_id,
-        })
-    }
-}
-
-impl Drop for ArchitectureRefreshPermit {
-    fn drop(&mut self) {
-        if let Ok(mut projects) = self.gate.projects.lock() {
-            projects.remove(&self.project_id);
-        }
-    }
 }
 
 impl StewardLaunchGate {
@@ -522,7 +493,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         health_triggers,
         health_demands,
         git_observation_gate: git_observation_gate.clone(),
-        architecture_refresh_gate: ArchitectureRefreshGate::default(),
         git_host_query_scheduler,
         repair_request_locks: Arc::new(StdMutex::new(HashMap::new())),
         task_source_refresh_locks: Arc::new(StdMutex::new(HashMap::new())),
@@ -1336,16 +1306,6 @@ mod tests {
     #[test]
     fn steward_launch_gate_coalesces_and_drop_always_releases_project() {
         let gate = StewardLaunchGate::default();
-        let permit = gate.try_admit("project-1".into()).unwrap();
-        assert!(gate.try_admit("project-1".into()).is_none());
-        assert!(gate.try_admit("project-2".into()).is_some());
-        drop(permit);
-        assert!(gate.try_admit("project-1".into()).is_some());
-    }
-
-    #[test]
-    fn architecture_refresh_gate_serializes_each_project_independently() {
-        let gate = ArchitectureRefreshGate::default();
         let permit = gate.try_admit("project-1".into()).unwrap();
         assert!(gate.try_admit("project-1".into()).is_none());
         assert!(gate.try_admit("project-2".into()).is_some());

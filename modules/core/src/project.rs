@@ -1,8 +1,6 @@
 //! Project command/projection ownership boundary.
 
-mod architecture;
 mod changes;
-pub use architecture::ProjectArchitecturePlan;
 pub(crate) use changes::ProjectChangeObservationCache;
 pub use changes::{
     ObservedProjectWorktreeChanges, ObservedProjectWorktreeDiff, ObservedProjectWorktreePreImage,
