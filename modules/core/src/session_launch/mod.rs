@@ -10,6 +10,7 @@ mod relocation;
 mod resume;
 mod resume_role;
 pub(crate) mod session_history;
+mod workflow_execution;
 
 pub use ask_to::{
     AskToInput, AskToLaunchCompletion, AskToPlanOutcome, McpAuthorizer, McpPrincipal,
@@ -32,6 +33,7 @@ pub use session_history::{
     ObservedSessionHistoryResume, ObservedSessionHistoryScan, SessionHistoryListPlanOutcome,
     SessionHistoryResumePlan, SessionHistoryScanPlan,
 };
+pub use workflow_execution::{WorkflowDelegateCommit, WorkflowDelegatePlan};
 
 use crate::{
     AgentObservationTransport, AgentRuntimeSignal, CoreError, CoreRuntime,
@@ -227,6 +229,7 @@ struct TaskKickoffLaunch {
 
 #[derive(Clone)]
 struct WorkflowLaunch {
+    execution_id: String,
     task_id: String,
     title: String,
     brief: Option<String>,
@@ -1501,6 +1504,14 @@ impl CoreRuntime {
         if configuration.project_id != task.project_id {
             return Err(CoreError::NotFound);
         }
+        if self.store.workflow_executions().iter().any(|execution| {
+            execution.task_id == task.id
+                && execution.phase != termloop_domain::WorkflowExecutionPhase::Completed
+        }) {
+            return Err(CoreError::WorkflowExecutionActive {
+                task_id: task.id.clone(),
+            });
+        }
         self.plan_task_worktree_launch(
             json!({
                 "taskId": task_id,
@@ -1671,7 +1682,9 @@ impl CoreRuntime {
             .iter()
             .find(|link| link.task_id == task_id && link.provider == IssueLinkProvider::Jira)
             .and_then(|link| link.url.as_deref());
+        let execution_id = termloop_platform::generate_opaque_id();
         termloop_invocation::task_workflow_prompt(
+            &execution_id,
             task_id,
             &task.title,
             task.brief.as_deref(),
@@ -1681,6 +1694,7 @@ impl CoreRuntime {
         )
         .map_err(|_| CoreError::InvalidParams("goal".into()))?;
         plan.workflow_launch = Some(WorkflowLaunch {
+            execution_id,
             task_id: task_id.to_owned(),
             title: task.title.clone(),
             brief: task.brief.clone(),
@@ -2034,7 +2048,30 @@ impl CoreRuntime {
             AgentMcpRole::Interactive | AgentMcpRole::Improver { .. }
         ) && plan.helper_prompt.is_none()
             && plan.steward_task_assignment.is_none();
-        let inserted = if remember_launch_selection {
+        let inserted = if let Some(workflow) = plan.workflow_launch.as_ref() {
+            let now = termloop_platform::current_epoch_ms();
+            self.store.insert_workflow_coordinator_session(
+                &self.write_authority,
+                session.clone(),
+                termloop_domain::WorkflowExecution {
+                    id: workflow.execution_id.clone(),
+                    project_id: plan.project_id.clone(),
+                    task_id: workflow.task_id.clone(),
+                    configuration: workflow.configuration.clone(),
+                    goal: workflow.goal.clone(),
+                    coordinator_session_id: session.id.clone(),
+                    current_step_index: 0,
+                    review_cycle: 1,
+                    phase: termloop_domain::WorkflowExecutionPhase::AwaitingCoordinator,
+                    coordinator_prompt_pending: false,
+                    current_request_id: None,
+                    participants: Vec::new(),
+                    review_changes_requested: false,
+                    started_at_epoch_ms: now,
+                    updated_at_epoch_ms: now,
+                },
+            )
+        } else if remember_launch_selection {
             self.store
                 .insert_session_and_remember_agent_launch(&self.write_authority, session.clone())
         } else {
@@ -2134,6 +2171,10 @@ impl Drop for AgentLaunchPlan {
 impl AgentLaunchPlan {
     pub fn agent_id(&self) -> &str {
         &self.agent_id
+    }
+
+    pub fn is_workflow_launch(&self) -> bool {
+        self.workflow_launch.is_some()
     }
 
     pub fn fork_task_scope(&self) -> Option<(&str, &str)> {
@@ -2452,6 +2493,7 @@ fn resolve_interactive_agent_launch(
             &selection.model,
             &selection.permission,
             &selection.reasoning,
+            &workflow.execution_id,
             &workflow.task_id,
             &workflow.title,
             workflow.brief.as_deref(),

@@ -80,6 +80,7 @@ impl CoreRuntime {
             "workflow.configurationCreate" => self.create_workflow_configuration(params),
             "workflow.configurationUpdate" => self.update_workflow_configuration(params),
             "workflow.configurationDelete" => self.delete_workflow_configuration(params),
+            "workflow.executionCancel" => self.cancel_workflow_execution(params),
             "configuration.versionList" => self.list_configuration_versions(params),
             "run.runtimeList" => self.list_run_runtime(params),
             "routine.configurationList" => self.list_tracker_configurations(params),

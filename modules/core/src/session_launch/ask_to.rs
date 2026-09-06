@@ -34,11 +34,11 @@ impl AskToStatus {
 }
 
 pub(crate) struct AskToRequest {
-    request_id: String,
-    conversation_id: String,
-    source_session_id: String,
+    pub(crate) request_id: String,
+    pub(crate) conversation_id: String,
+    pub(crate) source_session_id: String,
     source_runtime_epoch: u64,
-    helper_session_id: String,
+    pub(crate) helper_session_id: String,
     project_id: String,
     idempotency_key: Option<String>,
     status: AskToStatus,
@@ -822,6 +822,7 @@ impl CoreRuntime {
                     .get_mut(&request_id)
                     .ok_or(CoreError::AskToRequestUnavailable)?
                     .reply_delivered = true;
+                self.complete_workflow_helper_reply_delivery(&request_id)?;
             }
         }
         self.ask_to_delivery_completions.remove(target_session_id);

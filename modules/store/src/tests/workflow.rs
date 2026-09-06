@@ -1,7 +1,8 @@
 use super::*;
 use termloop_domain::{
-    AgentLaunchSelection, ProjectRecord, WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX,
-    WorkflowConfiguration, WorkflowStep, WorkflowStepKind,
+    AgentLaunchSelection, ProcessDescriptor, ProjectRecord, SessionKind, SessionRecord, TaskRecord,
+    TaskStatus, WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WorkflowConfiguration, WorkflowExecution,
+    WorkflowExecutionPhase, WorkflowStep, WorkflowStepKind,
 };
 
 fn project(id: &str) -> ProjectRecord {
@@ -51,6 +52,79 @@ fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
     }
 }
 
+fn task(id: &str, project_id: &str) -> TaskRecord {
+    TaskRecord {
+        id: id.into(),
+        project_id: project_id.into(),
+        title: "Workflow task".into(),
+        brief: None,
+        developer_notes: vec![],
+        status: TaskStatus::Open,
+        archived_at_epoch_ms: None,
+        branch: None,
+        worktree: None,
+        worktree_generation: 0,
+        steward_brief_markdown: String::new(),
+        steward_brief_revision: 1,
+        rank: 0,
+        created_at_epoch_ms: 1,
+        updated_at_epoch_ms: 1,
+    }
+}
+
+fn coordinator_session(id: &str, project_id: &str) -> SessionRecord {
+    SessionRecord {
+        id: id.into(),
+        project_id: project_id.into(),
+        name: Some("Discuss, implement, review".into()),
+        kind: SessionKind::Agent,
+        process: ProcessDescriptor {
+            program: "codex".into(),
+            args: vec![],
+            cwd: format!("/tmp/{project_id}"),
+            agent_id: Some("codex".into()),
+            template_ref: Some("builtin.agent.task-workflow".into()),
+            template_version: Some(3),
+        },
+        launch_selection: AgentLaunchSelection::default(),
+        lifecycle_state: "running".into(),
+        runtime_epoch: 1,
+        archived_at_epoch_ms: None,
+        ask_to_source_session_id: None,
+        run_configuration_id: None,
+        improver_target: None,
+        ask_to_continuation: None,
+        resume_ref: None,
+        resume_launch_guard: None,
+        resume_failure: None,
+    }
+}
+
+fn execution(
+    id: &str,
+    task_id: &str,
+    coordinator_session_id: &str,
+    configuration: WorkflowConfiguration,
+) -> WorkflowExecution {
+    WorkflowExecution {
+        id: id.into(),
+        project_id: configuration.project_id.clone(),
+        task_id: task_id.into(),
+        configuration,
+        goal: "Ship Core-managed workflows.".into(),
+        coordinator_session_id: coordinator_session_id.into(),
+        current_step_index: 0,
+        review_cycle: 1,
+        phase: WorkflowExecutionPhase::AwaitingCoordinator,
+        coordinator_prompt_pending: false,
+        current_request_id: None,
+        participants: vec![],
+        review_changes_requested: false,
+        started_at_epoch_ms: 1,
+        updated_at_epoch_ms: 1,
+    }
+}
+
 fn open_store(label: &str) -> (std::path::PathBuf, CoreWriteAuthority, Store) {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-workflow-{label}-{}-{}.json",
@@ -87,6 +161,36 @@ fn schema_50_migrates_to_empty_workflow_current_state() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert_eq!(persisted["workflow_configurations"], serde_json::json!([]));
+    assert_eq!(persisted["workflow_executions"], serde_json::json!([]));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn schema_51_migrates_to_an_empty_current_execution_set() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-workflow-execution-migration-{}-{}.json",
+        std::process::id(),
+        termloop_platform::current_epoch_ms()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 51,
+            "revision": 4,
+            "projects": [],
+            "sessions": [],
+            "workflow_configurations": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert!(store.workflow_executions().is_empty());
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(persisted["workflow_executions"], serde_json::json!([]));
     let _ = std::fs::remove_file(path);
 }
 
@@ -165,5 +269,56 @@ fn workflow_configuration_count_is_bounded_and_project_delete_cascades() {
         .delete_project_and_related_records(&authority, "project-a")
         .unwrap();
     assert!(store.workflow_configurations().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn coordinator_and_current_execution_are_atomic_bounded_and_durable() {
+    let (path, authority, mut store) = open_store("execution");
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .insert_task(&authority, task("task-a", "project-a"))
+        .unwrap();
+    let configuration = store
+        .set_workflow_configuration(
+            &authority,
+            configuration("workflow-1", "project-a"),
+            store.revision(),
+        )
+        .unwrap();
+    let first = execution(
+        "execution-1",
+        "task-a",
+        "coordinator-1",
+        configuration.clone(),
+    );
+    store
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("coordinator-1", "project-a"),
+            first.clone(),
+        )
+        .unwrap();
+    assert_eq!(store.workflow_executions(), std::slice::from_ref(&first));
+
+    assert!(matches!(
+        store.insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("coordinator-2", "project-a"),
+            execution("execution-2", "task-a", "coordinator-2", configuration,),
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+
+    drop(store);
+    let mut reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.workflow_executions(), std::slice::from_ref(&first));
+    let removed = reopened
+        .cancel_workflow_execution(&authority, &first.id, reopened.revision())
+        .unwrap();
+    assert_eq!(removed, first);
+    assert!(reopened.workflow_executions().is_empty());
     let _ = std::fs::remove_file(path);
 }

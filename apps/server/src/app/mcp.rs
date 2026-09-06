@@ -16,7 +16,8 @@ use termloop_contract::current::{
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
     McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
     RoutineFindingResolveParams, SendToAgentParams, WorkerAssignmentCompleteParams,
-    WorkerAssignmentStatus, WorkerTaskAgentRequestParams,
+    WorkerAssignmentStatus, WorkerTaskAgentRequestParams, WorkflowDelegateParams,
+    WorkflowStepCompleteParams,
 };
 use tokio::time::{Duration, Instant};
 
@@ -292,6 +293,29 @@ async fn tool_call_inner(
                 state,
             )
             .await
+        }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "workflow_delegate") => {
+            let params: WorkflowDelegateParams = serde_json::from_value(arguments)
+                .expect("generated workflow delegate validation precedes decoding");
+            run_workflow_delegate(token, params.message, state).await
+        }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "workflow_step_complete") => {
+            let params: WorkflowStepCompleteParams = serde_json::from_value(arguments)
+                .expect("generated workflow completion validation precedes decoding");
+            let outcome = match params.outcome {
+                protocol::WorkflowStepOutcome::Completed => "completed",
+                protocol::WorkflowStepOutcome::Approved => "approved",
+                protocol::WorkflowStepOutcome::ChangesRequested => "changesRequested",
+            };
+            let result = state
+                .core
+                .lock()
+                .await
+                .complete_workflow_step(token, outcome);
+            if result.is_ok() {
+                publish_workflow_invalidation(state).await;
+            }
+            result
         }
         (
             termloop_core::session_launch::AgentMcpRole::Helper { request_id },
@@ -578,6 +602,34 @@ async fn run_ask_to(
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
     let outcome = state.core.lock().await.plan_ask_to(token, input)?;
+    run_planned_ask_to(outcome, state).await
+}
+
+async fn run_workflow_delegate(
+    token: &str,
+    message: String,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let planned = state
+        .core
+        .lock()
+        .await
+        .plan_workflow_delegate(token, message)?;
+    let (outcome, commit) = planned.into_parts();
+    let acknowledgement = run_planned_ask_to(outcome, state).await?;
+    state
+        .core
+        .lock()
+        .await
+        .complete_workflow_delegate(token, commit)?;
+    publish_workflow_invalidation(state).await;
+    Ok(acknowledgement)
+}
+
+async fn run_planned_ask_to(
+    outcome: termloop_core::session_launch::AskToPlanOutcome,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
     let plan = match outcome {
         termloop_core::session_launch::AskToPlanOutcome::Existing(value)
         | termloop_core::session_launch::AskToPlanOutcome::FollowUp(value) => return Ok(value),
@@ -601,6 +653,15 @@ async fn run_ask_to(
             )))
         }
     }
+}
+
+async fn publish_workflow_invalidation(state: &AppState) {
+    let state_revision = state.core.lock().await.state_revision();
+    let _ = state.invalidation_requests.try_send(InvalidationRequest {
+        topics: vec![ProjectionTopic::Workflow],
+        state_revision,
+        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+    });
 }
 
 async fn execute_ask_to_launch(
@@ -659,7 +720,7 @@ async fn execute_ask_to_launch(
 fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {
     match role {
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. Use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -1793,7 +1854,15 @@ mod tests {
             },
             &descriptions,
         );
-        assert_eq!(tool_names(&asker), ["ask_to", "send_to_agent"]);
+        assert_eq!(
+            tool_names(&asker),
+            [
+                "ask_to",
+                "send_to_agent",
+                "workflow_delegate",
+                "workflow_step_complete"
+            ]
+        );
         assert_eq!(
             tool_names(&helper),
             ["ask_to", "send_to_agent", "reply_to_request"]

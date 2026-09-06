@@ -554,6 +554,14 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
+        51 => {
+            migrate_v51_to_v52_value(&mut value)?;
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
         CURRENT_SCHEMA_VERSION => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
@@ -1100,6 +1108,7 @@ fn migrate_v49_to_v50(state: &mut CurrentState) {
 
 fn migrate_v50_to_v51(state: &mut CurrentState) {
     debug_assert!(state.workflow_configurations.is_empty());
+    debug_assert!(state.workflow_executions.is_empty());
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
 
@@ -1363,6 +1372,15 @@ fn migrate_v50_to_v51_value(value: &mut serde_json::Value) -> Result<(), StoreEr
         .as_object_mut()
         .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
     object.insert("workflow_configurations".into(), serde_json::json!([]));
+    object.insert("schema_version".into(), serde_json::json!(51));
+    migrate_v51_to_v52_value(value)
+}
+
+fn migrate_v51_to_v52_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    object.insert("workflow_executions".into(), serde_json::json!([]));
     object.insert(
         "schema_version".into(),
         serde_json::json!(CURRENT_SCHEMA_VERSION),

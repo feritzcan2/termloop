@@ -107,6 +107,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   workflowConfigurationCreate: "termloop:workflow-configuration-create",
   workflowConfigurationUpdate: "termloop:workflow-configuration-update",
   workflowConfigurationDelete: "termloop:workflow-configuration-delete",
+  workflowExecutionCancel: "termloop:workflow-execution-cancel",
   settingsImprovePreview: "termloop:settings-improve-preview",
   settingsImproveLaunch: "termloop:settings-improve-launch",
   assistantPromptImprovePreview: "termloop:assistant-prompt-improve-preview",

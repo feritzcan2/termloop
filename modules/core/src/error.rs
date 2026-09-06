@@ -141,6 +141,10 @@ pub enum CoreError {
     AskToAlreadyReplied,
     #[error("the asker Session no longer exists")]
     AskToRequestGone,
+    #[error("Task {task_id} already has an active workflow execution")]
+    WorkflowExecutionActive { task_id: String },
+    #[error("the workflow execution is not waiting for this action")]
+    WorkflowExecutionState,
     #[error("branch is held by Task {task_id}")]
     BranchHeldByTask { task_id: String },
     #[error("Task {task_id} already has a different branch binding")]

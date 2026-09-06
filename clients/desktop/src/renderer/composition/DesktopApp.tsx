@@ -329,7 +329,7 @@ async function refreshSelectedProjectOnce(): Promise<void> {
   let tasks: Task[] = [];
   let projectWorktreeSummary;
   let runConfigurationResult = { configurations: [] as RunConfigurationDto[], stateRevision: 0 };
-  let workflowConfigurationResult = { configurations: [] as WorkflowConfigurationDto[], stateRevision: 0 };
+  let workflowConfigurationResult: Awaited<ReturnType<SourceDesktopApi["workflowConfigurationList"]>> = { configurations: [], executions: [], stateRevision: 0 };
   let runRuntimeResult: Awaited<ReturnType<SourceDesktopApi["runRuntimeList"]>> = { runs: [], stateRevision: 0 };
   let playbookResult: Awaited<ReturnType<SourceDesktopApi["playbookGet"]>> = { playbook: null, stateRevision: 0 };
   let playbookRuntime: Awaited<ReturnType<SourceDesktopApi["playbookRuntime"]>> | undefined;
@@ -381,6 +381,7 @@ async function refreshSelectedProjectOnce(): Promise<void> {
       playbookResult.playbook,
       playbookRuntime ?? null,
       workflowConfigurationResult.configurations,
+      workflowConfigurationResult.executions,
       workflowConfigurationResult.stateRevision,
     );
   }
@@ -1066,6 +1067,20 @@ export function DesktopApp() {
       return message;
     }
   }, [selectedSourceApi]);
+  const cancelWorkflowExecution = useCallback(async (executionId: string): Promise<string | undefined> => {
+    try {
+      await selectedSourceApi.workflowExecutionCancel({
+        executionId,
+        expectedRevision: projectionStore.getSnapshot().workflowStateRevision,
+      });
+      await refreshProjection();
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, [selectedSourceApi]);
   /// Improve-with-agent launch and immutable version history for settings.
   /// The Agent activates a new version only after the user tells it to apply.
   const settingsImprovement = useMemo(() => ({
@@ -1328,7 +1343,9 @@ export function DesktopApp() {
       const session = outcome.result;
       projectionStore.upsertSession(session);
       terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-      await refreshTaskProjection([taskId]);
+      // The launch creates both a Session and Core execution state. Refresh
+      // both projections before revealing the coordinator terminal.
+      await refreshProjection();
       presentationStore.getState().selectProject(session.project_id);
       presentationStore.getState().selectSession(session.project_id, session.id);
       focusTerminalSoon(session.id);
@@ -2250,6 +2267,7 @@ export function DesktopApp() {
       branchCommitSummaries={projection.branchCommitSummaries}
       runConfigurations={projection.runConfigurations}
       workflowConfigurations={projection.workflowConfigurations}
+      workflowExecutions={projection.workflowExecutions}
       workflowStateRevision={projection.workflowStateRevision}
       runRuntimes={projection.runRuntimes}
       runStateRevision={projection.runStateRevision}
@@ -2403,6 +2421,7 @@ export function DesktopApp() {
       deleteRunConfiguration={deleteRunConfiguration}
       saveWorkflowConfiguration={saveWorkflowConfiguration}
       deleteWorkflowConfiguration={deleteWorkflowConfiguration}
+      cancelWorkflowExecution={cancelWorkflowExecution}
       launchTaskRun={launchTaskRun}
       launchProjectRun={launchProjectRun}
       inspectTaskWorktreeRepair={inspectTaskWorktreeRepair}

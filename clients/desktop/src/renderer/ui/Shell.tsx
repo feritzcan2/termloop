@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
-import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration } from "../model.js";
+import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
 import { agentActivityPriority } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
@@ -133,6 +133,7 @@ export type ShellProps = {
   branchCommitSummaries: readonly BranchCommitSummary[];
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
   workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
@@ -284,6 +285,7 @@ export type ShellProps = {
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
   saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
+  cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   launchProjectRun(projectId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
@@ -1427,6 +1429,7 @@ export function Shell(props: ShellProps) {
             branchCommitSummaries={props.branchCommitSummaries}
             runConfigurations={props.runConfigurations}
             workflowConfigurations={props.workflowConfigurations}
+            workflowExecutions={props.workflowExecutions}
             workflowStateRevision={props.workflowStateRevision}
             runRuntimes={props.runRuntimes}
             runStateRevision={props.runStateRevision}
@@ -1471,6 +1474,7 @@ export function Shell(props: ShellProps) {
             deleteRunConfiguration={props.deleteRunConfiguration}
             saveWorkflowConfiguration={props.saveWorkflowConfiguration}
             deleteWorkflowConfiguration={props.deleteWorkflowConfiguration}
+            cancelWorkflowExecution={props.cancelWorkflowExecution}
             launchTaskRun={props.launchTaskRun}
             inspectTaskWorktreeRepair={props.inspectTaskWorktreeRepair}
             repairTaskWorktree={props.repairTaskWorktree}

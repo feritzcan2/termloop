@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
-import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration } from "../model.js";
+import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration, type WorkflowExecution } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentAttention, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { integrationTone, taskChangeCount, taskChangeLabel, taskChangedFileLabel, taskDivergence, taskIntegration, taskPrimaryAction, taskRowAccessibleName, taskRowTone, taskStage, type TaskDivergence, type TaskIntegration, type TaskNextStepKind, type TaskSignalTone, type TaskStage } from "../task-presentation.js";
 import { Icon } from "./Icon.js";
@@ -219,6 +219,7 @@ export type TaskRailProps = {
   branchCommitSummaries: readonly BranchCommitSummary[];
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
   workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
@@ -265,6 +266,7 @@ export type TaskRailProps = {
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
   saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
+  cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
   repairTaskWorktree(params: TaskRepairWorktreeParams): Promise<string | undefined>;
@@ -400,6 +402,7 @@ export function TaskRail(props: TaskRailProps) {
       branchCommitSummary={branchCommitsByTask.get(task.id)}
       runConfigurations={props.runConfigurations}
       workflowConfigurations={props.workflowConfigurations}
+      workflowExecutions={props.workflowExecutions}
       workflowStateRevision={props.workflowStateRevision}
       runRuntimes={props.runRuntimes}
       runStateRevision={props.runStateRevision}
@@ -426,6 +429,7 @@ export function TaskRail(props: TaskRailProps) {
       launchTerminal={props.launchTaskTerminal}
       launchAgent={props.launchTaskAgent}
       launchWorkflow={props.launchTaskWorkflow}
+      cancelWorkflowExecution={props.cancelWorkflowExecution}
       runImprovement={props.runImprovement}
       setupRunImprovement={props.setupRunImprovement}
       saveRunConfiguration={props.saveRunConfiguration}
@@ -781,6 +785,7 @@ type TaskGroupProps = {
   branchCommitSummary: BranchCommitSummary | undefined;
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
   workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
@@ -807,6 +812,7 @@ type TaskGroupProps = {
   launchTerminal(taskId: string): Promise<string | undefined>;
   launchAgent(taskId: string, agentId: string): Promise<string | undefined>;
   launchWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
@@ -1279,6 +1285,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                 projectId={task.project_id}
                 task={task}
                 configurations={props.workflowConfigurations}
+                executions={props.workflowExecutions}
                 stateRevision={props.workflowStateRevision}
                 agentCapabilities={props.agentCapabilities}
                 launchable={launchable}
@@ -1287,6 +1294,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                 save={props.saveWorkflowConfiguration}
                 remove={props.deleteWorkflowConfiguration}
                 launch={props.launchWorkflow}
+                cancel={props.cancelWorkflowExecution}
               />
               <TaskRunLaunchers
                 projectId={task.project_id}
@@ -1318,6 +1326,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.branchCommitSummary === right.branchCommitSummary
   && left.runConfigurations === right.runConfigurations
   && left.workflowConfigurations === right.workflowConfigurations
+  && left.workflowExecutions === right.workflowExecutions
   && left.workflowStateRevision === right.workflowStateRevision
   && left.runRuntimes === right.runRuntimes
   && left.runStateRevision === right.runStateRevision
