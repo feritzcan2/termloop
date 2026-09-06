@@ -213,8 +213,6 @@ test("architecture projections are strict, bounded, and full-control only", () =
     node_count: 1,
     edge_count: 0,
     community_count: 1,
-    communities: [{ key: "n:1", name: "Application", node_count: 1, risk_score: 72.5 }],
-    community_catalog_truncated: false,
     hotspots: [node],
     warning: null,
   };
