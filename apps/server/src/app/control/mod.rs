@@ -619,6 +619,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "session.historyList"
             | "session.historyPreview"
             | "agent.capabilityList"
+            | "agent.profileList"
             | "agent.statusList"
             | "mcp.toolSettingsGet"
             | "steward.configurationGet"

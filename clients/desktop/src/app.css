@@ -1393,7 +1393,9 @@ button.task-signal.issue:hover { color: var(--warning); }
 
 .quick-action-header { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border-bottom: 1px solid var(--qa-rule); }
 .quick-action-kind-slot { flex: 0 0 360px; min-width: 0; }
-.quick-action-kind { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--qa-rule); border-radius: 8px; background: var(--qa-fill); }
+.quick-action-kind { position: relative; display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--qa-rule); border-radius: 8px; background: var(--qa-fill); cursor: pointer; }
+.quick-action-kind:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.quick-action-kind > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .quick-action-kind > span { display: grid; flex: none; place-items: center; width: 20px; height: 20px; border: 1px solid light-dark(rgba(15,23,42,.14), rgba(255,255,255,.14)); border-radius: 5px; background: light-dark(rgba(15,23,42,.08), rgba(255,255,255,.08)); color: #fff; font-size: 11px; font-weight: 700; }
 .quick-action-kind strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .quick-action-kind i { flex: none; width: 1px; height: 14px; background: light-dark(rgba(15,23,42,.12), rgba(255,255,255,.12)); }

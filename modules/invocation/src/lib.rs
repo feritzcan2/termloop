@@ -3,6 +3,7 @@
 mod assistant;
 mod codex_config;
 mod manifest;
+mod profiles;
 mod submission;
 
 pub use manifest::{
@@ -10,6 +11,7 @@ pub use manifest::{
     InspectableGeneratedFile, InspectableLaunchManifest, InspectableLaunchTarget,
     InspectableLimitation, InspectableProvenance, InspectableTransport,
 };
+pub use profiles::{AgentProfile, agent_profile, agent_profiles};
 pub use submission::GeneratedTerminalSubmission;
 
 use codex_config::CodexProjectTrust;
@@ -47,8 +49,9 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     authored_body: include_str!("../../../resources/prompts/builtin.agent.interactive.md"),
 };
 const CODEX_DISABLE_STARTUP_UPDATE_CHECK: &str = "check_for_update_on_startup=false";
+pub const QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF: &str = "builtin.quick-action.free-prompt";
 const QUICK_ACTION_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.quick-action.free-prompt",
+    id: QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
     version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.quick-action.free-prompt.md"),
 };
@@ -243,6 +246,10 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
+        profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,
+        profiles::EDGE_CASE_HUNTER_TEMPLATE,
+        profiles::TEST_GAP_FINDER_TEMPLATE,
+        profiles::ARCHITECTURE_BOUNDARY_REVIEWER_TEMPLATE,
         IMPROVER_RUN_CONFIGURATION_TEMPLATE,
         IMPROVER_RUN_CONFIGURATION_NEW_TEMPLATE,
         IMPROVER_STEWARD_INSTRUCTIONS_TEMPLATE,
@@ -428,10 +435,191 @@ pub fn quick_action_agent_with_attachments_for_conversation(
     .map(ResolvedLaunchManifest::into_payload)
 }
 
+/// Resolves a catalog-backed Agent Profile as persistent provider instructions
+/// while preserving the caller's task as the first visible conversation
+/// message. Profiles are deliberately limited to the providers that can accept
+/// an inspectable launch-scoped instruction layer.
+#[allow(clippy::too_many_arguments)]
+pub fn profile_quick_action_agent_with_attachments_for_conversation(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    prompt: &str,
+    attachments: &[QuickActionImageAttachment],
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    let profile = validate_agent_profile_selection(profile_ref, agent_id, permission)?;
+    validate_quick_action_with_attachments(
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        prompt,
+        attachments,
+    )?;
+    let provider_instructions = profile_provider_instructions(profile, mcp.as_ref())?;
+    let mut resolved = resolve_launch_manifest_with_attachments(
+        agent_id,
+        cwd,
+        profile.template(),
+        model,
+        permission,
+        reasoning,
+        Some(prompt),
+        conversation,
+        observation,
+        mcp,
+        Some(profile.template()),
+        Some(&provider_instructions),
+        attachments,
+    )?;
+    let delivered_prompt = resolved
+        .delivered_prompt
+        .as_deref()
+        .expect("profile Quick Action always resolves a first message");
+    resolved.inspectable.provenance.delivered_digest =
+        content_digest(&format!("{provider_instructions}\n\n{delivered_prompt}"));
+    finalize_digest(&mut resolved.inspectable);
+    resolved.bindings = vec![
+        ("profileRef".into(), profile.id.into()),
+        ("prompt".into(), prompt.into()),
+    ];
+    Ok(resolved.into_payload())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn configured_agent_profile_for_conversation_resume(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+        profile_ref,
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        conversation,
+        observation,
+        mcp,
+        CodexProjectTrust::Inherit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn configured_agent_profile_for_managed_worktree_conversation_resume(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+        profile_ref,
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        conversation,
+        observation,
+        mcp,
+        CodexProjectTrust::TermLoopManagedWorktree,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+    codex_project_trust: CodexProjectTrust,
+) -> Result<LaunchPayload, InvocationError> {
+    let profile = validate_agent_profile_selection(profile_ref, agent_id, permission)?;
+    validate_agent_configuration(agent_id, model, permission, reasoning)?;
+    let provider_instructions = profile_provider_instructions(profile, mcp.as_ref())?;
+    resolve_launch_manifest_with_attachments_and_codex_project_trust(
+        agent_id,
+        cwd,
+        profile.template(),
+        model,
+        permission,
+        reasoning,
+        None,
+        conversation,
+        observation,
+        mcp,
+        Some(profile.template()),
+        Some(&provider_instructions),
+        &[],
+        codex_project_trust,
+    )
+    .map(ResolvedLaunchManifest::into_payload)
+}
+
+fn validate_agent_profile_selection(
+    profile_ref: &str,
+    agent_id: &str,
+    permission: &str,
+) -> Result<&'static AgentProfile, InvocationError> {
+    let profile = agent_profile(profile_ref).ok_or(InvocationError::TemplateMissing)?;
+    if !profile.user_invocable || !profile.supported_agent_ids.contains(&agent_id) {
+        return Err(InvocationError::UnsupportedAgent(agent_id.to_owned()));
+    }
+    if permission != profile.permission {
+        return Err(InvocationError::UnsupportedPermission {
+            agent_id: agent_id.to_owned(),
+            permission: permission.to_owned(),
+        });
+    }
+    Ok(profile)
+}
+
+fn profile_provider_instructions(
+    profile: &AgentProfile,
+    mcp: Option<&AgentMcpLaunch<'_>>,
+) -> Result<String, InvocationError> {
+    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
+        format!(
+            "{}\n\n{}",
+            INTERACTIVE_AGENT_TEMPLATE.authored_body,
+            profile.instructions()
+        )
+    } else {
+        profile.instructions().to_owned()
+    };
+    if instructions.len() > 64 * 1024 {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    Ok(instructions)
+}
+
 fn quick_action_template() -> Result<&'static PromptTemplate, InvocationError> {
     let template = prompt_templates()
         .iter()
-        .find(|template| template.id == "builtin.quick-action.free-prompt")
+        .find(|template| template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF)
         .ok_or(InvocationError::TemplateMissing)?;
     if !template
         .authored_body
@@ -1264,7 +1452,7 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
             ]);
         }
     }
-    if template.id == "builtin.quick-action.free-prompt"
+    if template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
         || model != "default"
         || permission != "default"
         || reasoning != "default"
@@ -4245,6 +4433,169 @@ mod tests {
                 "Inspect this\nthen run tests\tcarefully",
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn agent_profile_catalog_is_versioned_and_read_only() {
+        assert_eq!(agent_profiles().len(), 4);
+        for profile in agent_profiles() {
+            assert_eq!(profile.permission, "plan");
+            assert!(profile.read_only);
+            assert!(profile.user_invocable);
+            assert_eq!(profile.supported_agent_ids, ["claude", "codex"]);
+            assert!(
+                profile
+                    .instructions()
+                    .contains(&format!("id: `{}`", profile.id))
+            );
+            assert!(
+                profile
+                    .instructions()
+                    .contains(&format!("version: `{}`", profile.version))
+            );
+            assert!(
+                prompt_templates()
+                    .iter()
+                    .any(|template| template.id == profile.id)
+            );
+        }
+    }
+
+    #[test]
+    fn agent_profile_keeps_instructions_separate_from_the_user_task() {
+        let profile = agent_profiles()[0];
+        let launch = profile_quick_action_agent_with_attachments_for_conversation(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            "Inspect session launch ownership",
+            &[],
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(launch.provenance().template_ref, profile.id);
+        assert_eq!(launch.provenance().template_version, profile.version);
+        assert_eq!(
+            launch.delivered_prompt(),
+            Some("Inspect session launch ownership")
+        );
+        assert_eq!(
+            launch.bindings().collect::<Vec<_>>(),
+            vec![
+                ("profileRef", profile.id),
+                ("prompt", "Inspect session launch ownership"),
+            ]
+        );
+        let content = &launch.inspectable_manifest().content_parts;
+        assert_eq!(content[0].kind, "firstMessage");
+        assert_eq!(content[0].content, "Inspect session launch ownership");
+        assert_eq!(content[1].kind, "providerInstructions");
+        assert_eq!(content[1].content, profile.instructions());
+    }
+
+    #[test]
+    fn agent_profile_rejects_write_permission_and_unsupported_provider() {
+        let profile = agent_profiles()[0];
+        let launch = |agent_id, permission| {
+            profile_quick_action_agent_with_attachments_for_conversation(
+                profile.id,
+                agent_id,
+                "/tmp/project",
+                "default",
+                permission,
+                "default",
+                "Inspect this",
+                &[],
+                AgentConversationLaunch::Fresh { resume_ref: None },
+                None,
+                None,
+            )
+        };
+        assert!(matches!(
+            launch("codex", "acceptEdits"),
+            Err(InvocationError::UnsupportedPermission { .. })
+        ));
+        assert!(matches!(
+            launch("gemini", "plan"),
+            Err(InvocationError::UnsupportedAgent(agent_id)) if agent_id == "gemini"
+        ));
+    }
+
+    #[test]
+    fn agent_profile_resume_reapplies_instructions_without_a_new_user_message() {
+        let profile = agent_profiles()[0];
+        let resume_ref = termloop_domain::ResumeRef::for_provider(
+            termloop_domain::ResumeProvider::Codex,
+            "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035".into(),
+        )
+        .unwrap();
+        let launch = configured_agent_profile_for_conversation_resume(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            AgentConversationLaunch::Resume {
+                resume_ref: &resume_ref,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(launch.provenance().template_ref, profile.id);
+        assert_eq!(launch.initial_input(), None);
+        assert_eq!(launch.delivered_prompt(), None);
+        assert_eq!(
+            launch.inspectable_manifest().transport.kind,
+            "codexDeveloperInstructions"
+        );
+        assert_eq!(launch.inspectable_manifest().content_parts.len(), 1);
+        assert_eq!(
+            launch.inspectable_manifest().content_parts[0].kind,
+            "providerInstructions"
+        );
+    }
+
+    #[test]
+    fn agent_profile_preserves_the_interactive_termloop_protocol() {
+        let profile = agent_profiles()[0];
+        let launch = profile_quick_action_agent_with_attachments_for_conversation(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            "Inspect this workflow",
+            &[],
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            Some(AgentMcpLaunch {
+                endpoint: "http://127.0.0.1:4567/mcp",
+                token: "private-token",
+                claude_config_path: "/tmp/claude-mcp.json",
+                profile: AgentMcpProfile::Interactive,
+            }),
+        )
+        .unwrap();
+
+        let instructions = &launch.inspectable_manifest().content_parts[1].content;
+        assert!(instructions.contains("use `ask_to`"));
+        assert!(instructions.contains("write-side operations"));
+        assert!(
+            !launch
+                .args()
+                .iter()
+                .any(|argument| argument == "private-token")
         );
     }
 
