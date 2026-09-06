@@ -70,6 +70,7 @@ function decorate(value: unknown, scope: ConnectionScope, key: string | undefine
   }
   if (Array.isArray(value)) return value.map((entry) => decorate(entry, scope, key));
   if (!isRecord(value)) return value;
+  if (isAgentProfile(value)) return value;
   const nested = Object.fromEntries(
     Object.entries(value).map(([entryKey, entry]) => [entryKey, decorate(entry, scope, entryKey)]),
   );
@@ -135,6 +136,16 @@ function isAgentStatus(value: Record<string, unknown>): boolean {
     && typeof value.status === "string"
     && typeof value.source === "string"
     && typeof value.observedAtEpochMs === "number";
+}
+
+function isAgentProfile(value: Record<string, unknown>): boolean {
+  return typeof value.id === "string"
+    && value.id.startsWith("builtin.agent-profile.")
+    && typeof value.name === "string"
+    && typeof value.permission === "string"
+    && typeof value.read_only === "boolean"
+    && typeof value.user_invocable === "boolean"
+    && Array.isArray(value.agent_ids);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
