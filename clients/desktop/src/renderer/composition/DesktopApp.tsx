@@ -2179,6 +2179,14 @@ export function DesktopApp() {
       sourceFileId,
     });
   }, [selectedSourceApi, skillProjectId]);
+  const architectureActions = useMemo(() => ({
+    loadSummary: (projectId: string) => sourceApiForProject(projectId).projectArchitectureSummary(projectId),
+    loadGraph: (params: import("@termloop/contract/current").ProjectArchitectureGraphParams) =>
+      sourceApiForProject(params.projectId).projectArchitectureGraph(params),
+    loadNode: (params: import("@termloop/contract/current").ProjectArchitectureNodeParams) =>
+      sourceApiForProject(params.projectId).projectArchitectureNode(params),
+    refresh: (projectId: string) => sourceApiForProject(projectId).projectArchitectureRefresh(projectId),
+  }), []);
 
   return (<>
     <Shell
@@ -2192,6 +2200,7 @@ export function DesktopApp() {
       playbookRuntime={projection.playbookRuntime}
       projectSessions={projectSessions}
       projectWorktreeSummary={projection.projectWorktreeSummary}
+      architectureActions={architectureActions}
       selectedProject={selectedProject}
       selectedSession={selectedSession}
       layout={projectLayout}
