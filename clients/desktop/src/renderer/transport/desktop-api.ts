@@ -107,6 +107,8 @@ import type {
   WorkflowConfigurationListResult,
   WorkflowConfigurationMutationResult,
   WorkflowConfigurationUpdateParams,
+  WorkflowExecutionCancelParams,
+  WorkflowExecutionCancelResult,
   RunRuntimeListParams,
   RunRuntimeListResult,
   ProjectRestartRunParams,
@@ -338,6 +340,7 @@ export type DesktopApi = {
   workflowConfigurationCreate(params: WorkflowConfigurationCreateParams): Promise<WorkflowConfigurationMutationResult>;
   workflowConfigurationUpdate(params: WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationMutationResult>;
   workflowConfigurationDelete(params: WorkflowConfigurationDeleteParams): Promise<WorkflowConfigurationDeleteResult>;
+  workflowExecutionCancel(params: WorkflowExecutionCancelParams): Promise<WorkflowExecutionCancelResult>;
   runConfigurationImprovePreview(params: RunConfigurationImprovePreviewParams): Promise<RunConfigurationImprovePreviewResult>;
   runConfigurationImproveLaunch(params: RunConfigurationImproveLaunchParams): Promise<RunConfigurationImproveLaunchResult>;
   settingsImprovePreview(params: SettingsImprovePreviewParams): Promise<SettingsImprovePreviewResult>;

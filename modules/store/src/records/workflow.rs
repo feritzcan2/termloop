@@ -1,10 +1,18 @@
-use termloop_domain::{WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WorkflowConfiguration};
+use termloop_domain::{
+    AgentConversationReadiness, AgentConversationReadinessRecord, SavedAgentLaunchSelection,
+    SessionKind, SessionRecord, WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WorkflowConfiguration,
+    WorkflowExecution, WorkflowExecutionPhase,
+};
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
 impl Store {
     pub fn workflow_configurations(&self) -> &[WorkflowConfiguration] {
         &self.state.workflow_configurations
+    }
+
+    pub fn workflow_executions(&self) -> &[WorkflowExecution] {
+        &self.state.workflow_executions
     }
 
     pub fn set_workflow_configuration(
@@ -76,5 +84,113 @@ impl Store {
         let deleted = self.state.workflow_configurations.remove(index);
         self.commit_or_restore(previous)?;
         Ok(deleted)
+    }
+
+    /// Admits the coordinator Session and its one current execution snapshot
+    /// atomically, so a spawned coordinator never becomes detached from the
+    /// Core state machine after a storage failure.
+    pub fn insert_workflow_coordinator_session(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        session: SessionRecord,
+        execution: WorkflowExecution,
+    ) -> Result<u64, StoreError> {
+        if session.kind != SessionKind::Agent
+            || session.id != execution.coordinator_session_id
+            || session.project_id != execution.project_id
+            || session.process.agent_id.as_deref()
+                != Some(execution.configuration.coordinator_agent_id.as_str())
+            || !execution.is_valid()
+            || self
+                .state
+                .sessions
+                .iter()
+                .any(|value| value.id == session.id)
+            || self.state.workflow_executions.iter().any(|current| {
+                current.task_id == execution.task_id
+                    && current.phase != WorkflowExecutionPhase::Completed
+            })
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let task_exists =
+            self.state.tasks.iter().any(|task| {
+                task.id == execution.task_id && task.project_id == execution.project_id
+            });
+        let preference = session.process.agent_id.as_deref().map(|agent_id| {
+            SavedAgentLaunchSelection::new(agent_id, session.launch_selection.clone())
+        });
+        if !task_exists || preference.as_ref().is_none_or(|value| !value.is_valid()) {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let previous = self.state.clone();
+        self.state
+            .workflow_executions
+            .retain(|current| current.task_id != execution.task_id);
+        self.state.workflow_executions.push(execution);
+        self.state.last_agent_launch_selection = preference;
+        self.state
+            .agent_conversation_readiness
+            .push(AgentConversationReadinessRecord {
+                session_id: session.id.clone(),
+                readiness: AgentConversationReadiness::Unconfirmed,
+            });
+        self.state.sessions.push(session);
+        self.commit_or_restore(previous)
+    }
+
+    pub fn replace_workflow_execution(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        expected: &WorkflowExecution,
+        replacement: WorkflowExecution,
+    ) -> Result<u64, StoreError> {
+        if !replacement.is_valid()
+            || replacement.id != expected.id
+            || replacement.task_id != expected.task_id
+            || replacement.project_id != expected.project_id
+            || replacement.configuration != expected.configuration
+            || replacement.goal != expected.goal
+            || replacement.coordinator_session_id != expected.coordinator_session_id
+            || replacement.started_at_epoch_ms != expected.started_at_epoch_ms
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let index = self
+            .state
+            .workflow_executions
+            .iter()
+            .position(|execution| execution.id == expected.id)
+            .ok_or(StoreError::NotFound)?;
+        if self.state.workflow_executions[index] != *expected {
+            return Err(StoreError::RevisionConflict);
+        }
+        if replacement == *expected {
+            return Ok(self.state.revision);
+        }
+        let previous = self.state.clone();
+        self.state.workflow_executions[index] = replacement;
+        self.commit_or_restore(previous)
+    }
+
+    pub fn cancel_workflow_execution(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        execution_id: &str,
+        expected_revision: u64,
+    ) -> Result<WorkflowExecution, StoreError> {
+        if self.state.revision != expected_revision {
+            return Err(StoreError::RevisionConflict);
+        }
+        let index = self
+            .state
+            .workflow_executions
+            .iter()
+            .position(|execution| execution.id == execution_id)
+            .ok_or(StoreError::NotFound)?;
+        let previous = self.state.clone();
+        let removed = self.state.workflow_executions.remove(index);
+        self.commit_or_restore(previous)?;
+        Ok(removed)
     }
 }

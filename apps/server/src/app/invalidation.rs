@@ -185,7 +185,20 @@ pub(super) async fn invalidate_automatic_git_host_task(state: &AppState, task_id
 }
 
 pub(super) async fn publish_agent_resume_invalidation(state: &AppState, session_id: &str) {
-    let cwd = state.core.lock().await.session_cwd(session_id);
+    let (cwd, workflow_redelivery) = {
+        let mut core = state.core.lock().await;
+        let cwd = core.session_cwd(session_id);
+        let workflow_redelivery = core.redeliver_pending_workflow_prompt(session_id);
+        (cwd, workflow_redelivery)
+    };
+    if let Err(error) = workflow_redelivery
+        && !matches!(
+            error,
+            termloop_core::CoreError::NotFound | termloop_core::CoreError::ConversationBusy
+        )
+    {
+        tracing::warn!(%session_id, %error, "workflow step prompt redelivery failed");
+    }
     if let Some(cwd) = cwd {
         refresh_task_presence_for_cwd(state, &cwd).await;
     }
@@ -195,7 +208,11 @@ pub(super) async fn publish_agent_resume_invalidation(state: &AppState, session_
 pub(super) async fn publish_session_invalidation(state: &AppState) {
     let state_revision = state.core.lock().await.state_revision();
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
+        topics: vec![
+            ProjectionTopic::Session,
+            ProjectionTopic::AgentStatus,
+            ProjectionTopic::Workflow,
+        ],
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
@@ -208,7 +225,9 @@ pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
         vec![ProjectionTopic::Worker]
     } else if method.starts_with("runConfiguration.") {
         vec![ProjectionTopic::Run]
-    } else if method.starts_with("workflow.configuration") {
+    } else if method.starts_with("workflow.configuration")
+        || method.starts_with("workflow.execution")
+    {
         vec![ProjectionTopic::Workflow]
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
         vec![ProjectionTopic::Routine]

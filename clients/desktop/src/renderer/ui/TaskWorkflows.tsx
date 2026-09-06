@@ -25,7 +25,7 @@ import type {
   WorkflowStepDto,
   WorkflowStepKind,
 } from "@termloop/contract/current";
-import type { Task, WorkflowConfiguration } from "../model.js";
+import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 
@@ -33,6 +33,7 @@ export function TaskWorkflowLaunchers(props: {
   projectId: string;
   task: Task;
   configurations: readonly WorkflowConfiguration[];
+  executions: readonly WorkflowExecution[];
   stateRevision: number;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchable: boolean;
@@ -41,24 +42,40 @@ export function TaskWorkflowLaunchers(props: {
   save(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   remove(workflowId: string): Promise<string | undefined>;
   launch(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  cancel(executionId: string): Promise<string | undefined>;
 }) {
   const [editing, setEditing] = useState<WorkflowConfigurationDto | "new">();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
+  const [inspectingExecution, setInspectingExecution] = useState(false);
+  const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
+  const executionActive = execution !== undefined && execution.status !== "completed";
   const { overlayVisibilityChanged } = props;
   useEffect(() => {
-    overlayVisibilityChanged(Boolean(editing || running));
+    overlayVisibilityChanged(Boolean(editing || running || (inspectingExecution && execution)));
     return () => overlayVisibilityChanged(false);
-  }, [editing, overlayVisibilityChanged, running]);
+  }, [editing, execution, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
     <span className="task-launch-divider" aria-hidden="true" />
+    {execution ? <button
+      type="button"
+      className={`workflow-execution-chip status-${execution.status}`}
+      title={workflowExecutionSummary(execution)}
+      aria-label={`Open ${execution.workflowName} workflow progress`}
+      onClick={() => setInspectingExecution(true)}
+    >
+      <span className="workflow-execution-dot" aria-hidden="true" />
+      <Icon name="branch" />
+      <span>{execution.workflowName}</span>
+      <b>{execution.status === "completed" ? "Done" : `${Math.min(execution.currentStepIndex + 1, execution.steps.length)}/${execution.steps.length}`}</b>
+    </button> : null}
     {props.configurations.map((configuration) => (
       <span className="run-chip workflow-chip" key={configuration.id}>
         <button
           type="button"
           className="run-chip-start"
-          disabled={!props.launchable}
-          title={workflowSummary(configuration)}
+          disabled={!props.launchable || executionActive}
+          title={executionActive ? `Finish or stop ${execution?.workflowName ?? "the current workflow"} first` : workflowSummary(configuration)}
           aria-label={`Run workflow ${configuration.name} in ${props.task.title}`}
           onClick={() => setRunning(configuration)}
         ><Icon name="branch" />{configuration.name}</button>
@@ -94,8 +111,69 @@ export function TaskWorkflowLaunchers(props: {
         close={() => setRunning(undefined)}
         launch={props.launch}
       /> : null}
+      {inspectingExecution && execution ? <WorkflowExecutionDialog
+        execution={execution}
+        close={() => setInspectingExecution(false)}
+        cancel={props.cancel}
+      /> : null}
     </OverlayPortal>
   </>;
+}
+
+function WorkflowExecutionDialog(props: {
+  execution: WorkflowExecution;
+  close(): void;
+  cancel(executionId: string): Promise<string | undefined>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const currentStep = props.execution.steps[props.execution.currentStepIndex];
+  const stop = async () => {
+    setBusy(true); setError(undefined);
+    try {
+      const failure = await props.cancel(props.execution.id);
+      if (failure) { setError(failure); return; }
+      props.close();
+    } finally { setBusy(false); }
+  };
+  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && !busy && props.close()}>
+    <button className="dialog-backdrop" aria-label="Close workflow progress" onClick={props.close} />
+    <section className="dialog-card workflow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-progress-title">
+      <header className="dialog-header">
+        <div><span className="dialog-eyebrow">Workflow progress</span><h2 id="workflow-progress-title">{props.execution.workflowName}</h2></div>
+        <span className={`workflow-status-badge status-${props.execution.status}`}><i aria-hidden="true" />{workflowStatusLabel(props.execution.status)}</span>
+        <button className="icon-button quiet" aria-label="Close dialog" disabled={busy} onClick={props.close}><Icon name="close" /></button>
+      </header>
+      <div className="dialog-body">
+        <div className="workflow-progress-current">
+          <span>{props.execution.status === "completed" ? "Finished" : currentStep ? `${stepKindLabel(currentStep.kind)} · step ${props.execution.currentStepIndex + 1} of ${props.execution.steps.length}` : "Workflow"}</span>
+          <strong>{workflowPhaseLabel(props.execution, currentStep)}</strong>
+          {props.execution.steps.some((step) => step.kind === "review") && props.execution.status !== "completed"
+            ? <small>Review cycle {props.execution.reviewCycle} of {props.execution.maxReviewCycles}</small>
+            : null}
+        </div>
+        <ol className="workflow-progress-steps">
+          {props.execution.steps.map((step, index) => {
+            const state = props.execution.status === "completed" || index < props.execution.currentStepIndex
+              ? "complete"
+              : index === props.execution.currentStepIndex ? "current" : "upcoming";
+            return <li key={step.id} className={`kind-${step.kind} ${state}`} aria-current={state === "current" ? "step" : undefined}>
+              <span className="workflow-progress-marker">{state === "complete" ? "✓" : index + 1}</span>
+              <span><b>{step.title}</b><small>{workflowStepParticipant(step, props.execution.steps)}</small></span>
+              <span className={`workflow-kind kind-${step.kind}`}>{stepKindLabel(step.kind)}</span>
+            </li>;
+          })}
+        </ol>
+        <div className="workflow-progress-goal"><span>Run goal</span><p>{props.execution.goal}</p></div>
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+      </div>
+      <footer className="dialog-actions">
+        <p className="workflow-stop-help">Stopping ends Core automation. Existing Agent Sessions stay open.</p>
+        <button type="button" className="secondary-button" disabled={busy} onClick={props.close}>Close</button>
+        {props.execution.status !== "completed" ? <button type="button" className="danger-button" disabled={busy} onClick={() => void stop()}>{busy ? "Stopping…" : "Stop automation"}</button> : null}
+      </footer>
+    </section>
+  </div>;
 }
 
 function WorkflowRunDialog(props: {
@@ -131,8 +209,8 @@ function WorkflowRunDialog(props: {
           </span>)}
         </div>
         <label htmlFor="workflow-run-goal">What should this run accomplish?</label>
-        <textarea id="workflow-run-goal" autoFocus rows={5} maxLength={8192} value={goal} onChange={(event) => setGoal(event.target.value)} />
-        <p className="field-help">The saved workflow is reusable. This goal is supplied only to the new coordinator Session for this run.</p>
+        <textarea id="workflow-run-goal" autoFocus rows={5} maxLength={32768} value={goal} onChange={(event) => setGoal(event.target.value)} />
+        <p className="field-help">The template stays reusable. Core keeps this goal while it routes each step and reuses the configured Agent conversations.</p>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
       <footer className="dialog-actions">
@@ -496,4 +574,33 @@ function stepOwnerSummary(step: WorkflowStepDto, steps: readonly WorkflowStepDto
 
 function workflowSummary(configuration: WorkflowConfigurationDto): string {
   return configuration.steps.map((step) => stepKindLabel(step.kind)).join(" → ");
+}
+
+function workflowExecutionSummary(execution: WorkflowExecution): string {
+  if (execution.status === "completed") return `${execution.workflowName} completed`;
+  const step = execution.steps[execution.currentStepIndex];
+  return `${execution.workflowName}: ${step?.title ?? "in progress"} (${execution.currentStepIndex + 1}/${execution.steps.length})`;
+}
+
+function workflowStatusLabel(status: WorkflowExecution["status"]): string {
+  if (status === "completed") return "Completed";
+  if (status === "paused") return "Paused";
+  return "Running";
+}
+
+function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowStepDto | undefined): string {
+  if (execution.status === "completed") return "Core completed the workflow";
+  if (execution.status === "paused") return "Coordinator stopped — resume its Session or stop this automation";
+  if (execution.phase === "awaitingHelper") return `Waiting for ${agentLabel(step?.agentId ?? null)}`;
+  if (execution.phase === "awaitingStepCompletion") return "Helper reply delivered — coordinator is deciding the outcome";
+  if (step?.kind === "implement") return "Coordinator is implementing the agreed approach";
+  if (step?.kind === "fix") return "Coordinator is applying the combined review findings";
+  return "Coordinator is starting this step";
+}
+
+function workflowStepParticipant(step: WorkflowStepDto, steps: readonly WorkflowStepDto[]): string {
+  if (!isHelperStep(step)) return "Coordinator";
+  if (!step.reuseStepId) return `${agentLabel(step.agentId)} · new conversation`;
+  const source = steps.find((candidate) => candidate.id === step.reuseStepId);
+  return `${agentLabel(step.agentId)} · reuse “${source?.title ?? step.reuseStepId}”`;
 }

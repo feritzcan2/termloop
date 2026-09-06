@@ -1124,6 +1124,14 @@
         "$ref": "#/$defs/workflowConfigurationDeleteResult"
       }
     },
+    "workflow.executionCancel": {
+      "params": {
+        "$ref": "#/$defs/workflowExecutionCancelParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workflowExecutionCancelResult"
+      }
+    },
     "runConfiguration.improvePreview": {
       "params": {
         "$ref": "#/$defs/runConfigurationImproveParams"
@@ -1578,6 +1586,7 @@
         "workflow.configurationCreate",
         "workflow.configurationUpdate",
         "workflow.configurationDelete",
+        "workflow.executionCancel",
         "runConfiguration.improvePreview",
         "runConfiguration.improveLaunch",
         "assistantPrompt.improvePreview",
@@ -1879,6 +1888,8 @@
         "ask_to",
         "send_to_agent",
         "reply_to_request",
+        "workflow_delegate",
+        "workflow_step_complete",
         "project_read",
         "task_read",
         "agent_status_read",
@@ -1986,8 +1997,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 30,
-          "maxItems": 30,
+          "minItems": 32,
+          "maxItems": 32,
           "uniqueItems": true
         }
       }
@@ -12278,7 +12289,7 @@
       "x-codegen-name": "WorkflowConfigurationListResult",
       "type": "object",
       "additionalProperties": false,
-      "required": ["configurations", "stateRevision"],
+      "required": ["configurations", "executions", "stateRevision"],
       "properties": {
         "configurations": {
           "type": "array",
@@ -12286,6 +12297,11 @@
             "$ref": "#/$defs/workflowConfigurationDto"
           },
           "maxItems": 16
+        },
+        "executions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflowExecutionDto" },
+          "maxItems": 1024
         },
         "stateRevision": {
           "type": "integer",
@@ -12380,6 +12396,75 @@
       "properties": {
         "workflowId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "deleted": { "const": true },
+        "stateRevision": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workflowExecutionPhase": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionPhase",
+      "type": "string",
+      "enum": ["awaitingCoordinator", "awaitingHelper", "awaitingStepCompletion", "completed"]
+    },
+    "workflowExecutionStatus": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionStatus",
+      "type": "string",
+      "enum": ["running", "paused", "completed"]
+    },
+    "workflowExecutionDto": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "projectId", "taskId", "workflowId", "workflowGeneration", "workflowName",
+        "goal", "coordinatorSessionId", "currentStepIndex", "reviewCycle", "maxReviewCycles",
+        "phase", "status", "steps", "startedAtEpochMs", "updatedAtEpochMs"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "projectId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 },
+        "workflowId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "workflowGeneration": { "type": "integer", "minimum": 1 },
+        "workflowName": { "type": "string", "minLength": 1, "maxLength": 80, "x-utf8-max-bytes": 80 },
+        "goal": { "type": "string", "minLength": 1, "maxLength": 32768, "x-utf8-max-bytes": 32768 },
+        "coordinatorSessionId": { "type": "string", "minLength": 1 },
+        "currentStepIndex": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "reviewCycle": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "maxReviewCycles": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "phase": { "$ref": "#/$defs/workflowExecutionPhase" },
+        "status": { "$ref": "#/$defs/workflowExecutionStatus" },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflowStepDto" },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "startedAtEpochMs": { "type": "integer", "minimum": 1 },
+        "updatedAtEpochMs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "workflowExecutionCancelParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionCancelParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionId", "expectedRevision"],
+      "properties": {
+        "executionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expectedRevision": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workflowExecutionCancelResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionCancelResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionId", "cancelled", "stateRevision"],
+      "properties": {
+        "executionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "cancelled": { "const": true },
         "stateRevision": { "type": "integer", "minimum": 0 }
       }
     },

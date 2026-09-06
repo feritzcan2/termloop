@@ -13,7 +13,12 @@ import {
 } from "../dist/current.js";
 
 test("MCP role definitions are generated and excluded from control methods", () => {
-  assert.deepEqual(MCP_INTERACTIVE_TOOLS, ["ask_to", "send_to_agent"]);
+  assert.deepEqual(MCP_INTERACTIVE_TOOLS, [
+    "ask_to",
+    "send_to_agent",
+    "workflow_delegate",
+    "workflow_step_complete",
+  ]);
   assert.deepEqual(MCP_HELPER_TOOLS, ["ask_to", "send_to_agent", "reply_to_request"]);
   assert.deepEqual(MCP_IMPROVER_TOOLS, [
     "ask_to",
