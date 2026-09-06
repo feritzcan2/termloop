@@ -364,7 +364,7 @@ describe("Active Agent rail", () => {
     expect(markup.indexOf('data-active-agent-section="In progress"')).toBeLessThan(markup.indexOf('data-active-agent-section="Idle / paused"'));
   });
 
-  it("shows the same current structured plan in Active Agents", () => {
+  it("shows structured todo progress in the row and keeps details in its tooltip", () => {
     const planning = agent("planning");
     const planningStatus: AgentStatus = {
       ...status(planning.id, "working"),
@@ -383,16 +383,19 @@ describe("Active Agent rail", () => {
       props([planning], [planningStatus], new Set()),
     ));
 
-    expect(markup).toContain('class="agent-plan"');
-    expect(markup).toContain('<span class="agent-plan-count">1/2</span>');
-    expect(markup).toContain('title="Render Active Agents"');
-    expect(markup).toContain("Keep one current projection.");
+    expect(markup).toContain('class="agent-todo-count"');
+    expect(markup).toContain('>1/2</span>');
+    expect(markup).toContain("✓ Persist the plan");
+    expect(markup).toContain("→ Render Active Agents");
+    expect(markup).not.toContain("Keep one current projection.");
+    expect(markup).not.toContain("<details");
 
     const resumingMarkup = renderToStaticMarkup(createElement(
       ActiveAgentRail,
       props([{ ...planning, lifecycle_state: "resuming" }], [planningStatus], new Set()),
     ));
-    expect(resumingMarkup).toContain('<span class="agent-plan-count">1/2</span>');
+    expect(resumingMarkup).toContain('class="agent-todo-count"');
+    expect(resumingMarkup).toContain('>1/2</span>');
 
     const completedStatus: AgentStatus = {
       ...planningStatus,
@@ -405,12 +408,14 @@ describe("Active Agent rail", () => {
       ActiveAgentRail,
       props([planning], [completedStatus], new Set()),
     ));
-    expect(unselectedCompleted).not.toContain("agent-plan");
+    expect(unselectedCompleted).toContain('class="agent-todo-count done"');
+    expect(unselectedCompleted).toContain('>2/2</span>');
     const selectedCompleted = renderToStaticMarkup(createElement(
       ActiveAgentRail,
       props([planning], [completedStatus], new Set(), planning),
     ));
-    expect(selectedCompleted).toContain('class="agent-plan done"');
+    expect(selectedCompleted).toContain('class="agent-todo-count done"');
+    expect(selectedCompleted).not.toContain("<details");
   });
 
   it("keeps shared-worktree agents as independent rows with a worktree label on each", () => {
