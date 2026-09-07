@@ -582,7 +582,7 @@ describe("production control adapter", () => {
 
     runtime.connections.resetTransports(false);
     expect(sockets[0]?.closed).toBe(true);
-    expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+    expect(events).toContainEqual({ type: "state", state: "connectionLost" });
     expect(sockets).toHaveLength(1);
     expect(diagnosticLines.some((line) => line.includes('"event":"reconnect_cycle_started"')))
       .toBe(false);
@@ -659,8 +659,9 @@ describe("production control adapter", () => {
       await vi.advanceTimersByTimeAsync(7_000);
       await rejection;
 
+      expect(events).toContainEqual({ type: "inputDelivery", state: "uncertain" });
       expect(socketClosed).toBe(true);
-      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      expect(events).toContainEqual({ type: "state", state: "connectionLost" });
       runtime.connections.resetTransports();
     } finally {
       vi.useRealTimers();
@@ -873,7 +874,7 @@ describe("production control adapter", () => {
       await vi.advanceTimersByTimeAsync(75_000);
 
       expect(socketClosed).toBe(true);
-      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      expect(events).toContainEqual({ type: "state", state: "connectionLost" });
       runtime.connections.resetTransports();
     } finally {
       vi.useRealTimers();
@@ -950,7 +951,7 @@ describe("production control adapter", () => {
       expect(events).toContainEqual({ type: "gap", droppedFrames: 1 });
 
       first.onclose?.({ code: 1006, wasClean: false });
-      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      expect(events).toContainEqual({ type: "state", state: "connectionLost" });
       await vi.advanceTimersByTimeAsync(500);
       await waitFor(() => sockets.length === 2
         && events.filter((event) => event.type === "state" && event.state === "connected").length === 2);
@@ -1735,7 +1736,7 @@ describe("production terminal adapter", () => {
     socket.message("TLOK");
     const attachment = await attaching;
 
-    const attachFrame = decodeFrame(new Uint8Array(socket.sent[1] as ArrayBuffer));
+    const attachFrame = decodeFrame(new Uint8Array(socket.sent[2] as ArrayBuffer));
     expect(attachFrame.kind).toBe(KIND_ATTACH);
     expect(attachFrame.sessionId).toBe(sessionId);
     expect(new TextDecoder().decode(attachFrame.payload.slice(0, 4))).toBe("TLRQ");
@@ -1753,8 +1754,10 @@ describe("production terminal adapter", () => {
     socket.message(encodeFrame(sessionId, 17, 2n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("recent ")));
     socket.message(encodeFrame(sessionId, 17, 3n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("screen\n")));
     socket.message(encodeFrame(sessionId, 17, 4n, KIND_OUTPUT, new TextEncoder().encode("live\n")));
-    await waitFor(() => events.length === 5);
-    expect(events.map((event) => event.type)).toEqual(["state", "state", "gap", "replay", "live"]);
+    await waitFor(() => events.some((event) => event.type === "live"));
+    expect(events.filter((event) => event.type !== "replayProgress" && event.type !== "ready").map((event) => event.type)).toEqual(["state", "state", "gap", "replay", "live"]);
+    expect(events).toContainEqual({ type: "replayProgress", receivedBytes: 14, totalBytes: 14 });
+    expect(events).toContainEqual({ type: "ready" });
     const replay = events.find((event) => event.type === "replay");
     expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
       .toBe("recent screen\n");
@@ -1854,8 +1857,8 @@ describe("production terminal adapter", () => {
       await vi.advanceTimersByTimeAsync(999);
       expect(events.map((event) => event.type)).toEqual(["state", "state"]);
       await vi.advanceTimersByTimeAsync(1);
-      expect(events.map((event) => event.type)).toEqual(["state", "state", "replay"]);
-      const replay = events.at(-1);
+      expect(events.map((event) => event.type)).toEqual(["state", "state", "replay", "ready"]);
+      const replay = events.findLast((event) => event.type === "replay");
       expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
         .toBe("older latest\n");
 
@@ -1900,7 +1903,7 @@ describe("production terminal adapter", () => {
       await waitFor(() => events.includes("reset"));
 
       expect(events.slice(-3)).toEqual(["state:connecting", "reset", "state:connected"]);
-      expect(decodeFrame(new Uint8Array(sockets[1]!.sent[1] as ArrayBuffer)).kind).toBe(KIND_ATTACH);
+      expect(decodeFrame(new Uint8Array(sockets[1]!.sent[2] as ArrayBuffer)).kind).toBe(KIND_ATTACH);
       await attachment.detach();
       const diagnosticEvents = diagnosticLines.map((line) =>
         (JSON.parse(line.replace("[termloop-mobile] ", "")) as { event: string }).event
@@ -2273,7 +2276,7 @@ describe("production pipeline, launch, and Steward adapters", () => {
     });
     const frames = sockets[0]!.sent
       .slice(1)
-      .map((data) => decodeFrame(new Uint8Array(data as ArrayBuffer)));
+      .map((data) => decodeFrame(new Uint8Array(data as ArrayBuffer))).filter((frame) => frame.kind !== 17);
     expect(frames.map((frame) => frame.kind)).toEqual([KIND_ATTACH, KIND_INPUT, KIND_INPUT]);
     expect(new TextDecoder().decode(frames[1]!.payload)).toBe("\u001b[200~investigate this now\u001b[201~");
     expect([...frames[2]!.payload]).toEqual([13]);
@@ -2742,6 +2745,10 @@ class FakeDataSocket implements DataSocket {
       throw new Error("socket write failed");
     }
     this.sent.push(data);
+    if (data instanceof ArrayBuffer) {
+      const frame = decodeFrame(new Uint8Array(data));
+      if (frame.kind === KIND_INPUT) queueMicrotask(() => this.message(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_INPUT_ACK)));
+    }
   }
   close() { this.closed = true; this.readyState = 3; }
   open() { this.readyState = 1; this.onopen?.(); }

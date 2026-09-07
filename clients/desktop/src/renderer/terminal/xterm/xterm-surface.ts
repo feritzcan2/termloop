@@ -257,6 +257,18 @@ export class XtermSurface implements TerminalSurface {
     this.#host.remove();
   }
 
+  container(): HTMLElement | undefined { return this.#host.parentElement ?? undefined; }
+  readText(): Promise<string> {
+    return new Promise((resolve) => this.#terminal.write("", () => {
+    const buffer = this.#terminal.buffer.active;
+    const lines: string[] = [];
+    for (let index = 0; index < buffer.length; index++) lines.push(buffer.getLine(index)?.translateToString(true) ?? "");
+    resolve(lines.join("\n"));
+    }));
+  }
+  setVisible(visible: boolean): void { this.#host.style.visibility = visible ? "visible" : "hidden"; }
+  scrollToBottom(): void { this.#terminal.scrollToBottom(); }
+
   write(data: Uint8Array, callback: () => void): void {
     this.#terminal.write(data, callback);
   }
