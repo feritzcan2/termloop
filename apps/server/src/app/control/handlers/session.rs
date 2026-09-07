@@ -495,6 +495,7 @@ pub(in crate::app) async fn launch_task_session(
             ProjectionTopic::Session,
             ProjectionTopic::Steward,
             ProjectionTopic::Routine,
+            ProjectionTopic::Workflow,
         ],
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),

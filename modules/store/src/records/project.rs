@@ -214,6 +214,12 @@ impl Store {
             .run_configurations
             .retain(|value| value.project_id != project_id);
         self.state
+            .workflow_configurations
+            .retain(|value| value.project_id != project_id);
+        self.state
+            .workflow_executions
+            .retain(|value| value.project_id != project_id);
+        self.state
             .run_setup_marks
             .retain(|value| value.project_id != project_id);
         self.state

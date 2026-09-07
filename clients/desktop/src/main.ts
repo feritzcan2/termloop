@@ -826,6 +826,12 @@ handleIpc("termloop:task-preview-agent", (
 handleIpc("termloop:task-launch-agent", (_event, taskId: string, agentId: string, launchTicket: string) =>
   typedControlCall("task.launchAgent", { taskId, agentId, launchTicket }),
 );
+handleIpc("termloop:task-preview-workflow", (_event, taskId: string, workflowId: string, goal: string) =>
+  typedControlCall("task.previewWorkflow", { taskId, workflowId, goal }),
+);
+handleIpc("termloop:task-launch-workflow", (_event, taskId: string, workflowId: string, goal: string, launchTicket: string) =>
+  typedControlCall("task.launchWorkflow", { taskId, workflowId, goal, launchTicket }),
+);
 // Interactive desktop creation resolves the Project default into choices the
 // user can see and edit, then provisions and launches those exact choices. The
 // create command itself must stay Task-only so it cannot race that flow.
@@ -938,6 +944,31 @@ handleIpc(
   "termloop:run-configuration-delete",
   (_event, params: import("@termloop/contract/current").RunConfigurationDeleteParams) =>
     controlCall("runConfiguration.delete", params),
+);
+handleIpc(
+  "termloop:workflow-configuration-list",
+  (_event, params: import("@termloop/contract/current").WorkflowConfigurationListParams) =>
+    controlCall("workflow.configurationList", params),
+);
+handleIpc(
+  "termloop:workflow-configuration-create",
+  (_event, params: import("@termloop/contract/current").WorkflowConfigurationCreateParams) =>
+    controlCall("workflow.configurationCreate", params),
+);
+handleIpc(
+  "termloop:workflow-configuration-update",
+  (_event, params: import("@termloop/contract/current").WorkflowConfigurationUpdateParams) =>
+    controlCall("workflow.configurationUpdate", params),
+);
+handleIpc(
+  "termloop:workflow-configuration-delete",
+  (_event, params: import("@termloop/contract/current").WorkflowConfigurationDeleteParams) =>
+    controlCall("workflow.configurationDelete", params),
+);
+handleIpc(
+  "termloop:workflow-execution-cancel",
+  (_event, params: import("@termloop/contract/current").WorkflowExecutionCancelParams) =>
+    controlCall("workflow.executionCancel", params),
 );
 handleIpc(
   "termloop:run-configuration-improve-preview",

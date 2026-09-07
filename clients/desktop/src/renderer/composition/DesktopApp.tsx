@@ -6,7 +6,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { dismissibleFailedProvisioningOperationId, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -319,16 +319,18 @@ async function refreshSelectedProjectOnce(): Promise<void> {
   let tasks: Task[] = [];
   let projectWorktreeSummary;
   let runConfigurationResult = { configurations: [] as RunConfigurationDto[], stateRevision: 0 };
+  let workflowConfigurationResult: Awaited<ReturnType<SourceDesktopApi["workflowConfigurationList"]>> = { configurations: [], executions: [], stateRevision: 0 };
   let runRuntimeResult: Awaited<ReturnType<SourceDesktopApi["runRuntimeList"]>> = { runs: [], stateRevision: 0 };
   let playbookResult: Awaited<ReturnType<SourceDesktopApi["playbookGet"]>> = { playbook: null, stateRevision: 0 };
   let playbookRuntime: Awaited<ReturnType<SourceDesktopApi["playbookRuntime"]>> | undefined;
   let taskSnapshotReady = false;
   if (taskProjectId) {
     try {
-      [tasks, projectWorktreeSummary, runConfigurationResult, runRuntimeResult, playbookResult, playbookRuntime] = await Promise.all([
+      [tasks, projectWorktreeSummary, runConfigurationResult, workflowConfigurationResult, runRuntimeResult, playbookResult, playbookRuntime] = await Promise.all([
         sourceApi.taskList(taskProjectId),
         sourceApi.projectWorktreeSummary(taskProjectId).catch(() => undefined),
         sourceApi.runConfigurationList({ projectId: taskProjectId }),
+        sourceApi.workflowConfigurationList({ projectId: taskProjectId }),
         sourceApi.runRuntimeList({ projectId: taskProjectId }),
         sourceApi.playbookGet(taskProjectId),
         sourceApi.playbookRuntime(taskProjectId),
@@ -368,6 +370,9 @@ async function refreshSelectedProjectOnce(): Promise<void> {
       playbookRuntime?.processingTaskId ?? null,
       playbookResult.playbook,
       playbookRuntime ?? null,
+      workflowConfigurationResult.configurations,
+      workflowConfigurationResult.executions,
+      workflowConfigurationResult.stateRevision,
     );
   }
   const requestedTaskIds = automaticGitHostTaskIds(tasks);
@@ -1054,6 +1059,50 @@ export function DesktopApp() {
       return message;
     }
   }, [selectedSourceApi]);
+  const saveWorkflowConfiguration = useCallback(async (
+    params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams,
+  ): Promise<WorkflowConfigurationDto | string> => {
+    try {
+      const result = "workflowId" in params
+        ? await selectedSourceApi.workflowConfigurationUpdate(params)
+        : await selectedSourceApi.workflowConfigurationCreate(params);
+      await refreshProjection();
+      return result.configuration;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, [selectedSourceApi]);
+  const deleteWorkflowConfiguration = useCallback(async (workflowId: string): Promise<string | undefined> => {
+    try {
+      await selectedSourceApi.workflowConfigurationDelete({
+        workflowId,
+        expectedRevision: projectionStore.getSnapshot().workflowStateRevision,
+      });
+      await refreshProjection();
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, [selectedSourceApi]);
+  const cancelWorkflowExecution = useCallback(async (executionId: string): Promise<string | undefined> => {
+    try {
+      await selectedSourceApi.workflowExecutionCancel({
+        executionId,
+        expectedRevision: projectionStore.getSnapshot().workflowStateRevision,
+      });
+      await refreshProjection();
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, [selectedSourceApi]);
+
   const startAgentCreator = useCallback(async (requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> => {
     const projectId = presentationStore.getState().selectedProjectId;
     if (!projectId) return "Open a Project first: Agent Creator runs in its checkout.";
@@ -1311,6 +1360,37 @@ export function DesktopApp() {
       return message;
     }
   }, [agentCapabilities]);
+  const launchTaskWorkflow = useCallback(async (taskId: string, workflowId: string, goal: string) => {
+    try {
+      const api = sourceApiForTask(taskId);
+      const inspected = await api.taskWorkflowPreview(taskId, workflowId, goal);
+      if (!inspected.ok) {
+        const message = taskLaunchFailureMessage(inspected);
+        projectionStore.setMessage(message);
+        return message;
+      }
+      const outcome = await api.taskWorkflowLaunch(taskId, workflowId, goal, inspected.result.launch_ticket);
+      if (!outcome.ok) {
+        const message = taskLaunchFailureMessage(outcome);
+        projectionStore.setMessage(message);
+        return message;
+      }
+      const session = outcome.result;
+      projectionStore.upsertSession(session);
+      terminalPool.reconcile(projectionStore.getSnapshot().sessions);
+      // The launch creates both a Session and Core execution state. Refresh
+      // both projections before revealing the coordinator terminal.
+      await refreshProjection();
+      presentationStore.getState().selectProject(session.project_id);
+      presentationStore.getState().selectSession(session.project_id, session.id);
+      focusTerminalSoon(session.id);
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, []);
   const inspectTaskWorktreeRepair = useCallback(async (taskId: string, candidatePath: string) => {
     const outcome = await sourceApiForTask(taskId).taskInspectWorktreeRepair(taskId, candidatePath);
     if (outcome.ok) return outcome.result;
@@ -2220,6 +2300,9 @@ export function DesktopApp() {
       gitHostProjections={projection.gitHostProjections}
       branchCommitSummaries={projection.branchCommitSummaries}
       runConfigurations={projection.runConfigurations}
+      workflowConfigurations={projection.workflowConfigurations}
+      workflowExecutions={projection.workflowExecutions}
+      workflowStateRevision={projection.workflowStateRevision}
       runRuntimes={projection.runRuntimes}
       runStateRevision={projection.runStateRevision}
       playbookRuntime={projection.playbookRuntime}
@@ -2369,10 +2452,14 @@ export function DesktopApp() {
       launchQuickAction={launchQuickAction}
       launchTaskTerminal={launchTaskTerminal}
       launchTaskAgent={launchTaskAgent}
+      launchTaskWorkflow={launchTaskWorkflow}
       runImprovement={runImprovement}
       settingsImprovement={settingsImprovement}
       saveRunConfiguration={saveRunConfiguration}
       deleteRunConfiguration={deleteRunConfiguration}
+      saveWorkflowConfiguration={saveWorkflowConfiguration}
+      deleteWorkflowConfiguration={deleteWorkflowConfiguration}
+      cancelWorkflowExecution={cancelWorkflowExecution}
       launchTaskRun={launchTaskRun}
       launchProjectRun={launchProjectRun}
       inspectTaskWorktreeRepair={inspectTaskWorktreeRepair}

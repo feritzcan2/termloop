@@ -15,6 +15,7 @@ pub(in crate::app::control) async fn execute_agent_launch(
     state: &AppState,
     mut plan: AgentLaunchPlan,
 ) -> Result<Value, CoreError> {
+    let workflow_launch = plan.is_workflow_launch();
     plan = tokio::task::spawn_blocking(move || {
         plan.prepare_runtime();
         plan
@@ -30,15 +31,19 @@ pub(in crate::app::control) async fn execute_agent_launch(
     // propagation so failure cannot run ManagedProcess::drop on this task.
     std::mem::drop(tokio::task::spawn_blocking(move || drop(plan)));
     let commit = result?;
-    publish_agent_launch(&commit, state).await;
+    publish_agent_launch(&commit, workflow_launch, state).await;
     Ok(commit.session)
 }
 
-async fn publish_agent_launch(commit: &AgentLaunchCommit, state: &AppState) {
+async fn publish_agent_launch(commit: &AgentLaunchCommit, workflow_launch: bool, state: &AppState) {
     let observation_sequence = state.observation_sequence.load(Ordering::Relaxed);
     let _ = state
         .invalidation_requests
-        .try_send(agent_launch_invalidation(commit, observation_sequence));
+        .try_send(agent_launch_invalidation(
+            commit,
+            workflow_launch,
+            observation_sequence,
+        ));
     if let Some(cwd) = session_cwd(&commit.session) {
         refresh_task_presence_for_cwd(state, cwd).await;
     }
@@ -46,10 +51,15 @@ async fn publish_agent_launch(commit: &AgentLaunchCommit, state: &AppState) {
 
 fn agent_launch_invalidation(
     commit: &AgentLaunchCommit,
+    workflow_launch: bool,
     observation_sequence: u64,
 ) -> InvalidationRequest {
     InvalidationRequest {
-        topics: vec![ProjectionTopic::Session],
+        topics: if workflow_launch {
+            vec![ProjectionTopic::Session, ProjectionTopic::Workflow]
+        } else {
+            vec![ProjectionTopic::Session]
+        },
         state_revision: commit.state_revision,
         observation_sequence,
     }
@@ -74,11 +84,24 @@ mod tests {
             state_revision: 41,
         };
 
-        let invalidation = agent_launch_invalidation(&commit, 17);
+        let invalidation = agent_launch_invalidation(&commit, false, 17);
 
         assert_eq!(invalidation.topics, [ProjectionTopic::Session]);
         assert_eq!(invalidation.state_revision, 41);
         assert_eq!(invalidation.observation_sequence, 17);
         assert_eq!(session_cwd(&commit.session), Some("/tmp/task-worktree"));
+    }
+
+    #[test]
+    fn workflow_launch_also_invalidates_the_workflow_projection() {
+        let commit = AgentLaunchCommit {
+            session: json!({}),
+            state_revision: 42,
+        };
+
+        assert_eq!(
+            agent_launch_invalidation(&commit, true, 18).topics,
+            [ProjectionTopic::Session, ProjectionTopic::Workflow]
+        );
     }
 }
