@@ -307,11 +307,12 @@ async fn tool_call_inner(
                 protocol::WorkflowStepOutcome::Approved => "approved",
                 protocol::WorkflowStepOutcome::ChangesRequested => "changesRequested",
             };
-            let result = state
-                .core
-                .lock()
-                .await
-                .complete_workflow_step(token, outcome);
+            let result =
+                state
+                    .core
+                    .lock()
+                    .await
+                    .complete_workflow_step(token, outcome, params.summary);
             if result.is_ok() {
                 publish_workflow_invalidation(state).await;
             }
