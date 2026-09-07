@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
 import {
   TaskWorkflowLaunchers,
+  WorkflowEditorDialog,
   initialWorkflowSteps,
   moveWorkflowStep,
   nextStepId,
@@ -86,6 +87,7 @@ const execution: WorkflowExecution = {
     { stepId: "discuss", sessionId: "claude-session-1" },
     { stepId: "review", sessionId: "claude-session-1" },
   ],
+  activeReviewStepIds: ["review"],
   stepResults: [
     {
       stepId: "discuss",
@@ -107,6 +109,23 @@ const execution: WorkflowExecution = {
 };
 
 describe("Task workflow editor", () => {
+  it("shows a compact node canvas with a parallel review join", () => {
+    const markup = renderToStaticMarkup(createElement(WorkflowEditorDialog, {
+      projectId: "project-1",
+      stateRevision: 1,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      close: vi.fn(),
+      save: vi.fn(),
+      remove: vi.fn(),
+    }));
+
+    expect(markup).toContain('aria-label="Workflow nodes"');
+    expect(markup).toContain('aria-label="Workflow canvas"');
+    expect(markup).toContain("2 parallel reviewers");
+    expect(markup).toContain("Wait for all");
+    expect(markup).toContain("Core combines review outcomes");
+  });
+
   it("creates stable unique step ids inside the bounded linear workflow", () => {
     expect(nextStepId("discuss", [{ id: "discuss-1" }, { id: "review-1" }])).toBe("discuss-2");
     expect(nextStepId("review", [{ id: "review-1" }, { id: "review-2" }])).toBe("review-3");

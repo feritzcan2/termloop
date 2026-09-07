@@ -2066,6 +2066,7 @@ impl CoreRuntime {
                     coordinator_prompt_pending: false,
                     current_request_id: None,
                     participants: Vec::new(),
+                    review_requests: Vec::new(),
                     step_results: Vec::new(),
                     review_changes_requested: false,
                     started_at_epoch_ms: now,
