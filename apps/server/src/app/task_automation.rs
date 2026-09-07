@@ -1,10 +1,10 @@
 use serde_json::{Value, json};
-use termloop_contract::current::{self as protocol, ProjectionTopic};
+use termloop_contract::current as protocol;
 use termloop_core::{CoreError, ProjectTaskAutomationConfiguration, TaskSourceImportPolicy};
 use tokio::time::{Duration, Instant};
 
 use super::AppState;
-use super::invalidation::InvalidationRequest;
+use super::invalidation::{CommitImpact, queue_commit_invalidation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TaskAutomationAction {
@@ -56,13 +56,14 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
         let action = action_from_task(&configuration, &task, selection)?;
         (task, action, core.state_revision())
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Task],
+    queue_commit_invalidation(
+        state,
+        CommitImpact::Task,
         state_revision,
-        observation_sequence: state
+        state
             .observation_sequence
             .load(std::sync::atomic::Ordering::Relaxed),
-    });
+    );
     spawn(vec![action], state);
     Ok(task)
 }
@@ -129,7 +130,12 @@ pub(super) async fn auto_import_after_refresh(
         (actions, core.state_revision())
     };
     if !actions.is_empty() {
-        publish_import(state, state_revision, observation_sequence);
+        queue_commit_invalidation(
+            state,
+            CommitImpact::TaskSourceImport,
+            state_revision,
+            observation_sequence,
+        );
     }
     Ok(actions)
 }
@@ -487,14 +493,6 @@ fn observed_base_refs(projection: &Value) -> impl Iterator<Item = &str> {
         .into_iter()
         .flatten()
         .filter_map(|branch| branch.get("exact_ref").and_then(Value::as_str))
-}
-
-fn publish_import(state: &AppState, state_revision: u64, observation_sequence: u64) {
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::TaskSource, ProjectionTopic::Task],
-        state_revision,
-        observation_sequence,
-    });
 }
 
 #[cfg(test)]
