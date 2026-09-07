@@ -1,19 +1,18 @@
 import type { ErrorCode, McpToolRole, McpToolSettingsResult, ProtocolErrorDetails } from "@termloop/contract/current";
 
 export const MCP_TOOL_DESCRIPTION_MAX_CHARACTERS = 4_096;
-export const MCP_TOOL_ROLES = ["interactive", "improver", "helper", "steward", "worker"] as const satisfies readonly McpToolRole[];
+export const MCP_TOOL_ROLES = ["interactive", "improver", "helper", "steward"] as const satisfies readonly McpToolRole[];
 
 export type McpSettingsMutationResult =
   | { ok: true; result: McpToolSettingsResult }
   | { ok: false; code: ErrorCode | undefined; details: ProtocolErrorDetails | undefined; message: string };
 
-export function mcpToolRoleLabel(role: McpToolRole): "Interactive" | "Improver" | "Helper" | "Steward" | "Worker" {
+export function mcpToolRoleLabel(role: McpToolRole): "Interactive" | "Improver" | "Helper" | "Steward" {
   switch (role) {
     case "interactive": return "Interactive";
     case "improver": return "Improver";
     case "helper": return "Helper";
     case "steward": return "Steward";
-    case "worker": return "Worker";
   }
 }
 

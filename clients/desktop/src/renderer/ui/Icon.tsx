@@ -3,7 +3,7 @@ import type { ReactNode, SVGProps } from "react";
 export type IconName =
   | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "fileGear" | "fileText"
   | "chevronDown" | "circle" | "close" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
-  | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "stop" | "task" | "terminal"
+  | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "settings" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash";
 
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
@@ -48,6 +48,7 @@ const paths: Record<IconName, ReactNode> = {
   /// direction at the 10px the run controls draw it.
   restart: <><path d="M16 10a6 6 0 1 1-2.1-4.6" /><path d="M16 3.2V6h-2.8" /></>,
   search: <><circle cx="8.5" cy="8.5" r="4.5" /><path d="m12 12 4 4" /></>,
+  settings: <><circle cx="10" cy="10" r="3" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" /></>,
   sparkles: <><path d="M7 2.5 8.2 6 11.5 7 8.2 8 7 11.5 5.8 8 2.5 7 5.8 6zM14 10.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></>,
   star: <><path d="m10 2.8 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 8l5-.7z" /></>,
   stop: <><rect x="5" y="5" width="10" height="10" rx="1.5" /></>,

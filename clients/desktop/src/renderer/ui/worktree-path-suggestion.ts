@@ -1,4 +1,4 @@
-import type { LocalBranchDto } from "@termloop/contract/current";
+import type { LocalBranchDto, RemoteBranchDto } from "@termloop/contract/current";
 
 function preferredSeparator(path: string): "/" | "\\" {
   return path.lastIndexOf("\\") > path.lastIndexOf("/") ? "\\" : "/";
@@ -96,6 +96,35 @@ export function sortLocalBranches(branches: readonly LocalBranchDto[]): LocalBra
     const leftPriority = priority.get(left.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
     const rightPriority = priority.get(right.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
     return leftPriority - rightPriority || left.name.localeCompare(right.name);
+  });
+}
+
+/// Remote-tracking refs are the only safe base for a newly-created Task
+/// branch. Prefer origin and the long-lived integration branches while keeping
+/// the exact remote name visible when more than one remote exposes a branch.
+export function sortRemoteBranches(branches: readonly RemoteBranchDto[]): RemoteBranchDto[] {
+  const priority = new Map<string, number>([
+    "development",
+    "develop",
+    "dev",
+    "main",
+    "master",
+    "staging",
+    "stage",
+    "integration",
+    "int",
+    "production",
+    "prod",
+  ].map((name, index) => [name, index]));
+  return [...branches].sort((left, right) => {
+    const [leftRemote, ...leftBranchParts] = left.name.split("/");
+    const [rightRemote, ...rightBranchParts] = right.name.split("/");
+    const leftBranch = leftBranchParts.join("/");
+    const rightBranch = rightBranchParts.join("/");
+    const leftPriority = priority.get(leftBranch.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+    const rightPriority = priority.get(rightBranch.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+    const remotePriority = Number(rightRemote === "origin") - Number(leftRemote === "origin");
+    return leftPriority - rightPriority || remotePriority || left.name.localeCompare(right.name);
   });
 }
 

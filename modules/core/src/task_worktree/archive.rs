@@ -277,13 +277,6 @@ impl CoreRuntime {
                     .iter()
                     .any(|configuration| {
                         configuration.executor_session_id.as_deref() == Some(&session.id)
-                    })
-                || self
-                    .store
-                    .worker_configurations()
-                    .iter()
-                    .any(|configuration| {
-                        configuration.executor_session_id.as_deref() == Some(&session.id)
                     });
             let live = self
                 .terminal

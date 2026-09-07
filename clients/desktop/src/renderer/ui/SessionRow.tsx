@@ -137,7 +137,7 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// The row shared by the Project Session sections and the Sessions nested under
 /// a Task. Presentation only — the caller owns selection, ordering, and the
 /// context menu it opens.
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, detailsExpanded = false, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
@@ -146,7 +146,6 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   active: boolean;
   visible: boolean;
   menuOpen: boolean;
-  detailsExpanded?: boolean;
   dragAttributes?: DraggableAttributes;
   dragListeners?: DraggableSyntheticListeners;
   /// The command behind a run, which is what that row is actually about. Absent
@@ -159,19 +158,36 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   /// The presence dot reports the raw observed agent status, so it must go quiet
   /// once the lifecycle has moved on and that observation is stale.
   const liveAgentStatus = agentStatusIsLive(session) ? agentStatus : undefined;
+  const currentPlan = agentPlanForRow(session, agentStatus);
+  const currentPlanKey = currentPlan ? `${session.id}:${currentPlan.updatedAtEpochMs}` : undefined;
+  const [dismissedPlanKey, setDismissedPlanKey] = useState<string>();
+  const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
+  const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel });
+  const planProgress = plan ? agentPlanProgress(plan) : undefined;
   return (
     <button
-      className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""}${detailsExpanded ? " details-expanded" : ""} state-${state.tone}`}
+      className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""} state-${state.tone}`}
       type="button"
       {...dragAttributes}
-      aria-label={sessionRowAccessibleName({ session, state, relationship: relationshipLabel })}
+      aria-label={planProgress
+        ? `${accessibleName}, ${planProgress.completed} of ${planProgress.total} todos completed`
+        : accessibleName}
       aria-pressed={active}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       data-session-id={session.id}
-      onPointerDown={(event) => { dragListeners?.onPointerDown?.(event); }}
+      onPointerDown={(event) => {
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]")) return;
+        dragListeners?.onPointerDown?.(event);
+      }}
       title={session.process.cwd}
-      onClick={select}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]") && currentPlanKey) {
+          setDismissedPlanKey(currentPlanKey);
+          return;
+        }
+        select();
+      }}
       onContextMenu={(event: ReactMouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         openMenu(event.clientX, event.clientY, event.currentTarget);
@@ -183,12 +199,12 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} state={state} reviewReady={reviewReady} subtitle={subtitle} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} visible={visible} active={active} runCommand={runCommand} />
     </button>
   );
 }
 
-export function AskToHelperRow({ source, helper, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, detailsExpanded = false, compact = false, relocatable = false, select, openMenu, dismiss, resume, detachRelationship }: {
+export function AskToHelperRow({ source, helper, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, compact = false, relocatable = false, select, openMenu, dismiss, resume, detachRelationship }: {
   source: Session;
   helper: Session;
   agentStatus: AgentStatus | undefined;
@@ -198,7 +214,6 @@ export function AskToHelperRow({ source, helper, agentStatus, reviewReady = fals
   active: boolean;
   visible: boolean;
   menuOpen: boolean;
-  detailsExpanded?: boolean;
   compact?: boolean;
   relocatable?: boolean;
   select(): void;
@@ -247,7 +262,6 @@ export function AskToHelperRow({ source, helper, agentStatus, reviewReady = fals
           active={active}
           visible={visible}
           menuOpen={menuOpen}
-          detailsExpanded={detailsExpanded}
           {...(relocatable ? {
             dragAttributes: draggable.attributes,
             dragListeners: draggable.listeners,
@@ -273,9 +287,55 @@ export function AskToHelperRow({ source, helper, agentStatus, reviewReady = fals
 /// first. Exactly one `<strong>` lives in the row, holding exactly the Session
 /// label — `tests/e2e/f1/session-navigation.mjs` reads the renamed label through
 /// it, so a second one would break that assertion.
-function SessionRowContent({ session, agentStatus, state, reviewReady, subtitle, visible, active, runCommand }: {
+type AgentPlan = NonNullable<AgentStatus["plan"]>;
+
+function agentPlanForRow(session: Session, status: AgentStatus | undefined): AgentPlan | undefined {
+  if (!(session.lifecycle_state === "running" || session.lifecycle_state === "resuming")) return undefined;
+  return status?.plan?.steps.length ? status.plan : undefined;
+}
+
+function agentPlanProgress(plan: AgentPlan): { completed: number; total: number } {
+  return {
+    completed: plan.steps.filter((step) => step.status === "completed").length,
+    total: plan.steps.length,
+  };
+}
+
+function AgentTodoCount({ plan }: { plan: AgentPlan }) {
+  const progress = agentPlanProgress(plan);
+  return <span
+    className={`agent-todo-count${progress.completed === progress.total ? " done" : ""}`}
+    data-agent-todo-dismiss
+  >
+    <span className="agent-todo-progress">{progress.completed}/{progress.total}</span>
+    <span className="agent-todo-dismiss-glyph" aria-hidden="true">×</span>
+  </span>;
+}
+
+function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
+  const progress = agentPlanProgress(plan);
+  return <span className="agent-todo-tooltip" role="tooltip">
+    <span className="agent-todo-tooltip-head">
+      <span>Todos</span>
+      <span>{progress.completed}/{progress.total} complete</span>
+    </span>
+    <span className="agent-todo-tooltip-list">
+      {plan.steps.map((step, index) => <span
+        key={`${index}:${step.text}`}
+        className="agent-todo-tooltip-item"
+        data-status={step.status}
+      >
+        <span className="agent-todo-tooltip-mark" aria-hidden="true" />
+        <span>{step.text}</span>
+      </span>)}
+    </span>
+  </span>;
+}
+
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, visible, active, runCommand }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
+  plan: AgentPlan | undefined;
   state: SessionState;
   reviewReady: boolean;
   subtitle: string;
@@ -315,6 +375,7 @@ function SessionRowContent({ session, agentStatus, state, reviewReady, subtitle,
       <span className="row-copy">
         <strong className="row-title">{sessionLabel(session)}</strong>
         <span className="session-state-line">
+          {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}
           {improver ? <span className="row-improve-kind">Improver</span> : null}
           {state.label ? <em className={`row-state ${state.tone}`} title={state.summary}>{state.label}</em> : null}
@@ -323,6 +384,7 @@ function SessionRowContent({ session, agentStatus, state, reviewReady, subtitle,
             ? <code className="row-run-command" title={runCommand}>{runCommand}</code>
             : provenance.folder ? <small className="row-subtitle" title={session.process.cwd}>{provenance.folder}</small> : null}
         </span>
+        {plan ? <AgentTodoTooltip plan={plan} /> : null}
       </span>
       <span className="session-presence">{visible ? <span className="pane-dot" title={active ? "Active pane" : "Visible in layout"} /> : null}</span>
     </>

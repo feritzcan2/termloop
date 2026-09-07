@@ -9,12 +9,15 @@ import {
   ConnectionProfilesDialog,
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
+import type { AppearancePreference } from "../appearance-theme.js";
 
-export type SettingsPage = "notifications" | "servers";
+export type SettingsPage = "appearance" | "notifications" | "servers";
 
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
   close(): void;
   initialPage?: SettingsPage;
+  appearancePreference: AppearancePreference;
+  changeAppearancePreference(preference: AppearancePreference): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
 };
@@ -22,6 +25,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
 export function SettingsDialog({
   close,
   initialPage = "notifications",
+  appearancePreference,
+  changeAppearancePreference,
   loadNotificationPreferences,
   saveNotificationPreferences,
   ...connectionProps
@@ -105,11 +110,14 @@ export function SettingsDialog({
         </header>
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="Settings sections">
+            <button type="button" className={page === "appearance" ? "active" : ""} aria-current={page === "appearance" ? "page" : undefined} onClick={() => setPage("appearance")}>Appearance</button>
             <button type="button" className={page === "notifications" ? "active" : ""} aria-current={page === "notifications" ? "page" : undefined} onClick={() => setPage("notifications")}>Notifications</button>
             <button type="button" className={page === "servers" ? "active" : ""} aria-current={page === "servers" ? "page" : undefined} onClick={() => setPage("servers")}>Servers</button>
           </nav>
           <main className="settings-content">
-            {page === "notifications" ? (
+            {page === "appearance" ? (
+              <AppearanceSettings preference={appearancePreference} change={changeAppearancePreference} />
+            ) : page === "notifications" ? (
               <NotificationSettings
                 preferences={preferences}
                 loadingError={loadingError}
@@ -131,6 +139,64 @@ export function SettingsDialog({
         </div>
       </section>
     </div>
+  );
+}
+
+function AppearanceSettings({
+  change,
+  preference,
+}: {
+  change(preference: AppearancePreference): void;
+  preference: AppearancePreference;
+}) {
+  return (
+    <section className="appearance-settings" aria-labelledby="appearance-settings-title">
+      <div className="settings-page-header">
+        <h3 id="appearance-settings-title">Appearance</h3>
+        <p>Choose how TermLoop looks on this computer.</p>
+      </div>
+      <div className="appearance-options" role="radiogroup" aria-label="Color theme">
+        <AppearanceOption preference="system" selected={preference === "system"} change={change} />
+        <AppearanceOption preference="light" selected={preference === "light"} change={change} />
+        <AppearanceOption preference="dark" selected={preference === "dark"} change={change} />
+      </div>
+      <p className="settings-footnote">System follows macOS appearance changes instantly. The resolved theme also applies to terminal panes.</p>
+    </section>
+  );
+}
+
+function AppearanceOption({
+  change,
+  preference,
+  selected,
+}: {
+  change(preference: AppearancePreference): void;
+  preference: AppearancePreference;
+  selected: boolean;
+}) {
+  const copy = {
+    system: ["System", "Follow this Mac automatically."],
+    light: ["Light", "Bright surfaces with dark text."],
+    dark: ["Dark", "Dim surfaces with light text."],
+  } satisfies Record<AppearancePreference, [string, string]>;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={selected ? "appearance-option selected" : "appearance-option"}
+      onClick={() => change(preference)}
+    >
+      <span className={`appearance-preview ${preference}`} aria-hidden="true">
+        <i />
+        <b><em /><em /><em /></b>
+      </span>
+      <span className="appearance-option-copy">
+        <strong>{copy[preference][0]}</strong>
+        <small>{copy[preference][1]}</small>
+      </span>
+      <span className="appearance-option-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+    </button>
   );
 }
 
@@ -263,6 +329,14 @@ function RemoteNotificationSection({
         title={`${deviceName} notifications`}
         description={`Send notifications from this Mac to ${deviceName}.`}
         change={(checked) => void update(target, "enabled", checked)}
+      />
+      <SettingsSwitch
+        accessibleName={`${deviceName}: Send while this Mac is active`}
+        checked={preferences.notifyWhenMacActive}
+        disabled={saving || !preferences.enabled}
+        title="Send while this Mac is active"
+        description="Also send push notifications while keyboard or mouse activity is detected on this Mac."
+        change={(checked) => void update(target, "notifyWhenMacActive", checked)}
       />
       <SettingsSwitch
         accessibleName={`${deviceName}: Agent needs input`}

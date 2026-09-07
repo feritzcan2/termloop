@@ -13,34 +13,35 @@ use tokio::time::{Duration, Instant};
 use super::super::core_lock::{in_operation, record_operation_duration};
 use super::super::health::refresh_all_health_demands;
 use super::super::invalidation::{
-    InvalidationRequest, invalidate_automatic_git_host_task, mutation_topics,
-    refresh_task_presence_for_cwd,
+    CommitImpact, InvalidationRequest, fallback_mutation_impact,
+    invalidate_automatic_git_host_task, queue_changed_commit_invalidation,
+    queue_durable_commit_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::{AppState, current_epoch_ms};
 use super::errors::{git_observation_error_response, response_conflict, response_error};
 use super::handlers::{
     bind_task_branch, cleanup_task_worktree, close_session, create_skill_definition,
-    create_worker_configuration, delete_project, delete_steward_configuration,
-    delete_worker_configuration, dismiss_task_worktree_provisioning, dismiss_task_worktree_repair,
-    fork_agent_session, get_context_bank_catalog, get_context_bank_file, get_skill_catalog,
-    get_skill_definition, git_host_pull_request_change_list, git_host_pull_request_diff,
-    git_host_pull_request_list, inspect_task_worktree_cleanup, inspect_task_worktree_repair,
-    launch_agent_session, launch_assistant_prompt_improver, launch_current_worker,
-    launch_project_run, launch_quick_action, launch_run_configuration_improver,
-    launch_settings_improver, launch_task_run, launch_task_session, list_deleted_sessions,
-    list_session_history, paste_agent_image, preview_agent_session,
-    preview_assistant_prompt_improver, preview_quick_action, preview_relocate_agent_session,
-    preview_relocate_agent_to_project, preview_resume_agent_session,
-    preview_run_configuration_improver, preview_session_history_resume, preview_settings_improver,
-    preview_task_agent_session, project_list_local_branches, project_worktree_change_list,
-    project_worktree_diff, project_worktree_pre_image, project_worktree_summary,
-    provision_task_worktree, relocate_agent_session, repair_provider_history, repair_task_worktree,
+    delete_project, delete_steward_configuration, dismiss_task_worktree_provisioning,
+    dismiss_task_worktree_repair, fork_agent_session, get_context_bank_catalog,
+    get_context_bank_file, get_skill_catalog, get_skill_definition,
+    git_host_pull_request_change_list, git_host_pull_request_diff, git_host_pull_request_list,
+    inspect_task_worktree_cleanup, inspect_task_worktree_repair, launch_agent_session,
+    launch_assistant_prompt_improver, launch_project_run, launch_quick_action,
+    launch_run_configuration_improver, launch_settings_improver, launch_task_run,
+    launch_task_session, list_deleted_sessions, list_session_history, paste_agent_image,
+    preview_agent_session, preview_assistant_prompt_improver, preview_quick_action,
+    preview_relocate_agent_session, preview_relocate_agent_to_project,
+    preview_resume_agent_session, preview_run_configuration_improver,
+    preview_session_history_resume, preview_settings_improver, preview_task_agent_session,
+    project_list_local_branches, project_worktree_change_list, project_worktree_diff,
+    project_worktree_pre_image, project_worktree_summary, provision_task_worktree,
+    relocate_agent_session, repair_provider_history, repair_task_worktree,
     resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
     restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
     save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
     set_steward_configuration, task_branch_commit_change_list, task_branch_commit_diff,
     task_branch_commit_list, task_branch_commit_summary_list, task_worktree_change_list,
-    task_worktree_diff, task_worktree_pre_image, terminate_session, update_worker_configuration,
+    task_worktree_diff, task_worktree_pre_image, terminate_session,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -172,9 +173,6 @@ pub(in crate::app) async fn apply_configuration_plan(
         }
         let _ = terminate_session(json!({ "sessionId": session_id }), state).await;
     }
-    if let Some(worker_id) = effects.launch_worker_id {
-        launch_current_worker(&worker_id, state).await?;
-    }
     if effects.tracker_runtime_changed {
         state.tracker_runtime_wake.notify_one();
     }
@@ -185,7 +183,6 @@ pub(in crate::app) async fn apply_configuration_plan(
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
             ProjectionTopic::Playbook,
             ProjectionTopic::Run,
@@ -202,7 +199,6 @@ fn configuration_agent_id(content: &str) -> Option<String> {
     let content = content.parse::<Value>().ok()?;
     content
         .get("agentId")
-        .or_else(|| content.get("preferredWorkerAgentId"))
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
 }
@@ -301,12 +297,14 @@ fn skill_application_error(
 }
 
 async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (plan, runtimes) = {
+    let (plan, runtimes, prepared_revision) = {
         let mut core = state.core.lock().await;
         let plan = core.prepare_task_archive(params)?;
         let runtimes = core.detach_task_archive_runtimes(&plan);
-        (plan, runtimes)
+        (plan, runtimes, core.state_revision())
     };
+    queue_durable_commit_invalidation(state, CommitImpact::TaskSessionAgent, prepared_revision)
+        .await;
     let terminal = state.terminal.clone();
     let session_ids = plan.session_ids().to_vec();
     let retirement =
@@ -325,39 +323,58 @@ async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop
             Ok(())
         })
         .await
-        .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))?;
-    if retirement.is_err() {
-        let mut core = state.core.lock().await;
-        core.mark_task_archive_recovery_attention(&plan)?;
+        .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))
+        .and_then(std::convert::identity);
+    if let Err(error) = retirement {
+        tracing::warn!(
+            %error,
+            task_id = plan.task_id(),
+            "Task archive retirement needs recovery attention"
+        );
+        let (recovery, recovery_revision) = {
+            let mut core = state.core.lock().await;
+            let recovery = core.mark_task_archive_recovery_attention(&plan);
+            (recovery, core.state_revision())
+        };
+        queue_changed_commit_invalidation(
+            state,
+            CommitImpact::TaskSessionAgent,
+            prepared_revision,
+            recovery_revision,
+        )
+        .await;
+        recovery?;
         return Err(termloop_core::CoreError::ArchiveRecoveryAttention {
             task_id: plan.task_id().to_owned(),
             operation_id: plan.operation_id().to_owned(),
         });
     }
-    let mut core = state.core.lock().await;
-    let result = core.complete_task_archive(plan)?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
-        state_revision: core.state_revision(),
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    Ok(result)
+    let (result, completed_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.complete_task_archive(plan);
+        (result, core.state_revision())
+    };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        prepared_revision,
+        completed_revision,
+    )
+    .await;
+    result
 }
 
 async fn archive_session(
     params: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let (plan, runtime) = {
+    let (plan, runtime, prepared_revision) = {
         let mut core = state.core.lock().await;
         let plan = core.prepare_session_archive(params)?;
         let runtime = core.detach_session_archive_runtime(&plan);
-        (plan, runtime)
+        (plan, runtime, core.state_revision())
     };
+    queue_durable_commit_invalidation(state, CommitImpact::SessionAgent, prepared_revision).await;
     let terminal = state.terminal.clone();
     let session_id = plan.session_id().to_owned();
     let retirement = tokio::task::spawn_blocking(move || {
@@ -373,39 +390,61 @@ async fn archive_session(
         Ok::<(), termloop_core::CoreError>(())
     })
     .await
-    .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))?;
-    if retirement.is_err() {
-        let mut core = state.core.lock().await;
-        core.mark_session_archive_recovery_attention(&plan)?;
+    .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))
+    .and_then(std::convert::identity);
+    if let Err(error) = retirement {
+        tracing::warn!(
+            %error,
+            session_id = plan.session_id(),
+            "Session archive retirement needs recovery attention"
+        );
+        let (recovery, recovery_revision) = {
+            let mut core = state.core.lock().await;
+            let recovery = core.mark_session_archive_recovery_attention(&plan);
+            (recovery, core.state_revision())
+        };
+        queue_changed_commit_invalidation(
+            state,
+            CommitImpact::SessionAgent,
+            prepared_revision,
+            recovery_revision,
+        )
+        .await;
+        recovery?;
         return Err(termloop_core::CoreError::InvalidParams(
             "sessionArchiveRecoveryAttention".into(),
         ));
     }
-    let mut core = state.core.lock().await;
-    let result = core.complete_session_archive(plan)?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
-        state_revision: core.state_revision(),
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    Ok(result)
+    let (result, completed_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.complete_session_archive(plan);
+        (result, core.state_revision())
+    };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::SessionAgent,
+        prepared_revision,
+        completed_revision,
+    )
+    .await;
+    result
 }
 
 async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (result, state_revision) = {
+    let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
-        let result = core.handle("task.restore", params)?;
-        (result, core.state_revision())
+        let previous_revision = core.state_revision();
+        let result = core.handle("task.restore", params);
+        (result, previous_revision, core.state_revision())
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        previous_revision,
         state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
+    )
+    .await;
+    let result = result?;
     let session_ids = result
         .get("resume_session_ids")
         .and_then(Value::as_array)
@@ -419,20 +458,20 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
 }
 
 async fn reopen_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (result, session_ids, state_revision) = {
+    let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
-        let (result, session_ids) = core.reopen_task_with_resume_plan(params)?;
-        (result, session_ids, core.state_revision())
+        let previous_revision = core.state_revision();
+        let result = core.reopen_task_with_resume_plan(params);
+        (result, previous_revision, core.state_revision())
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        previous_revision,
         state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
+    )
+    .await;
+    let (result, session_ids) = result?;
     resume_task_sessions(session_ids, state).await;
     Ok(result)
 }
@@ -468,10 +507,20 @@ async fn restore_archived_session(
         .and_then(Value::as_str)
         .ok_or_else(|| termloop_core::CoreError::InvalidParams("sessionId".into()))?
         .to_owned();
-    let restored = {
+    let (restored, previous_revision, restored_revision) = {
         let mut core = state.core.lock().await;
-        core.handle("session.restoreArchived", params)?
+        let previous_revision = core.state_revision();
+        let restored = core.handle("session.restoreArchived", params);
+        (restored, previous_revision, core.state_revision())
     };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::SessionAgent,
+        previous_revision,
+        restored_revision,
+    )
+    .await;
+    let restored = restored?;
     let preview = preview_resume_agent_session(json!({ "sessionId": session_id }), state).await?;
     let launch_ticket = preview
         .get("launch_ticket")
@@ -935,7 +984,7 @@ async fn dispatch_inner(
                         match outcome {
                             Err(error) => Err(error),
                             Ok(outcome) => {
-                                super::super::acknowledge_confirmed_steward_wakes(
+                                super::super::reconcile_steward_wake_runtime_events(
                                     &mut core,
                                     &state.companion_wakes,
                                 );
@@ -1029,6 +1078,10 @@ async fn dispatch_inner(
                     })
                     .collect(),
             )),
+            "agent.profileList" => {
+                let core = state.core.lock().await;
+                Ok(core.agent_profile_list())
+            }
             "steward.configurationGet" => {
                 let mut core = state.core.lock().await;
                 let project_id = request
@@ -1057,19 +1110,6 @@ async fn dispatch_inner(
             "steward.configurationSet" => set_steward_configuration(request.params, state).await,
             "steward.configurationDelete" => {
                 delete_steward_configuration(request.params, state).await
-            }
-            "worker.configurationList" => {
-                let mut core = state.core.lock().await;
-                core.handle("worker.configurationList", request.params)
-            }
-            "worker.configurationCreate" => {
-                create_worker_configuration(request.params, state).await
-            }
-            "worker.configurationUpdate" => {
-                update_worker_configuration(request.params, state).await
-            }
-            "worker.configurationDelete" => {
-                delete_worker_configuration(request.params, state).await
             }
             "routine.runNow" => {
                 let params =
@@ -1124,26 +1164,16 @@ async fn dispatch_inner(
                     request.params,
                 )
                 .expect("validated Routine create params");
-                let kind = match params.kind {
-                    protocol::RoutineKind::Slack => "slack",
-                    protocol::RoutineKind::Jira => "jira",
-                    protocol::RoutineKind::Runtime => "runtime",
-                    protocol::RoutineKind::Delivery => "delivery",
-                    protocol::RoutineKind::CiPr => "ciPr",
-                    protocol::RoutineKind::Custom => "custom",
-                };
                 let mut core = state.core.lock().await;
                 let result = core.create_tracker_configuration(
                     termloop_platform::generate_opaque_id(),
                     &params.project_id,
-                    kind,
                     routine_trigger_mode(params.trigger_mode),
                     params.name,
-                    params.worker_id,
                     params.schedule_interval_seconds,
-                    routine_action_handling(params.action_handling),
-                    params.prompt,
-                    params.steward_instructions,
+                    routine_action_handling(params.while_waiting.mode),
+                    params.instructions,
+                    Some(params.while_waiting.instructions),
                     params.expected_revision,
                     current_epoch_ms(),
                 );
@@ -1159,12 +1189,11 @@ async fn dispatch_inner(
                     &params.routine_id,
                     routine_trigger_mode(params.trigger_mode),
                     params.name,
-                    params.prompt,
-                    params.steward_instructions,
-                    params.worker_id,
+                    params.instructions,
+                    params.while_waiting.instructions,
                     params.enabled,
                     params.schedule_interval_seconds,
-                    routine_action_handling(params.action_handling),
+                    routine_action_handling(params.while_waiting.mode),
                     params.expected_revision,
                     current_epoch_ms(),
                 );
@@ -1215,21 +1244,12 @@ async fn dispatch_inner(
                     serde_json::from_value::<protocol::PlaybookUpdateParams>(request.params)
                         .expect("validated Playbook update params");
                 let project_id = params.project_id.clone();
-                let preferred_agent = match params.preferred_worker_agent_id {
-                    protocol::StewardAgentId::Claude => "claude",
-                    protocol::StewardAgentId::Codex => "codex",
-                };
-                let preferred_worker_available =
-                    state.agent_capabilities.iter().any(|capability| {
-                        capability.agent_id == preferred_agent && capability.available
-                    });
                 let routine_capacity = params.milestones.len()
                     + params
                         .saved_pipelines
                         .iter()
                         .map(|pipeline| pipeline.milestones.len())
                         .sum::<usize>();
-                let new_worker_id = termloop_platform::generate_opaque_id();
                 let new_routine_ids = (0..routine_capacity)
                     .map(|_| termloop_platform::generate_opaque_id())
                     .collect::<Vec<_>>();
@@ -1238,9 +1258,7 @@ async fn dispatch_inner(
                 let steward_was_enabled = core.current_enabled_steward_wake(&project_id).is_some();
                 let result = core.update_playbook(
                     serde_json::to_value(params).expect("Playbook update params serialize"),
-                    new_worker_id,
                     new_routine_ids,
-                    preferred_worker_available,
                     current_epoch_ms(),
                 );
                 let state_revision = core.state_revision();
@@ -1249,11 +1267,7 @@ async fn dispatch_inner(
                     && core.current_enabled_steward_wake(&project_id).is_some();
                 drop(core);
                 if result.is_ok() && state_revision != previous_revision {
-                    let mut topics = vec![
-                        ProjectionTopic::Playbook,
-                        ProjectionTopic::Routine,
-                        ProjectionTopic::Worker,
-                    ];
+                    let mut topics = vec![ProjectionTopic::Playbook, ProjectionTopic::Routine];
                     if steward_enabled {
                         topics.push(ProjectionTopic::Steward);
                     }
@@ -1263,14 +1277,6 @@ async fn dispatch_inner(
                         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
                     });
                     state.tracker_runtime_wake.notify_one();
-                    if let Some(worker_id) = result
-                        .as_ref()
-                        .ok()
-                        .and_then(|value| value["workerId"].as_str())
-                        && let Err(error) = launch_current_worker(worker_id, state).await
-                    {
-                        tracing::warn!(%error, %worker_id, "Playbook Worker launch needs attention");
-                    }
                     if steward_enabled {
                         super::super::companion_supervisor::enqueue_current_steward_wake(
                             state,
@@ -1555,13 +1561,14 @@ async fn dispatch_inner(
                 let result = core.handle(&request.method, request.params);
                 let current_revision = core.state_revision();
                 drop(core);
-                let topics = mutation_topics(&request.method);
-                if result.is_ok() && current_revision != previous_revision && !topics.is_empty() {
-                    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-                        topics,
-                        state_revision: current_revision,
-                        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-                    });
+                if let Some(impact) = fallback_mutation_impact(&request.method) {
+                    queue_changed_commit_invalidation(
+                        state,
+                        impact,
+                        previous_revision,
+                        current_revision,
+                    )
+                    .await;
                 }
                 result
             }
@@ -2133,11 +2140,9 @@ async fn dispatch_inner(
                 ErrorCode::Conflict,
                 "disable and stop the Routine before deleting it",
             ),
-            Err(
-                error @ (termloop_core::CoreError::PlaybookStepRoutineHeld { .. }
-                | termloop_core::CoreError::WorkerRuntimeActive
-                | termloop_core::CoreError::WorkerHasRoutines { .. }),
-            ) => response_error(request.id, ErrorCode::Conflict, &error.to_string()),
+            Err(error @ termloop_core::CoreError::PlaybookStepRoutineHeld { .. }) => {
+                response_error(request.id, ErrorCode::Conflict, &error.to_string())
+            }
             Err(termloop_core::CoreError::TrackerReportStale) => response_error(
                 request.id,
                 ErrorCode::Conflict,

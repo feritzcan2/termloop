@@ -183,7 +183,7 @@ describe("Active Agent rail", () => {
       actionNeeded: [],
       interrupted: [],
       inProgress: [],
-      resting: [ordinary],
+      resting: [ordinary, legacyWorker],
       older: [],
       stopped: [stopped],
     });
@@ -364,7 +364,7 @@ describe("Active Agent rail", () => {
     expect(markup.indexOf('data-active-agent-section="In progress"')).toBeLessThan(markup.indexOf('data-active-agent-section="Idle / paused"'));
   });
 
-  it("shows the same current structured plan in Active Agents", () => {
+  it("shows structured todo progress in the row and keeps details in its tooltip", () => {
     const planning = agent("planning");
     const planningStatus: AgentStatus = {
       ...status(planning.id, "working"),
@@ -383,16 +383,21 @@ describe("Active Agent rail", () => {
       props([planning], [planningStatus], new Set()),
     ));
 
-    expect(markup).toContain('class="agent-plan"');
-    expect(markup).toContain('<span class="agent-plan-count">1/2</span>');
-    expect(markup).toContain('title="Render Active Agents"');
-    expect(markup).toContain("Keep one current projection.");
+    expect(markup).toContain('class="agent-todo-count"');
+    expect(markup).toContain('class="agent-todo-progress">1/2</span>');
+    expect(markup).toContain('class="agent-todo-dismiss-glyph" aria-hidden="true">×</span>');
+    expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
+    expect(markup).toContain("Persist the plan");
+    expect(markup).toContain("Render Active Agents");
+    expect(markup).not.toContain("Keep one current projection.");
+    expect(markup).not.toContain("<details");
 
     const resumingMarkup = renderToStaticMarkup(createElement(
       ActiveAgentRail,
       props([{ ...planning, lifecycle_state: "resuming" }], [planningStatus], new Set()),
     ));
-    expect(resumingMarkup).toContain('<span class="agent-plan-count">1/2</span>');
+    expect(resumingMarkup).toContain('class="agent-todo-count"');
+    expect(resumingMarkup).toContain('class="agent-todo-progress">1/2</span>');
 
     const completedStatus: AgentStatus = {
       ...planningStatus,
@@ -405,12 +410,14 @@ describe("Active Agent rail", () => {
       ActiveAgentRail,
       props([planning], [completedStatus], new Set()),
     ));
-    expect(unselectedCompleted).not.toContain("agent-plan");
+    expect(unselectedCompleted).toContain('class="agent-todo-count done"');
+    expect(unselectedCompleted).toContain('class="agent-todo-progress">2/2</span>');
     const selectedCompleted = renderToStaticMarkup(createElement(
       ActiveAgentRail,
       props([planning], [completedStatus], new Set(), planning),
     ));
-    expect(selectedCompleted).toContain('class="agent-plan done"');
+    expect(selectedCompleted).toContain('class="agent-todo-count done"');
+    expect(selectedCompleted).not.toContain("<details");
   });
 
   it("keeps shared-worktree agents as independent rows with a worktree label on each", () => {
@@ -717,6 +724,25 @@ describe("Workspace view switch", () => {
     expect(searching).toContain('aria-pressed="true"');
     expect(searching).not.toContain("workspace-view-attention");
     expect(renderToStaticMarkup(createElement(WorkspaceViewSwitch, base))).not.toContain("workspace-view-action");
+  });
+
+  it("keeps Task Settings at the far edge after Create Task", () => {
+    const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
+      view: "overview",
+      disabled: false,
+      select: () => {},
+      launchTerminal: async () => {},
+      launchAgent: async () => {},
+      viewAction: { label: "Create Task", icon: "add", run: () => {} },
+      settingsAction: { label: "Task Settings", icon: "settings", run: () => {}, pressed: true },
+    }));
+    const createTask = markup.indexOf('aria-label="Create Task"');
+    const taskSettings = markup.indexOf('aria-label="Task Settings"');
+    expect(createTask).toBeGreaterThan(-1);
+    expect(taskSettings).toBeGreaterThan(createTask);
+    expect(markup).toContain('class="workspace-view-action settings"');
+    expect(markup).toContain('title="Task Settings"');
+    expect(markup).toContain('aria-pressed="true"');
   });
 
   it("stacks the view row above the launch row instead of sharing one line", () => {

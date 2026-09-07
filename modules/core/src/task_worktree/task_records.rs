@@ -281,13 +281,6 @@ impl CoreRuntime {
             .iter()
             .filter(|configuration| configuration.project_id == project_id)
             .filter_map(|configuration| configuration.executor_session_id.as_deref())
-            .chain(
-                self.store
-                    .worker_configurations()
-                    .iter()
-                    .filter(|configuration| configuration.project_id == project_id)
-                    .filter_map(|configuration| configuration.executor_session_id.as_deref()),
-            )
             .collect::<HashSet<_>>();
         Ok(self
             .store

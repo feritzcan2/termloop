@@ -6,7 +6,6 @@ mod session;
 mod settings_improvement;
 mod skills;
 mod steward;
-mod worker;
 mod worktree;
 
 pub(super) use context_bank::{
@@ -48,10 +47,6 @@ pub(super) use skills::{
 };
 pub(super) use steward::{delete_steward_configuration, set_steward_configuration};
 pub(in crate::app) use steward::{launch_current_steward, schedule_current_steward};
-pub(in crate::app) use worker::launch_current_worker;
-pub(super) use worker::{
-    create_worker_configuration, delete_worker_configuration, update_worker_configuration,
-};
 pub(super) use worktree::{
     bind_task_branch, cleanup_task_worktree, dismiss_task_worktree_provisioning,
     dismiss_task_worktree_repair, inspect_task_worktree_cleanup, inspect_task_worktree_repair,

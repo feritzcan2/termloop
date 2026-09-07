@@ -58,6 +58,7 @@ function worktreeLessTask(): Task {
 
 function mergedProjection(task: Task): GitHostProjection {
   return {
+    usage: "displayOnly",
     task_id: task.id,
     branch_name: task.branch?.name ?? null,
     repository_provider: "github",
@@ -465,7 +466,7 @@ describe("Task rail agent attention", () => {
     expect(expanded).toContain("task-children");
   });
 
-  it("nests the current structured Agent plan under its Session", () => {
+  it("keeps structured todo progress in the Agent row and details in its tooltip", () => {
     const working = agentSession("planning-agent");
     const status: AgentStatus = {
       ...agentStatus(working.id, "working"),
@@ -482,20 +483,23 @@ describe("Task rail agent attention", () => {
     };
     const markup = renderRail({ sessions: [working], statuses: [status] });
 
-    expect(markup).toContain('class="agent-plan"');
-    expect(markup).toContain('<span class="agent-plan-count">1/3</span>');
-    expect(markup).toContain('title="Render the current plan"');
-    expect(markup).toContain('data-status="completed"');
-    expect(markup).toContain("Keep the rollout exact.");
-    /// The completed count is visible at a glance without a competing progress bar.
-    expect(markup).not.toContain("agent-plan-bar");
+    expect(markup).toContain('class="agent-todo-count"');
+    expect(markup).toContain('class="agent-todo-progress">1/3</span>');
+    expect(markup).toContain('class="agent-todo-dismiss-glyph" aria-hidden="true">×</span>');
+    expect(markup).toContain('class="agent-todo-tooltip" role="tooltip"');
+    expect(markup).toContain("Inspect the flow");
+    expect(markup).toContain("Render the current plan");
+    expect(markup).toContain("Run focused tests");
+    expect(markup).not.toContain("Keep the rollout exact.");
+    expect(markup).not.toContain("<details");
 
     const done: AgentStatus = {
       ...status,
       plan: { ...status.plan!, steps: status.plan!.steps.map((step) => ({ ...step, status: "completed" as const })) },
     };
-    expect(renderRail({ sessions: [working], statuses: [done] })).not.toContain("agent-plan");
-    expect(renderRail({ sessions: [working], statuses: [done], selectedSessionId: working.id })).toContain('class="agent-plan done"');
+    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('class="agent-todo-count done"');
+    expect(renderRail({ sessions: [working], statuses: [done] })).toContain('class="agent-todo-progress">3/3</span>');
+    expect(renderRail({ sessions: [working], statuses: [done], selectedSessionId: working.id })).toContain('class="agent-todo-count done"');
   });
 
   it("drops the plan the moment its Session is no longer live", () => {
@@ -509,7 +513,7 @@ describe("Task rail agent attention", () => {
         updatedAtEpochMs: 2,
       },
     };
-    expect(renderRail({ sessions: [stopped], statuses: [status] })).not.toContain("agent-plan");
+    expect(renderRail({ sessions: [stopped], statuses: [status] })).not.toContain("agent-todo-count");
   });
 });
 
@@ -762,6 +766,7 @@ describe("Task rail row anatomy", () => {
       },
     };
     const projection: GitHostProjection = {
+      usage: "displayOnly",
       task_id: task.id,
       branch_name: task.branch?.name ?? null,
       repository_provider: null,
@@ -1456,6 +1461,11 @@ describe("Task rail create flow", () => {
         { name: "main", exact_ref: "refs/heads/main" },
         { name: "develop", exact_ref: "refs/heads/develop" },
       ],
+      base_branches: [
+        { name: "origin/main", exact_ref: "refs/remotes/origin/main" },
+        { name: "origin/develop", exact_ref: "refs/remotes/origin/develop" },
+      ],
+      base_branches_truncated: false,
       truncated: false,
     }));
     const props = {
@@ -1471,12 +1481,12 @@ describe("Task rail create flow", () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create Task"]')!.click());
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     const createBase = container.querySelector<HTMLSelectElement>("#create-base-ref")!;
-    expect(createBase.value).toBe("refs/heads/main");
+    expect(createBase.value).toBe("refs/remotes/origin/develop");
     await act(async () => {
-      createBase.value = "refs/heads/develop";
+      createBase.value = "refs/remotes/origin/main";
       createBase.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(createBase.value).toBe("refs/heads/develop");
+    expect(createBase.value).toBe("refs/remotes/origin/main");
 
     /// Remounting represents a renderer/application restart: the next dialog
     /// must recover the Project-scoped choice from client-local storage.
@@ -1491,7 +1501,7 @@ describe("Task rail create flow", () => {
       branchMode.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.querySelector<HTMLSelectElement>("#worktree-base-ref")?.value)
-      .toBe("refs/heads/develop");
+      .toBe("refs/remotes/origin/main");
 
     await act(async () => root.unmount());
     container.remove();
@@ -1527,6 +1537,7 @@ describe("Task rail create flow", () => {
         projectId: "project-1",
         createWorktree: false,
         worktreePrefix: "termloop",
+        baseRef: null,
         agentId: null,
         model: null,
         permission: null,
@@ -1567,6 +1578,7 @@ describe("Task rail create flow", () => {
         projectId: "project-1",
         createWorktree: true,
         worktreePrefix: "feature",
+        baseRef: "refs/remotes/origin/main",
         agentId: "claude",
         model: "opus[1m]",
         permission: "bypassPermissions" as const,
@@ -1580,6 +1592,8 @@ describe("Task rail create flow", () => {
     const listProjectLocalBranches = vi.fn(async () => ({
       repository_root: "/repository",
       branches: [{ name: "main", exact_ref: "refs/heads/main" }],
+      base_branches: [{ name: "origin/main", exact_ref: "refs/remotes/origin/main" }],
+      base_branches_truncated: false,
       truncated: false,
     }));
     const readyTask: Task = {
@@ -1616,7 +1630,7 @@ describe("Task rail create flow", () => {
     expect(container.querySelector<HTMLInputElement>("#create-branch-name")?.value)
       .toBe("feature/fix-login-redirect");
     expect(container.querySelector<HTMLSelectElement>("#create-base-ref")?.value)
-      .toBe("refs/heads/main");
+      .toBe("refs/remotes/origin/main");
 
     const claudeOption = [...container.querySelectorAll<HTMLButtonElement>(".start-chip")]
       .find((option) => option.textContent?.includes("Claude"))!;
@@ -1649,7 +1663,7 @@ describe("Task rail create flow", () => {
       repositoryPath: "/repository",
       branchName: "feature/fix-login-redirect",
       branchMode: "create",
-      baseRef: "refs/heads/main",
+      baseRef: "refs/remotes/origin/main",
       destinationPath: "/feature-fix-login-redirect_worktree",
     });
     expect(container.querySelector('[role="dialog"]')).toBeNull();

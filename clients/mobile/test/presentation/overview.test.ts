@@ -12,6 +12,7 @@ import {
   shouldResetConnectionTransports,
 } from "../../src/features/connection/connection-resilience";
 import {
+  refreshIndicatorForOverviewRead,
   snapshotWhileBackgrounded,
   snapshotWhileUnavailable,
 } from "../../src/features/overview/overview-resilience";
@@ -505,6 +506,21 @@ describe("connection presentation", () => {
       refreshing: false,
     });
     expect(snapshotWhileBackgrounded(undefined).refreshing).toBe(false);
+  });
+
+  it("shows pull-to-refresh only for an explicit gesture, not foreground recovery", () => {
+    const previous = {
+      load: "ready" as const,
+      error: undefined,
+      overview: baseOverview,
+      refreshing: false,
+      reviewReadySessionIds: new Set<string>(),
+      readAtEpochMs: 100,
+    };
+
+    expect(refreshIndicatorForOverviewRead(true, previous)).toBe(true);
+    expect(refreshIndicatorForOverviewRead(false, previous)).toBe(false);
+    expect(refreshIndicatorForOverviewRead(true, undefined)).toBe(false);
   });
 
   it("keeps every paired Mac as its own selector group and carries its identity into retained routes", () => {

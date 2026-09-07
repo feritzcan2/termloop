@@ -27,7 +27,7 @@ function RootLayout() {
             <OverviewProvider>
               <NotificationCoordinator />
               <WatchSyncCoordinator />
-              <StatusBar style="light" />
+              <StatusBar style="dark" />
               <Stack
                 screenOptions={{
                   headerShown: false,

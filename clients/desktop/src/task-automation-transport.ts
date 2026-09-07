@@ -14,6 +14,7 @@ export function interactiveTaskCreateParams(
     brief,
     worktreeIntent: "none",
     worktreePrefix: null,
+    baseRef: null,
     agentId: null,
     model: null,
     permission: null,

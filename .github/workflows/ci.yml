@@ -63,12 +63,12 @@ jobs:
         include:
           - os: macos-15
             runner: '["self-hosted", "macOS", "ARM64", "termloop-macos"]'
-          - os: ubuntu-24.04
-            runner: '["ubuntu-24.04"]'
+          - os: linux-netcup
+            runner: '["self-hosted", "Linux", "X64", "netcup"]'
           - os: windows-2025
             runner: '["windows-2025"]'
     runs-on: ${{ fromJSON(matrix.runner) }}
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

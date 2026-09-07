@@ -38,7 +38,7 @@ import {
   taskStage,
 } from "@/presentation/task-presentation";
 import type { RowTone } from "@/presentation/tone";
-import { color, space } from "@/theme/tokens";
+import { color, space, toneColor } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
 /// Task detail keeps Task/worktree recovery read-only while attached Session rows
@@ -336,12 +336,12 @@ export default function TaskRoute() {
 
 function statusColor(tone: RowTone): string {
   switch (tone) {
-    case "attention": return "#ff8e62";
+    case "attention": return toneColor.attention;
     case "blocked": return color.danger;
     case "review": return color.agentCodex;
     case "working":
     case "done": return color.success;
-    case "busy": return "#e8813f";
+    case "busy": return toneColor.busy;
     case "interrupted": return color.warning;
     case "quiet": return color.textMuted;
   }

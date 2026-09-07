@@ -183,7 +183,7 @@ fn reserve_create_operation(
             "destinationPath": destination,
             "branchName": branch_name,
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }),
         task_id,
     )
@@ -207,7 +207,7 @@ fn provision_cleanup_fixture(fixture: &mut Fixture) -> (String, PathBuf, String,
             "destinationPath": destination,
             "branchName": "feature/cleanup",
             "branchMode": "create",
-            "baseRef": "refs/heads/main",
+            "baseRef": "refs/remotes/origin/main",
         }))
         .unwrap();
     let proof = fixture.runtime.store.managed_worktrees()[0].clone();

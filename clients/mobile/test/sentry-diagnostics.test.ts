@@ -82,6 +82,38 @@ describe("mobile Sentry diagnostics", () => {
     expect(JSON.stringify(diagnostic)).not.toContain("mac-private");
     expect(JSON.stringify(diagnostic)).not.toContain("session-private");
   });
+
+  it("creates an issue with classified preflight state but no endpoint details", () => {
+    const diagnostic = mobileSentryDiagnostic(event("connection", "preflight_stalled", {
+      connectionId: "mac-private",
+      endpoint: "https://private.example.ts.net/health?token=secret",
+      preflightFailureReason: "requestRejected",
+      requestCauseType: "TypeError",
+      preflightFailuresSinceReady: 3,
+      preflightsInFlight: 2,
+      transportPhase: "preflight",
+      routeKind: "tailnetDns",
+      lastDisconnectReason: "clientReset",
+    }));
+
+    expect(diagnostic).toMatchObject({
+      message: "mobile.connection.preflight_stalled",
+      level: "error",
+      createsIssue: true,
+      attributes: {
+        preflightFailureReason: "requestRejected",
+        requestCauseType: "TypeError",
+        preflightFailuresSinceReady: 3,
+        preflightsInFlight: 2,
+        transportPhase: "preflight",
+        routeKind: "tailnetDns",
+        lastDisconnectReason: "clientReset",
+      },
+    });
+    expect(diagnostic?.attributes.connectionRef).toMatch(/^ref-/);
+    expect(JSON.stringify(diagnostic)).not.toContain("private.example.ts.net");
+    expect(JSON.stringify(diagnostic)).not.toContain("secret");
+  });
 });
 
 function event(

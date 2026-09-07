@@ -24,12 +24,10 @@ pub(super) struct FairResumeGate {
 pub(super) struct AgentResumeGates {
     ordinary: FairResumeGate,
     steward: FairResumeGate,
-    worker: FairResumeGate,
 }
 
 pub(super) const MAX_ACTIVE_AGENT_RESUMES: usize = 7;
 pub(super) const MAX_ACTIVE_STEWARD_RESUMES: usize = 1;
-pub(super) const MAX_ACTIVE_WORKER_RESUMES: usize = 7;
 const MAX_QUEUED_AGENT_RESUMES: usize = 64;
 #[cfg(test)]
 pub(super) const MAX_ADMITTED_AGENT_RESUMES: usize =
@@ -45,7 +43,6 @@ impl AgentResumeGates {
         Self {
             ordinary: FairResumeGate::new(MAX_ACTIVE_AGENT_RESUMES, MAX_QUEUED_AGENT_RESUMES),
             steward: FairResumeGate::new(MAX_ACTIVE_STEWARD_RESUMES, MAX_QUEUED_AGENT_RESUMES),
-            worker: FairResumeGate::new(MAX_ACTIVE_WORKER_RESUMES, MAX_QUEUED_AGENT_RESUMES),
         }
     }
 
@@ -53,16 +50,11 @@ impl AgentResumeGates {
         match lane {
             termloop_core::AgentResumeLane::Ordinary => &self.ordinary,
             termloop_core::AgentResumeLane::Steward => &self.steward,
-            termloop_core::AgentResumeLane::Worker => &self.worker,
         }
     }
 
     pub(super) async fn shutdown(&self) {
-        tokio::join!(
-            self.ordinary.shutdown(),
-            self.steward.shutdown(),
-            self.worker.shutdown(),
-        );
+        tokio::join!(self.ordinary.shutdown(), self.steward.shutdown());
     }
 }
 
@@ -939,17 +931,7 @@ mod tests {
         .await
         .expect("Steward resume waited behind the ordinary lane")
         .unwrap();
-        let worker = tokio::time::timeout(
-            Duration::from_millis(25),
-            gates
-                .for_lane(termloop_core::AgentResumeLane::Worker)
-                .acquire("project-worker".into()),
-        )
-        .await
-        .expect("Worker resume waited behind the ordinary lane")
-        .unwrap();
-
-        drop((ordinary, steward, worker));
+        drop((ordinary, steward));
         gates.shutdown().await;
     }
 }

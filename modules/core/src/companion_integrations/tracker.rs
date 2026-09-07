@@ -1,11 +1,10 @@
-//! Durable current Tracker assignment configuration. Trackers own no Session;
-//! a selected persistent Worker executes their bounded checks.
+//! Durable current Routine configuration. Routines own no Session; the
+//! Project Steward executes their bounded assignments sequentially.
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
-use serde_json::{Value, json, to_value};
+use serde_json::{Value, json};
 use termloop_domain::{
     RoutineActionHandling, RoutineTriggerMode, TRACKER_PROMPT_MAX_BYTES, TrackerConfiguration,
-    TrackerKind,
 };
 
 impl CoreRuntime {
@@ -42,9 +41,11 @@ impl CoreRuntime {
                         "routineId": configuration.id,
                         "routineName": configuration.name,
                         "routineGeneration": configuration.generation,
-                        "actionHandling": configuration.action_handling,
-                        "workerInstructions": configuration.prompt,
-                        "stewardInstructions": configuration.steward_instructions,
+                        "instructions": configuration.prompt,
+                        "whileWaiting": {
+                            "mode": configuration.action_handling,
+                            "instructions": configuration.steward_instructions,
+                        },
                         "findings": findings,
                     })
                 })
@@ -135,7 +136,7 @@ impl CoreRuntime {
             })
     }
 
-    fn routine_finding_is_current(
+    pub(crate) fn routine_finding_is_current(
         &self,
         configuration: &TrackerConfiguration,
         finding: &termloop_domain::PendingRoutineFinding,
@@ -183,10 +184,8 @@ impl CoreRuntime {
         &mut self,
         tracker_id: String,
         project_id: &str,
-        kind: &str,
         trigger_mode: RoutineTriggerMode,
         name: String,
-        worker_id: String,
         schedule_interval_seconds: u64,
         action_handling: RoutineActionHandling,
         prompt: Option<String>,
@@ -197,12 +196,11 @@ impl CoreRuntime {
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
         }
-        let kind = parse_kind(kind)?;
-        // A step check is a pipeline question, not a scan: its built-in
-        // instructions are about answering for a named set of Tasks, so the
-        // kind only says where the answer comes from.
+        // A step check is a pipeline question, while a scheduled Routine is a
+        // provider-neutral scan. The Steward chooses among the capabilities
+        // actually exposed in its terminal instead of a stored source kind.
         let role = if trigger_mode.is_scheduled() {
-            super::assistant_session::tracker_role(kind)
+            termloop_invocation::ExecutorRole::Routine
         } else {
             termloop_invocation::ExecutorRole::StepCheckTracker
         };
@@ -228,12 +226,10 @@ impl CoreRuntime {
         let configuration = TrackerConfiguration {
             id: tracker_id,
             project_id: project_id.to_owned(),
-            kind,
             trigger_mode,
             name,
             prompt,
             steward_instructions: steward_instructions.trim().to_owned(),
-            worker_id,
             enabled: false,
             schedule_interval_seconds,
             generation: 1,
@@ -265,7 +261,6 @@ impl CoreRuntime {
         name: String,
         prompt: String,
         steward_instructions: String,
-        worker_id: String,
         enabled: bool,
         schedule_interval_seconds: u64,
         action_handling: RoutineActionHandling,
@@ -279,19 +274,18 @@ impl CoreRuntime {
             .find(|configuration| configuration.id == tracker_id)
             .cloned()
             .ok_or(CoreError::NotFound)?;
-        let worker = self
+        let steward = self
             .store
-            .worker_configurations()
+            .steward_configurations()
             .iter()
-            .find(|worker| worker.id == worker_id && worker.project_id == current.project_id)
+            .find(|steward| steward.project_id == current.project_id)
             .ok_or(CoreError::NotFound)?;
-        if enabled && (!worker.enabled || worker.executor_session_id.is_none()) {
+        if enabled && !steward.enabled {
             return Err(CoreError::AgentCapabilityUnproven);
         }
         let changed = current.name != name
             || current.prompt != prompt
             || current.steward_instructions != steward_instructions
-            || current.worker_id != worker_id
             || current.enabled != enabled
             || current.trigger_mode != trigger_mode
             || current.schedule_interval_seconds != schedule_interval_seconds
@@ -304,9 +298,6 @@ impl CoreRuntime {
                 json!({"configuration": tracker_projection(&current)?, "stateRevision": self.store.revision()}),
             );
         }
-        if current.enabled && current.worker_id != worker_id {
-            return Err(CoreError::TrackerRuntimeActive);
-        }
         let generation = current
             .generation
             .checked_add(1)
@@ -314,12 +305,10 @@ impl CoreRuntime {
         let configuration = TrackerConfiguration {
             id: current.id,
             project_id: current.project_id,
-            kind: current.kind,
             trigger_mode,
             name,
             prompt,
             steward_instructions,
-            worker_id,
             enabled,
             schedule_interval_seconds,
             generation,
@@ -342,8 +331,6 @@ impl CoreRuntime {
         if enabled {
             self.tracker_runtime
                 .schedule_tracker_now(tracker_id, updated_at_epoch_ms);
-            self.tracker_runtime
-                .schedule_worker_ping_now(&configuration.worker_id, updated_at_epoch_ms);
         }
         Ok(
             json!({"configuration": tracker_projection(&configuration)?, "stateRevision": self.store.revision()}),
@@ -424,17 +411,27 @@ impl CoreRuntime {
 }
 
 fn tracker_projection(configuration: &TrackerConfiguration) -> Result<Value, CoreError> {
-    to_value(configuration).map_err(|error| CoreError::Store(error.to_string()))
-}
-
-fn parse_kind(value: &str) -> Result<TrackerKind, CoreError> {
-    match value {
-        "slack" => Ok(TrackerKind::Slack),
-        "jira" => Ok(TrackerKind::Jira),
-        "runtime" => Ok(TrackerKind::Runtime),
-        "delivery" => Ok(TrackerKind::Delivery),
-        "ciPr" => Ok(TrackerKind::CiPr),
-        "custom" => Ok(TrackerKind::Custom),
-        _ => Err(CoreError::InvalidParams("kind".into())),
-    }
+    Ok(json!({
+        "id": configuration.id,
+        "projectId": configuration.project_id,
+        "triggerMode": configuration.trigger_mode,
+        "name": configuration.name,
+        "instructions": configuration.prompt,
+        "whileWaiting": {
+            "mode": configuration.action_handling,
+            "instructions": configuration.steward_instructions,
+        },
+        "enabled": configuration.enabled,
+        "scheduleIntervalSeconds": configuration.schedule_interval_seconds,
+        "generation": configuration.generation,
+        "contextMarkdown": configuration.context_markdown,
+        "contextRevision": configuration.context_revision,
+        "recentSourceKeys": configuration.recent_source_keys,
+        "relatedTaskIds": configuration.related_task_ids,
+        "pendingRoutineFindings": configuration.pending_routine_findings,
+        "lastCheckStartedAtEpochMs": configuration.last_check_started_at_epoch_ms,
+        "lastSuccessfulReportAtEpochMs": configuration.last_successful_report_at_epoch_ms,
+        "lastAttemptAtEpochMs": configuration.last_attempt_at_epoch_ms,
+        "updatedAtEpochMs": configuration.updated_at_epoch_ms,
+    }))
 }

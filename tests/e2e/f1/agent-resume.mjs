@@ -48,6 +48,7 @@ git(["init", "--initial-branch=main", projectDirectory]);
 git(["-C", projectDirectory, "config", "user.name", "TermLoop Fixture"]);
 git(["-C", projectDirectory, "config", "user.email", "fixture@termloop.invalid"]);
 git(["-C", projectDirectory, "commit", "--allow-empty", "-m", "fixture"]);
+git(["-C", projectDirectory, "update-ref", "refs/remotes/origin/main", "HEAD"]);
 
 const evidence = {
   schema: requireGhostty ? "f1-ghostty-agent-resume-v1" : "f1-agent-resume-v1",
@@ -95,7 +96,11 @@ try {
   let record;
   [server, record] = await startServer();
   const project = await controlCall(record, "project.create", { name: "Resume", folderPath: projectDirectory });
-  const task = await controlCall(record, "task.create", { projectId: project.id, title: "Resume presence", brief: null, worktreeIntent: "none" });
+  const task = await controlCall(record, "task.create", {
+    projectId: project.id, title: "Resume presence", brief: null,
+    worktreeIntent: "none", worktreePrefix: null, baseRef: null,
+    agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null,
+  });
   const provisioned = await controlCall(record, "task.provisionWorktree", {
     operationId: crypto.randomUUID(),
     taskId: task.id,
@@ -103,7 +108,7 @@ try {
     destinationPath: taskWorktreeDirectory,
     branchName: "feature/resume-presence",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
   const taskWorktreePath = provisioned.task.worktree.path;
   const claude = await launchTaskAgent(record, {

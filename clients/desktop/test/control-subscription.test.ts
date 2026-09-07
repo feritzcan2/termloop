@@ -113,8 +113,10 @@ describe("ControlSubscription", () => {
     await waitUntil(() => invalidations === 1);
 
     expect(attempts).toBe(3);
-    expect(subscribedTopics.at(-1)).toEqual(expect.arrayContaining(["steward", "worker", "routine"]));
-    expect(connectedTopics).toEqual(expect.arrayContaining(["steward", "worker", "routine"]));
+    expect(subscribedTopics.at(-1)).toEqual(expect.arrayContaining(["steward", "routine"]));
+    expect(subscribedTopics.at(-1)).not.toContain("worker");
+    expect(connectedTopics).toEqual(expect.arrayContaining(["steward", "routine"]));
+    expect(connectedTopics).not.toContain("worker");
     subscription.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });

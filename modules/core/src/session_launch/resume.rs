@@ -29,8 +29,7 @@ pub struct AgentResumePlan {
     pub(super) observation_token: Option<String>,
     pub(super) mcp_token: Option<String>,
     pub(super) mcp_role: Option<super::AgentMcpRole>,
-    pub(super) worker_prompt: Option<String>,
-    pub(super) worker_system_prompt: Option<String>,
+    pub(super) agent_profile_ref: Option<String>,
     pub(super) steward_system_prompt: Option<String>,
     pub(super) mcp_authorizer: super::McpAuthorizer,
     pub(super) observation_transport: AgentObservationTransport,
@@ -239,13 +238,6 @@ impl AgentResumePlan {
                 termloop_invocation::ExecutorRole::Steward,
                 termloop_invocation::AgentMcpProfile::Steward,
                 self.steward_system_prompt.as_deref(),
-                None,
-            )),
-            super::AgentMcpRole::Worker { .. } => Some((
-                termloop_invocation::ExecutorRole::Worker,
-                termloop_invocation::AgentMcpProfile::Worker,
-                self.worker_system_prompt.as_deref(),
-                self.worker_prompt.as_deref(),
             )),
             _ => None,
         }) {
@@ -261,7 +253,6 @@ impl AgentResumePlan {
                     reasoning: &self.launch_selection.reasoning,
                     role: role.0,
                     system_prompt: role.2,
-                    worker_prompt: role.3,
                     cwd: &self.cwd,
                     conversation: termloop_invocation::AgentConversationLaunch::Resume {
                         resume_ref: &self.resume_ref,
@@ -277,19 +268,23 @@ impl AgentResumePlan {
             )
             .map_err(|_| AgentResumePreparationError::ProviderRejected);
         }
+        let conversation = termloop_invocation::AgentConversationLaunch::Resume {
+            resume_ref: &self.resume_ref,
+        };
+        let mcp = self
+            .mcp_token
+            .as_ref()
+            .map(|token| termloop_invocation::AgentMcpLaunch {
+                endpoint: &self.observation_transport.mcp_endpoint,
+                token,
+                claude_config_path: &self.observation_transport.claude_mcp_config_path,
+                profile: self
+                    .mcp_role
+                    .as_ref()
+                    .map(super::AgentMcpRole::invocation_profile)
+                    .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
+            });
         if let Some(super::AgentMcpRole::Helper { request_id }) = &self.mcp_role {
-            let conversation = termloop_invocation::AgentConversationLaunch::Resume {
-                resume_ref: &self.resume_ref,
-            };
-            let mcp = self
-                .mcp_token
-                .as_ref()
-                .map(|token| termloop_invocation::AgentMcpLaunch {
-                    endpoint: &self.observation_transport.mcp_endpoint,
-                    token,
-                    claude_config_path: &self.observation_transport.claude_mcp_config_path,
-                    profile: termloop_invocation::AgentMcpProfile::Helper,
-                });
             let launch = if self.managed_worktree_trust {
                 termloop_invocation::configured_ask_to_helper_for_managed_worktree_conversation_resume(
                     &self.agent_id,
@@ -317,18 +312,34 @@ impl AgentResumePlan {
             };
             return launch.map_err(|_| AgentResumePreparationError::ProviderRejected);
         }
-        let conversation = termloop_invocation::AgentConversationLaunch::Resume {
-            resume_ref: &self.resume_ref,
-        };
-        let mcp = self
-            .mcp_token
-            .as_ref()
-            .map(|token| termloop_invocation::AgentMcpLaunch {
-                endpoint: &self.observation_transport.mcp_endpoint,
-                token,
-                claude_config_path: &self.observation_transport.claude_mcp_config_path,
-                profile: termloop_invocation::AgentMcpProfile::Interactive,
-            });
+        if let Some(profile_ref) = &self.agent_profile_ref {
+            let launch = if self.managed_worktree_trust {
+                termloop_invocation::configured_agent_profile_for_managed_worktree_conversation_resume(
+                    profile_ref,
+                    &self.agent_id,
+                    &self.cwd,
+                    &self.launch_selection.model,
+                    &self.launch_selection.permission,
+                    &self.launch_selection.reasoning,
+                    conversation,
+                    observation,
+                    mcp,
+                )
+            } else {
+                termloop_invocation::configured_agent_profile_for_conversation_resume(
+                    profile_ref,
+                    &self.agent_id,
+                    &self.cwd,
+                    &self.launch_selection.model,
+                    &self.launch_selection.permission,
+                    &self.launch_selection.reasoning,
+                    conversation,
+                    observation,
+                    mcp,
+                )
+            };
+            return launch.map_err(|_| AgentResumePreparationError::ProviderRejected);
+        }
         let launch = if self.managed_worktree_trust {
             termloop_invocation::configured_interactive_agent_for_managed_worktree_conversation(
                 &self.agent_id,
@@ -386,6 +397,11 @@ impl AgentResumePlan {
         // until complete_agent_resume promotes this exact token.
         self.register_provisional_mcp();
         if self.agent_id == "codex" {
+            let developer_instructions = self
+                .prepared_launch
+                .as_ref()
+                .and_then(|launch| launch.codex_app_server_developer_instructions())
+                .map(str::to_owned);
             let runtime = start_codex_runtime(
                 &self.session_id,
                 self.runtime_epoch,
@@ -404,6 +420,7 @@ impl AgentResumePlan {
                             .map(super::AgentMcpRole::invocation_profile)
                             .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
                     }),
+                developer_instructions.as_deref(),
                 self.runtime_signal_sender
                     .take()
                     .ok_or(AgentResumePreparationError::ProviderRejected)?,
@@ -562,7 +579,6 @@ impl CoreRuntime {
             session,
             self.store.sessions(),
             self.store.steward_configurations(),
-            self.store.worker_configurations(),
             transport,
         )
     }
@@ -635,6 +651,12 @@ impl CoreRuntime {
                     .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
             });
         let managed_worktree_trust = self.session_has_current_managed_worktree_proof(session);
+        let agent_profile_ref = session
+            .process
+            .template_ref
+            .as_deref()
+            .and_then(termloop_invocation::agent_profile)
+            .map(|profile| profile.id);
         let launch = if let Some(super::AgentMcpRole::Helper { request_id }) = &mcp_role {
             if managed_worktree_trust {
                 termloop_invocation::configured_ask_to_helper_for_managed_worktree_conversation_resume(
@@ -656,6 +678,32 @@ impl CoreRuntime {
                     &session.launch_selection.permission,
                     &session.launch_selection.reasoning,
                     request_id.as_deref(),
+                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    observation,
+                    mcp,
+                )
+            }
+        } else if let Some(profile_ref) = agent_profile_ref {
+            if managed_worktree_trust {
+                termloop_invocation::configured_agent_profile_for_managed_worktree_conversation_resume(
+                    profile_ref,
+                    agent_id,
+                    &session.process.cwd,
+                    &session.launch_selection.model,
+                    &session.launch_selection.permission,
+                    &session.launch_selection.reasoning,
+                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    observation,
+                    mcp,
+                )
+            } else {
+                termloop_invocation::configured_agent_profile_for_conversation_resume(
+                    profile_ref,
+                    agent_id,
+                    &session.process.cwd,
+                    &session.launch_selection.model,
+                    &session.launch_selection.permission,
+                    &session.launch_selection.reasoning,
                     termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
                     observation,
                     mcp,
@@ -986,28 +1034,14 @@ impl CoreRuntime {
         let observation_token = (agent_id == "claude")
             .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
         let mcp_role = self.resumed_mcp_role(&session, &transport);
-        let (worker_prompt, worker_system_prompt, steward_system_prompt) = match &mcp_role {
-            Some(super::AgentMcpRole::Worker { worker_id, .. }) => self
-                .store
-                .worker_configurations()
-                .iter()
-                .find(|configuration| configuration.id == *worker_id)
-                .map(|configuration| {
-                    (
-                        Some(configuration.worker_prompt.clone()),
-                        Some(configuration.system_prompt.clone()),
-                        None,
-                    )
-                })
-                .unwrap_or((None, None, None)),
+        let steward_system_prompt = match &mcp_role {
             Some(super::AgentMcpRole::Steward { project_id }) => self
                 .store
                 .steward_configurations()
                 .iter()
                 .find(|configuration| configuration.project_id == *project_id)
-                .map(|configuration| (None, None, Some(configuration.system_prompt.clone())))
-                .unwrap_or((None, None, None)),
-            _ => (None, None, None),
+                .map(|configuration| configuration.system_prompt.clone()),
+            _ => None,
         };
         let mcp_token = mcp_role
             .is_some()
@@ -1036,6 +1070,12 @@ impl CoreRuntime {
             .then(|| self.codex_runtimes.remove(&session_id))
             .flatten();
         let managed_worktree_trust = self.session_has_current_managed_worktree_proof(&session);
+        let agent_profile_ref = session
+            .process
+            .template_ref
+            .as_deref()
+            .and_then(termloop_invocation::agent_profile)
+            .map(|profile| profile.id.to_owned());
         // Most daemon-restart resumes use the new daemon epoch. A Retry may,
         // however, follow a failed client-launch restart in the same daemon,
         // where the durable descriptor still carries this daemon's original
@@ -1055,8 +1095,7 @@ impl CoreRuntime {
                 observation_token,
                 mcp_token,
                 mcp_role,
-                worker_prompt,
-                worker_system_prompt,
+                agent_profile_ref,
                 steward_system_prompt,
                 mcp_authorizer: self.mcp_authorizer.clone(),
                 observation_transport: transport,
@@ -1435,7 +1474,7 @@ impl CoreRuntime {
         const ADMISSION_CAP_PER_LANE: usize = 68;
         let mut by_lane = std::array::from_fn::<
             std::collections::BTreeMap<String, std::collections::VecDeque<AgentResumeCandidate>>,
-            3,
+            2,
             _,
         >(|_| std::collections::BTreeMap::new());
         for session in self.store.sessions().iter().filter(|session| {
@@ -1448,7 +1487,6 @@ impl CoreRuntime {
             let lane_index = match lane {
                 super::AgentResumeLane::Ordinary => 0,
                 super::AgentResumeLane::Steward => 1,
-                super::AgentResumeLane::Worker => 2,
             };
             by_lane[lane_index]
                 .entry(session.project_id.clone())

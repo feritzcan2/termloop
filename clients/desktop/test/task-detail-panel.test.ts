@@ -28,7 +28,8 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     gate: "automatic",
     routineId: "routine-code",
     retryDelaySeconds: 600,
-    condition: "The Task branch has commits and no agent is still working.",
+    completeWhen: "The Task branch has commits and no agent is still working.",
+    whileWaiting: { mode: "off", instructions: "" },
     approver: null,
     ...overrides,
   };
@@ -75,7 +76,6 @@ function routineHealth(overrides: Partial<RoutineHealthDto> = {}): RoutineHealth
   return {
     routineId: "routine-review",
     generation: 1,
-    kind: "custom",
     triggerMode: "onDemand",
     name: "Slack review request",
     contextMarkdown: "",
@@ -360,7 +360,6 @@ describe("the Task detail page on screen", () => {
         configurations: ROUTINES.map((routine) => ({
           ...routine,
           projectId: "project-1",
-          workerId: "worker-1",
           kind: "custom",
           triggerMode: "onDemand",
           prompt: "",

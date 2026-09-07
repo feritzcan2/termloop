@@ -15,6 +15,7 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
         &json!({"projectId":"project","taskIds":[]}),
     ));
     let projection = json!([{
+        "usage":"displayOnly",
         "task_id":"task",
         "branch_name":"feature",
         "repository_provider":"github",
@@ -59,6 +60,12 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
     assert!(validate_method_result(
         "gitHost.pullRequestList",
         &projection
+    ));
+    let mut missing_usage = projection.clone();
+    missing_usage[0].as_object_mut().unwrap().remove("usage");
+    assert!(!validate_method_result(
+        "gitHost.pullRequestList",
+        &missing_usage
     ));
     let mut azure = projection.clone();
     azure[0]["repository_provider"] = json!("azureDevOps");

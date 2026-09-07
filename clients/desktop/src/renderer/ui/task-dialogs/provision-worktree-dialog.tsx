@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { LocalBranchDto, ProjectLocalBranchListResult, TaskProvisionWorktreeParams } from "@termloop/contract/current";
+import type { LocalBranchDto, ProjectLocalBranchListResult, RemoteBranchDto, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
 import { Icon } from "../Icon.js";
 import {
   initialWorktreeDestination,
   localBranchesForTaskBinding,
   selectedWorktreeParent,
+  sortRemoteBranches,
   updateWorktreeDestinationBranch,
   worktreePathParent,
 } from "../worktree-path-suggestion.js";
@@ -27,6 +28,7 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
   const [destinationParentPath, setDestinationParentPath] = useState(initialParentPath);
   const [destinationPath, setDestinationPath] = useState(() => initialWorktreeDestination(repositoryPath, initialBranchName, rememberedParentPath));
   const [localBranches, setLocalBranches] = useState<readonly LocalBranchDto[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<readonly RemoteBranchDto[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string>();
   const [branchesTruncated, setBranchesTruncated] = useState(false);
@@ -49,7 +51,7 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
     let current = true;
     if (!projectId) {
       setBranchesLoading(false);
-      setBranchesError("Select a Project before loading local branches.");
+      setBranchesError("Select a Project before loading repository branches.");
       return () => { current = false; };
     }
     setBranchesLoading(true);
@@ -62,13 +64,15 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
         result.truncated,
       );
       const sortedBranches = branchSelection.branches;
+      const sortedRemoteBranches = sortRemoteBranches(result.base_branches);
       setLocalBranches(sortedBranches);
-      setBranchesTruncated(result.truncated);
+      setRemoteBranches(sortedRemoteBranches);
+      setBranchesTruncated(result.truncated || result.base_branches_truncated);
       setBaseRef((selected) => {
-        if (sortedBranches.some((branch) => branch.exact_ref === selected)) return selected;
-        const remembered = sortedBranches.find((branch) => branch.exact_ref === rememberedBaseRef);
+        if (sortedRemoteBranches.some((branch) => branch.exact_ref === selected)) return selected;
+        const remembered = sortedRemoteBranches.find((branch) => branch.exact_ref === rememberedBaseRef);
         if (remembered) return remembered.exact_ref;
-        return sortedBranches[0]?.exact_ref ?? "";
+        return sortedRemoteBranches[0]?.exact_ref ?? "";
       });
       setExistingBranchName((selected) => {
         const requiredBranch = task.branch?.name;
@@ -84,7 +88,7 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
     }).catch((loadError: unknown) => {
       if (!current) return;
       setBranchesLoading(false);
-      setBranchesError(loadError instanceof Error ? loadError.message : "Local branches could not be loaded.");
+      setBranchesError(loadError instanceof Error ? loadError.message : "Repository branches could not be loaded.");
     });
     return () => { current = false; };
   }, [listBranches, projectId, rememberedBaseRef, task.branch]);
@@ -101,17 +105,18 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
 
   const submit = async () => {
     if (!repositoryPath.trim()) { setError("The selected Project does not have a repository path."); return; }
-    if (branchesLoading) { setError("Wait for local branches to load."); return; }
+    if (branchesLoading) { setError("Wait for repository branches to load."); return; }
     if (branchesError) { setError(branchesError); return; }
-    if (localBranches.length === 0) { setError("This repository has no local branches to select."); return; }
+    if (branchMode === "existing" && localBranches.length === 0) { setError("This repository has no local branch to use."); return; }
+    if (branchMode === "create" && remoteBranches.length === 0) { setError("This repository has no remote-tracking branch to create from. Fetch a remote branch first."); return; }
     if (!destinationPath.trim()) { setError("Enter a new worktree path."); return; }
     if (!branchName.trim()) { setError("Enter a branch name."); return; }
     if (branchMode === "existing" && !localBranches.some((branch) => branch.name === branchName)) {
       setError("Select an existing local branch.");
       return;
     }
-    if (branchMode === "create" && !localBranches.some((branch) => branch.exact_ref === baseRef)) {
-      setError("Select an exact local base ref.");
+    if (branchMode === "create" && !remoteBranches.some((branch) => branch.exact_ref === baseRef)) {
+      setError("Select an exact remote base ref.");
       return;
     }
     const selectedParentPath = selectedWorktreeParent(destinationPath, branchName);
@@ -141,11 +146,12 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
     requestAnimationFrame(() => (nextMode === "create" ? branchRef : existingBranchRef).current?.focus());
   };
   const branchPlaceholder = branchesLoading
-    ? "Loading local branches…"
+    ? "Loading branches…"
     : branchesError
-      ? "Local branches unavailable"
-      : "No local branches";
-  const selectionUnavailable = branchesLoading || Boolean(branchesError) || localBranches.length === 0;
+      ? "Branches unavailable"
+      : branchMode === "existing" ? "No local branches" : "No remote branches";
+  const selectableBranches = branchMode === "existing" ? localBranches : remoteBranches;
+  const selectionUnavailable = branchesLoading || Boolean(branchesError) || selectableBranches.length === 0;
   const canSubmit = !busy
     && !selectionUnavailable
     && Boolean(destinationPath.trim())
@@ -184,15 +190,15 @@ export function ProvisionWorktreeDialog({ task, projectId, repositoryPath, remem
               <label htmlFor="worktree-base-ref">Base branch</label>
               <select id="worktree-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); rememberBaseRef(event.target.value); setError(undefined); }}>
                 {selectionUnavailable ? <option value="">{branchPlaceholder}</option> : null}
-                {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.exact_ref}</option>)}
+                {remoteBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
               </select>
             </>
           ) : null}
 
           <p className="field-help">TermLoop creates this folder new; an existing folder is never adopted or overwritten.</p>
-          {branchesTruncated ? <p className="field-help" role="status">Only the first 512 representable local branches are shown.</p> : null}
+          {branchesTruncated ? <p className="field-help" role="status">Only the first 512 representable branches of each kind are shown.</p> : null}
           {branchesError ? <p className="form-error" role="alert">{branchesError}</p> : null}
-          {!branchesLoading && !branchesError && localBranches.length === 0 ? <p className="field-help" role="status">This repository has no local branches.</p> : null}
+          {!branchesLoading && !branchesError && selectableBranches.length === 0 ? <p className="field-help" role="status">This repository has no {branchMode === "existing" ? "local" : "remote-tracking"} branches.</p> : null}
           {task.worktree_provisioning?.status === "failed" ? <p className="field-help" role="status">Previous provisioning failed: {task.worktree_provisioning.failure?.kind ?? "operationFailed"}. Review these values to retry safely.</p> : null}
           {error ? <p className="form-error" role="alert">{error}</p> : null}
         </div>

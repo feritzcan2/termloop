@@ -71,13 +71,15 @@ export class GhosttySurfaceManager {
   readonly #addon: GhosttyHostAddon;
   readonly #window: BrowserWindow;
   readonly #configFile: string;
+  readonly #lightConfigFile: string;
   readonly #surfaces = new Map<number, SurfaceEntry>();
   #appInitialized = false;
 
-  constructor(addon: GhosttyHostAddon, window: BrowserWindow, configFile: string) {
+  constructor(addon: GhosttyHostAddon, window: BrowserWindow, configFile: string, lightConfigFile: string) {
     this.#addon = addon;
     this.#window = window;
     this.#configFile = configFile;
+    this.#lightConfigFile = lightConfigFile;
   }
 
   /// `frame` is the pane rect the renderer is about to show this surface in.
@@ -91,6 +93,7 @@ export class GhosttySurfaceManager {
     if (!this.#appInitialized) {
       this.#addon.initApp({
         configFile: this.#configFile,
+        lightConfigFile: this.#lightConfigFile,
         onSurfaceClosed: (surfaceId) => this.#surfaceClosed(surfaceId),
         onOutputConsumed: (surfaceId, bytes) => this.#outputConsumed(surfaceId, bytes),
         onShellShortcut: (shortcut) => this.#shellShortcut(shortcut),
@@ -166,6 +169,11 @@ export class GhosttySurfaceManager {
   setVisible(surfaceId: number, visible: boolean): void {
     if (!this.#surfaces.has(surfaceId)) return;
     this.#addon.setSurfaceVisible(surfaceId, visible);
+  }
+
+  setColorScheme(surfaceId: number, theme: "dark" | "light"): void {
+    if (!this.#surfaces.has(surfaceId)) return;
+    this.#addon.setSurfaceColorScheme(surfaceId, theme);
   }
 
   focus(surfaceId: number): void {

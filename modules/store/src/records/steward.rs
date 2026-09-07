@@ -10,7 +10,6 @@ use super::super::{CoreWriteAuthority, Store, StoreError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectAssistantReset {
     pub session_ids: Vec<String>,
-    pub deleted_workers: usize,
     pub deleted_routines: usize,
     pub deleted_messages: usize,
     pub playbook_deleted: bool,
@@ -120,7 +119,7 @@ impl Store {
     }
 
     /// Deletes the Project Assistant as one current-state replacement. The
-    /// Steward, Workers, Routines, Playbook, transcript, Task pipeline state,
+    /// Steward, Routines, Playbook, transcript, Task pipeline state,
     /// Steward-authored Task briefs, and assistant-owned Sessions disappear in
     /// the same commit, so no projection can observe a partially reset tree.
     pub fn reset_project_assistant(
@@ -157,12 +156,6 @@ impl Store {
             .iter()
             .filter(|configuration| configuration.project_id == project_id)
             .filter_map(|configuration| configuration.executor_session_id.clone())
-            .chain(
-                next.worker_configurations
-                    .iter()
-                    .filter(|configuration| configuration.project_id == project_id)
-                    .filter_map(|configuration| configuration.executor_session_id.clone()),
-            )
             .collect::<std::collections::HashSet<_>>();
         let session_ids = next
             .sessions
@@ -180,11 +173,6 @@ impl Store {
             .filter(|task| task.project_id == project_id)
             .map(|task| task.id.clone())
             .collect::<std::collections::HashSet<_>>();
-        let deleted_workers = next
-            .worker_configurations
-            .iter()
-            .filter(|configuration| configuration.project_id == project_id)
-            .count();
         let deleted_routines = next
             .tracker_configurations
             .iter()
@@ -204,8 +192,6 @@ impl Store {
             .retain(|configuration| configuration.project_id != project_id);
         next.steward_conversation_refs
             .retain(|conversation| conversation.project_id != project_id);
-        next.worker_configurations
-            .retain(|configuration| configuration.project_id != project_id);
         next.tracker_configurations
             .retain(|configuration| configuration.project_id != project_id);
         next.playbook_configurations
@@ -260,7 +246,6 @@ impl Store {
         self.commit_or_restore(previous)?;
         Ok(ProjectAssistantReset {
             session_ids,
-            deleted_workers,
             deleted_routines,
             deleted_messages,
             playbook_deleted,
@@ -351,9 +336,7 @@ fn session_is_project_assistant(session: &SessionRecord) -> bool {
         Some(
             "builtin.assistant.activation"
                 | "builtin.steward.executor"
-                | "builtin.worker.executor"
                 | "builtin.improver.steward-instructions"
-                | "builtin.improver.worker-instructions"
                 | "builtin.improver.routine-instructions"
                 | "builtin.builder.routine"
                 | "builtin.builder.playbook"
@@ -362,7 +345,6 @@ fn session_is_project_assistant(session: &SessionRecord) -> bool {
         matches!(
             target.target_kind,
             ImproverSessionTargetKind::StewardInstructions
-                | ImproverSessionTargetKind::WorkerInstructions
                 | ImproverSessionTargetKind::RoutineInstructions
                 | ImproverSessionTargetKind::RoutineBuilder
                 | ImproverSessionTargetKind::Playbook

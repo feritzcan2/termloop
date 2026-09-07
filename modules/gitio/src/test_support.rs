@@ -28,6 +28,11 @@ pub fn initialize_repository(runner: &GitRunner, path: &Path) -> Result<(), GitE
             OsString::from("fixture"),
         ],
     )?;
+    runner.checked(
+        GitOperation::CreateRef,
+        path,
+        ["update-ref", "refs/remotes/origin/main", "HEAD"],
+    )?;
     Ok(())
 }
 

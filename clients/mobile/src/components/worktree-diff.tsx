@@ -8,9 +8,8 @@ import { color, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// `react-native-diff-view` owns the unified-patch parser. Its stock renderer
-/// still carries a light, fixed palette, so this small native renderer consumes
-/// its typed hunk model and keeps the resulting review surface in TermLoop's
-/// own accessible dark theme.
+/// carries a fixed palette, so this small native renderer consumes its typed
+/// hunk model and keeps the review surface inside TermLoop's light theme.
 export type WorktreeDiffMode = "diff" | "fullFile";
 
 export function WorktreeDiff({ state, patch, mode = "diff", preImage, fullFileLoading = false, fullFileError }: {
@@ -212,8 +211,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   line: { flexDirection: "row", alignItems: "stretch", backgroundColor: color.bgTerminal, minWidth: "100%" },
-  lineInsert: { backgroundColor: "rgba(76, 201, 138, 0.13)" },
-  lineDelete: { backgroundColor: "rgba(239, 124, 130, 0.13)" },
+  lineInsert: { backgroundColor: color.successWash },
+  lineDelete: { backgroundColor: color.dangerWash },
   lineNumber: {
     width: 34,
     color: color.textMuted,
@@ -225,12 +224,12 @@ const styles = StyleSheet.create({
   },
   prefix: { width: 17, color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 18, textAlign: "center" },
   code: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 18, paddingRight: space.sm },
-  insertText: { color: "#a6e8c0" },
-  deleteText: { color: "#ffb6ba" },
+  insertText: { color: color.success },
+  deleteText: { color: color.danger },
   rawPatch: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 18, padding: space.md },
   fullFileSummary: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10.5, paddingHorizontal: space.md, paddingTop: space.sm },
   fullFile: { gap: 0, minWidth: "100%", padding: space.md },
   fullFileCode: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 18 },
-  fullFileChanged: { backgroundColor: "rgba(76, 201, 138, 0.18)", color: "#b9f0d0" },
-  fullFileDeleted: { backgroundColor: "rgba(239, 124, 130, 0.16)", color: "#ffb6ba" },
+  fullFileChanged: { backgroundColor: color.successWash, color: color.success },
+  fullFileDeleted: { backgroundColor: color.dangerWash, color: color.danger },
 });

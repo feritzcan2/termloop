@@ -12,6 +12,33 @@ export type GatewayCompatibilityProbe =
   | "gatewayUpdateRequired"
   | "mobileUpdateRequired";
 
+export type GatewayReachabilityFailureReason =
+  | "timeout"
+  | "requestRejected"
+  | "httpResponse";
+
+export type GatewayRequestSettlement =
+  | { readonly kind: "response"; readonly httpStatus: number }
+  | { readonly kind: "requestRejected"; readonly causeType: string };
+
+export class GatewayReachabilityError extends Error {
+  override readonly name = "GatewayReachabilityError";
+
+  constructor(
+    readonly reason: GatewayReachabilityFailureReason,
+    readonly requestCauseType?: string,
+    readonly httpStatus?: number,
+    readonly lateSettlement?: Promise<GatewayRequestSettlement>,
+  ) {
+    super("Mobile gateway is not reachable.");
+  }
+}
+
+type GatewayRequestOutcome =
+  | { readonly kind: "response"; readonly response: Response }
+  | { readonly kind: "timeout"; readonly lateSettlement: Promise<GatewayRequestSettlement> }
+  | { readonly kind: "requestRejected"; readonly causeType: string };
+
 /// Proves the Tailnet route and gateway HTTP listener before iOS is allowed to
 /// allocate another native WebSocket. A CONNECTING WebSocket can outlive its JS
 /// wrapper for tens of seconds after `close()`, so blind retries accumulate stale
@@ -22,8 +49,16 @@ export async function waitForGatewayReachability(
   request: typeof fetch,
 ): Promise<void> {
   const health = gatewayHttpEndpoint(connection, "/health");
-  const response = await requestWithTimeout(request, health.toString(), GATEWAY_WAKE_TIMEOUT_MS);
-  if (!response?.ok) throw new Error("Mobile gateway is not reachable.");
+  const outcome = await requestWithTimeout(request, health.toString(), GATEWAY_WAKE_TIMEOUT_MS);
+  if (outcome.kind === "timeout") {
+    throw new GatewayReachabilityError("timeout", undefined, undefined, outcome.lateSettlement);
+  }
+  if (outcome.kind === "requestRejected") {
+    throw new GatewayReachabilityError("requestRejected", outcome.causeType);
+  }
+  if (!outcome.response.ok) {
+    throw new GatewayReachabilityError("httpResponse", undefined, outcome.response.status);
+  }
 }
 
 /// Distinguishes an unreachable Mac from a reachable persistent gateway that
@@ -37,10 +72,16 @@ export async function probeGatewayCompatibility(
   const health = gatewayHttpEndpoint(connection, "/health");
   // Probe both routes concurrently so an offline Mac adds at most one bounded
   // timeout. React Native provides AbortController but not AbortSignal.timeout.
-  const [wellKnownResponse, healthResponse] = await Promise.all([
+  const [wellKnownOutcome, healthOutcome] = await Promise.all([
     requestWithTimeout(request, wellKnown.toString(), GATEWAY_PROBE_TIMEOUT_MS),
     requestWithTimeout(request, health.toString(), GATEWAY_PROBE_TIMEOUT_MS),
   ]);
+  const wellKnownResponse = wellKnownOutcome.kind === "response"
+    ? wellKnownOutcome.response
+    : undefined;
+  const healthResponse = healthOutcome.kind === "response"
+    ? healthOutcome.response
+    : undefined;
   if (wellKnownResponse?.ok) {
     return gatewayIdentityCompatibility(await wellKnownResponse.json().catch(() => undefined));
   }
@@ -55,26 +96,60 @@ async function requestWithTimeout(
   request: typeof fetch,
   url: string,
   timeoutMs: number,
-): Promise<Response | undefined> {
+): Promise<GatewayRequestOutcome> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   try {
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timeout = setTimeout(() => {
-        controller.abort();
-        reject(new Error("Gateway compatibility probe timed out."));
-      }, timeoutMs);
-    });
-    return await Promise.race([
-      request(url, {
+    let response: Promise<Response>;
+    try {
+      response = request(url, {
         cache: "no-store",
         headers: { accept: "application/json", "cache-control": "no-cache" },
         signal: controller.signal,
+      });
+    } catch (cause: unknown) {
+      return {
+        kind: "requestRejected",
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      };
+    }
+    const lateSettlement: Promise<GatewayRequestSettlement> = response.then(
+      (settled): GatewayRequestSettlement => ({
+        kind: "response",
+        httpStatus: settled.status,
       }),
+      (cause: unknown): GatewayRequestSettlement => ({
+        kind: "requestRejected",
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      }),
+    );
+    const deadline = new Promise<GatewayRequestOutcome>((resolve) => {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        resolve({ kind: "timeout", lateSettlement });
+        controller.abort();
+      }, timeoutMs);
+    });
+    const requestOutcome = new Promise<GatewayRequestOutcome>((resolve) => {
+      void response.then(
+        (settled) => {
+          if (!timedOut) resolve({ kind: "response", response: settled });
+        },
+        (cause: unknown) => {
+          if (!timedOut) {
+            resolve({
+              kind: "requestRejected",
+              causeType: cause instanceof Error ? cause.name : typeof cause,
+            });
+          }
+        },
+      );
+    });
+    return await Promise.race([
+      requestOutcome,
       deadline,
     ]);
-  } catch {
-    return undefined;
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }

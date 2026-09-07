@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 
 import type { TerminalBuffer, TerminalLine } from "@/presentation/terminal-buffer";
+import { nextTerminalLoadingProgress } from "@/presentation/terminal-loading";
 import {
   overscrollRequest,
   reduceInitialTerminalPosition,
@@ -52,6 +54,13 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     || buffer.screen !== undefined
     || buffer.lines.length !== 0
     || buffer.pending.length !== 0;
+  const waitingForContent = !hasContent && (
+    buffer.stream === "attaching"
+    || buffer.stream === "reconnecting"
+    || buffer.stream === "live"
+  );
+  const [loadingProgress, setLoadingProgress] = useState(hasContent ? 100 : 0);
+  const showInitialLoading = initialPosition !== "ready" && (hasContent || waitingForContent);
 
   /// How far the current drag has already been converted into scroll requests. The
   /// bounce animates back through the same offsets it came in on, so without a
@@ -109,6 +118,19 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   useEffect(() => () => {
     if (revealFrame.current !== undefined) cancelAnimationFrame(revealFrame.current);
   }, []);
+
+  useEffect(() => {
+    if (hasContent) {
+      setLoadingProgress(100);
+      return;
+    }
+    if (!waitingForContent) return;
+    setLoadingProgress((current) => current === 100 ? 0 : current);
+    const interval = setInterval(() => {
+      setLoadingProgress((current) => nextTerminalLoadingProgress(current, false));
+    }, 120);
+    return () => clearInterval(interval);
+  }, [hasContent, waitingForContent]);
 
   /// Auto-scroll only while the reader is already at the bottom. Yanking a scrolled-up
   /// reader back down every time an agent writes a line makes reading the middle of a
@@ -181,6 +203,21 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
           </View>
         </ScrollView>
       </ScrollView>
+
+      {showInitialLoading ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.loading]}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading terminal"
+          accessibilityLiveRegion="polite"
+          accessibilityValue={{ min: 0, max: 100, now: loadingProgress }}
+        >
+          <ActivityIndicator color={color.accentStrong} />
+          <Text style={styles.loadingLabel}>Loading terminal</Text>
+          <Text style={styles.loadingProgress}>{loadingProgress}%</Text>
+        </View>
+      ) : null}
 
       {atBottom ? null : (
         <Pressable
@@ -275,6 +312,14 @@ const styles = StyleSheet.create({
   /// into it would open stripes through a TUI frame.
   content: { padding: terminalGeometry.contentPadding },
   initiallyHidden: { opacity: 0 },
+  loading: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.sm,
+    backgroundColor: color.bgTerminal,
+  },
+  loadingLabel: { color: color.textSecondary, fontSize: 13 },
+  loadingProgress: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12 },
   /// `minWidth` rather than `width`, so short output still fills the surface while a wide
   /// line is free to push the content box past the screen and become scrollable.
   horizontal: { minWidth: "100%" },

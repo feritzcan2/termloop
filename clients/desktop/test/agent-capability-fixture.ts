@@ -2,7 +2,7 @@ import type { AgentCapabilityDto } from "@termloop/contract/current";
 
 const MODELS: Record<string, string[]> = {
   claude: ["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"],
-  codex: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
+  codex: ["default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
   gemini: ["default", "auto", "pro", "flash", "flash-lite"],
 };
 

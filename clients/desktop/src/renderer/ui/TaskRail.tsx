@@ -21,7 +21,6 @@ import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-par
 import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
-import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
@@ -1212,12 +1211,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                       />
                       <SessionRowClose session={source} dismiss={() => props.dismissSession(source.id)} resume={() => props.resumeSession(source.id)} />
                     </>}</TaskSessionRow>
-                    <AgentPlanDisclosure
-                      session={source}
-                      status={props.statusesById.get(source.id)}
-                      selected={source.id === props.selectedSessionId}
-                      showWorkspace
-                    />
                     {runtimeBySession.get(source.id) ? <RunSessionLine
                       session={source}
                       runtime={runtimeBySession.get(source.id)!}
@@ -1244,13 +1237,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                           dismiss={() => props.dismissSession(helper.id)}
                           resume={() => props.resumeSession(helper.id)}
                           {...(props.detachRelationship ? { detachRelationship: () => props.detachRelationship!(helper.id) } : {})}
-                        />
-                        <AgentPlanDisclosure
-                          session={helper}
-                          status={props.statusesById.get(helper.id)}
-                          selected={helper.id === props.selectedSessionId}
-                          showWorkspace
-                          nested
                         />
                       </Fragment>
                     ))}

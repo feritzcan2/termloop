@@ -728,7 +728,7 @@ const styles = StyleSheet.create({
     marginHorizontal: space.md,
     padding: space.md,
     borderRadius: radius.control,
-    backgroundColor: "rgba(225,117,126,0.12)",
+    backgroundColor: color.dangerWash,
     color: color.danger,
     fontSize: 12,
     lineHeight: 17,

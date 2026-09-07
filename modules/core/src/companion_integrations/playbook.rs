@@ -7,12 +7,12 @@
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json, to_value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use termloop_domain::{
     PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
-    RoutineActionHandling, RoutineTriggerMode, StewardAgentId, StewardConfiguration,
-    TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    RoutineActionHandling, RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES,
+    TrackerConfiguration,
 };
 use termloop_store::PlaybookApply;
 
@@ -23,8 +23,6 @@ struct PlaybookUpdateDraft {
     active_pipeline_name: String,
     milestones: Vec<PlaybookMilestoneDraft>,
     saved_pipelines: Vec<PlaybookPipelineDraft>,
-    worker_id: Option<String>,
-    preferred_worker_agent_id: StewardAgentId,
     expected_playbook_revision: u64,
     expected_revision: u64,
 }
@@ -42,20 +40,17 @@ pub(crate) struct PlaybookMilestoneDraft {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) gate: PlaybookGateKind,
-    pub(crate) check: PlaybookStepCheckDraft,
+    pub(crate) complete_when: String,
+    pub(crate) while_waiting: PlaybookWhileWaitingDraft,
     pub(crate) retry_delay_seconds: u64,
-    pub(crate) condition: String,
     pub(crate) approver: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PlaybookStepCheckDraft {
-    pub(crate) kind: TrackerKind,
+pub(crate) struct PlaybookWhileWaitingDraft {
+    pub(crate) mode: RoutineActionHandling,
     pub(crate) instructions: String,
-    pub(crate) steward_instructions: String,
-    pub(crate) action_handling: RoutineActionHandling,
-    pub(crate) worker_id: Option<String>,
 }
 
 impl CoreRuntime {
@@ -108,9 +103,7 @@ impl CoreRuntime {
     pub fn update_playbook(
         &mut self,
         params: Value,
-        new_worker_id: String,
         new_routine_ids: Vec<String>,
-        preferred_worker_available: bool,
         updated_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
         let draft: PlaybookUpdateDraft = serde_json::from_value(params)
@@ -128,14 +121,6 @@ impl CoreRuntime {
                 .saved_pipelines
                 .iter()
                 .any(|pipeline| !pipeline.milestones.is_empty());
-        let (worker_id, create_worker) = self.resolve_playbook_worker(
-            &draft,
-            current.as_ref(),
-            has_steps,
-            new_worker_id,
-            preferred_worker_available,
-            updated_at_epoch_ms,
-        )?;
         let steward_configuration = if has_steps {
             self.store
                 .steward_configurations()
@@ -169,14 +154,6 @@ impl CoreRuntime {
             .iter()
             .map(|routine| (routine.id.clone(), routine.clone()))
             .collect::<HashMap<_, _>>();
-        let eligible_worker_ids = self
-            .store
-            .worker_configurations()
-            .iter()
-            .filter(|worker| worker.project_id == draft.project_id && worker.enabled)
-            .map(|worker| worker.id.clone())
-            .chain(worker_id.iter().cloned())
-            .collect::<HashSet<_>>();
         let mut ids = new_routine_ids.into_iter();
         let mut reused = HashSet::new();
         let mut next_routine_ids = HashSet::new();
@@ -187,10 +164,8 @@ impl CoreRuntime {
             &draft.project_id,
             &draft.active_pipeline_name,
             &draft.milestones,
-            worker_id.as_deref(),
             &current_steps,
             &current_routines,
-            &eligible_worker_ids,
             &mut ids,
             &mut reused,
             &mut next_routine_ids,
@@ -204,10 +179,8 @@ impl CoreRuntime {
                 &draft.project_id,
                 &pipeline.name,
                 &pipeline.milestones,
-                worker_id.as_deref(),
                 &current_steps,
                 &current_routines,
-                &eligible_worker_ids,
                 &mut ids,
                 &mut reused,
                 &mut next_routine_ids,
@@ -238,18 +211,13 @@ impl CoreRuntime {
                 || value.milestones != milestones
                 || value.saved_pipelines != saved_pipelines
         });
-        if !document_changed
-            && !routines_changed
-            && create_worker.is_none()
-            && steward_configuration.is_none()
-        {
+        if !document_changed && !routines_changed && steward_configuration.is_none() {
             if draft.expected_revision != self.store.revision() {
                 return Err(CoreError::RevisionConflict);
             }
             let current = current.as_ref().ok_or(CoreError::NotFound)?;
             return Ok(json!({
-                "playbook": playbook_projection(current)?,
-                "workerId": worker_id,
+                "playbook": playbook_projection(current, self.store.tracker_configurations())?,
                 "stateRevision": self.store.revision(),
             }));
         }
@@ -283,7 +251,6 @@ impl CoreRuntime {
                 PlaybookApply {
                     configuration,
                     steward_configuration,
-                    create_worker,
                     upsert_routines,
                     delete_routine_ids: delete_routine_ids.clone(),
                 },
@@ -297,86 +264,9 @@ impl CoreRuntime {
             self.tracker_runtime.cancel_tracker_check(&routine_id);
         }
         Ok(json!({
-            "playbook": playbook_projection(&configuration)?,
-            "workerId": worker_id,
+            "playbook": playbook_projection(&configuration, self.store.tracker_configurations())?,
             "stateRevision": self.store.revision(),
         }))
-    }
-
-    fn resolve_playbook_worker(
-        &self,
-        draft: &PlaybookUpdateDraft,
-        current: Option<&PlaybookConfiguration>,
-        required: bool,
-        new_worker_id: String,
-        _preferred_worker_available: bool,
-        updated_at_epoch_ms: u64,
-    ) -> Result<(Option<String>, Option<WorkerConfiguration>), CoreError> {
-        // An empty board has no checks to execute. Saving or clearing it must
-        // never depend on an installed provider CLI or on an enabled Worker.
-        if !required {
-            return Ok((None, None));
-        }
-        let workers = self.store.worker_configurations();
-        let selected = draft
-            .worker_id
-            .as_deref()
-            .and_then(|id| workers.iter().find(|worker| worker.id == id))
-            .or_else(|| {
-                current
-                    .and_then(|playbook| playbook.all_milestones().next())
-                    .and_then(|milestone| {
-                        self.store
-                            .tracker_configurations()
-                            .iter()
-                            .find(|routine| routine.id == milestone.routine_id)
-                    })
-                    .and_then(|routine| {
-                        workers.iter().find(|worker| worker.id == routine.worker_id)
-                    })
-            })
-            .or_else(|| {
-                workers
-                    .iter()
-                    .find(|worker| worker.project_id == draft.project_id && worker.enabled)
-            });
-        if let Some(worker) = selected {
-            if worker.project_id != draft.project_id {
-                return Err(CoreError::NotFound);
-            }
-            return Ok((Some(worker.id.clone()), None));
-        }
-        let agent_id = draft.preferred_worker_agent_id;
-        let agent_name = match agent_id {
-            StewardAgentId::Claude => "claude",
-            StewardAgentId::Codex => "codex",
-        };
-        let launch_defaults =
-            termloop_invocation::default_assistant_launch_selection(agent_name)
-                .map_err(|_| CoreError::InvalidParams("preferredWorkerAgentId".into()))?;
-        Ok((
-            Some(new_worker_id.clone()),
-            Some(WorkerConfiguration {
-                id: new_worker_id,
-                project_id: draft.project_id.clone(),
-                name: "Playbook Worker".into(),
-                agent_id,
-                model: launch_defaults.model.into(),
-                permission: launch_defaults.permission.into(),
-                reasoning: launch_defaults.reasoning.into(),
-                // Applying a Playbook provisions execution capacity as one
-                // operation. Launch still reports attention if the provider
-                // disappeared, but a transient capability probe must not leave
-                // the new Worker silently dormant behind a second Save.
-                enabled: true,
-                ping_interval_seconds: 60,
-                worker_prompt: String::new(),
-                system_prompt: String::new(),
-                executor_session_id: None,
-                generation: 1,
-                updated_at_epoch_ms,
-            }),
-        ))
     }
 
     /// Steward-facing read of the current Playbook. The caller's Project scope
@@ -431,7 +321,7 @@ impl CoreRuntime {
     fn playbook_value(&self, project_id: &str) -> Result<Value, CoreError> {
         self.store
             .playbook_for_project(project_id)
-            .map(playbook_projection)
+            .map(|playbook| playbook_projection(playbook, self.store.tracker_configurations()))
             .transpose()
             .map(|playbook| playbook.unwrap_or(Value::Null))
     }
@@ -463,10 +353,8 @@ fn materialize_pipeline(
     project_id: &str,
     pipeline_name: &str,
     drafts: &[PlaybookMilestoneDraft],
-    default_worker_id: Option<&str>,
     current_steps: &HashMap<(String, String), PlaybookMilestone>,
     current_routines: &HashMap<String, TrackerConfiguration>,
-    eligible_worker_ids: &HashSet<String>,
     generated_ids: &mut impl Iterator<Item = String>,
     reused_ids: &mut HashSet<String>,
     next_routine_ids: &mut HashSet<String>,
@@ -476,20 +364,9 @@ fn materialize_pipeline(
     let mut milestones = Vec::with_capacity(drafts.len());
     let mut changed = false;
     for draft in drafts {
-        let worker_id = draft
-            .check
-            .worker_id
-            .as_deref()
-            .or(default_worker_id)
-            .ok_or(CoreError::AgentCapabilityUnproven)?;
-        if !eligible_worker_ids.contains(worker_id) {
-            return Err(CoreError::AgentCapabilityUnproven);
-        }
-        let prompt = step_check_prompt(&draft.check.instructions)?;
-        let steward_instructions = step_steward_instructions(
-            &draft.check.steward_instructions,
-            draft.check.action_handling,
-        )?;
+        let prompt = step_check_prompt(&draft.complete_when)?;
+        let steward_instructions =
+            step_steward_instructions(&draft.while_waiting.instructions, draft.while_waiting.mode)?;
         let name = bounded_check_name(&draft.title);
         let current_milestone = current_steps.get(&(pipeline_name.to_owned(), draft.id.clone()));
         let reusable = current_milestone.and_then(|milestone| {
@@ -497,16 +374,13 @@ fn materialize_pipeline(
             (milestone.title == draft.title
                 && milestone.gate == draft.gate
                 && milestone.retry_delay_seconds == draft.retry_delay_seconds
-                && milestone.condition == draft.condition
                 && milestone.approver == draft.approver
                 && routine.project_id == project_id
                 && routine.trigger_mode == RoutineTriggerMode::OnDemand
-                && routine.kind == draft.check.kind
                 && routine.name == name
                 && routine.prompt == prompt
                 && routine.steward_instructions == steward_instructions
-                && routine.action_handling == draft.check.action_handling
-                && routine.worker_id == worker_id
+                && routine.action_handling == draft.while_waiting.mode
                 && !reused_ids.contains(&routine.id))
             .then_some(routine)
         });
@@ -539,12 +413,10 @@ fn materialize_pipeline(
                 TrackerConfiguration {
                     id: routine_id,
                     project_id: project_id.to_owned(),
-                    kind: draft.check.kind,
                     trigger_mode: RoutineTriggerMode::OnDemand,
                     name,
                     prompt,
                     steward_instructions,
-                    worker_id: worker_id.to_owned(),
                     enabled: true,
                     schedule_interval_seconds: 60,
                     generation: 1,
@@ -552,7 +424,7 @@ fn materialize_pipeline(
                     context_revision: 1,
                     recent_source_keys: Vec::new(),
                     related_task_ids: Vec::new(),
-                    action_handling: draft.check.action_handling,
+                    action_handling: draft.while_waiting.mode,
                     pending_routine_findings: Vec::new(),
                     last_check_started_at_epoch_ms: None,
                     last_attempt_at_epoch_ms: None,
@@ -569,7 +441,6 @@ fn materialize_pipeline(
             gate: draft.gate,
             routine_id,
             retry_delay_seconds: draft.retry_delay_seconds,
-            condition: draft.condition.clone(),
             approver: draft.approver.clone(),
         });
     }
@@ -611,16 +482,65 @@ fn bounded_check_name(title: &str) -> String {
     value
 }
 
-fn playbook_projection(configuration: &PlaybookConfiguration) -> Result<Value, CoreError> {
-    to_value(configuration).map_err(|error| CoreError::Store(error.to_string()))
+fn playbook_projection(
+    configuration: &PlaybookConfiguration,
+    routines: &[TrackerConfiguration],
+) -> Result<Value, CoreError> {
+    let milestone = |value: &PlaybookMilestone| -> Result<Value, CoreError> {
+        let routine = routines
+            .iter()
+            .find(|routine| {
+                routine.id == value.routine_id && routine.project_id == configuration.project_id
+            })
+            .ok_or_else(|| CoreError::Store("Playbook Routine is missing".into()))?;
+        Ok(json!({
+            "id": value.id,
+            "title": value.title,
+            "gate": value.gate,
+            "routineId": value.routine_id,
+            "retryDelaySeconds": value.retry_delay_seconds,
+            "completeWhen": routine.prompt,
+            "whileWaiting": {
+                "mode": routine.action_handling,
+                "instructions": routine.steward_instructions,
+            },
+            "approver": value.approver,
+        }))
+    };
+    let milestones = configuration
+        .milestones
+        .iter()
+        .map(milestone)
+        .collect::<Result<Vec<_>, _>>()?;
+    let saved_pipelines = configuration
+        .saved_pipelines
+        .iter()
+        .map(|pipeline| {
+            Ok(json!({
+                "name": pipeline.name,
+                "milestones": pipeline
+                    .milestones
+                    .iter()
+                    .map(milestone)
+                    .collect::<Result<Vec<_>, CoreError>>()?,
+            }))
+        })
+        .collect::<Result<Vec<_>, CoreError>>()?;
+    Ok(json!({
+        "projectId": configuration.project_id,
+        "revision": configuration.revision,
+        "activePipelineName": configuration.active_pipeline_name,
+        "milestones": milestones,
+        "savedPipelines": saved_pipelines,
+        "updatedAtEpochMs": configuration.updated_at_epoch_ms,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use termloop_domain::{
-        PlaybookGateKind, RoutineTriggerMode, StewardAgentId, TrackerConfiguration, TrackerKind,
-        WorkerConfiguration,
+        PlaybookGateKind, RoutineTriggerMode, StewardAgentId, TrackerConfiguration,
     };
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
@@ -661,15 +581,9 @@ mod tests {
             "id": "pr-approved",
             "title": "PR approved",
             "gate": "human",
-            "check": {
-                "kind": "ciPr",
-                "instructions": "Check the Task's pull request.",
-                "stewardInstructions": "",
-                "actionHandling": "off",
-                "workerId": "worker-1"
-            },
             "retryDelaySeconds": 600,
-            "condition": "PR review projection shows an approval.",
+            "completeWhen": "PR review projection shows an approval.",
+            "whileWaiting": {"mode":"off","instructions":""},
             "approver": "ferit"
         })
     }
@@ -681,7 +595,8 @@ mod tests {
             "gate": "human",
             "routineId": "routine-pr",
             "retryDelaySeconds": 600,
-            "condition": "PR review projection shows an approval.",
+            "completeWhen": "Check the Task's pull request.",
+            "whileWaiting": {"mode":"off","instructions":""},
             "approver": "ferit"
         })
     }
@@ -692,46 +607,18 @@ mod tests {
         updated_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
         params["expectedRevision"] = json!(runtime.state_revision());
-        params["workerId"] = Value::Null;
-        params["preferredWorkerAgentId"] = json!("claude");
         runtime.update_playbook(
             params,
-            format!("generated-worker-{updated_at_epoch_ms}"),
             (0..32)
                 .map(|index| format!("generated-routine-{updated_at_epoch_ms}-{index}"))
                 .collect(),
-            true,
             updated_at_epoch_ms,
         )
     }
 
     /// A step may only name a Routine that already exists in its Project, so
-    /// the fixture Project owns the Worker and the on-demand Routine first.
+    /// the fixture Project owns the on-demand Routine first.
     fn install_step_routine(runtime: &mut CoreRuntime, project_id: &str) {
-        let revision = runtime.state_revision();
-        runtime
-            .store
-            .set_worker_configuration(
-                &runtime.write_authority,
-                WorkerConfiguration {
-                    id: "worker-1".into(),
-                    project_id: project_id.to_owned(),
-                    name: "Worker 1".into(),
-                    agent_id: StewardAgentId::Claude,
-                    model: "default".into(),
-                    permission: "default".into(),
-                    reasoning: "default".into(),
-                    enabled: true,
-                    ping_interval_seconds: 60,
-                    worker_prompt: String::new(),
-                    system_prompt: String::new(),
-                    executor_session_id: None,
-                    generation: 1,
-                    updated_at_epoch_ms: 1,
-                },
-                revision,
-            )
-            .unwrap();
         let revision = runtime.state_revision();
         runtime
             .store
@@ -740,12 +627,10 @@ mod tests {
                 TrackerConfiguration {
                     id: "routine-pr".into(),
                     project_id: project_id.to_owned(),
-                    kind: TrackerKind::CiPr,
                     trigger_mode: RoutineTriggerMode::OnDemand,
                     name: "PR checker".into(),
                     prompt: "Check the Task's pull request.".into(),
                     steward_instructions: String::new(),
-                    worker_id: "worker-1".into(),
                     enabled: true,
                     schedule_interval_seconds: 300,
                     generation: 1,
@@ -766,45 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn playbook_created_workers_use_provider_specific_launch_defaults() {
-        let (path, folder, runtime, project_id) = runtime_with_empty_project();
-
-        for (agent_id, expected_model) in [
-            (StewardAgentId::Claude, "sonnet"),
-            (StewardAgentId::Codex, "gpt-5.6-luna"),
-        ] {
-            let draft = PlaybookUpdateDraft {
-                project_id: project_id.clone(),
-                active_pipeline_name: "Ship to production".into(),
-                milestones: vec![],
-                saved_pipelines: vec![],
-                worker_id: None,
-                preferred_worker_agent_id: agent_id,
-                expected_playbook_revision: 0,
-                expected_revision: runtime.state_revision(),
-            };
-            let (_, worker) = runtime
-                .resolve_playbook_worker(
-                    &draft,
-                    None,
-                    true,
-                    format!("generated-{expected_model}"),
-                    true,
-                    1,
-                )
-                .unwrap();
-            let worker = worker.unwrap();
-            assert_eq!(worker.model, expected_model);
-            assert_eq!(worker.permission, "bypassPermissions");
-            assert_eq!(worker.reasoning, "medium");
-        }
-
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_dir_all(folder);
-    }
-
-    #[test]
-    fn executable_playbook_apply_enables_the_worker_and_configured_steward() {
+    fn executable_playbook_apply_enables_the_configured_steward() {
         let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
         let revision = runtime.state_revision();
         runtime
@@ -826,8 +673,7 @@ mod tests {
                 revision,
             )
             .unwrap();
-        let mut milestone = milestone_value();
-        milestone["check"]["workerId"] = Value::Null;
+        let milestone = milestone_value();
 
         runtime
             .update_playbook(
@@ -836,14 +682,10 @@ mod tests {
                     "activePipelineName": "Draft",
                     "savedPipelines": [],
                     "milestones": [],
-                    "workerId": null,
-                    "preferredWorkerAgentId": "codex",
                     "expectedPlaybookRevision": 0,
                     "expectedRevision": runtime.state_revision(),
                 }),
-                "unused-worker".into(),
                 Vec::new(),
-                false,
                 1,
             )
             .unwrap();
@@ -856,28 +698,19 @@ mod tests {
                     "activePipelineName": "Ship to production",
                     "savedPipelines": [],
                     "milestones": [milestone.clone()],
-                    "workerId": null,
-                    "preferredWorkerAgentId": "codex",
                     "expectedPlaybookRevision": 1,
                     "expectedRevision": runtime.state_revision(),
                 }),
-                "generated-worker".into(),
                 vec!["generated-routine".into()],
-                false,
                 1,
             )
             .unwrap();
 
-        assert_eq!(result["workerId"], "generated-worker");
         assert_eq!(result["playbook"]["revision"], 2);
         assert_eq!(
             result["playbook"]["milestones"].as_array().unwrap().len(),
             1
         );
-        let worker = &runtime.store.worker_configurations()[0];
-        assert_eq!(worker.id, "generated-worker");
-        assert!(worker.enabled);
-        assert_eq!(worker.agent_id, StewardAgentId::Codex);
         let steward = &runtime.store.steward_configurations()[0];
         assert!(steward.enabled);
         assert_eq!(steward.generation, 2);
@@ -924,7 +757,6 @@ mod tests {
                 let mut milestone = milestone_value();
                 milestone["id"] = json!(format!("stage-{index}"));
                 milestone["title"] = json!(format!("Stage {index}"));
-                milestone["check"]["workerId"] = Value::Null;
                 milestone
             })
             .collect::<Vec<_>>();
@@ -1042,10 +874,10 @@ mod tests {
         ));
         let mut renamed = milestone_value();
         renamed["title"] = json!("Is the PR approved?");
-        renamed["check"]["stewardInstructions"] = json!(
+        renamed["whileWaiting"]["instructions"] = json!(
             "If approval is still missing, propose asking the named approver and ask Ferit whether to send it."
         );
-        renamed["check"]["actionHandling"] = json!("ask");
+        renamed["whileWaiting"]["mode"] = json!("ask");
         let replaced = apply_playbook(
             &mut runtime,
             json!({
@@ -1110,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn clearing_the_board_needs_neither_an_enabled_worker_nor_a_provider_cli() {
+    fn clearing_the_board_needs_no_provider_cli() {
         let (path, folder, mut runtime, project_id) = runtime_with_project();
         apply_playbook(
             &mut runtime,
@@ -1124,14 +956,6 @@ mod tests {
             1,
         )
         .unwrap();
-        let mut worker = runtime.store.worker_configurations()[0].clone();
-        worker.enabled = false;
-        let revision = runtime.state_revision();
-        runtime
-            .store
-            .set_worker_configuration(&runtime.write_authority, worker, revision)
-            .unwrap();
-
         let result = runtime
             .update_playbook(
                 json!({
@@ -1139,14 +963,10 @@ mod tests {
                     "activePipelineName": "Ship to production",
                     "savedPipelines": [],
                     "milestones": [],
-                    "workerId": null,
-                    "preferredWorkerAgentId": "claude",
                     "expectedPlaybookRevision": 1,
                     "expectedRevision": runtime.state_revision(),
                 }),
-                "unused-worker".into(),
                 vec![],
-                false,
                 2,
             )
             .unwrap();
@@ -1156,8 +976,6 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert_eq!(result["workerId"], Value::Null);
-
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);
     }
@@ -1222,7 +1040,7 @@ mod tests {
         // An actionable waiting policy is incomplete unless the Steward knows
         // what bounded response it may offer or perform.
         let mut missing_steward_policy = milestone_value();
-        missing_steward_policy["check"]["actionHandling"] = json!("ask");
+        missing_steward_policy["whileWaiting"]["mode"] = json!("ask");
         assert!(matches!(
             apply_playbook(
                 &mut runtime,
@@ -1254,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_worker_cascades_through_active_and_kept_playbook_steps() {
+    fn a_kept_playbook_step_prevents_its_routine_from_being_deleted() {
         let (path, folder, mut runtime, project_id) = runtime_with_project();
         apply_playbook(
             &mut runtime,
@@ -1286,20 +1104,31 @@ mod tests {
         )
         .unwrap();
 
-        // The user's one confirmation owns the complete cleanup: enabled
-        // Worker, Routine, and the kept Playbook reference disappear together.
-        let routine_count = runtime.store.tracker_configurations().len();
+        let routine_id = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .saved_pipelines[0]
+            .milestones[0]
+            .routine_id
+            .clone();
+        let mut routine = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|candidate| candidate.id == routine_id)
+            .unwrap()
+            .clone();
+        routine.enabled = false;
         let revision = runtime.state_revision();
-        let deleted = runtime
-            .delete_worker_configuration("worker-1", revision, 3)
+        runtime
+            .store
+            .set_tracker_configuration(&runtime.write_authority, routine, revision)
             .unwrap();
-        assert_eq!(deleted["deletedRoutines"], routine_count);
-        assert!(runtime.store.worker_configurations().is_empty());
-        assert!(runtime.store.tracker_configurations().is_empty());
-        let playbook = runtime.store.playbook_for_project(&project_id).unwrap();
-        assert!(playbook.milestones.is_empty());
-        assert!(playbook.saved_pipelines[0].milestones.is_empty());
-        assert_eq!(playbook.revision, 3);
+        assert!(matches!(
+            runtime.delete_tracker_configuration(&routine_id, runtime.state_revision()),
+            Err(CoreError::PlaybookStepRoutineHeld { .. })
+        ));
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);

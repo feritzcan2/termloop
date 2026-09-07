@@ -7,7 +7,7 @@ pub struct AssistantLaunchDefaults {
     pub reasoning: &'static str,
 }
 
-/// The explicit launch selection used when a persistent Steward or Worker is
+/// The explicit launch selection used when a persistent Steward is
 /// first created for a provider. Once stored, each field remains user-owned.
 pub fn default_assistant_launch_selection(
     agent_id: &str,
@@ -37,29 +37,18 @@ pub fn default_assistant_launch_selection(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutorRole {
     Steward,
-    Worker,
-    SlackTracker,
-    JiraTracker,
-    RuntimeTracker,
-    DeliveryTracker,
-    CiPrTracker,
+    /// A provider-neutral scheduled Routine executed by the Project Steward.
+    Routine,
     /// One delivery-pipeline stage, evaluated for one focused Task per run.
     StepCheckTracker,
-    CustomTracker,
 }
 
 impl ExecutorRole {
     pub(crate) fn template(self) -> &'static PromptTemplate {
         match self {
             Self::Steward => &STEWARD_EXECUTOR_TEMPLATE,
-            Self::Worker => &WORKER_EXECUTOR_TEMPLATE,
-            Self::SlackTracker => &SLACK_TRACKER_TEMPLATE,
-            Self::JiraTracker => &JIRA_TRACKER_TEMPLATE,
-            Self::RuntimeTracker => &RUNTIME_TRACKER_TEMPLATE,
-            Self::DeliveryTracker => &DELIVERY_TRACKER_TEMPLATE,
-            Self::CiPrTracker => &CI_PR_TRACKER_TEMPLATE,
+            Self::Routine => &ROUTINE_TRACKER_TEMPLATE,
             Self::StepCheckTracker => &STEP_CHECK_TRACKER_TEMPLATE,
-            Self::CustomTracker => &CUSTOM_TRACKER_TEMPLATE,
         }
     }
 }
@@ -90,12 +79,17 @@ impl ProvenancedPrompt {
 pub fn executor_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt, InvocationError> {
     let template = role.template();
     validate_template_asset(template)?;
+    let preview = if template.authored_body.contains("{{task_evidence_policy}}") {
+        bind_task_evidence_policy(template.authored_body)?
+    } else {
+        template.authored_body.to_owned()
+    };
     Ok(ProvenancedPrompt {
         provenance: Provenance {
             template_ref: template.id.to_owned(),
             template_version: template.version,
         },
-        preview: template.authored_body.to_owned(),
+        preview,
     })
 }
 
@@ -131,6 +125,8 @@ const RETIRED_STEWARD_EXECUTOR_DEFAULTS: &[&str] = &[
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v33.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v34.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md"),
+    include_str!("../../../resources/prompts/retired/builtin.steward.executor.v36.md"),
+    include_str!("../../../resources/prompts/retired/builtin.steward.executor.v37.md"),
 ];
 
 pub fn resolved_steward_system_prompt(configured: &str) -> &str {
@@ -173,35 +169,6 @@ pub fn effective_steward_system_prompt(configured: &str) -> String {
     } else {
         format!("{built_in}\n\n{}", configured.trim())
     }
-}
-
-pub fn effective_worker_prompt(worker_prompt: &str, system_prompt: &str) -> String {
-    let mut effective = WORKER_EXECUTOR_TEMPLATE.authored_body.trim().to_owned();
-    let worker_prompt = worker_prompt.trim();
-    let system_prompt = system_prompt.trim();
-    match (worker_prompt.is_empty(), system_prompt.is_empty()) {
-        (true, true) => {}
-        // A single configured value is the complete editable suffix. This is
-        // the current one-editor representation and must round-trip without
-        // invocation adding its own visible text.
-        (true, false) => {
-            effective.push_str("\n\n");
-            effective.push_str(system_prompt);
-        }
-        (false, true) => {
-            effective.push_str("\n\n");
-            effective.push_str(worker_prompt);
-        }
-        // Preserve the visible ordering and precedence of configurations that
-        // still contain both independently stored fields.
-        (false, false) => {
-            effective.push_str("\n\n## Configured Worker prompt\n\n");
-            effective.push_str(worker_prompt);
-            effective.push_str("\n\n## Configured System prompt\n\n");
-            effective.push_str(system_prompt);
-        }
-    }
-    effective
 }
 
 pub fn editable_steward_system_prompt_from_effective(effective: &str) -> Option<&str> {
@@ -247,9 +214,9 @@ fn metadata_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
 
 /// Returns the exact visible built-in instructions delivered for a Tracker
 /// assignment. Trackers do not own a launch or terminal; their role prompt is
-/// embedded into a wake sent to the selected Worker.
+/// embedded into a wake sent to the Project Steward.
 pub fn tracker_assignment_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt, InvocationError> {
-    if matches!(role, ExecutorRole::Steward | ExecutorRole::Worker) {
+    if role == ExecutorRole::Steward {
         return Err(InvocationError::InvalidAssistantConfiguration);
     }
     let template = role.template();
@@ -260,6 +227,7 @@ pub fn tracker_assignment_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt
         .nth(2)
         .filter(|body| !body.trim().is_empty())
         .ok_or(InvocationError::UnprovenancedPrompt)?;
+    let instructions = bind_task_evidence_policy(instructions)?;
     Ok(ProvenancedPrompt {
         provenance: Provenance {
             template_ref: template.id.to_owned(),
@@ -276,11 +244,7 @@ pub fn assistant_activation_message(
     let (role_name, instructions) = match role {
         ExecutorRole::Steward => (
             "Project Steward",
-            "Follow the **Initial activation** row in the visible Steward wake protocol, including its mutation-receipt and silent-idle rules.",
-        ),
-        ExecutorRole::Worker => (
-            "Project Worker",
-            "Call `worker_get_next_routine`, finish a step assignment through `worker_report_step_verdicts` with one verdict, finish another claimed Routine through `worker_complete_routine`, use `worker_report_routine_problem` when required configuration or access is missing, and repeat until get-next returns idle.",
+            "Follow the **Initial activation** row in the visible Steward wake protocol, including its mutation-receipt and silent-idle rules. Then call `steward_next_assignment`, execute at most one exact assignment at a time, and repeat until it returns idle.",
         ),
         _ => return Err(InvocationError::InvalidAssistantConfiguration),
     };
@@ -355,6 +319,12 @@ impl AssistantWakeMessage {
     }
 }
 
+// A scheduled assignment can legitimately contain the full rolling Routine
+// context plus its bounded source-key memory. Leave framing and wake-copy room
+// below the terminal's 192 KiB atomic-input ceiling.
+const DIRECT_STEWARD_ASSIGNMENT_MAX_BYTES: usize = 176 * 1024;
+const ASSISTANT_WAKE_MAX_BYTES: usize = 184 * 1024;
+
 pub fn assistant_wake_message(
     role: ExecutorRole,
     reason: AssistantWakeReason,
@@ -362,17 +332,16 @@ pub fn assistant_wake_message(
     configured_task_prompt: Option<&str>,
 ) -> Result<AssistantWakeMessage, InvocationError> {
     validate_template_asset(&ASSISTANT_WAKE_TEMPLATE)?;
-    let tracker = matches!(
-        role,
-        ExecutorRole::SlackTracker
-            | ExecutorRole::JiraTracker
-            | ExecutorRole::RuntimeTracker
-            | ExecutorRole::DeliveryTracker
-            | ExecutorRole::CiPrTracker
-            | ExecutorRole::CustomTracker
-    );
-    let worker_batch =
-        role == ExecutorRole::Worker && reason == AssistantWakeReason::ScheduledCheck;
+    let tracker = role == ExecutorRole::Routine;
+    let steward_assignment =
+        role == ExecutorRole::Steward && reason == AssistantWakeReason::ScheduledCheck;
+    let valid_check = check_id.is_some_and(|value| {
+        value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    });
+    let valid_assignment = configured_task_prompt.is_some_and(|prompt| {
+        !prompt.trim().is_empty() && prompt.len() <= DIRECT_STEWARD_ASSIGNMENT_MAX_BYTES
+    });
+    let direct_steward_assignment = steward_assignment && valid_check && valid_assignment;
     let steward_reason = matches!(
         reason,
         AssistantWakeReason::StewardUserMessage
@@ -382,41 +351,33 @@ pub fn assistant_wake_message(
             | AssistantWakeReason::StewardConfigurationChanged
             | AssistantWakeReason::StewardStartupRefresh
     );
-    if tracker
-        != check_id.is_some_and(|value| {
-            value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
-        || (tracker || worker_batch) != (reason == AssistantWakeReason::ScheduledCheck)
-        || (role == ExecutorRole::Steward) != steward_reason
-        || tracker
-            != configured_task_prompt
-                .is_some_and(|prompt| !prompt.trim().is_empty() && prompt.len() <= 8 * 1024)
+    if (tracker && (!valid_check || !valid_assignment))
+        || (steward_assignment && !direct_steward_assignment)
+        || (!tracker
+            && !steward_assignment
+            && (check_id.is_some() || configured_task_prompt.is_some()))
+        || (tracker || steward_assignment) != (reason == AssistantWakeReason::ScheduledCheck)
+        || (role == ExecutorRole::Steward) != (steward_reason || steward_assignment)
     {
         return Err(InvocationError::InvalidAssistantConfiguration);
     }
     let role_name = match role {
         ExecutorRole::Steward => "Project Steward",
-        ExecutorRole::Worker => "Project Worker",
-        ExecutorRole::SlackTracker => "Slack Tracker",
-        ExecutorRole::JiraTracker => "Jira Issue Synchronizer",
-        ExecutorRole::RuntimeTracker => "Runtime Tracker",
-        ExecutorRole::DeliveryTracker => "Delivery Tracker",
-        ExecutorRole::CiPrTracker => "CI/PR Tracker",
+        ExecutorRole::Routine => "Scheduled Routine",
         ExecutorRole::StepCheckTracker => "Pipeline Step Check",
-        ExecutorRole::CustomTracker => "Custom Routine",
     };
     let check = check_id.map_or_else(
         || {
-            if worker_batch {
-                "Claim the next Routine through worker_get_next_routine.".into()
+            if steward_assignment {
+                "Claim the next Routine through steward_next_assignment.".into()
             } else {
                 "No check ID is required for this Steward wake.".into()
             }
         },
         |value| format!("Check ID: {value}"),
     );
-    let instructions = if worker_batch {
-        "Call `worker_get_next_routine`, execute the one claimed Routine using its visible context, finish a step assignment through `worker_report_step_verdicts` with one verdict, finish another Routine through `worker_complete_routine`, use `worker_report_routine_problem` when required configuration or access is missing, and repeat until get-next returns idle."
+    let instructions = if direct_steward_assignment {
+        "Execute the exact assigned Routine below directly; do not call get-next first. Verify live facts with the tools available in this Session, advance the Task when the configured waiting policy authorizes it, and finish once through `steward_complete_assignment`. Then call `steward_next_assignment` to drain one other due assignment at a time until it returns idle."
     } else if tracker {
         "Read the current Project context through your TermLoop tools, perform this one bounded Task using its exact configured instructions, and report its result through the reporting tool required by your role."
     } else if reason == AssistantWakeReason::StewardUserMessage {
@@ -441,10 +402,14 @@ pub fn assistant_wake_message(
         .replace("{{CHECK}}", &check)
         .replace("{{INSTRUCTIONS}}", instructions);
     if let Some(task_prompt) = configured_task_prompt {
-        delivered.push_str("\n\nExact configured Task instructions:\n\n");
+        delivered.push_str(if direct_steward_assignment {
+            "\n\nExact assigned Routine:\n\n"
+        } else {
+            "\n\nExact configured Task instructions:\n\n"
+        });
         delivered.push_str(task_prompt);
     }
-    if delivered.contains("{{") || delivered.len() > 12 * 1024 {
+    if delivered.contains("{{") || delivered.len() > ASSISTANT_WAKE_MAX_BYTES {
         return Err(InvocationError::InvalidAssistantConfiguration);
     }
     let provenance = Provenance {

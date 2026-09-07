@@ -208,7 +208,8 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
             "expectedRevision":1, "worktreeIntent":"provision",
-            "worktreePrefix":"termloop", "agentId":"codex",
+            "worktreePrefix":"termloop", "baseRef":"refs/remotes/origin/development",
+            "agentId":"codex",
             "model":"gpt-5.6-sol", "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":"Implement and verify."
         })
@@ -219,7 +220,7 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
             "expectedRevision":1, "worktreeIntent":"none",
-            "worktreePrefix":null, "agentId":null,
+            "worktreePrefix":null, "baseRef":null, "agentId":null,
             "model":null, "permission":null, "reasoning":null, "kickoffMessage":null
         })
     ));
@@ -229,7 +230,7 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
             "expectedRevision":1, "worktreeIntent":"none",
-            "worktreePrefix":null, "agentId":"codex",
+            "worktreePrefix":null, "baseRef":null, "agentId":"codex",
             "model":"gpt-5.6-sol", "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":null
         })

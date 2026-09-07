@@ -144,7 +144,6 @@ fn absent_and_current_configuration_results_are_strict() {
         &json!({
             "projectId":"project-1",
             "deleted":true,
-            "deletedWorkers":2,
             "deletedRoutines":3,
             "deletedSessions":4,
             "deletedMessages":5,
@@ -157,7 +156,6 @@ fn absent_and_current_configuration_results_are_strict() {
         &json!({
             "projectId":"project-1",
             "deleted":true,
-            "deletedWorkers":2,
             "deletedRoutines":3,
             "deletedSessions":4,
             "deletedMessages":5,

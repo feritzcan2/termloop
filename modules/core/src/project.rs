@@ -78,6 +78,7 @@ impl CoreRuntime {
                 project_id: project_id.to_owned(),
                 create_worktree: false,
                 worktree_prefix: PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT.into(),
+                base_ref: None,
                 agent_id: None,
                 model: None,
                 permission: None,
@@ -107,6 +108,7 @@ impl CoreRuntime {
         let worktree_prefix = required_string(&params, "worktreePrefix")?
             .trim()
             .to_owned();
+        let base_ref = nullable_trimmed_string(&params, "baseRef")?;
         let agent_id = nullable_trimmed_string(&params, "agentId")?;
         let model = nullable_trimmed_string(&params, "model")?;
         let permission = nullable_trimmed_string(&params, "permission")?;
@@ -120,6 +122,7 @@ impl CoreRuntime {
             project_id,
             create_worktree,
             worktree_prefix,
+            base_ref,
             agent_id,
             model,
             permission,
@@ -490,7 +493,10 @@ impl ProjectLocalBranchListPlan {
         let observed = runner
             .list_local_branches(&identity.resolved_path)
             .map_err(map_git_observation_error)?;
-        project_local_branch_projection(repository_root, observed)
+        let remote_branches = runner
+            .list_remote_branches(&identity.resolved_path)
+            .map_err(map_git_observation_error)?;
+        project_local_branch_projection(repository_root, observed, remote_branches)
     }
 }
 
@@ -534,6 +540,7 @@ fn local_branch_name(reference: &[u8]) -> Result<Option<&str>, CoreError> {
 fn project_local_branch_projection(
     repository_root: String,
     observed: termloop_gitio::LocalBranchList,
+    remote_branches: termloop_gitio::RemoteBranchList,
 ) -> Result<Value, CoreError> {
     let mut truncated = observed.truncated;
     let mut branches = Vec::with_capacity(observed.branches.len());
@@ -554,9 +561,35 @@ fn project_local_branch_projection(
             "exact_ref": exact_ref,
         }));
     }
+    let mut base_branches_truncated = remote_branches.truncated;
+    let mut base_branches = Vec::with_capacity(remote_branches.branches.len());
+    for reference in remote_branches.branches {
+        let Ok(exact_ref) = std::str::from_utf8(reference.as_bytes()) else {
+            base_branches_truncated = true;
+            continue;
+        };
+        let Some(name) = exact_ref.strip_prefix("refs/remotes/") else {
+            return Err(CoreError::RepositoryUnavailable);
+        };
+        if name.is_empty()
+            || !name.contains('/')
+            || name.ends_with("/HEAD")
+            || name.chars().count() > 1024
+            || exact_ref.chars().count() > 1024
+        {
+            base_branches_truncated = true;
+            continue;
+        }
+        base_branches.push(serde_json::json!({
+            "name": name,
+            "exact_ref": exact_ref,
+        }));
+    }
     Ok(serde_json::json!({
         "repository_root": repository_root,
         "branches": branches,
+        "base_branches": base_branches,
+        "base_branches_truncated": base_branches_truncated,
         "truncated": truncated,
     }))
 }
@@ -692,6 +725,7 @@ mod tests {
             .unwrap();
         assert_eq!(initial["configuration"]["createWorktree"], false);
         assert_eq!(initial["configuration"]["worktreePrefix"], "termloop");
+        assert_eq!(initial["configuration"]["baseRef"], Value::Null);
         assert_eq!(initial["configuration"]["agentId"], Value::Null);
         let revision = initial["stateRevision"].as_u64().unwrap();
         let updated = runtime
@@ -699,6 +733,7 @@ mod tests {
                 "projectId": project_id,
                 "createWorktree": true,
                 "worktreePrefix": "feature",
+                "baseRef": "refs/remotes/origin/development",
                 "agentId": "codex",
                 "model": "gpt-5.6-sol",
                 "permission": "bypassPermissions",
@@ -709,6 +744,10 @@ mod tests {
             .unwrap();
         assert_eq!(updated["configuration"]["agentId"], "codex");
         assert_eq!(updated["configuration"]["worktreePrefix"], "feature");
+        assert_eq!(
+            updated["configuration"]["baseRef"],
+            "refs/remotes/origin/development"
+        );
         assert_eq!(updated["configuration"]["model"], "gpt-5.6-sol");
         assert_eq!(updated["configuration"]["permission"], "bypassPermissions");
         assert_eq!(updated["configuration"]["reasoning"], "high");
@@ -721,6 +760,7 @@ mod tests {
                 "projectId": project_id,
                 "createWorktree": false,
                 "worktreePrefix": "termloop",
+                "baseRef": null,
                 "agentId": null,
                 "model": null,
                 "permission": null,
@@ -923,6 +963,19 @@ mod tests {
                 ],
                 truncated: false,
             },
+            termloop_gitio::RemoteBranchList {
+                branches: vec![
+                    termloop_gitio::GitRefName::from_bytes(
+                        b"refs/remotes/origin/development".to_vec(),
+                    )
+                    .unwrap(),
+                    termloop_gitio::GitRefName::from_bytes(
+                        b"refs/remotes/origin/non-\xff".to_vec(),
+                    )
+                    .unwrap(),
+                ],
+                truncated: false,
+            },
         )
         .unwrap();
         assert_eq!(
@@ -930,6 +983,11 @@ mod tests {
             json!({
                 "repository_root": "/repository",
                 "branches": [{ "name": "main", "exact_ref": "refs/heads/main" }],
+                "base_branches": [{
+                    "name": "origin/development",
+                    "exact_ref": "refs/remotes/origin/development"
+                }],
+                "base_branches_truncated": true,
                 "truncated": true,
             })
         );

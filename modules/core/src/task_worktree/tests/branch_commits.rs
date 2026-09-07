@@ -149,7 +149,7 @@ fn branch_commit_cache_invalidation_advances_only_the_observation_sequence() {
 }
 
 #[test]
-fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() {
+fn managed_created_branch_tracks_its_exact_remote_base() {
     let mut fixture = Fixture::new();
     let (task_id, destination, _, _) = provision_cleanup_fixture(&mut fixture);
     let runner = GitRunner::discover().unwrap();
@@ -179,10 +179,13 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
         .unwrap();
     assert_eq!(summary[0]["count"], 2);
-    assert_eq!(summary[0]["base_ref"], "refs/heads/main");
+    assert_eq!(summary[0]["base_ref"], "refs/remotes/origin/main");
     assert_eq!(summary[0]["freshness"], "fresh");
     assert_eq!(summary[0]["not_in_base"]["count"], 2);
-    assert_eq!(summary[0]["not_in_base"]["base_ref"], "refs/heads/main");
+    assert_eq!(
+        summary[0]["not_in_base"]["base_ref"],
+        "refs/remotes/origin/main"
+    );
 
     let mut commits = None;
     for _ in 0..4 {
@@ -203,7 +206,7 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
         }
     }
     let commits = commits.expect("branch commit observation repeatedly timed out");
-    assert_eq!(commits["base_ref"], "refs/heads/main");
+    assert_eq!(commits["base_ref"], "refs/remotes/origin/main");
     assert_eq!(commits["commits"].as_array().unwrap().len(), 2);
 
     let plan = fixture
@@ -274,8 +277,10 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
         .runtime
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
         .unwrap();
-    assert_eq!(merged_summary[0]["count"], 0);
-    assert_eq!(merged_summary[0]["not_in_base"]["count"], 0);
+    // Advancing only the local branch must not pretend that the selected
+    // remote-tracking base advanced with it.
+    assert_eq!(merged_summary[0]["count"], 2);
+    assert_eq!(merged_summary[0]["not_in_base"]["count"], 2);
 
     let plan = fixture
         .runtime
@@ -285,7 +290,7 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
         .runtime
         .complete_task_branch_commit_list(plan.observe())
         .unwrap();
-    assert!(commits["commits"].as_array().unwrap().is_empty());
+    assert_eq!(commits["commits"].as_array().unwrap().len(), 2);
     runner
         .remove_worktree_non_force(&fixture.project_directory, &destination)
         .unwrap();
