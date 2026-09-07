@@ -234,6 +234,9 @@ mod tests {
                                     McpToolRole::AgentCreator,
                                 ]
                             }
+                            McpToolName::WorkflowDelegate | McpToolName::WorkflowStepComplete => {
+                                vec![McpToolRole::Interactive]
+                            }
                             McpToolName::PlaybookRead => {
                                 vec![McpToolRole::Steward]
                             }

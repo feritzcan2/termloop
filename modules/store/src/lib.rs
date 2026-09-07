@@ -26,9 +26,9 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorktreeCleanupOperation, WorktreeCleanupReceipt, WorktreeProvisioningOperation,
-    WorktreeRepairOperation, WorktreeRepairReceipt, WorktreeStaleResolutionOperation,
-    WorktreeStaleResolutionReceipt,
+    WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
+    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -59,9 +59,12 @@ use termloop_domain::{
 // Version 51 removes persistent Workers and binds Routine execution directly
 // to the Project Steward. Version 52 adds personal agent profiles and pinned
 // current Session instructions. Version 53 permits user overrides of built-in
-// agent profiles in the same bounded library.
+// agent profiles in the same bounded library. Versions 51 through 55 were also
+// independently used by the workflow branch for configurations, executions,
+// sidebar results, parallel review routing, and fresh-helper launch selections.
 // Version 54 adds the current Agent Creator Session target.
-const CURRENT_SCHEMA_VERSION: u32 = 54;
+// Version 57 is the first integrated state containing all three feature families.
+const CURRENT_SCHEMA_VERSION: u32 = 57;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -137,6 +140,10 @@ struct CurrentState {
     #[serde(default)]
     run_configurations: Vec<RunConfiguration>,
     #[serde(default)]
+    workflow_configurations: Vec<WorkflowConfiguration>,
+    #[serde(default)]
+    workflow_executions: Vec<WorkflowExecution>,
+    #[serde(default)]
     configuration_versions: Vec<ConfigurationVersion>,
     #[serde(default)]
     configuration_version_selections: Vec<ConfigurationVersionSelection>,
@@ -190,6 +197,8 @@ impl Default for CurrentState {
             playbook_step_progress: vec![],
             worker_configurations: vec![],
             run_configurations: vec![],
+            workflow_configurations: vec![],
+            workflow_executions: vec![],
             configuration_versions: vec![],
             configuration_version_selections: vec![],
             run_setup_marks: vec![],
