@@ -38,9 +38,10 @@ export function ScreenHeader({ title, subtitle, back, backFallback, center, righ
       {back === undefined ? null : (
         <Pressable
           onPress={() => {
-            const action = backNavigationAction(router.canGoBack());
-            if (action === "back") router.back();
-            else router.replace(backFallback ?? "/");
+            const action = backNavigationAction(router.canGoBack(), backFallback !== undefined);
+            if (action === "replace") router.replace(backFallback!);
+            else if (action === "back") router.back();
+            else router.replace("/");
           }}
           accessibilityRole="button"
           accessibilityLabel={`Back to ${back}`}
