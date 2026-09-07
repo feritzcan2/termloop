@@ -139,6 +139,11 @@ import type {
   QuickActionPreviewResult,
   QuickActionParams,
   AgentProfileDto,
+  AgentLibraryResult,
+  AgentProfileCreateParams,
+  AgentProfileUpdateParams,
+  AgentProfileDeleteParams,
+  AgentProfileFavoriteParams,
   AgentLaunchPreviewResult,
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
@@ -311,6 +316,11 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentLibraryGet(): Promise<AgentLibraryResult>;
+  agentProfileCreate(params: AgentProfileCreateParams): Promise<AgentLibraryResult>;
+  agentProfileUpdate(params: AgentProfileUpdateParams): Promise<AgentLibraryResult>;
+  agentProfileDelete(params: AgentProfileDeleteParams): Promise<AgentLibraryResult>;
+  agentProfileFavorite(params: AgentProfileFavoriteParams): Promise<AgentLibraryResult>;
   agentProfileList(): Promise<AgentProfileDto[]>;
   stewardConfigurationGet(projectId: string): Promise<StewardConfigurationGetResult>;
   stewardConfigurationSet(params: StewardConfigurationSetParams): Promise<StewardConfigurationSetResult>;

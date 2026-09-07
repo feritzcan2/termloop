@@ -1,3 +1,4 @@
+@import "./agents.css";
 @import "./skills.css";
 
 :root {
@@ -2528,7 +2529,8 @@ button.history-row-main { cursor: pointer; }
 .workspace-view-action[aria-pressed="true"] { background: rgba(102,179,255,.14); color: light-dark(#5f6e7d, #c4e2ff); }
 .workspace-view-action:disabled { opacity: .45; }
 .workspace-view-action svg { width: 13px; height: 13px; }
-.workspace-view-action.settings { margin-left: auto; opacity: .8; }
+.workspace-view-action.settings { width: auto; margin-left: auto; padding: 0 7px; display: inline-flex; align-items: center; gap: 4px; opacity: .8; white-space: nowrap; }
+.workspace-view-settings-label { font: 600 9.5px/1 var(--font-ui); }
 
 /* Create-Task dialog: the worktree plan is one card — branch, base, and folder
    as hairline rows of a single object — with a switch to skip it and one quiet

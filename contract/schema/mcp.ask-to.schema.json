@@ -5,7 +5,7 @@
   "type": "object",
   "x-mcp-tools": {
     "ask_to": {
-      "description": "Canonical TermLoop Next Ask-To action. Use this MCP tool whenever the user wants another Claude or Codex involved in the current work: asking, consulting, discussing, brainstorming, a second opinion, a sanity check, or a review. Naming the provider with that intent is the entire trigger, in any language and whether or not TermLoop, MCP, or this tool is named; short requests such as 'ask codex', 'discuss this with codex', 'get a second Claude opinion', or 'have codex review this' are complete Ask-To requests on their own, and equivalent intent in any language is sufficient. Never make the user restate the request in tool terms, and never substitute the legacy `termloop ask-to` shell command. The user usually does not supply the helper's message: compose it yourself from the current conversation, stating the exact question, the context the helper cannot see, and the answer you need back; ask the user first only when the subject is genuinely ambiguous. Omit conversationId to launch a visible helper. To message a previously used still-running helper (for example, 'the first Claude'), pass the conversationId returned by that earlier call; reuse never launches a replacement. The helper replies exactly once and TermLoop delivers that final answer back automatically as a visible message; do not poll for a result. After calling, never contact, inspect, or check on the helper; the answer arrives on its own. While waiting, finish your other pending work if any; otherwise stop and wait. Reuse an idempotency key when retrying the same call.",
+      "description": "Canonical TermLoop Next Ask-To action. Use this MCP tool whenever the user wants another Claude or Codex involved in the current work: asking, consulting, discussing, brainstorming, a second opinion, a sanity check, or a review. Naming the provider with that intent is the entire trigger, in any language and whether or not TermLoop, MCP, or this tool is named; short requests such as 'ask codex', 'discuss this with codex', 'get a second Claude opinion', or 'have codex review this' are complete Ask-To requests on their own, and equivalent intent in any language is sufficient. Never make the user restate the request in tool terms, and never substitute the legacy `termloop ask-to` shell command. The user usually does not supply the helper's message: compose it yourself from the current conversation, stating the exact question, the context the helper cannot see, and the answer you need back; ask the user first only when the subject is genuinely ambiguous. Omit conversationId to launch a visible helper. Model and reasoning apply only to a new helper. Set each field only when the user explicitly requests that setting for this helper; otherwise omit it or use default. Never infer or choose a non-default setting from task complexity, your own model, or the helper message. Each omitted field independently uses default. Omit both fields when reusing conversationId; reuse preserves the helper settings and rejects these fields. To message a previously used still-running helper (for example, 'the first Claude'), pass the conversationId returned by that earlier call; reuse never launches a replacement. The helper replies exactly once and TermLoop delivers that final answer back automatically as a visible message; do not poll for a result. After calling, never contact, inspect, or check on the helper; the answer arrives on its own. While waiting, finish your other pending work if any; otherwise stop and wait. Reuse an idempotency key when retrying the same call.",
       "role": [
         "interactive",
         "helper",
@@ -638,8 +638,133 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "default",
+            "opus[1m]",
+            "fable",
+            "sonnet",
+            "haiku",
+            "opus",
+            "gpt-6-astra",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+            "gpt-5.5-pro"
+          ],
+          "default": "default",
+          "description": "Initial helper model. Set a non-default value only if the user explicitly requested it for this helper. Otherwise omit or use default. Must match target; omit when conversationId is provided."
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "default",
+          "description": "Initial helper reasoning effort. Set a non-default value only if the user explicitly requested it for this helper. Otherwise omit or use default, even when model was explicitly selected. Omit when conversationId is provided."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "claude"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "opus[1m]",
+                  "fable",
+                  "sonnet",
+                  "haiku",
+                  "opus"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "codex"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "gpt-6-astra",
+                  "gpt-5.6-sol",
+                  "gpt-5.6-terra",
+                  "gpt-5.6-luna",
+                  "gpt-5.5",
+                  "gpt-5.5-pro"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "conversationId"
+            ],
+            "properties": {
+              "conversationId": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "$ref": "#/$defs/askToTarget"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32768
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "conversationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
     },
     "askToResult": {
       "x-codegen": true,

@@ -30,6 +30,8 @@ pub(super) fn validate_stale_resolution_failure(
 
 pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreError> {
     if state.schema_version != CURRENT_SCHEMA_VERSION
+        || !state.agent_library.is_valid()
+        || super::records::agent_library::session_profiles_are_invalid(state)
         || companion_records_are_invalid(state)
         || steward_configurations_are_invalid(state)
         || steward_conversation_refs_are_invalid(state)

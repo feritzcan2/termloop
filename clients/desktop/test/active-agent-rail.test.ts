@@ -742,6 +742,7 @@ describe("Workspace view switch", () => {
     expect(taskSettings).toBeGreaterThan(createTask);
     expect(markup).toContain('class="workspace-view-action settings"');
     expect(markup).toContain('title="Task Settings"');
+    expect(markup).toContain('class="workspace-view-settings-label">Task Settings</span>');
     expect(markup).toContain('aria-pressed="true"');
   });
 

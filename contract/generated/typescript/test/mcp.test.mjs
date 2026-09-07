@@ -56,6 +56,27 @@ test("MCP result validation is generated and strict", () => {
   }), false);
 });
 
+test("Ask-To advertises independent defaults and user-requested initial selection", () => {
+  const definition = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "ask_to");
+  const { properties, required, allOf } = definition.inputSchema;
+  assert.deepEqual(required, ["target", "message"]);
+  assert.equal(properties.model.default, "default");
+  assert.equal(properties.reasoning.default, "default");
+  assert.ok(properties.model.enum.includes("gpt-6-astra"));
+  assert.deepEqual(properties.reasoning.enum, ["default", "low", "medium", "high", "xhigh", "max"]);
+  assert.match(definition.description, /only when the user explicitly requests/);
+  assert.match(definition.description, /Never infer or choose a non-default setting/);
+  for (const target of ["claude", "codex"]) {
+    const rule = allOf.find((rule) => rule.if.properties?.target?.const === target);
+    assert.equal(rule.then.properties.model.enum.includes("gpt-6-astra"), target === "codex");
+    assert.equal(rule.then.properties.model.enum.includes("opus"), target === "claude");
+  }
+  const reuse = allOf.find((rule) => rule.if.required.includes("conversationId"));
+  assert.equal(reuse.then.additionalProperties, false);
+  assert.equal(Object.hasOwn(reuse.then.properties, "model"), false);
+  assert.equal(Object.hasOwn(reuse.then.properties, "reasoning"), false);
+});
+
 test("send_to_agent accepts exact Session IDs and typed delivery outcomes", () => {
   const sessionId = "123e4567-e89b-42d3-a456-426614174000";
   const definition = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "send_to_agent");
