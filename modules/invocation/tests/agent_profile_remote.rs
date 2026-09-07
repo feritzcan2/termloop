@@ -35,6 +35,33 @@ fn profile_permissions_remain_user_selected() {
 }
 
 #[test]
+fn gpt_6_astra_is_forwarded_as_the_selected_codex_model() {
+    let profile = agent_profiles()[0];
+    let launch = profile_quick_action_agent_with_attachments_for_conversation(
+        profile.id,
+        "codex",
+        "/tmp/project",
+        "gpt-6-astra",
+        "default",
+        "max",
+        "Inspect this workflow",
+        &[],
+        AgentConversationLaunch::Fresh { resume_ref: None },
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(launch.inspectable_manifest().target.model, "gpt-6-astra");
+    assert!(
+        launch
+            .args()
+            .windows(2)
+            .any(|arguments| arguments == ["--model", "gpt-6-astra"])
+    );
+}
+
+#[test]
 fn profile_instructions_configure_the_remote_codex_app_server() {
     let profile = agent_profiles()[0];
     let launch = profile_quick_action_agent_with_attachments_for_conversation(
