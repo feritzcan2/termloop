@@ -1368,13 +1368,12 @@ impl CoreRuntime {
             .to_owned();
         let attachments = quick_action_attachments(&params)?;
         let mut plan = self.plan_agent_launch(params)?;
-        if let Some(profile) = profile {
-            if !profile
+        if let Some(profile) = profile
+            && !profile
                 .supported_agent_ids
                 .contains(&plan.agent_id.as_str())
-            {
-                return Err(CoreError::AgentUnsupported);
-            }
+        {
+            return Err(CoreError::AgentUnsupported);
         }
         termloop_invocation::validate_quick_action_with_attachments(
             &plan.agent_id,
@@ -2439,6 +2438,7 @@ fn resolve_interactive_agent_launch_with_transport(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_codex_runtime(
     session_id: &str,
     runtime_epoch: u64,

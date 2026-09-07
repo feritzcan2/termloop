@@ -183,7 +183,7 @@ describe("Active Agent rail", () => {
       actionNeeded: [],
       interrupted: [],
       inProgress: [],
-      resting: [ordinary],
+      resting: [ordinary, legacyWorker],
       older: [],
       stopped: [stopped],
     });

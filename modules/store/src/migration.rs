@@ -1404,10 +1404,7 @@ fn retire_persistent_worker_state(value: &mut serde_json::Value) -> Result<(), S
         }
     }
 
-    if let Some(sessions) = object
-        .get("sessions")
-        .and_then(serde_json::Value::as_array)
-    {
+    if let Some(sessions) = object.get("sessions").and_then(serde_json::Value::as_array) {
         retired_session_ids.extend(sessions.iter().filter_map(|session| {
             let template = session
                 .get("process")?
@@ -1463,7 +1460,12 @@ fn retire_persistent_worker_state(value: &mut serde_json::Value) -> Result<(), S
             records.retain(|record| {
                 !matches!(
                     configuration_target_kind(record),
-                    Some("WorkerInstructions" | "workerInstructions" | "RoutineBuilder" | "routineBuilder")
+                    Some(
+                        "WorkerInstructions"
+                            | "workerInstructions"
+                            | "RoutineBuilder"
+                            | "routineBuilder"
+                    )
                 )
             });
         }

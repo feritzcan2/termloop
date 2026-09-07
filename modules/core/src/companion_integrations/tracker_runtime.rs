@@ -90,20 +90,6 @@ impl TrackerRuntimeState {
             .is_some_and(|health| health.active.is_some())
     }
 
-    pub(crate) fn cancel_project_checks(&mut self, project_id: &str) {
-        self.pending_steward_wakes.remove(project_id);
-        for health in self.health.values_mut() {
-            if health
-                .active
-                .as_ref()
-                .is_some_and(|active| active.project_id == project_id)
-            {
-                health.active = None;
-                health.pending_trigger = false;
-            }
-        }
-    }
-
     pub(crate) fn cancel_tracker_check(&mut self, routine_id: &str) {
         self.health.remove(routine_id);
         self.next_due_epoch_ms.remove(routine_id);
@@ -122,7 +108,6 @@ impl TrackerRuntimeState {
         self.next_due_epoch_ms
             .insert(routine_id.to_owned(), now_epoch_ms);
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,14 +214,6 @@ impl CoreRuntime {
                 }
             }
         }
-    }
-
-    /// Whether this enabled Routine has anything to do at all. A scheduled
-    /// Routine always does; a step check only while a Task stands at it.
-    fn routine_has_work(&self, routine_id: &str) -> bool {
-        self.tracker_runtime
-            .next_due_epoch_ms
-            .contains_key(routine_id)
     }
 
     pub(crate) fn tracker_runtime_next_due_epoch_ms(&self, routine_id: &str) -> Option<u64> {
@@ -436,7 +413,10 @@ impl CoreRuntime {
                             routine.enabled && routine.project_id == steward.project_id
                         })
                         .filter_map(|routine| {
-                            self.tracker_runtime.next_due_epoch_ms.get(&routine.id).copied()
+                            self.tracker_runtime
+                                .next_due_epoch_ms
+                                .get(&routine.id)
+                                .copied()
                         })
                         .min()
                 });
@@ -455,7 +435,9 @@ impl CoreRuntime {
         now_epoch_ms: u64,
     ) -> Result<StewardRoutineClaim, CoreError> {
         let steward = self.current_steward(project_id, session_id)?;
-        self.tracker_runtime.pending_steward_wakes.remove(project_id);
+        self.tracker_runtime
+            .pending_steward_wakes
+            .remove(project_id);
         self.pending_assistant_wake_deliveries.remove(session_id);
 
         if let Some((routine_id, active)) = self.active_check_for_project(project_id) {
@@ -543,7 +525,10 @@ impl CoreRuntime {
                 .iter()
                 .filter(|routine| routine.enabled && routine.project_id == project_id)
                 .filter_map(|routine| {
-                    self.tracker_runtime.next_due_epoch_ms.get(&routine.id).copied()
+                    self.tracker_runtime
+                        .next_due_epoch_ms
+                        .get(&routine.id)
+                        .copied()
                 })
                 .min();
             return Ok(StewardRoutineClaim {
@@ -1239,8 +1224,7 @@ impl CoreRuntime {
             steward.project_id == wake.project_id
                 && steward.enabled
                 && steward.generation == wake.steward_generation
-                && steward.executor_session_id.as_deref()
-                    == Some(wake.steward_session_id.as_str())
+                && steward.executor_session_id.as_deref() == Some(wake.steward_session_id.as_str())
         }) && self
             .tracker_runtime
             .pending_steward_wakes
@@ -1652,7 +1636,7 @@ mod tests {
     use super::*;
     use termloop_domain::{
         AgentLaunchSelection, ProcessDescriptor, ResumeProvider, ResumeRef, RoutineTriggerMode,
-        SessionKind, SessionRecord, StewardAgentId, WorkerConfiguration,
+        SessionKind, SessionRecord, StewardAgentId, StewardConfiguration,
     };
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
@@ -1679,19 +1663,17 @@ mod tests {
         let project_id = project["id"].as_str().unwrap().to_owned();
         runtime
             .store
-            .set_worker_configuration(
+            .set_steward_configuration(
                 &runtime.write_authority,
-                WorkerConfiguration {
-                    id: "worker-1".into(),
+                StewardConfiguration {
                     project_id: project_id.clone(),
-                    name: "Routine Worker".into(),
+
                     agent_id: StewardAgentId::Codex,
                     model: "default".into(),
                     permission: "bypassPermissions".into(),
                     reasoning: "default".into(),
                     enabled: true,
-                    ping_interval_seconds: 60,
-                    worker_prompt: String::new(),
+
                     system_prompt: String::new(),
                     executor_session_id: None,
                     generation: 1,
@@ -1702,19 +1684,19 @@ mod tests {
             .unwrap();
         runtime
             .store
-            .attach_worker_executor_session(
+            .attach_steward_executor_session(
                 &runtime.write_authority,
                 SessionRecord {
-                    id: "worker-session".into(),
+                    id: "steward-session".into(),
                     project_id: project_id.clone(),
-                    name: Some("Routine Worker".into()),
+                    name: Some("Routine Steward".into()),
                     kind: SessionKind::Agent,
                     process: ProcessDescriptor {
                         program: "codex".into(),
                         args: vec![],
                         cwd: root.to_string_lossy().into_owned(),
                         agent_id: Some("codex".into()),
-                        template_ref: Some("builtin.worker.executor".into()),
+                        template_ref: Some("builtin.steward.executor".into()),
                         template_version: Some(6),
                     },
                     launch_selection: AgentLaunchSelection::default(),
@@ -1732,14 +1714,14 @@ mod tests {
                     resume_launch_guard: None,
                     resume_failure: None,
                 },
-                "worker-1",
+                &project_id,
                 1,
                 100,
             )
             .unwrap();
         runtime
             .store
-            .mark_agent_conversation_resumable(&runtime.write_authority, "worker-session")
+            .mark_agent_conversation_resumable(&runtime.write_authority, "steward-session")
             .unwrap();
         for index in 0..count {
             runtime
@@ -1756,7 +1738,7 @@ mod tests {
                         name: format!("Routine {index}"),
                         prompt: "Inspect Slack and update the visible context.".into(),
                         steward_instructions: String::new(),
-                        worker_id: "worker-1".into(),
+
                         enabled: true,
                         schedule_interval_seconds: 60,
                         generation: 1,
@@ -1782,17 +1764,17 @@ mod tests {
     fn get_next_is_one_at_a_time_idempotent_and_restart_keeps_completion_schedule() {
         let (mut runtime, root, project_id) = runtime_with_routines(2);
         let first = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-a".into(), 100)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-a".into(), 100)
             .unwrap();
         let first_capability = first.capability.unwrap();
         assert_eq!(first_capability.tracker_id, "routine-a");
         let retried = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "ignored".into(), 101)
+            .claim_next_steward_routine(&project_id, "steward-session", "ignored".into(), 101)
             .unwrap();
         assert_eq!(retried.capability.unwrap().check_id, "check-a");
 
         runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &first_capability,
                 1,
                 String::new(),
@@ -1804,12 +1786,12 @@ mod tests {
             )
             .unwrap();
         let second = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-b".into(), 201)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-b".into(), 201)
             .unwrap();
         let second_capability = second.capability.unwrap();
         assert_eq!(second_capability.tracker_id, "routine-b");
         runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &second_capability,
                 1,
                 String::new(),
@@ -1821,10 +1803,10 @@ mod tests {
             )
             .unwrap();
         let idle = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "unused".into(), 251)
+            .claim_next_steward_routine(&project_id, "steward-session", "unused".into(), 251)
             .unwrap();
         assert!(idle.capability.is_none());
-        assert_eq!(idle.result["nextWakeAtEpochMs"], 60_251);
+        assert_eq!(idle.result["nextWakeAtEpochMs"], 60_200);
 
         drop(runtime);
         let store = Store::open(root.join("state.json")).unwrap();
@@ -1836,26 +1818,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            reopened.store.worker_configurations()[0]
+            reopened.store.steward_configurations()[0]
                 .executor_session_id
                 .as_deref(),
-            Some("worker-session")
+            Some("steward-session")
         );
         assert_eq!(
             reopened
                 .store
                 .sessions()
                 .iter()
-                .find(|session| session.id == "worker-session")
+                .find(|session| session.id == "steward-session")
                 .unwrap()
                 .lifecycle_state,
             "resuming"
         );
         let after_restart = reopened
-            .claim_next_worker_routine(&project_id, "worker-session", "too-early".into(), 300)
+            .claim_next_steward_routine(&project_id, "steward-session", "too-early".into(), 300)
             .unwrap();
         assert!(after_restart.capability.is_none());
-        assert_eq!(after_restart.result["nextWakeAtEpochMs"], 60_300);
+        assert_eq!(after_restart.result["nextWakeAtEpochMs"], 60_200);
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1863,44 +1845,44 @@ mod tests {
     #[test]
     fn first_get_next_readiness_exposes_a_future_schedule_to_the_supervisor() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
-        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), None);
+        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), Some(100));
         let idle = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "not-due".into(), 0)
+            .claim_next_steward_routine(&project_id, "steward-session", "not-due".into(), 0)
             .unwrap();
         assert!(idle.capability.is_none());
-        assert_eq!(idle.result["nextWakeAtEpochMs"], 60_000);
-        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), Some(60_000));
-        assert!(runtime.admit_due_worker_wakes(59_999).is_empty());
-        let wakes = runtime.admit_due_worker_wakes(60_000);
+        assert_eq!(idle.result["nextWakeAtEpochMs"], 100);
+        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), Some(100));
+        assert!(runtime.admit_due_steward_wakes(99).is_empty());
+        let wakes = runtime.admit_due_steward_wakes(100);
         assert_eq!(wakes.len(), 1);
-        assert_eq!(wakes[0].worker_id, "worker-1");
+        assert_eq!(wakes[0].project_id, project_id);
         let claimed = runtime
-            .claim_due_worker_routine(&wakes[0], "due".into(), 60_000)
+            .claim_due_steward_routine(&wakes[0], "due".into(), 100)
             .unwrap();
         assert_eq!(claimed.capability.unwrap().tracker_id, "routine-a");
-        assert!(runtime.worker_wake_is_current(&wakes[0]));
-        runtime.acknowledge_worker_wake_delivery(&wakes[0]);
-        assert!(!runtime.worker_wake_is_current(&wakes[0]));
+        assert!(runtime.steward_assignment_is_current(&wakes[0]));
+        runtime.acknowledge_steward_assignment_delivery(&wakes[0]);
+        assert!(!runtime.steward_assignment_is_current(&wakes[0]));
 
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn a_worker_already_mid_turn_is_not_pinged_until_it_finishes() {
+    fn a_steward_already_mid_turn_is_not_pinged_until_it_finishes() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let idle = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "not-due".into(), 0)
+            .claim_next_steward_routine(&project_id, "steward-session", "not-due".into(), 0)
             .unwrap();
         assert!(idle.capability.is_none());
 
-        // The Worker is in the middle of a turn. A wake is a message typed into
+        // The Steward is in the middle of a turn. A wake is a message typed into
         // its terminal, and one typed now is not read until the turn ends, so
         // the ping is held rather than stacked behind it.
         runtime.agent_observations.insert(
-            "worker-session".into(),
+            "steward-session".into(),
             crate::AgentObservationCapability {
-                token: Some("worker-token".into()),
+                token: Some("steward-token".into()),
                 runtime_epoch: 1,
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
@@ -1915,7 +1897,7 @@ mod tests {
                 pending_generated_input: None,
             },
         );
-        assert!(runtime.admit_due_worker_wakes(60_000).is_empty());
+        assert!(runtime.admit_due_steward_wakes(60_000).is_empty());
         // The loop must agree with the admission, or it would spin on a ping it
         // has already decided not to send.
         assert_eq!(runtime.next_tracker_schedule_epoch_ms(), None);
@@ -1924,8 +1906,8 @@ mod tests {
         // enough to be told at once.
         let observation = runtime
             .agent_observations
-            .get_mut("worker-session")
-            .expect("the Worker Session is still observed");
+            .get_mut("steward-session")
+            .expect("the Steward Session is still observed");
         observation.observation = Some(termloop_agents::reduce_observation(
             observation.observation,
             termloop_agents::AgentSignal::Stopped,
@@ -1933,131 +1915,85 @@ mod tests {
             2,
             60_100,
         ));
-        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), Some(60_000));
-        let wakes = runtime.admit_due_worker_wakes(60_100);
+        assert_eq!(runtime.next_tracker_schedule_epoch_ms(), Some(100));
+        let wakes = runtime.admit_due_steward_wakes(60_100);
         assert_eq!(wakes.len(), 1);
-        assert_eq!(wakes[0].worker_id, "worker-1");
+        assert_eq!(wakes[0].project_id, project_id);
 
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn changing_worker_ping_interval_keeps_the_running_session() {
-        let (mut runtime, root, _project_id) = runtime_with_routines(1);
-        let updated = runtime
-            .update_worker_configuration(
-                "worker-1",
-                "Routine Worker".into(),
-                "codex",
-                "default".into(),
-                "bypassPermissions".into(),
-                "default".into(),
-                true,
-                15 * 60,
-                String::new(),
-                String::new(),
-                runtime.state_revision(),
-                crate::AssistantAvailability::Proven,
-                500,
-            )
-            .unwrap();
-        assert_eq!(updated["configuration"]["pingIntervalSeconds"], 900);
-        assert_eq!(
-            updated["configuration"]["executorSessionId"],
-            "worker-session"
-        );
-        assert_eq!(updated["configuration"]["generation"], 1);
-
-        drop(runtime);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn changing_worker_prompts_retires_the_running_session() {
+    fn unchanged_steward_configuration_keeps_the_running_session() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let updated = runtime
-            .update_worker_configuration(
-                "worker-1",
-                "Routine Worker".into(),
-                "codex",
-                "gpt-5.6-sol".into(),
-                "bypassPermissions".into(),
-                "high".into(),
-                true,
-                60,
-                "Summarize every Routine.".into(),
-                "Answer briefly in Turkish.".into(),
-                runtime.state_revision(),
-                crate::AssistantAvailability::Proven,
-                500,
+            .set_steward_configuration(
+                crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    project_id: &project_id,
+                    agent_id: "codex",
+                    model: "default".into(),
+                    permission: "bypassPermissions".into(),
+                    reasoning: "default".into(),
+                    enabled: true,
+                    system_prompt: String::new(),
+                    expected_revision: runtime.state_revision(),
+                    capability: crate::AssistantAvailability::Proven,
+                    updated_at_epoch_ms: 500,
+                },
             )
             .unwrap();
         assert_eq!(
-            updated["configuration"]["workerPrompt"],
-            "Summarize every Routine."
+            updated["configuration"]["executorSessionId"],
+            "steward-session"
         );
-        assert_eq!(
-            updated["configuration"]["systemPrompt"],
-            "Answer briefly in Turkish."
-        );
+        assert_eq!(updated["configuration"]["generation"], 1);
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changing_steward_prompt_retires_the_running_session() {
+        let (mut runtime, root, project_id) = runtime_with_routines(1);
+        let editable = "Answer briefly in Turkish.";
+        let updated = runtime
+            .set_steward_configuration(
+                crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    project_id: &project_id,
+                    agent_id: "codex",
+                    model: "gpt-5.6-sol".into(),
+                    permission: "bypassPermissions".into(),
+                    reasoning: "high".into(),
+                    enabled: true,
+                    system_prompt: editable.into(),
+                    expected_revision: runtime.state_revision(),
+                    capability: crate::AssistantAvailability::Proven,
+                    updated_at_epoch_ms: 500,
+                },
+            )
+            .unwrap();
+        assert_eq!(updated["configuration"]["systemPrompt"], editable);
         assert!(updated["configuration"]["executorSessionId"].is_null());
         assert_eq!(updated["configuration"]["generation"], 2);
         assert_eq!(updated["configuration"]["model"], "gpt-5.6-sol");
         assert_eq!(updated["configuration"]["reasoning"], "high");
         let projected = runtime
-            .list_worker_configurations(json!({"projectId": project_id}))
+            .get_steward_configuration(json!({"projectId": project_id}))
             .unwrap();
-        assert_eq!(projected["promptContexts"][0]["workerId"], "worker-1");
-        assert!(
-            projected["promptContexts"][0]["instructionsPrompt"]
-                .as_str()
-                .unwrap()
-                .ends_with("## Configured System prompt\n\nAnswer briefly in Turkish.")
-        );
-        assert!(
-            projected["promptContexts"][0]["protectedPrompt"]
-                .as_str()
-                .unwrap()
-                .contains("worker_get_next_routine")
-        );
-        assert!(
-            projected["promptContexts"][0]["wakePrompt"]
-                .as_str()
-                .unwrap()
-                .contains("repeat until get-next returns idle")
-        );
-
-        let editable = "Handle Routine work and report only new findings.";
-        runtime
-            .update_worker_configuration(
-                "worker-1",
-                "Routine Worker".into(),
-                "codex",
-                "default".into(),
-                "bypassPermissions".into(),
-                "default".into(),
-                true,
-                60,
-                String::new(),
-                editable.into(),
-                runtime.state_revision(),
-                crate::AssistantAvailability::Proven,
-                600,
-            )
-            .unwrap();
-        let consolidated = runtime
-            .list_worker_configurations(json!({"projectId": project_id}))
-            .unwrap();
-        let prompt_context = &consolidated["promptContexts"][0];
+        let context = &projected["promptContext"];
         assert_eq!(
-            prompt_context["instructionsPrompt"].as_str().unwrap(),
+            context["instructionsPrompt"].as_str().unwrap(),
             format!(
                 "{}\n\n{editable}",
-                prompt_context["protectedPrompt"].as_str().unwrap()
+                context["protectedPrompt"].as_str().unwrap()
             )
         );
-
+        assert!(
+            context["protectedPrompt"]
+                .as_str()
+                .unwrap()
+                .contains("steward_complete_assignment")
+        );
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -2078,12 +2014,12 @@ mod tests {
             .unwrap();
         let task_id = task["id"].as_str().unwrap().to_owned();
         let first = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-1".into(), 1_000)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), 1_000)
             .unwrap()
             .capability
             .unwrap();
         assert!(matches!(
-            runtime.complete_worker_routine(
+            runtime.complete_steward_routine(
                 &first,
                 2,
                 "# Slack\nNothing hidden.".into(),
@@ -2098,7 +2034,7 @@ mod tests {
         assert!(runtime.tracker_check_is_current(&first));
         assert_eq!(runtime.tracker_check_task_id(&first).unwrap(), None);
 
-        let finding = WorkerRoutineFinding {
+        let finding = RoutineFinding {
             id: "finding-1".into(),
             source_key: "slack:C123:1700.001".into(),
             summary: "A follow-up is waiting.".into(),
@@ -2107,7 +2043,7 @@ mod tests {
             related_task_ids: vec![task_id.clone()],
         };
         let completed = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &first,
                 1,
                 "# Slack\nNothing hidden.".into(),
@@ -2135,12 +2071,12 @@ mod tests {
 
         assert!(runtime.run_routine_now("routine-a", 1_200).unwrap());
         let duplicate_check = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-2".into(), 1_200)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-2".into(), 1_200)
             .unwrap()
             .capability
             .unwrap();
         let duplicate = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &duplicate_check,
                 2,
                 "# Slack\nNothing hidden.".into(),
@@ -2163,12 +2099,12 @@ mod tests {
 
         assert!(runtime.run_routine_now("routine-a", 1_300).unwrap());
         let action_check = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-3".into(), 1_300)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-3".into(), 1_300)
             .unwrap()
             .capability
             .unwrap();
         let action = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &action_check,
                 2,
                 "# Slack\nNothing hidden.".into(),
@@ -2229,69 +2165,14 @@ mod tests {
             .store
             .set_tracker_configuration(&runtime.write_authority, routine, runtime.store.revision())
             .unwrap();
-        runtime
-            .set_steward_configuration(crate::StewardConfigurationUpdate {
-                project_id: &project_id,
-                agent_id: "codex",
-                model: "default".into(),
-                permission: "bypassPermissions".into(),
-                reasoning: "default".into(),
-                enabled: true,
-                system_prompt: String::new(),
-                expected_revision: runtime.state_revision(),
-                capability: crate::AssistantAvailability::Proven,
-                updated_at_epoch_ms: 900,
-            })
-            .unwrap();
-        let steward_generation = runtime
-            .store
-            .steward_configurations()
-            .iter()
-            .find(|configuration| configuration.project_id == project_id)
-            .unwrap()
-            .generation;
-        runtime
-            .store
-            .attach_steward_executor_session(
-                &runtime.write_authority,
-                SessionRecord {
-                    id: "steward-session".into(),
-                    project_id: project_id.clone(),
-                    name: Some("Project Steward".into()),
-                    kind: SessionKind::Agent,
-                    process: ProcessDescriptor {
-                        program: "codex".into(),
-                        args: vec![],
-                        cwd: root.to_string_lossy().into_owned(),
-                        agent_id: Some("codex".into()),
-                        template_ref: Some("builtin.steward.executor".into()),
-                        template_version: Some(1),
-                    },
-                    launch_selection: AgentLaunchSelection::default(),
-                    lifecycle_state: "running".into(),
-                    runtime_epoch: 1,
-                    archived_at_epoch_ms: None,
-                    ask_to_source_session_id: None,
-                    run_configuration_id: None,
-                    improver_target: None,
-                    ask_to_continuation: None,
-                    resume_ref: None,
-                    resume_launch_guard: None,
-                    resume_failure: None,
-                },
-                &project_id,
-                steward_generation,
-                950,
-            )
-            .unwrap();
-
+        let steward_generation = runtime.store.steward_configurations()[0].generation;
         let first = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "action-1".into(), 1_000)
+            .claim_next_steward_routine(&project_id, "steward-session", "action-1".into(), 1_000)
             .unwrap();
         assert!(first.result["routine"].get("actionHandling").is_none());
         assert!(first.result["routine"].get("stewardInstructions").is_none());
         let first = first.capability.unwrap();
-        let finding = WorkerRoutineFinding {
+        let finding = RoutineFinding {
             id: "finding-1".into(),
             source_key: "slack:C123:review-request:42".into(),
             summary: "No review request for PR 42 is visible.".into(),
@@ -2299,7 +2180,7 @@ mod tests {
             source_references: vec!["slack://C123".into()],
             related_task_ids: vec![],
         };
-        let second_finding = WorkerRoutineFinding {
+        let second_finding = RoutineFinding {
             id: "finding-2".into(),
             source_key: "slack:C123:review-request:43".into(),
             summary: "No review request for PR 43 is visible.".into(),
@@ -2308,7 +2189,7 @@ mod tests {
             related_task_ids: vec![],
         };
         let completed = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &first,
                 1,
                 String::new(),
@@ -2347,17 +2228,17 @@ mod tests {
 
         assert!(runtime.run_routine_now("routine-a", 1_200).unwrap());
         let duplicate = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "action-2".into(), 1_200)
+            .claim_next_steward_routine(&project_id, "steward-session", "action-2".into(), 1_200)
             .unwrap()
             .capability
             .unwrap();
         let duplicate = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &duplicate,
                 2,
                 String::new(),
                 None,
-                vec![WorkerRoutineFinding {
+                vec![RoutineFinding {
                     id: "finding-2".into(),
                     ..finding
                 }],
@@ -2497,7 +2378,7 @@ mod tests {
     #[test]
     fn changed_context_is_projected_even_when_a_duplicate_finding_creates_no_report() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
-        let finding = WorkerRoutineFinding {
+        let finding = RoutineFinding {
             id: "finding-1".into(),
             source_key: "slack:C123:1700.001".into(),
             summary: "A follow-up is waiting.".into(),
@@ -2506,12 +2387,12 @@ mod tests {
             related_task_ids: vec![],
         };
         let first = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-1".into(), 1_000)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), 1_000)
             .unwrap()
             .capability
             .unwrap();
         runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &first,
                 1,
                 "# Slack\nInitial context.".into(),
@@ -2525,12 +2406,12 @@ mod tests {
 
         assert!(runtime.run_routine_now("routine-a", 1_200).unwrap());
         let refresh = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-2".into(), 1_200)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-2".into(), 1_200)
             .unwrap()
             .capability
             .unwrap();
         let completed = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &refresh,
                 2,
                 "# Slack\nRefreshed current context.".into(),
@@ -2554,9 +2435,9 @@ mod tests {
     fn releasing_an_exact_claim_survives_a_routine_generation_change() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let stale = runtime
-            .claim_next_worker_routine(
+            .claim_next_steward_routine(
                 &project_id,
-                "worker-session",
+                "steward-session",
                 "check-before-edit".into(),
                 1_000,
             )
@@ -2573,13 +2454,13 @@ mod tests {
             .unwrap();
 
         assert!(!runtime.tracker_check_is_current(&stale));
-        assert!(runtime.release_worker_routine_claim(&stale));
-        assert!(!runtime.release_worker_routine_claim(&stale));
+        assert!(runtime.release_steward_routine_claim(&stale));
+        assert!(!runtime.release_steward_routine_claim(&stale));
 
         let fresh = runtime
-            .claim_next_worker_routine(
+            .claim_next_steward_routine(
                 &project_id,
-                "worker-session",
+                "steward-session",
                 "check-after-edit".into(),
                 1_001,
             )
@@ -2617,13 +2498,10 @@ mod tests {
             Err(CoreError::RevisionConflict)
         ));
         let claim = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-context".into(), 500)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-context".into(), 500)
             .unwrap();
         assert_eq!(claim.result["context"]["revision"], 2);
-        assert_eq!(
-            claim.result["context"]["evidenceKind"],
-            "workerAuthoredMemory"
-        );
+        assert_eq!(claim.result["context"]["evidenceKind"], "routineMemory");
         assert_eq!(claim.result["context"]["independentlyVerified"], false);
         assert_eq!(
             claim.result["context"]["markdown"],
@@ -2638,9 +2516,9 @@ mod tests {
     fn user_context_edit_wins_without_losing_the_in_flight_completion() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let claim = runtime
-            .claim_next_worker_routine(
+            .claim_next_steward_routine(
                 &project_id,
-                "worker-session",
+                "steward-session",
                 "check-user-edit".into(),
                 1_000,
             )
@@ -2658,10 +2536,10 @@ mod tests {
             .unwrap();
 
         let completed = runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &claim,
                 1,
-                "# Worker replacement\nThis came from the old memory.".into(),
+                "# Steward replacement\nThis came from the old memory.".into(),
                 Some("The source check completed.".into()),
                 vec![],
                 vec![],
@@ -2702,18 +2580,18 @@ mod tests {
             .unwrap();
 
         let claim = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "check-custom".into(), 500)
+            .claim_next_steward_routine(&project_id, "steward-session", "check-custom".into(), 500)
             .unwrap();
         assert_eq!(claim.result["routine"]["name"], "Weekly customer pulse");
         assert!(claim.result["routine"].get("kind").is_none());
         let capability = claim.capability.unwrap();
         runtime
-            .complete_worker_routine(
+            .complete_steward_routine(
                 &capability,
                 1,
                 "# Customer pulse".into(),
                 Some("Customer pulse check completed.".into()),
-                vec![WorkerRoutineFinding {
+                vec![RoutineFinding {
                     id: "custom-finding".into(),
                     source_key: "observed:customer-pulse:2026-W33".into(),
                     summary: "No new escalations".into(),
@@ -2740,7 +2618,6 @@ mod tests {
                 &project_id,
                 RoutineTriggerMode::Schedule,
                 "Customer pulse".into(),
-                "worker-1".into(),
                 2_700,
                 RoutineActionHandling::Off,
                 None,
@@ -2767,12 +2644,12 @@ mod tests {
     fn problem_finishes_on_schedule_while_timeout_retries_after_backoff() {
         let (mut runtime, root, project_id) = runtime_with_routines(1);
         let problem_check = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "problem-check".into(), 100)
+            .claim_next_steward_routine(&project_id, "steward-session", "problem-check".into(), 100)
             .unwrap()
             .capability
             .unwrap();
         runtime
-            .report_worker_routine_problem(
+            .report_steward_routine_problem(
                 &problem_check,
                 "Slack access is unavailable.".into(),
                 vec!["slack://C123".into()],
@@ -2789,7 +2666,7 @@ mod tests {
 
         runtime.run_routine_now("routine-a", 300).unwrap();
         let timed_out = runtime
-            .claim_next_worker_routine(&project_id, "worker-session", "timeout-check".into(), 300)
+            .claim_next_steward_routine(&project_id, "steward-session", "timeout-check".into(), 300)
             .unwrap()
             .capability
             .unwrap();

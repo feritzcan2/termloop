@@ -1,8 +1,8 @@
 use serde_json::json;
 use termloop_contract::current::{
     MCP_HELPER_TOOLS, MCP_IMPROVER_TOOLS, MCP_INTERACTIVE_TOOLS, MCP_STEWARD_TOOLS,
-    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError,
-    validate_mcp_tool_params, validate_mcp_tool_result,
+    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError, validate_mcp_tool_params,
+    validate_mcp_tool_result,
 };
 
 #[test]

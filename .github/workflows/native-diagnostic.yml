@@ -11,7 +11,7 @@ on:
         type: boolean
         default: true
       ubuntu:
-        description: Run Ubuntu/Linux native verification
+        description: Run Linux native verification on Netcup
         required: true
         type: boolean
         default: false
@@ -52,7 +52,7 @@ jobs:
 
   ubuntu:
     if: inputs.ubuntu
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, netcup]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

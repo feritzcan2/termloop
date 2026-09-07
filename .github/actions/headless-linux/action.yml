@@ -1,0 +1,18 @@
+name: Headless Linux server
+description: Test static Linux server binaries and assemble the independently installable package
+runs:
+  using: composite
+  steps:
+    - name: Build and test headless Linux binaries
+      shell: bash
+      run: |
+        set -euo pipefail
+        node tools/release/check-version-sync.mjs
+        rustup toolchain install 1.90.0 --profile minimal
+        rustup target add x86_64-unknown-linux-musl
+        command -v musl-gcc >/dev/null
+        cargo test --target x86_64-unknown-linux-musl -p termloop-server -p termloop-companion -p termloop-terminal
+        cargo build --release --target x86_64-unknown-linux-musl -p termloop-server -p termloop-companion
+        node tools/skills-manager/fetch-cli.mjs --output target/x86_64-unknown-linux-musl/release/skills-manager-cli
+        pnpm --filter @termloop/cli build:bundle -- --outfile="$RUNNER_TEMP/termloopctl.mjs"
+        node tools/release/package-server.mjs target/x86_64-unknown-linux-musl/release "$RUNNER_TEMP/termloopctl.mjs" "$RUNNER_TEMP/server-release-assets"
