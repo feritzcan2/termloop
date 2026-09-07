@@ -2,8 +2,11 @@
 // rejected without replaying input, including when a connection is replaced.
 export class TerminalInputReceipts {
   private readonly pending = new Map<bigint, { resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
+  assertCapacity(frames: number): void {
+    if (this.pending.size + frames > 128) throw new Error("Too much input is awaiting delivery.");
+  }
   expect(sequence: bigint): Promise<void> {
-    if (this.pending.size >= 128) return Promise.reject(new Error("Too much input is awaiting delivery."));
+    this.assertCapacity(1);
     const result = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(sequence);

@@ -109,6 +109,9 @@ export class GhosttySurface implements TerminalSurface {
     await this.#writeTail;
     return this.#surfaceId ? this.bridge.snapshotText(this.#surfaceId) : undefined;
   }
+  scrollToBottom(): void {
+    if (this.#surfaceId) void this.bridge.scrollToBottom?.(this.#surfaceId).catch(() => this.#fail());
+  }
   onError(listener: () => void): () => void {
     this.#errorListeners.add(listener);
     if (this.#failed) listener();

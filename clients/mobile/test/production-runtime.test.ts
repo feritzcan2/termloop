@@ -235,6 +235,11 @@ describe("production control adapter", () => {
     const replay = events.find((event) => event.type === "replay");
     expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
       .toBe("older latest\n");
+    for (let i = 0; i < 10; i++) mobileSocket?.onmessage?.({ data: encodeFrame(
+      sessionId, 7, BigInt(i + 3), KIND_OUTPUT, new Uint8Array([65]),
+    ) });
+    await vi.waitFor(() => expect(events.filter((event) => event.type === "live")).toHaveLength(10));
+    expect(events.filter((event) => event.type === "ready")).toHaveLength(1);
     let delivered = false;
     const input = attachment.input(new TextEncoder().encode("hello")).then(() => { delivered = true; });
     await waitFor(() => inputFrame !== undefined);
@@ -1761,6 +1766,15 @@ describe("production terminal adapter", () => {
     const replay = events.find((event) => event.type === "replay");
     expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
       .toBe("recent screen\n");
+    for (let i = 0; i < 10; i++) socket.message(encodeFrame(
+      sessionId, 17, BigInt(i + 5), KIND_OUTPUT, new Uint8Array([65]),
+    ));
+    await vi.waitFor(() => expect(events.filter((event) => event.type === "live")).toHaveLength(11));
+    expect(events.filter((event) => event.type === "ready")).toHaveLength(1);
+
+    const beforeOversizedInput = socket.sent.length;
+    await expect(attachment.input(new Uint8Array(128 * 16 * 1024 + 1))).rejects.toThrow("Too much input");
+    expect(socket.sent).toHaveLength(beforeOversizedInput);
 
     await attachment.input(new TextEncoder().encode("continue\r"));
     const input = decodeFrame(new Uint8Array(socket.sent.at(-1) as ArrayBuffer));

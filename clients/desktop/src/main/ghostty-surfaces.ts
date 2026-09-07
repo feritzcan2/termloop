@@ -181,6 +181,10 @@ export class GhosttySurfaceManager {
     this.#addon.focusSurface(surfaceId);
   }
 
+  scrollToBottom(surfaceId: number): void {
+    if (this.#surfaces.has(surfaceId)) this.#addon.scrollSurfaceToBottom(surfaceId);
+  }
+
   probeText(surfaceId: number): string | undefined {
     if (!this.#surfaces.has(surfaceId)) return undefined;
     return this.#addon.surfaceText(surfaceId);

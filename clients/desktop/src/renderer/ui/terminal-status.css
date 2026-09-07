@@ -3,9 +3,10 @@
 .terminal-stream-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 .terminal-stream-actions button { color: inherit; background: transparent; border: 1px solid var(--border, #555); border-radius: 4px; padding: 2px 6px; cursor: pointer; }
 .terminal-stream-actions button:focus-visible { outline: 2px solid var(--accent, #aabaff); }
-.terminal-reading-view { position: absolute; inset: 0 0 38px; z-index: 4; overflow: auto; margin: 0; padding: 12px; white-space: pre; user-select: text; color: var(--text-primary, #ddd); background: var(--bg-panel, #202226); font: 13px/1.35 monospace; }
-.terminal-pane-body, .assistant-terminal-frame { display: flex; flex-direction: column; min-height: 0; position: relative; }
-.terminal-pane-body > .terminal-mount, .assistant-terminal-frame > .assistant-terminal-host { flex: 1 1 0; height: auto; min-height: 0; }
+.terminal-reading-view { grid-area: 1 / 1; z-index: 4; min-width: 0; min-height: 0; overflow: auto; margin: 0; padding: 12px; white-space: pre; user-select: text; color: var(--text-primary, #ddd); background: var(--bg-panel, #202226); font: 13px/1.35 monospace; }
+.terminal-pane-body, .assistant-terminal-frame { display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); min-height: 0; position: relative; }
+.terminal-pane-body > .terminal-mount, .assistant-terminal-frame > .assistant-terminal-host { grid-area: 1 / 1; height: 100%; min-height: 0; }
+.terminal-stream-status { grid-area: 2 / 1; }
 .assistant-terminal-frame { height: 100%; }
 
-.terminal-pane-body .terminal-resize-owner-badge { bottom: 40px; }
+.terminal-pane-body .terminal-resize-owner-badge, .terminal-pane-body > .terminal-recovery-strip { grid-area: 1 / 1; }

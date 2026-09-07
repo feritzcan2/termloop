@@ -34,6 +34,7 @@ function fakeBridge(created?: Promise<{ surfaceId: number; rows: number; cols: n
     snapshotImage: vi.fn(async () => undefined),
     snapshotAndHide: vi.fn(async () => undefined),
     focus: vi.fn(async () => {}),
+    scrollToBottom: vi.fn(async () => {}),
     diagnosticText: vi.fn(async () => "native screen"),
     destroy: vi.fn(async () => {}),
     onInput: vi.fn((id, listener) => {
@@ -76,6 +77,21 @@ const container = () => ({
 }) as HTMLElement;
 
 describe("GhosttySurface", () => {
+  it("returns to live output through the native scroll action and reports failures", async () => {
+    const { bridge } = fakeBridge();
+    const surface = new GhosttySurface(() => {}, () => {}, bridge);
+    const failed = vi.fn();
+    surface.onError(failed);
+    await surface.mount(container(), false);
+    surface.scrollToBottom();
+    expect(bridge.scrollToBottom).toHaveBeenCalledWith(7);
+    vi.mocked(bridge.scrollToBottom!).mockRejectedValueOnce(new Error("surface closed"));
+    surface.scrollToBottom();
+    await flush();
+    expect(failed).toHaveBeenCalledOnce();
+    surface.dispose();
+  });
+
   it("applies the selected appearance to a native surface", async () => {
     const { bridge } = fakeBridge();
     const surface = new GhosttySurface(() => {}, () => {}, bridge);

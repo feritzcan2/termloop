@@ -263,7 +263,7 @@ export function reduceTerminalEvent(
     case "notice":
       return { ...buffer, continuityNotice: event.message };
     case "inputDelivery":
-      return { ...buffer, inputDelivery: event.state };
+      return buffer.inputDelivery === event.state ? buffer : { ...buffer, inputDelivery: event.state };
     case "gap": {
       return appendGap(flushPending(buffer), event.droppedFrames);
     }

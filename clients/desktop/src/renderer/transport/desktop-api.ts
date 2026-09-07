@@ -229,6 +229,7 @@ export type DesktopApi = {
   ghosttySurfaceSnapshotText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotImage(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotAndHide(surfaceId: number): Promise<string | undefined>;
+  ghosttySurfaceScrollBottom(surfaceId: number): Promise<void>;
   ghosttySurfaceFocus(surfaceId: number): Promise<void>;
   ghosttySurfaceDiagnosticText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceDestroy(surfaceId: number): Promise<void>;

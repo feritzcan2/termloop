@@ -33,6 +33,7 @@ type Entry = {
   replay?: TerminalReplayBuffer;
   removeErrorListener?: (() => void) | undefined;
   readRevision: number;
+  rendererFailed: boolean;
   surface: TerminalSurface | undefined;
   attachment: TerminalAttachmentLike | undefined;
   attaching: Promise<void> | undefined;
@@ -75,6 +76,7 @@ export class TerminalPool {
   };
 
   #present(entry: Entry, patch: Partial<TerminalPresentation>): void {
+    if (entry.rendererFailed) patch = { ...patch, phase: "failed", notice: "Terminal display stopped. Reopen the view to recover." };
     if (Object.entries(patch).every(([key, value]) => entry.presentation[key as keyof TerminalPresentation] === value)) return;
     entry.presentation = { ...entry.presentation, ...patch };
     for (const listener of this.#presentationListeners) listener();
@@ -92,7 +94,8 @@ export class TerminalPool {
     }
     entry.batcher?.flush();
     try {
-      const text = await entry.surface.readText?.() ?? entry.surface.probe()?.text ?? "";
+      const text = await entry.surface.readText?.() ?? entry.surface.probe()?.text;
+      if (text === undefined) throw new Error("terminal snapshot unavailable");
       if (revision !== entry.readRevision || !entry.mounted) return;
       this.#present(entry, { reading: text, unread: false });
       entry.surface.setVisible?.(false);
@@ -106,7 +109,8 @@ export class TerminalPool {
     this.#disposeRuntime(entry);
     entry.tail.clear();
     this.#present(entry, { phase: "connecting", reading: undefined, notice: "Reopening the available recent output." });
-    await this.mount(id, container);
+    try { await this.mount(id, container); }
+    catch { this.#present(entry, { phase: "failed", notice: "The terminal view could not be reopened." }); }
   }
 
   readonly #resizeOwnershipListeners = new Set<() => void>();
@@ -148,6 +152,7 @@ export class TerminalPool {
         } else if (sessionHasAttachableTerminal(next) && entry.mounted) {
           void this.#ensureAttachment(entry);
         }
+        if (!sessionHasAttachableTerminal(next)) this.#present(entry, { phase: "exited", progress: undefined });
         if (lifecycleChanged && entry.mounted) {
           entry.surface?.setVisible?.(this.#visible && entry.presentation.reading === undefined);
         }
@@ -157,9 +162,10 @@ export class TerminalPool {
       if (!this.#entries.has(session.id)) {
         this.#entries.set(session.id, {
           session,
-          presentation: { phase: "connecting" },
+          presentation: { phase: sessionHasAttachableTerminal(session) ? "connecting" : "exited" },
           tail: new TerminalOutputTail(),
           readRevision: 0,
+          rendererFailed: false,
           surface: undefined,
           attachment: undefined,
           attaching: undefined,
@@ -188,7 +194,7 @@ export class TerminalPool {
       entry.surface.setAppearanceTheme?.(this.#appearanceTheme);
       const surface = entry.surface;
       entry.batcher = new TerminalWriteBatcher((bytes, done) => surface.write(bytes, done));
-      entry.removeErrorListener = surface.onError?.(() => this.#present(entry, { phase: "failed", notice: "Terminal display stopped. Reopen the view to recover." }));
+      entry.removeErrorListener = surface.onError?.(() => { entry.rendererFailed = true; this.#present(entry, { phase: "failed" }); });
       entry.replay = new TerminalReplayBuffer((bytes, complete) => {
         const previous = entry.tail.snapshot();
         const continuation = continueReplay(previous, bytes);
@@ -199,7 +205,13 @@ export class TerminalPool {
           surface.write(new Uint8Array([27, 99]), () => {});
           this.#present(entry, { notice: "Earlier output could not be matched. Showing available recent output." });
         }
-        const ready = () => { if (entry.presentation.phase !== "failed") this.#present(entry, { phase: "live", progress: undefined }); };
+        const attachment = entry.attachment;
+        const ready = () => {
+          if (entry.surface === surface && entry.attachment === attachment
+            && ["connecting", "replaying", "live"].includes(entry.presentation.phase)) {
+            this.#present(entry, { phase: "live", progress: undefined });
+          }
+        };
         if (continuation.bytes.length) this.#write(entry, continuation.bytes, ready);
         else ready();
       }, (progress) => this.#present(entry, { phase: "replaying", progress }));
@@ -221,6 +233,7 @@ export class TerminalPool {
     const entry = this.#entries.get(sessionId);
     if (!entry?.surface || !entry.mounted) return;
     entry.mountToken = undefined;
+    entry.readRevision++;
     entry.mounted = false;
     entry.surface.unmount();
   }
@@ -359,7 +372,11 @@ export class TerminalPool {
         // reporting its own outcome, not a broken connection. The Session row
         // already states that it stopped, so a red transport error would only
         // obscure it. Every other failure stays visible.
-        if (sessionStoppedDuringAttach(error)) return;
+        if (entry.attaching !== pending) return;
+        if (sessionStoppedDuringAttach(error)) {
+          this.#present(entry, { phase: "exited", progress: undefined });
+          return;
+        }
         this.#present(entry, { phase: "failed", notice: `Terminal connection failed: ${String(error)}` });
       })
       .finally(() => {
@@ -447,6 +464,8 @@ export class TerminalPool {
     entry.removeErrorListener = undefined;
     entry.surface?.dispose();
     entry.surface = undefined;
+    entry.rendererFailed = false;
+    entry.readRevision++;
     entry.dimensions = undefined;
     entry.mountToken = undefined;
     entry.mounted = false;

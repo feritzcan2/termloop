@@ -2,10 +2,12 @@ const LIMIT = 1024 * 1024;
 
 // Keep a bounded rolling suffix without copying the entire suffix per live write.
 export class TerminalOutputTail {
-  private ring = new Uint8Array(LIMIT);
+  private ring: Uint8Array = new Uint8Array(0);
   private size = 0;
   private offset = 0;
   append(bytes: Uint8Array): void {
+    if (!bytes.length) return;
+    if (!this.ring.length) this.ring = new Uint8Array(LIMIT);
     if (bytes.length >= LIMIT) {
       this.ring.set(bytes.subarray(bytes.length - LIMIT));
       this.size = LIMIT;
