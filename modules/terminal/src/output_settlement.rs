@@ -1044,19 +1044,11 @@ mod tests {
     fn composer_render_marker_then_quiescence_releases_settlement() {
         let tracker = OutputActivityTracker::default();
         let snapshot = tracker.snapshot("session".into(), 7).unwrap();
-        let producer = tracker.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(5));
-            producer.record(b"paste preview\x1b[?25h");
-            std::thread::sleep(Duration::from_millis(8));
-            producer.record(b"final redraw");
-        });
+        tracker.record(b"paste preview\x1b[?25h");
+        tracker.record(b"final redraw");
 
         let receipt = snapshot
-            .wait_for_composer_render_settlement(
-                Duration::from_millis(15),
-                Duration::from_millis(100),
-            )
+            .wait_for_composer_render_settlement(Duration::from_millis(15), Duration::from_secs(1))
             .unwrap();
 
         assert_eq!(receipt.baseline_sequence, 0);
@@ -1185,29 +1177,27 @@ mod tests {
         let tracker = OutputActivityTracker::default();
         tracker.record(b"\x1b[?2026hidle\x1b[?25h\x1b[36;3H\x1b[?2026l");
         let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+        // Make the post-baseline surface observable before waiting. Scheduling
+        // an idle producer late must not turn this into a quiescence scenario.
+        tracker.record(b"\x1b[?2026h\x1b[34;1H\x1b[Kcomposer top\x1b[35;1H\x1b[Kcomposer body");
+        tracker.record(b"\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l");
         let producer = tracker.clone();
-        std::thread::spawn(move || {
-            for _ in 0..4 {
-                std::thread::sleep(Duration::from_millis(3));
-                producer
-                    .record(b"\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[?25h\x1b[36;3H\x1b[?2026l");
-            }
-            producer
-                .record(b"\x1b[?2026h\x1b[34;1H\x1b[Kcomposer top\x1b[35;1H\x1b[Kcomposer body");
-            producer.record(b"\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l");
-            for _ in 0..20 {
-                std::thread::sleep(Duration::from_millis(3));
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let animation = std::thread::spawn(move || {
+            while matches!(
+                stopped.recv_timeout(Duration::from_millis(3)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ) {
                 producer
                     .record(b"\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[?25h\x1b[36;3H\x1b[?2026l");
             }
         });
 
         let receipt = snapshot
-            .wait_for_composer_render_settlement(
-                Duration::from_millis(20),
-                Duration::from_millis(120),
-            )
-            .unwrap();
+            .wait_for_composer_render_settlement(Duration::from_millis(20), Duration::from_secs(1));
+        drop(stop);
+        animation.join().unwrap();
+        let receipt = receipt.unwrap();
 
         assert_eq!(
             receipt.evidence,

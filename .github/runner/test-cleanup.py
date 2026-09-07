@@ -19,6 +19,9 @@ class RunnerCleanupTest(unittest.TestCase):
             cache = base / "job-cache"
             cache.mkdir()
             (cache / "download").write_text("disposable")
+            pnpm = base / "setup-pnpm" / "node_modules" / ".bin" / "store"
+            pnpm.mkdir(parents=True)
+            (pnpm / "package").write_text("disposable")
             server = base / "server-state"
             server.mkdir()
             (server / "database").write_text("keep")
@@ -33,6 +36,7 @@ class RunnerCleanupTest(unittest.TestCase):
             followup = subprocess.run(["pwd"], cwd=workspace, capture_output=True, text=True)
             self.assertEqual(followup.returncode, 0, followup.stderr)
             self.assertFalse(cache.exists())
+            self.assertFalse((base / "setup-pnpm").exists())
             self.assertEqual((server / "database").read_text(), "keep")
             self.assertTrue(toolchain.exists())
 
