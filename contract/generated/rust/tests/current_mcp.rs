@@ -7,7 +7,15 @@ use termloop_contract::current::{
 
 #[test]
 fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
-    assert_eq!(MCP_INTERACTIVE_TOOLS, ["ask_to", "send_to_agent"]);
+    assert_eq!(
+        MCP_INTERACTIVE_TOOLS,
+        [
+            "ask_to",
+            "send_to_agent",
+            "workflow_delegate",
+            "workflow_step_complete"
+        ]
+    );
     assert_eq!(
         MCP_IMPROVER_TOOLS,
         [
@@ -149,6 +157,26 @@ fn ask_to_tool_validation_is_strict_and_generated() {
     assert!(!validate_mcp_tool_result(
         "ask_to",
         &json!({"requestId":"request-1","conversationId":"conversation-1","status":"completed","message":"answers are pushed"})
+    ));
+}
+
+#[test]
+fn workflow_step_completion_requires_a_bounded_sidebar_summary() {
+    assert!(validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved","summary":"No actionable findings remain."})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved"})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved","summary":""})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"completed","summary":"x".repeat(2049)})
     ));
 }
 

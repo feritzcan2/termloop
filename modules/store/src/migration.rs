@@ -549,18 +549,10 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        50 => {
+        50..=56 => {
             migrate_v50_to_v51_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
-            sanitize_resume_metadata(&mut state);
-            validate_current_state(&state)?;
-            Ok((state, true))
-        }
-        51..=53 => {
-            let mut state: CurrentState =
-                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
-            state.schema_version = CURRENT_SCHEMA_VERSION;
             sanitize_resume_metadata(&mut state);
             validate_current_state(&state)?;
             Ok((state, true))
@@ -1107,6 +1099,8 @@ fn migrate_v49_to_v50(state: &mut CurrentState) {
 }
 
 fn migrate_v50_to_v51(state: &mut CurrentState) {
+    debug_assert!(state.workflow_configurations.is_empty());
+    debug_assert!(state.workflow_executions.is_empty());
     state.worker_configurations.clear();
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
@@ -1368,13 +1362,126 @@ fn migrate_v49_to_v50_value(value: &mut serde_json::Value) -> Result<(), StoreEr
 
 fn migrate_v50_to_v51_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
     retire_persistent_worker_state(value)?;
-    value
+    let object = value
         .as_object_mut()
-        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?
-        .insert(
-            "schema_version".into(),
-            serde_json::json!(CURRENT_SCHEMA_VERSION),
-        );
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    object
+        .entry("workflow_configurations")
+        .or_insert_with(|| serde_json::json!([]));
+    object.insert("schema_version".into(), serde_json::json!(51));
+    migrate_v51_to_v52_value(value)
+}
+
+fn migrate_v51_to_v52_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    object
+        .entry("workflow_executions")
+        .or_insert_with(|| serde_json::json!([]));
+    object.insert("schema_version".into(), serde_json::json!(52));
+    migrate_v52_to_v53_value(value)
+}
+
+fn migrate_v52_to_v53_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    if let Some(executions) = object
+        .get_mut("workflow_executions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for execution in executions {
+            execution
+                .as_object_mut()
+                .ok_or_else(|| StoreError::Io("workflow execution must be an object".into()))?
+                .entry("stepResults")
+                .or_insert_with(|| serde_json::json!([]));
+        }
+    }
+    object.insert("schema_version".into(), serde_json::json!(53));
+    migrate_v53_to_v54_value(value)
+}
+
+fn migrate_v53_to_v54_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    if let Some(executions) = object
+        .get_mut("workflow_executions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for execution in executions {
+            execution
+                .as_object_mut()
+                .ok_or_else(|| StoreError::Io("workflow execution must be an object".into()))?
+                .entry("reviewRequests")
+                .or_insert_with(|| serde_json::json!([]));
+        }
+    }
+    object.insert("schema_version".into(), serde_json::json!(54));
+    migrate_v54_to_v55_value(value)
+}
+
+fn migrate_v54_to_v55_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    if let Some(configurations) = object
+        .get_mut("workflow_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for configuration in configurations {
+            migrate_workflow_step_launch_selections(configuration)?;
+        }
+    }
+    if let Some(executions) = object
+        .get_mut("workflow_executions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for execution in executions {
+            let configuration = execution
+                .get_mut("configuration")
+                .ok_or_else(|| StoreError::Io("workflow execution configuration missing".into()))?;
+            migrate_workflow_step_launch_selections(configuration)?;
+        }
+    }
+    object.insert(
+        "schema_version".into(),
+        serde_json::json!(CURRENT_SCHEMA_VERSION),
+    );
+    Ok(())
+}
+
+fn migrate_workflow_step_launch_selections(
+    configuration: &mut serde_json::Value,
+) -> Result<(), StoreError> {
+    let steps = configuration
+        .get_mut("steps")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| StoreError::Io("workflow configuration steps missing".into()))?;
+    for step in steps {
+        let step = step
+            .as_object_mut()
+            .ok_or_else(|| StoreError::Io("workflow step must be an object".into()))?;
+        let fresh_helper = matches!(
+            step.get("kind").and_then(serde_json::Value::as_str),
+            Some("discuss" | "review")
+        ) && step
+            .get("reuseStepId")
+            .is_none_or(serde_json::Value::is_null);
+        step.entry("launchSelection").or_insert_with(|| {
+            if fresh_helper {
+                serde_json::json!({
+                    "model": "default",
+                    "permission": "bypassPermissions",
+                    "reasoning": "default"
+                })
+            } else {
+                serde_json::Value::Null
+            }
+        });
+    }
     Ok(())
 }
 
@@ -1552,7 +1659,6 @@ fn remove_worker_snapshot_fields(value: &mut serde_json::Value) {
         _ => {}
     }
 }
-
 fn remove_retired_mcp_tool_description_overrides(
     value: &mut serde_json::Value,
 ) -> Result<bool, StoreError> {
