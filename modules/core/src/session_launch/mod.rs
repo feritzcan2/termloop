@@ -1,5 +1,7 @@
 //! Session/agent launch and resume ownership boundary.
 
+mod agent_library;
+
 mod agent_message;
 pub mod archive;
 pub(crate) mod ask_to;
@@ -207,6 +209,7 @@ pub(crate) use relocation::SessionRelocationPreviewTicket;
 struct QuickActionLaunch {
     selection: AgentLaunchSelection,
     template_ref: String,
+    personal_agent: Option<termloop_domain::PersonalAgent>,
     prompt: String,
     attachments: Vec<termloop_invocation::QuickActionImageAttachment>,
 }
@@ -1346,16 +1349,20 @@ impl CoreRuntime {
 
     pub fn plan_quick_action_launch(&self, params: Value) -> Result<AgentLaunchPlan, CoreError> {
         let template_ref = required_string(&params, "templateRef")?;
-        let profile = if template_ref == termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+        let personal_agent = self
+            .store
+            .agent_library()
+            .agents
+            .iter()
+            .find(|profile| profile.id == template_ref)
+            .cloned();
+        let profile = termloop_invocation::agent_profile(&template_ref);
+        if template_ref != termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+            && personal_agent.is_none()
+            && profile.is_none_or(|profile| !profile.user_invocable)
         {
-            None
-        } else {
-            Some(
-                termloop_invocation::agent_profile(&template_ref)
-                    .filter(|profile| profile.user_invocable)
-                    .ok_or_else(|| CoreError::InvalidParams("templateRef".into()))?,
-            )
-        };
+            return Err(CoreError::InvalidParams("templateRef".into()));
+        }
         let model = required_string(&params, "model")?;
         let permission = required_string(&params, "permission")?;
         let reasoning = required_string(&params, "reasoning")?;
@@ -1368,6 +1375,9 @@ impl CoreRuntime {
             .to_owned();
         let attachments = quick_action_attachments(&params)?;
         let mut plan = self.plan_agent_launch(params)?;
+        if personal_agent.is_some() && !matches!(plan.agent_id.as_str(), "codex" | "claude") {
+            return Err(CoreError::AgentUnsupported);
+        }
         if let Some(profile) = profile {
             if !profile
                 .supported_agent_ids
@@ -1388,6 +1398,7 @@ impl CoreRuntime {
         plan.quick_action = Some(QuickActionLaunch {
             selection: AgentLaunchSelection::new(&model, &permission, &reasoning),
             template_ref,
+            personal_agent,
             prompt,
             attachments,
         });
@@ -1395,24 +1406,25 @@ impl CoreRuntime {
     }
 
     pub fn agent_profile_list(&self) -> Value {
-        Value::Array(
-            termloop_invocation::agent_profiles()
-                .iter()
-                .map(|profile| {
-                    json!({
-                        "id": profile.id,
-                        "name": profile.name,
-                        "description": profile.description,
-                        "category": profile.category,
-                        "version": profile.version,
-                        "permission": profile.permission,
-                        "read_only": profile.read_only,
-                        "user_invocable": profile.user_invocable,
-                        "agent_ids": profile.supported_agent_ids,
-                    })
-                })
-                .collect(),
-        )
+        let mut profiles = self.agent_library_get().expect("agent library projection")["profiles"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for profile in &mut profiles {
+            if let Some(object) = profile.as_object_mut() {
+                for key in [
+                    "source",
+                    "instructions",
+                    "favorite",
+                    "default_agent_id",
+                    "default_model",
+                    "default_reasoning",
+                ] {
+                    object.remove(key);
+                }
+            }
+        }
+        Value::Array(profiles)
     }
 
     pub fn plan_task_worktree_launch(
@@ -1910,7 +1922,18 @@ impl CoreRuntime {
             AgentMcpRole::Interactive | AgentMcpRole::Improver { .. }
         ) && plan.helper_prompt.is_none()
             && plan.steward_task_assignment.is_none();
-        let inserted = if remember_launch_selection {
+        let inserted = if let Some(profile) = plan
+            .quick_action
+            .as_ref()
+            .and_then(|action| action.personal_agent.as_ref())
+        {
+            self.store.insert_personal_agent_session(
+                &self.write_authority,
+                session.clone(),
+                profile.clone(),
+                remember_launch_selection,
+            )
+        } else if remember_launch_selection {
             self.store
                 .insert_session_and_remember_agent_launch(&self.write_authority, session.clone())
         } else {
@@ -2053,7 +2076,22 @@ fn resolve_quick_action_launch(
     observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
 ) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
-    if quick_action.template_ref == termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF {
+    if let Some(profile) = &quick_action.personal_agent {
+        termloop_invocation::personal_agent_for_conversation(
+            profile,
+            &plan.agent_id,
+            &plan.cwd,
+            &quick_action.selection,
+            Some(&quick_action.prompt),
+            &quick_action.attachments,
+            conversation,
+            observation,
+            mcp,
+            false,
+        )
+    } else if quick_action.template_ref
+        == termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+    {
         termloop_invocation::quick_action_agent_with_attachments_for_conversation(
             &plan.agent_id,
             &plan.cwd,
@@ -2128,8 +2166,15 @@ fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarg
 
 fn quick_action_launch_session_name(quick_action: &QuickActionLaunch) -> Option<String> {
     let first_line = quick_action.prompt.trim().lines().next()?.trim();
-    let raw_name = termloop_invocation::agent_profile(&quick_action.template_ref)
-        .map(|profile| format!("{} · {first_line}", profile.name))
+    let raw_name = quick_action
+        .personal_agent
+        .as_ref()
+        .map(|profile| profile.name.as_str())
+        .or_else(|| {
+            termloop_invocation::agent_profile(&quick_action.template_ref)
+                .map(|profile| profile.name)
+        })
+        .map(|name| format!("{name} · {first_line}"))
         .unwrap_or_else(|| first_line.to_owned());
     quick_action_session_name(&raw_name)
 }

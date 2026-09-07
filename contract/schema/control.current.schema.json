@@ -1370,6 +1370,46 @@
       "result": {
         "$ref": "#/$defs/gitHostPullRequestDiffResult"
       }
+    },
+    "agent.libraryGet": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentLibraryResult"
+      }
+    },
+    "agent.profileCreate": {
+      "params": {
+        "$ref": "#/$defs/agentProfileCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentLibraryResult"
+      }
+    },
+    "agent.profileUpdate": {
+      "params": {
+        "$ref": "#/$defs/agentProfileUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentLibraryResult"
+      }
+    },
+    "agent.profileDelete": {
+      "params": {
+        "$ref": "#/$defs/agentProfileDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentLibraryResult"
+      }
+    },
+    "agent.profileFavorite": {
+      "params": {
+        "$ref": "#/$defs/agentProfileFavoriteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentLibraryResult"
+      }
     }
   },
   "$defs": {
@@ -1545,7 +1585,12 @@
         "voice.credentialsSet",
         "gitHost.pullRequestList",
         "gitHost.pullRequestChangeList",
-        "gitHost.pullRequestDiff"
+        "gitHost.pullRequestDiff",
+        "agent.libraryGet",
+        "agent.profileCreate",
+        "agent.profileUpdate",
+        "agent.profileDelete",
+        "agent.profileFavorite"
       ]
     },
     "eventName": {
@@ -6955,7 +7000,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
+          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
         },
         "bindings": {
           "type": "object",
@@ -7041,7 +7086,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
+          "pattern": "^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$"
         },
         "bindings": {
           "type": "object",
@@ -9375,7 +9420,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+          "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
         },
         "name": {
           "type": "string",
@@ -14839,6 +14884,349 @@
         "available",
         "unavailable"
       ]
+    },
+    "agentLibraryEntry": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentLibraryEntry",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "category",
+        "version",
+        "permission",
+        "read_only",
+        "user_invocable",
+        "agent_ids",
+        "source",
+        "instructions",
+        "favorite",
+        "default_agent_id",
+        "default_model",
+        "default_reasoning"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "user_invocable": {
+          "type": "boolean"
+        },
+        "agent_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+          }
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "builtIn",
+            "personal"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "favorite": {
+          "type": "boolean"
+        },
+        "default_agent_id": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "default_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "default_reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      }
+    },
+    "agentLibraryResult": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentLibraryResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "profiles"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "profiles": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/agentLibraryEntry"
+          }
+        }
+      }
+    },
+    "agentProfileCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentProfileCreateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "category",
+        "permission",
+        "instructions",
+        "agentId",
+        "model",
+        "reasoning",
+        "expectedRevision"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "agentProfileUpdateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentProfileUpdateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "category",
+        "permission",
+        "instructions",
+        "agentId",
+        "model",
+        "reasoning",
+        "expectedRevision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "agentProfileDeleteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentProfileDeleteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "expectedRevision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "agentProfileFavoriteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentProfileFavoriteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "favorite",
+        "expectedRevision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
+        },
+        "favorite": {
+          "type": "boolean"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   }
 }
