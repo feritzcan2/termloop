@@ -65,7 +65,7 @@
       }
     },
     "workflow_delegate": {
-      "description": "Delegate the current Core-managed workflow DISCUSS or REVIEW step. Supply only the message the configured participant needs. TermLoop Core selects the exact provider and either launches the participant assigned to this step or reuses the conversation declared by the saved workflow; provider and conversation identities are intentionally not caller inputs. Call exactly once for the current helper-owned step, then wait for the answer delivered by TermLoop. This tool is available only to the active workflow coordinator even though it is advertised in the interactive profile.",
+      "description": "Delegate the current Core-managed workflow DISCUSS step or the next undelegated participant in the current parallel REVIEW group. Supply only the message that participant needs. TermLoop Core selects the exact provider and either launches the assigned participant or reuses only the conversation declared by the saved workflow; provider and conversation identities are intentionally not caller inputs. For DISCUSS call once. For REVIEW call once per configured reviewer in the prompt's order without waiting between calls, then wait for all answers. This tool is available only to the active workflow coordinator even though it is advertised in the interactive profile.",
       "role": "interactive",
       "params": {
         "$ref": "#/$defs/workflowDelegateParams"
@@ -82,7 +82,7 @@
       }
     },
     "workflow_step_complete": {
-      "description": "Complete only the current step of the active Core-managed workflow and report its concise result for the workflow sidebar. For DISCUSS, IMPLEMENT, and FIX use completed. For REVIEW use approved when no actionable change remains or changesRequested when the configured Fix step must address findings. Summary is the coordinator's bounded result report, not copied provider transcript or reasoning. Core validates the coordinator, current step, helper-reply delivery, outcome, review cycle, and next transition. After an accepted call, stop the current turn; TermLoop delivers the next step automatically.",
+      "description": "Complete the current step of the active Core-managed workflow and report its concise result for the workflow sidebar. For DISCUSS, IMPLEMENT, and FIX use completed. After every answer in a parallel REVIEW group is delivered, call once per reviewer in configured order; use approved when that reviewer has no actionable change or changesRequested when Fix must address its findings. Summary is the coordinator's bounded per-step report, not copied provider transcript or reasoning. Core validates the coordinator, reply delivery, outcomes, review cycle, wait-all join, and next transition. Continue completing remaining reviewers after an accepted REVIEW call; otherwise stop because TermLoop delivers the next step automatically.",
       "role": "interactive",
       "params": {
         "$ref": "#/$defs/workflowStepCompleteParams"

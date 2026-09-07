@@ -238,7 +238,7 @@ const AGENT_TASK_KICKOFF_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.task-workflow",
-    version: 3,
+    version: 4,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.task-workflow.md"),
 };
 
@@ -3305,18 +3305,24 @@ fn compose_task_workflow(
         termloop_domain::WorkflowStepKind::Review => "REVIEW",
         termloop_domain::WorkflowStepKind::Fix => "FIX",
     };
+    let review_group_count = workflow.steps[current_step_index..]
+        .iter()
+        .take_while(|step| step.kind == termloop_domain::WorkflowStepKind::Review)
+        .count();
     let step_action = match current_step.kind {
         termloop_domain::WorkflowStepKind::Discuss => {
-            "Use `workflow_delegate` once with the exact question and context the configured discussion participant needs. TermLoop chooses that participant. When its answer arrives, incorporate the advice, then call `workflow_step_complete` with outcome `completed` and a concise `summary` of the decision for the workflow sidebar."
+            "Use `workflow_delegate` once with the exact question and context the configured discussion participant needs. TermLoop chooses that participant. When its answer arrives, incorporate the advice, then call `workflow_step_complete` with outcome `completed` and a concise `summary` of the decision for the workflow sidebar.".to_owned()
         }
         termloop_domain::WorkflowStepKind::Review => {
-            "Use `workflow_delegate` once with a concrete request to review the current work. TermLoop chooses and, when configured, reuses the exact participant conversation. When its answer arrives, call `workflow_step_complete` with outcome `approved` if no actionable change remains, or `changesRequested` if the Fix step must address findings, plus a concise `summary` of the findings or approval for the workflow sidebar."
+            format!(
+                "This is one parallel review group with {review_group_count} independent reviewer(s). Call `workflow_delegate` {review_group_count} time(s), in the configured review-step order, without waiting between calls. Each call routes the next reviewer and, when configured, reuses only that reviewer's declared conversation. Wait until every reviewer answer has arrived. Then call `workflow_step_complete` {review_group_count} time(s), again in configured order: use outcome `approved` when that reviewer has no actionable change, or `changesRequested` when the Fix step must address its findings, with that reviewer's concise `summary`. Core waits for all reviewers and combines their outcomes; do not collapse them into one report."
+            )
         }
         termloop_domain::WorkflowStepKind::Implement => {
-            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of what changed and what was verified for the workflow sidebar."
+            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of what changed and what was verified for the workflow sidebar.".to_owned()
         }
         termloop_domain::WorkflowStepKind::Fix => {
-            "Address the actionable findings collected in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of fixes and verification for the workflow sidebar. TermLoop will either re-run the review steps or finish at the configured cycle limit."
+            "Address the actionable findings collected from every reviewer in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of fixes and verification for the workflow sidebar. TermLoop will either re-run the parallel review group or finish at the configured cycle limit.".to_owned()
         }
     };
     let review_cycles = workflow.max_review_cycles.to_string();
@@ -3340,7 +3346,7 @@ fn compose_task_workflow(
             workflow_steps.as_str(),
             current_step.title.as_str(),
             current_step.instructions.as_str(),
-            step_action,
+            step_action.as_str(),
         ]
         .iter()
         .any(|value| {
@@ -3376,7 +3382,7 @@ fn compose_task_workflow(
         ("max_review_cycles", review_cycles.as_str()),
         ("step_instructions", current_step.instructions.as_str()),
         ("execution_id", execution_id),
-        ("step_action", step_action),
+        ("step_action", step_action.as_str()),
     ];
     let delivered_prompt = bind_ordered(message_template, &delivered_bindings)?;
     Ok(ComposedTaskKickoff {
@@ -6871,7 +6877,7 @@ mod tests {
             prompt.provenance().template_ref,
             "builtin.agent.task-workflow"
         );
-        assert_eq!(prompt.provenance().template_version, 3);
+        assert_eq!(prompt.provenance().template_version, 4);
         assert!(prompt.delivered_prompt().contains("1. DISCUSS"));
         assert!(prompt.delivered_prompt().contains("2. IMPLEMENT"));
         assert!(prompt.delivered_prompt().contains("3. REVIEW"));
@@ -6907,6 +6913,33 @@ mod tests {
         assert_eq!(
             prompt.bindings().find(|(name, _)| *name == "workflow_id"),
             Some(("workflow_id", "workflow-1"))
+        );
+        let review_prompt = task_workflow_step_prompt(
+            "workflow-execution-1",
+            "task-123",
+            "Fix OAuth callback",
+            None,
+            None,
+            "Make callback handling reliable",
+            &workflow,
+            2,
+            1,
+        )
+        .unwrap();
+        assert!(
+            review_prompt
+                .delivered_prompt()
+                .contains("parallel review group with 2")
+        );
+        assert!(
+            review_prompt
+                .delivered_prompt()
+                .contains("Call `workflow_delegate` 2 time(s)")
+        );
+        assert!(
+            review_prompt
+                .delivered_prompt()
+                .contains("Core waits for all reviewers")
         );
 
         let launch = task_agent_with_workflow_for_managed_worktree_conversation(

@@ -3,8 +3,8 @@
 use serde_json::{Value, json};
 use termloop_domain::{
     IssueLinkProvider, WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES, WorkflowExecution,
-    WorkflowExecutionPhase, WorkflowParticipant, WorkflowStepKind, WorkflowStepResult,
-    WorkflowStepResultOutcome,
+    WorkflowExecutionPhase, WorkflowParticipant, WorkflowReviewRequest, WorkflowStepKind,
+    WorkflowStepResult, WorkflowStepResultOutcome,
 };
 
 use crate::{CoreError, CoreRuntime, store_error};
@@ -49,7 +49,11 @@ impl CoreRuntime {
         // A daemon may stop after starting an Ask-To delivery but before the
         // exact helper request becomes recoverable. A new explicit delegate
         // call can retry that step; a still-current request remains fenced.
-        if execution.phase == WorkflowExecutionPhase::AwaitingHelper {
+        if execution.phase == WorkflowExecutionPhase::AwaitingHelper
+            && execution
+                .current_step()
+                .is_some_and(|step| step.kind == WorkflowStepKind::Discuss)
+        {
             if execution
                 .current_request_id
                 .as_deref()
@@ -65,20 +69,30 @@ impl CoreRuntime {
                 .replace_workflow_execution(&self.write_authority, &expected, execution.clone())
                 .map_err(store_error)?;
         }
-        let step = execution
+        if execution.phase != WorkflowExecutionPhase::AwaitingCoordinator
+            || execution.coordinator_prompt_pending
+        {
+            return Err(CoreError::WorkflowExecutionState);
+        }
+        let current_step = execution
             .current_step()
-            .filter(|step| {
-                matches!(
-                    step.kind,
-                    WorkflowStepKind::Discuss | WorkflowStepKind::Review
-                )
-            })
-            .filter(|_| {
-                execution.phase == WorkflowExecutionPhase::AwaitingCoordinator
-                    && !execution.coordinator_prompt_pending
-            })
             .cloned()
             .ok_or(CoreError::WorkflowExecutionState)?;
+        let step = match current_step.kind {
+            WorkflowStepKind::Discuss => current_step,
+            WorkflowStepKind::Review => review_group(&execution)
+                .find(|step| {
+                    !execution
+                        .review_requests
+                        .iter()
+                        .any(|request| request.step_id == step.id)
+                })
+                .cloned()
+                .ok_or(CoreError::WorkflowExecutionState)?,
+            WorkflowStepKind::Implement | WorkflowStepKind::Fix => {
+                return Err(CoreError::WorkflowExecutionState);
+            }
+        };
         let target = step
             .agent_id
             .clone()
@@ -113,15 +127,17 @@ impl CoreRuntime {
             "workflow:{}:{}:{}",
             execution.id, execution.review_cycle, step.id
         );
-        let outcome = self.plan_ask_to(
-            token,
-            AskToInput {
-                target,
-                message,
-                idempotency_key: Some(idempotency_key),
-                conversation_id,
-            },
-        )?;
+        let input = AskToInput {
+            target,
+            message,
+            idempotency_key: Some(idempotency_key),
+            conversation_id,
+        };
+        let outcome = if step.kind == WorkflowStepKind::Review {
+            self.plan_parallel_ask_to(token, input)?
+        } else {
+            self.plan_ask_to(token, input)?
+        };
         let request_id = match &outcome {
             AskToPlanOutcome::Existing(value) | AskToPlanOutcome::FollowUp(value) => value
                 .get("requestId")
@@ -163,16 +179,23 @@ impl CoreRuntime {
             .find(|execution| execution.id == commit.execution_id)
             .cloned()
             .ok_or(CoreError::WorkflowExecutionState)?;
-        let step = expected
+        let current_step = expected
             .current_step()
-            .filter(|step| step.id == commit.step_id)
-            .filter(|step| {
-                matches!(
-                    step.kind,
-                    WorkflowStepKind::Discuss | WorkflowStepKind::Review
-                )
-            })
             .ok_or(CoreError::WorkflowExecutionState)?;
+        let step = if current_step.kind == WorkflowStepKind::Review {
+            review_group(&expected)
+                .find(|step| step.id == commit.step_id)
+                .filter(|step| {
+                    !expected
+                        .review_requests
+                        .iter()
+                        .any(|request| request.step_id == step.id)
+                })
+        } else {
+            (current_step.id == commit.step_id && current_step.kind == WorkflowStepKind::Discuss)
+                .then_some(current_step)
+        }
+        .ok_or(CoreError::WorkflowExecutionState)?;
         if expected.coordinator_session_id != commit.coordinator_session_id
             || expected.phase != WorkflowExecutionPhase::AwaitingCoordinator
             || expected.coordinator_prompt_pending
@@ -214,8 +237,23 @@ impl CoreRuntime {
                 helper_session_id,
             });
         }
-        replacement.phase = WorkflowExecutionPhase::AwaitingHelper;
-        replacement.current_request_id = Some(commit.request_id);
+        if step.kind == WorkflowStepKind::Review {
+            replacement.review_requests.push(WorkflowReviewRequest {
+                step_id: step.id.clone(),
+                request_id: commit.request_id,
+                reply_delivered: false,
+            });
+            replacement.phase =
+                if replacement.review_requests.len() == review_group(&replacement).count() {
+                    WorkflowExecutionPhase::AwaitingHelper
+                } else {
+                    WorkflowExecutionPhase::AwaitingCoordinator
+                };
+            replacement.current_request_id = None;
+        } else {
+            replacement.phase = WorkflowExecutionPhase::AwaitingHelper;
+            replacement.current_request_id = Some(commit.request_id);
+        }
         replacement.updated_at_epoch_ms = termloop_platform::current_epoch_ms();
         self.store
             .replace_workflow_execution(&self.write_authority, &expected, replacement.clone())
@@ -244,10 +282,23 @@ impl CoreRuntime {
             .find(|execution| execution.coordinator_session_id == principal.session_id())
             .cloned()
             .ok_or(CoreError::CapabilityDenied)?;
-        let step = expected
+        let current_step = expected
             .current_step()
             .cloned()
             .ok_or(CoreError::WorkflowExecutionState)?;
+        let step = if current_step.kind == WorkflowStepKind::Review {
+            review_group(&expected)
+                .find(|candidate| {
+                    !expected.step_results.iter().any(|result| {
+                        result.step_id == candidate.id
+                            && result.review_cycle == expected.review_cycle
+                    })
+                })
+                .cloned()
+                .ok_or(CoreError::WorkflowExecutionState)?
+        } else {
+            current_step
+        };
         let phase_is_valid = match step.kind {
             WorkflowStepKind::Discuss | WorkflowStepKind::Review => {
                 expected.phase == WorkflowExecutionPhase::AwaitingStepCompletion
@@ -288,7 +339,21 @@ impl CoreRuntime {
                 completed_at_epoch_ms,
             },
         );
-        let skipped_step_index = advance_execution(&mut replacement, step.kind);
+        let review_group_completed = step.kind == WorkflowStepKind::Review
+            && review_group(&replacement).all(|review_step| {
+                replacement.step_results.iter().any(|result| {
+                    result.step_id == review_step.id
+                        && result.review_cycle == replacement.review_cycle
+                })
+            });
+        let skipped_step_index = if review_group_completed {
+            finish_review_group(&mut replacement)
+        } else if step.kind == WorkflowStepKind::Review {
+            replacement.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
+            None
+        } else {
+            advance_execution(&mut replacement, step.kind)
+        };
         if let Some(skipped_step_id) = skipped_step_index.and_then(|index| {
             replacement
                 .configuration
@@ -307,14 +372,16 @@ impl CoreRuntime {
                 },
             );
         }
-        if replacement.phase != WorkflowExecutionPhase::Completed {
+        let needs_next_prompt = step.kind != WorkflowStepKind::Review || review_group_completed;
+        if needs_next_prompt && replacement.phase != WorkflowExecutionPhase::Completed {
             replacement.coordinator_prompt_pending = true;
         }
-        let next_prompt = if replacement.phase == WorkflowExecutionPhase::Completed {
-            None
-        } else {
-            Some(self.compose_workflow_step_prompt(&replacement)?)
-        };
+        let next_prompt =
+            if !needs_next_prompt || replacement.phase == WorkflowExecutionPhase::Completed {
+                None
+            } else {
+                Some(self.compose_workflow_step_prompt(&replacement)?)
+            };
         self.store
             .replace_workflow_execution(&self.write_authority, &expected, replacement.clone())
             .map_err(store_error)?;
@@ -386,16 +453,40 @@ impl CoreRuntime {
             .workflow_executions()
             .iter()
             .find(|execution| {
-                execution.phase == WorkflowExecutionPhase::AwaitingHelper
-                    && execution.current_request_id.as_deref() == Some(request_id)
+                (execution.phase == WorkflowExecutionPhase::AwaitingHelper
+                    && execution.current_request_id.as_deref() == Some(request_id))
+                    || (matches!(
+                        execution.phase,
+                        WorkflowExecutionPhase::AwaitingCoordinator
+                            | WorkflowExecutionPhase::AwaitingHelper
+                    ) && execution
+                        .review_requests
+                        .iter()
+                        .any(|request| request.request_id == request_id))
             })
             .cloned()
         else {
             return Ok(false);
         };
         let mut replacement = expected.clone();
-        replacement.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        replacement.current_request_id = None;
+        if let Some(review_request) = replacement
+            .review_requests
+            .iter_mut()
+            .find(|request| request.request_id == request_id)
+        {
+            review_request.reply_delivered = true;
+            if replacement.review_requests.len() == review_group(&replacement).count()
+                && replacement
+                    .review_requests
+                    .iter()
+                    .all(|request| request.reply_delivered)
+            {
+                replacement.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
+            }
+        } else {
+            replacement.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
+            replacement.current_request_id = None;
+        }
         replacement.updated_at_epoch_ms = termloop_platform::current_epoch_ms();
         self.store
             .replace_workflow_execution(&self.write_authority, &expected, replacement)
@@ -468,6 +559,44 @@ impl CoreRuntime {
     }
 }
 
+fn review_group(
+    execution: &WorkflowExecution,
+) -> impl Iterator<Item = &termloop_domain::WorkflowStep> {
+    execution
+        .configuration
+        .steps
+        .get(usize::from(execution.current_step_index)..)
+        .unwrap_or_default()
+        .iter()
+        .take_while(|step| step.kind == WorkflowStepKind::Review)
+}
+
+fn finish_review_group(execution: &mut WorkflowExecution) -> Option<usize> {
+    let review_count = review_group(execution).count();
+    let next_index = usize::from(execution.current_step_index) + review_count;
+    execution.review_requests.clear();
+    match execution.configuration.steps.get(next_index) {
+        Some(next) if next.kind == WorkflowStepKind::Fix => {
+            if execution.review_changes_requested {
+                execution.current_step_index = next_index as u8;
+                execution.phase = WorkflowExecutionPhase::AwaitingCoordinator;
+                None
+            } else {
+                complete_execution(execution, execution.configuration.steps.len());
+                Some(next_index)
+            }
+        }
+        None => {
+            complete_execution(execution, execution.configuration.steps.len());
+            None
+        }
+        Some(_) => {
+            complete_execution(execution, execution.configuration.steps.len());
+            None
+        }
+    }
+}
+
 fn advance_execution(
     execution: &mut WorkflowExecution,
     completed_kind: WorkflowStepKind,
@@ -486,6 +615,7 @@ fn advance_execution(
             execution.current_step_index = review_index as u8;
             execution.review_cycle += 1;
             execution.review_changes_requested = false;
+            execution.review_requests.clear();
             execution.phase = WorkflowExecutionPhase::AwaitingCoordinator;
             return None;
         }
@@ -535,6 +665,7 @@ fn complete_execution(execution: &mut WorkflowExecution, step_count: usize) {
     execution.phase = WorkflowExecutionPhase::Completed;
     execution.coordinator_prompt_pending = false;
     execution.current_request_id = None;
+    execution.review_requests.clear();
 }
 
 fn workflow_action_json(execution: &WorkflowExecution) -> Value {
@@ -620,6 +751,7 @@ mod tests {
             coordinator_prompt_pending: false,
             current_request_id: None,
             participants: vec![],
+            review_requests: vec![],
             step_results: vec![],
             review_changes_requested: false,
             started_at_epoch_ms: 1,
@@ -630,18 +762,7 @@ mod tests {
     #[test]
     fn approved_review_group_skips_the_optional_fix_step() {
         let mut execution = execution();
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            None
-        );
-        assert_eq!(execution.current_step_index, 3);
-        assert_eq!(execution.phase, WorkflowExecutionPhase::AwaitingCoordinator);
-
-        execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            Some(4)
-        );
+        assert_eq!(finish_review_group(&mut execution), Some(4));
         assert_eq!(execution.current_step_index, 5);
         assert_eq!(execution.phase, WorkflowExecutionPhase::Completed);
     }
@@ -650,15 +771,7 @@ mod tests {
     fn combined_findings_run_fix_then_repeat_the_whole_review_group() {
         let mut execution = execution();
         execution.review_changes_requested = true;
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            None
-        );
-        execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            None
-        );
+        assert_eq!(finish_review_group(&mut execution), None);
         assert_eq!(execution.current_step_index, 4);
 
         assert_eq!(
@@ -670,16 +783,8 @@ mod tests {
         assert!(!execution.review_changes_requested);
 
         execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            None
-        );
-        execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
         execution.review_changes_requested = true;
-        assert_eq!(
-            advance_execution(&mut execution, WorkflowStepKind::Review),
-            None
-        );
+        assert_eq!(finish_review_group(&mut execution), None);
         assert_eq!(
             advance_execution(&mut execution, WorkflowStepKind::Fix),
             None

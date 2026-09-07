@@ -12450,7 +12450,7 @@
       "required": [
         "id", "projectId", "taskId", "workflowId", "workflowGeneration", "workflowName",
         "goal", "coordinatorSessionId", "currentStepIndex", "reviewCycle", "maxReviewCycles",
-        "phase", "status", "steps", "participants", "stepResults",
+        "phase", "status", "steps", "participants", "activeReviewStepIds", "stepResults",
         "startedAtEpochMs", "updatedAtEpochMs"
       ],
       "properties": {
@@ -12477,6 +12477,12 @@
           "type": "array",
           "items": { "$ref": "#/$defs/workflowExecutionParticipantDto" },
           "maxItems": 8
+        },
+        "activeReviewStepIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "maxItems": 8,
+          "uniqueItems": true
         },
         "stepResults": {
           "type": "array",

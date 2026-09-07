@@ -266,8 +266,10 @@ impl CoreRuntime {
     pub(crate) fn source_has_in_flight_ask_to(&self, source_session_id: &str) -> bool {
         self.ask_to_by_source
             .get(source_session_id)
-            .and_then(|request_id| self.ask_to_requests.get(request_id))
-            .is_some_and(|request| {
+            .into_iter()
+            .flatten()
+            .filter_map(|request_id| self.ask_to_requests.get(request_id))
+            .any(|request| {
                 request.status == AskToStatus::Pending
                     || matches!(request.status, AskToStatus::Completed(_))
                         && !request.reply_delivered
@@ -282,6 +284,23 @@ impl CoreRuntime {
         &mut self,
         token: &str,
         params: AskToInput,
+    ) -> Result<AskToPlanOutcome, CoreError> {
+        self.plan_ask_to_internal(token, params, false)
+    }
+
+    pub(crate) fn plan_parallel_ask_to(
+        &mut self,
+        token: &str,
+        params: AskToInput,
+    ) -> Result<AskToPlanOutcome, CoreError> {
+        self.plan_ask_to_internal(token, params, true)
+    }
+
+    fn plan_ask_to_internal(
+        &mut self,
+        token: &str,
+        params: AskToInput,
+        allow_parallel: bool,
     ) -> Result<AskToPlanOutcome, CoreError> {
         let principal = self.mcp_authorizer.authenticate(token)?;
         if !matches!(
@@ -309,22 +328,35 @@ impl CoreRuntime {
             return Err(CoreError::InvalidParams("askTo".into()));
         }
         let source_session_id = principal.session_id;
-        if let Some(current_id) = self.ask_to_by_source.get(&source_session_id).cloned() {
+        let current_ids = self
+            .ask_to_by_source
+            .get(&source_session_id)
+            .cloned()
+            .unwrap_or_default();
+        for current_id in &current_ids {
             let current = self
                 .ask_to_requests
-                .get(&current_id)
+                .get(current_id)
                 .ok_or(CoreError::AskToRequestUnavailable)?;
             if params.idempotency_key.is_some() && params.idempotency_key == current.idempotency_key
             {
                 return Ok(AskToPlanOutcome::Existing(request_value(current)));
             }
-            if current.status == AskToStatus::Pending
-                || matches!(current.status, AskToStatus::Completed(_)) && !current.reply_delivered
+            if !allow_parallel
+                && (current.status == AskToStatus::Pending
+                    || matches!(current.status, AskToStatus::Completed(_))
+                        && !current.reply_delivered)
             {
                 return Err(CoreError::AskToInProgress {
                     request_id: current.request_id.clone(),
                     status: current.status.name().into(),
                 });
+            }
+        }
+        if !allow_parallel {
+            self.ask_to_by_source.remove(&source_session_id);
+            for request_id in current_ids {
+                self.ask_to_requests.remove(&request_id);
             }
         }
 
@@ -346,6 +378,7 @@ impl CoreRuntime {
                 principal.runtime_epoch,
                 &conversation_id,
                 params,
+                allow_parallel,
             );
         }
         let (daemon_helper_count, project_helper_count) =
@@ -428,12 +461,10 @@ impl CoreRuntime {
             current_request_id: Some(request_id.clone()),
         });
 
-        if let Some(previous_id) = self
-            .ask_to_by_source
-            .insert(source_session_id.clone(), request_id.clone())
-        {
-            self.ask_to_requests.remove(&previous_id);
-        }
+        self.ask_to_by_source
+            .entry(source_session_id.clone())
+            .or_default()
+            .push(request_id.clone());
         self.ask_to_requests.insert(
             request_id.clone(),
             AskToRequest {
@@ -468,6 +499,7 @@ impl CoreRuntime {
         source_runtime_epoch: u64,
         conversation_id: &str,
         params: AskToInput,
+        allow_parallel: bool,
     ) -> Result<AskToPlanOutcome, CoreError> {
         let conversation = self
             .ask_to_conversations
@@ -525,12 +557,11 @@ impl CoreRuntime {
         let prompt = termloop_invocation::ask_to_follow_up_prompt(&request_id, &params.message)
             .map_err(|_| CoreError::InvalidParams("message".into()))?;
         self.submit_generated_terminal_input(&helper.id, prompt.terminal_submission())?;
-        if let Some(previous_id) = self
-            .ask_to_by_source
-            .insert(source.id.clone(), request_id.clone())
-        {
-            self.ask_to_requests.remove(&previous_id);
-        }
+        debug_assert!(allow_parallel || !self.ask_to_by_source.contains_key(&source.id));
+        self.ask_to_by_source
+            .entry(source.id.clone())
+            .or_default()
+            .push(request_id.clone());
         self.ask_to_requests.insert(
             request_id.clone(),
             AskToRequest {
@@ -582,8 +613,10 @@ impl CoreRuntime {
             .filter(|request| {
                 request.status == AskToStatus::Pending
                     && request.helper_session_id == plan.session_id
-                    && self.ask_to_by_source.get(&request.source_session_id)
-                        == Some(&request.request_id)
+                    && self
+                        .ask_to_by_source
+                        .get(&request.source_session_id)
+                        .is_some_and(|request_ids| request_ids.contains(&request.request_id))
             })
             .ok_or(CoreError::AskToRequestUnavailable)?;
         let source_is_live = self.store.sessions().iter().any(|session| {
@@ -657,8 +690,22 @@ impl CoreRuntime {
     }
 
     pub(crate) fn try_deliver_ask_to_reply_for_source(&mut self, source_session_id: &str) {
-        if let Some(request_id) = self.ask_to_by_source.get(source_session_id).cloned() {
-            self.try_deliver_ask_to_reply(&request_id);
+        let request_ids = self
+            .ask_to_by_source
+            .get(source_session_id)
+            .cloned()
+            .unwrap_or_default();
+        for request_id in request_ids {
+            let ready = self
+                .ask_to_requests
+                .get(&request_id)
+                .is_some_and(|request| {
+                    matches!(request.status, AskToStatus::Completed(_)) && !request.reply_delivered
+                });
+            if ready {
+                self.try_deliver_ask_to_reply(&request_id);
+                break;
+            }
         }
     }
 
@@ -674,8 +721,7 @@ impl CoreRuntime {
         }
         if self
             .ask_to_delivery_completions
-            .get(&request.source_session_id)
-            .is_some_and(|completion| completion.request_id() == request_id)
+            .contains_key(&request.source_session_id)
         {
             return;
         }
@@ -751,6 +797,7 @@ impl CoreRuntime {
                 request.helper_session_id.clone(),
             )
         };
+        let is_reply = matches!(completion, AskToGeneratedInputCompletion::Reply { .. });
         match completion {
             AskToGeneratedInputCompletion::FollowUp { .. } => {
                 if helper_session_id != target_session_id {
@@ -826,6 +873,9 @@ impl CoreRuntime {
             }
         }
         self.ask_to_delivery_completions.remove(target_session_id);
+        if is_reply {
+            self.try_deliver_ask_to_reply_for_source(&source_session_id);
+        }
         Ok(true)
     }
 
@@ -848,12 +898,15 @@ impl CoreRuntime {
             conversation.source_session_id != session_id
                 && conversation.helper_session_id != session_id
         });
-        if let Some(request_id) = self.ask_to_by_source.remove(session_id)
-            && let Some(mut request) = self.ask_to_requests.remove(&request_id)
-            && self.helper_session_is_live(&request.helper_session_id)
-        {
-            request.status = AskToStatus::RequestGone;
-            self.ask_to_requests.insert(request_id, request);
+        if let Some(request_ids) = self.ask_to_by_source.remove(session_id) {
+            for request_id in request_ids {
+                if let Some(mut request) = self.ask_to_requests.remove(&request_id)
+                    && self.helper_session_is_live(&request.helper_session_id)
+                {
+                    request.status = AskToStatus::RequestGone;
+                    self.ask_to_requests.insert(request_id, request);
+                }
+            }
         }
         let mut remove = Vec::new();
         for (request_id, request) in &mut self.ask_to_requests {
@@ -940,7 +993,7 @@ fn request_value(request: &AskToRequest) -> Value {
 
 pub(crate) type AskToMaps = (
     HashMap<String, AskToRequest>,
-    HashMap<String, String>,
+    HashMap<String, Vec<String>>,
     HashMap<String, AskToConversation>,
 );
 
@@ -979,7 +1032,10 @@ pub(crate) fn restore_ask_to_maps(
         let Some(request_id) = continuation.current_request_id.as_ref() else {
             continue;
         };
-        requests_by_source.insert(source.id.clone(), request_id.clone());
+        requests_by_source
+            .entry(source.id.clone())
+            .or_insert_with(Vec::new)
+            .push(request_id.clone());
         requests.insert(
             request_id.clone(),
             AskToRequest {
@@ -1112,6 +1168,27 @@ mod tests {
             "asker-token".into(),
         );
         (runtime, "asker-token".into(), root)
+    }
+
+    #[test]
+    fn workflow_can_plan_multiple_helpers_while_ordinary_ask_to_stays_single_flight() {
+        let (mut runtime, token, root) = runtime_with_asker();
+        for message in ["Review correctness", "Review test coverage"] {
+            let mut request = input(None);
+            request.message = message.into();
+            assert!(matches!(
+                runtime.plan_parallel_ask_to(&token, request).unwrap(),
+                AskToPlanOutcome::Launch(_)
+            ));
+        }
+
+        assert_eq!(runtime.ask_to_by_source["asker"].len(), 2);
+        assert_eq!(runtime.ask_to_requests.len(), 2);
+        assert!(matches!(
+            runtime.plan_ask_to(&token, input(None)),
+            Err(CoreError::AskToInProgress { .. })
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn input(key: Option<&str>) -> AskToInput {
@@ -1951,7 +2028,10 @@ mod tests {
         let mut reopened =
             CoreRuntime::open(root.join("state.json"), TerminalService::default(), 8).unwrap();
 
-        assert_eq!(reopened.ask_to_by_source.get("asker"), Some(&request_id));
+        assert_eq!(
+            reopened.ask_to_by_source.get("asker"),
+            Some(&vec![request_id.clone()])
+        );
         assert_eq!(
             reopened.ask_to_requests[&request_id].status,
             AskToStatus::Pending
