@@ -22,6 +22,7 @@ const option = (name) => {
 const has = (name) => args.includes(name);
 const hostPlatform = option("--platform") ?? process.platform;
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_PUSH_RELAY_URL = "https://push.termloop.ai";
 
 await main();
 
@@ -61,7 +62,7 @@ async function main() {
         stateDirectory,
         config.hostPlatform ?? hostPlatform,
         desired,
-        undefined,
+        config.version === 2 ? withPushRelayCredentials(config) : undefined,
         has("--take-development-ownership") ? "developmentTakeover" : "strict",
       );
       console.log(JSON.stringify(result));
@@ -105,6 +106,7 @@ async function enroll(desired) {
     watchToken: existing?.watchToken ?? randomBytes(32).toString("hex"),
     pushDevicesFile: path.join(stateDirectory, "push-devices.json"),
     apnsConfigFile: option("--apns-config") ?? existing?.apnsConfigFile ?? defaultApnsConfigFile(hostPlatform),
+    ...pushRelayCredentials(existing),
     ...(logFile === undefined ? {} : { logFile }),
   };
   if (logFile !== undefined && existing === undefined) await initializeGatewayLog(logFile);
@@ -142,6 +144,31 @@ async function enroll(desired) {
     ? `Gateway log: journalctl --user -u ${label}.service`
     : `Gateway log: ${logFile} (previous run: ${logFile}.previous)`);
   console.log("Keep Tailscale connected on both devices. TermLoop Mobile will reconnect automatically.");
+}
+
+function withPushRelayCredentials(config) {
+  return { ...config, ...pushRelayCredentials(config) };
+}
+
+function pushRelayCredentials(existing) {
+  const relayUrl = option("--push-relay-url") ?? existing?.pushRelayUrl ?? DEFAULT_PUSH_RELAY_URL;
+  const parsed = new URL(relayUrl);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash
+    || (parsed.pathname !== "/" && parsed.pathname !== "")) {
+    throw new Error("Mobile push relay URL is invalid.");
+  }
+  if (existing?.pushRelayInstallationId !== undefined
+    && !/^[a-f0-9]{32}$/u.test(existing.pushRelayInstallationId)) {
+    throw new Error("Mobile push relay installation ID is invalid.");
+  }
+  if (existing?.pushRelayToken !== undefined && !/^[a-f0-9]{64}$/u.test(existing.pushRelayToken)) {
+    throw new Error("Mobile push relay token is invalid.");
+  }
+  return {
+    pushRelayUrl: parsed.origin,
+    pushRelayInstallationId: existing?.pushRelayInstallationId ?? randomBytes(16).toString("hex"),
+    pushRelayToken: existing?.pushRelayToken ?? randomBytes(32).toString("hex"),
+  };
 }
 
 async function installExisting(stateDirectory, platform, desired, nextConfig, installPolicy) {

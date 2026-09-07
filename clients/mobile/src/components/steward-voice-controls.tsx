@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 
+import { MicrophoneGlyph } from "@/components/microphone-glyph";
 import { StewardVoiceProjectSelector } from "@/components/steward-voice-project-selector";
 import { canSwitchVoiceProject } from "@/presentation/steward-voice-project-selection";
 import type { VoicePhase } from "@/presentation/steward-voice-presentation";
@@ -164,16 +165,6 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
   );
 }
 
-function MicrophoneGlyph({ active = false }: { active?: boolean }) {
-  return (
-    <View style={styles.mic} accessible={false}>
-      <View style={[styles.micCapsule, active && styles.micCapsuleActive]} />
-      <View style={styles.micCradle} />
-      <View style={styles.micStem} />
-    </View>
-  );
-}
-
 function voiceStatus(phase: VoicePhase, durationMs: number): string {
   switch (phase) {
     case "ready": return "Kayda hazır";
@@ -205,7 +196,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.accent,
     borderWidth: 1,
     borderColor: color.accentStrong,
-    shadowColor: "#000",
+    shadowColor: color.shadow,
     shadowOpacity: 0.34,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
@@ -220,7 +211,7 @@ const styles = StyleSheet.create({
     borderColor: color.borderStrong,
     backgroundColor: color.bgRaised,
     overflow: "hidden",
-    shadowColor: "#000",
+    shadowColor: color.shadow,
     shadowOpacity: 0.42,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
@@ -254,7 +245,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
   primaryButton: { minHeight: 38, justifyContent: "center", paddingHorizontal: 14, borderRadius: radius.control, backgroundColor: color.accent },
   primaryButtonText: { color: color.onAccent, fontSize: 12, fontWeight: "800" },
-  sentCard: { borderRadius: radius.card, padding: space.md, gap: 4, backgroundColor: `${color.success}18` },
+  sentCard: { borderRadius: radius.card, padding: space.md, gap: 4, backgroundColor: color.successWash },
   sentTitle: { color: color.success, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "900" },
   sentBody: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   hint: { color: color.textMuted, fontSize: 12, lineHeight: 17 },
@@ -280,21 +271,5 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: color.accentStrong,
   },
-  micButtonActive: { backgroundColor: color.danger, borderColor: "#ff9aa2" },
-  mic: { width: 20, height: 25, alignItems: "center" },
-  micCapsule: { width: 9, height: 15, borderRadius: 6, borderWidth: 2, borderColor: color.onAccent },
-  micCapsuleActive: { backgroundColor: color.onAccent },
-  micCradle: {
-    position: "absolute",
-    top: 8,
-    width: 16,
-    height: 11,
-    borderBottomWidth: 2,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderColor: color.onAccent,
-    borderBottomLeftRadius: 9,
-    borderBottomRightRadius: 9,
-  },
-  micStem: { width: 2, height: 5, marginTop: 18, backgroundColor: color.onAccent },
+  micButtonActive: { backgroundColor: color.danger, borderColor: color.dangerBorder },
 });

@@ -474,7 +474,7 @@ fn successful_ref_rollback_allows_same_operation_retry() {
         "destinationPath": destination,
         "branchName": "feature/rollback-retry",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     });
     let mut observed = fixture
         .runtime
@@ -795,7 +795,7 @@ fn branch_created_recovery_refuses_a_ref_recreated_after_the_journal_boundary() 
         "destinationPath": destination,
         "branchName": "feature/ref-recreated",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     });
     let observed = fixture
         .runtime
@@ -901,7 +901,7 @@ fn dismiss_preserves_an_external_ref_that_won_the_create_race() {
         "destinationPath": destination,
         "branchName": "feature/external-race",
         "branchMode": "create",
-        "baseRef": "refs/heads/main",
+        "baseRef": "refs/remotes/origin/main",
     });
     let observed = fixture
         .runtime

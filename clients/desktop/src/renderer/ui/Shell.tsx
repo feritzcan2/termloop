@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
@@ -19,7 +19,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -79,6 +79,11 @@ import type {
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
 import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
+import {
+  appearancePreference,
+  setAppearancePreference,
+  subscribeAppearancePreference,
+} from "../appearance-theme.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
 import {
   SIDEBAR_MIN_WIDTH,
@@ -92,7 +97,6 @@ import {
 type AssistantActions = Pick<StewardPanelProps,
   | "getConfiguration" | "setConfiguration" | "listTranscript" | "appendMessage"
   | "respondToProposal" | "acceptSuggestion" | "clearTranscript"
-  | "listWorkers" | "createWorker" | "updateWorker" | "deleteWorker"
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
   | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime"
   | "promptImprovement"
@@ -101,7 +105,6 @@ type AssistantActions = Pick<StewardPanelProps,
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
-  restartWorker(workerId: string): Promise<string | null>;
 };
 
 type ImproverSetup =
@@ -140,6 +143,7 @@ export type ShellProps = {
   deletingTaskIds: ReadonlySet<string>;
   agentStatuses: readonly AgentStatus[];
   agentCapabilities: readonly AgentCapabilityDto[];
+  agentProfiles: readonly AgentProfileDto[];
   connection: ConnectionState;
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
@@ -264,8 +268,8 @@ export type ShellProps = {
   pasteQuickActionImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
-  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
+  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
@@ -365,10 +369,10 @@ export type StagePage =
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
-  | { kind: "taskSources" };
+  | { kind: "taskSettings" };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
-  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources"
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings"
     ? undefined
     : page;
 }
@@ -415,6 +419,11 @@ export function shellNativeOverlayOpen(state: {
 }
 
 export function Shell(props: ShellProps) {
+  const selectedAppearancePreference = useSyncExternalStore(
+    subscribeAppearancePreference,
+    appearancePreference,
+    appearancePreference,
+  );
   const [renameSessionId, setRenameSessionId] = useState<string>();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
@@ -1064,8 +1073,8 @@ export function Shell(props: ShellProps) {
       disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
     },
     {
-      id: "view.taskSources", title: "Tasks", detail: "What a new Task starts with, the Jira sources, and the issues waiting to import.", group: "Session", keywords: ["jira", "import", "issues", "sync", "worktree", "automation"],
-      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSources" }),
+      id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
+      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSettings" }),
     },
     ...props.projectSessions.map((session): ShellCommand => ({
       id: `session.focus.${session.id}`,
@@ -1356,8 +1365,8 @@ export function Shell(props: ShellProps) {
                 : workspaceView === "agents"
                   ? { label: agentSearchOpen ? "Close agent search" : "Search active agents", icon: "search", pressed: agentSearchOpen, run: () => setAgentSearchOpen((open) => !open) }
                   : undefined}
-            secondaryAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
-              ? { label: "Tasks", icon: "task", pressed: stagePage?.kind === "taskSources", run: () => openStagePage({ kind: "taskSources" }) }
+            settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
+              ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
           <div className="sidebar-scroll">
@@ -1531,10 +1540,6 @@ export function Shell(props: ShellProps) {
             getSteward={props.assistantActions.getConfiguration}
             setSteward={props.assistantActions.setConfiguration}
             deleteSteward={props.assistantActions.deleteConfiguration}
-            listWorkers={props.assistantActions.listWorkers}
-            createWorker={props.assistantActions.createWorker}
-            updateWorker={props.assistantActions.updateWorker}
-            deleteWorker={props.assistantActions.deleteWorker}
             listRoutines={props.assistantActions.listRoutines}
             listRuntime={props.assistantActions.listRoutineRuntime}
             getPlaybook={props.assistantActions.getPlaybook}
@@ -1546,7 +1551,6 @@ export function Shell(props: ShellProps) {
             deleteRoutine={props.assistantActions.deleteRoutine}
             improvement={props.assistantActions.promptImprovement}
             setupPromptImprovement={openPromptImproverSetup}
-            restartWorker={props.assistantActions.restartWorker}
             restartSteward={props.assistantActions.restartSteward}
             selectSession={selectAssistantSession}
             openImproverTerminal={openImproverTerminal}
@@ -1724,7 +1728,7 @@ export function Shell(props: ShellProps) {
               error={mcpLibrary.error}
               loaded={Boolean(mcpLibrary.value)}
               close={() => setStagePage(undefined)}
-            />) : stagePage?.kind === "taskSources" && props.selectedProject ? <TaskSourcesPanel
+            />) : stagePage?.kind === "taskSettings" && props.selectedProject ? <TaskSourcesPanel
               key={props.selectedProject.id}
               projectId={props.selectedProject.id}
               projectName={props.selectedProject.name}
@@ -1831,7 +1835,7 @@ export function Shell(props: ShellProps) {
               ))}
             </div>
             <div className="project-menu-divider" role="separator" />
-            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSources" }); }}><Icon name="task" /><span className="project-menu-label">Tasks</span></button>
+            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSettings" }); }}><Icon name="settings" /><span className="project-menu-label">Task Settings</span></button>
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setEditProjectOpen(true); }}><Icon name="edit" /><span className="project-menu-label">Edit Project</span></button>
             <button type="button" role="menuitem" className="danger" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setDeleteProjectOpen(true); }}><Icon name="trash" /><span className="project-menu-label">Delete Project</span></button>
           </div>
@@ -1890,6 +1894,7 @@ export function Shell(props: ShellProps) {
         ))}
         selectedProject={props.selectedProject}
         capabilities={props.agentCapabilities}
+        profiles={props.agentProfiles}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}
@@ -1931,6 +1936,8 @@ export function Shell(props: ShellProps) {
       /> : null}
       {settingsPage ? <SettingsDialog
         initialPage={settingsPage}
+        appearancePreference={selectedAppearancePreference}
+        changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
         saveNotificationPreferences={props.saveNotificationPreferences}
         list={props.listConnectionProfiles}

@@ -8,8 +8,8 @@ import { Platform } from "react-native";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import {
-  notificationDestination,
-  notificationRoute,
+  notificationDestinationFromRemote,
+  notificationRouteStack,
   resolveNotificationConnectionId,
   type NotificationDestination,
 } from "@/features/notifications/notification-navigation";
@@ -82,7 +82,10 @@ export function NotificationCoordinator() {
       const identifier = response.notification.request.identifier;
       if (handledResponse.current === identifier) return;
       handledResponse.current = identifier;
-      const destination = notificationDestination(response.notification.request.content.data);
+      const destination = notificationDestinationFromRemote(
+        response.notification.request.content.data,
+        response.notification.request.trigger,
+      );
       mobileDiagnostics.report("notification", destination === undefined ? "response_rejected" : "response_received", {
         hasDestination: destination !== undefined,
         hasConnectionHint: destination?.connectionId !== undefined,
@@ -125,7 +128,13 @@ export function NotificationCoordinator() {
       return;
     }
 
-    router.replace(notificationRoute(pendingDestination, connectionId));
+    const routes = notificationRouteStack(pendingDestination, connectionId);
+    if (routes.length === 2) {
+      router.replace(routes[0]);
+      router.push(routes[1]);
+    } else {
+      router.push(routes[0]);
+    }
     mobileDiagnostics.report("notification", "route_replaced", {
       connectionId,
       reason: pendingDestination.kind,

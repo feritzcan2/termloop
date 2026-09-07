@@ -78,7 +78,6 @@ pub(in crate::app::control) async fn delete_steward_configuration(
             ProjectionTopic::AgentStatus,
             ProjectionTopic::Companion,
             ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
             ProjectionTopic::Routine,
             ProjectionTopic::Playbook,
         ],

@@ -29,6 +29,7 @@ function fakeBridge(created?: Promise<{ surfaceId: number; rows: number; cols: n
     write: vi.fn(async () => {}),
     setFrame: vi.fn(async () => ({ rows: 30, cols: 100 })),
     setVisible: vi.fn(async () => {}),
+    setColorScheme: vi.fn(async () => {}),
     snapshotText: vi.fn(async () => "native screen"),
     snapshotImage: vi.fn(async () => undefined),
     snapshotAndHide: vi.fn(async () => undefined),
@@ -75,6 +76,17 @@ const container = () => ({
 }) as HTMLElement;
 
 describe("GhosttySurface", () => {
+  it("applies the selected appearance to a native surface", async () => {
+    const { bridge } = fakeBridge();
+    const surface = new GhosttySurface(() => {}, () => {}, bridge);
+    surface.setAppearanceTheme("light");
+    await surface.mount(container(), false);
+    expect(bridge.setColorScheme).toHaveBeenCalledWith(7, "light");
+
+    surface.setAppearanceTheme("dark");
+    expect(bridge.setColorScheme).toHaveBeenLastCalledWith(7, "dark");
+  });
+
   it("queues writes before creation and preserves callback order", async () => {
     const created = deferred<{ surfaceId: number; rows: number; cols: number }>();
     const { bridge } = fakeBridge(created.promise);

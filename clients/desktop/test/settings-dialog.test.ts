@@ -28,6 +28,8 @@ function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProp
     remove: vi.fn(async () => []),
     setEnabled: vi.fn(async () => []),
     subscribeStatus: vi.fn(() => () => undefined),
+    appearancePreference: "system",
+    changeAppearancePreference: vi.fn(),
     loadNotificationPreferences: vi.fn(async () => ({ ...defaultNotificationPreferences })),
     saveNotificationPreferences: vi.fn(async (value) => value),
     ...overrides,
@@ -70,15 +72,29 @@ describe("SettingsDialog", () => {
     expect(foreground?.getAttribute("aria-checked")).toBe("true");
 
     const mobileReview = container.querySelector<HTMLButtonElement>('[aria-label="iPhone: Agent ready for review"]');
+    const mobileWhileActive = container.querySelector<HTMLButtonElement>('[aria-label="iPhone: Send while this Mac is active"]');
     const watchSteward = container.querySelector<HTMLButtonElement>('[aria-label="Apple Watch: Steward messages and approvals"]');
+    const watchWhileActive = container.querySelector<HTMLButtonElement>('[aria-label="Apple Watch: Send while this Mac is active"]');
     expect(mobileReview?.getAttribute("aria-checked")).toBe("true");
+    expect(mobileWhileActive?.getAttribute("aria-checked")).toBe("false");
     expect(watchSteward?.getAttribute("aria-checked")).toBe("true");
+    expect(watchWhileActive?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => mobileWhileActive?.click());
+    expect(saveNotificationPreferences).toHaveBeenLastCalledWith({
+      ...defaultNotificationPreferences,
+      notifyWhenFocused: true,
+      mobile: {
+        ...defaultNotificationPreferences.mobile,
+        notifyWhenMacActive: true,
+      },
+    });
     await act(async () => mobileReview?.click());
     expect(saveNotificationPreferences).toHaveBeenLastCalledWith({
       ...defaultNotificationPreferences,
       notifyWhenFocused: true,
       mobile: {
         ...defaultNotificationPreferences.mobile,
+        notifyWhenMacActive: true,
         agentReadyForReview: false,
       },
     });
@@ -93,5 +109,25 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".settings-content")?.textContent).toContain("Your computers");
     expect(container.querySelector(".settings-content")?.textContent).toContain("Share this computer");
     expect(container.querySelector(".server-profiles-layer")).toBeNull();
+  });
+
+  it("offers system, light, and dark appearance choices", async () => {
+    const changeAppearancePreference = vi.fn();
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "appearance",
+      appearancePreference: "system",
+      changeAppearancePreference,
+    }))));
+
+    const options = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    const system = options.find((option) => option.textContent?.includes("System"));
+    const light = options
+      .find((option) => option.textContent?.includes("Light"));
+    expect(options).toHaveLength(3);
+    expect(system?.getAttribute("aria-checked")).toBe("true");
+    expect(light?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => light?.click());
+    expect(changeAppearancePreference).toHaveBeenCalledWith("light");
   });
 });

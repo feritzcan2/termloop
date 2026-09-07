@@ -10,6 +10,8 @@ pub struct ProjectTaskAutomationConfiguration {
     pub create_worktree: bool,
     #[serde(default = "default_worktree_prefix")]
     pub worktree_prefix: String,
+    #[serde(default)]
+    pub base_ref: Option<String>,
     pub agent_id: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
@@ -23,7 +25,13 @@ pub struct ProjectTaskAutomationConfiguration {
 
 impl ProjectTaskAutomationConfiguration {
     pub fn is_valid(&self) -> bool {
-        if self.project_id.trim().is_empty() || !valid_worktree_prefix(&self.worktree_prefix) {
+        if self.project_id.trim().is_empty()
+            || !valid_worktree_prefix(&self.worktree_prefix)
+            || self
+                .base_ref
+                .as_deref()
+                .is_some_and(|value| !valid_remote_base_ref(value))
+        {
             return false;
         }
         match (
@@ -69,6 +77,32 @@ fn valid_worktree_prefix(value: &str) -> bool {
         && !bytes.windows(2).any(|pair| pair == b"--")
 }
 
+fn valid_remote_base_ref(value: &str) -> bool {
+    let Some(suffix) = value.strip_prefix("refs/remotes/") else {
+        return false;
+    };
+    let Some((remote, branch)) = suffix.split_once('/') else {
+        return false;
+    };
+    !remote.is_empty()
+        && !branch.is_empty()
+        && branch != "HEAD"
+        && value.len() <= 1024
+        && !value.ends_with('/')
+        && !value.ends_with('.')
+        && !value.contains("..")
+        && !value.contains("@{")
+        && !value.contains("//")
+        && !value.bytes().any(|byte| {
+            byte.is_ascii_control()
+                || byte == 0x7f
+                || matches!(byte, b' ' | b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+        })
+        && value
+            .split('/')
+            .all(|component| !component.starts_with('.') && !component.ends_with(".lock"))
+}
+
 fn valid_model(value: &str) -> bool {
     !value.is_empty() && value.len() <= 80 && !value.chars().any(char::is_control)
 }
@@ -105,6 +139,7 @@ mod tests {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: Some("refs/remotes/origin/development".into()),
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
@@ -122,6 +157,9 @@ mod tests {
         configuration.agent_id = Some("codex".into());
         configuration.worktree_prefix = "feature/team".into();
         assert!(!configuration.is_valid());
+        configuration.worktree_prefix = "feature".into();
+        configuration.base_ref = Some("refs/heads/development".into());
+        assert!(!configuration.is_valid());
     }
 
     #[test]
@@ -130,6 +168,7 @@ mod tests {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: None,
             model: None,
             permission: None,

@@ -58,6 +58,7 @@ try {
   await writeFile(path.join(repository, "tracked.txt"), "base\n");
   git(repository, ["add", "tracked.txt"]);
   git(repository, ["commit", "-m", "fixture"]);
+  git(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
 
   server = await startServer();
   let record = await readRecord(server.pid);
@@ -165,11 +166,15 @@ async function makeOrphan(record, projectId, title, branchName, fileName) {
 }
 
 async function makeManaged(record, projectId, title, branchName, fileName) {
-  const task = await call(record, "task.create", { projectId, title, brief: null, worktreeIntent: "none" });
+  const task = await call(record, "task.create", {
+    projectId, title, brief: null,
+    worktreeIntent: "none", worktreePrefix: null, baseRef: null,
+    agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null,
+  });
   const requestedPath = path.join(temporary, branchName.replaceAll("/", "-"));
   const provisioned = await call(record, "task.provisionWorktree", {
     operationId: randomUUID(), taskId: task.id, repositoryPath: repository,
-    destinationPath: requestedPath, branchName, branchMode: "create", baseRef: "refs/heads/main",
+    destinationPath: requestedPath, branchName, branchMode: "create", baseRef: "refs/remotes/origin/main",
   });
   const exactPath = provisioned.task.worktree.path;
   await writeFile(path.join(exactPath, fileName), `${fileName}\n`);

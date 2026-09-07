@@ -128,6 +128,7 @@ impl ProviderHistoryRepairPlan {
             self.managed_worktree_trust,
             &self.provider_process_directory,
             None,
+            None,
             self.runtime_signal_sender.clone(),
         )
         .map_err(|error| {
