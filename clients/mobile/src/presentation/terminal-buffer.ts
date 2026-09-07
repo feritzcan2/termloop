@@ -260,6 +260,8 @@ export function reduceTerminalEvent(
       return { ...buffer, ready: false, replayProgress: event };
     case "ready":
       return buffer.ready && !buffer.replayProgress ? buffer : { ...buffer, ready: true, replayProgress: undefined };
+    case "notice":
+      return { ...buffer, continuityNotice: event.message };
     case "inputDelivery":
       return { ...buffer, inputDelivery: event.state };
     case "gap": {
