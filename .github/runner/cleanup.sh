@@ -23,14 +23,21 @@ if workspace.parent.parent != root or workspace.name != workspace.parent.name:
 def remove(target):
     if target.is_symlink():
         target.unlink()
-    elif target.exists():
+    elif target.is_dir():
         shutil.rmtree(target)
+    elif target.exists():
+        target.unlink()
 
-# Check every ancestor before traversal, including an interrupted previous checkout.
-if workspace.parent.is_symlink():
-    workspace.parent.unlink()
-else:
-    remove(workspace.parent)
+# Runner starts every action, including the completion hook, in this directory.
+# Keep its inode alive while removing all checkout/build contents.
+if workspace.parent.is_symlink() or workspace.is_symlink():
+    raise SystemExit("Refusing a symlinked workspace")
+workspace.mkdir(parents=True, exist_ok=True)
+for entry in workspace.iterdir():
+    remove(entry)
+for entry in workspace.parent.iterdir():
+    if entry != workspace:
+        remove(entry)
 
 # Toolchains remain installed. CARGO_HOME, PNPM_HOME and XDG cache/data paths
 # point beneath this sibling directory in the runner service environment.
