@@ -74,7 +74,9 @@ pub use path::{
     path_entry_state, resolve_existing_directory_within, sibling_directory_path,
     subprocess_path_argument,
 };
-pub use private_command::{PrivateCommandExit, PrivateCommandRequest, run_private_command};
+pub use private_command::{
+    PrivateCommandExit, PrivateCommandFailure, PrivateCommandRequest, run_private_command,
+};
 pub use process::{
     CommandOutcome, CommandProbe, CommandRequest, CommandTermination, ResolvedExecutable,
     current_executable, os_string_from_process_bytes, path_from_process_bytes, probe_command,

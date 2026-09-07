@@ -1,11 +1,7 @@
-use super::{Action, Operation, Phase, Provider, Status};
+use super::{Action, Operation, Phase, Provider, SetupControl, Status};
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-    mpsc,
-};
+use std::sync::{Arc, Mutex, atomic::Ordering, mpsc};
 use std::time::Duration;
 use termloop_platform::{
     CommandRequest, CommandTermination, LaunchEnvironment, PrivateCommandExit,
@@ -87,19 +83,13 @@ pub(super) fn run(
     provider: Provider,
     action: Action,
     snapshot: Arc<Mutex<Operation>>,
-    cancel: Arc<AtomicBool>,
+    control: SetupControl,
     input: mpsc::SyncSender<Vec<u8>>,
     receiver: mpsc::Receiver<Vec<u8>>,
     registry: PathBuf,
 ) {
     let result = run_inner(
-        provider,
-        action,
-        &snapshot,
-        cancel.clone(),
-        input,
-        receiver,
-        registry,
+        provider, action, &snapshot, &control, input, receiver, registry,
     );
     let mut operation = snapshot.lock().unwrap();
     // A structured success ends the app server intentionally; cleanup happens
@@ -113,7 +103,7 @@ pub(super) fn run(
                 Action::SignOut => "Signed out on this server.",
             },
         ),
-        Ok(false) if cancel.load(Ordering::Acquire) => {
+        Ok(false) if control.cancel.load(Ordering::Acquire) => {
             operation.finish(Phase::Cancelled, "Setup cancelled.")
         }
         Ok(false) => operation.finish(Phase::Expired, "Setup timed out. Start a new attempt."),
@@ -125,11 +115,12 @@ fn run_inner(
     provider: Provider,
     action: Action,
     snapshot: &Arc<Mutex<Operation>>,
-    cancel: Arc<AtomicBool>,
+    control: &SetupControl,
     input: mpsc::SyncSender<Vec<u8>>,
     receiver: mpsc::Receiver<Vec<u8>>,
     registry: PathBuf,
 ) -> Result<bool, &'static str> {
+    let cancel = control.cancel.clone();
     let home = user_home_directory().ok_or("The server user’s home directory is unavailable.")?;
     let environment = LaunchEnvironment::os_baseline()
         .with_explicit("BROWSER", "echo")
@@ -218,7 +209,12 @@ fn run_inner(
                 }
             }
         }
-    }).map_err(|_| "Could not run the provider CLI. Check its installation and retry.")?;
+    }).map_err(|failure| {
+        if let Some(process) = failure.into_unreaped_process() {
+            *control.unreaped.lock().unwrap() = Some(process);
+            "The provider process could not be cleaned up. Restart this server before retrying setup."
+        } else { "Could not run the provider CLI. Check its installation and retry." }
+    })?;
     if dialogue.failed {
         return Err(
             "Provider sign-in failed. Enable device-code login in ChatGPT settings if required, or update the CLI and retry.",
