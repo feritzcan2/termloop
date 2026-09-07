@@ -122,9 +122,9 @@ function addAttachment(sessionId: string, runtimeEpoch: number, port: Electron.M
     queue: [],
     gapPending: false,
     attached: false,
-    receipts: new InputReceiptLedger((bytes, confirmed) => {
+    receipts: new InputReceiptLedger((bytes, confirmed, waiting) => {
       port.postMessage({ type: "inputCredit", bytes });
-      port.postMessage({ type: "inputDelivery", state: confirmed ? "confirmed" : "uncertain" });
+      port.postMessage({ type: "inputDelivery", state: confirmed ? (waiting ? "sending" : "confirmed") : "uncertain" });
     }),
     attachRetryMs: INITIAL_ATTACH_RETRY_MS,
     attachRetryTimer: undefined,

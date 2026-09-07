@@ -699,6 +699,9 @@ handleIpc("termloop:ghostty-surface-snapshot-and-hide", (event, surfaceId: unkno
   if (!png || png.byteLength > 32 * 1024 * 1024) return undefined;
   return `data:image/png;base64,${png.toString("base64")}`;
 });
+handleIpc("termloop:ghostty-surface-scroll-bottom", (event, surfaceId: unknown) => {
+  requireGhosttyManager(event).scrollToBottom(requireSurfaceId(surfaceId));
+});
 handleIpc("termloop:ghostty-surface-focus", (event, surfaceId: unknown) => {
   requireGhosttyManager(event).focus(requireSurfaceId(surfaceId));
 });

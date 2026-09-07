@@ -14,6 +14,7 @@ export type GhosttyBridge = {
   snapshotText(surfaceId: number): Promise<string | undefined>;
   snapshotImage(surfaceId: number): Promise<string | undefined>;
   snapshotAndHide(surfaceId: number): Promise<string | undefined>;
+  scrollToBottom?(surfaceId: number): Promise<void>;
   focus(surfaceId: number): Promise<void>;
   diagnosticText(surfaceId: number): Promise<string | undefined>;
   destroy(surfaceId: number): Promise<void>;
@@ -64,6 +65,7 @@ export const ghosttyBridge: GhosttyBridge = {
   snapshotText: (surfaceId) => desktopApi.ghosttySurfaceSnapshotText(surfaceId),
   snapshotImage: (surfaceId) => desktopApi.ghosttySurfaceSnapshotImage(surfaceId),
   snapshotAndHide: (surfaceId) => desktopApi.ghosttySurfaceSnapshotAndHide(surfaceId),
+  scrollToBottom: (surfaceId) => desktopApi.ghosttySurfaceScrollBottom(surfaceId),
   focus: (surfaceId) => desktopApi.ghosttySurfaceFocus(surfaceId),
   diagnosticText: (surfaceId) => desktopApi.ghosttySurfaceDiagnosticText(surfaceId),
   destroy: (surfaceId) => desktopApi.ghosttySurfaceDestroy(surfaceId),
