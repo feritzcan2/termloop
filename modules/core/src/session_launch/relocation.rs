@@ -675,6 +675,7 @@ impl CoreRuntime {
             mcp_token: preview.mcp_token,
             mcp_role: Some(preview.mcp_role),
             agent_profile_ref: None,
+            personal_agent: self.store.session_agent_profile(&session.id).cloned(),
             steward_system_prompt: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,

@@ -140,7 +140,7 @@ function isAgentStatus(value: Record<string, unknown>): boolean {
 
 function isAgentProfile(value: Record<string, unknown>): boolean {
   return typeof value.id === "string"
-    && value.id.startsWith("builtin.agent-profile.")
+    && (value.id.startsWith("builtin.agent-profile.") || value.id.startsWith("custom.agent-profile."))
     && typeof value.name === "string"
     && typeof value.permission === "string"
     && typeof value.read_only === "boolean"

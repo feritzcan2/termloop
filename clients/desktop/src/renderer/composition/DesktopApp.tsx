@@ -1,3 +1,4 @@
+import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
@@ -656,6 +657,7 @@ export function DesktopApp() {
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
+  const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
   const localSourceApi = desktopApi.source("local");
   const assistantProjectId = selectedProject?.id ?? "";
   const assistantReadIdentity = useMemo<AssistantReadIdentity>(() => ({
@@ -2196,6 +2198,7 @@ export function DesktopApp() {
       agentStatuses={presentedAgentStatuses}
       agentCapabilities={agentCapabilities}
       agentProfiles={agentProfiles}
+      agentLibrary={agentLibrary}
       connection={projection.connection}
       connectionMessage={projection.message}
       reconnectSource={async (profileId) => {

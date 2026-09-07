@@ -1,3 +1,4 @@
+pub(crate) mod agent_library;
 mod agent_plan;
 mod companion;
 pub(crate) mod configuration_version;
