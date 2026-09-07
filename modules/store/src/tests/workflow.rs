@@ -29,6 +29,11 @@ fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
                 instructions: "Challenge the proposed approach.".into(),
                 agent_id: Some("claude".into()),
                 reuse_step_id: None,
+                launch_selection: Some(AgentLaunchSelection::new(
+                    "default",
+                    "bypassPermissions",
+                    "default",
+                )),
             },
             WorkflowStep {
                 id: "implement".into(),
@@ -37,6 +42,7 @@ fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
                 instructions: "Implement and verify the agreed approach.".into(),
                 agent_id: None,
                 reuse_step_id: None,
+                launch_selection: None,
             },
             WorkflowStep {
                 id: "review".into(),
@@ -45,6 +51,7 @@ fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
                 instructions: "Review the result and report concrete findings.".into(),
                 agent_id: Some("claude".into()),
                 reuse_step_id: Some("discuss".into()),
+                launch_selection: None,
             },
         ],
         generation: 1,
@@ -285,6 +292,68 @@ fn schema_53_migrates_existing_executions_to_empty_review_requests() {
         persisted["workflow_executions"][0]["reviewRequests"],
         serde_json::json!([])
     );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn schema_54_migrates_fresh_workflow_helpers_to_bypass_launches() {
+    let (path, authority, mut store) = open_store("workflow-helper-launch-migration");
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .insert_task(&authority, task("task-a", "project-a"))
+        .unwrap();
+    let configuration = store
+        .set_workflow_configuration(
+            &authority,
+            configuration("workflow-1", "project-a"),
+            store.revision(),
+        )
+        .unwrap();
+    store
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("coordinator-1", "project-a"),
+            execution("execution-1", "task-a", "coordinator-1", configuration),
+        )
+        .unwrap();
+    drop(store);
+
+    let mut legacy: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["schema_version"] = serde_json::json!(54);
+    for configuration in legacy["workflow_configurations"].as_array_mut().unwrap() {
+        for step in configuration["steps"].as_array_mut().unwrap() {
+            step.as_object_mut().unwrap().remove("launchSelection");
+        }
+    }
+    for execution in legacy["workflow_executions"].as_array_mut().unwrap() {
+        for step in execution["configuration"]["steps"].as_array_mut().unwrap() {
+            step.as_object_mut().unwrap().remove("launchSelection");
+        }
+    }
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let migrated = Store::open(&path).unwrap();
+    for configuration in [
+        &migrated.workflow_configurations()[0],
+        &migrated.workflow_executions()[0].configuration,
+    ] {
+        assert_eq!(
+            configuration.steps[0].launch_selection,
+            Some(AgentLaunchSelection::new(
+                "default",
+                "bypassPermissions",
+                "default",
+            ))
+        );
+        assert!(configuration.steps[1].launch_selection.is_none());
+        assert!(configuration.steps[2].launch_selection.is_none());
+    }
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     let _ = std::fs::remove_file(path);
 }
 

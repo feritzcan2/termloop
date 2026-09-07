@@ -6826,6 +6826,11 @@ mod tests {
                     instructions: "Surface tradeoffs before implementation.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: None,
+                    launch_selection: Some(termloop_domain::AgentLaunchSelection::new(
+                        "default",
+                        "bypassPermissions",
+                        "default",
+                    )),
                 },
                 termloop_domain::WorkflowStep {
                     id: "implement".into(),
@@ -6834,6 +6839,7 @@ mod tests {
                     instructions: "Implement and run focused tests.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    launch_selection: None,
                 },
                 termloop_domain::WorkflowStep {
                     id: "review-claude".into(),
@@ -6842,6 +6848,7 @@ mod tests {
                     instructions: "Inspect the diff for concrete defects.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: Some("discuss".into()),
+                    launch_selection: None,
                 },
                 termloop_domain::WorkflowStep {
                     id: "review-codex".into(),
@@ -6850,6 +6857,11 @@ mod tests {
                     instructions: "Inspect the diff independently.".into(),
                     agent_id: Some("codex".into()),
                     reuse_step_id: None,
+                    launch_selection: Some(termloop_domain::AgentLaunchSelection::new(
+                        "default",
+                        "bypassPermissions",
+                        "default",
+                    )),
                 },
                 termloop_domain::WorkflowStep {
                     id: "fix".into(),
@@ -6858,6 +6870,7 @@ mod tests {
                     instructions: "Apply the accepted combined findings.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    launch_selection: None,
                 },
             ],
             generation: 3,
