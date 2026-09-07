@@ -106,6 +106,37 @@ fn local_branches_are_sorted_exact_and_do_not_touch_the_index() {
 }
 
 #[test]
+fn remote_branches_are_sorted_exact_and_do_not_touch_the_index() {
+    let runner = GitRunner::discover().unwrap();
+    let repository = TestRepository::init("remote-branches");
+    repository.create_commit("initial");
+    repository.git(["update-ref", "refs/remotes/upstream/main", "HEAD"]);
+    repository.git(["update-ref", "refs/remotes/origin/development", "HEAD"]);
+    repository.git([
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/development",
+    ]);
+    let before = repository.index_snapshot(repository.root());
+
+    let branches = runner.list_remote_branches(repository.root()).unwrap();
+    let names = branches
+        .branches
+        .iter()
+        .map(|reference| std::str::from_utf8(reference.as_bytes()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "refs/remotes/origin/development",
+            "refs/remotes/upstream/main",
+        ]
+    );
+    assert!(!branches.truncated);
+    assert_eq!(before, repository.index_snapshot(repository.root()));
+}
+
+#[test]
 fn path_facts_preserve_newlines_and_runtime_supported_non_utf_bytes() {
     let runner = GitRunner::discover().unwrap();
     let newline_component =

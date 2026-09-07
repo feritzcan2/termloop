@@ -5,7 +5,7 @@ import {
   AssistantReadCoordinator,
   type AssistantReadIdentity,
 } from "./assistant-read-coordinator.js";
-import { restartStewardSession, restartWorkerSession } from "./worker-restart.js";
+import { restartStewardSession } from "./steward-restart.js";
 
 type AssistantActionInputs = {
   readonly api: SourceDesktopApi;
@@ -73,15 +73,6 @@ export function createAssistantActions({
       api.companionSuggestionAccept({ projectId, suggestionMessageId })),
     clearTranscript: coordinator.wrapMutation(identity, (expectedRevision: number) =>
       api.companionTranscriptClear({ projectId, expectedRevision })),
-    listWorkers: () => coordinator.read(
-      identity,
-      "worker.configurationList",
-      () => api.workerConfigurationList({ projectId }),
-    ),
-    createWorker: coordinator.wrapMutation(identity, api.workerConfigurationCreate),
-    updateWorker: coordinator.wrapMutation(identity, api.workerConfigurationUpdate),
-    deleteWorker: coordinator.wrapMutation(identity, (workerId: string, expectedRevision: number) =>
-      api.workerConfigurationDelete({ workerId, expectedRevision })),
     listRoutines: () => coordinator.read(
       identity,
       "routine.configurationList",
@@ -124,7 +115,5 @@ export function createAssistantActions({
     promptImprovement,
     restartSteward: coordinator.wrapMutation(identity, () =>
       restartStewardSession(api, projectId, sessions())),
-    restartWorker: coordinator.wrapMutation(identity, (workerId: string) =>
-      restartWorkerSession(api, projectId, workerId, sessions())),
   };
 }

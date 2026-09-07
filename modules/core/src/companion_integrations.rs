@@ -2,6 +2,7 @@
 
 pub mod assistant_reset;
 pub mod assistant_session;
+pub(crate) mod finding_disposition;
 pub mod playbook;
 pub mod playbook_runtime;
 pub mod prompt_improvement;
@@ -10,7 +11,6 @@ pub mod steward;
 pub mod tracker;
 pub mod tracker_runtime;
 pub mod transcript;
-pub mod worker;
 mod worktree_branches;
 
 use crate::{CoreError, CoreRuntime};
@@ -110,6 +110,9 @@ pub struct GitHostPullRequestSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct GitHostTaskProjection {
+    /// This cache powers UI affordances only. Steward gates must inspect live
+    /// provider truth with the capabilities available in their Session.
+    pub usage: &'static str,
     pub task_id: String,
     pub branch_name: Option<String>,
     pub repository_provider: Option<String>,
@@ -1412,6 +1415,7 @@ fn project_task(
             GitHostProjectionQuality::Unavailable
         };
         return GitHostTaskProjection {
+            usage: "displayOnly",
             task_id: observation.snapshot.task_id.clone(),
             branch_name: observation.snapshot.branch_name.clone(),
             repository_provider: None,
@@ -1496,6 +1500,7 @@ fn project_task(
         repository_name,
     ) = candidate_identity(&observation.candidates[0]);
     GitHostTaskProjection {
+        usage: "displayOnly",
         task_id: observation.snapshot.task_id.clone(),
         branch_name: observation.snapshot.branch_name.clone(),
         repository_provider: Some(repository_provider.into()),
@@ -1589,6 +1594,7 @@ fn local_unavailable(
     reason: GitHostProjectionReason,
 ) -> GitHostTaskProjection {
     GitHostTaskProjection {
+        usage: "displayOnly",
         task_id: snapshot.task_id.clone(),
         branch_name: snapshot.branch_name.clone(),
         repository_provider: None,
@@ -1893,6 +1899,7 @@ mod tests {
     fn cached_projection_is_immediate_but_marked_stale_when_refresh_is_due() {
         let observed_at = 10_000;
         let projection = GitHostTaskProjection {
+            usage: "displayOnly",
             task_id: "task".into(),
             branch_name: Some("feature".into()),
             repository_provider: Some("azureDevOps".into()),
@@ -1969,6 +1976,7 @@ mod tests {
             cache.insert(
                 "project".into(),
                 GitHostTaskProjection {
+                    usage: "displayOnly",
                     task_id,
                     branch_name: None,
                     repository_provider: None,

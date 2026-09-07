@@ -204,6 +204,16 @@ describe("styling", () => {
     expect(spans[1]?.style.foreground).toBe(color.text);
   });
 
+  it("maps the named magenta slots to warm non-purple colours", () => {
+    const projection = new TerminalScreenProjection();
+    const snapshot = projection.write(encoder.encode(
+      `${esc}[1;1H${esc}[35mnormal${esc}[95mbright`,
+    ));
+    const spans = spansOf(snapshot, 0);
+    expect(spans[0]?.style.foreground).toBe("#93400F");
+    expect(spans[1]?.style.foreground).toBe("#963F0E");
+  });
+
   it("resolves 256-colour and truecolor selectors", () => {
     const projection = new TerminalScreenProjection();
     const snapshot = projection.write(encoder.encode(

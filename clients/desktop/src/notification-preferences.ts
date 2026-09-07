@@ -1,5 +1,6 @@
 export type RemoteNotificationPreferences = {
   enabled: boolean;
+  notifyWhenMacActive: boolean;
   agentNeedsInput: boolean;
   agentReadyForReview: boolean;
   stewardMessages: boolean;
@@ -19,6 +20,7 @@ export type NotificationPreferences = DesktopNotificationPreferences & {
 
 const defaultRemoteNotificationPreferences: Readonly<RemoteNotificationPreferences> = Object.freeze({
   enabled: true,
+  notifyWhenMacActive: false,
   agentNeedsInput: true,
   agentReadyForReview: true,
   stewardMessages: true,
@@ -62,6 +64,7 @@ function remoteNotificationPreferencesOf(value: unknown): RemoteNotificationPref
   const candidate = value as Record<string, unknown>;
   if (
     typeof candidate.enabled !== "boolean"
+    || (candidate.notifyWhenMacActive !== undefined && typeof candidate.notifyWhenMacActive !== "boolean")
     || typeof candidate.agentNeedsInput !== "boolean"
     || typeof candidate.agentReadyForReview !== "boolean"
     || typeof candidate.stewardMessages !== "boolean"
@@ -69,6 +72,7 @@ function remoteNotificationPreferencesOf(value: unknown): RemoteNotificationPref
   ) return undefined;
   return {
     enabled: candidate.enabled,
+    notifyWhenMacActive: candidate.notifyWhenMacActive ?? false,
     agentNeedsInput: candidate.agentNeedsInput,
     agentReadyForReview: candidate.agentReadyForReview,
     stewardMessages: candidate.stewardMessages,

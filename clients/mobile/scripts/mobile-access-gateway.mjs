@@ -37,6 +37,11 @@ import {
   withNotificationPreview,
 } from "./mobile-access-push.mjs";
 import {
+  invalidPushDeviceReason,
+  pushRelayOf,
+  sendPushRelay,
+} from "./mobile-access-push-relay.mjs";
+import {
   WATCH_PATCH_ENTRY_LIMIT,
   parseWatchTarget,
   patchTextOf,
@@ -1151,6 +1156,7 @@ function startAttentionMonitor() {
   let initialized = false;
   let previous = new Map();
   let pending = new Map();
+  let deliveredAttention = new Map();
   let stewardSequences = new Map();
   // Per-device APNs acceptance is retained only while its exact decision is
   // pending. A Watch registering after the proposal was created still receives
@@ -1179,8 +1185,6 @@ function startAttentionMonitor() {
     deliveredStewardDecisions = new Map(
       [...deliveredStewardDecisions].filter(([messageId]) => pendingDecisionIds.has(messageId)),
     );
-    // Steward is the user's wrist control plane. Unlike terminal attention,
-    // these notifications are never suppressed while the Mac is active.
     const notifications = new Map();
     for (const notification of stewardChanges.notifications) {
       notifications.set(notification.stewardMessageId ?? `${notification.sessionId}:${notification.kind}`, notification);
@@ -1188,16 +1192,17 @@ function startAttentionMonitor() {
     for (const notification of pendingDecisions) {
       notifications.set(notification.stewardMessageId, notification);
     }
+    const macActive = notifications.size > 0 && await desktopRecentlyActive();
     for (const notification of notifications.values()) {
       if (pendingDecisionIds.has(notification.stewardMessageId)) {
         const deliveredDevices = deliveredStewardDecisions.get(notification.stewardMessageId) ?? new Set();
-        const acceptedDevices = await deliverPush(notification, deliveredDevices);
+        const acceptedDevices = await deliverPush(notification, deliveredDevices, { macActive });
         deliveredStewardDecisions.set(
           notification.stewardMessageId,
           new Set([...deliveredDevices, ...acceptedDevices]),
         );
       } else {
-        await deliverPush(notification);
+        await deliverPush(notification, new Set(), { macActive });
       }
     }
     lastStewardPollAt = Date.now();
@@ -1216,12 +1221,30 @@ function startAttentionMonitor() {
         pending.set(notification.sessionId, notification);
       }
       pending = retainCurrentAttention(pending, statuses);
-      if (!(await desktopRecentlyActive())) {
+      deliveredAttention = new Map(
+        [...deliveredAttention].filter(([sessionId]) => pending.has(sessionId)),
+      );
+      if (pending.size > 0) {
+        const macActive = await desktopRecentlyActive();
         for (const notification of pending.values()) {
+          const deliveredDevices = deliveredAttention.get(notification.sessionId) ?? new Set();
           const preview = await readTerminalNotificationPreview(runtime, notification);
-          await deliverPush(withNotificationPreview(notification, preview));
+          const acceptedDevices = await deliverPush(
+            withNotificationPreview(notification, preview),
+            deliveredDevices,
+            { macActive },
+          );
+          if (macActive) {
+            deliveredAttention.set(
+              notification.sessionId,
+              new Set([...deliveredDevices, ...acceptedDevices]),
+            );
+          }
         }
-        pending.clear();
+        if (!macActive) {
+          pending.clear();
+          deliveredAttention.clear();
+        }
       }
     }
     previous = nextStatusMap(statuses);
@@ -1260,9 +1283,7 @@ function desktopRecentlyActive() {
   });
 }
 
-async function deliverPush(notification, skipDeviceTokens = new Set()) {
-  let provider;
-  try { provider = await loadApnsProvider(config.push.apnsConfigFile); } catch { return new Set(); }
+async function deliverPush(notification, skipDeviceTokens = new Set(), context = {}) {
   const [current, preferences] = await Promise.all([
     readPushDevices(),
     readPushNotificationPreferences(),
@@ -1270,24 +1291,70 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
   const devices = current.devices ?? [];
   const retained = [];
   const accepted = new Set();
+  const deliveries = [];
   for (const device of devices) {
     if (skipDeviceTokens.has(device.deviceToken)) {
       retained.push(device);
       continue;
     }
-    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind);
+    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind, context);
     if (!delivery.enabled) {
       retained.push(device);
       continue;
     }
-    const result = await sendApns(
-      provider,
+    deliveries.push({
       device,
-      apnsPayload(notification, config.push.connectionId, { playSound: delivery.playSound }),
-    );
-    if (result.ok) accepted.add(device.deviceToken);
-    if (!["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"].includes(result.reason)) {
-      retained.push(device);
+      payload: apnsPayload(notification, config.push.connectionId, { playSound: delivery.playSound }),
+    });
+  }
+  if (deliveries.length > 0 && config.push.relay !== undefined) {
+    const result = await sendPushRelay(config.push.relay, deliveries.map(({ device, payload }) => ({
+      deviceToken: device.deviceToken,
+      environment: device.environment,
+      bundleId: device.bundleId,
+      payload,
+    })));
+    if (!result.ok) {
+      retained.push(...deliveries.map(({ device }) => device));
+      diagnostics.report("push", "relay_failed", {
+        targetCount: deliveries.length,
+        reason: result.reason,
+        durationMs: result.durationMs,
+      });
+    } else {
+      for (const deliveryResult of result.results) {
+        const device = deliveries[deliveryResult.index].device;
+        if (deliveryResult.ok) accepted.add(device.deviceToken);
+        if (!invalidPushDeviceReason(deliveryResult.reason)) retained.push(device);
+      }
+      diagnostics.report("push", "relay_completed", {
+        targetCount: deliveries.length,
+        acceptedCount: result.results.filter((entry) => entry.ok).length,
+        invalidCount: result.results.filter((entry) => invalidPushDeviceReason(entry.reason)).length,
+        durationMs: result.durationMs,
+      });
+    }
+  } else if (deliveries.length > 0) {
+    let provider;
+    try {
+      provider = await loadApnsProvider(config.push.apnsConfigFile);
+    } catch (error) {
+      retained.push(...deliveries.map(({ device }) => device));
+      diagnostics.report("push", "provider_unavailable", {
+        targetCount: deliveries.length,
+        errorType: error?.name,
+      });
+    }
+    if (provider !== undefined) {
+      for (const { device, payload } of deliveries) {
+        const result = await sendApns(provider, device, payload);
+        if (result.ok) accepted.add(device.deviceToken);
+        if (!invalidPushDeviceReason(result.reason)) retained.push(device);
+      }
+      diagnostics.report("push", "direct_completed", {
+        targetCount: deliveries.length,
+        acceptedCount: accepted.size,
+      });
     }
   }
   if (retained.length !== devices.length) {
@@ -2358,6 +2425,7 @@ function validateConfig(value) {
       connectionId: requiredString(value.connectionId),
       devicesFile: requiredString(value.pushDevicesFile),
       apnsConfigFile: requiredString(value.apnsConfigFile),
+      relay: pushRelayOf(value),
     };
   }
   if (value.watchToken !== undefined) result.watchToken = boundedToken(value.watchToken);

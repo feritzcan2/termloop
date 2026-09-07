@@ -4,7 +4,7 @@ import type { WorkspaceView } from "../workspace-view-memory.js";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, secondaryAction }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -39,9 +39,9 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   /// (RUN, terminal, agents, history) starts something and belongs to the
   /// Project, not to a view. One row could not hold both at the default width.
   viewAction?: { label: string; icon: IconName; run(): void; pressed?: boolean; disabled?: boolean } | undefined;
-  /// A quieter Project-level companion to the primary action — the Tasks view
-  /// uses it for Task Sources, the page that feeds the list from Jira.
-  secondaryAction?: { label: string; icon: IconName; run(): void; pressed?: boolean; disabled?: boolean } | undefined;
+  /// A trailing settings destination for the selected view. It stays at the
+  /// far edge so Create Task remains beside the Tasks tab.
+  settingsAction?: { label: string; icon: IconName; run(): void; pressed?: boolean; disabled?: boolean } | undefined;
 }) {
   const selected = (candidate: WorkspaceView) => viewActive && view === candidate;
   return (
@@ -76,17 +76,6 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             onClick={() => select("steward")}
           ><span className="workspace-view-glyph" aria-hidden="true">✦</span><span className="workspace-view-label">Steward</span></button>
       </div>
-      {secondaryAction ? (
-        <button
-          type="button"
-          className="workspace-view-action secondary"
-          title={secondaryAction.label}
-          aria-label={secondaryAction.label}
-          aria-pressed={secondaryAction.pressed}
-          disabled={secondaryAction.disabled}
-          onClick={secondaryAction.run}
-        ><Icon name={secondaryAction.icon} /></button>
-      ) : null}
       {viewAction ? (
         <button
           type="button"
@@ -97,6 +86,17 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
           disabled={viewAction.disabled}
           onClick={viewAction.run}
         ><Icon name={viewAction.icon} /></button>
+      ) : null}
+      {settingsAction ? (
+        <button
+          type="button"
+          className="workspace-view-action settings"
+          title={settingsAction.label}
+          aria-label={settingsAction.label}
+          aria-pressed={settingsAction.pressed}
+          disabled={settingsAction.disabled}
+          onClick={settingsAction.run}
+        ><Icon name={settingsAction.icon} /></button>
       ) : null}
       </div>
       {view === "steward" ? null : <div className="workspace-launch-actions" aria-label="Launch Session">

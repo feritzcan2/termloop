@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, TaskProvisionWorktreeParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RemoteBranchDto, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
 import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX, permissionLabel } from "../../project-task-automation.js";
 import { Icon } from "../Icon.js";
 import {
   selectedWorktreeParent,
   sortLocalBranches,
+  sortRemoteBranches,
   suggestedBranchName,
   worktreeDestination,
   worktreePathParent,
@@ -118,6 +119,8 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const [existingBranchName, setExistingBranchName] = useState("");
   const [baseRef, setBaseRef] = useState("");
   const [localBranches, setLocalBranches] = useState<readonly LocalBranchDto[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<readonly RemoteBranchDto[]>([]);
+  const [automationBaseRef, setAutomationBaseRef] = useState<string | null>();
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string>();
   const [branchesTruncated, setBranchesTruncated] = useState(false);
@@ -148,6 +151,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
       if (!current) return;
       setWorkspace(configuration.createWorktree ? "create" : "none");
       setWorktreePrefix(configuration.worktreePrefix);
+      setAutomationBaseRef(configuration.baseRef);
       const selectedAgent = configuration.createWorktree
         && configuration.agentId
         && configuration.model
@@ -179,29 +183,34 @@ function CreateTaskDialog({ close, createTask, flow }: {
     let current = true;
     if (!projectId) {
       setBranchesLoading(false);
-      setBranchesError("Select a Project before loading local branches.");
+      setBranchesError("Select a Project before loading repository branches.");
       return () => { current = false; };
     }
     void listBranches(projectId).then((result) => {
       if (!current) return;
-      const sorted = sortLocalBranches(result.branches);
-      setLocalBranches(sorted);
-      setBranchesTruncated(result.truncated);
-      setBaseRef((selected) => {
-        if (sorted.some((branch) => branch.exact_ref === selected)) return selected;
-        const remembered = sorted.find((branch) => branch.exact_ref === rememberedBaseRef);
-        if (remembered) return remembered.exact_ref;
-        return sorted[0]?.exact_ref ?? "";
-      });
-      setExistingBranchName((selected) => sorted.some((branch) => branch.name === selected) ? selected : sorted[0]?.name ?? "");
+      const sortedLocal = sortLocalBranches(result.branches);
+      setLocalBranches(sortedLocal);
+      setRemoteBranches(sortRemoteBranches(result.base_branches));
+      setBranchesTruncated(result.truncated || result.base_branches_truncated);
+      setExistingBranchName((selected) => sortedLocal.some((branch) => branch.name === selected) ? selected : sortedLocal[0]?.name ?? "");
       setBranchesLoading(false);
     }).catch((loadError: unknown) => {
       if (!current) return;
       setBranchesLoading(false);
-      setBranchesError(loadError instanceof Error ? loadError.message : "Local branches could not be loaded.");
+      setBranchesError(loadError instanceof Error ? loadError.message : "Repository branches could not be loaded.");
     });
     return () => { current = false; };
-  }, [listBranches, projectId, rememberedBaseRef]);
+  }, [listBranches, projectId]);
+
+  useEffect(() => {
+    setBaseRef((selected) => {
+      const configured = remoteBranches.find((branch) => branch.exact_ref === automationBaseRef);
+      if (configured) return configured.exact_ref;
+      if (remoteBranches.some((branch) => branch.exact_ref === selected)) return selected;
+      const remembered = remoteBranches.find((branch) => branch.exact_ref === rememberedBaseRef);
+      return remembered?.exact_ref ?? remoteBranches[0]?.exact_ref ?? "";
+    });
+  }, [automationBaseRef, rememberedBaseRef, remoteBranches]);
 
   /// The branch field is never empty: the title drives it, and before a title
   /// exists (or when it yields no slug) a per-dialog suffix keeps the proposal
@@ -216,17 +225,19 @@ function CreateTaskDialog({ close, createTask, flow }: {
       : (suggestedBranchName(title, worktreePrefix) || `${worktreePrefix}/${fallbackBranchSuffix}`);
   const destinationPath = editedDestinationPath
     ?? (branchName ? worktreeDestination(destinationParentPath, branchName) : "");
-  const selectionUnavailable = branchesLoading || Boolean(branchesError) || localBranches.length === 0;
+  const selectableBranches = branchMode === "existing" ? localBranches : remoteBranches;
+  const selectionUnavailable = branchesLoading || Boolean(branchesError) || selectableBranches.length === 0;
 
   const validateWorkspace = (): string | undefined => {
     if (!flow.repositoryPath.trim()) return "The selected Project does not have a repository path.";
-    if (branchesLoading) return "Wait for local branches to load.";
+    if (branchesLoading) return "Wait for repository branches to load.";
     if (branchesError) return branchesError;
-    if (localBranches.length === 0) return "This repository has no local branches, so a worktree cannot be created yet. Turn the worktree off to create the Task alone.";
+    if (branchMode === "existing" && localBranches.length === 0) return "This repository has no local branch to use.";
+    if (branchMode === "create" && remoteBranches.length === 0) return "This repository has no remote-tracking branch to create a worktree from. Fetch a remote branch first.";
     if (!branchName.trim()) return "Enter a branch name.";
     if (branchMode === "existing" && !localBranches.some((branch) => branch.name === branchName)) return "Select an existing local branch.";
     if (branchMode === "create" && localBranches.some((branch) => branch.name === branchName.trim())) return "A local branch with this name already exists. Pick another name or use the existing branch.";
-    if (branchMode === "create" && !localBranches.some((branch) => branch.exact_ref === baseRef)) return "Select a base branch to start from.";
+    if (branchMode === "create" && !remoteBranches.some((branch) => branch.exact_ref === baseRef)) return "Select a remote base branch to start from.";
     if (!destinationPath.trim()) return "Enter a worktree folder.";
     return undefined;
   };
@@ -358,7 +369,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
                 <input id="create-branch-name" value={branchName} spellCheck={false} onChange={(event) => { setBranchEdited(true); setCreatedBranchName(event.target.value); setError(undefined); }} />
               ) : (
                 <select id="create-existing-branch" value={existingBranchName} disabled={selectionUnavailable} onChange={(event) => { setExistingBranchName(event.target.value); setError(undefined); }}>
-                  {selectionUnavailable ? <option value="">{branchesLoading ? "Loading local branches…" : "No local branches"}</option> : null}
+                  {selectionUnavailable ? <option value="">{branchesLoading ? "Loading branches…" : "No local branches"}</option> : null}
                   {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.name}>{branch.name}</option>)}
                 </select>
               )}
@@ -367,8 +378,8 @@ function CreateTaskDialog({ close, createTask, flow }: {
               <div className="plan-row">
                 <label className="plan-label" htmlFor="create-base-ref">Base branch</label>
                 <select id="create-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); flow.rememberBaseRef(event.target.value); setError(undefined); }}>
-                  {selectionUnavailable ? <option value="">{branchesLoading ? "Loading local branches…" : "No local branches"}</option> : null}
-                  {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
+                  {selectionUnavailable ? <option value="">{branchesLoading ? "Loading branches…" : "No remote branches"}</option> : null}
+                  {remoteBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
                 </select>
               </div>
             ) : null}
@@ -381,7 +392,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
             </button>
           </div>
         ) : null}
-        {workspace === "create" && branchesTruncated ? <p className="field-help" role="status">Only the first 512 local branches are shown.</p> : null}
+        {workspace === "create" && branchesTruncated ? <p className="field-help" role="status">Only the first 512 representable branches of each kind are shown.</p> : null}
 
         <div className="plan-head">
           <span className="plan-heading">Start</span>

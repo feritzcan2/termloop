@@ -8,6 +8,7 @@ const TOKEN_MAX = 256;
 const DEFAULT_DESKTOP_ACTIVE_MS = 2 * 60 * 1000;
 const DEFAULT_DEVICE_NOTIFICATION_PREFERENCES = Object.freeze({
   enabled: true,
+  notifyWhenMacActive: false,
   agentNeedsInput: true,
   agentReadyForReview: true,
   stewardMessages: true,
@@ -29,7 +30,7 @@ export function pushNotificationPreferencesOf(value) {
     : { version: 1, mobile, watch };
 }
 
-export function pushDeliveryOptions(preferences, bundleId, notificationKind) {
+export function pushDeliveryOptions(preferences, bundleId, notificationKind, context = {}) {
   const target = typeof bundleId === "string" && bundleId.endsWith(".watch")
     ? preferences.watch
     : preferences.mobile;
@@ -39,7 +40,7 @@ export function pushDeliveryOptions(preferences, bundleId, notificationKind) {
       ? target.agentReadyForReview
       : target.stewardMessages;
   return {
-    enabled: target.enabled && kindEnabled,
+    enabled: target.enabled && kindEnabled && (!context.macActive || target.notifyWhenMacActive),
     playSound: target.playSound,
   };
 }
@@ -111,6 +112,21 @@ export function upsertPushDevice(current, candidate, now = Date.now()) {
 export function apnsPayload(notification, connectionId, options = {}) {
   const isStewardDecision = notification.kind === "stewardProposal"
     || notification.kind === "stewardSuggestion";
+  const navigation = {
+    connectionId,
+    projectId: notification.projectId,
+    sessionId: notification.sessionId,
+    attentionKind: notification.kind,
+    // Watch clients deep-link to worktree changes by matching this against
+    // the worktree paths in the /watch/worktrees facade response.
+    cwd: notification.cwd ?? null,
+    // The watch's inline dictation reply posts terminal input, which is
+    // epoch-addressed; a Stew chat push instead deep-links to the chat page.
+    runtimeEpoch: notification.runtimeEpoch ?? null,
+    chatProjectId: notification.chatProjectId ?? null,
+    stewardMessageId: notification.stewardMessageId ?? null,
+    stewardMessageKind: notification.stewardMessageKind ?? null,
+  };
   return {
     aps: {
       alert: { title: notification.title, body: notification.body },
@@ -127,31 +143,24 @@ export function apnsPayload(notification, connectionId, options = {}) {
         "relevance-score": 1,
       } : {}),
     },
-    connectionId,
-    projectId: notification.projectId,
-    sessionId: notification.sessionId,
-    attentionKind: notification.kind,
-    // Watch clients deep-link to worktree changes by matching this against
-    // the worktree paths in the /watch/worktrees facade response.
-    cwd: notification.cwd ?? null,
-    // The watch's inline dictation reply posts terminal input, which is
-    // epoch-addressed; a Stew chat push instead deep-links to the chat page.
-    runtimeEpoch: notification.runtimeEpoch ?? null,
-    chatProjectId: notification.chatProjectId ?? null,
-    stewardMessageId: notification.stewardMessageId ?? null,
-    stewardMessageKind: notification.stewardMessageKind ?? null,
+    ...navigation,
+    // Expo Notifications 57 reads remote `content.data` from this dictionary.
+    // Keep the top-level copy for the native Watch notification delegate.
+    body: navigation,
   };
 }
 
 function deviceNotificationPreferencesOf(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   if (typeof value.enabled !== "boolean"
+    || (value.notifyWhenMacActive !== undefined && typeof value.notifyWhenMacActive !== "boolean")
     || typeof value.agentNeedsInput !== "boolean"
     || typeof value.agentReadyForReview !== "boolean"
     || typeof value.stewardMessages !== "boolean"
     || typeof value.playSound !== "boolean") return undefined;
   return {
     enabled: value.enabled,
+    notifyWhenMacActive: value.notifyWhenMacActive ?? false,
     agentNeedsInput: value.agentNeedsInput,
     agentReadyForReview: value.agentReadyForReview,
     stewardMessages: value.stewardMessages,
