@@ -838,6 +838,7 @@ async fn access_control_socket(mut socket: WebSocket, state: AppState) {
         }
     };
     let credential = RemoteControlCredential {
+        device_id: authenticated.revocation.device_id.clone(),
         token: Arc::from(authenticated.connection_token),
         scope: match authenticated.scope {
             RemoteScope::Full => ClientScope::Full,

@@ -1,3 +1,4 @@
+import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type {
@@ -17,12 +18,14 @@ type Message = {
   text: string;
   placement?: MessagePlacement;
 };
-type View = "connect" | "share";
+type View = "connect" | "agents" | "share";
 type Tone = "ok" | "warn" | "danger" | "idle";
 
 const DISCOVERY_REFRESH_MS = 10_000;
 
 export type ConnectionProfilesDialogProps = {
+  agentConnections?: AgentConnectionActions | undefined;
+  initialProfileId?: string;
   close(): void;
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   disableHost(): Promise<RemoteHostStatus>;
@@ -37,6 +40,8 @@ export type ConnectionProfilesDialogProps = {
 };
 
 export function ConnectionProfilesDialog({
+  agentConnections,
+  initialProfileId = "local",
   close,
   connect,
   disableHost,
@@ -49,6 +54,7 @@ export function ConnectionProfilesDialog({
   setEnabled,
   subscribeStatus,
 }: ConnectionProfilesDialogProps) {
+  const [selectedProfileId, setSelectedProfileId] = useState(initialProfileId);
   const [view, setView] = useState<View>("connect");
   const [profiles, setProfiles] = useState<ConnectionProfileSummary[]>();
   const [message, setMessage] = useState<Message>();
@@ -272,6 +278,7 @@ export function ConnectionProfilesDialog({
           {profile.warning ? <small className="conn-warn-text">{profile.warning}</small> : null}
         </div>
         <div className="conn-card-actions">
+          {agentConnections ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("agents"); }}>Manage agents</button> : null}
           {isLocal ? <span className="conn-always">Always on</span> : (
             <>
               <button
@@ -452,12 +459,20 @@ export function ConnectionProfilesDialog({
   const content = (
     <>
       <div className="conn-toggle" role="group" aria-label="Connection settings">
-        <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Connect</button>
+        <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Computers</button>
+        {agentConnections ? <button type="button" aria-pressed={view === "agents"} className={view === "agents" ? "active" : ""} onClick={() => setView("agents")}>Agent accounts</button> : null}
         <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>
       </div>
 
       <div className="server-profiles-body">
-        {view === "connect" ? renderConnect() : renderShare()}
+        {view === "connect" ? renderConnect() : view === "share" ? renderShare() : <>
+          <label className="conn-field agent-server-select"><span>Server</span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
+            {profiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.transport === "local" ? "" : ` · ${transportLabel(profile.transport)}`}{profile.state === "offline" ? " · Offline" : ""}</option>)}
+          </select></label>
+          {profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
+            ? <AgentConnectionsPanel key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={agentConnections} />
+            : <p className="conn-note">Choose an available server from Computers.</p>}
+        </>}
       </div>
       <footer>Each connection creates a device credential that stays on the connecting computer and can be revoked from the server.</footer>
     </>

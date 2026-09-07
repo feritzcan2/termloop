@@ -108,6 +108,9 @@ pub(in crate::app::control) async fn set_steward_configuration(
     };
     let capability = state
         .agent_capabilities
+        .lock()
+        .unwrap()
+        .clone()
         .iter()
         .find(|capability| capability.agent_id == agent_id)
         .map(|capability| {

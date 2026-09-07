@@ -13,6 +13,7 @@ mod keep_awake;
 mod launch_target;
 mod managed_process;
 mod path;
+mod private_command;
 mod process;
 mod process_tree;
 mod runtime;
@@ -73,6 +74,7 @@ pub use path::{
     path_entry_state, resolve_existing_directory_within, sibling_directory_path,
     subprocess_path_argument,
 };
+pub use private_command::{PrivateCommandExit, PrivateCommandRequest, run_private_command};
 pub use process::{
     CommandOutcome, CommandProbe, CommandRequest, CommandTermination, ResolvedExecutable,
     current_executable, os_string_from_process_bytes, path_from_process_bytes, probe_command,
@@ -112,6 +114,16 @@ pub use watch::{
     DirectoryWatcher, GitRepositoryWatchChange, watch_directories, watch_directory,
     watch_git_repository_directories,
 };
+
+/// npm's per-user Unix bin layout matches the repaired launch PATH. Windows
+/// shims use a different layout and remain manually installed for now.
+pub fn user_cli_install_prefix() -> Option<std::path::PathBuf> {
+    if cfg!(unix) {
+        user_home_directory().map(|home| home.join(".local"))
+    } else {
+        None
+    }
+}
 
 use std::io;
 
