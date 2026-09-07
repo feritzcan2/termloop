@@ -76,6 +76,22 @@ fn agent_library_migrates_persists_and_rolls_back_failed_writes() {
             .agents
             .is_empty()
     );
+    store.update_personal_agent(&authority, agent(), 3).unwrap();
+    drop(store);
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["schema_version"] = json!(52);
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.agent_library().agents, [agent()]);
+    let mut builtin = agent();
+    builtin.id = "builtin.agent-profile.edge-case-hunter".into();
+    builtin.version = 2;
+    store
+        .update_personal_agent(&authority, builtin.clone(), 4)
+        .unwrap();
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.agent_library().agents, [agent(), builtin]);
     drop(store);
     let _ = std::fs::remove_dir_all(root);
 }

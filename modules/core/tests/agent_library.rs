@@ -38,7 +38,7 @@ fn personal_agent_library_is_durable_versioned_and_preview_pins_instructions() {
     invalid["instructions"] = json!(" ");
     assert!(runtime.handle("agent.profileCreate", invalid).is_err());
     let mut builtin_edit = draft(1);
-    builtin_edit["id"] = initial["profiles"][0]["id"].clone();
+    builtin_edit["id"] = json!("builtin.agent-profile.unknown");
     assert!(runtime.handle("agent.profileUpdate", builtin_edit).is_err());
     runtime
         .handle(
@@ -161,4 +161,101 @@ fn personal_agent_library_is_durable_versioned_and_preview_pins_instructions() {
     assert_eq!(resumed["manifest"]["target"]["permission"], "plan");
     drop(runtime);
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn built_in_agent_edits_keep_identity_and_persist_effective_launch_settings() {
+    let root = std::env::temp_dir().join(format!("termloop-builtin-agent-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("state.json");
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let mut runtime = CoreRuntime::new(
+        Store::open(&path).unwrap(),
+        authority,
+        TerminalService::default(),
+        1,
+    )
+    .unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo", "folderPath":root}))
+        .unwrap();
+    let initial = runtime.handle("agent.libraryGet", json!({})).unwrap();
+    let id = initial["profiles"][0]["id"].as_str().unwrap().to_owned();
+    runtime
+        .handle(
+            "agent.profileFavorite",
+            json!({"id":id, "favorite":true, "expectedRevision":0}),
+        )
+        .unwrap();
+    let mut edit = draft(1);
+    edit["id"] = json!(id);
+    edit["model"] = json!("sonnet");
+    edit["permission"] = json!("acceptEdits");
+    let result = runtime.handle("agent.profileUpdate", edit.clone()).unwrap();
+    assert_eq!(result["profiles"].as_array().unwrap().len(), 4);
+    let saved = &result["profiles"][0];
+    assert_eq!(saved["id"], id);
+    assert_eq!(saved["source"], "builtIn");
+    assert_eq!(saved["version"], 2);
+    assert_eq!(saved["name"], edit["name"]);
+    assert_eq!(saved["description"], edit["description"]);
+    assert_eq!(saved["category"], edit["category"]);
+    assert_eq!(saved["instructions"], edit["instructions"]);
+    assert_eq!(saved["default_agent_id"], "claude");
+    assert_eq!(saved["default_model"], "sonnet");
+    assert_eq!(saved["default_reasoning"], "high");
+    assert_eq!(saved["permission"], "acceptEdits");
+    assert_eq!(saved["read_only"], false);
+    assert_eq!(saved["favorite"], true);
+    assert!(matches!(
+        runtime.handle("agent.profileUpdate", edit.clone()),
+        Err(CoreError::RevisionConflict)
+    ));
+    let mut invalid = edit.clone();
+    invalid["expectedRevision"] = json!(2);
+    invalid["model"] = json!("unsupported-model");
+    assert!(runtime.handle("agent.profileUpdate", invalid).is_err());
+    assert!(
+        runtime
+            .handle(
+                "agent.profileDelete",
+                json!({"id":id, "expectedRevision":2})
+            )
+            .is_err()
+    );
+    drop(runtime);
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let mut runtime = CoreRuntime::new(
+        Store::open(&path).unwrap(),
+        authority,
+        TerminalService::default(),
+        2,
+    )
+    .unwrap();
+    assert_eq!(
+        runtime.handle("agent.libraryGet", json!({})).unwrap(),
+        result
+    );
+    assert_eq!(runtime.agent_profile_list()[0]["name"], edit["name"]);
+    let preview = runtime.preview_quick_action(json!({"projectId":project["id"], "cwd":root, "agentId":"claude", "model":"sonnet", "permission":"acceptEdits", "reasoning":"high", "templateRef":id, "bindings":{"prompt":"Inspect changes"}, "attachments":[]})).unwrap();
+    assert_eq!(preview["manifest"]["target"]["permission"], "acceptEdits");
+    assert_eq!(preview["manifest"]["target"]["model"], "sonnet");
+    let instructions = preview["manifest"]["content_parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|part| part["kind"] == "providerInstructions")
+        .unwrap()["content"]
+        .as_str()
+        .unwrap();
+    assert!(instructions.contains(edit["instructions"].as_str().unwrap()));
+    assert!(instructions.contains(&id));
+    edit["expectedRevision"] = json!(2);
+    edit["instructions"] = json!("A second revision");
+    assert_eq!(
+        runtime.handle("agent.profileUpdate", edit).unwrap()["profiles"][0]["version"],
+        3
+    );
+    drop(runtime);
+    std::fs::remove_dir_all(root).unwrap();
 }

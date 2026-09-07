@@ -33,7 +33,7 @@ impl Store {
                 }
                 *current = agent;
             } else {
-                if agent.version != 1 {
+                if termloop_domain::valid_personal_agent_id(&agent.id) && agent.version != 1 {
                     return Err(StoreError::NotFound);
                 }
                 library.agents.push(agent);
