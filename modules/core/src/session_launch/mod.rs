@@ -407,7 +407,8 @@ impl AgentLaunchPlan {
                 if let Some(launch) = self.prepared_launch.as_mut()
                     && launch.bind_codex_app_server_endpoint(endpoint).is_err()
                 {
-                    // Re-resolve from the typed plan below rather than ever
+                    // Re-resolve from the typed plan below, or fail closed when
+                    // it cannot preserve the reviewed content, rather than ever
                     // spawning the preview placeholder as real argv.
                     self.prepared_launch = None;
                 }
@@ -415,10 +416,11 @@ impl AgentLaunchPlan {
             }
             Err(error) => {
                 self.revoke_provisional_mcp();
-                // A Quick Action preview can carry only invocation's private
-                // runtime placeholder. If observation preparation fails,
-                // discard that payload and resolve a normal fresh launch
-                // below; never pass the placeholder to Codex as an endpoint.
+                // A preview can carry only invocation's private runtime
+                // placeholder. If observation preparation fails, discard that
+                // payload; completion may re-resolve only from a lossless typed
+                // plan and otherwise fails closed. Never pass the placeholder
+                // to Codex as an endpoint.
                 self.prepared_launch = None;
                 self.observation_warning = Some(error.to_string());
             }
@@ -890,6 +892,9 @@ impl CoreRuntime {
             .quick_action_previews
             .remove(position)
             .expect("ticket position came from the same bounded queue");
+        if !matches!(&preview.plan.mcp_role, AgentMcpRole::Improver { .. }) {
+            return Err(CoreError::InvalidParams("launchTicket".into()));
+        }
         let selection = preview.plan.interactive_options.clone().unwrap_or_default();
         let matches = params.get("projectId").and_then(Value::as_str)
             == Some(preview.plan.project_id.as_str())
@@ -1301,7 +1306,7 @@ impl CoreRuntime {
             .plan
             .quick_action
             .as_ref()
-            .expect("quick action plan");
+            .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
         let prompt = params
             .get("bindings")
             .and_then(|bindings| bindings.get("prompt"))
@@ -1807,46 +1812,15 @@ impl CoreRuntime {
                     mcp,
                 )
             }
-        } else if let Some(options) = &plan.interactive_options {
-            if managed_worktree {
-                termloop_invocation::configured_interactive_agent_for_managed_worktree_conversation(
-                    &plan.agent_id,
-                    &plan.cwd,
-                    &options.model,
-                    &options.permission,
-                    &options.reasoning,
-                    conversation,
-                    observation,
-                    mcp,
-                )
-            } else {
-                termloop_invocation::configured_interactive_agent_for_conversation(
-                    &plan.agent_id,
-                    &plan.cwd,
-                    &options.model,
-                    &options.permission,
-                    &options.reasoning,
-                    conversation,
-                    observation,
-                    mcp,
-                )
-            }
-        } else if managed_worktree {
-            termloop_invocation::interactive_agent_for_managed_worktree_conversation(
-                &plan.agent_id,
-                &plan.cwd,
-                conversation,
-                observation,
-                mcp,
-            )
+        } else if matches!(&plan.mcp_role, AgentMcpRole::Improver { .. }) {
+            // Improve previews own the only exact copy of their target-aware
+            // invocation payload. If Codex runtime preparation discarded that
+            // placeholder-bearing payload, no typed fallback can reproduce the
+            // reviewed prompt, so fail instead of launching an interactive
+            // Agent under the Improver capability.
+            return Err(CoreError::AgentCapabilityUnproven);
         } else {
-            termloop_invocation::interactive_agent_for_conversation(
-                &plan.agent_id,
-                &plan.cwd,
-                conversation,
-                observation,
-                mcp,
-            )
+            resolve_interactive_agent_launch_with_transport(plan, conversation, observation, mcp)
         }
         .map_err(invocation_error)?;
         let program = launch.program().to_owned();
@@ -2339,6 +2313,16 @@ fn resolve_interactive_agent_launch(
                 profile: plan.mcp_role.invocation_profile(),
             })
     });
+    resolve_interactive_agent_launch_with_transport(plan, conversation, observation, mcp)
+        .map_err(invocation_error)
+}
+
+fn resolve_interactive_agent_launch_with_transport(
+    plan: &AgentLaunchPlan,
+    conversation: termloop_invocation::AgentConversationLaunch<'_>,
+    observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
+    mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
+) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
     let managed_worktree = plan.has_observed_managed_worktree();
     if let Some(assignment) = &plan.steward_task_assignment {
         let selection = plan.interactive_options.clone().unwrap_or_default();
@@ -2453,7 +2437,6 @@ fn resolve_interactive_agent_launch(
             mcp,
         )
     }
-    .map_err(invocation_error)
 }
 
 pub(crate) fn start_codex_runtime(
