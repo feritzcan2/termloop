@@ -83,6 +83,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{Receiver, Sender};
+pub mod agent_connections;
+
 use termloop_agents::{AgentObservation, AgentSignalSource, AgentState};
 use termloop_store::{CoreWriteAuthority, Store};
 use termloop_terminal::TerminalService;
@@ -534,8 +536,15 @@ pub struct DiscoveredAgentCapabilities {
 }
 
 pub fn discover_agent_capabilities() -> Vec<DiscoveredAgentCapabilities> {
+    discover_agent_capabilities_matching(|_| true)
+}
+
+pub(crate) fn discover_agent_capabilities_matching(
+    include: impl Fn(&str) -> bool,
+) -> Vec<DiscoveredAgentCapabilities> {
     termloop_agents::agent_catalog()
         .iter()
+        .filter(|descriptor| include(descriptor.id))
         .map(|descriptor| termloop_agents::discover_capabilities(descriptor.id))
         .map(|capability| {
             let descriptor = termloop_agents::agent_descriptor(&capability.agent_id)

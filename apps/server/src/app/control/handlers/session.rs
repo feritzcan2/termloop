@@ -455,6 +455,9 @@ pub(in crate::app) async fn launch_task_session(
             .unwrap_or_default();
         if !state
             .agent_capabilities
+            .lock()
+            .unwrap()
+            .clone()
             .iter()
             .any(|capability| capability.agent_id == requested && capability.available)
         {

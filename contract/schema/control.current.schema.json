@@ -1426,6 +1426,66 @@
       "result": {
         "$ref": "#/$defs/sessionDto"
       }
+    },
+    "agent.authStatusList": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "type": "array",
+        "maxItems": 2,
+        "items": {
+          "$ref": "#/$defs/agentAuthStatusDto"
+        }
+      }
+    },
+    "agent.install": {
+      "params": {
+        "$ref": "#/$defs/agentConnectionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.authStart": {
+      "params": {
+        "$ref": "#/$defs/agentConnectionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.authLogout": {
+      "params": {
+        "$ref": "#/$defs/agentConnectionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.authGet": {
+      "params": {
+        "$ref": "#/$defs/agentAuthOperationParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.authCancel": {
+      "params": {
+        "$ref": "#/$defs/agentAuthOperationParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.authSubmitCode": {
+      "params": {
+        "$ref": "#/$defs/agentAuthSubmitCodeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAuthOperationDto"
+      }
     }
   },
   "$defs": {
@@ -1608,7 +1668,14 @@
         "agent.profileDelete",
         "agent.profileFavorite",
         "agent.creatorPreview",
-        "agent.creatorLaunch"
+        "agent.creatorLaunch",
+        "agent.authStatusList",
+        "agent.install",
+        "agent.authStart",
+        "agent.authLogout",
+        "agent.authGet",
+        "agent.authCancel",
+        "agent.authSubmitCode"
       ]
     },
     "eventName": {
@@ -15371,6 +15438,213 @@
           "pattern": "^[0-9a-f]{64}$"
         }
       }
+    },
+    "agentConnectionProvider": {
+      "type": "string",
+      "enum": [
+        "codex",
+        "claude"
+      ],
+      "x-codegen": true
+    },
+    "agentConnectionParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAuthOperationParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "operationId"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAuthSubmitCodeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "operationId",
+        "code"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAuthOperationDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "operationId",
+        "action",
+        "phase",
+        "verificationUrl",
+        "userCode",
+        "acceptsCode",
+        "message",
+        "expiresAtEpochMs"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "operationId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "install",
+            "signIn",
+            "signOut"
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "installing",
+            "awaitingBrowser",
+            "awaitingCode",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "verificationUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "userCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acceptsCode": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "expiresAtEpochMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAuthStatusDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "label",
+        "installed",
+        "version",
+        "authState",
+        "installSupported",
+        "busy",
+        "operation"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authState": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "signedOut",
+            "signedIn"
+          ]
+        },
+        "installSupported": {
+          "type": "boolean"
+        },
+        "busy": {
+          "type": "boolean"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/agentAuthOperationDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-codegen": true
     }
   }
 }

@@ -383,8 +383,12 @@ async fn launch_agent(
 ) -> Result<(), CoreError> {
     let capability = state
         .agent_capabilities
+        .lock()
+        .unwrap()
+        .clone()
         .iter()
         .find(|capability| capability.agent_id == agent_id && capability.available)
+        .cloned()
         .ok_or(CoreError::AgentUnsupported)?;
     let model = action
         .model

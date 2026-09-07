@@ -77,58 +77,61 @@ static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
+    regex::Regex::new("^[^\\s\\x00-\\x1f\\x7f]+$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/remotes/[^/]+/.+").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_36: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
@@ -163,45 +166,46 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_16.is_match(text),
         "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_17.is_match(text),
         "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_18.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_19.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_20.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_21.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_22.is_match(text),
+        "^[^\\s\\x00-\\x1f\\x7f]+$" => CONTRACT_PATTERN_19.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_20.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_21.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_22.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_23.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_23.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_26.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_27.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_28.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_29.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_30.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_31.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_32.is_match(text),
-        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_33.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_34.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_35.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_31.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_32.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_33.is_match(text),
+        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_34.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_35.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_36.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:3009cd7afff938f2fe31995bf7636f9447b6cc49ee7087bf9d2e2718f058f753";
+    "sha256:c2c6c30c1c69f7bbe24e6bb316caa037580634ab37b5e3b05e8b9366478a6fb6";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -381,6 +385,13 @@ pub const METHODS: &[&str] = &[
     "agent.profileFavorite",
     "agent.creatorPreview",
     "agent.creatorLaunch",
+    "agent.authStatusList",
+    "agent.install",
+    "agent.authStart",
+    "agent.authLogout",
+    "agent.authGet",
+    "agent.authCancel",
+    "agent.authSubmitCode",
 ];
 pub const READ_ONLY_METHODS: &[&str] = &[
     "system.version",
@@ -6897,6 +6908,84 @@ pub struct AgentCreatorLaunchParams {
     pub launch_ticket: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AgentConnectionProvider {
+    #[serde(rename = "codex")]
+    Codex,
+    #[serde(rename = "claude")]
+    Claude,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentConnectionParams {
+    #[serde(rename = "agentId")]
+    pub agent_id: AgentConnectionProvider,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAuthOperationParams {
+    #[serde(rename = "agentId")]
+    pub agent_id: AgentConnectionProvider,
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAuthSubmitCodeParams {
+    #[serde(rename = "agentId")]
+    pub agent_id: AgentConnectionProvider,
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAuthOperationDto {
+    #[serde(rename = "agentId")]
+    pub agent_id: AgentConnectionProvider,
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    pub action: String,
+    pub phase: String,
+    #[serde(
+        rename = "verificationUrl",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub verification_url: Option<String>,
+    #[serde(
+        rename = "userCode",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub user_code: Option<String>,
+    #[serde(rename = "acceptsCode")]
+    pub accepts_code: bool,
+    pub message: String,
+    #[serde(rename = "expiresAtEpochMs")]
+    pub expires_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAuthStatusDto {
+    #[serde(rename = "agentId")]
+    pub agent_id: AgentConnectionProvider,
+    pub label: String,
+    pub installed: bool,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub version: Option<String>,
+    #[serde(rename = "authState")]
+    pub auth_state: String,
+    #[serde(rename = "installSupported")]
+    pub install_supported: bool,
+    pub busy: bool,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub operation: Option<AgentAuthOperationDto>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigurationVersionWriteParams {
@@ -7757,6 +7846,19 @@ pub type AgentProfileFavoriteResult = AgentLibraryResult;
 pub type AgentCreatorPreviewParams = AgentCreatorParams;
 pub type AgentCreatorPreviewResult = QuickActionPreviewResult;
 pub type AgentCreatorLaunchResult = SessionDto;
+pub type AgentAuthStatusListParams = EmptyParams;
+pub type AgentAuthStatusListResult = Vec<AgentAuthStatusDto>;
+pub type AgentInstallParams = AgentConnectionParams;
+pub type AgentInstallResult = AgentAuthOperationDto;
+pub type AgentAuthStartParams = AgentConnectionParams;
+pub type AgentAuthStartResult = AgentAuthOperationDto;
+pub type AgentAuthLogoutParams = AgentConnectionParams;
+pub type AgentAuthLogoutResult = AgentAuthOperationDto;
+pub type AgentAuthGetParams = AgentAuthOperationParams;
+pub type AgentAuthGetResult = AgentAuthOperationDto;
+pub type AgentAuthCancelParams = AgentAuthOperationParams;
+pub type AgentAuthCancelResult = AgentAuthOperationDto;
+pub type AgentAuthSubmitCodeResult = AgentAuthOperationDto;
 
 #[allow(
     dead_code,
@@ -7946,6 +8048,13 @@ fn validate_method(value: &Value) -> bool {
             "agent.profileFavorite",
             "agent.creatorPreview",
             "agent.creatorLaunch",
+            "agent.authStatusList",
+            "agent.install",
+            "agent.authStart",
+            "agent.authLogout",
+            "agent.authGet",
+            "agent.authCancel",
+            "agent.authSubmitCode",
         ]
         .contains(&text)
     })
@@ -25322,6 +25431,234 @@ fn validate_agent_creator_launch_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_connection_provider(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["codex", "claude"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_connection_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("agentId")
+            .is_some_and(|field| validate_agent_connection_provider(field))
+            && object.keys().all(|key| ["agentId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_auth_operation_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("agentId")
+            .is_some_and(|field| validate_agent_connection_provider(field))
+            && object.get("operationId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object
+                .keys()
+                .all(|key| ["agentId", "operationId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_auth_submit_code_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("agentId")
+            .is_some_and(|field| validate_agent_connection_provider(field))
+            && object.get("operationId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("code").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 2048
+                        && contract_pattern_matches("^[^\\s\\x00-\\x1f\\x7f]+$", text)
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["agentId", "operationId", "code"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_auth_operation_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("agentId")
+            .is_some_and(|field| validate_agent_connection_provider(field))
+            && object.get("operationId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 64)
+            })
+            && object.get("action").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["install", "signIn", "signOut"].contains(&text))
+            })
+            && object.get("phase").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    [
+                        "starting",
+                        "installing",
+                        "awaitingBrowser",
+                        "awaitingCode",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                        "expired",
+                    ]
+                    .contains(&text)
+                })
+            })
+            && object.get("verificationUrl").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 4096)
+                    || field.is_null())
+            })
+            && object.get("userCode").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object
+                .get("acceptsCode")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("message").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 512)
+            })
+            && object.get("expiresAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "agentId",
+                    "operationId",
+                    "action",
+                    "phase",
+                    "verificationUrl",
+                    "userCode",
+                    "acceptsCode",
+                    "message",
+                    "expiresAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_auth_status_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("agentId")
+            .is_some_and(|field| validate_agent_connection_provider(field))
+            && object.get("label").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 64)
+            })
+            && object
+                .get("installed")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("version").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object.get("authState").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["unknown", "signedOut", "signedIn"].contains(&text))
+            })
+            && object
+                .get("installSupported")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("busy").is_some_and(|field| field.is_boolean())
+            && object
+                .get("operation")
+                .is_some_and(|field| (validate_agent_auth_operation_dto(field) || field.is_null()))
+            && object.keys().all(|key| {
+                [
+                    "agentId",
+                    "label",
+                    "installed",
+                    "version",
+                    "authState",
+                    "installSupported",
+                    "busy",
+                    "operation",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_configuration_version_write_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("expectedActiveVersionId").is_some_and(|field| {
@@ -28010,6 +28347,34 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<AgentCreatorLaunchParams>(params.clone()).is_ok()
                 && validate_agent_creator_launch_params(params)
         }
+        "agent.authStatusList" => {
+            serde_json::from_value::<AgentAuthStatusListParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
+        "agent.install" => {
+            serde_json::from_value::<AgentInstallParams>(params.clone()).is_ok()
+                && validate_agent_connection_params(params)
+        }
+        "agent.authStart" => {
+            serde_json::from_value::<AgentAuthStartParams>(params.clone()).is_ok()
+                && validate_agent_connection_params(params)
+        }
+        "agent.authLogout" => {
+            serde_json::from_value::<AgentAuthLogoutParams>(params.clone()).is_ok()
+                && validate_agent_connection_params(params)
+        }
+        "agent.authGet" => {
+            serde_json::from_value::<AgentAuthGetParams>(params.clone()).is_ok()
+                && validate_agent_auth_operation_params(params)
+        }
+        "agent.authCancel" => {
+            serde_json::from_value::<AgentAuthCancelParams>(params.clone()).is_ok()
+                && validate_agent_auth_operation_params(params)
+        }
+        "agent.authSubmitCode" => {
+            serde_json::from_value::<AgentAuthSubmitCodeParams>(params.clone()).is_ok()
+                && validate_agent_auth_submit_code_params(params)
+        }
         _ => false,
     }
 }
@@ -28755,6 +29120,39 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "agent.creatorLaunch" => {
             serde_json::from_value::<AgentCreatorLaunchResult>(result.clone()).is_ok()
                 && validate_session_dto(result)
+        }
+        "agent.authStatusList" => {
+            serde_json::from_value::<AgentAuthStatusListResult>(result.clone()).is_ok()
+                && result.as_array().is_some_and(|items| {
+                    items.len() <= 2
+                        && items
+                            .iter()
+                            .all(|item| validate_agent_auth_status_dto(item))
+                })
+        }
+        "agent.install" => {
+            serde_json::from_value::<AgentInstallResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
+        }
+        "agent.authStart" => {
+            serde_json::from_value::<AgentAuthStartResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
+        }
+        "agent.authLogout" => {
+            serde_json::from_value::<AgentAuthLogoutResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
+        }
+        "agent.authGet" => {
+            serde_json::from_value::<AgentAuthGetResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
+        }
+        "agent.authCancel" => {
+            serde_json::from_value::<AgentAuthCancelResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
+        }
+        "agent.authSubmitCode" => {
+            serde_json::from_value::<AgentAuthSubmitCodeResult>(result.clone()).is_ok()
+                && validate_agent_auth_operation_dto(result)
         }
         _ => false,
     }

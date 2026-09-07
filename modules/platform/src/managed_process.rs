@@ -170,6 +170,13 @@ pub(super) fn spawn_managed_process_inner(
         command.process_group(0);
     }
     let child = command.spawn()?;
+    own_child(child, record_path)
+}
+
+pub(crate) fn own_child(
+    child: Child,
+    record_path: Option<PathBuf>,
+) -> Result<ManagedProcess, PlatformError> {
     let mut process = ManagedProcess {
         child,
         record_path: None,

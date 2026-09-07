@@ -1,3 +1,4 @@
+import { registerAgentConnectionIpc } from "./main/agent-connections.js";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -114,6 +115,7 @@ declare const TERMLOOP_COMPILED_DEV_PROFILE: string | null;
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const handleIpc = sourceAwareIpcHandle(ipcMain);
+registerAgentConnectionIpc(handleIpc, requireMainRenderer);
 const smokeRun = process.argv.includes("--smoke");
 const developmentProfileStartupError = linkedWorktreeProfileStartupError(
   TERMLOOP_COMPILED_DEV_PROFILE,

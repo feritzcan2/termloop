@@ -22,6 +22,7 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::time::{Duration, MissedTickBehavior};
 
 mod access_plane;
+mod agent_connections;
 mod attachments;
 mod companion_supervisor;
 mod control;
@@ -121,7 +122,9 @@ struct AppState {
     repair_request_locks: Arc<StdMutex<HashMap<String, Weak<Mutex<()>>>>>,
     task_source_refresh_locks: Arc<StdMutex<HashMap<String, Weak<Mutex<()>>>>>,
     steward_task_start_locks: Arc<StdMutex<HashMap<String, Weak<Mutex<()>>>>>,
-    agent_capabilities: Arc<Vec<termloop_core::DiscoveredAgentCapabilities>>,
+    agent_capabilities: Arc<StdMutex<Vec<termloop_core::DiscoveredAgentCapabilities>>>,
+    agent_connections: Arc<termloop_core::agent_connections::AgentConnections>,
+    agent_capability_refresh: Arc<Mutex<()>>,
     agent_resume_gates: AgentResumeGates,
     tracker_report_capabilities: Arc<StdMutex<tracker_runtime::TrackerReportCapabilityRegistry>>,
     steward_launch_gate: StewardLaunchGate,
@@ -339,9 +342,9 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "discovered agent capabilities"
         );
     }
-    let agent_capabilities = Arc::new(agent_capabilities);
+    let agent_capabilities = Arc::new(StdMutex::new(agent_capabilities));
     let mut runtime_agent_capabilities = std::collections::HashMap::new();
-    for capability in agent_capabilities.iter() {
+    for capability in agent_capabilities.lock().unwrap().iter() {
         let observation = match capability.observation {
             termloop_core::ObservationCapability::None => {
                 termloop_core::AgentObservationRuntimeTransport::None
@@ -498,6 +501,10 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         task_source_refresh_locks: Arc::new(StdMutex::new(HashMap::new())),
         steward_task_start_locks: Arc::new(StdMutex::new(HashMap::new())),
         agent_capabilities,
+        agent_connections: Arc::new(termloop_core::agent_connections::AgentConnections::new(
+            provider_process_directory.clone(),
+        )),
+        agent_capability_refresh: Arc::new(Mutex::new(())),
         agent_resume_gates: agent_resume_gates.clone(),
         tracker_report_capabilities: Arc::new(StdMutex::new(
             tracker_runtime::TrackerReportCapabilityRegistry::default(),

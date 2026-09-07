@@ -14,6 +14,11 @@ import type {
   TailscaleServerDiscovery,
 } from "../../connection-profile-types.js";
 import type {
+  AgentAuthOperationDto,
+  AgentAuthStatusDto,
+  AgentConnectionParams,
+  AgentAuthOperationParams,
+  AgentAuthSubmitCodeParams,
   ErrorCode,
   ProjectTaskAutomationGetResult,
   ProjectTaskAutomationSetParams,
@@ -318,6 +323,14 @@ export type DesktopApi = {
   sessionDeleteArchived(sessionId: string): Promise<{ sessionId: string; closed: boolean }>;
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
+  agentAuthStatusList(): Promise<AgentAuthStatusDto[]>;
+  agentInstall(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
+  agentAuthStart(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
+  agentAuthLogout(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
+  agentAuthGet(params: AgentAuthOperationParams): Promise<AgentAuthOperationDto>;
+  agentAuthCancel(params: AgentAuthOperationParams): Promise<AgentAuthOperationDto>;
+  agentAuthSubmitCode(params: AgentAuthSubmitCodeParams): Promise<AgentAuthOperationDto>;
+  agentAuthOpen(params: AgentAuthOperationParams): Promise<void>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
   agentCreatorPreview(params: AgentCreatorParams): Promise<QuickActionPreviewResult>;
   agentCreatorLaunch(params: AgentCreatorLaunchParams): Promise<Session>;

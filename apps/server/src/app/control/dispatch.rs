@@ -124,9 +124,9 @@ pub(in crate::app) async fn apply_configuration_plan(
             let availability =
                 configuration_agent_id(&plan.content)
                     .map(|agent_id| {
-                        if state.agent_capabilities.iter().any(|capability| {
-                            capability.agent_id == agent_id && capability.available
-                        }) {
+                        if state.agent_capabilities.lock().unwrap().clone().iter().any(
+                            |capability| capability.agent_id == agent_id && capability.available,
+                        ) {
                             termloop_core::AssistantAvailability::Proven
                         } else {
                             termloop_core::AssistantAvailability::Unavailable
@@ -609,13 +609,16 @@ pub(in crate::app) async fn dispatch(
 ) -> DispatchOutcome {
     let operation = Arc::<str>::from(request.method.as_str());
     let scope = request_scope(&request, state, remote_credential);
+    let account_owner = remote_credential
+        .map(|remote| format!("device:{}", remote.device_id))
+        .unwrap_or_else(|| request.token.clone());
     let role = scope_name(scope);
     let started = Instant::now();
     let outcome = in_operation(
         "control",
         role,
         operation.clone(),
-        dispatch_inner(request, state, scope, origin),
+        dispatch_inner(request, state, scope, origin, &account_owner),
     )
     .await;
     record_operation_duration("control", role, &operation, started.elapsed());
@@ -659,6 +662,7 @@ async fn dispatch_inner(
     state: &AppState,
     scope: Option<ClientScope>,
     origin: ConnectionOrigin,
+    account_owner: &str,
 ) -> DispatchOutcome {
     let requested_method = request.method.clone();
     let request_token = request.token.clone();
@@ -917,6 +921,9 @@ async fn dispatch_inner(
                     (Ok(agent_id), Ok(wake)) => {
                         let proven = state
                             .agent_capabilities
+                            .lock()
+                            .unwrap()
+                            .clone()
                             .iter()
                             .find(|capability| capability.agent_id == agent_id)
                             .is_some_and(|capability| capability.available);
@@ -1054,9 +1061,27 @@ async fn dispatch_inner(
                     }
                 }
             }
+            "agent.authStatusList"
+            | "agent.install"
+            | "agent.authStart"
+            | "agent.authLogout"
+            | "agent.authGet"
+            | "agent.authCancel"
+            | "agent.authSubmitCode" => {
+                super::super::agent_connections::handle(
+                    &request.method,
+                    request.params,
+                    account_owner,
+                    state,
+                )
+                .await
+            }
             "agent.capabilityList" => Ok(serde_json::Value::Array(
                 state
                     .agent_capabilities
+                    .lock()
+                    .unwrap()
+                    .clone()
                     .iter()
                     .map(|capability| {
                         json!({

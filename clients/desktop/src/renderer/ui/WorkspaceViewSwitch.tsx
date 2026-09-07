@@ -4,7 +4,7 @@ import type { WorkspaceView } from "../workspace-view-memory.js";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -15,6 +15,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   select(view: WorkspaceView): void;
   launchTerminal(): Promise<void>;
   launchAgent(agentId: string): Promise<void>;
+  setupAgents?(): void;
   /// Present only until this Project has a dev server to run. It states the
   /// whole offer in words because nothing on screen has taught the icon yet.
   setupDevServer?: (() => void) | undefined;
@@ -139,7 +140,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
         {agents.map((agent) => {
           const icon = agent.agent_id === "claude" ? "claude" : agent.agent_id === "codex" ? "codex" : "agent";
           const title = !agent.available
-            ? `${agent.label} CLI unavailable`
+            ? `${agent.label} CLI unavailable — set up in Settings`
             : `New ${agent.label} Session${agent.integration_level === "launchOnly" ? " (launch only)" : ""}`;
           return <button
             key={agent.agent_id}
@@ -147,8 +148,8 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             className={agent.agent_id}
             title={title}
             aria-label={title}
-            disabled={disabled || !agent.available}
-            onClick={() => void launchAgent(agent.agent_id)}
+            disabled={disabled || (!agent.available && !setupAgents)}
+            onClick={() => agent.available ? void launchAgent(agent.agent_id) : setupAgents?.()}
           ><Icon name={icon} /></button>;
         })}
         <span className="workspace-history-separator" aria-hidden="true" />
