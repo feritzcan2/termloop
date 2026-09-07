@@ -1832,8 +1832,12 @@ async fn assert_quick_action_initial_input_delivery(
     );
     let mut environment = termloop_platform::LaunchEnvironment::os_baseline()
         .with_explicit("TERMLOOP_TEST_PENDING_INITIAL_INPUT", "1")
-        .with_explicit("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT", "Review this diff")
-        .with_explicit("TERMLOOP_TEST_INTERLEAVED_USER_INPUT", "1");
+        .with_explicit("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT", "Review this diff");
+    // The no-repaint case must not ask ConPTY to redraw the composer through
+    // a cursor edit. The other cases independently cover interleaved input.
+    if !retain_without_repaint {
+        environment = environment.with_explicit("TERMLOOP_TEST_INTERLEAVED_USER_INPUT", "1");
+    }
     let client_protocol_replies =
         termloop_platform::host_uses_bracketed_paste_framing() && agent_id != "codex";
     if client_protocol_replies {
@@ -2065,16 +2069,18 @@ async fn assert_quick_action_initial_input_delivery(
             bounded_headless_fixture_output(&bytes),
         )
     });
-    terminal
-        .input_user("quick-action-ready", 9, b"\x1b[D")
-        .unwrap();
+    if !retain_without_repaint {
+        terminal
+            .input_user("quick-action-ready", 9, b"\x1b[D")
+            .unwrap();
+    }
     assert_eq!(
         terminal
             .user_input_activity("quick-action-ready", 9)
             .unwrap(),
         termloop_terminal::UserInputActivitySnapshot {
-            sequence: 1,
-            mutation_sequence: 1,
+            sequence: u64::from(!retain_without_repaint),
+            mutation_sequence: u64::from(!retain_without_repaint),
         }
     );
     assert_eq!(
