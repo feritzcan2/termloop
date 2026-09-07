@@ -583,6 +583,8 @@ describe("Task rail row anatomy", () => {
     expect(markup).toContain('data-workflow-session-id="workflow-claude"');
     expect(markup).toContain('aria-label="Open Codex — Working"');
     expect(markup).toContain('aria-label="Open Claude — Idle"');
+    expect(markup.match(/data-workflow-session-id="workflow-coordinator"/gu)).toHaveLength(2);
+    expect(markup).toContain(">same coordinator</em>");
     expect(markup).not.toContain('data-session-id="workflow-coordinator"');
     expect(markup).not.toContain('data-session-id="workflow-claude"');
     expect(markup).toContain('data-session-id="ordinary-agent"');
