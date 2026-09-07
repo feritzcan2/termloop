@@ -7,7 +7,7 @@ export type SystemAppearanceQuery = {
   removeEventListener(type: "change", listener: (event: { matches: boolean }) => void): void;
 };
 
-const STORAGE_KEY = "termloop.appearance-theme";
+const STORAGE_KEY = "termloop.appearance-preference";
 const preferenceListeners = new Set<() => void>();
 const themeListeners = new Set<() => void>();
 let currentPreference: AppearancePreference = "system";
