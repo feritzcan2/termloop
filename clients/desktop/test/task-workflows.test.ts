@@ -60,9 +60,9 @@ const workflow: WorkflowConfiguration = {
   reasoning: "default",
   maxReviewCycles: 2,
   steps: [
-    { id: "discuss", kind: "discuss", title: "Discuss", instructions: "Challenge the approach.", agentId: "claude", reuseStepId: null },
-    { id: "implement", kind: "implement", title: "Implement", instructions: "Build it.", agentId: null, reuseStepId: null },
-    { id: "review", kind: "review", title: "Review", instructions: "Review the diff.", agentId: "claude", reuseStepId: "discuss" },
+    { id: "discuss", kind: "discuss", title: "Discuss", instructions: "Challenge the approach.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "implement", kind: "implement", title: "Implement", instructions: "Build it.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
+    { id: "review", kind: "review", title: "Review", instructions: "Review the diff.", agentId: "claude", reuseStepId: "discuss", model: null, permission: null, reasoning: null },
   ],
   generation: 1,
   updatedAtEpochMs: 1,
@@ -126,6 +126,32 @@ describe("Task workflow editor", () => {
     expect(markup).toContain("Core combines review outcomes");
     expect(markup).toContain('class="stage-editor workflow-editor-stage"');
     expect(markup).not.toContain('role="dialog"');
+  });
+
+  it("defaults coordinator and fresh helper permissions to bypass and exposes every launch option", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(WorkflowEditorPanel, {
+      projectId: "project-1",
+      stateRevision: 1,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      close: vi.fn(),
+      save: vi.fn(),
+      remove: vi.fn(),
+    })));
+
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Model"]')?.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Permission"]')?.value).toBe("bypassPermissions");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Thinking"]')?.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Model"]')?.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Permission"]')?.value).toBe("bypassPermissions");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Thinking"]')?.value).toBe("default");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
   it("creates stable unique step ids inside the bounded linear workflow", () => {
