@@ -377,8 +377,8 @@ export default function SessionRoute() {
       }
       return;
     }
-    terminal.submit(draft);
-    setDraft("");
+    const submitted = draft;
+    if (await terminal.submit(submitted)) setDraft((current) => current === submitted ? "" : current);
   };
 
   return (
@@ -447,6 +447,8 @@ export default function SessionRoute() {
           <Banner kind="danger" message={terminal.error ?? terminal.imageError!} />
         </View>
       )}
+
+      {terminal.buffer.inputDelivery ? <View style={styles.notice}><Text style={styles.subDetail} accessibilityLiveRegion="polite">{({ sending: "Sending to terminal…", confirmed: "Input reached the terminal", sent: "Sent · terminal receipt unavailable", uncertain: "Delivery unconfirmed · check the terminal before sending again" })[terminal.buffer.inputDelivery]}</Text></View> : null}
 
       <View style={[styles.terminal, dimmed && styles.dimmed]}>
         <TerminalView
@@ -592,13 +594,13 @@ export default function SessionRoute() {
               )}
               <Pressable
                 onPress={() => void submit()}
-                disabled={!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
+                disabled={!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
                 accessibilityRole="button"
                 accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
                 style={({ pressed }) => [
                   styles.send,
                   pressed && styles.sendPressed,
-                  (!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
+                  (!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
                 ]}
               >
                 {imageSending

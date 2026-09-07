@@ -2407,6 +2407,7 @@ export function DesktopApp() {
       resizeLayoutSplit={resizeLayoutSplit}
       closePane={closePane}
       clearPane={clearPane}
+      terminalPresentation={terminalPool.presentationPort}
       terminalResizeOwner={(sessionId) => terminalPool.resizeOwnership(sessionId)}
       reorderSession={reorderSession}
       agentGroups={selectedProject ? presentation.agentGroupsByProject[selectedProject.id] ?? [] : []}

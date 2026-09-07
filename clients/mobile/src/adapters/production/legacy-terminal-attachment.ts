@@ -1,3 +1,4 @@
+import { TerminalInputReceipts } from "./terminal-input-receipts";
 import type { TerminalAttachment, TerminalEvent } from "../../application/ports";
 import type { SavedConnection } from "../../platform/secure-connections";
 import { websocketEndpointLabel, type MobileDiagnosticReporter, type MobileDiagnosticValue } from "../../platform/mobile-diagnostics";
@@ -10,6 +11,8 @@ import {
   KIND_ERROR,
   KIND_GAP,
   KIND_INPUT,
+  KIND_INPUT_ACK,
+  KIND_ENABLE_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
   decodeReplayAck,
@@ -52,6 +55,7 @@ export async function attachTerminal(
     attachmentId,
     ...details,
   });
+  const inputReceipts = new TerminalInputReceipts();
   let socket: DataSocket | undefined;
   let sequence = 1n;
   let detached = false;
@@ -151,10 +155,12 @@ export async function attachTerminal(
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
+    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || bytes.length !== expectedBytes)) onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     discardReplay();
     if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0) onEvent({ type: "replay", bytes });
     if (eof) onEvent({ type: "eof" });
+    onEvent({ type: "ready" });
     if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
       report("replay_received", {
         bytes: bytes.byteLength,
@@ -198,6 +204,7 @@ export async function attachTerminal(
       return false;
     }
     replayReceivedFrames += 1;
+    onEvent({ type: "replayProgress", receivedBytes: replayBytes, totalBytes: replayExpectedBytes ?? 0 });
     if (replayReceivedFrames === expected) flushReplay();
     return true;
   };
@@ -212,6 +219,7 @@ export async function attachTerminal(
     clearAuthenticationTimer();
     clearStabilityTimer();
     const failed = socket;
+    inputReceipts.clear();
     socket = undefined;
     report("attachment_failed", {
       reason,
@@ -252,6 +260,7 @@ export async function attachTerminal(
       closeReasonLength: close?.reason?.length,
       wasClean: close?.wasClean,
     });
+    inputReceipts.clear();
     socket = undefined;
     authenticated = false;
     clearConnectionTimer();
@@ -384,6 +393,7 @@ export async function attachTerminal(
       });
       onEvent({ type: "state", state: "connected" });
       discardReplay();
+      source.send(encodeFrame("00000000-0000-0000-0000-000000000000", 0, 0n, KIND_ENABLE_INPUT_ACK));
       source.send(encodeFrame(
         session.id,
         session.runtime_epoch,
@@ -417,18 +427,23 @@ export async function attachTerminal(
       });
       return;
     }
+    if (frame.kind === KIND_INPUT_ACK) { inputReceipts.accept(frame.sequence); return; }
     if (frame.kind === KIND_ACK) {
       const replay = decodeReplayAck(frame.payload);
       if (replay !== undefined) {
         replayExpectedFrames = replay.frameCount;
         replayExpectedBytes = replay.outputBytes;
         replayReceivedFrames = 0;
+        onEvent({ type: "replayProgress", receivedBytes: 0, totalBytes: replay.outputBytes });
         report("replay_negotiated", {
           connectionAttempt,
           replayFrames: replay.frameCount,
           replayBytes: replay.outputBytes,
         });
         if (replay.frameCount === 0) flushReplay();
+        else replayTimer = setTimeout(flushReplay, 5_000);
+      } else {
+        replayTimer = setTimeout(flushReplay, REPLAY_BATCH_SETTLE_MS);
       }
       return;
     }
@@ -466,20 +481,29 @@ export async function attachTerminal(
         throw new Error("Terminal is not connected.");
       }
       const target = socket;
+      const pending: Promise<void>[] = [];
+      onEvent({ type: "inputDelivery", state: "sending" });
       try {
         for (let offset = 0; offset < bytes.byteLength; offset += MAX_INPUT_FRAME_BYTES) {
+          const inputSequence = sequence++;
+          pending.push(inputReceipts.expect(inputSequence));
           target.send(encodeFrame(
             session.id,
             session.runtime_epoch,
-            sequence++,
+            inputSequence,
             KIND_INPUT,
             bytes.slice(offset, offset + MAX_INPUT_FRAME_BYTES),
           ));
         }
+        await Promise.all(pending);
+        onEvent({ type: "inputDelivery", state: "confirmed" });
       } catch (cause: unknown) {
         /// Browser WebSocket implementations can throw before delivering `close`.
         /// Enter the same bounded reconnect path immediately so presentation cannot
         /// remain permanently disconnected behind a socket that is already unusable.
+        inputReceipts.clear();
+        await Promise.allSettled(pending);
+        onEvent({ type: "inputDelivery", state: "uncertain" });
         report("input_send_failed", {
           connectionAttempt,
           inputBytes: bytes.byteLength,
@@ -518,7 +542,8 @@ export async function attachTerminal(
         reconnectTimer = undefined;
       }
       const stale = socket;
-      socket = undefined;
+      inputReceipts.clear();
+    socket = undefined;
       authenticated = false;
       clearConnectionTimer();
       clearAuthenticationTimer();
@@ -545,7 +570,8 @@ export async function attachTerminal(
       discardReplay();
       settleReconnectWaiters(new Error("Terminal is detached."));
       socket?.close();
-      socket = undefined;
+      inputReceipts.clear();
+    socket = undefined;
     },
   };
 }

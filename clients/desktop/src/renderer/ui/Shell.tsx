@@ -1,3 +1,5 @@
+import { TerminalStatus } from "./TerminalStatus.js";
+import type { TerminalPresentationPort } from "../terminal-presentation.js";
 import type { AgentLibraryController } from "../agent-library.js";
 import { AgentsRail } from "./AgentsRail.js";
 import { AgentProfilePanel } from "./AgentProfilePanel.js";
@@ -316,6 +318,7 @@ export type ShellProps = {
   closePane(paneId: string): void;
   clearPane(paneId: string): void;
   terminalResizeOwner(sessionId: string): boolean | undefined;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   reorderSession(sessionId: string, targetSessionId: string, placement: "before" | "after"): boolean;
   agentGroups: readonly AgentGroupLayout[];
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
@@ -1689,6 +1692,7 @@ export function Shell(props: ShellProps) {
               renderTerminal={(sessionId) => <AssistantTerminalHost
                 sessionId={sessionId}
                 session={sessionsById.get(sessionId)}
+                terminalPresentation={props.terminalPresentation}
                 bindTerminalHost={props.bindTerminalHost}
                 resumeSession={props.resumeSession}
                 repairProviderHistory={setProviderHistoryRepairSessionId}
@@ -1789,6 +1793,7 @@ export function Shell(props: ShellProps) {
                 node={props.layout.root}
                 activePaneId={props.layout.activePaneId}
                 sessions={sessionsById}
+                terminalPresentation={props.terminalPresentation}
                 bindTerminalHost={props.bindTerminalHost}
                 focusPane={props.focusPane}
                 resizeSplit={props.resizeLayoutSplit}
@@ -2150,6 +2155,7 @@ type PaneTreeProps = {
   closePane(paneId: string): void;
   clearPane(paneId: string): void;
   terminalResizeOwner(sessionId: string): boolean | undefined;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   launchTerminal(): Promise<void>;
   resumeSession(sessionId: string): Promise<void>;
   repairProviderHistory(sessionId: string): void;
@@ -2169,8 +2175,9 @@ function PaneTree(props: PaneTreeProps) {
   );
 }
 
-export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, resumeSession, repairProviderHistory }: {
+export function AssistantTerminalHost({ sessionId, session, terminalPresentation, bindTerminalHost, resumeSession, repairProviderHistory }: {
   sessionId: string;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   session: Session | undefined;
   bindTerminalHost(sessionId: string, host: HTMLElement | null): void;
   resumeSession(sessionId: string): Promise<void>;
@@ -2183,13 +2190,13 @@ export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, re
     // is actionable; retrying remounts the retained surface on the next state.
     bindTerminalHost(sessionId, assistantTerminalKeepsSurfaceMounted(session) ? host : null);
   }, [bindTerminalHost, sessionId, session?.runtime_epoch, session?.lifecycle_state, session?.kind]);
-  return <div className="assistant-terminal-host" ref={hostRef}>
+  return <div className="assistant-terminal-frame"><div className="assistant-terminal-host" ref={hostRef}>
     {session && sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip
       session={session}
       resumeSession={resumeSession}
       repairProviderHistory={repairProviderHistory}
     /> : null}
-  </div>;
+  </div><TerminalStatus sessionId={sessionId} port={terminalPresentation} /></div>;
 }
 
 export function assistantTerminalKeepsSurfaceMounted(session: Session | undefined): boolean {
@@ -2215,7 +2222,7 @@ function TerminalRecoveryStrip({ session, resumeSession, repairProviderHistory, 
   </div>;
 }
 
-function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, focusPane, closePane, clearPane, terminalResizeOwner, launchTerminal, resumeSession, repairProviderHistory, closeSession }: PaneTreeProps & { paneId: string; sessionId: string | null; session: Session | undefined; active: boolean }) {
+function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, focusPane, closePane, clearPane, terminalResizeOwner, terminalPresentation, launchTerminal, resumeSession, repairProviderHistory, closeSession }: PaneTreeProps & { paneId: string; sessionId: string | null; session: Session | undefined; active: boolean }) {
   const splitDrop = useDroppable({
     id: `split-pane:${paneId}`,
     data: { kind: "split", paneId },
@@ -2234,7 +2241,7 @@ function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, fo
     <section ref={splitDrop.setNodeRef} className={`layout-pane${active ? " active" : ""}${splitDropTarget ? ` split-drop-target ${splitDropTarget.direction} ${splitDropTarget.placement}` : ""}`} data-pane-id={paneId} data-pane-session-id={sessionId ?? ""} data-split-drop-direction={splitDropTarget?.direction} data-split-drop-placement={splitDropTarget?.placement} onPointerDown={() => focusPane(paneId)}>
       <header className="pane-header"><span className="pane-active-dot" aria-hidden="true" /><Icon name={session?.kind === "Agent" ? "agent" : "terminal"} /><strong>{session ? sessionLabel(session) : sessionId ? "Session unavailable" : "Empty pane"}</strong><div className="pane-header-actions">{resumeLabel ? <button type="button" className="pane-retry" title="Retry Agent in this terminal" aria-label={`Retry ${session ? sessionLabel(session) : "Agent"}`} onClick={() => { if (session) void resumeSession(session.id); }}>Retry</button> : null}<button type="button" className="pane-close" title="Close pane — Session keeps running" aria-label="Close pane" onClick={() => closePane(paneId)}><Icon name="close" /></button></div></header>
       {splitDropTarget ? <div className={`pane-split-drop-preview ${splitDropTarget.direction} ${splitDropTarget.placement}`} aria-hidden="true"><span>Drop to split {splitDropLabel(splitDropTarget.direction, splitDropTarget.placement)}</span></div> : null}
-      {session && preserveTerminal ? <div className="terminal-pane-body"><div className="terminal-mount" ref={terminalRef} />{terminalResizeOwner(session.id) === false ? <div className="terminal-resize-owner-badge" role="status">Size controlled by another client</div> : null}{sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip session={session} resumeSession={resumeSession} repairProviderHistory={repairProviderHistory} {...(sessionDismissCommand(session) ? { closeDescriptor } : {})} /> : null}</div> : session ? (
+      {session && preserveTerminal ? <div className="terminal-pane-body"><div className="terminal-mount" ref={terminalRef} /><TerminalStatus sessionId={session.id} port={terminalPresentation} />{terminalResizeOwner(session.id) === false ? <div className="terminal-resize-owner-badge" role="status">Size controlled by another client</div> : null}{sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip session={session} resumeSession={resumeSession} repairProviderHistory={repairProviderHistory} {...(sessionDismissCommand(session) ? { closeDescriptor } : {})} /> : null}</div> : session ? (
         <div className={`pane-placeholder ${session.lifecycle_state}`} data-session-recovery-state={session.lifecycle_state}><span className="placeholder-symbol" aria-hidden="true">◇</span><h2>{sessionRecoveryTitle(session)}</h2><p>{sessionRecoveryMessage(session)}</p><div className="placeholder-actions">{repairAvailable ? <button className="primary-button" type="button" onClick={() => repairProviderHistory(session.id)}>Repair history</button> : resumeLabel ? <button className="primary-button" type="button" onClick={() => void resumeSession(session.id)}>{resumeLabel}</button> : null}{sessionDismissCommand(session) ? <button className="secondary-button" type="button" onClick={closeDescriptor}>Close Session</button> : null}</div></div>
       ) : sessionId ? (
         <div className="pane-placeholder missing" data-missing-session-id={sessionId}><span className="placeholder-symbol" aria-hidden="true">◇</span><h2>Session stopped</h2><p>The saved pane stays visible. Nothing was restarted automatically.</p><div className="placeholder-actions"><button className="primary-button" type="button" onClick={launchHere}>Open terminal</button><button className="secondary-button" type="button" onClick={() => clearPane(paneId)}>Remove reference</button></div></div>

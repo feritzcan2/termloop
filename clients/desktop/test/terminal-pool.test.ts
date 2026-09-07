@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Session } from "../src/renderer/model.js";
 import type { AttachmentEvent } from "../src/renderer/transport/terminal-port.js";
 import {
@@ -355,7 +355,7 @@ describe("TerminalPool", () => {
     expect(attachments.get(first.id)!.replayAcknowledged).toBe(0);
 
     attachments.get(first.id)!.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: output.buffer });
-    expect(attachments.get(first.id)!.replayAcknowledged).toBe(output.byteLength);
+    await vi.waitFor(() => expect(attachments.get(first.id)!.replayAcknowledged).toBe(output.byteLength));
   });
 
   it("reconnects attachments only for the gateway source that changed", async () => {
@@ -602,8 +602,9 @@ describe("TerminalPool", () => {
     await pool.mount(value.id, {} as HTMLElement);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(surface.probeValue.text).toContain("terminal connection failed");
-    expect(surface.probeValue.text).toContain("socket closed");
+    expect(surface.probeValue.text).toBe("");
+    expect(pool.presentationPort.snapshot(value.id)?.phase).toBe("failed");
+    expect(pool.presentationPort.snapshot(value.id)?.notice).toContain("socket closed");
   });
 
   it("hides mounted native-capable surfaces while chrome overlays are open", async () => {
