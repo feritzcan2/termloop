@@ -303,7 +303,8 @@ async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop
         let runtimes = core.detach_task_archive_runtimes(&plan);
         (plan, runtimes, core.state_revision())
     };
-    queue_durable_commit_invalidation(state, CommitImpact::TaskSessionAgent, prepared_revision);
+    queue_durable_commit_invalidation(state, CommitImpact::TaskSessionAgent, prepared_revision)
+        .await;
     let terminal = state.terminal.clone();
     let session_ids = plan.session_ids().to_vec();
     let retirement =
@@ -340,7 +341,8 @@ async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop
             CommitImpact::TaskSessionAgent,
             prepared_revision,
             recovery_revision,
-        );
+        )
+        .await;
         recovery?;
         return Err(termloop_core::CoreError::ArchiveRecoveryAttention {
             task_id: plan.task_id().to_owned(),
@@ -357,7 +359,8 @@ async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop
         CommitImpact::TaskSessionAgent,
         prepared_revision,
         completed_revision,
-    );
+    )
+    .await;
     result
 }
 
@@ -371,7 +374,7 @@ async fn archive_session(
         let runtime = core.detach_session_archive_runtime(&plan);
         (plan, runtime, core.state_revision())
     };
-    queue_durable_commit_invalidation(state, CommitImpact::SessionAgent, prepared_revision);
+    queue_durable_commit_invalidation(state, CommitImpact::SessionAgent, prepared_revision).await;
     let terminal = state.terminal.clone();
     let session_id = plan.session_id().to_owned();
     let retirement = tokio::task::spawn_blocking(move || {
@@ -405,7 +408,8 @@ async fn archive_session(
             CommitImpact::SessionAgent,
             prepared_revision,
             recovery_revision,
-        );
+        )
+        .await;
         recovery?;
         return Err(termloop_core::CoreError::InvalidParams(
             "sessionArchiveRecoveryAttention".into(),
@@ -421,7 +425,8 @@ async fn archive_session(
         CommitImpact::SessionAgent,
         prepared_revision,
         completed_revision,
-    );
+    )
+    .await;
     result
 }
 
@@ -437,7 +442,8 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
         CommitImpact::TaskSessionAgent,
         previous_revision,
         state_revision,
-    );
+    )
+    .await;
     let result = result?;
     let session_ids = result
         .get("resume_session_ids")
@@ -463,7 +469,8 @@ async fn reopen_task(params: Value, state: &AppState) -> Result<Value, termloop_
         CommitImpact::TaskSessionAgent,
         previous_revision,
         state_revision,
-    );
+    )
+    .await;
     let (result, session_ids) = result?;
     resume_task_sessions(session_ids, state).await;
     Ok(result)
@@ -511,7 +518,8 @@ async fn restore_archived_session(
         CommitImpact::SessionAgent,
         previous_revision,
         restored_revision,
-    );
+    )
+    .await;
     let restored = restored?;
     let preview = preview_resume_agent_session(json!({ "sessionId": session_id }), state).await?;
     let launch_ticket = preview
@@ -1562,7 +1570,8 @@ async fn dispatch_inner(
                         impact,
                         previous_revision,
                         current_revision,
-                    );
+                    )
+                    .await;
                 }
                 result
             }
