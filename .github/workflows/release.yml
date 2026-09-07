@@ -348,8 +348,8 @@ jobs:
             "termloop-desktop-macos-universal-$version.dmg"
             "termloop-desktop-macos-universal-$version.zip"
             "termloop-server-linux-x64-$version.tar.gz"
-            "termloop-desktop-linux-x64-$version.AppImage"
-            "termloop-desktop-linux-x64-$version.deb"
+            "termloop-desktop-linux-x86_64-$version.AppImage"
+            "termloop-desktop-linux-amd64-$version.deb"
             "latest-mac.yml"
             "latest-linux.yml"
           )
@@ -384,8 +384,8 @@ jobs:
           payloads=(
             "termloop-desktop-macos-universal-$version.dmg"
             "termloop-desktop-macos-universal-$version.zip"
-            "termloop-desktop-linux-x64-$version.AppImage"
-            "termloop-desktop-linux-x64-$version.deb"
+            "termloop-desktop-linux-x86_64-$version.AppImage"
+            "termloop-desktop-linux-amd64-$version.deb"
           )
           while IFS= read -r blockmap; do
             payloads+=("${blockmap##*/}")
