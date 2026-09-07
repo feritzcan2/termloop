@@ -65,7 +65,7 @@ try {
       reasoning: stewardSnapshot.configuration?.reasoning || "default",
       enabled: false,
       expectedRevision: stewardSnapshot.stateRevision,
-      systemPrompt: stewardSnapshot.configuration?.systemPrompt || stewardSnapshot.defaultSystemPrompt,
+      systemPrompt: stewardSnapshot.configuration?.systemPrompt ?? "",
     });
     stewardSnapshot = await client.call("steward.configurationGet", { projectId: project.id });
   }
