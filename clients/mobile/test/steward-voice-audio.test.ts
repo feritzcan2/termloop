@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   configureStewardAudioSession,
+  stopVoiceAudioStream,
   stewardVoiceAudioErrorMessage,
 } from "../src/platform/steward-voice-audio";
 
@@ -30,5 +31,24 @@ describe("Steward voice audio session", () => {
     expect(stewardVoiceAudioErrorMessage(new Error("OSStatus error 561017449"), "fallback"))
       .toBe("iPhone ses geçişini tamamlayamadı. Bir an sonra tekrar dene.");
     expect(stewardVoiceAudioErrorMessage(undefined, "fallback")).toBe("fallback");
+  });
+
+  it("tolerates an audio stream that Expo already released during unmount", () => {
+    const released = {
+      get isStreaming(): boolean {
+        throw new Error("Unable to find the native shared object");
+      },
+      stop: vi.fn(),
+    };
+
+    expect(() => stopVoiceAudioStream(released)).not.toThrow();
+    expect(released.stop).not.toHaveBeenCalled();
+  });
+
+  it("stops a live stream and treats cleanup failures as already settled", () => {
+    const stop = vi.fn(() => { throw new Error("native stream released"); });
+
+    expect(() => stopVoiceAudioStream({ isStreaming: true, stop })).not.toThrow();
+    expect(stop).toHaveBeenCalledOnce();
   });
 });

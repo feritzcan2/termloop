@@ -1,0 +1,11 @@
+.terminal-stream-status { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 4px 8px; font-size: 11px; line-height: 16px; color: var(--text-muted, #aaa); background: var(--bg-panel, #202226); border-top: 1px solid var(--border, #36383b); }
+.terminal-stream-status > span { min-width: 0; overflow-wrap: anywhere; }
+.terminal-stream-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+.terminal-stream-actions button { color: inherit; background: transparent; border: 1px solid var(--border, #555); border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+.terminal-stream-actions button:focus-visible { outline: 2px solid var(--accent, #aabaff); }
+.terminal-reading-view { position: absolute; inset: 0 0 38px; z-index: 4; overflow: auto; margin: 0; padding: 12px; white-space: pre; user-select: text; color: var(--text-primary, #ddd); background: var(--bg-panel, #202226); font: 13px/1.35 monospace; }
+.terminal-pane-body, .assistant-terminal-frame { display: flex; flex-direction: column; min-height: 0; position: relative; }
+.terminal-pane-body > .terminal-mount, .assistant-terminal-frame > .assistant-terminal-host { flex: 1 1 0; height: auto; min-height: 0; }
+.assistant-terminal-frame { height: 100%; }
+
+.terminal-pane-body .terminal-resize-owner-badge { bottom: 40px; }

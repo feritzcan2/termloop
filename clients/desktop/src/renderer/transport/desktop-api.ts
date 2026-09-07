@@ -70,13 +70,6 @@ import type {
   StewardConfigurationDeleteResult,
   StewardConfigurationSetParams,
   StewardConfigurationSetResult,
-  WorkerConfigurationCreateParams,
-  WorkerConfigurationDeleteParams,
-  WorkerConfigurationDeleteResult,
-  WorkerConfigurationListParams,
-  WorkerConfigurationListResult,
-  WorkerConfigurationMutationResult,
-  WorkerConfigurationUpdateParams,
   RunConfigurationCreateParams,
   RunConfigurationDeleteParams,
   RunConfigurationDeleteResult,
@@ -153,6 +146,13 @@ import type {
   TaskBranchCommitChangeListResult,
   TaskBranchCommitDiffResult,
   QuickActionPreviewResult,
+  QuickActionParams,
+  AgentProfileDto,
+  AgentLibraryResult,
+  AgentProfileCreateParams,
+  AgentProfileUpdateParams,
+  AgentProfileDeleteParams,
+  AgentProfileFavoriteParams,
   AgentLaunchPreviewResult,
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
@@ -325,13 +325,15 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentLibraryGet(): Promise<AgentLibraryResult>;
+  agentProfileCreate(params: AgentProfileCreateParams): Promise<AgentLibraryResult>;
+  agentProfileUpdate(params: AgentProfileUpdateParams): Promise<AgentLibraryResult>;
+  agentProfileDelete(params: AgentProfileDeleteParams): Promise<AgentLibraryResult>;
+  agentProfileFavorite(params: AgentProfileFavoriteParams): Promise<AgentLibraryResult>;
+  agentProfileList(): Promise<AgentProfileDto[]>;
   stewardConfigurationGet(projectId: string): Promise<StewardConfigurationGetResult>;
   stewardConfigurationSet(params: StewardConfigurationSetParams): Promise<StewardConfigurationSetResult>;
   stewardConfigurationDelete(params: StewardConfigurationDeleteParams): Promise<StewardConfigurationDeleteResult>;
-  workerConfigurationList(params: WorkerConfigurationListParams): Promise<WorkerConfigurationListResult>;
-  workerConfigurationCreate(params: WorkerConfigurationCreateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationUpdate(params: WorkerConfigurationUpdateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationDelete(params: WorkerConfigurationDeleteParams): Promise<WorkerConfigurationDeleteResult>;
   runConfigurationList(params: RunConfigurationListParams): Promise<RunConfigurationListResult>;
   runConfigurationCreate(params: RunConfigurationCreateParams): Promise<RunConfigurationMutationResult>;
   runConfigurationUpdate(params: RunConfigurationUpdateParams): Promise<RunConfigurationMutationResult>;
@@ -388,8 +390,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;

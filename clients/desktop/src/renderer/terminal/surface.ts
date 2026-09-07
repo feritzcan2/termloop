@@ -10,6 +10,10 @@ export type TerminalBufferProbe = {
 };
 
 export type TerminalSurface = {
+  container?(): HTMLElement | undefined;
+  readText?(): Promise<string | undefined> | string;
+  scrollToBottom?(): void;
+  onError?(listener: () => void): () => void;
   mount(container: HTMLElement, preferWebgl: boolean): void | Promise<void>;
   unmount(): void;
   write(data: Uint8Array, callback: () => void): void;

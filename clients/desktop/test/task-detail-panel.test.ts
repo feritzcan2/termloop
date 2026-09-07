@@ -30,7 +30,6 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     retryDelaySeconds: 600,
     completeWhen: "The Task branch has commits and no agent is still working.",
     whileWaiting: { mode: "off", instructions: "" },
-    workerId: "worker-1",
     approver: null,
     ...overrides,
   };
@@ -361,7 +360,6 @@ describe("the Task detail page on screen", () => {
         configurations: ROUTINES.map((routine) => ({
           ...routine,
           projectId: "project-1",
-          workerId: "worker-1",
           kind: "custom",
           triggerMode: "onDemand",
           prompt: "",

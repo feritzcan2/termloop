@@ -26,9 +26,9 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorkerConfiguration, WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation,
-    WorktreeCleanupReceipt, WorktreeProvisioningOperation, WorktreeRepairOperation,
-    WorktreeRepairReceipt, WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
+    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -55,14 +55,15 @@ use termloop_domain::{
 // Version 47 adds the managed Task branch/worktree prefix. Version 48 adds the
 // bounded current set of branches observed in each managed Task worktree.
 // Version 49 adds the selected remote base ref to Project Task automation.
-// Version 50 removes the retired Routine provider kind from durable state;
-// capability selection now belongs to the Worker at assignment time. Version
-// 51 adds Project-scoped workflow configurations. Version 52 adds one bounded
-// current Core-managed workflow execution per Task, without attempt history.
-// Version 53 adds one replace-in-place result summary per configured step.
-// Version 54 adds durable routing state for parallel review groups. Version 55
-// stores the exact launch selection for each fresh workflow helper.
-const CURRENT_SCHEMA_VERSION: u32 = 55;
+// Version 50 removes the retired Routine provider kind from durable state.
+// Version 51 removes persistent Workers and binds Routine execution directly
+// to the Project Steward. Version 52 adds personal agent profiles and pinned
+// current Session instructions. Version 53 permits user overrides of built-in
+// agent profiles in the same bounded library. Versions 51 through 55 were also
+// independently used by the workflow branch for configurations, executions,
+// sidebar results, parallel review routing, and fresh-helper launch selections.
+// Version 56 is the first integrated state containing both feature families.
+const CURRENT_SCHEMA_VERSION: u32 = 56;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -76,6 +77,10 @@ pub fn issue_core_write_authority_for_composition() -> CoreWriteAuthority {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CurrentState {
     schema_version: u32,
+    #[serde(default)]
+    agent_library: termloop_domain::AgentLibrary,
+    #[serde(default)]
+    session_agent_profiles: Vec<termloop_domain::SessionAgentProfile>,
     revision: u64,
     #[serde(default)]
     mcp_tool_description_overrides: Vec<McpToolDescriptionOverride>,
@@ -128,8 +133,9 @@ struct CurrentState {
     playbook_configurations: Vec<PlaybookConfiguration>,
     #[serde(default)]
     playbook_step_progress: Vec<PlaybookStepProgress>,
-    #[serde(default)]
-    worker_configurations: Vec<WorkerConfiguration>,
+    /// Migration-only input. Schema 51 never writes persistent Worker state.
+    #[serde(default, skip_serializing)]
+    worker_configurations: Vec<serde_json::Value>,
     #[serde(default)]
     run_configurations: Vec<RunConfiguration>,
     #[serde(default)]
@@ -159,6 +165,8 @@ impl Default for CurrentState {
     fn default() -> Self {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
+            agent_library: Default::default(),
+            session_agent_profiles: vec![],
             revision: 0,
             mcp_tool_description_overrides: vec![],
             projects: vec![],
@@ -434,6 +442,7 @@ impl Store {
     }
 
     fn commit(&mut self) -> Result<u64, StoreError> {
+        records::agent_library::prune_session_profiles(&mut self.state);
         self.state.revision += 1;
         self.persisted_bytes = persist_state(&self.path, &self.state, self.persisted_bytes)?;
         Ok(self.state.revision)

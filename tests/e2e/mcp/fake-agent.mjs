@@ -1,7 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const [provider, evidenceDir, ...args] = process.argv.slice(2);
+process.on("uncaughtExceptionMonitor", (error) => {
+  writeFileSync(`${evidenceDir}/fake-agent-error.json`, JSON.stringify({ message: error.message }));
+});
 if (args.includes("--version")) {
   console.log(provider === "claude" ? "2.1.228 (Claude Code)" : "codex-cli 0.147.0");
   process.exit(0);
@@ -106,6 +110,8 @@ const listed = await rpc("tools/list");
 const tools = listed.result.tools.map((tool) => tool.name);
 const initialPrompt = args.at(-1) ?? "";
 const isHelper = tools.includes("reply_to_request");
+const selectedModel = args.includes("--model") ? args[args.indexOf("--model") + 1] : "default";
+const selectedReasoning = args.includes("--effort") ? args[args.indexOf("--effort") + 1] : "default";
 let preCommitCommandDenied = false;
 if (provider === "claude" && isResume) {
   // Reproduce eager provider startup: MCP initialize and discovery happen
@@ -190,11 +196,11 @@ if (!isHelper && !isResume) {
   await reportClaudeObservation("UserPromptSubmit");
   const first = structured(await rpc("tools/call", {
     name: "ask_to",
-    arguments: { target: "claude", message: "Return the exact acceptance marker MCP-ROUNDTRIP-OK.", idempotencyKey: "acceptance-retry" },
+    arguments: { target: "claude", model: "opus", reasoning: "high", message: "Return the exact acceptance marker MCP-ROUNDTRIP-OK.", idempotencyKey: "acceptance-retry" },
   }));
   const retry = structured(await rpc("tools/call", {
     name: "ask_to",
-    arguments: { target: "claude", message: "Return the exact acceptance marker MCP-ROUNDTRIP-OK.", idempotencyKey: "acceptance-retry" },
+    arguments: { target: "claude", model: "opus", reasoning: "high", message: "Return the exact acceptance marker MCP-ROUNDTRIP-OK.", idempotencyKey: "acceptance-retry" },
   }));
   await writeFile(`${evidenceDir}/asker-pre-restart.json`, JSON.stringify({
     tools,
@@ -213,11 +219,14 @@ if (!isHelper && !isResume) {
   await writeFile(`${evidenceDir}/helper-pre-restart.json`, JSON.stringify({
     requestId,
     tools,
+    selectedModel,
+    selectedReasoning,
     tokenInArguments: args.some((argument) => argument.includes(token)),
     subprocessBearerVisible,
   }));
   await waitForever();
 } else if (isHelper) {
+  await writeFile(`${evidenceDir}/helper-resumed.json`, JSON.stringify({ selectedModel, selectedReasoning }));
   const recoveryText = await readSubmittedPrompt("Ask-To restart recovery");
   const requestId = recoveryText.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0];
   if (!requestId || !recoveryText.includes("daemon restarted")) {
@@ -247,6 +256,8 @@ if (!isHelper && !isResume) {
   }));
   await writeFile(`${evidenceDir}/helper.json`, JSON.stringify({
     tools,
+    selectedModel,
+    selectedReasoning,
     status: reply.status,
     duplicateReplyDeniedAfterDelivery: duplicateReply.result?.isError === true,
     followUpStatus: followUpReply.status,
@@ -264,6 +275,16 @@ if (!isHelper && !isResume) {
   await reportClaudeObservation("Stop");
   const firstReplyText = await readSubmittedPrompt("restarted first pushed reply");
   await reportClaudeObservation("UserPromptSubmit");
+  const selectionChange = await rpc("tools/call", {
+    name: "ask_to",
+    arguments: {
+      target: "claude",
+      model: "sonnet",
+      reasoning: "low",
+      message: "Must not change the existing helper selection.",
+      conversationId: beforeRestart.conversationId,
+    },
+  });
   const followUp = structured(await rpc("tools/call", {
     name: "ask_to",
     arguments: {
@@ -282,6 +303,7 @@ if (!isHelper && !isResume) {
     subprocessBearerVisible,
     initializedBeforeReadiness: true,
     preCommitCommandDenied,
+    followUpSelectionChangeDenied: selectionChange.result?.isError === true,
     pushedReplyVisible: firstReplyText.includes("TermLoop Ask-To final reply") && firstReplyText.includes("MCP-ROUNDTRIP-OK"),
     followUpRequestId: followUp.requestId,
     followUpConversationId: followUp.conversationId,

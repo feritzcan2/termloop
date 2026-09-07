@@ -3,7 +3,6 @@ use termloop_domain::{
     PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
     PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling,
     RoutineTriggerMode, StewardAgentId, StewardConfiguration, TrackerConfiguration,
-    WorkerConfiguration,
 };
 
 fn temp_store(label: &str) -> (std::path::PathBuf, Store) {
@@ -24,25 +23,6 @@ fn project(id: &str) -> ProjectRecord {
         id: id.into(),
         name: id.into(),
         folder_path: format!("/tmp/{id}"),
-    }
-}
-
-fn step_worker(project_id: &str) -> WorkerConfiguration {
-    WorkerConfiguration {
-        id: "worker-1".into(),
-        project_id: project_id.into(),
-        name: "Worker 1".into(),
-        agent_id: StewardAgentId::Claude,
-        model: "default".into(),
-        permission: "default".into(),
-        reasoning: "default".into(),
-        enabled: true,
-        ping_interval_seconds: 60,
-        worker_prompt: String::new(),
-        system_prompt: String::new(),
-        executor_session_id: None,
-        generation: 1,
-        updated_at_epoch_ms: 1,
     }
 }
 
@@ -71,7 +51,6 @@ fn step_routine(project_id: &str, id: &str) -> TrackerConfiguration {
         name: "PR checker".into(),
         prompt: "Look at the Task's pull request and report whether it is approved.".into(),
         steward_instructions: String::new(),
-        worker_id: "worker-1".into(),
         enabled: true,
         schedule_interval_seconds: 300,
         generation: 1,
@@ -128,7 +107,6 @@ fn atomic_playbook_apply_creates_capacity_checks_and_document_in_one_revision() 
             PlaybookApply {
                 configuration: playbook("project-a", 1),
                 steward_configuration: Some(enabled_steward),
-                create_worker: Some(step_worker("project-a")),
                 upsert_routines: vec![step_routine("project-a", "routine-pr")],
                 delete_routine_ids: Vec::new(),
             },
@@ -137,7 +115,6 @@ fn atomic_playbook_apply_creates_capacity_checks_and_document_in_one_revision() 
         .unwrap();
     assert_eq!(applied.revision, 1);
     assert_eq!(store.revision(), before + 1);
-    assert_eq!(store.worker_configurations().len(), 1);
     assert_eq!(store.tracker_configurations().len(), 1);
     assert_eq!(store.playbook_configurations().len(), 1);
     assert!(store.steward_configurations()[0].enabled);
@@ -145,7 +122,6 @@ fn atomic_playbook_apply_creates_capacity_checks_and_document_in_one_revision() 
 
     drop(store);
     let reopened = Store::open(&path).unwrap();
-    assert_eq!(reopened.worker_configurations().len(), 1);
     assert_eq!(reopened.tracker_configurations().len(), 1);
     assert_eq!(reopened.playbook_configurations().len(), 1);
     assert!(reopened.steward_configurations()[0].enabled);
@@ -165,7 +141,7 @@ fn atomic_playbook_apply_rolls_back_the_entire_invalid_replacement() {
         .unwrap();
     let before = store.revision();
     let mut routine = step_routine("project-a", "routine-pr");
-    routine.worker_id = "missing-worker".into();
+    routine.project_id = "project-b".into();
     let mut enabled_steward = disabled_steward("project-a");
     enabled_steward.enabled = true;
     enabled_steward.generation = 2;
@@ -175,7 +151,6 @@ fn atomic_playbook_apply_rolls_back_the_entire_invalid_replacement() {
             PlaybookApply {
                 configuration: playbook("project-a", 1),
                 steward_configuration: Some(enabled_steward),
-                create_worker: Some(step_worker("project-a")),
                 upsert_routines: vec![routine],
                 delete_routine_ids: Vec::new(),
             },
@@ -184,7 +159,6 @@ fn atomic_playbook_apply_rolls_back_the_entire_invalid_replacement() {
         Err(StoreError::ConstraintViolation)
     ));
     assert_eq!(store.revision(), before);
-    assert!(store.worker_configurations().is_empty());
     assert!(store.tracker_configurations().is_empty());
     assert!(store.playbook_configurations().is_empty());
     assert!(!store.steward_configurations()[0].enabled);
@@ -198,10 +172,6 @@ fn playbook_is_one_replaceable_document_per_project_and_survives_reopen() {
     let authority = issue_core_write_authority_for_composition();
     store
         .insert_project(&authority, project("project-a"))
-        .unwrap();
-    let revision = store.revision();
-    store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
         .unwrap();
     let revision = store.revision();
     store
@@ -247,10 +217,6 @@ fn playbook_write_requires_current_revision_valid_document_and_known_project() {
         .unwrap();
     let revision = store.revision();
     store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
-        .unwrap();
-    let revision = store.revision();
-    store
         .set_tracker_configuration(
             &authority,
             step_routine("project-a", "routine-pr"),
@@ -289,10 +255,6 @@ fn project_delete_removes_its_playbook() {
         .unwrap();
     let revision = store.revision();
     store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
-        .unwrap();
-    let revision = store.revision();
-    store
         .set_tracker_configuration(
             &authority,
             step_routine("project-a", "routine-pr"),
@@ -316,10 +278,6 @@ fn steward_brief_update_is_document_cas_replace_only() {
     let authority = issue_core_write_authority_for_composition();
     store
         .insert_project(&authority, project("project-a"))
-        .unwrap();
-    let revision = store.revision();
-    store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
         .unwrap();
     let revision = store.revision();
     store
@@ -442,10 +400,6 @@ fn playbook_step_must_name_a_routine_in_its_own_project() {
         .unwrap();
     let revision = store.revision();
     store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
-        .unwrap();
-    let revision = store.revision();
-    store
         .set_tracker_configuration(
             &authority,
             step_routine("project-a", "routine-pr"),
@@ -499,10 +453,6 @@ fn on_demand_routines_are_current_state_like_scheduled_ones() {
         .unwrap();
     let revision = store.revision();
     store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
-        .unwrap();
-    let revision = store.revision();
-    store
         .set_tracker_configuration(
             &authority,
             step_routine("project-a", "routine-pr"),
@@ -529,10 +479,6 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
     let authority = issue_core_write_authority_for_composition();
     store
         .insert_project(&authority, project("project-a"))
-        .unwrap();
-    let revision = store.revision();
-    store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
         .unwrap();
     let revision = store.revision();
     store
@@ -652,10 +598,6 @@ fn a_pipeline_the_project_kept_still_holds_its_routines() {
         .unwrap();
     let revision = store.revision();
     store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
-        .unwrap();
-    let revision = store.revision();
-    store
         .set_tracker_configuration(
             &authority,
             step_routine("project-a", "routine-pr"),
@@ -748,16 +690,12 @@ fn answer(task_id: &str, verdict: PlaybookStepVerdict) -> PlaybookStepProgress {
     }
 }
 
-/// Sets up a Project with a Worker, a step Routine, one Playbook, and one Task.
+/// Sets up a Project with a step Routine, one Playbook, and one Task.
 fn project_with_pipeline(label: &str) -> (std::path::PathBuf, Store, CoreWriteAuthority) {
     let (path, mut store) = temp_store(label);
     let authority = issue_core_write_authority_for_composition();
     store
         .insert_project(&authority, project("project-a"))
-        .unwrap();
-    let revision = store.revision();
-    store
-        .set_worker_configuration(&authority, step_worker("project-a"), revision)
         .unwrap();
     let revision = store.revision();
     store

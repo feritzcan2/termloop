@@ -1,3 +1,4 @@
+pub(crate) mod agent_library;
 mod agent_plan;
 mod companion;
 pub(crate) mod configuration_version;
@@ -15,7 +16,6 @@ mod task;
 pub(crate) mod task_branch;
 mod task_source;
 mod tracker;
-mod worker;
 mod workflow;
 
 pub use playbook::PlaybookApply;

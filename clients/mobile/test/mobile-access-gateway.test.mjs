@@ -15,7 +15,7 @@ import {
 } from "../src/adapters/production/terminal-frame";
 
 describe("persistent mobile access gateway", () => {
-  it("multiplexes control, invalidations, and terminal frames over one downstream socket", async () => {
+  it.each(process.platform === "win32" ? ["ipc"] : ["signal", "ipc"])("multiplexes control, invalidations, and terminal frames over one downstream socket (%s shutdown)", async (shutdown) => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-multiplex-"));
     const runtimeFile = path.join(directory, "runtime.json");
     const gatewayConfig = path.join(directory, "gateway.json");
@@ -91,8 +91,14 @@ describe("persistent mobile access gateway", () => {
         "project-1": [{ sessionIds: groupedSessionIds, name: "Review crew" }],
       },
     }));
-    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
-      cwd: path.resolve("."), stdio: "ignore",
+    // Windows kills a child abruptly for SIGTERM. This test-only preload lets
+    // its IPC parent exercise the gateway's real graceful signal handler too.
+    const gracefulSignalFixture = "process.once('message', message => { if (message === 'shutdown') process.emit('SIGTERM'); });";
+    const gateway = spawn(process.execPath, [
+      "--import", `data:text/javascript,${encodeURIComponent(gracefulSignalFixture)}`,
+      path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig,
+    ], {
+      cwd: path.resolve("."), stdio: ["ignore", "ignore", "ignore", "ipc"],
     });
     try {
       await waitForHealth(gatewayPort);
@@ -228,7 +234,8 @@ describe("persistent mobile access gateway", () => {
       });
       expect(upstreamPaths.filter((value) => value === "/terminal")).toHaveLength(1);
       const restarting = closed(mobile);
-      gateway.kill("SIGTERM");
+      if (shutdown === "ipc") gateway.send("shutdown");
+      else gateway.kill("SIGTERM");
       await expect(restarting).resolves.toEqual({ code: 1001, reason: "gateway restarting" });
     } finally {
       gateway.kill("SIGTERM");

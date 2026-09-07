@@ -45,7 +45,7 @@ pub use runtime::generated_input_delivery::{
 };
 pub use session_launch::archive::SessionArchiveRetirementPlan;
 pub use session_launch::{
-    AgentLaunchPlan, AgentResumeCandidate, AgentResumeLane, AgentResumePlan,
+    AgentLaunchCommit, AgentLaunchPlan, AgentResumeCandidate, AgentResumeLane, AgentResumePlan,
     AgentResumePlanOutcome, AgentResumePreparationError, AgentResumeTargetValidation, CodexRuntime,
     McpAuthorizer, McpPrincipal, ObservedSessionRelocationPreview, ObservedTaskWorktreeLaunch,
     SessionRelocationPreviewOutcome, SessionRelocationPreviewPlan, TaskWorktreeLaunchPlan,
@@ -1646,7 +1646,7 @@ impl CoreRuntime {
                 true
             }
             PendingAssistantWakeDelivery::Steward { .. }
-            | PendingAssistantWakeDelivery::Worker { .. } => false,
+            | PendingAssistantWakeDelivery::StewardAssignment { .. } => false,
         }
     }
 
@@ -2084,20 +2084,13 @@ impl CoreRuntime {
         Ok(self.store.revision() != previous_revision)
     }
 
-    /// Whether a Session is the current executor of a persistent Steward or
-    /// Worker. Their launch configuration owns the permission and effort modes.
+    /// Whether a Session is the current executor of a persistent Steward. Its
+    /// launch configuration owns the permission and effort modes.
     fn session_is_persistent_assistant_executor(&self, session_id: &str) -> bool {
         self.store
             .steward_configurations()
             .iter()
             .any(|configuration| configuration.executor_session_id.as_deref() == Some(session_id))
-            || self
-                .store
-                .worker_configurations()
-                .iter()
-                .any(|configuration| {
-                    configuration.executor_session_id.as_deref() == Some(session_id)
-                })
     }
 
     /// Remembers which transcript and turn a working Claude Session belongs to.

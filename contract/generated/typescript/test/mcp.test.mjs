@@ -4,7 +4,6 @@ import {
   MCP_INTERACTIVE_TOOLS,
   MCP_IMPROVER_TOOLS,
   MCP_STEWARD_TOOLS,
-  MCP_WORKER_TOOLS,
   MCP_HELPER_TOOLS,
   MCP_TOOL_DEFINITIONS,
   MCP_TOOLS,
@@ -34,14 +33,10 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_worktree_provision"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_launch"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("ask_to"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_get_next_routine"));
-  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_transcript_tail_read"));
-  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
-  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_request"));
-  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_request"));
-  assert.ok(!MCP_WORKER_TOOLS.includes("send_to_agent"));
-  assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_assignment"));
-  assert.ok(!MCP_WORKER_TOOLS.includes("task_create"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("task_agent_request"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("steward_next_assignment"));
+  assert.ok(MCP_STEWARD_TOOLS.includes("steward_complete_assignment"));
   assert.ok(MCP_TOOLS.every((tool) => !METHODS.includes(tool)));
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.message.maxLength, 32768);
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.conversationId.maxLength, 128);
@@ -68,6 +63,27 @@ test("MCP result validation is generated and strict", () => {
     status: "completed",
     message: "answers are pushed, not returned by ask_to",
   }), false);
+});
+
+test("Ask-To advertises independent defaults and user-requested initial selection", () => {
+  const definition = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "ask_to");
+  const { properties, required, allOf } = definition.inputSchema;
+  assert.deepEqual(required, ["target", "message"]);
+  assert.equal(properties.model.default, "default");
+  assert.equal(properties.reasoning.default, "default");
+  assert.ok(properties.model.enum.includes("gpt-6-astra"));
+  assert.deepEqual(properties.reasoning.enum, ["default", "low", "medium", "high", "xhigh", "max"]);
+  assert.match(definition.description, /only when the user explicitly requests/);
+  assert.match(definition.description, /Never infer or choose a non-default setting/);
+  for (const target of ["claude", "codex"]) {
+    const rule = allOf.find((rule) => rule.if.properties?.target?.const === target);
+    assert.equal(rule.then.properties.model.enum.includes("gpt-6-astra"), target === "codex");
+    assert.equal(rule.then.properties.model.enum.includes("opus"), target === "claude");
+  }
+  const reuse = allOf.find((rule) => rule.if.required.includes("conversationId"));
+  assert.equal(reuse.then.additionalProperties, false);
+  assert.equal(Object.hasOwn(reuse.then.properties, "model"), false);
+  assert.equal(Object.hasOwn(reuse.then.properties, "reasoning"), false);
 });
 
 test("send_to_agent accepts exact Session IDs and typed delivery outcomes", () => {
@@ -118,6 +134,12 @@ test("Steward Task Agent results validate provider/model pairs", () => {
     status: "ready",
   };
   assert.equal(validateMcpToolResult("task_agent_start", result), true);
+  assert.equal(validateMcpToolResult("task_agent_start", {
+    ...result,
+    agentId: "codex",
+    model: "gpt-6-astra",
+    reasoning: "max",
+  }), true);
   assert.equal(validateMcpToolResult("task_agent_start", {
     ...result,
     agentId: "codex",

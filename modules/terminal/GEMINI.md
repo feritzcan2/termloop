@@ -19,6 +19,11 @@
 - The bounded atomic-input primitive preserves one caller-provided byte
   sequence; terminal must not learn prompt, MCP, conversation, or readiness
   policy from its use.
+- Receipt-bearing atomic input, settlement observation, and guarded submit are
+  transport primitives for Core's shared generated-input coordinator only; they
+  never imply provider delivery. Do not add feature-specific prompt sequencing,
+  fixed paste-to-Enter timing, content replay, or Enter retry policy here.
+  Direct client input remains the separate user-input path.
 - Detach does not terminate. Daemon restart may create a new PTY and explicitly
   resume an agent; screen/scrollback restoration is not promised.
 - Each attachment has a bounded outbound queue. Overflow is session-local and

@@ -21,6 +21,10 @@ import {
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
   type QuickActionParams,
+  type AgentProfileCreateParams,
+  type AgentProfileUpdateParams,
+  type AgentProfileDeleteParams,
+  type AgentProfileFavoriteParams,
   type QuickActionLaunchParams,
   type ResultFor,
   type TaskProvisionWorktreeParams,
@@ -893,6 +897,12 @@ handleIpc("termloop:layout-save", async (_event, document: unknown) => {
 handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));
 handleIpc("termloop:agent-capability-list", () => controlCall("agent.capabilityList"));
+handleIpc("termloop:agent-library-get", () => controlCall("agent.libraryGet"));
+handleIpc("termloop:agent-profile-create", (_event, params: AgentProfileCreateParams) => controlCall("agent.profileCreate", params));
+handleIpc("termloop:agent-profile-update", (_event, params: AgentProfileUpdateParams) => controlCall("agent.profileUpdate", params));
+handleIpc("termloop:agent-profile-delete", (_event, params: AgentProfileDeleteParams) => controlCall("agent.profileDelete", params));
+handleIpc("termloop:agent-profile-favorite", (_event, params: AgentProfileFavoriteParams) => controlCall("agent.profileFavorite", params));
+handleIpc("termloop:agent-profile-list", () => controlCall("agent.profileList"));
 handleIpc("termloop:steward-configuration-get", (_event, projectId: string) =>
   controlCall("steward.configurationGet", { projectId }),
 );
@@ -905,26 +915,6 @@ handleIpc(
   "termloop:steward-configuration-delete",
   (_event, params: import("@termloop/contract/current").StewardConfigurationDeleteParams) =>
     controlCall("steward.configurationDelete", params),
-);
-handleIpc(
-  "termloop:worker-configuration-list",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationListParams) =>
-    controlCall("worker.configurationList", params),
-);
-handleIpc(
-  "termloop:worker-configuration-create",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationCreateParams) =>
-    controlCall("worker.configurationCreate", params),
-);
-handleIpc(
-  "termloop:worker-configuration-update",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationUpdateParams) =>
-    controlCall("worker.configurationUpdate", params),
-);
-handleIpc(
-  "termloop:worker-configuration-delete",
-  (_event, params: import("@termloop/contract/current").WorkerConfigurationDeleteParams) =>
-    controlCall("worker.configurationDelete", params),
 );
 handleIpc(
   "termloop:run-configuration-list",
@@ -1253,6 +1243,7 @@ const quickActionParams = async (
   model: string,
   permission: "default" | "acceptEdits" | "plan" | "bypassPermissions",
   reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max",
+  templateRef: QuickActionParams["templateRef"],
   prompt: string,
   attachmentIds: string[],
 ): Promise<QuickActionParams> => ({
@@ -1262,20 +1253,20 @@ const quickActionParams = async (
   model,
   permission,
   reasoning,
-  templateRef: "builtin.quick-action.free-prompt",
+  templateRef,
   bindings: { prompt },
   attachments: await quickActionImages().resolve(attachmentIds, currentConnectionProfileId()),
 });
 handleIpc(
   "termloop:quick-action-preview",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]) =>
-    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, prompt, attachmentIds)),
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]) =>
+    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)),
 );
 handleIpc(
   "termloop:quick-action-launch",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string) => {
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string) => {
     const params: QuickActionLaunchParams = {
-      ...await quickActionParams(projectId, agentId, model, permission, reasoning, prompt, attachmentIds),
+      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds),
       launchTicket,
     };
     const result = await controlCall("quickAction.launch", params);

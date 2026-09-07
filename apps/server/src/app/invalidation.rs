@@ -13,11 +13,135 @@ use super::{AppState, current_epoch_ms};
 
 const INVALIDATION_COALESCE_WINDOW: Duration = Duration::from_millis(100);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct InvalidationRequest {
     pub(super) topics: Vec<ProjectionTopic>,
     pub(super) state_revision: u64,
     pub(super) observation_sequence: u64,
+}
+
+/// One closed description of the projections changed by a committed control
+/// write. Callers select the lifecycle impact; this module alone translates it
+/// into transport topics and queues the publication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CommitImpact {
+    Project,
+    Task,
+    TaskSessionAgent,
+    Session,
+    SessionAgent,
+    Companion,
+    Steward,
+    Routine,
+    TaskSource,
+    TaskSourceImport,
+    Run,
+    Playbook,
+    Workflow,
+}
+
+impl CommitImpact {
+    fn topics(self) -> Vec<ProjectionTopic> {
+        match self {
+            Self::Project => vec![ProjectionTopic::Project],
+            Self::Task => vec![ProjectionTopic::Task],
+            Self::TaskSessionAgent => vec![
+                ProjectionTopic::Task,
+                ProjectionTopic::Session,
+                ProjectionTopic::AgentStatus,
+            ],
+            Self::Session => vec![ProjectionTopic::Session],
+            Self::SessionAgent => {
+                vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
+            }
+            Self::Companion => vec![ProjectionTopic::Companion],
+            Self::Steward => vec![ProjectionTopic::Steward],
+            Self::Routine => vec![ProjectionTopic::Routine],
+            Self::TaskSource => vec![ProjectionTopic::TaskSource],
+            Self::TaskSourceImport => {
+                vec![ProjectionTopic::TaskSource, ProjectionTopic::Task]
+            }
+            Self::Run => vec![ProjectionTopic::Run],
+            Self::Playbook => vec![ProjectionTopic::Playbook],
+            Self::Workflow => vec![ProjectionTopic::Workflow],
+        }
+    }
+}
+
+fn commit_invalidation(
+    impact: CommitImpact,
+    state_revision: u64,
+    observation_sequence: u64,
+) -> InvalidationRequest {
+    InvalidationRequest {
+        topics: impact.topics(),
+        state_revision,
+        observation_sequence,
+    }
+}
+
+fn changed_commit_invalidation(
+    impact: CommitImpact,
+    previous_revision: u64,
+    current_revision: u64,
+    observation_sequence: u64,
+) -> Option<InvalidationRequest> {
+    (current_revision != previous_revision)
+        .then(|| commit_invalidation(impact, current_revision, observation_sequence))
+}
+
+pub(super) async fn queue_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    state_revision: u64,
+    observation_sequence: u64,
+) {
+    queue_invalidation(
+        &state.invalidation_requests,
+        commit_invalidation(impact, state_revision, observation_sequence),
+    )
+    .await;
+}
+
+/// Await backpressure so a full queue cannot silently lose a committed
+/// revision. Callers must release the serialized Core lock before entering.
+async fn queue_invalidation(
+    sender: &mpsc::Sender<InvalidationRequest>,
+    invalidation: InvalidationRequest,
+) {
+    if sender.send(invalidation).await.is_err() {
+        tracing::warn!("Committed write invalidation queue is closed");
+    }
+}
+
+pub(super) async fn queue_durable_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    state_revision: u64,
+) {
+    queue_commit_invalidation(
+        state,
+        impact,
+        state_revision,
+        state.observation_sequence.load(Ordering::Relaxed),
+    )
+    .await;
+}
+
+pub(super) async fn queue_changed_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    previous_revision: u64,
+    current_revision: u64,
+) {
+    if let Some(invalidation) = changed_commit_invalidation(
+        impact,
+        previous_revision,
+        current_revision,
+        state.observation_sequence.load(Ordering::Relaxed),
+    ) {
+        queue_invalidation(&state.invalidation_requests, invalidation).await;
+    }
 }
 
 pub(super) async fn coalesce_invalidations(
@@ -93,7 +217,6 @@ fn extend_topic_names(topics: &mut BTreeSet<&'static str>, values: Vec<Projectio
             ProjectionTopic::BranchCommit => "branchCommit",
             ProjectionTopic::Companion => "companion",
             ProjectionTopic::Steward => "steward",
-            ProjectionTopic::Worker => "worker",
             ProjectionTopic::Routine => "routine",
             ProjectionTopic::TaskSource => "taskSource",
             ProjectionTopic::Playbook => "playbook",
@@ -114,7 +237,6 @@ fn projection_topic(value: &'static str) -> Option<ProjectionTopic> {
         "branchCommit" => Some(ProjectionTopic::BranchCommit),
         "companion" => Some(ProjectionTopic::Companion),
         "steward" => Some(ProjectionTopic::Steward),
-        "worker" => Some(ProjectionTopic::Worker),
         "routine" => Some(ProjectionTopic::Routine),
         "taskSource" => Some(ProjectionTopic::TaskSource),
         "playbook" => Some(ProjectionTopic::Playbook),
@@ -218,61 +340,141 @@ pub(super) async fn publish_session_invalidation(state: &AppState) {
     });
 }
 
-pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
-    if method.starts_with("steward.configuration") {
-        vec![ProjectionTopic::Steward]
-    } else if method.starts_with("worker.configuration") {
-        vec![ProjectionTopic::Worker]
+pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
+    if matches!(
+        method,
+        "project.delete"
+            | "task.archive"
+            | "task.restore"
+            | "task.reopen"
+            | "session.archive"
+            | "session.restoreArchived"
+    ) {
+        None
+    } else if method.starts_with("steward.configuration") {
+        Some(CommitImpact::Steward)
     } else if method.starts_with("runConfiguration.") {
-        vec![ProjectionTopic::Run]
+        Some(CommitImpact::Run)
     } else if method.starts_with("workflow.configuration")
         || method.starts_with("workflow.execution")
     {
-        vec![ProjectionTopic::Workflow]
+        Some(CommitImpact::Workflow)
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
-        vec![ProjectionTopic::Routine]
+        Some(CommitImpact::Routine)
     } else if method.starts_with("playbook.") {
-        vec![ProjectionTopic::Playbook]
+        Some(CommitImpact::Playbook)
     } else if method.starts_with("companion.transcript") {
-        vec![ProjectionTopic::Companion]
-    } else if method == "project.delete" {
-        vec![
-            ProjectionTopic::Project,
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-            ProjectionTopic::Companion,
-            ProjectionTopic::Steward,
-            ProjectionTopic::Worker,
-            ProjectionTopic::Routine,
-            ProjectionTopic::Run,
-            ProjectionTopic::Playbook,
-            ProjectionTopic::Workflow,
-            ProjectionTopic::GitHost,
-        ]
+        Some(CommitImpact::Companion)
     } else if method.starts_with("project.") {
-        vec![ProjectionTopic::Project]
-    } else if matches!(
-        method,
-        "task.archive" | "task.restore" | "task.abandonArchive" | "task.deleteArchived"
-    ) {
-        vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ]
+        Some(CommitImpact::Project)
+    } else if matches!(method, "task.abandonArchive" | "task.deleteArchived") {
+        Some(CommitImpact::TaskSessionAgent)
     } else if method.starts_with("task.") {
-        vec![ProjectionTopic::Task]
+        Some(CommitImpact::Task)
     } else if method.starts_with("session.") {
-        if matches!(
-            method,
-            "session.archive" | "session.restoreArchived" | "session.deleteArchived"
-        ) {
-            vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
+        if method == "session.deleteArchived" {
+            Some(CommitImpact::SessionAgent)
         } else {
-            vec![ProjectionTopic::Session]
+            Some(CommitImpact::Session)
         }
     } else {
-        vec![]
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_impacts_own_ordered_projection_topic_sets() {
+        assert_eq!(
+            commit_invalidation(CommitImpact::TaskSessionAgent, 9, 11),
+            InvalidationRequest {
+                topics: vec![
+                    ProjectionTopic::Task,
+                    ProjectionTopic::Session,
+                    ProjectionTopic::AgentStatus,
+                ],
+                state_revision: 9,
+                observation_sequence: 11,
+            }
+        );
+        assert_eq!(
+            commit_invalidation(CommitImpact::TaskSourceImport, 12, 14).topics,
+            vec![ProjectionTopic::TaskSource, ProjectionTopic::Task]
+        );
+    }
+
+    #[test]
+    fn changed_commit_invalidates_the_new_revision_and_no_op_does_not() {
+        assert_eq!(
+            changed_commit_invalidation(CommitImpact::SessionAgent, 20, 21, 34),
+            Some(InvalidationRequest {
+                topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
+                state_revision: 21,
+                observation_sequence: 34,
+            })
+        );
+        assert_eq!(
+            changed_commit_invalidation(CommitImpact::SessionAgent, 21, 21, 34),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_invalidation_waits_for_queue_capacity_instead_of_dropping() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        sender
+            .send(commit_invalidation(CommitImpact::Task, 1, 2))
+            .await
+            .expect("test invalidation receiver remains open");
+
+        let queued_sender = sender.clone();
+        let queued = tokio::spawn(async move {
+            queue_invalidation(
+                &queued_sender,
+                commit_invalidation(CommitImpact::Session, 3, 4),
+            )
+            .await;
+        });
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+
+        assert_eq!(
+            receiver.recv().await,
+            Some(commit_invalidation(CommitImpact::Task, 1, 2))
+        );
+        queued.await.expect("queued invalidation task completes");
+        assert_eq!(
+            receiver.recv().await,
+            Some(commit_invalidation(CommitImpact::Session, 3, 4))
+        );
+    }
+
+    #[test]
+    fn fallback_policy_contains_only_lifecycles_dispatched_through_core_handle() {
+        assert_eq!(
+            fallback_mutation_impact("task.abandonArchive"),
+            Some(CommitImpact::TaskSessionAgent)
+        );
+        assert_eq!(
+            fallback_mutation_impact("session.deleteArchived"),
+            Some(CommitImpact::SessionAgent)
+        );
+        assert_eq!(
+            fallback_mutation_impact("workflow.configurationCreate"),
+            Some(CommitImpact::Workflow)
+        );
+        for dedicated in [
+            "project.delete",
+            "task.archive",
+            "task.restore",
+            "task.reopen",
+            "session.archive",
+            "session.restoreArchived",
+        ] {
+            assert_eq!(fallback_mutation_impact(dedicated), None, "{dedicated}");
+        }
     }
 }

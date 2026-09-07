@@ -1,8 +1,8 @@
 use serde_json::json;
 use termloop_contract::current::{
     MCP_HELPER_TOOLS, MCP_IMPROVER_TOOLS, MCP_INTERACTIVE_TOOLS, MCP_STEWARD_TOOLS,
-    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, MCP_WORKER_TOOLS, METHODS, McpToolError,
-    validate_mcp_tool_params, validate_mcp_tool_result,
+    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError, validate_mcp_tool_params,
+    validate_mcp_tool_result,
 };
 
 #[test]
@@ -30,17 +30,14 @@ fn role_profile_tools_are_generated_bounded_and_not_control_methods() {
     assert!(MCP_STEWARD_TOOLS.contains(&"task_set_jira_url"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_system_prompt_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_system_prompt_update"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"steward_system_prompt_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"steward_suggest"));
     assert!(MCP_STEWARD_TOOLS.contains(&"routine_finding_read"));
     assert!(MCP_STEWARD_TOOLS.contains(&"routine_finding_resolve"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"steward_system_prompt_update"));
     assert!(!MCP_INTERACTIVE_TOOLS.contains(&"steward_system_prompt_update"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_get_next_routine"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"send_to_agent"));
-    assert!(MCP_WORKER_TOOLS.contains(&"worker_complete_assignment"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"worker_complete_routine"));
-    assert!(!MCP_WORKER_TOOLS.contains(&"worker_report_routine_problem"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"steward_next_assignment"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"steward_complete_assignment"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"task_agent_transcript_tail_read"));
+    assert!(MCP_STEWARD_TOOLS.contains(&"task_agent_request"));
     assert_eq!(
         MCP_HELPER_TOOLS,
         ["ask_to", "send_to_agent", "reply_to_request"]
@@ -184,6 +181,36 @@ fn workflow_step_completion_requires_a_bounded_sidebar_summary() {
 }
 
 #[test]
+fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
+    for params in [
+        json!({"target":"codex","message":"review"}),
+        json!({"target":"codex","message":"review","model":"default","reasoning":"default"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","reasoning":"high"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra","reasoning":"max"}),
+        json!({"target":"claude","message":"review","model":"opus","reasoning":"high"}),
+        json!({"target":"codex","message":"review","conversationId":"existing"}),
+    ] {
+        assert!(validate_mcp_tool_params("ask_to", &params), "{params}");
+        let decoded: termloop_contract::current::AskToParams =
+            serde_json::from_value(params.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), params);
+    }
+    for params in [
+        json!({"target":"codex","message":"review","model":"opus"}),
+        json!({"target":"claude","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","model":"unknown"}),
+        json!({"target":"codex","message":"review","reasoning":"unknown"}),
+        json!({"target":"codex","message":"review","model":null}),
+        json!({"target":"codex","message":"review","reasoning":null}),
+        json!({"target":"codex","message":"review","conversationId":"existing","model":"default"}),
+        json!({"target":"codex","message":"review","conversationId":"existing","reasoning":"high"}),
+    ] {
+        assert!(!validate_mcp_tool_params("ask_to", &params), "{params}");
+    }
+}
+
+#[test]
 fn send_to_agent_requires_an_exact_session_id_and_strict_result() {
     let session_id = "123e4567-e89b-42d3-a456-426614174000";
     assert!(validate_mcp_tool_params(
@@ -265,7 +292,7 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             .as_array()
             .is_some_and(|models| models.contains(&json!("fable"))
                 && models.contains(&json!("opus"))
-                && models.contains(&json!("gpt-5.6-sol")))
+                && models.contains(&json!("gpt-6-astra")))
     );
     assert!(validate_mcp_tool_params(
         "task_agent_start",
@@ -282,7 +309,12 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
     ));
     assert!(validate_mcp_tool_params(
         "task_agent_start",
-        &json!({"taskId":"task-1","assignment":"Implement it.","agentId":"codex"})
+        &json!({
+            "taskId":"task-1",
+            "assignment":"Implement it.",
+            "agentId":"codex",
+            "model":"gpt-6-astra"
+        })
     ));
     // The transport keeps one simple object-shaped tool declaration for model
     // callers. Core remains the authority that rejects a model without its
@@ -311,6 +343,22 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             "model":"opus",
             "permission":"default",
             "reasoning":"default",
+            "assignmentDelivered":true,
+            "reusedSession":false,
+            "status":"ready"
+        })
+    ));
+    assert!(validate_mcp_tool_result(
+        "task_agent_start",
+        &json!({
+            "taskId":"task-1",
+            "sessionId":"session-1",
+            "branchName":"termloop/task-1",
+            "worktreePath":"/tmp/task-1",
+            "agentId":"codex",
+            "model":"gpt-6-astra",
+            "permission":"default",
+            "reasoning":"max",
             "assignmentDelivered":true,
             "reusedSession":false,
             "status":"ready"

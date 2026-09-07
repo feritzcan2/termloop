@@ -38,7 +38,7 @@
 - A fresh acknowledged destructive cleanup may atomically replace any failed
   cleanup journal for the same exact Task/proof/generation/path only after new
   observation passes every current safety gate. An active journal remains
-  non-supersedable, and fresh safe intent cannot replace a failed journal.
+  non-supersedable.
 - Multiple write-capable agents in one worktree remain allowed. Presence,
   writer count, Active Agents, blocked/attention, health, and PRs are projections.
 - PR composition keeps the durable Task branch, bounded exact-worktree branch
@@ -51,9 +51,19 @@
   neither path rebinds the Task or loosens repair/stale-disposal policy.
 - Close has no filesystem effect. Cleanup is explicit and fail-closed; delete
   follows the accepted delete semantics and cannot bypass cleanup safety.
-- Stale binding forget is record-only. Its separate recursive disposal
+- ADR-0028 archive is separate from close/cleanup/delete, preserves the branch
+  and worktree tuple, and binds the complete exact-path multi-Agent cohort with
+  a preview ticket. Suspended Sessions remain Project-scoped; restore uses the
+  existing invocation-owned resume path per Agent.
+- CCP-0016 stale binding forget is record-only. Its separate recursive disposal
   command is journaled, explicitly acknowledged, exact-path reserved, and must
   revalidate Git, Session, protected-path, and leaf identity gates before removal.
+- Recursive stale disposal is permitted only for an exact Task-recorded orphaned
+  directory with its managed tuple, or for a generation-zero legacy binding
+  freshly proven to be the Task branch's exact registered checkout. If
+  protected-path, repository-registration, Session, Task-tuple, or leaf-identity
+  safety cannot be proven, deletion fails closed; the UI describes stale
+  contents as unverified.
 - Launch accepts only a valid provenance-bearing payload from `invocation`.
 - Native fork is a named Session command derived from a live source Session; it
   derives the bounded `<source display name> fork-1` child name, creates no
@@ -62,6 +72,15 @@
   not compose or append agent content, argv, environment, generated files, or
   initial input. One-time preview tickets bind Quick Action, Project, Task, and
   user-requested resume execution to the inspected private payload.
+- `runtime/generated_input_delivery.rs` is the sole orchestrator for every
+  invocation-owned generated terminal submission, including all initial-input,
+  resume, Ask-To, handover, agent-message, assignment, Steward, Companion, and
+  Worker paths. Feature handlers submit the immutable
+  `GeneratedTerminalSubmission`; they never call terminal input-sequence or
+  receipt-bearing atomic write primitives directly and never recompose content.
+  Transport receipt is not delivery: only newer same-epoch provider evidence may
+  confirm and clear delivery-dependent state. Never replay content or use fixed
+  paste-to-Enter delays or automatic Enter retries.
 - Core stores the effective launch selection with the current agent Session,
   inherits it for native fork, and passes it unchanged to automatic/manual
   resume; helper roles without user selection use explicit defaults. A live
@@ -103,8 +122,10 @@
   complete source value returned by the read and fails on a stale source; Core
   clears the old executor binding and never accepts Project or Session scope
   from arguments. Invocation retains the built-in wake/safety layer at launch.
-  Workers may report bounded current findings but cannot mutate Tasks or
-  contact Task Agents.
+  Workers may report bounded current findings but cannot mutate Tasks. During
+  one exact claimed Playbook step, a Worker may send a bounded request only to
+  an ordinary Agent projected into that focused Task after the scoped Task read;
+  it cannot launch, substitute, or contact any other Agent.
 - Session projection may expose the exact live Ask-To source for a helper. The
   source and bounded continuation provenance survive restart, but never become
   parentage, history, lifecycle cascading, content storage, or bearer authority.

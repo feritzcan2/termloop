@@ -139,7 +139,7 @@ function generatedInputFailureDetail(
     case "runtimeEpochChanged": return "terminal restarted";
     case "terminalClosed": return "terminal closed";
     case "submitWriteFailed": return "Enter write failed";
-    case "workerUnavailable": return "delivery worker unavailable";
+    case "assistantUnavailable": return "Project Steward unavailable";
     case null: return "prompt submission paused";
   }
 }

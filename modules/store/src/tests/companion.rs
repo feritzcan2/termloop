@@ -5,7 +5,7 @@ use termloop_domain::{
     PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict, ProcessDescriptor,
     ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling, RoutineTriggerMode,
     SessionKind, SessionRecord, StewardAgentId, StewardConfiguration, TaskStatus,
-    TrackerConfiguration, WorkerConfiguration,
+    TrackerConfiguration,
 };
 
 #[test]
@@ -90,13 +90,6 @@ fn companion_message_and_finding_dismissal_commit_atomically() {
     store
         .insert_project(&authority, project("project-a"))
         .unwrap();
-    store
-        .set_worker_configuration(
-            &authority,
-            worker_configuration("worker-1", "project-a", 1, true),
-            store.revision(),
-        )
-        .unwrap();
     let finding = PendingRoutineFinding {
         id: "finding-1".into(),
         source_key: "ci:missing-pr".into(),
@@ -117,7 +110,6 @@ fn companion_message_and_finding_dismissal_commit_atomically() {
                 name: "Pull request".into(),
                 prompt: "Read the current pull request state.".into(),
                 steward_instructions: "Surface a useful response.".into(),
-                worker_id: "worker-1".into(),
                 enabled: true,
                 schedule_interval_seconds: 60,
                 generation: 1,
@@ -391,123 +383,6 @@ fn steward_session_attach_is_one_atomic_generation_checked_write() {
 }
 
 #[test]
-fn worker_owns_session_and_tracker_only_references_worker() {
-    let path = std::env::temp_dir().join(format!(
-        "termloop-store-worker-{}-{}.json",
-        std::process::id(),
-        termloop_platform::current_epoch_ms()
-    ));
-    let authority = issue_core_write_authority_for_composition();
-    let mut store = Store::open(&path).unwrap();
-    store
-        .insert_project(&authority, project("project-a"))
-        .unwrap();
-    store
-        .set_worker_configuration(
-            &authority,
-            WorkerConfiguration {
-                id: "worker-1".into(),
-                project_id: "project-a".into(),
-                name: "Worker 1".into(),
-                agent_id: StewardAgentId::Claude,
-                model: "default".into(),
-                permission: "default".into(),
-                reasoning: "default".into(),
-                enabled: true,
-                ping_interval_seconds: 60,
-                worker_prompt: String::new(),
-                system_prompt: String::new(),
-                executor_session_id: None,
-                generation: 1,
-                updated_at_epoch_ms: 1,
-            },
-            store.revision(),
-        )
-        .unwrap();
-    store
-        .set_tracker_configuration(
-            &authority,
-            TrackerConfiguration {
-                id: "tracker-1".into(),
-                project_id: "project-a".into(),
-                trigger_mode: RoutineTriggerMode::Schedule,
-                name: "Slack actions".into(),
-                prompt: "Use the Slack connector to inspect #product.".into(),
-                steward_instructions: String::new(),
-                worker_id: "worker-1".into(),
-                enabled: false,
-                schedule_interval_seconds: 300,
-                generation: 1,
-                context_markdown: String::new(),
-                context_revision: 1,
-                recent_source_keys: vec![],
-                related_task_ids: vec![],
-                action_handling: RoutineActionHandling::Off,
-                pending_routine_findings: vec![],
-                last_check_started_at_epoch_ms: None,
-                last_attempt_at_epoch_ms: None,
-                last_successful_report_at_epoch_ms: None,
-                updated_at_epoch_ms: 1,
-            },
-            store.revision(),
-        )
-        .unwrap();
-    let session = SessionRecord {
-        launch_selection: Default::default(),
-        id: "worker-session".into(),
-        project_id: "project-a".into(),
-        name: Some("Worker 1".into()),
-        kind: SessionKind::Agent,
-        process: ProcessDescriptor {
-            program: "claude".into(),
-            args: vec![],
-            cwd: "/tmp".into(),
-            agent_id: Some("claude".into()),
-            template_ref: Some("builtin.worker.executor".into()),
-            template_version: Some(1),
-        },
-        lifecycle_state: "running".into(),
-        runtime_epoch: 1,
-        archived_at_epoch_ms: None,
-        ask_to_source_session_id: None,
-        run_configuration_id: None,
-        improver_target: None,
-        ask_to_continuation: None,
-        resume_ref: ResumeRef::for_provider(
-            ResumeProvider::Claude,
-            "123e4567-e89b-42d3-a456-426614174000".into(),
-        ),
-        resume_launch_guard: None,
-        resume_failure: None,
-    };
-    let attached = store
-        .attach_worker_executor_session(&authority, session, "worker-1", 1, 2)
-        .unwrap();
-    assert_eq!(
-        attached.executor_session_id.as_deref(),
-        Some("worker-session")
-    );
-    assert_eq!(store.tracker_configurations()[0].worker_id, "worker-1");
-
-    // One confirmed Worker deletion removes its live executor descriptor and
-    // owned Routine in the same commit; callers never dismantle ownership by
-    // hand or stop the Worker first.
-    let revision = store.revision();
-    store
-        .delete_worker_configuration(&authority, "worker-1", revision, 3)
-        .unwrap();
-    assert!(store.worker_configurations().is_empty());
-    assert!(store.tracker_configurations().is_empty());
-    assert!(
-        store
-            .sessions()
-            .iter()
-            .all(|session| session.id != "worker-session")
-    );
-    let _ = std::fs::remove_file(path);
-}
-
-#[test]
 fn project_accepts_more_than_the_legacy_sixteen_routines() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-unbounded-routines-{}-{}.json",
@@ -519,29 +394,6 @@ fn project_accepts_more_than_the_legacy_sixteen_routines() {
     store
         .insert_project(&authority, project("project-a"))
         .unwrap();
-    store
-        .set_worker_configuration(
-            &authority,
-            WorkerConfiguration {
-                id: "worker-1".into(),
-                project_id: "project-a".into(),
-                name: "Worker 1".into(),
-                agent_id: StewardAgentId::Codex,
-                model: "default".into(),
-                permission: "default".into(),
-                reasoning: "default".into(),
-                enabled: false,
-                ping_interval_seconds: 60,
-                worker_prompt: String::new(),
-                system_prompt: String::new(),
-                executor_session_id: None,
-                generation: 1,
-                updated_at_epoch_ms: 1,
-            },
-            store.revision(),
-        )
-        .unwrap();
-
     for index in 0..20 {
         store
             .set_tracker_configuration(
@@ -553,7 +405,6 @@ fn project_accepts_more_than_the_legacy_sixteen_routines() {
                     name: format!("Routine {index}"),
                     prompt: "Inspect one configured source and report factual evidence.".into(),
                     steward_instructions: String::new(),
-                    worker_id: "worker-1".into(),
                     enabled: false,
                     schedule_interval_seconds: 60,
                     generation: 1,
@@ -581,7 +432,7 @@ fn project_accepts_more_than_the_legacy_sixteen_routines() {
 }
 
 #[test]
-fn tracker_rejects_missing_or_cross_project_worker() {
+fn tracker_rejects_a_missing_project() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-tracker-worker-{}-{}.json",
         std::process::id(),
@@ -596,12 +447,11 @@ fn tracker_rejects_missing_or_cross_project_worker() {
         &authority,
         TrackerConfiguration {
             id: "tracker-1".into(),
-            project_id: "project-a".into(),
+            project_id: "project-b".into(),
             trigger_mode: RoutineTriggerMode::Schedule,
             name: "Runtime".into(),
             prompt: "Inspect the configured log connector and report failures.".into(),
             steward_instructions: String::new(),
-            worker_id: "missing".into(),
             enabled: false,
             schedule_interval_seconds: 60,
             generation: 1,
@@ -674,30 +524,6 @@ fn steward_configuration(project_id: &str, generation: u64, enabled: bool) -> St
     }
 }
 
-fn worker_configuration(
-    id: &str,
-    project_id: &str,
-    generation: u64,
-    enabled: bool,
-) -> WorkerConfiguration {
-    WorkerConfiguration {
-        id: id.into(),
-        project_id: project_id.into(),
-        name: "Worker 1".into(),
-        agent_id: StewardAgentId::Claude,
-        model: "default".into(),
-        permission: "default".into(),
-        reasoning: "default".into(),
-        enabled,
-        ping_interval_seconds: 60,
-        worker_prompt: String::new(),
-        system_prompt: String::new(),
-        executor_session_id: None,
-        generation,
-        updated_at_epoch_ms: generation,
-    }
-}
-
 #[test]
 fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
     let path = std::env::temp_dir().join(format!(
@@ -748,9 +574,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
     steward.executor_session_id = Some("steward-a".into());
     store.state.steward_configurations =
         vec![steward, steward_configuration("project-b", 1, false)];
-    let mut worker = worker_configuration("worker-a", "project-a", 1, true);
-    worker.executor_session_id = Some("worker-a-session".into());
-    store.state.worker_configurations.push(worker);
     store
         .state
         .tracker_configurations
@@ -761,7 +584,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             name: "CI is green".into(),
             prompt: "Check CI for the focused Task.".into(),
             steward_instructions: String::new(),
-            worker_id: "worker-a".into(),
             enabled: true,
             schedule_interval_seconds: 60,
             generation: 1,
@@ -819,12 +641,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             "Steward",
         ),
         assistant_session(
-            "worker-a-session",
-            "project-a",
-            "builtin.worker.executor",
-            "Worker",
-        ),
-        assistant_session(
             "builder-a",
             "project-a",
             "builtin.builder.playbook",
@@ -853,11 +669,10 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         .reset_project_assistant(&authority, "project-a", store.revision(), 10)
         .unwrap();
 
-    assert_eq!(reset.deleted_workers, 1);
     assert_eq!(reset.deleted_routines, 1);
     assert_eq!(reset.deleted_messages, 1);
     assert!(reset.playbook_deleted);
-    assert_eq!(reset.session_ids.len(), 3);
+    assert_eq!(reset.session_ids.len(), 2);
     assert!(
         store
             .steward_configurations()
@@ -865,7 +680,6 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             .all(|value| value.project_id != "project-a")
     );
     assert_eq!(store.steward_configurations()[0].project_id, "project-b");
-    assert!(store.worker_configurations().is_empty());
     assert!(store.tracker_configurations().is_empty());
     assert!(store.playbook_configurations().is_empty());
     assert!(store.playbook_step_progress().is_empty());
@@ -1014,99 +828,6 @@ fn steward_replacement_cycles_leave_only_the_current_descriptor() {
 }
 
 #[test]
-fn worker_replacement_disable_and_delete_leave_no_stale_descriptors() {
-    let path = std::env::temp_dir().join(format!(
-        "termloop-store-worker-cycles-{}-{}.json",
-        std::process::id(),
-        termloop_platform::current_epoch_ms()
-    ));
-    let authority = issue_core_write_authority_for_composition();
-    let mut store = Store::open(&path).unwrap();
-    store
-        .insert_project(&authority, project("project-a"))
-        .unwrap();
-    store
-        .insert_session(&authority, ordinary_agent_session("ordinary", "project-a"))
-        .unwrap();
-    store.mark_session_exited(&authority, "ordinary").unwrap();
-    let revision = store.revision();
-    store
-        .set_worker_configuration(
-            &authority,
-            worker_configuration("worker-1", "project-a", 1, true),
-            revision,
-        )
-        .unwrap();
-
-    for (cycle, session_id) in ["worker-session-1", "worker-session-2", "worker-session-3"]
-        .iter()
-        .enumerate()
-    {
-        store
-            .attach_worker_executor_session(
-                &authority,
-                assistant_session(
-                    session_id,
-                    "project-a",
-                    "builtin.worker.executor",
-                    "Worker 1",
-                ),
-                "worker-1",
-                1,
-                u64::try_from(cycle).unwrap() + 2,
-            )
-            .unwrap();
-        let worker_descriptors = store
-            .sessions()
-            .iter()
-            .filter(|session| {
-                session.process.template_ref.as_deref() == Some("builtin.worker.executor")
-            })
-            .map(|session| session.id.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(worker_descriptors, [session_id.to_owned()]);
-        store.mark_session_exited(&authority, session_id).unwrap();
-        assert!(
-            !store
-                .sessions()
-                .iter()
-                .any(|session| session.process.template_ref.as_deref()
-                    == Some("builtin.worker.executor")),
-            "repeated Worker relaunch cycles must not accumulate exited descriptors"
-        );
-    }
-
-    // Disable then delete: no assistant descriptor survives removal.
-    let revision = store.revision();
-    store
-        .set_worker_configuration(
-            &authority,
-            worker_configuration("worker-1", "project-a", 2, false),
-            revision,
-        )
-        .unwrap();
-    let revision = store.revision();
-    store
-        .delete_worker_configuration(&authority, "worker-1", revision, 3)
-        .unwrap();
-    assert!(store.worker_configurations().is_empty());
-    assert!(
-        !store
-            .sessions()
-            .iter()
-            .any(|session| session.process.template_ref.as_deref()
-                == Some("builtin.worker.executor"))
-    );
-    let ordinary = store
-        .sessions()
-        .iter()
-        .find(|session| session.id == "ordinary")
-        .expect("ordinary exited Agent descriptor is preserved");
-    assert_eq!(ordinary.lifecycle_state, "exited");
-    let _ = std::fs::remove_file(path);
-}
-
-#[test]
 fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-assistant-debris-{}-{}.json",
@@ -1116,14 +837,14 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     let authority = issue_core_write_authority_for_composition();
     let mut store = Store::open(&path).unwrap();
     store.state.projects.push(project("project-a"));
-    // Accumulated legacy debris from earlier replacement/restart cycles.
-    for debris_id in ["steward-old-1", "steward-old-2", "worker-old-1"] {
-        let template = if debris_id.starts_with("steward") {
-            "builtin.steward.executor"
-        } else {
-            "builtin.worker.executor"
-        };
-        let mut debris = assistant_session(debris_id, "project-a", template, debris_id);
+    // Accumulated Steward debris from earlier replacement/restart cycles.
+    for debris_id in ["steward-old-1", "steward-old-2"] {
+        let mut debris = assistant_session(
+            debris_id,
+            "project-a",
+            "builtin.steward.executor",
+            debris_id,
+        );
         debris.lifecycle_state = "exited".into();
         store.state.sessions.push(debris);
     }
@@ -1147,41 +868,13 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     let mut configuration = steward_configuration("project-a", 1, true);
     configuration.executor_session_id = Some("steward-live".into());
     store.state.steward_configurations.push(configuration);
-    let mut worker_live = assistant_session(
-        "worker-live",
-        "project-a",
-        "builtin.assistant.activation",
-        "Worker 1",
-    );
-    let worker_resume_ref = ResumeRef::for_provider(
-        ResumeProvider::Claude,
-        "123e4567-e89b-42d3-a456-426614174011".into(),
-    )
-    .unwrap();
-    worker_live.resume_ref = Some(worker_resume_ref.clone());
-    worker_live.lifecycle_state = "exited".into();
-    store.state.sessions.push(worker_live);
-    let mut worker = worker_configuration("worker-1", "project-a", 1, true);
-    worker.executor_session_id = Some("worker-live".into());
-    store.state.worker_configurations.push(worker);
-    // Ownership-uncertain failures keep their descriptor so the daemon-owned
-    // recovery and reap path stays reachable.
-    let mut uncertain = assistant_session(
-        "worker-uncertain",
-        "project-a",
-        "builtin.worker.executor",
-        "Worker 1",
-    );
-    uncertain.lifecycle_state = "resumeFailed".into();
-    uncertain.resume_failure = Some(ResumeFailureReason::RuntimeOwnershipUncertain);
-    store.state.sessions.push(uncertain);
     let mut running_ordinary = ordinary_agent_session("ordinary-running", "project-a");
     running_ordinary.lifecycle_state = "running".into();
     store.state.sessions.push(running_ordinary);
     let mut exited_ordinary = ordinary_agent_session("ordinary-exited", "project-a");
     exited_ordinary.lifecycle_state = "exited".into();
     store.state.sessions.push(exited_ordinary);
-    store.state.agent_conversation_readiness = ["steward-live", "worker-live", "ordinary-exited"]
+    store.state.agent_conversation_readiness = ["steward-live", "ordinary-exited"]
         .into_iter()
         .map(|session_id| AgentConversationReadinessRecord {
             session_id: session_id.into(),
@@ -1199,15 +892,9 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     remaining.sort_unstable();
     assert_eq!(
         remaining,
-        [
-            "ordinary-exited",
-            "ordinary-running",
-            "steward-live",
-            "worker-live",
-            "worker-uncertain"
-        ]
+        ["ordinary-exited", "ordinary-running", "steward-live"]
     );
-    for session_id in ["ordinary-running", "steward-live", "worker-live"] {
+    for session_id in ["ordinary-running", "steward-live"] {
         assert_eq!(
             store
                 .sessions()
@@ -1227,26 +914,11 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
         Some(&steward_resume_ref)
     );
     assert_eq!(
-        store
-            .sessions()
-            .iter()
-            .find(|session| session.id == "worker-live")
-            .and_then(|session| session.resume_ref.as_ref()),
-        Some(&worker_resume_ref)
-    );
-    assert_eq!(
         store.steward_configurations()[0]
             .executor_session_id
             .as_deref(),
         Some("steward-live")
     );
-    assert_eq!(
-        store.worker_configurations()[0]
-            .executor_session_id
-            .as_deref(),
-        Some("worker-live")
-    );
-
     store
         .mark_session_resume_failed(
             &authority,
