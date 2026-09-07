@@ -30,6 +30,7 @@ pub(super) enum CommitImpact {
     TaskSessionAgent,
     Session,
     SessionAgent,
+    AgentLibrary,
     Companion,
     Steward,
     Routine,
@@ -53,6 +54,7 @@ impl CommitImpact {
             Self::SessionAgent => {
                 vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
             }
+            Self::AgentLibrary => vec![ProjectionTopic::AgentLibrary],
             Self::Companion => vec![ProjectionTopic::Companion],
             Self::Steward => vec![ProjectionTopic::Steward],
             Self::Routine => vec![ProjectionTopic::Routine],
@@ -211,6 +213,7 @@ fn extend_topic_names(topics: &mut BTreeSet<&'static str>, values: Vec<Projectio
             ProjectionTopic::Task => "task",
             ProjectionTopic::Session => "session",
             ProjectionTopic::AgentStatus => "agentStatus",
+            ProjectionTopic::AgentLibrary => "agentLibrary",
             ProjectionTopic::GitHost => "gitHost",
             ProjectionTopic::BranchCommit => "branchCommit",
             ProjectionTopic::Companion => "companion",
@@ -230,6 +233,7 @@ fn projection_topic(value: &'static str) -> Option<ProjectionTopic> {
         "task" => Some(ProjectionTopic::Task),
         "session" => Some(ProjectionTopic::Session),
         "agentStatus" => Some(ProjectionTopic::AgentStatus),
+        "agentLibrary" => Some(ProjectionTopic::AgentLibrary),
         "gitHost" => Some(ProjectionTopic::GitHost),
         "branchCommit" => Some(ProjectionTopic::BranchCommit),
         "companion" => Some(ProjectionTopic::Companion),
@@ -330,6 +334,14 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
             | "session.restoreArchived"
     ) {
         None
+    } else if matches!(
+        method,
+        "agent.profileCreate"
+            | "agent.profileUpdate"
+            | "agent.profileDelete"
+            | "agent.profileFavorite"
+    ) {
+        Some(CommitImpact::AgentLibrary)
     } else if method.starts_with("steward.configuration") {
         Some(CommitImpact::Steward)
     } else if method.starts_with("runConfiguration.") {
@@ -360,6 +372,29 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_library_writes_publish_the_library_topic() {
+        for method in [
+            "agent.profileCreate",
+            "agent.profileUpdate",
+            "agent.profileDelete",
+            "agent.profileFavorite",
+        ] {
+            assert_eq!(
+                fallback_mutation_impact(method),
+                Some(CommitImpact::AgentLibrary)
+            );
+        }
+        assert_eq!(fallback_mutation_impact("agent.libraryGet"), None);
+        let mut names = BTreeSet::new();
+        extend_topic_names(&mut names, CommitImpact::AgentLibrary.topics());
+        assert_eq!(names, BTreeSet::from(["agentLibrary"]));
+        assert_eq!(
+            projection_topic("agentLibrary"),
+            Some(ProjectionTopic::AgentLibrary)
+        );
+    }
 
     #[test]
     fn commit_impacts_own_ordered_projection_topic_sets() {

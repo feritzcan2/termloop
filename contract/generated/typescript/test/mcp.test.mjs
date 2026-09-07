@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   MCP_INTERACTIVE_TOOLS,
   MCP_IMPROVER_TOOLS,
+  MCP_AGENT_CREATOR_TOOLS,
   MCP_STEWARD_TOOLS,
   MCP_HELPER_TOOLS,
   MCP_TOOL_DEFINITIONS,
@@ -20,6 +21,7 @@ test("MCP role definitions are generated and excluded from control methods", () 
     "configuration_version_read",
     "configuration_version_write",
   ]);
+  assert.deepEqual(MCP_AGENT_CREATOR_TOOLS, ["ask_to", "send_to_agent", "agent_library_read", "agent_profile_create"]);
   assert.ok(MCP_STEWARD_TOOLS.includes("task_create"));
   assert.ok(MCP_STEWARD_TOOLS.includes("send_to_agent"));
   assert.ok(MCP_STEWARD_TOOLS.includes("task_agent_start"));

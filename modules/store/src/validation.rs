@@ -193,6 +193,7 @@ fn configuration_versions_are_invalid(state: &CurrentState) -> bool {
             return false;
         }
         match target.target_kind {
+            ImproverSessionTargetKind::AgentCreator => false,
             ImproverSessionTargetKind::StewardInstructions => state
                 .steward_configurations
                 .iter()
@@ -710,6 +711,7 @@ fn sessions_are_invalid(state: &CurrentState) -> bool {
         let invalid_improver_target = session.improver_target.as_ref().is_some_and(|target| {
             use termloop_domain::ImproverSessionTargetKind;
             let expected_template = match target.target_kind {
+                ImproverSessionTargetKind::AgentCreator => "builtin.builder.agent",
                 ImproverSessionTargetKind::StewardInstructions => {
                     "builtin.improver.steward-instructions"
                 }

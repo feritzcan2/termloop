@@ -1410,6 +1410,22 @@
       "result": {
         "$ref": "#/$defs/agentLibraryResult"
       }
+    },
+    "agent.creatorPreview": {
+      "params": {
+        "$ref": "#/$defs/agentCreatorParams"
+      },
+      "result": {
+        "$ref": "#/$defs/quickActionPreviewResult"
+      }
+    },
+    "agent.creatorLaunch": {
+      "params": {
+        "$ref": "#/$defs/agentCreatorLaunchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sessionDto"
+      }
     }
   },
   "$defs": {
@@ -1590,7 +1606,9 @@
         "agent.profileCreate",
         "agent.profileUpdate",
         "agent.profileDelete",
-        "agent.profileFavorite"
+        "agent.profileFavorite",
+        "agent.creatorPreview",
+        "agent.creatorLaunch"
       ]
     },
     "eventName": {
@@ -1618,7 +1636,8 @@
         "taskSource",
         "run",
         "playbook",
-        "keepAwake"
+        "keepAwake",
+        "agentLibrary"
       ]
     },
     "errorCode": {
@@ -1870,7 +1889,9 @@
         "playbook_read",
         "task_set_steward_brief",
         "configuration_version_read",
-        "configuration_version_write"
+        "configuration_version_write",
+        "agent_library_read",
+        "agent_profile_create"
       ]
     },
     "mcpToolRole": {
@@ -1881,7 +1902,8 @@
         "interactive",
         "helper",
         "steward",
-        "improver"
+        "improver",
+        "agentCreator"
       ]
     },
     "mcpToolSettingsDto": {
@@ -1950,8 +1972,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 30,
-          "maxItems": 30,
+          "minItems": 32,
+          "maxItems": 32,
           "uniqueItems": true
         }
       }
@@ -5123,7 +5145,8 @@
         "newRunConfiguration",
         "settingsSkill",
         "settingsPrompt",
-        "settingsMcpTool"
+        "settingsMcpTool",
+        "agentCreator"
       ]
     },
     "improverSessionTargetDto": {
@@ -15225,6 +15248,127 @@
         "expectedRevision": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "agentCreatorParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentCreatorParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "agentId",
+        "model",
+        "permission",
+        "reasoning",
+        "templateRef"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "templateRef": {
+          "type": "string",
+          "enum": [
+            "builtin.builder.agent"
+          ]
+        }
+      }
+    },
+    "agentCreatorLaunchParams": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentCreatorLaunchParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "agentId",
+        "model",
+        "permission",
+        "reasoning",
+        "templateRef",
+        "launchTicket"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "templateRef": {
+          "type": "string",
+          "enum": [
+            "builtin.builder.agent"
+          ]
+        },
+        "launchTicket": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }
