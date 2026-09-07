@@ -59,6 +59,7 @@ import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeAc
 import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
+import { WorkflowEditorPanel } from "./TaskWorkflows.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import type { ErrorLogEntry } from "../state/projection-store.js";
 import type { SessionHistoryListResult } from "@termloop/contract/current";
@@ -377,10 +378,11 @@ export type StagePage =
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
-  | { kind: "taskSources" };
+  | { kind: "taskSources" }
+  | { kind: "workflow"; id: string | null };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
-  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources"
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources" || page?.kind === "workflow"
     ? undefined
     : page;
 }
@@ -1430,7 +1432,6 @@ export function Shell(props: ShellProps) {
             runConfigurations={props.runConfigurations}
             workflowConfigurations={props.workflowConfigurations}
             workflowExecutions={props.workflowExecutions}
-            workflowStateRevision={props.workflowStateRevision}
             runRuntimes={props.runRuntimes}
             runStateRevision={props.runStateRevision}
             sessionsById={sessionsById}
@@ -1468,12 +1469,11 @@ export function Shell(props: ShellProps) {
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
             launchTaskWorkflow={props.launchTaskWorkflow}
+            openWorkflowEditor={(workflowId) => openStagePage({ kind: "workflow", id: workflowId ?? null })}
             runImprovement={props.runImprovement}
             setupRunImprovement={openRunImproverSetup}
             saveRunConfiguration={props.saveRunConfiguration}
             deleteRunConfiguration={props.deleteRunConfiguration}
-            saveWorkflowConfiguration={props.saveWorkflowConfiguration}
-            deleteWorkflowConfiguration={props.deleteWorkflowConfiguration}
             cancelWorkflowExecution={props.cancelWorkflowExecution}
             launchTaskRun={props.launchTaskRun}
             inspectTaskWorktreeRepair={props.inspectTaskWorktreeRepair}
@@ -1719,6 +1719,17 @@ export function Shell(props: ShellProps) {
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
+            /> : stagePage?.kind === "workflow" && props.selectedProject ? <WorkflowEditorPanel
+              key={stagePage.id ?? "new"}
+              projectId={props.selectedProject.id}
+              configuration={stagePage.id
+                ? props.workflowConfigurations.find((configuration) => configuration.id === stagePage.id)
+                : undefined}
+              stateRevision={props.workflowStateRevision}
+              agentCapabilities={props.agentCapabilities}
+              close={() => setStagePage(undefined)}
+              save={props.saveWorkflowConfiguration}
+              remove={props.deleteWorkflowConfiguration}
             /> : stagePage?.kind === "skill" ? <SkillEditorPanel
               key={stagePage.id}
               skillId={stagePage.id}
