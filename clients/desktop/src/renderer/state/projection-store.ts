@@ -1,4 +1,4 @@
-import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task } from "../model.js";
+import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { pullRequestKey } from "../change-source.js";
 import type { PlaybookDto, PlaybookRuntimeResult } from "@termloop/contract/current";
 import type {
@@ -18,6 +18,9 @@ export type ProjectionState = {
   tasks: readonly Task[];
   sessions: readonly Session[];
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
+  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   processingTaskId: string | null;
@@ -37,6 +40,9 @@ type SelectedProjectSnapshot = Pick<ProjectionState,
   | "projectWorktreeSummary"
   | "tasks"
   | "runConfigurations"
+  | "workflowConfigurations"
+  | "workflowExecutions"
+  | "workflowStateRevision"
   | "runRuntimes"
   | "runStateRevision"
   | "processingTaskId"
@@ -64,7 +70,7 @@ export function layoutPreservationProfileIds(
 }
 
 export class ProjectionStore {
-  #state: ProjectionState = { projects: [], tasks: [], sessions: [], runConfigurations: [], runRuntimes: [], runStateRevision: 0, processingTaskId: null, playbook: null, playbookRuntime: null, agentStatuses: [], gitHostProjections: [], branchCommitSummaries: [], connection: "connecting", errorLog: [] };
+  #state: ProjectionState = { projects: [], tasks: [], sessions: [], runConfigurations: [], workflowConfigurations: [], workflowExecutions: [], workflowStateRevision: 0, runRuntimes: [], runStateRevision: 0, processingTaskId: null, playbook: null, playbookRuntime: null, agentStatuses: [], gitHostProjections: [], branchCommitSummaries: [], connection: "connecting", errorLog: [] };
   #listeners = new Set<Listener>();
   #nextErrorId = 1;
   #sources = new Map<string, SourceBaseSnapshot>();
@@ -163,13 +169,16 @@ export class ProjectionStore {
     this.#applyProjectSnapshot(projectId ? this.#projectSnapshots.get(projectId) : undefined);
   }
 
-  applySelectedProjectSnapshot(projectId: string, tasks: Task[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null): void {
+  applySelectedProjectSnapshot(projectId: string, tasks: Task[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null, workflowConfigurations: WorkflowConfiguration[] = [], workflowExecutions: WorkflowExecution[] = [], workflowStateRevision = 0): void {
     const snapshot: SelectedProjectSnapshot = {
       tasks: [...tasks],
       gitHostProjections: [...gitHostProjections],
       branchCommitSummaries: [...branchCommitSummaries],
       ...(projectWorktreeSummary ? { projectWorktreeSummary } : {}),
       runConfigurations: [...runConfigurations],
+      workflowConfigurations: [...workflowConfigurations],
+      workflowExecutions: [...workflowExecutions],
+      workflowStateRevision,
       runRuntimes: [...runRuntimes],
       runStateRevision,
       processingTaskId,
@@ -181,13 +190,16 @@ export class ProjectionStore {
     if (this.#selectedProjectId === projectId) this.#applyProjectSnapshot(snapshot);
   }
 
-  applySnapshot(projects: Project[], tasks: Task[], sessions: Session[], agentStatuses: AgentStatus[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null): void {
+  applySnapshot(projects: Project[], tasks: Task[], sessions: Session[], agentStatuses: AgentStatus[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null, workflowConfigurations: WorkflowConfiguration[] = [], workflowExecutions: WorkflowExecution[] = [], workflowStateRevision = 0): void {
     this.#state = {
       projects: [...projects],
       ...(projectWorktreeSummary ? { projectWorktreeSummary } : {}),
       tasks: [...tasks],
       sessions: [...sessions],
       runConfigurations: [...runConfigurations],
+      workflowConfigurations: [...workflowConfigurations],
+      workflowExecutions: [...workflowExecutions],
+      workflowStateRevision,
       runRuntimes: [...runRuntimes],
       runStateRevision,
       processingTaskId,
@@ -283,14 +295,14 @@ export class ProjectionStore {
   setConnection(connection: ConnectionState, message?: string): void {
     this.#state = message
       ? { ...this.#state, connection, message, errorLog: this.#appendError(message) }
-      : { projects: this.#state.projects, ...(this.#state.projectWorktreeSummary ? { projectWorktreeSummary: this.#state.projectWorktreeSummary } : {}), tasks: this.#state.tasks, sessions: this.#state.sessions, runConfigurations: this.#state.runConfigurations, runRuntimes: this.#state.runRuntimes, runStateRevision: this.#state.runStateRevision, processingTaskId: this.#state.processingTaskId, playbook: this.#state.playbook, playbookRuntime: this.#state.playbookRuntime, agentStatuses: this.#state.agentStatuses, gitHostProjections: this.#state.gitHostProjections, branchCommitSummaries: this.#state.branchCommitSummaries, connection, errorLog: this.#state.errorLog };
+      : { projects: this.#state.projects, ...(this.#state.projectWorktreeSummary ? { projectWorktreeSummary: this.#state.projectWorktreeSummary } : {}), tasks: this.#state.tasks, sessions: this.#state.sessions, runConfigurations: this.#state.runConfigurations, workflowConfigurations: this.#state.workflowConfigurations, workflowExecutions: this.#state.workflowExecutions, workflowStateRevision: this.#state.workflowStateRevision, runRuntimes: this.#state.runRuntimes, runStateRevision: this.#state.runStateRevision, processingTaskId: this.#state.processingTaskId, playbook: this.#state.playbook, playbookRuntime: this.#state.playbookRuntime, agentStatuses: this.#state.agentStatuses, gitHostProjections: this.#state.gitHostProjections, branchCommitSummaries: this.#state.branchCommitSummaries, connection, errorLog: this.#state.errorLog };
     this.#emit();
   }
 
   setMessage(message?: string): void {
     this.#state = message
       ? { ...this.#state, message, errorLog: this.#appendError(message) }
-      : { projects: this.#state.projects, ...(this.#state.projectWorktreeSummary ? { projectWorktreeSummary: this.#state.projectWorktreeSummary } : {}), tasks: this.#state.tasks, sessions: this.#state.sessions, runConfigurations: this.#state.runConfigurations, runRuntimes: this.#state.runRuntimes, runStateRevision: this.#state.runStateRevision, processingTaskId: this.#state.processingTaskId, playbook: this.#state.playbook, playbookRuntime: this.#state.playbookRuntime, agentStatuses: this.#state.agentStatuses, gitHostProjections: this.#state.gitHostProjections, branchCommitSummaries: this.#state.branchCommitSummaries, connection: this.#state.connection, errorLog: this.#state.errorLog };
+      : { projects: this.#state.projects, ...(this.#state.projectWorktreeSummary ? { projectWorktreeSummary: this.#state.projectWorktreeSummary } : {}), tasks: this.#state.tasks, sessions: this.#state.sessions, runConfigurations: this.#state.runConfigurations, workflowConfigurations: this.#state.workflowConfigurations, workflowExecutions: this.#state.workflowExecutions, workflowStateRevision: this.#state.workflowStateRevision, runRuntimes: this.#state.runRuntimes, runStateRevision: this.#state.runStateRevision, processingTaskId: this.#state.processingTaskId, playbook: this.#state.playbook, playbookRuntime: this.#state.playbookRuntime, agentStatuses: this.#state.agentStatuses, gitHostProjections: this.#state.gitHostProjections, branchCommitSummaries: this.#state.branchCommitSummaries, connection: this.#state.connection, errorLog: this.#state.errorLog };
     this.#emit();
   }
 
@@ -351,6 +363,9 @@ function selectedProjectSnapshot(state: ProjectionState): SelectedProjectSnapsho
     ...(state.projectWorktreeSummary ? { projectWorktreeSummary: state.projectWorktreeSummary } : {}),
     tasks: state.tasks,
     runConfigurations: state.runConfigurations,
+    workflowConfigurations: state.workflowConfigurations,
+    workflowExecutions: state.workflowExecutions,
+    workflowStateRevision: state.workflowStateRevision,
     runRuntimes: state.runRuntimes,
     runStateRevision: state.runStateRevision,
     processingTaskId: state.processingTaskId,
@@ -365,6 +380,9 @@ function emptySelectedProjectSnapshot(): SelectedProjectSnapshot {
   return {
     tasks: [],
     runConfigurations: [],
+    workflowConfigurations: [],
+    workflowExecutions: [],
+    workflowStateRevision: 0,
     runRuntimes: [],
     runStateRevision: 0,
     processingTaskId: null,

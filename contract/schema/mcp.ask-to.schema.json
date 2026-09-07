@@ -66,6 +66,40 @@
         "openWorldHint": false
       }
     },
+    "workflow_delegate": {
+      "description": "Delegate the current Core-managed workflow DISCUSS step or the next undelegated participant in the current parallel REVIEW group. Supply only the message that participant needs. TermLoop Core selects the exact provider and either launches the assigned participant or reuses only the conversation declared by the saved workflow; provider and conversation identities are intentionally not caller inputs. For DISCUSS call once. For REVIEW call once per configured reviewer in the prompt's order without waiting between calls, then wait for all answers. This tool is available only to the active workflow coordinator even though it is advertised in the interactive profile.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/workflowDelegateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/askToResult"
+      },
+      "annotations": {
+        "title": "Delegate the current workflow step",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "workflow_step_complete": {
+      "description": "Complete the current step of the active Core-managed workflow and report its concise result for the workflow sidebar. For DISCUSS, IMPLEMENT, and FIX use completed. After every answer in a parallel REVIEW group is delivered, call once per reviewer in configured order; use approved when that reviewer has no actionable change or changesRequested when Fix must address its findings. Summary is the coordinator's bounded per-step report, not copied provider transcript or reasoning. Core validates the coordinator, reply delivery, outcomes, review cycle, wait-all join, and next transition. Continue completing remaining reviewers after an accepted REVIEW call; otherwise stop because TermLoop delivers the next step automatically.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/workflowStepCompleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workflowActionResult"
+      },
+      "annotations": {
+        "title": "Complete the current workflow step",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
     "project_read": {
       "description": "Read the current Project identity and folder projection.",
       "role": "steward",
@@ -966,6 +1000,56 @@
         "status": {
           "$ref": "#/$defs/replyToRequestStatus"
         }
+      }
+    },
+    "workflowDelegateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowDelegateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      }
+    },
+    "workflowStepOutcome": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepOutcome",
+      "type": "string",
+      "enum": ["completed", "approved", "changesRequested"]
+    },
+    "workflowStepCompleteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepCompleteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "summary"],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/workflowStepOutcome" },
+        "summary": {
+          "description": "Concise user-facing report of what this step decided, changed, verified, or found.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "x-utf8-max-bytes": 2048
+        }
+      }
+    },
+    "workflowActionResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowActionResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionId", "status", "currentStepIndex", "reviewCycle"],
+      "properties": {
+        "executionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "status": { "type": "string", "enum": ["running", "completed", "paused"] },
+        "currentStepIndex": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "reviewCycle": { "type": "integer", "minimum": 1, "maximum": 3 }
       }
     },
     "mcpToolErrorCode": {

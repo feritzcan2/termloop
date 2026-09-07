@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfiguration, RunRuntime, Session, Task } from "../src/renderer/model.js";
+import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfiguration, RunRuntime, Session, Task, WorkflowExecution } from "../src/renderer/model.js";
 import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
@@ -179,7 +179,44 @@ function agentStatus(sessionId: string, status: AgentStatus["status"]): AgentSta
   return { sessionId, status, source: "appServer", observedAtEpochMs: 1 };
 }
 
-type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string; closeTaskAndWorktree?: TaskRailProps["closeTaskAndWorktree"] };
+function workflowExecution(coordinatorSessionId: string, participantSessionId: string): WorkflowExecution {
+  return {
+    id: "workflow-execution-1",
+    projectId: "project-1",
+    taskId: "task-1",
+    workflowId: "workflow-1",
+    workflowGeneration: 1,
+    workflowName: "Discuss, build, review",
+    goal: "Keep workflow-owned agents together.",
+    coordinatorSessionId,
+    currentStepIndex: 1,
+    reviewCycle: 1,
+    maxReviewCycles: 2,
+    phase: "awaitingCoordinator",
+    status: "running",
+    steps: [
+      { id: "discuss", kind: "discuss", title: "Challenge the approach", instructions: "Discuss.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+      { id: "implement", kind: "implement", title: "Implement", instructions: "Build.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
+      { id: "review", kind: "review", title: "Independent review", instructions: "Review.", agentId: "claude", reuseStepId: "discuss", model: null, permission: null, reasoning: null },
+    ],
+    participants: [
+      { stepId: "discuss", sessionId: participantSessionId },
+      { stepId: "review", sessionId: participantSessionId },
+    ],
+    activeReviewStepIds: [],
+    stepResults: [{
+      stepId: "discuss",
+      reviewCycle: 1,
+      outcome: "completed",
+      summary: "Use one readable workflow card with its participants nested inside.",
+      completedAtEpochMs: 2,
+    }],
+    startedAtEpochMs: 1,
+    updatedAtEpochMs: 2,
+  };
+}
+
+type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; workflowExecutions?: readonly WorkflowExecution[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string; closeTaskAndWorktree?: TaskRailProps["closeTaskAndWorktree"] };
 
 function railProps(options: RailOptions = {}): TaskRailProps {
   const unused = async (): Promise<never> => { throw new Error("unused test callback"); };
@@ -191,6 +228,8 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     gitHostProjections: options.gitHostProjection ? [options.gitHostProjection] : [],
     branchCommitSummaries: options.branchCommitSummary ? [options.branchCommitSummary] : [],
     runConfigurations: options.runConfigurations ?? [],
+    workflowConfigurations: [],
+    workflowExecutions: options.workflowExecutions ?? [],
     runRuntimes: options.runRuntimes ?? [],
     runStateRevision: 0,
     runImprovement: { start: unused, versions: unused, restore: unused },
@@ -227,8 +266,11 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     ],
     launchTaskTerminal: unused,
     launchTaskAgent: unused,
+    launchTaskWorkflow: unused,
+    openWorkflowEditor: () => {},
     saveRunConfiguration: unused,
     deleteRunConfiguration: unused,
+    cancelWorkflowExecution: unused,
     launchTaskRun: unused,
     inspectTaskWorktreeRepair: unused,
     repairTaskWorktree: unused,
@@ -518,6 +560,38 @@ describe("Task rail agent attention", () => {
 });
 
 describe("Task rail row anatomy", () => {
+  it("moves an active workflow above ordinary Sessions and nests its exact Agent Sessions inside it", () => {
+    const coordinator = { ...agentSession("workflow-coordinator"), name: "Discuss, build, review" };
+    const claude = agentSession("workflow-claude");
+    const participant = {
+      ...claude,
+      process: { ...claude.process, agent_id: "claude" },
+      ask_to_source_session_id: coordinator.id,
+    };
+    const ordinary = agentSession("ordinary-agent");
+    const markup = renderRail({
+      sessions: [coordinator, participant, ordinary],
+      statuses: [
+        agentStatus(coordinator.id, "working"),
+        agentStatus(participant.id, "idle"),
+        agentStatus(ordinary.id, "working"),
+      ],
+      workflowExecutions: [workflowExecution(coordinator.id, participant.id)],
+    });
+
+    expect(markup).toContain('data-workflow-session-id="workflow-coordinator"');
+    expect(markup).toContain('data-workflow-session-id="workflow-claude"');
+    expect(markup).toContain('aria-label="Open Codex — Working"');
+    expect(markup).toContain('aria-label="Open Claude — Idle"');
+    expect(markup.match(/data-workflow-session-id="workflow-coordinator"/gu)).toHaveLength(2);
+    expect(markup).toContain(">same coordinator</em>");
+    expect(markup).not.toContain('data-session-id="workflow-coordinator"');
+    expect(markup).not.toContain('data-session-id="workflow-claude"');
+    expect(markup).toContain('data-session-id="ordinary-agent"');
+    expect(markup.indexOf('aria-label="Discuss, build, review workflow progress"'))
+      .toBeLessThan(markup.indexOf('data-session-id="ordinary-agent"'));
+  });
+
   it("offers an idle run as a launcher chip in the Task's Start row, not a card", () => {
     const markup = renderRail({ runConfigurations: [runConfiguration()] });
     expect(markup).toContain('class="run-chip"');
