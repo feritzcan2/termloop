@@ -83,7 +83,8 @@ struct LegacyRoutineSnapshot {
     name: String,
     prompt: String,
     steward_instructions: String,
-    worker_id: String,
+    #[serde(rename = "workerId")]
+    _worker_id: String,
     enabled: bool,
     schedule_interval_seconds: u64,
     action_handling: RoutineActionHandling,
@@ -108,8 +109,10 @@ struct LegacyPlaybookSnapshot {
     active_pipeline_name: String,
     milestones: Vec<LegacyPlaybookMilestoneDraft>,
     saved_pipelines: Vec<LegacyPlaybookPipelineDraft>,
-    worker_id: Option<String>,
-    preferred_worker_agent_id: StewardAgentId,
+    #[serde(rename = "workerId")]
+    _worker_id: Option<String>,
+    #[serde(rename = "preferredWorkerAgentId")]
+    _preferred_worker_agent_id: StewardAgentId,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,7 +141,8 @@ struct LegacyPlaybookStepCheckDraft {
     instructions: String,
     steward_instructions: String,
     action_handling: RoutineActionHandling,
-    worker_id: Option<String>,
+    #[serde(rename = "workerId")]
+    _worker_id: Option<String>,
 }
 
 impl TryFrom<LegacyRoutineSnapshot> for RoutineSnapshot {
@@ -1377,7 +1381,7 @@ mod tests {
             "Inspect the live review state.\n\nApplies when: The development pull request exists."
         );
         assert_eq!(canonical["milestones"][0]["whileWaiting"]["mode"], "ask");
-        assert_eq!(canonical["milestones"][0]["workerId"], "worker-1");
+        assert!(canonical["milestones"][0].get("workerId").is_none());
         assert!(canonical["milestones"][0].get("check").is_none());
         assert!(canonical["milestones"][0].get("condition").is_none());
     }

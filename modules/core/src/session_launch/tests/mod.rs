@@ -588,7 +588,12 @@ fn pending_generated_input_fixture() {
         std::io::stdout().flush().unwrap();
         read_headless_fixture_input(&mut input, b"\r");
     } else if retain_without_repaint {
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        // Keep the child and its screen unchanged until the parent terminates
+        // it. Exiting the Rust harness makes ConPTY repaint the old transcript,
+        // which is new structural output rather than this no-repaint scenario.
+        let mut unexpected = [0_u8; 1];
+        std::io::Read::read_exact(&mut input, &mut unexpected).unwrap();
+        panic!("fixture received input after the sole expected submit");
     }
     if termloop_platform::host_uses_bracketed_paste_framing() {
         println!("\x1b[?2004lTERMLOOP_INITIAL_INPUT_RECEIVED:{submitted}");
@@ -1832,8 +1837,12 @@ async fn assert_quick_action_initial_input_delivery(
     );
     let mut environment = termloop_platform::LaunchEnvironment::os_baseline()
         .with_explicit("TERMLOOP_TEST_PENDING_INITIAL_INPUT", "1")
-        .with_explicit("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT", "Review this diff")
-        .with_explicit("TERMLOOP_TEST_INTERLEAVED_USER_INPUT", "1");
+        .with_explicit("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT", "Review this diff");
+    // The no-repaint case must not ask ConPTY to redraw the composer through
+    // a cursor edit. The other cases independently cover interleaved input.
+    if !retain_without_repaint {
+        environment = environment.with_explicit("TERMLOOP_TEST_INTERLEAVED_USER_INPUT", "1");
+    }
     let client_protocol_replies =
         termloop_platform::host_uses_bracketed_paste_framing() && agent_id != "codex";
     if client_protocol_replies {
@@ -1923,6 +1932,37 @@ async fn assert_quick_action_initial_input_delivery(
             None,
             "thread identity alone must not release generated input"
         );
+        if retain_without_repaint {
+            // This case promises no output after the sole submit. Establish
+            // the fixture's initial composer before publishing App Server
+            // idle: that structured signal already authorizes paste delivery.
+            // Otherwise ConPTY's delayed startup screen diff can move the
+            // cursor after paste, settle it, then render the paste after Enter.
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while !terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .unwrap()
+                    .facts()
+                    .composer_prompt_seen_in_current_alternate_screen
+                {
+                    match output.recv().await.unwrap() {
+                        termloop_terminal::TerminalEvent::Output(chunk) => {
+                            append_headless_output_and_answer_cursor_queries(
+                                &terminal,
+                                "quick-action-ready",
+                                9,
+                                &mut bytes,
+                                &mut answered_cursor_position_queries,
+                                chunk,
+                            );
+                        }
+                        event => panic!("fixture lost its initial composer: {event:?}"),
+                    }
+                }
+            })
+            .await
+            .expect("no-repaint fixture must render its initial composer before structured idle");
+        }
         runtime
             .record_app_server_observation(
                 "quick-action-ready",
@@ -1951,15 +1991,17 @@ async fn assert_quick_action_initial_input_delivery(
                 )
                 .unwrap();
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let diagnostics = runtime
-            .generated_input_deliveries
-            .diagnostics("quick-action-ready", 9)
-            .unwrap();
-        assert!(
-            !diagnostics.paste_receipted,
-            "Codex startup output must not receive the paste before its composer glyph renders"
-        );
+        if !retain_without_repaint {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let diagnostics = runtime
+                .generated_input_deliveries
+                .diagnostics("quick-action-ready", 9)
+                .unwrap();
+            assert!(
+                !diagnostics.paste_receipted,
+                "Codex startup output must not receive the paste before its composer glyph renders"
+            );
+        }
     } else {
         runtime
             .record_agent_observation(
@@ -2065,16 +2107,18 @@ async fn assert_quick_action_initial_input_delivery(
             bounded_headless_fixture_output(&bytes),
         )
     });
-    terminal
-        .input_user("quick-action-ready", 9, b"\x1b[D")
-        .unwrap();
+    if !retain_without_repaint {
+        terminal
+            .input_user("quick-action-ready", 9, b"\x1b[D")
+            .unwrap();
+    }
     assert_eq!(
         terminal
             .user_input_activity("quick-action-ready", 9)
             .unwrap(),
         termloop_terminal::UserInputActivitySnapshot {
-            sequence: 1,
-            mutation_sequence: 1,
+            sequence: u64::from(!retain_without_repaint),
+            mutation_sequence: u64::from(!retain_without_repaint),
         }
     );
     assert_eq!(
@@ -2102,55 +2146,56 @@ async fn assert_quick_action_initial_input_delivery(
             .pending_generated_input
             .is_some()
     );
-    tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        async {
-            while !String::from_utf8_lossy(&bytes)
-                .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
-            {
-                match output.recv().await.unwrap() {
-                    termloop_terminal::TerminalEvent::Output(chunk) => {
-                        append_headless_output_and_answer_cursor_queries(
-                            &terminal,
-                            "quick-action-ready",
-                            9,
-                            &mut bytes,
-                            &mut answered_cursor_position_queries,
-                            chunk,
-                        );
-                    }
-                    termloop_terminal::TerminalEvent::Gap(_) => {
-                        panic!("fixture output unexpectedly reported a gap")
-                    }
-                    termloop_terminal::TerminalEvent::Eof => {
-                        panic!(
-                            "fixture exited before receiving initial input: {}",
-                            String::from_utf8_lossy(&bytes)
-                        )
+    if !retain_without_repaint {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            async {
+                while !String::from_utf8_lossy(&bytes)
+                    .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
+                {
+                    match output.recv().await.unwrap() {
+                        termloop_terminal::TerminalEvent::Output(chunk) => {
+                            append_headless_output_and_answer_cursor_queries(
+                                &terminal,
+                                "quick-action-ready",
+                                9,
+                                &mut bytes,
+                                &mut answered_cursor_position_queries,
+                                chunk,
+                            );
+                        }
+                        termloop_terminal::TerminalEvent::Gap(_) => {
+                            panic!("fixture output unexpectedly reported a gap")
+                        }
+                        termloop_terminal::TerminalEvent::Eof => {
+                            panic!(
+                                "fixture exited before receiving initial input: {}",
+                                String::from_utf8_lossy(&bytes)
+                            )
+                        }
                     }
                 }
-            }
-        },
-    )
-    .await
-    .unwrap_or_else(|_| {
-        panic!(
-            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
-            runtime.generated_input_delivery_state("quick-action-ready", 9),
-            runtime.generated_input_delivery_failure("quick-action-ready", 9),
-            terminal
-                .input_readiness_snapshot("quick-action-ready", 9)
-                .map(|snapshot| snapshot.facts()),
-            terminal
-                .input_readiness_snapshot("quick-action-ready", 9)
-                .map(|snapshot| snapshot.diagnostics()),
-            generated_input_events.try_recv().ok(),
-            bounded_headless_fixture_output(&bytes),
+            },
         )
-    });
-
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
+                runtime.generated_input_delivery_state("quick-action-ready", 9),
+                runtime.generated_input_delivery_failure("quick-action-ready", 9),
+                terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .map(|snapshot| snapshot.facts()),
+                terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .map(|snapshot| snapshot.diagnostics()),
+                generated_input_events.try_recv().ok(),
+                bounded_headless_fixture_output(&bytes),
+            )
+        });
+    }
     let event = generated_input_events
-        .recv_timeout(std::time::Duration::from_secs(1))
+        .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap();
     assert!(runtime.record_generated_input_runtime_event(event).unwrap());
     assert_eq!(
@@ -2188,13 +2233,28 @@ async fn assert_quick_action_initial_input_delivery(
         assert_eq!(diagnostics.submit_attempts, 2);
         assert!(diagnostics.submit_receipted);
     } else if retain_without_repaint {
+        let readiness = terminal
+            .input_readiness_snapshot("quick-action-ready", 9)
+            .unwrap();
         let event = generated_input_events
             .recv_timeout(std::time::Duration::from_secs(6))
             .unwrap();
+        let diagnostic = format!("{event:?}");
+        for _ in 0..64 {
+            match tokio::time::timeout(std::time::Duration::from_millis(1), output.recv()).await {
+                Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) => bytes.extend(chunk),
+                _ => break,
+            }
+        }
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
             runtime.generated_input_delivery_state("quick-action-ready", 9),
-            Some(crate::GeneratedInputDeliveryState::Stalled)
+            Some(crate::GeneratedInputDeliveryState::Stalled),
+            "no-repaint fixture received an unexpected transport event: {diagnostic}; readiness_before={:?}; readiness_after={:?}; readiness_diagnostics={:?}; output={}",
+            readiness.facts(),
+            readiness.current_facts(),
+            readiness.diagnostics(),
+            bounded_headless_fixture_output(&bytes)
         );
         let diagnostics = runtime
             .generated_input_deliveries

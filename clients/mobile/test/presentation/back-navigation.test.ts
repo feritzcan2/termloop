@@ -11,8 +11,8 @@ describe("detail-screen back navigation", () => {
     expect(backNavigationAction(false, false)).toBe("fallback");
   });
 
-  it("prefers an exact parent even when unrelated history exists", () => {
-    expect(backNavigationAction(true, true)).toBe("dismissTo");
-    expect(backNavigationAction(false, true)).toBe("dismissTo");
+  it("replaces to an exact parent instead of dismissing the native stack", () => {
+    expect(backNavigationAction(true, true)).toBe("replace");
+    expect(backNavigationAction(false, true)).toBe("replace");
   });
 });

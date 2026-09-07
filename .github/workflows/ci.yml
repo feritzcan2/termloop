@@ -56,6 +56,8 @@ jobs:
               -- -D warnings
 
   verify:
+    # Keep the required status-check identities stable when execution hosts change.
+    name: ${{ matrix.check-name }}
     needs: preflight
     strategy:
       fail-fast: false
@@ -63,12 +65,15 @@ jobs:
         include:
           - os: macos-15
             runner: '["self-hosted", "macOS", "ARM64", "termloop-macos"]'
-          - os: ubuntu-24.04
-            runner: '["ubuntu-24.04"]'
+            check-name: 'verify (macos-15, ["self-hosted", "macOS", "ARM64", "termloop-macos"])'
+          - os: linux-netcup
+            runner: '["self-hosted", "Linux", "X64", "netcup"]'
+            check-name: 'verify (ubuntu-24.04, ["ubuntu-24.04"])'
           - os: windows-2025
             runner: '["windows-2025"]'
+            check-name: 'verify (windows-2025, ["windows-2025"])'
     runs-on: ${{ fromJSON(matrix.runner) }}
-    timeout-minutes: 40
+    timeout-minutes: ${{ matrix.os == 'linux-netcup' && 90 || 40 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

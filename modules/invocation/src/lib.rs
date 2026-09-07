@@ -28,8 +28,8 @@ pub use assistant::{
     ProvenancedPrompt, assistant_activation_message, assistant_wake_message,
     default_assistant_launch_selection, default_steward_system_prompt,
     editable_steward_system_prompt, editable_steward_system_prompt_from_effective,
-    effective_steward_system_prompt, executor_prompt,
-    resolved_steward_system_prompt, tracker_assignment_prompt,
+    effective_steward_system_prompt, executor_prompt, resolved_steward_system_prompt,
+    tracker_assignment_prompt,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2790,9 +2790,12 @@ pub fn persistent_assistant_agent(
     Ok(manifest.into_payload())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ask_to_helper_agent_for_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2802,6 +2805,8 @@ pub fn ask_to_helper_agent_for_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2815,6 +2820,8 @@ pub fn ask_to_helper_agent_for_conversation(
 pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2824,6 +2831,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2837,6 +2846,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
 fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2863,9 +2874,9 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
         template,
+        model,
         "default",
-        "default",
-        "default",
+        reasoning,
         None,
         conversation,
         observation,
@@ -3923,11 +3934,11 @@ mod tests {
     #[test]
     fn routines_use_one_provider_neutral_evidence_policy() {
         let cases = [
-            (ExecutorRole::Routine, "builtin.tracker.routine", 2),
+            (ExecutorRole::Routine, "builtin.tracker.routine", 3),
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                9,
+                10,
             ),
         ];
 
@@ -3942,7 +3953,7 @@ mod tests {
                 "{template_ref}"
             );
             assert!(
-                delivered.contains("worker_complete_assignment"),
+                delivered.contains("steward_complete_assignment"),
                 "{template_ref}"
             );
             assert!(delivered.contains("satisfied"), "{template_ref}");
@@ -4111,24 +4122,17 @@ mod tests {
                 built_in_instructions: "Protected Steward behavior.",
                 max_bytes: 16_384,
             },
-            ImproverTarget::WorkerInstructions {
-                worker_id: "wkr-1",
-                worker_name: "Delivery Worker",
-                built_in_instructions: "Protected Worker behavior.",
-                routine_summary: r#"{"routines":[]}"#,
-                max_bytes: 16_384,
-            },
             ImproverTarget::RoutineInstructions {
+                project_name: "Nucleus",
                 routine_id: "rtn-1",
                 routine_name: "PR approved",
-                worker_name: "Delivery Worker",
+
                 built_in_instructions: "Protected Routine behavior.",
                 max_bytes: 9_216,
             },
             ImproverTarget::RoutineBuilder {
                 project_name: "Nucleus",
-                worker_id: "wkr-1",
-                worker_name: "Delivery Worker",
+
                 routine_summary: r#"{"routines":[]}"#,
             },
             ImproverTarget::Playbook {
@@ -4170,39 +4174,27 @@ mod tests {
     fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
         let targets = [
             (
-                ImproverTarget::WorkerInstructions {
-                    worker_id: "wkr-1",
-                    worker_name: "Delivery Worker",
-                    built_in_instructions: "Protected Worker behavior.",
-                    routine_summary: r#"{"routines":[]}"#,
-                    max_bytes: 16_384,
-                },
-                9,
-            ),
-            (
                 ImproverTarget::RoutineInstructions {
+                    project_name: "Nucleus",
                     routine_id: "rtn-1",
                     routine_name: "PR approved",
-                    worker_name: "Delivery Worker",
                     built_in_instructions: "Protected Routine behavior.",
                     max_bytes: 9_216,
                 },
-                11,
+                12,
             ),
             (
                 ImproverTarget::RoutineBuilder {
                     project_name: "Nucleus",
-                    worker_id: "wkr-1",
-                    worker_name: "Delivery Worker",
                     routine_summary: r#"{"routines":[]}"#,
                 },
-                10,
+                11,
             ),
             (
                 ImproverTarget::Playbook {
                     project_name: "Nucleus",
                 },
-                19,
+                20,
             ),
         ];
 
@@ -4243,8 +4235,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 19);
-        assert_eq!(launch.provenance().template_version, 19);
+        assert_eq!(template.version, 20);
+        assert_eq!(launch.provenance().template_version, 20);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -4258,19 +4250,17 @@ mod tests {
             "\"activePipelineName\"",
             "\"milestones\"",
             "\"savedPipelines\"",
-            "\"workerId\"",
-            "\"preferredWorkerAgentId\"",
             "Every saved pipeline contains exactly",
-            "`completeWhen`, `whileWaiting`, `workerId`",
+            "`completeWhen`, `whileWaiting`",
             "never send probe",
             "authoritative only for TermLoop-owned Task identity",
             "Worker's cwd or HEAD",
             "task_agent_request",
-            "Worker-to-Agent coordination among the recommended options",
+            "Steward-to-Agent coordination among the recommended options",
             "`coordinationAgent` projection",
             "sole authority",
-            "never require the Worker to re-prove Agent",
-            "Worker to attempt",
+            "never require the Steward to re-prove Agent",
+            "Steward to attempt",
             "ordinary unmet evidence and is `pending`",
             "Routines have no provider kind",
         ] {
@@ -4280,7 +4270,6 @@ mod tests {
             "`schemaVersion`",
             "`activePipelineId`",
             "`pipelines`",
-            "`workers`",
             "`routines`",
         ] {
             assert!(
@@ -4351,9 +4340,10 @@ mod tests {
             "default",
             "default",
             ImproverTarget::RoutineInstructions {
+                project_name: "Nucleus",
                 routine_id: "rtn-9",
                 routine_name: "PR approved",
-                worker_name: "Delivery Worker",
+
                 built_in_instructions: "Write {{entry_content}} elsewhere.",
                 max_bytes: 9_216,
             },
@@ -4961,7 +4951,7 @@ mod tests {
                 reasoning: "default",
                 role: ExecutorRole::Steward,
                 system_prompt: Some(""),
-                worker_prompt: None,
+
                 cwd: "/tmp/project",
                 conversation: AgentConversationLaunch::Fresh { resume_ref: None },
                 observation: None,
@@ -5015,14 +5005,14 @@ mod tests {
         }
 
         for agent_id in ["codex", "claude"] {
-            let worker = persistent_assistant_agent(PersistentAssistantLaunch {
+            let steward = persistent_assistant_agent(PersistentAssistantLaunch {
                 agent_id,
                 model: "default",
                 permission: "default",
                 reasoning: "default",
-                role: ExecutorRole::Worker,
+                role: ExecutorRole::Steward,
                 system_prompt: Some("Answer briefly in Turkish."),
-                worker_prompt: Some("Summarize each Routine in one sentence."),
+
                 cwd: "/tmp/project",
                 conversation: AgentConversationLaunch::Fresh { resume_ref: None },
                 observation: None,
@@ -5030,80 +5020,61 @@ mod tests {
                     endpoint: "http://127.0.0.1:1234/mcp",
                     token: "runtime-secret",
                     claude_config_path: "/tmp/termloop-agent-mcp.json",
-                    profile: AgentMcpProfile::Worker,
+                    profile: AgentMcpProfile::Steward,
                 },
             })
             .unwrap();
-            assert!(
-                !worker
-                    .args()
-                    .iter()
-                    .any(|argument| argument.contains("bypass"))
-            );
-            assert_eq!(worker.inspectable_manifest().target.permission, "default");
-            let instructions = worker
+            assert!(!steward.args().iter().any(|argument| matches!(
+                argument.as_str(),
+                "--dangerously-skip-permissions" | "--dangerously-bypass-approvals-and-sandbox"
+            )));
+            assert_eq!(steward.inspectable_manifest().target.permission, "default");
+            let instructions = steward
                 .inspectable_manifest()
                 .content_parts
                 .iter()
                 .find(|part| part.id == "persistent-assistant-instructions")
-                .expect("visible native Worker instructions");
+                .expect("visible native Steward instructions");
             assert_eq!(instructions.kind, "providerInstructions");
-            assert!(instructions.content.contains("Configured Worker prompt"));
-            assert!(instructions.content.contains("Configured System prompt"));
             assert!(
                 instructions
                     .content
-                    .contains("task_agent_transcript_tail_read")
+                    .starts_with(default_steward_system_prompt())
+            );
+            assert!(instructions.content.ends_with("Answer briefly in Turkish."));
+            assert!(
+                instructions
+                    .content
+                    .contains("canonical Session ID returned by the scoped `task_read`")
             );
             assert!(instructions.content.contains("task_agent_request"));
             match agent_id {
-                "codex" => assert!(worker.args().iter().any(|argument| {
+                "codex" => assert!(steward.args().iter().any(|argument| {
                     argument.starts_with("developer_instructions=")
-                        && argument.contains("Configured Worker prompt")
-                        && argument.contains("Configured System prompt")
+                        && argument.contains("Answer briefly in Turkish.")
                 })),
-                "claude" => assert!(worker.args().windows(2).any(|arguments| {
+                "claude" => assert!(steward.args().windows(2).any(|arguments| {
                     arguments[0] == "--append-system-prompt"
-                        && arguments[1].contains("Configured Worker prompt")
-                        && arguments[1].contains("Configured System prompt")
+                        && arguments[1].contains("Answer briefly in Turkish.")
                 })),
                 _ => unreachable!(),
             }
-            assert!(worker.initial_input().is_some_and(|input| {
-                input.contains("worker_get_next_routine")
-                    && input.contains("worker_complete_assignment")
-                    && !input.contains("## Configured Worker prompt")
-                    && !input.contains("Summarize each Routine in one sentence.")
+            assert!(steward.initial_input().is_some_and(|input| {
+                input.contains("Persistent Assistant Activation")
+                    && !input.contains("Answer briefly in Turkish.")
                     && input.ends_with('\r')
             }));
             assert_eq!(
-                worker.bindings().collect::<Vec<_>>(),
-                vec![
-                    ("workerPrompt", "Summarize each Routine in one sentence."),
-                    ("systemPrompt", "Answer briefly in Turkish."),
-                ]
+                steward.bindings().collect::<Vec<_>>(),
+                vec![("systemPrompt", "Answer briefly in Turkish."),]
             );
             assert!(
-                worker
+                steward
                     .initial_input_sequence()
                     .and_then(|sequence| sequence.last())
                     .is_some_and(|input| input.as_slice() == b"\r")
             );
         }
-    }
-
-    #[test]
-    fn persistent_worker_single_editor_suffix_round_trips_without_added_text() {
-        let built_in = assistant::effective_worker_prompt("", "");
-        let editable = "Handle Slack checks and summarize only new messages.";
-        assert_eq!(
-            assistant::effective_worker_prompt("", editable),
-            format!("{built_in}\n\n{editable}")
-        );
-        assert_eq!(
-            assistant::effective_worker_prompt(editable, ""),
-            format!("{built_in}\n\n{editable}")
-        );
     }
 
     #[test]
@@ -5116,7 +5087,7 @@ mod tests {
             reasoning: "high",
             role: ExecutorRole::Steward,
             system_prompt: Some(custom),
-            worker_prompt: None,
+
             cwd: "/tmp/project",
             conversation: AgentConversationLaunch::Fresh { resume_ref: None },
             observation: None,
@@ -6035,6 +6006,8 @@ mod tests {
         let launch = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-1",
             "Review the race.",
@@ -6081,6 +6054,8 @@ mod tests {
         let codex = ask_to_helper_agent_for_conversation(
             "codex",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-3",
             "Write a poem.",
@@ -6106,6 +6081,8 @@ mod tests {
         let literal_placeholder = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-2",
             "Explain {{request_id}} literally.",
@@ -6260,7 +6237,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 37);
+        assert_eq!(prompt.provenance().template_version, 38);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6363,7 +6340,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("A finding is a Worker's factual observation")
+                .contains("A finding is a prior assignment's factual observation")
         );
         assert!(
             prompt
@@ -6446,7 +6423,11 @@ mod tests {
                 .authored_preview()
                 .contains("Every current `ask` or `auto` finding must leave the wake")
         );
-        assert!(prompt.authored_preview().contains("use `task_agent_start`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Call `task_agent_start` only")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -6475,7 +6456,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("The Worker remains the sole authority")
+                .contains("a later exact assignment must independently")
         );
         assert!(
             prompt
@@ -6491,7 +6472,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("Do not run repository, provider, build, test")
+                .contains("provider connectors, CLIs, and bounded repository inspection")
         );
 
         let retired =
@@ -6546,28 +6527,30 @@ mod tests {
 
     #[test]
     fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
-        let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 25);
-        let worker = worker.authored_preview();
-        assert!(worker.contains("stage title is only a label"));
-        assert!(worker.contains("purpose-built connector"));
-        assert!(worker.contains("cached UI projection is display-only"));
-        assert!(worker.contains("observed branch family"));
-        assert!(worker.contains("worker_complete_assignment"));
-        assert!(worker.contains("`satisfied`"));
-        assert!(worker.contains("`pending`"));
-        assert!(worker.contains("`blocked`"));
-        assert!(worker.contains("task_agent_request"));
-        assert!(!worker.contains("pullRequestCandidatesByBaseBranch"));
-        assert!(!worker.contains("Azure"));
+        let steward = executor_prompt(ExecutorRole::Steward).unwrap();
+        assert_eq!(steward.provenance().template_version, 38);
+        let steward = steward.authored_preview();
+        assert!(steward.contains("stage title is only a label"));
+        assert!(steward.contains("steward_complete_assignment"));
+        assert!(steward.contains("`satisfied`"));
+        assert!(steward.contains("`pending`"));
+        assert!(steward.contains("`blocked`"));
+        assert!(steward.contains("task_agent_request"));
+        assert!(!steward.contains("pullRequestCandidatesByBaseBranch"));
+        assert!(!steward.contains("Azure"));
+
+        assert!(steward.contains("provider connectors, CLIs"));
+        assert!(steward.contains("canonical Session ID returned by the scoped `task_read`"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 9);
+        assert_eq!(step.provenance().template_version, 10);
+        assert!(step.delivered_preview().contains("purpose-built connector"));
+        assert!(step.delivered_preview().contains("observed branch family"));
         assert!(step.delivered_preview().contains("title is only a label"));
         assert!(step.delivered_preview().contains("`completeWhen`"));
         assert!(
             step.delivered_preview()
-                .contains("worker_complete_assignment")
+                .contains("steward_complete_assignment")
         );
         assert!(step.delivered_preview().contains("canonical Agent"));
         assert!(
@@ -6578,13 +6561,13 @@ mod tests {
     }
 
     #[test]
-    fn direct_worker_wake_accepts_assignment_with_full_routine_memory() {
+    fn direct_steward_wake_accepts_assignment_with_full_routine_memory() {
         let assignment = format!(
             r#"{{"status":"assigned","context":{{"markdown":"{}"}}}}"#,
             "x".repeat(80 * 1024)
         );
         let wake = assistant_wake_message(
-            ExecutorRole::Worker,
+            ExecutorRole::Steward,
             AssistantWakeReason::ScheduledCheck,
             Some("0123456789abcdef0123456789abcdef"),
             Some(&assignment),

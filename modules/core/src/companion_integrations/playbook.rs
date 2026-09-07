@@ -211,10 +211,7 @@ impl CoreRuntime {
                 || value.milestones != milestones
                 || value.saved_pipelines != saved_pipelines
         });
-        if !document_changed
-            && !routines_changed
-            && steward_configuration.is_none()
-        {
+        if !document_changed && !routines_changed && steward_configuration.is_none() {
             if draft.expected_revision != self.store.revision() {
                 return Err(CoreError::RevisionConflict);
             }
@@ -1107,8 +1104,14 @@ mod tests {
         )
         .unwrap();
 
-        let routine_id = runtime.store.playbook_for_project(&project_id).unwrap()
-            .saved_pipelines[0].milestones[0].routine_id.clone();
+        let routine_id = runtime
+            .store
+            .playbook_for_project(&project_id)
+            .unwrap()
+            .saved_pipelines[0]
+            .milestones[0]
+            .routine_id
+            .clone();
         let mut routine = runtime
             .store
             .tracker_configurations()

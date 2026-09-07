@@ -31,7 +31,7 @@ for (const provider of ["claude", "codex"]) {
 
 const build = spawnSync("cargo", ["build", "-p", "termloop-server"], { stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status ?? 1);
-const serverPath = path.resolve("target/debug", process.platform === "win32" ? "termloop-server.exe" : "termloop-server");
+const serverPath = path.resolve(process.env.CARGO_TARGET_DIR ?? "target", "debug", process.platform === "win32" ? "termloop-server.exe" : "termloop-server");
 let serverError = "";
 function startServer() {
   const child = spawn(serverPath, [], {
@@ -51,6 +51,9 @@ let server = startServer();
 
 async function waitForJson(file, attempts = 300) {
   for (let attempt = 0; attempt < attempts; attempt++) {
+    const failure = await readFile(path.join(evidenceDir, "fake-agent-error.json"), "utf8")
+      .catch((error) => { if (error.code === "ENOENT") return null; throw error; });
+    if (failure) throw new Error(`fake agent failed: ${JSON.parse(failure).message}`);
     try { return JSON.parse(await readFile(file, "utf8")); } catch { await new Promise((resolve) => setTimeout(resolve, 50)); }
   }
   throw new Error(`timed out waiting for ${file}: ${serverError}`);
@@ -101,6 +104,8 @@ try {
   assert.equal(sourceSession.ask_to_source_session_id, null);
   assert.equal(askerBeforeRestart.status, "pending");
   assert.deepEqual(helperBeforeRestart.tools, ["ask_to", "send_to_agent", "reply_to_request"]);
+  assert.equal(helperBeforeRestart.selectedModel, "opus");
+  assert.equal(helperBeforeRestart.selectedReasoning, "high");
 
   const firstServerExit = new Promise((resolve) => server.once("exit", resolve));
   // Crash the daemon so durable restart reconciliation, rather than an explicit
@@ -111,6 +116,9 @@ try {
   serverError = "";
   server = startServer();
   const restartedRecord = await waitForJson(path.join(runtimeDir, "runtime.json"));
+  const resumedSelection = await waitForJson(path.join(evidenceDir, "helper-resumed.json"));
+  assert.deepEqual(resumedSelection, { selectedModel: "opus", selectedReasoning: "high" });
+  console.log("ASK_TO_SELECTION_OK: initial helper and daemon restart preserve model and reasoning");
   const asker = await waitForJson(path.join(evidenceDir, "asker.json"), 800);
   const helper = await waitForJson(path.join(evidenceDir, "helper.json"), 800);
   const restartedSessions = await rawCall(restartedRecord, "session.list", {});
@@ -119,6 +127,9 @@ try {
   assert.ok(restartedHelper, "Ask-To helper Session must survive daemon restart");
   assert.ok(restartedSource, "Ask-To source Session must survive daemon restart");
   assert.equal(restartedHelper.ask_to_source_session_id, restartedSource.id);
+  assert.equal(helper.selectedModel, "opus");
+  assert.equal(helper.selectedReasoning, "high");
+  assert.equal(asker.followUpSelectionChangeDenied, true);
   assert.deepEqual(asker.tools, ["ask_to", "send_to_agent"]);
   assert.deepEqual(helper.tools, ["ask_to", "send_to_agent", "reply_to_request"]);
   assert.equal(asker.discoveryFallback, true);
@@ -160,6 +171,8 @@ try {
       idempotentLostResponseRecovery: true,
       pushedSingleReplyRoundTrip: true,
       liveHelperFollowUpReuse: true,
+      explicitHelperSelectionAndRestart: true,
+      followUpSelectionChangeDenied: true,
       askToCallerProjection: true,
       restartPreservesCallerProjection: true,
       restartPreservesReplyAndFollowUp: true,

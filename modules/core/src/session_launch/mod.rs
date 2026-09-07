@@ -1378,13 +1378,12 @@ impl CoreRuntime {
         if personal_agent.is_some() && !matches!(plan.agent_id.as_str(), "codex" | "claude") {
             return Err(CoreError::AgentUnsupported);
         }
-        if let Some(profile) = profile {
-            if !profile
+        if let Some(profile) = profile
+            && !profile
                 .supported_agent_ids
                 .contains(&plan.agent_id.as_str())
-            {
-                return Err(CoreError::AgentUnsupported);
-            }
+        {
+            return Err(CoreError::AgentUnsupported);
         }
         termloop_invocation::validate_quick_action_with_attachments(
             &plan.agent_id,
@@ -1803,10 +1802,13 @@ impl CoreRuntime {
             resolve_quick_action_launch(plan, quick_action, conversation, observation, mcp)
         } else if let Some((request_id, message)) = plan.helper_prompt.as_ref() {
             let mcp = mcp.ok_or(CoreError::AgentUnsupported)?;
+            let selection = plan.interactive_options.clone().unwrap_or_default();
             if managed_worktree {
                 termloop_invocation::ask_to_helper_agent_for_managed_worktree_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
@@ -1817,6 +1819,8 @@ impl CoreRuntime {
                 termloop_invocation::ask_to_helper_agent_for_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
@@ -2484,6 +2488,7 @@ fn resolve_interactive_agent_launch_with_transport(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_codex_runtime(
     session_id: &str,
     runtime_epoch: u64,

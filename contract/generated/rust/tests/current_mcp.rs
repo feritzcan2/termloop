@@ -1,8 +1,8 @@
 use serde_json::json;
 use termloop_contract::current::{
     MCP_HELPER_TOOLS, MCP_IMPROVER_TOOLS, MCP_INTERACTIVE_TOOLS, MCP_STEWARD_TOOLS,
-    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError,
-    validate_mcp_tool_params, validate_mcp_tool_result,
+    MCP_TOOL_DEFINITIONS_JSON, MCP_TOOLS, METHODS, McpToolError, validate_mcp_tool_params,
+    validate_mcp_tool_result,
 };
 
 #[test]
@@ -150,6 +150,36 @@ fn ask_to_tool_validation_is_strict_and_generated() {
         "ask_to",
         &json!({"requestId":"request-1","conversationId":"conversation-1","status":"completed","message":"answers are pushed"})
     ));
+}
+
+#[test]
+fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
+    for params in [
+        json!({"target":"codex","message":"review"}),
+        json!({"target":"codex","message":"review","model":"default","reasoning":"default"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","reasoning":"high"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra","reasoning":"max"}),
+        json!({"target":"claude","message":"review","model":"opus","reasoning":"high"}),
+        json!({"target":"codex","message":"review","conversationId":"existing"}),
+    ] {
+        assert!(validate_mcp_tool_params("ask_to", &params), "{params}");
+        let decoded: termloop_contract::current::AskToParams =
+            serde_json::from_value(params.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), params);
+    }
+    for params in [
+        json!({"target":"codex","message":"review","model":"opus"}),
+        json!({"target":"claude","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","model":"unknown"}),
+        json!({"target":"codex","message":"review","reasoning":"unknown"}),
+        json!({"target":"codex","message":"review","model":null}),
+        json!({"target":"codex","message":"review","reasoning":null}),
+        json!({"target":"codex","message":"review","conversationId":"existing","model":"default"}),
+        json!({"target":"codex","message":"review","conversationId":"existing","reasoning":"high"}),
+    ] {
+        assert!(!validate_mcp_tool_params("ask_to", &params), "{params}");
+    }
 }
 
 #[test]

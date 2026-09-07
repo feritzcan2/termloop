@@ -931,17 +931,7 @@ mod tests {
         .await
         .expect("Steward resume waited behind the ordinary lane")
         .unwrap();
-        let worker = tokio::time::timeout(
-            Duration::from_millis(25),
-            gates
-                .for_lane(termloop_core::AgentResumeLane::Worker)
-                .acquire("project-worker".into()),
-        )
-        .await
-        .expect("Worker resume waited behind the ordinary lane")
-        .unwrap();
-
-        drop((ordinary, steward, worker));
+        drop((ordinary, steward));
         gates.shutdown().await;
     }
 }
