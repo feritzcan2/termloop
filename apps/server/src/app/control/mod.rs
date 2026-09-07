@@ -620,6 +620,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "session.historyPreview"
             | "agent.capabilityList"
             | "agent.profileList"
+            | "agent.libraryGet"
             | "agent.statusList"
             | "mcp.toolSettingsGet"
             | "steward.configurationGet"
@@ -810,6 +811,9 @@ mod tests {
         assert!(cancellation_safe_method("project.list"));
         assert!(cancellation_safe_method("companion.wakeNext"));
         assert!(cancellation_safe_method("task.branchCommitSummaryList"));
+        assert!(cancellation_safe_method("agent.libraryGet"));
+        assert!(!read_only_method("agent.libraryGet"));
+        assert!(!companion_method("agent.libraryGet"));
         assert!(!cancellation_safe_method("system.keepAwake.get"));
         assert!(!cancellation_safe_method("gitHost.pullRequestList"));
         assert!(
@@ -824,6 +828,9 @@ mod tests {
                             // provider transcripts from the daemon host.
                             "session.historyList",
                             "session.historyPreview",
+                            // Agent instructions remain Full-scope data even
+                            // though reading the library is safe to cancel.
+                            "agent.libraryGet",
                             "companion.transcriptList",
                             "companion.wakeNext",
                             // Board discovery is a read, but it carries

@@ -23,68 +23,68 @@ static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLo
     regex::Regex::new("^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$").expect("generated contract pattern")
+    regex::Regex::new("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> =
+static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$")
+        .expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[0-9]+$").expect("generated contract pattern"));
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z2-9]{4}-[A-Z2-9]{4}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
-});
 static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$")
-        .expect("generated contract pattern")
+    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
@@ -136,36 +136,36 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
         "\\S" => CONTRACT_PATTERN_0.is_match(text),
         "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" => CONTRACT_PATTERN_1.is_match(text),
-        "^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$" => {
+        "^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$" => {
             CONTRACT_PATTERN_2.is_match(text)
         }
-        "^[0-9]+$" => CONTRACT_PATTERN_3.is_match(text),
+        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$" => {
+            CONTRACT_PATTERN_3.is_match(text)
+        }
+        "^[0-9]+$" => CONTRACT_PATTERN_4.is_match(text),
         "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" => {
-            CONTRACT_PATTERN_4.is_match(text)
+            CONTRACT_PATTERN_5.is_match(text)
         }
-        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_5.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_6.is_match(text),
+        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_6.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_7.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_7.is_match(text)
-        }
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
             CONTRACT_PATTERN_8.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_12.is_match(text),
-        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_13.is_match(text),
-        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_14.is_match(text),
-        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_16.is_match(text),
-        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_17.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_18.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_19.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_20.is_match(text),
-        "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$" => {
-            CONTRACT_PATTERN_21.is_match(text)
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
+            CONTRACT_PATTERN_9.is_match(text)
         }
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_13.is_match(text),
+        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_14.is_match(text),
+        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_15.is_match(text),
+        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_17.is_match(text),
+        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_18.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_19.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_20.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_21.is_match(text),
         "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_22.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_23.is_match(text)
@@ -201,7 +201,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:295bc925df5732836f3a4245730d2f307ec94efcedc4fb5f045a84c3a509ff90";
+    "sha256:8126d722aaff8f2e662ea726189ecda116991ce1d6288fa2590746c5d83d6194";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -374,6 +374,11 @@ pub const METHODS: &[&str] = &[
     "gitHost.pullRequestList",
     "gitHost.pullRequestChangeList",
     "gitHost.pullRequestDiff",
+    "agent.libraryGet",
+    "agent.profileCreate",
+    "agent.profileUpdate",
+    "agent.profileDelete",
+    "agent.profileFavorite",
 ];
 pub const READ_ONLY_METHODS: &[&str] = &[
     "system.version",
@@ -6766,6 +6771,83 @@ pub enum CompanionSupervisorAvailability {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct AgentLibraryEntry {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub version: u64,
+    pub permission: String,
+    pub read_only: bool,
+    pub user_invocable: bool,
+    pub agent_ids: Vec<String>,
+    pub source: String,
+    pub instructions: String,
+    pub favorite: bool,
+    pub default_agent_id: String,
+    pub default_model: String,
+    pub default_reasoning: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentLibraryResult {
+    pub revision: u64,
+    pub profiles: Vec<AgentLibraryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentProfileCreateParams {
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub permission: String,
+    pub instructions: String,
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    pub model: String,
+    pub reasoning: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentProfileUpdateParams {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub permission: String,
+    pub instructions: String,
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    pub model: String,
+    pub reasoning: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentProfileDeleteParams {
+    pub id: String,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentProfileFavoriteParams {
+    pub id: String,
+    pub favorite: bool,
+    #[serde(rename = "expectedRevision")]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigurationVersionWriteParams {
     #[serde(
         rename = "expectedActiveVersionId",
@@ -7615,6 +7697,12 @@ pub type VoiceSettingsGetParams = EmptyParams;
 pub type VoiceSettingsGetResult = VoiceSettingsResult;
 pub type VoiceCredentialsSetResult = VoiceSettingsResult;
 pub type GitHostPullRequestListResult = Vec<GitHostTaskProjectionDto>;
+pub type AgentLibraryGetParams = EmptyParams;
+pub type AgentLibraryGetResult = AgentLibraryResult;
+pub type AgentProfileCreateResult = AgentLibraryResult;
+pub type AgentProfileUpdateResult = AgentLibraryResult;
+pub type AgentProfileDeleteResult = AgentLibraryResult;
+pub type AgentProfileFavoriteResult = AgentLibraryResult;
 
 #[allow(
     dead_code,
@@ -7797,6 +7885,11 @@ fn validate_method(value: &Value) -> bool {
             "gitHost.pullRequestList",
             "gitHost.pullRequestChangeList",
             "gitHost.pullRequestDiff",
+            "agent.libraryGet",
+            "agent.profileCreate",
+            "agent.profileUpdate",
+            "agent.profileDelete",
+            "agent.profileFavorite",
         ]
         .contains(&text)
     })
@@ -15081,7 +15174,7 @@ fn validate_agent_coordination_delivery_result(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -15094,7 +15187,7 @@ fn validate_quick_action_params(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_quick_action_launch_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("launchTicket").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "launchTicket"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("projectId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("cwd").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("agentId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && contract_pattern_matches("^[a-z](?:[a-z0-9]|-[a-z0-9])*$", text))) && object.get("model").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)) && object.get("permission").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text))) && object.get("reasoning").is_some_and(|field| field.as_str().is_some_and(|text| ["default", "low", "medium", "high", "xhigh", "max"].contains(&text))) && object.get("templateRef").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128 && contract_pattern_matches("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$", text))) && object.get("bindings").is_some_and(|field| field.as_object().is_some_and(|object| object.get("prompt").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)) && object.keys().all(|key| ["prompt"].contains(&key.as_str())))) && object.get("attachments").is_some_and(|field| field.as_array().is_some_and(|items| items.len() <= 1 && items.iter().all(|item| validate_quick_action_image_attachment(item)))) && object.get("launchTicket").is_some_and(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))) && object.keys().all(|key| ["projectId", "cwd", "agentId", "model", "permission", "reasoning", "templateRef", "bindings", "attachments", "launchTicket"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -17549,7 +17642,7 @@ fn validate_agent_profile_dto(value: &Value) -> bool {
                 text.chars().count() >= 1
                     && text.chars().count() <= 128
                     && contract_pattern_matches(
-                        "^builtin\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
                         text,
                     )
             })
@@ -24703,6 +24796,353 @@ fn validate_companion_supervisor_availability(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_library_entry(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches(
+                        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        text,
+                    )
+            })
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 240)
+        }) && object.get("category").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 40)
+        }) && object.get("version").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("permission").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+            })
+        }) && object
+            .get("read_only")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .get("user_invocable")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("agent_ids").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 8
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1
+                                    && text.chars().count() <= 64
+                                    && contract_pattern_matches(
+                                        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                                        text,
+                                    )
+                            })
+                        })
+                })
+            })
+            && object.get("source").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["builtIn", "personal"].contains(&text))
+            })
+            && object.get("instructions").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)
+            })
+            && object
+                .get("favorite")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("default_agent_id").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["claude", "codex"].contains(&text))
+            })
+            && object.get("default_model").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+            })
+            && object.get("default_reasoning").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "name",
+                    "description",
+                    "category",
+                    "version",
+                    "permission",
+                    "read_only",
+                    "user_invocable",
+                    "agent_ids",
+                    "source",
+                    "instructions",
+                    "favorite",
+                    "default_agent_id",
+                    "default_model",
+                    "default_reasoning",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_library_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("revision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.get("profiles").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 64 && items.iter().all(|item| validate_agent_library_entry(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["revision", "profiles"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_profile_create_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 240)
+        }) && object.get("category").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 40)
+        }) && object.get("permission").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+            })
+        }) && object.get("instructions").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)
+        }) && object.get("agentId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| ["claude", "codex"].contains(&text))
+        }) && object.get("model").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("reasoning").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+            })
+        }) && object.get("expectedRevision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            [
+                "name",
+                "description",
+                "category",
+                "permission",
+                "instructions",
+                "agentId",
+                "model",
+                "reasoning",
+                "expectedRevision",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_profile_update_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches(
+                        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        text,
+                    )
+            })
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("description").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 240)
+        }) && object.get("category").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 40)
+        }) && object.get("permission").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+            })
+        }) && object.get("instructions").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)
+        }) && object.get("agentId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| ["claude", "codex"].contains(&text))
+        }) && object.get("model").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+        }) && object.get("reasoning").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+            })
+        }) && object.get("expectedRevision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            [
+                "id",
+                "name",
+                "description",
+                "category",
+                "permission",
+                "instructions",
+                "agentId",
+                "model",
+                "reasoning",
+                "expectedRevision",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_profile_delete_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches(
+                        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        text,
+                    )
+            })
+        }) && object.get("expectedRevision").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["id", "expectedRevision"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_profile_favorite_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches(
+                        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                        text,
+                    )
+            })
+        }) && object
+            .get("favorite")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("expectedRevision").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["id", "favorite", "expectedRevision"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_configuration_version_write_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("expectedActiveVersionId").is_some_and(|field| {
@@ -27363,6 +27803,26 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<GitHostPullRequestDiffParams>(params.clone()).is_ok()
                 && validate_git_host_pull_request_diff_params(params)
         }
+        "agent.libraryGet" => {
+            serde_json::from_value::<AgentLibraryGetParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
+        "agent.profileCreate" => {
+            serde_json::from_value::<AgentProfileCreateParams>(params.clone()).is_ok()
+                && validate_agent_profile_create_params(params)
+        }
+        "agent.profileUpdate" => {
+            serde_json::from_value::<AgentProfileUpdateParams>(params.clone()).is_ok()
+                && validate_agent_profile_update_params(params)
+        }
+        "agent.profileDelete" => {
+            serde_json::from_value::<AgentProfileDeleteParams>(params.clone()).is_ok()
+                && validate_agent_profile_delete_params(params)
+        }
+        "agent.profileFavorite" => {
+            serde_json::from_value::<AgentProfileFavoriteParams>(params.clone()).is_ok()
+                && validate_agent_profile_favorite_params(params)
+        }
         _ => false,
     }
 }
@@ -28080,6 +28540,26 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "gitHost.pullRequestDiff" => {
             serde_json::from_value::<GitHostPullRequestDiffResult>(result.clone()).is_ok()
                 && validate_git_host_pull_request_diff_result(result)
+        }
+        "agent.libraryGet" => {
+            serde_json::from_value::<AgentLibraryGetResult>(result.clone()).is_ok()
+                && validate_agent_library_result(result)
+        }
+        "agent.profileCreate" => {
+            serde_json::from_value::<AgentProfileCreateResult>(result.clone()).is_ok()
+                && validate_agent_library_result(result)
+        }
+        "agent.profileUpdate" => {
+            serde_json::from_value::<AgentProfileUpdateResult>(result.clone()).is_ok()
+                && validate_agent_library_result(result)
+        }
+        "agent.profileDelete" => {
+            serde_json::from_value::<AgentProfileDeleteResult>(result.clone()).is_ok()
+                && validate_agent_library_result(result)
+        }
+        "agent.profileFavorite" => {
+            serde_json::from_value::<AgentProfileFavoriteResult>(result.clone()).is_ok()
+                && validate_agent_library_result(result)
         }
         _ => false,
     }

@@ -57,8 +57,10 @@ use termloop_domain::{
 // Version 49 adds the selected remote base ref to Project Task automation.
 // Version 50 removes the retired Routine provider kind from durable state.
 // Version 51 removes persistent Workers and binds Routine execution directly
-// to the Project Steward.
-const CURRENT_SCHEMA_VERSION: u32 = 51;
+// to the Project Steward. Version 52 adds personal agent profiles and pinned
+// current Session instructions. Version 53 permits user overrides of built-in
+// agent profiles in the same bounded library.
+const CURRENT_SCHEMA_VERSION: u32 = 53;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -72,6 +74,10 @@ pub fn issue_core_write_authority_for_composition() -> CoreWriteAuthority {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CurrentState {
     schema_version: u32,
+    #[serde(default)]
+    agent_library: termloop_domain::AgentLibrary,
+    #[serde(default)]
+    session_agent_profiles: Vec<termloop_domain::SessionAgentProfile>,
     revision: u64,
     #[serde(default)]
     mcp_tool_description_overrides: Vec<McpToolDescriptionOverride>,
@@ -152,6 +158,8 @@ impl Default for CurrentState {
     fn default() -> Self {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
+            agent_library: Default::default(),
+            session_agent_profiles: vec![],
             revision: 0,
             mcp_tool_description_overrides: vec![],
             projects: vec![],
@@ -425,6 +433,7 @@ impl Store {
     }
 
     fn commit(&mut self) -> Result<u64, StoreError> {
+        records::agent_library::prune_session_profiles(&mut self.state);
         self.state.revision += 1;
         self.persisted_bytes = persist_state(&self.path, &self.state, self.persisted_bytes)?;
         Ok(self.state.revision)
