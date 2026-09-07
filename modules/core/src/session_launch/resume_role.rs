@@ -56,6 +56,7 @@ pub(super) fn derive_resumed_mcp_role(
             | "builtin.improver.steward-instructions"
             | "builtin.improver.routine-instructions"
             | "builtin.builder.routine"
+            | "builtin.builder.agent"
             | "builtin.improver.run-configuration"
             | "builtin.improver.run-configuration-new"
             | "builtin.improver.skill-definition"
@@ -67,7 +68,13 @@ pub(super) fn derive_resumed_mcp_role(
             session
                 .improver_target
                 .as_ref()
-                .filter(|target| target.is_well_formed())
+                .filter(|target| {
+                    target.is_well_formed()
+                        && (session.process.template_ref.as_deref()
+                            == Some("builtin.builder.agent"))
+                            == (target.target_kind
+                                == termloop_domain::ImproverSessionTargetKind::AgentCreator)
+                })
                 .cloned()
                 .map(|target| AgentMcpRole::Improver { target })
         }
@@ -274,6 +281,11 @@ mod tests {
     #[test]
     fn resumed_improvers_keep_only_their_exact_target_bound_role() {
         for (template, target_kind, target_id) in [
+            (
+                "builtin.builder.agent",
+                ImproverSessionTargetKind::AgentCreator,
+                None,
+            ),
             (
                 MCP_TOOL_IMPROVER_TEMPLATE,
                 ImproverSessionTargetKind::SettingsMcpTool,

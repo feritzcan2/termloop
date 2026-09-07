@@ -9,7 +9,8 @@
       "role": [
         "interactive",
         "helper",
-        "improver"
+        "improver",
+        "agentCreator"
       ],
       "params": {
         "$ref": "#/$defs/askToParams"
@@ -31,7 +32,8 @@
         "interactive",
         "helper",
         "steward",
-        "improver"
+        "improver",
+        "agentCreator"
       ],
       "params": {
         "$ref": "#/$defs/sendToAgentParams"
@@ -517,6 +519,40 @@
       },
       "annotations": {
         "title": "Apply a new configuration version",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    "agent_library_read": {
+      "description": "Read the reusable agent library, its exact revision, and supported provider model, working mode, and reasoning choices. Available only in the authenticated Agent Creator session. Read before proposing or creating an agent.",
+      "role": "agentCreator",
+      "params": {
+        "$ref": "#/$defs/assistantEmptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/assistantTextResult"
+      },
+      "annotations": {
+        "title": "Read agent library",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    "agent_profile_create": {
+      "description": "Create a reusable personal agent in this connection after the user asks to save or create the proposed agent. Supply all fields and the exact expectedRevision returned by agent_library_read. On revision conflict, read the library again and check whether the requested agent already exists before retrying. This tool cannot edit or delete existing agents.",
+      "role": "agentCreator",
+      "params": {
+        "$ref": "#/$defs/agentProfileCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/assistantTextResult"
+      },
+      "annotations": {
+        "title": "Create personal agent",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
