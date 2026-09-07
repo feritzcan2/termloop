@@ -26,9 +26,12 @@ class RunnerCleanupTest(unittest.TestCase):
             toolchain = root / "_tool"
             toolchain.mkdir()
             env = {**os.environ, "TERMLOOP_RUNNER_WORK_ROOT": str(root), "GITHUB_WORKSPACE": str(workspace)}
-            result = subprocess.run(["bash", str(HOOK)], env=env, capture_output=True, text=True)
+            result = subprocess.run(["bash", str(HOOK.resolve())], cwd=workspace, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(workspace.parent.exists())
+            self.assertTrue(workspace.is_dir())
+            self.assertEqual(list(workspace.iterdir()), [])
+            followup = subprocess.run(["pwd"], cwd=workspace, capture_output=True, text=True)
+            self.assertEqual(followup.returncode, 0, followup.stderr)
             self.assertFalse(cache.exists())
             self.assertEqual((server / "database").read_text(), "keep")
             self.assertTrue(toolchain.exists())
