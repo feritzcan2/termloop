@@ -44,7 +44,7 @@ pub use runtime::generated_input_delivery::{
 };
 pub use session_launch::archive::SessionArchiveRetirementPlan;
 pub use session_launch::{
-    AgentLaunchPlan, AgentResumeCandidate, AgentResumeLane, AgentResumePlan,
+    AgentLaunchCommit, AgentLaunchPlan, AgentResumeCandidate, AgentResumeLane, AgentResumePlan,
     AgentResumePlanOutcome, AgentResumePreparationError, AgentResumeTargetValidation, CodexRuntime,
     McpAuthorizer, McpPrincipal, ObservedSessionRelocationPreview, ObservedTaskWorktreeLaunch,
     SessionRelocationPreviewOutcome, SessionRelocationPreviewPlan, TaskWorktreeLaunchPlan,
