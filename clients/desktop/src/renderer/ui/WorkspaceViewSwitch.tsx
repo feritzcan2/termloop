@@ -96,7 +96,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
           aria-pressed={settingsAction.pressed}
           disabled={settingsAction.disabled}
           onClick={settingsAction.run}
-        ><Icon name={settingsAction.icon} /></button>
+        ><Icon name={settingsAction.icon} /><span className="workspace-view-settings-label">{settingsAction.label}</span></button>
       ) : null}
       </div>
       {view === "steward" ? null : <div className="workspace-launch-actions" aria-label="Launch Session">

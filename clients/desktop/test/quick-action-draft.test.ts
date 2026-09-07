@@ -100,18 +100,11 @@ describe("Quick Action draft", () => {
       }],
     };
     await act(async () => root.render(createElement(QuickActionComposer, props)));
-    const profile = container.querySelector<HTMLSelectElement>('select[aria-label="Agent profile"]');
-    expect(profile).not.toBeNull();
-
-    await act(async () => {
-      if (!profile) return;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set
-        ?.call(profile, "builtin.agent-profile.scattered-orchestration-finder");
-      profile.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Agent profile"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[role="option"][aria-selected="false"]')!.click());
 
     const permission = container.querySelector<HTMLSelectElement>('select[aria-label="Permission"]');
-    expect(permission?.value).toBe("default");
+    expect(permission?.value).toBe("plan");
     expect(permission?.disabled).toBe(false);
     expect([...permission?.options ?? []].map((option) => option.value))
       .toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
@@ -143,18 +136,12 @@ describe("Quick Action draft", () => {
       }],
     };
     await act(async () => root.render(createElement(QuickActionComposer, props)));
-    const profile = container.querySelector<HTMLSelectElement>('select[aria-label="Agent profile"]');
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Agent profile"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[role="option"][aria-selected="false"]')!.click());
 
-    await act(async () => {
-      if (!profile) return;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set
-        ?.call(profile, "builtin.agent-profile.scattered-orchestration-finder");
-      profile.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Agent"]')?.value).toBe("codex");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')?.value).toBe("codex");
     const permission = container.querySelector<HTMLSelectElement>('select[aria-label="Permission"]');
-    expect(permission?.value).toBe("default");
+    expect(permission?.value).toBe("plan");
     expect(permission?.disabled).toBe(false);
   });
 });
