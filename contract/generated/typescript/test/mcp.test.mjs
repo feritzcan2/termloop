@@ -45,6 +45,10 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(MCP_TOOLS.every((tool) => !METHODS.includes(tool)));
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.message.maxLength, 32768);
   assert.equal(MCP_TOOL_DEFINITIONS[0].inputSchema.properties.conversationId.maxLength, 128);
+  const workflowCompletion = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "workflow_step_complete");
+  assert.ok(workflowCompletion);
+  assert.deepEqual(workflowCompletion.inputSchema.required, ["outcome", "summary"]);
+  assert.equal(workflowCompletion.inputSchema.properties.summary.maxLength, 2048);
 });
 
 test("MCP result validation is generated and strict", () => {

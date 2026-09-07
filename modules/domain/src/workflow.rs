@@ -17,6 +17,7 @@ pub const WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES: usize = 4 * 1024;
 pub const WORKFLOW_REVIEW_CYCLES_MAX: u8 = 3;
 pub const WORKFLOW_GOAL_MAX_BYTES: usize = 32 * 1024;
 pub const WORKFLOW_EXECUTION_ID_MAX_BYTES: usize = 64;
+pub const WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES: usize = 2 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -160,6 +161,52 @@ pub struct WorkflowParticipant {
     pub helper_session_id: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkflowStepResultOutcome {
+    Completed,
+    Approved,
+    ChangesRequested,
+    Skipped,
+}
+
+/// The latest bounded report for one configured step in the current workflow
+/// execution. Repeated review cycles replace the same step's report; this is
+/// current progress, not an execution or transcript history.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowStepResult {
+    pub step_id: String,
+    pub review_cycle: u8,
+    pub outcome: WorkflowStepResultOutcome,
+    pub summary: String,
+    pub completed_at_epoch_ms: u64,
+}
+
+impl WorkflowStepResult {
+    fn is_valid_for(&self, step: &WorkflowStep, execution: &WorkflowExecution) -> bool {
+        let outcome_is_valid = match step.kind {
+            WorkflowStepKind::Discuss | WorkflowStepKind::Implement | WorkflowStepKind::Fix => {
+                self.outcome == WorkflowStepResultOutcome::Completed
+                    || (step.kind == WorkflowStepKind::Fix
+                        && self.outcome == WorkflowStepResultOutcome::Skipped)
+            }
+            WorkflowStepKind::Review => matches!(
+                self.outcome,
+                WorkflowStepResultOutcome::Approved | WorkflowStepResultOutcome::ChangesRequested
+            ),
+        };
+        self.step_id == step.id
+            && bounded_text(&self.summary, WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES)
+            && (1..=execution.review_cycle).contains(&self.review_cycle)
+            && (matches!(step.kind, WorkflowStepKind::Review | WorkflowStepKind::Fix)
+                || self.review_cycle == 1)
+            && outcome_is_valid
+            && self.completed_at_epoch_ms >= execution.started_at_epoch_ms
+            && self.completed_at_epoch_ms <= execution.updated_at_epoch_ms
+    }
+}
+
 /// The single current execution snapshot for one Task. It contains routing
 /// state only: provider replies and review text remain in Agent conversations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -180,6 +227,8 @@ pub struct WorkflowExecution {
     pub coordinator_prompt_pending: bool,
     pub current_request_id: Option<String>,
     pub participants: Vec<WorkflowParticipant>,
+    #[serde(default)]
+    pub step_results: Vec<WorkflowStepResult>,
     pub review_changes_requested: bool,
     pub started_at_epoch_ms: u64,
     pub updated_at_epoch_ms: u64,
@@ -260,6 +309,17 @@ impl WorkflowExecution {
                             .iter()
                             .any(|candidate| candidate.step_id == participant.step_id)
                 })
+            && self.step_results.len() <= self.configuration.steps.len()
+            && self.step_results.iter().enumerate().all(|(index, result)| {
+                self.configuration
+                    .steps
+                    .iter()
+                    .find(|step| step.id == result.step_id)
+                    .is_some_and(|step| result.is_valid_for(step, self))
+                    && !self.step_results[index + 1..]
+                        .iter()
+                        .any(|candidate| candidate.step_id == result.step_id)
+            })
             && self.configuration.steps.iter().all(|step| {
                 step.reuse_step_id.as_deref().is_none_or(|source_step_id| {
                     let participant = self
@@ -443,6 +503,13 @@ mod tests {
                     helper_session_id: "helper-1".into(),
                 },
             ],
+            step_results: vec![WorkflowStepResult {
+                step_id: "discuss".into(),
+                review_cycle: 1,
+                outcome: WorkflowStepResultOutcome::Completed,
+                summary: "Chose the bounded Core-owned approach.".into(),
+                completed_at_epoch_ms: 2,
+            }],
             review_changes_requested: false,
             started_at_epoch_ms: 1,
             updated_at_epoch_ms: 2,
@@ -450,6 +517,40 @@ mod tests {
         assert!(execution.is_valid());
 
         execution.participants[1].helper_session_id = "replacement".into();
+        assert!(!execution.is_valid());
+    }
+
+    #[test]
+    fn current_execution_keeps_only_one_bounded_result_per_step() {
+        let mut execution = WorkflowExecution {
+            id: "execution-1".into(),
+            project_id: "project-1".into(),
+            task_id: "task-1".into(),
+            configuration: configuration(),
+            goal: "Implement the workflow engine".into(),
+            coordinator_session_id: "coordinator-1".into(),
+            current_step_index: 2,
+            review_cycle: 2,
+            phase: WorkflowExecutionPhase::AwaitingCoordinator,
+            coordinator_prompt_pending: false,
+            current_request_id: None,
+            participants: vec![],
+            step_results: vec![WorkflowStepResult {
+                step_id: "review".into(),
+                review_cycle: 1,
+                outcome: WorkflowStepResultOutcome::ChangesRequested,
+                summary: "One actionable finding remains.".into(),
+                completed_at_epoch_ms: 2,
+            }],
+            review_changes_requested: false,
+            started_at_epoch_ms: 1,
+            updated_at_epoch_ms: 2,
+        };
+        assert!(execution.is_valid());
+
+        execution
+            .step_results
+            .push(execution.step_results[0].clone());
         assert!(!execution.is_valid());
     }
 }

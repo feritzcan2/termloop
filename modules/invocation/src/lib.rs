@@ -3307,16 +3307,16 @@ fn compose_task_workflow(
     };
     let step_action = match current_step.kind {
         termloop_domain::WorkflowStepKind::Discuss => {
-            "Use `workflow_delegate` once with the exact question and context the configured discussion participant needs. TermLoop chooses that participant. When its answer arrives, incorporate the advice, then call `workflow_step_complete` with outcome `completed`."
+            "Use `workflow_delegate` once with the exact question and context the configured discussion participant needs. TermLoop chooses that participant. When its answer arrives, incorporate the advice, then call `workflow_step_complete` with outcome `completed` and a concise `summary` of the decision for the workflow sidebar."
         }
         termloop_domain::WorkflowStepKind::Review => {
-            "Use `workflow_delegate` once with a concrete request to review the current work. TermLoop chooses and, when configured, reuses the exact participant conversation. When its answer arrives, call `workflow_step_complete` with outcome `approved` if no actionable change remains, or `changesRequested` if the Fix step must address findings."
+            "Use `workflow_delegate` once with a concrete request to review the current work. TermLoop chooses and, when configured, reuses the exact participant conversation. When its answer arrives, call `workflow_step_complete` with outcome `approved` if no actionable change remains, or `changesRequested` if the Fix step must address findings, plus a concise `summary` of the findings or approval for the workflow sidebar."
         }
         termloop_domain::WorkflowStepKind::Implement => {
-            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed`."
+            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of what changed and what was verified for the workflow sidebar."
         }
         termloop_domain::WorkflowStepKind::Fix => {
-            "Address the actionable findings collected in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed`. TermLoop will either re-run the review steps or finish at the configured cycle limit."
+            "Address the actionable findings collected in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of fixes and verification for the workflow sidebar. TermLoop will either re-run the review steps or finish at the configured cycle limit."
         }
     };
     let review_cycles = workflow.max_review_cycles.to_string();

@@ -24,6 +24,7 @@ import type {
   WorkflowConfigurationUpdateParams,
   WorkflowStepDto,
   WorkflowStepKind,
+  WorkflowStepResultDto,
 } from "@termloop/contract/current";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { Icon } from "./Icon.js";
@@ -37,18 +38,24 @@ export function TaskWorkflowLaunchers(props: {
   stateRevision: number;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchable: boolean;
+  showLaunchers: boolean;
   overlayContainer: Element | undefined;
   overlayVisibilityChanged(visible: boolean): void;
   save(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   remove(workflowId: string): Promise<string | undefined>;
   launch(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   cancel(executionId: string): Promise<string | undefined>;
+  openSession(sessionId: string): void;
 }) {
+  const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
+  const executionActive = execution !== undefined && execution.status !== "completed";
   const [editing, setEditing] = useState<WorkflowConfigurationDto | "new">();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
   const [inspectingExecution, setInspectingExecution] = useState(false);
-  const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
-  const executionActive = execution !== undefined && execution.status !== "completed";
+  const [progressPreference, setProgressPreference] = useState<{ executionId: string; expanded: boolean }>();
+  const progressExpanded = execution !== undefined && (progressPreference?.executionId === execution.id
+    ? progressPreference.expanded
+    : executionActive);
   const { overlayVisibilityChanged } = props;
   useEffect(() => {
     overlayVisibilityChanged(Boolean(editing || running || (inspectingExecution && execution)));
@@ -56,20 +63,22 @@ export function TaskWorkflowLaunchers(props: {
   }, [editing, execution, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
-    <span className="task-launch-divider" aria-hidden="true" />
+    {props.showLaunchers ? <span className="task-launch-divider" aria-hidden="true" /> : null}
     {execution ? <button
       type="button"
       className={`workflow-execution-chip status-${execution.status}`}
       title={workflowExecutionSummary(execution)}
-      aria-label={`Open ${execution.workflowName} workflow progress`}
-      onClick={() => setInspectingExecution(true)}
+      aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
+      aria-expanded={progressExpanded}
+      onClick={() => setProgressPreference({ executionId: execution.id, expanded: !progressExpanded })}
     >
       <span className="workflow-execution-dot" aria-hidden="true" />
       <Icon name="branch" />
       <span>{execution.workflowName}</span>
       <b>{execution.status === "completed" ? "Done" : `${Math.min(execution.currentStepIndex + 1, execution.steps.length)}/${execution.steps.length}`}</b>
+      <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
     </button> : null}
-    {props.configurations.map((configuration) => (
+    {props.showLaunchers ? props.configurations.map((configuration) => (
       <span className="run-chip workflow-chip" key={configuration.id}>
         <button
           type="button"
@@ -87,14 +96,19 @@ export function TaskWorkflowLaunchers(props: {
           onClick={() => setEditing(configuration)}
         ><Icon name="edit" /></button>
       </span>
-    ))}
-    <button
+    )) : null}
+    {props.showLaunchers ? <button
       type="button"
       className="workflow-add"
       title="Add workflow"
       aria-label="Add workflow"
       onClick={() => setEditing("new")}
-    ><Icon name="add" />Workflow</button>
+    ><Icon name="add" />Workflow</button> : null}
+    {execution && progressExpanded ? <WorkflowSidebarProgress
+      execution={execution}
+      openSession={props.openSession}
+      showDetails={() => setInspectingExecution(true)}
+    /> : null}
     <OverlayPortal container={props.overlayContainer}>
       {editing ? <WorkflowEditorDialog
         projectId={props.projectId}
@@ -115,15 +129,57 @@ export function TaskWorkflowLaunchers(props: {
         execution={execution}
         close={() => setInspectingExecution(false)}
         cancel={props.cancel}
+        openSession={props.openSession}
       /> : null}
     </OverlayPortal>
   </>;
+}
+
+function WorkflowSidebarProgress(props: {
+  execution: WorkflowExecution;
+  openSession(sessionId: string): void;
+  showDetails(): void;
+}) {
+  const currentStep = props.execution.steps[props.execution.currentStepIndex];
+  return <section className="workflow-sidebar-progress" aria-label={`${props.execution.workflowName} workflow progress`}>
+    <header>
+      <span>{workflowPhaseLabel(props.execution, currentStep)}</span>
+      <button type="button" onClick={props.showDetails}>Details</button>
+    </header>
+    <ol>
+      {props.execution.steps.map((step, index) => {
+        const result = workflowStepResult(props.execution, step.id);
+        const state = workflowStepState(props.execution, index, result);
+        const participantSessionId = workflowStepSessionId(props.execution, step);
+        return <li key={step.id} className={`kind-${step.kind} ${state}`} aria-current={state === "current" ? "step" : undefined}>
+          <span className="workflow-sidebar-marker" aria-hidden="true">{state === "complete" ? "✓" : state === "skipped" ? "–" : index + 1}</span>
+          <span className="workflow-sidebar-step-copy">
+            <span className="workflow-sidebar-step-head">
+              <b>{step.title}</b>
+              {participantSessionId ? <button
+                type="button"
+                className="workflow-participant-link"
+                title={`Open ${workflowStepParticipant(step, props.execution.steps)}`}
+                onClick={() => props.openSession(participantSessionId)}
+              >{workflowStepParticipant(step, props.execution.steps)}</button> : <small>{workflowStepParticipant(step, props.execution.steps)}</small>}
+            </span>
+            {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
+              <strong>{workflowStepResultLabel(step.kind, result.outcome)}</strong>
+              {result.reviewCycle < props.execution.reviewCycle ? <em>Cycle {result.reviewCycle}</em> : null}
+              <small>{result.summary}</small>
+            </span> : state === "current" ? <small className="workflow-step-waiting">{workflowPhaseLabel(props.execution, step)}</small> : null}
+          </span>
+        </li>;
+      })}
+    </ol>
+  </section>;
 }
 
 function WorkflowExecutionDialog(props: {
   execution: WorkflowExecution;
   close(): void;
   cancel(executionId: string): Promise<string | undefined>;
+  openSession(sessionId: string): void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -154,12 +210,24 @@ function WorkflowExecutionDialog(props: {
         </div>
         <ol className="workflow-progress-steps">
           {props.execution.steps.map((step, index) => {
-            const state = props.execution.status === "completed" || index < props.execution.currentStepIndex
-              ? "complete"
-              : index === props.execution.currentStepIndex ? "current" : "upcoming";
+            const result = workflowStepResult(props.execution, step.id);
+            const state = workflowStepState(props.execution, index, result);
+            const participantSessionId = workflowStepSessionId(props.execution, step);
             return <li key={step.id} className={`kind-${step.kind} ${state}`} aria-current={state === "current" ? "step" : undefined}>
-              <span className="workflow-progress-marker">{state === "complete" ? "✓" : index + 1}</span>
-              <span><b>{step.title}</b><small>{workflowStepParticipant(step, props.execution.steps)}</small></span>
+              <span className="workflow-progress-marker">{state === "complete" ? "✓" : state === "skipped" ? "–" : index + 1}</span>
+              <span>
+                <b>{step.title}</b>
+                {participantSessionId ? <button
+                  type="button"
+                  className="workflow-participant-link"
+                  onClick={() => props.openSession(participantSessionId)}
+                >{workflowStepParticipant(step, props.execution.steps)}</button> : <small>{workflowStepParticipant(step, props.execution.steps)}</small>}
+                {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
+                  <strong>{workflowStepResultLabel(step.kind, result.outcome)}</strong>
+                  {result.reviewCycle < props.execution.reviewCycle ? <em>Cycle {result.reviewCycle}</em> : null}
+                  <small>{result.summary}</small>
+                </span> : null}
+              </span>
               <span className={`workflow-kind kind-${step.kind}`}>{stepKindLabel(step.kind)}</span>
             </li>;
           })}
@@ -603,4 +671,40 @@ function workflowStepParticipant(step: WorkflowStepDto, steps: readonly Workflow
   if (!step.reuseStepId) return `${agentLabel(step.agentId)} · new conversation`;
   const source = steps.find((candidate) => candidate.id === step.reuseStepId);
   return `${agentLabel(step.agentId)} · reuse “${source?.title ?? step.reuseStepId}”`;
+}
+
+function workflowStepResult(execution: WorkflowExecution, stepId: string): WorkflowStepResultDto | undefined {
+  return execution.stepResults.find((result) => result.stepId === stepId);
+}
+
+function workflowStepState(
+  execution: WorkflowExecution,
+  index: number,
+  result: WorkflowStepResultDto | undefined,
+): "complete" | "current" | "upcoming" | "skipped" {
+  if (execution.status === "completed") return result?.outcome === "skipped" ? "skipped" : "complete";
+  if (index === execution.currentStepIndex) return "current";
+  if (index < execution.currentStepIndex) return result?.outcome === "skipped" ? "skipped" : "complete";
+  return "upcoming";
+}
+
+function workflowStepSessionId(execution: WorkflowExecution, step: WorkflowStepDto): string | undefined {
+  if (!isHelperStep(step)) return execution.coordinatorSessionId;
+  const participant = execution.participants.find((candidate) => candidate.stepId === step.id)
+    ?? (step.reuseStepId
+      ? execution.participants.find((candidate) => candidate.stepId === step.reuseStepId)
+      : undefined);
+  return participant?.sessionId;
+}
+
+function workflowStepResultLabel(
+  kind: WorkflowStepKind,
+  outcome: WorkflowStepResultDto["outcome"],
+): string {
+  if (outcome === "approved") return "Approved";
+  if (outcome === "changesRequested") return "Changes requested";
+  if (outcome === "skipped") return "Skipped";
+  if (kind === "discuss") return "Decision";
+  if (kind === "fix") return "Fixed";
+  return "Completed";
 }

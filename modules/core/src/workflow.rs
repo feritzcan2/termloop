@@ -224,6 +224,11 @@ pub(crate) fn workflow_execution_json(
         "phase": execution.phase,
         "status": status,
         "steps": execution.configuration.steps,
+        "participants": execution.participants.iter().map(|participant| json!({
+            "stepId": participant.step_id,
+            "sessionId": participant.helper_session_id,
+        })).collect::<Vec<_>>(),
+        "stepResults": execution.step_results,
         "startedAtEpochMs": execution.started_at_epoch_ms,
         "updatedAtEpochMs": execution.updated_at_epoch_ms,
     })

@@ -664,12 +664,51 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-execution-chip > span:not(.workflow-execution-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-execution-chip > b { flex: none; color: var(--sidebar-dimmer); font: 700 8px/1 var(--font-mono); text-transform: uppercase; }
 .workflow-execution-chip svg { flex: none; width: 9px; height: 9px; color: light-dark(#5575b6,#89aaf0); }
+.workflow-execution-chip .workflow-disclosure { width: 8px; height: 8px; margin-left: 1px; color: var(--sidebar-dimmer); transition: transform .14s ease; }
+.workflow-execution-chip .workflow-disclosure.expanded { transform: rotate(180deg); }
 .workflow-execution-dot,.workflow-status-badge > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #4ba675; box-shadow: 0 0 0 2px color-mix(in srgb,#4ba675 14%,transparent); }
 .workflow-execution-chip.status-paused .workflow-execution-dot,.workflow-status-badge.status-paused > i { background: #d09555; box-shadow: 0 0 0 2px color-mix(in srgb,#d09555 14%,transparent); }
 .workflow-execution-chip.status-completed .workflow-execution-dot,.workflow-status-badge.status-completed > i { background: #7b8790; box-shadow: none; }
 .workflow-add { display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 5px 0 3px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9.5px/1 var(--font-ui); }
 .workflow-add:hover { border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--accent-strong); }
 .workflow-add svg { width: 9px; height: 9px; }
+
+/* The active workflow unfolds in the Task itself. It is deliberately a
+   compact timeline: results stay scannable without turning the sidebar into a
+   second transcript, while every known participant remains one click away. */
+.workflow-sidebar-progress { order: 20; flex: 1 0 100%; min-width: 0; margin: 4px 0 3px; overflow: hidden; border: 1px solid color-mix(in srgb,#6b8ed6 26%,var(--border)); border-radius: 8px; background: color-mix(in srgb,#6b8ed6 4%,var(--sidebar-bg)); }
+.workflow-sidebar-progress > header { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb,#6b8ed6 17%,var(--border)); }
+.workflow-sidebar-progress > header > span { min-width: 0; flex: 1; overflow: hidden; color: var(--sidebar-dim); font: 9px/1.25 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-sidebar-progress > header > button { flex: none; padding: 2px 4px; border: 0; border-radius: 3px; background: transparent; color: light-dark(#5575b6,#89aaf0); font: 700 8px/1 var(--font-mono); text-transform: uppercase; }
+.workflow-sidebar-progress > header > button:hover { background: var(--accent-wash); color: var(--accent-strong); }
+.workflow-sidebar-progress > ol { display: grid; max-height: 270px; margin: 0; padding: 5px 6px 6px; overflow-y: auto; list-style: none; scrollbar-width: thin; }
+.workflow-sidebar-progress li { --workflow-tone: #7b8790; position: relative; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 6px; min-height: 34px; padding: 5px 5px 5px 1px; color: var(--sidebar-dimmer); }
+.workflow-sidebar-progress li.kind-discuss { --workflow-tone: #5a91a8; }
+.workflow-sidebar-progress li.kind-implement { --workflow-tone: #4d94d8; }
+.workflow-sidebar-progress li.kind-review { --workflow-tone: #d09555; }
+.workflow-sidebar-progress li.kind-fix { --workflow-tone: #56a478; }
+.workflow-sidebar-progress li::before { position: absolute; top: 0; bottom: 0; left: 10px; width: 1px; background: color-mix(in srgb,var(--workflow-tone) 24%,var(--border)); content: ""; }
+.workflow-sidebar-progress li:first-child::before { top: 50%; }
+.workflow-sidebar-progress li:last-child::before { bottom: 50%; }
+.workflow-sidebar-progress li.upcoming { opacity: .48; }
+.workflow-sidebar-progress li.current { margin: 1px 0; padding-right: 6px; border-radius: 6px; background: color-mix(in srgb,var(--workflow-tone) 8%,transparent); }
+.workflow-sidebar-marker { z-index: 1; display: grid; place-items: center; align-self: start; width: 19px; height: 19px; border: 1px solid color-mix(in srgb,var(--workflow-tone) 43%,var(--border)); border-radius: 50%; background: var(--sidebar-bg); color: var(--workflow-tone); font: 750 7.5px/1 var(--font-mono); }
+.workflow-sidebar-progress li.current .workflow-sidebar-marker { border-color: var(--workflow-tone); background: var(--workflow-tone); color: white; box-shadow: 0 0 0 2px color-mix(in srgb,var(--workflow-tone) 13%,transparent); }
+.workflow-sidebar-progress li.complete .workflow-sidebar-marker { border-color: color-mix(in srgb,#4ba675 55%,var(--border)); color: #4ba675; }
+.workflow-sidebar-progress li.skipped .workflow-sidebar-marker { border-style: dashed; color: var(--sidebar-dimmer); }
+.workflow-sidebar-step-copy { display: grid; min-width: 0; gap: 4px; }
+.workflow-sidebar-step-head { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
+.workflow-sidebar-step-head > b { min-width: 0; flex: 1; overflow: hidden; color: var(--sidebar-text); font: 650 9.5px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-sidebar-step-head > small { flex: none; color: var(--sidebar-dimmer); font: 8px/1.2 var(--font-ui); }
+.workflow-participant-link { min-width: 0; flex: none; max-width: 48%; overflow: hidden; padding: 1px 3px; border: 0; border-radius: 3px; background: transparent; color: light-dark(#5575b6,#89aaf0); font: 8px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-participant-link:hover { background: var(--accent-wash); color: var(--accent-strong); }
+.workflow-step-result { display: grid; grid-template-columns: auto auto minmax(0,1fr); align-items: baseline; gap: 4px; min-width: 0; }
+.workflow-step-result > strong { color: #4ba675; font: 750 7.5px/1.2 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.workflow-step-result.outcome-changesRequested > strong { color: #d09555; }
+.workflow-step-result.outcome-skipped > strong { color: var(--sidebar-dimmer); }
+.workflow-step-result > em { color: var(--sidebar-dimmer); font: 7.5px/1.2 var(--font-mono); font-style: normal; }
+.workflow-step-result > small { min-width: 0; overflow: hidden; color: var(--sidebar-dim); font: 8.5px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-step-waiting { overflow: hidden; color: var(--sidebar-dimmer); font: 8.5px/1.25 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 
 /* Workflow templates are linear, but the builder makes participant identity
    and conversation reuse visible instead of hiding orchestration in prose. */
@@ -757,6 +796,10 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-progress-marker { z-index: 1; display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid color-mix(in srgb,var(--workflow-tone) 44%,var(--border)); border-radius: 50%; background: var(--bg-raised); color: var(--workflow-tone); font: 750 8px/1 var(--font-mono); }
 .workflow-progress-steps li.current .workflow-progress-marker { border-color: var(--workflow-tone); background: var(--workflow-tone); color: white; box-shadow: 0 0 0 3px color-mix(in srgb,var(--workflow-tone) 13%,transparent); }
 .workflow-progress-steps li.complete .workflow-progress-marker { border-color: color-mix(in srgb,#4ba675 55%,var(--border)); color: #4ba675; }
+.workflow-progress-steps li.skipped .workflow-progress-marker { border-style: dashed; color: var(--text-muted); }
+.workflow-progress-steps .workflow-participant-link { width: fit-content; max-width: 100%; padding-left: 0; color: light-dark(#5575b6,#89aaf0); font-size: 9px; text-align: left; }
+.workflow-progress-steps .workflow-step-result { grid-template-columns: auto auto minmax(0,1fr); margin-top: 2px; }
+.workflow-progress-steps .workflow-step-result > small { color: var(--text-muted); font: 9px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 .workflow-progress-goal { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--border); }
 .workflow-progress-goal > span { color: var(--text-muted); font: 700 8px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .workflow-progress-goal > p { max-height: 90px; margin: 7px 0 0; overflow: auto; color: var(--text); font: 10.5px/1.45 var(--font-ui); white-space: pre-wrap; }

@@ -164,6 +164,26 @@ fn ask_to_tool_validation_is_strict_and_generated() {
 }
 
 #[test]
+fn workflow_step_completion_requires_a_bounded_sidebar_summary() {
+    assert!(validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved","summary":"No actionable findings remain."})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved"})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"approved","summary":""})
+    ));
+    assert!(!validate_mcp_tool_params(
+        "workflow_step_complete",
+        &json!({"outcome":"completed","summary":"x".repeat(2049)})
+    ));
+}
+
+#[test]
 fn send_to_agent_requires_an_exact_session_id_and_strict_result() {
     let session_id = "123e4567-e89b-42d3-a456-426614174000";
     assert!(validate_mcp_tool_params(
