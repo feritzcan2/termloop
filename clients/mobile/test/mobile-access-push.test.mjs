@@ -135,6 +135,7 @@ describe("mobile APNs attention projection", () => {
       body: "Mobile notifications",
     }, "mac_1");
     expect(payload).toMatchObject({ connectionId: "mac_1", sessionId: session.id, projectId: "prj_1" });
+    expect(payload.body).toMatchObject({ connectionId: "mac_1", sessionId: session.id, projectId: "prj_1" });
     expect(JSON.stringify(payload)).not.toContain("terminal");
   });
 
@@ -154,10 +155,19 @@ describe("mobile APNs attention projection", () => {
     expect(preferences).toBeDefined();
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsInput"))
       .toEqual({ enabled: true, playSound: true });
+    expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsInput", { macActive: true }))
+      .toEqual({ enabled: false, playSound: true });
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsReview"))
       .toEqual({ enabled: false, playSound: true });
     expect(pushDeliveryOptions(preferences, "ai.termloop.mobile.watch", "stewardProposal"))
       .toEqual({ enabled: false, playSound: false });
+
+    const activeWatch = pushNotificationPreferencesOf({
+      ...preferences,
+      watch: { ...preferences.watch, notifyWhenMacActive: true, stewardMessages: true },
+    });
+    expect(pushDeliveryOptions(activeWatch, "ai.termloop.mobile.watch", "stewardProposal", { macActive: true }))
+      .toEqual({ enabled: true, playSound: false });
 
     const silent = apnsPayload({
       kind: "needsInput",

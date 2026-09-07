@@ -16,6 +16,7 @@ class FakeSurface implements TerminalSurface {
   disposed = false;
   markers: string[] = [];
   visibility: boolean[] = [];
+  appearanceThemes: Array<"dark" | "light"> = [];
   probeValue: TerminalBufferProbe = { lines: 1, cursorX: 0, cursorY: 0, text: "", bufferType: "normal", mouseTrackingMode: "none" };
   constructor(private readonly initialResize?: { callback(rows: number, cols: number): void; rows: number; cols: number }) {}
   mount(): void {
@@ -32,6 +33,7 @@ class FakeSurface implements TerminalSurface {
   writeln(message: string): void { this.markers.push(message); this.probeValue.lines += 1; this.probeValue.text += `${message}\n`; }
   focus(): void {}
   setVisible(visible: boolean): void { this.visibility.push(visible); }
+  setAppearanceTheme(theme: "dark" | "light"): void { this.appearanceThemes.push(theme); }
   probe(): TerminalBufferProbe { return { ...this.probeValue }; }
   dispose(): void { this.disposed = true; this.mounted = false; }
 }
@@ -111,6 +113,25 @@ function agentSession(id: string, projectId = "project-a"): Session {
 }
 
 describe("TerminalPool", () => {
+  it("applies appearance changes to existing and newly created surfaces", async () => {
+    const surfaces: FakeSurface[] = [];
+    const pool = new TerminalPool(() => {
+      const surface = new FakeSurface();
+      surfaces.push(surface);
+      return surface;
+    }, async () => new FakeAttachment());
+    pool.reconcile([session("one"), session("two")]);
+    pool.setAppearanceTheme("light");
+
+    await pool.mount("one", {} as HTMLElement);
+    expect(surfaces[0]?.appearanceThemes).toEqual(["light"]);
+
+    pool.setAppearanceTheme("dark");
+    expect(surfaces[0]?.appearanceThemes).toEqual(["light", "dark"]);
+    await pool.mount("two", {} as HTMLElement);
+    expect(surfaces[1]?.appearanceThemes).toEqual(["dark"]);
+  });
+
   it("discards a superseded attachment even when its promise resolves last", async () => {
     const pending: Array<{ attachment: FakeAttachment; resolve(value: FakeAttachment): void }> = [];
     const value = session("003e4567-e89b-12d3-a456-426614174000");

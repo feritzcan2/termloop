@@ -4,6 +4,7 @@ import type { PromptAsset } from "../prompt-settings.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
+import type { AppearanceTheme } from "../appearance-theme.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -69,13 +70,6 @@ import type {
   StewardConfigurationDeleteResult,
   StewardConfigurationSetParams,
   StewardConfigurationSetResult,
-  WorkerConfigurationCreateParams,
-  WorkerConfigurationDeleteParams,
-  WorkerConfigurationDeleteResult,
-  WorkerConfigurationListParams,
-  WorkerConfigurationListResult,
-  WorkerConfigurationMutationResult,
-  WorkerConfigurationUpdateParams,
   RunConfigurationCreateParams,
   RunConfigurationDeleteParams,
   RunConfigurationDeleteResult,
@@ -143,6 +137,8 @@ import type {
   TaskBranchCommitChangeListResult,
   TaskBranchCommitDiffResult,
   QuickActionPreviewResult,
+  QuickActionParams,
+  AgentProfileDto,
   AgentLaunchPreviewResult,
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
@@ -222,6 +218,7 @@ export type DesktopApi = {
   ghosttySurfaceWrite(surfaceId: number, data: ArrayBuffer): Promise<void>;
   ghosttySurfaceSetFrame(surfaceId: number, x: number, y: number, width: number, height: number): Promise<{ rows: number; cols: number } | undefined>;
   ghosttySurfaceSetVisible(surfaceId: number, visible: boolean): Promise<void>;
+  ghosttySurfaceSetColorScheme(surfaceId: number, theme: AppearanceTheme): Promise<void>;
   ghosttySurfaceSnapshotText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotImage(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotAndHide(surfaceId: number): Promise<string | undefined>;
@@ -314,13 +311,10 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentProfileList(): Promise<AgentProfileDto[]>;
   stewardConfigurationGet(projectId: string): Promise<StewardConfigurationGetResult>;
   stewardConfigurationSet(params: StewardConfigurationSetParams): Promise<StewardConfigurationSetResult>;
   stewardConfigurationDelete(params: StewardConfigurationDeleteParams): Promise<StewardConfigurationDeleteResult>;
-  workerConfigurationList(params: WorkerConfigurationListParams): Promise<WorkerConfigurationListResult>;
-  workerConfigurationCreate(params: WorkerConfigurationCreateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationUpdate(params: WorkerConfigurationUpdateParams): Promise<WorkerConfigurationMutationResult>;
-  workerConfigurationDelete(params: WorkerConfigurationDeleteParams): Promise<WorkerConfigurationDeleteResult>;
   runConfigurationList(params: RunConfigurationListParams): Promise<RunConfigurationListResult>;
   runConfigurationCreate(params: RunConfigurationCreateParams): Promise<RunConfigurationMutationResult>;
   runConfigurationUpdate(params: RunConfigurationUpdateParams): Promise<RunConfigurationMutationResult>;
@@ -372,8 +366,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;

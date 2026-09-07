@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld("termloop", {
     ipcRenderer.invoke("termloop:ghostty-surface-set-frame", surfaceId, x, y, width, height),
   ghosttySurfaceSetVisible: (surfaceId: number, visible: boolean) =>
     ipcRenderer.invoke("termloop:ghostty-surface-set-visible", surfaceId, visible),
+  ghosttySurfaceSetColorScheme: (surfaceId: number, theme: "dark" | "light") =>
+    ipcRenderer.invoke("termloop:ghostty-surface-set-color-scheme", surfaceId, theme),
   ghosttySurfaceSnapshotText: (surfaceId: number) =>
     ipcRenderer.invoke("termloop:ghostty-surface-snapshot-text", surfaceId),
   ghosttySurfaceSnapshotImage: (surfaceId: number) =>

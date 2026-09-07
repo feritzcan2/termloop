@@ -2,8 +2,7 @@ use serde_json::json;
 use termloop_domain::{
     CONFIGURATION_VERSIONS_PER_TARGET_MAX, ConfigurationVersion, ConfigurationVersionSelection,
     ImproverSessionTarget, ImproverSessionTargetKind, PlaybookConfiguration, PlaybookMilestone,
-    PlaybookPipeline, RunConfiguration, StewardAgentId, StewardConfiguration, TrackerConfiguration,
-    WorkerConfiguration,
+    PlaybookPipeline, RunConfiguration, StewardConfiguration, TrackerConfiguration,
 };
 
 use super::super::{CoreWriteAuthority, CurrentState, Store, StoreError};
@@ -191,15 +190,11 @@ pub(crate) fn initialize_configuration_versions(state: &mut CurrentState) {
         return;
     }
     let steward = state.steward_configurations.clone();
-    let workers = state.worker_configurations.clone();
     let routines = state.tracker_configurations.clone();
     let playbooks = state.playbook_configurations.clone();
     let runs = state.run_configurations.clone();
     for configuration in &steward {
         record_steward_version(state, configuration, None, "Initial configuration");
-    }
-    for configuration in &workers {
-        record_worker_version(state, configuration, None, "Initial configuration");
     }
     for configuration in &routines {
         record_routine_version(state, configuration, None, "Initial configuration");
@@ -261,41 +256,6 @@ pub(crate) fn record_steward_version(
     );
 }
 
-pub(crate) fn record_worker_version(
-    state: &mut CurrentState,
-    configuration: &WorkerConfiguration,
-    source_session_id: Option<String>,
-    summary: &str,
-) {
-    let target = ImproverSessionTarget {
-        target_kind: ImproverSessionTargetKind::WorkerInstructions,
-        target_id: Some(configuration.id.clone()),
-    };
-    let content = serde_json::to_string(&json!({
-        "name": configuration.name,
-        "agentId": configuration.agent_id,
-        "model": configuration.model,
-        "permission": configuration.permission,
-        "reasoning": configuration.reasoning,
-        "enabled": configuration.enabled,
-        "pingIntervalSeconds": configuration.ping_interval_seconds,
-        "workerPrompt": configuration.worker_prompt,
-        "systemPrompt": configuration.system_prompt,
-    }))
-    .expect("Worker configuration snapshot serializes");
-    record_version(
-        state,
-        &configuration.project_id,
-        target,
-        content,
-        VersionRecord {
-            summary,
-            source_session_id,
-            created_at_epoch_ms: configuration.updated_at_epoch_ms.max(1),
-        },
-    );
-}
-
 pub(crate) fn record_routine_version(
     state: &mut CurrentState,
     configuration: &TrackerConfiguration,
@@ -307,15 +267,15 @@ pub(crate) fn record_routine_version(
         target_id: Some(configuration.id.clone()),
     };
     let content = serde_json::to_string(&json!({
-        "kind": configuration.kind,
         "triggerMode": configuration.trigger_mode,
         "name": configuration.name,
-        "prompt": configuration.prompt,
-        "stewardInstructions": configuration.steward_instructions,
-        "workerId": configuration.worker_id,
+        "instructions": configuration.prompt,
+        "whileWaiting": {
+            "mode": configuration.action_handling,
+            "instructions": configuration.steward_instructions,
+        },
         "enabled": configuration.enabled,
         "scheduleIntervalSeconds": configuration.schedule_interval_seconds,
-        "actionHandling": configuration.action_handling,
     }))
     .expect("Routine configuration snapshot serializes");
     record_version(
@@ -341,18 +301,6 @@ pub(crate) fn record_playbook_version(
         target_kind: ImproverSessionTargetKind::Playbook,
         target_id: None,
     };
-    let worker_id = configuration
-        .all_milestones()
-        .find_map(|milestone| tracker_for_milestone(state, configuration, milestone))
-        .map(|routine| routine.worker_id.clone());
-    let preferred_worker_agent_id = worker_id
-        .as_deref()
-        .and_then(|worker_id| {
-            state.worker_configurations.iter().find(|worker| {
-                worker.id == worker_id && worker.project_id == configuration.project_id
-            })
-        })
-        .map_or(StewardAgentId::Claude, |worker| worker.agent_id);
     let milestones = configuration
         .milestones
         .iter()
@@ -367,8 +315,6 @@ pub(crate) fn record_playbook_version(
         "activePipelineName": configuration.active_pipeline_name,
         "milestones": milestones,
         "savedPipelines": saved_pipelines,
-        "workerId": worker_id,
-        "preferredWorkerAgentId": preferred_worker_agent_id,
     }))
     .expect("Playbook configuration snapshot serializes");
     record_version(
@@ -410,15 +356,12 @@ fn playbook_milestone_snapshot(
         "id": milestone.id,
         "title": milestone.title,
         "gate": milestone.gate,
-        "check": {
-            "kind": routine.kind,
-            "instructions": routine.prompt,
-            "stewardInstructions": routine.steward_instructions,
-            "actionHandling": routine.action_handling,
-            "workerId": routine.worker_id,
+        "completeWhen": routine.prompt,
+        "whileWaiting": {
+            "mode": routine.action_handling,
+            "instructions": routine.steward_instructions,
         },
         "retryDelaySeconds": milestone.retry_delay_seconds,
-        "condition": milestone.condition,
         "approver": milestone.approver,
     })
 }

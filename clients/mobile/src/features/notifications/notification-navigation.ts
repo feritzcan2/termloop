@@ -1,5 +1,10 @@
 export type NotificationDestination =
-  | { readonly kind: "session"; readonly connectionId?: string; readonly sessionId: string }
+  | {
+    readonly kind: "session";
+    readonly connectionId?: string;
+    readonly projectId?: string;
+    readonly sessionId: string;
+  }
   | { readonly kind: "steward"; readonly connectionId?: string; readonly projectId: string };
 
 export interface NotificationConnectionScope {
@@ -11,7 +16,11 @@ export interface NotificationConnectionScope {
 export type NotificationRoute =
   | {
     readonly pathname: "/session/[sessionId]";
-    readonly params: { readonly sessionId: string; readonly connectionId: string };
+    readonly params: {
+      readonly sessionId: string;
+      readonly connectionId: string;
+      readonly projectId?: string;
+    };
   }
   | {
     readonly pathname: "/project/[projectId]";
@@ -23,6 +32,7 @@ export type NotificationRoute =
 export function notificationDestination(data: unknown): NotificationDestination | undefined {
   if (!isRecord(data)) return undefined;
   const connectionId = nonEmptyString(data.connectionId);
+  const projectId = nonEmptyString(data.projectId);
 
   const chatProjectId = nonEmptyString(data.chatProjectId);
   if (chatProjectId !== undefined) return {
@@ -35,8 +45,21 @@ export function notificationDestination(data: unknown): NotificationDestination 
   return sessionId === undefined ? undefined : {
     kind: "session",
     ...(connectionId === undefined ? {} : { connectionId }),
+    ...(projectId === undefined ? {} : { projectId }),
     sessionId,
   };
+}
+
+/// Expo Notifications exposes Expo-shaped remote data through `content.data`,
+/// while direct APNs custom fields remain available on the push trigger payload.
+/// Accept either representation so notification taps survive both delivery paths.
+export function notificationDestinationFromRemote(
+  contentData: unknown,
+  trigger: unknown,
+): NotificationDestination | undefined {
+  const contentDestination = notificationDestination(contentData);
+  if (contentDestination !== undefined) return contentDestination;
+  return isRecord(trigger) ? notificationDestination(trigger.payload) : undefined;
 }
 
 /// The entity projection is stronger evidence than a possibly stale push hint. When
@@ -58,9 +81,9 @@ export function resolveNotificationConnectionId(
   return scopes.length === 1 ? scopes[0]?.connectionId : undefined;
 }
 
-/// A notification is an explicit navigation intent, so its target replaces the
-/// currently visible route. This avoids React Navigation reusing an older dynamic
-/// Session route with the same route name and stale params.
+/// A notification is an explicit navigation intent. Its exact target is pushed so
+/// Back always has an in-app destination; `push` also creates a fresh dynamic route
+/// rather than reusing an older Session with stale params.
 export function notificationRoute(
   destination: NotificationDestination,
   connectionId: string,
@@ -68,12 +91,31 @@ export function notificationRoute(
   return destination.kind === "session"
     ? {
       pathname: "/session/[sessionId]",
-      params: { sessionId: destination.sessionId, connectionId },
+      params: {
+        sessionId: destination.sessionId,
+        connectionId,
+        ...(destination.projectId === undefined ? {} : { projectId: destination.projectId }),
+      },
     }
     : {
       pathname: "/project/[projectId]",
       params: { projectId: destination.projectId, connectionId },
     };
+}
+
+/// A notification can launch the app without useful native-stack history. Seed the
+/// owning Project directly beneath an Agent so both the header and iOS back gesture
+/// have the same deterministic destination.
+export function notificationRouteStack(
+  destination: NotificationDestination,
+  connectionId: string,
+): readonly [NotificationRoute] | readonly [NotificationRoute, NotificationRoute] {
+  const target = notificationRoute(destination, connectionId);
+  if (destination.kind !== "session" || destination.projectId === undefined) return [target];
+  return [{
+    pathname: "/project/[projectId]",
+    params: { projectId: destination.projectId, connectionId },
+  }, target];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

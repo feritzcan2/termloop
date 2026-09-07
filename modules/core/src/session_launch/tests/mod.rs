@@ -319,7 +319,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
             SessionRecord {
                 launch_selection: Default::default(),
                 id: "stale-assistant".into(),
-                project_id,
+                project_id: project_id.clone(),
                 name: Some("Stale Steward".into()),
                 kind: SessionKind::Agent,
                 process: ProcessDescriptor {
@@ -1517,9 +1517,9 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
 }
 
 #[tokio::test]
-async fn worker_activation_waits_for_post_hook_and_confirms_once() {
+async fn steward_activation_waits_for_post_hook_and_confirms_once() {
     let root = std::env::temp_dir().join(format!(
-        "termloop-core-worker-activation-{}-{}",
+        "termloop-core-steward-activation-{}-{}",
         std::process::id(),
         Uuid::new_v4()
     ));
@@ -1537,7 +1537,7 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     let project_id = runtime
         .handle(
             "project.create",
-            json!({"name":"Worker activation","folderPath":root}),
+            json!({"name":"Steward activation","folderPath":root}),
         )
         .unwrap()["id"]
         .as_str()
@@ -1545,19 +1545,15 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .to_owned();
     runtime
         .store
-        .set_worker_configuration(
+        .set_steward_configuration(
             &runtime.write_authority,
-            termloop_domain::WorkerConfiguration {
-                id: "worker-1".into(),
+            termloop_domain::StewardConfiguration {
                 project_id: project_id.clone(),
-                name: "Activation Worker".into(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),
                 permission: "default".into(),
                 reasoning: "default".into(),
                 enabled: true,
-                ping_interval_seconds: 60,
-                worker_prompt: String::new(),
                 system_prompt: String::new(),
                 executor_session_id: None,
                 generation: 1,
@@ -1568,13 +1564,13 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     runtime
         .store
-        .attach_worker_executor_session(
+        .attach_steward_executor_session(
             &runtime.write_authority,
             SessionRecord {
                 launch_selection: Default::default(),
-                id: "worker-activation".into(),
-                project_id,
-                name: Some("Activation Worker".into()),
+                id: "steward-activation".into(),
+                project_id: project_id.clone(),
+                name: Some("Activation Steward".into()),
                 kind: SessionKind::Agent,
                 process: ProcessDescriptor {
                     program: "claude".into(),
@@ -1598,28 +1594,28 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
                 resume_launch_guard: None,
                 resume_failure: None,
             },
-            "worker-1",
+            &project_id,
             1,
             1,
         )
         .unwrap();
     runtime.agent_observations.insert(
-        "worker-activation".into(),
+        "steward-activation".into(),
         crate::AgentObservationCapability {
-            token: Some("worker-token".into()),
+            token: Some("steward-token".into()),
             runtime_epoch: 9,
             last_signal: None,
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             observation: None,
             pending_generated_input: Some(crate::test_generated_terminal_submission(
-                "Activate this Worker",
+                "Activate this Steward",
             )),
         },
     );
     terminal
         .spawn(PtySpawnSpec {
-            session_id: "worker-activation".into(),
+            session_id: "steward-activation".into(),
             runtime_epoch: 9,
             program: std::env::current_exe()
                 .unwrap()
@@ -1636,13 +1632,13 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
                 .with_explicit("TERMLOOP_TEST_PENDING_INITIAL_INPUT", "1")
                 .with_explicit(
                     "TERMLOOP_TEST_EXPECTED_INITIAL_INPUT",
-                    "Activate this Worker",
+                    "Activate this Steward",
                 )
                 .with_explicit("TERMLOOP_TEST_DELAY_COMPOSER_RENDER", "1"),
             recent_output_replay: false,
         })
         .unwrap();
-    let mut output = terminal.subscribe("worker-activation", 9).unwrap();
+    let mut output = terminal.subscribe("steward-activation", 9).unwrap();
     let mut bytes = Vec::new();
     let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -1650,7 +1646,7 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1664,8 +1660,8 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
 
     runtime
         .record_agent_observation(
-            "worker-token",
-            "worker-activation",
+            "steward-token",
+            "steward-activation",
             "SessionStart",
             None,
             None,
@@ -1673,22 +1669,22 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             1,
         )
         .unwrap();
-    assert!(runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(runtime.pending_generated_input_after_hook_response("steward-activation"));
     assert!(
         runtime
-            .deliver_pending_generated_input_after_hook_response("worker-activation")
+            .deliver_pending_generated_input_after_hook_response("steward-activation")
             .unwrap()
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !String::from_utf8_lossy(&bytes)
-            .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Worker")
+            .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Steward")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1700,26 +1696,26 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "worker fixture did not render paste; state={:?} failure={:?} output={}",
-            runtime.generated_input_delivery_state("worker-activation", 9),
-            runtime.generated_input_delivery_failure("worker-activation", 9),
+            "steward fixture did not render paste; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("steward-activation", 9),
+            runtime.generated_input_delivery_failure("steward-activation", 9),
             bounded_headless_fixture_output(&bytes),
         )
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::WritingPaste),
         "a synchronized frame must not release submit before the composer render marker"
     );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !String::from_utf8_lossy(&bytes)
-            .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Worker")
+            .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Steward")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                 append_headless_output_and_answer_cursor_queries(
                     &terminal,
-                    "worker-activation",
+                    "steward-activation",
                     9,
                     &mut bytes,
                     &mut answered_cursor_position_queries,
@@ -1731,9 +1727,9 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "worker fixture did not receive submit; state={:?} failure={:?} output={}",
-            runtime.generated_input_delivery_state("worker-activation", 9),
-            runtime.generated_input_delivery_failure("worker-activation", 9),
+            "steward fixture did not receive submit; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("steward-activation", 9),
+            runtime.generated_input_delivery_failure("steward-activation", 9),
             bounded_headless_fixture_output(&bytes),
         )
     });
@@ -1743,15 +1739,15 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     assert!(runtime.record_generated_input_runtime_event(event).unwrap());
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::AwaitingProviderAck)
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
 
     runtime
         .record_agent_observation(
-            "worker-token",
-            "worker-activation",
+            "steward-token",
+            "steward-activation",
             "UserPromptSubmit",
             None,
             None,
@@ -1760,11 +1756,11 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         )
         .unwrap();
     assert_eq!(
-        runtime.generated_input_delivery_state("worker-activation", 9),
+        runtime.generated_input_delivery_state("steward-activation", 9),
         Some(crate::GeneratedInputDeliveryState::Confirmed)
     );
-    assert!(!runtime.pending_generated_input_after_hook_response("worker-activation"));
-    let _ = terminal.terminate("worker-activation");
+    assert!(!runtime.pending_generated_input_after_hook_response("steward-activation"));
+    let _ = terminal.terminate("steward-activation");
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -2543,6 +2539,10 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
         )
         .unwrap();
     let launch = resolve_interactive_agent_launch(&plan).unwrap();
+    assert_eq!(
+        launch.provenance().template_ref,
+        "builtin.steward.task-assignment"
+    );
     assert!(launch.initial_input().is_some_and(|input| {
         input.contains("Jira issue: https://example.atlassian.net/browse/TERM-42")
     }));
@@ -2954,6 +2954,301 @@ fn quick_action_preview_is_project_scoped_and_matches_versioned_delivery() {
     assert_eq!(runtime.state_revision(), revision);
     assert!(runtime.store.sessions().is_empty());
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn shared_preview_tickets_reject_cross_flow_redemption_and_remain_single_use() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-cross-flow-launch-ticket-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let improver_params = json!({
+        "projectId": project["id"], "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.improver.run-configuration-new",
+        "bindings": { "newKind": "devServer" }
+    });
+    let quick_action_params = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.quick-action.free-prompt",
+        "bindings": { "prompt": "Inspect this" }, "attachments": []
+    });
+
+    let improver_preview = runtime
+        .preview_run_configuration_improver(improver_params.clone())
+        .unwrap();
+    let mut wrong_quick_action = quick_action_params.clone();
+    wrong_quick_action["launchTicket"] = improver_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_quick_action_launch(wrong_quick_action),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+    let mut spent_improver = improver_params.clone();
+    spent_improver["launchTicket"] = improver_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_run_configuration_improver_launch(spent_improver),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+
+    let quick_action_preview = runtime
+        .preview_quick_action(quick_action_params.clone())
+        .unwrap();
+    let mut wrong_improver = improver_params;
+    wrong_improver["launchTicket"] = quick_action_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_run_configuration_improver_launch(wrong_improver),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+    let mut spent_quick_action = quick_action_params;
+    spent_quick_action["launchTicket"] = quick_action_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_quick_action_launch(spent_quick_action),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+
+    assert!(runtime.store.sessions().is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn codex_runtime_preparation_failure_rejects_a_redeemed_improver_payload() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-improver-runtime-failure-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state.json");
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(&state).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    // A regular file cannot contain the runtime ownership record. This forces
+    // preparation to fail whether or not the Codex executable is installed.
+    runtime.configure_agent_observations(crate::test_agent_observation_transport(state));
+    let params = json!({
+        "projectId": project["id"], "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.improver.run-configuration-new",
+        "bindings": { "newKind": "devServer" }
+    });
+    let preview = runtime
+        .preview_run_configuration_improver(params.clone())
+        .unwrap();
+    assert_eq!(
+        preview["template_ref"],
+        "builtin.improver.run-configuration-new"
+    );
+    let mut launch_params = params;
+    launch_params["launchTicket"] = preview["launch_ticket"].clone();
+    let mut plan = runtime
+        .take_run_configuration_improver_launch(launch_params)
+        .unwrap();
+
+    plan.prepare_runtime();
+    assert!(plan.observation_warning().is_some());
+    assert!(plan.prepared_launch.is_none());
+    assert!(matches!(
+        runtime.complete_agent_launch(&mut plan),
+        Err(CoreError::AgentCapabilityUnproven)
+    ));
+    assert!(runtime.store.sessions().is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-agent-profile-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let profile_ref = "builtin.agent-profile.scattered-orchestration-finder";
+    let params = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "high", "templateRef": profile_ref,
+        "bindings": { "prompt": "Inspect session launch ownership" }, "attachments": []
+    });
+
+    let catalog = runtime.agent_profile_list();
+    assert_eq!(catalog.as_array().unwrap().len(), 4);
+    assert_eq!(catalog[0]["permission"], "plan");
+    assert_eq!(catalog[0]["read_only"], true);
+
+    let preview = runtime.preview_quick_action(params.clone()).unwrap();
+    assert_eq!(preview["template_ref"], profile_ref);
+    assert_eq!(preview["template_version"], 1);
+    assert_eq!(
+        preview["manifest"]["provenance"]["template_ref"],
+        profile_ref
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["kind"],
+        "firstMessage"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][1]["kind"],
+        "providerInstructions"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][1]["delivery"],
+        "codexDeveloperInstructions"
+    );
+    let mut launch_params = params.clone();
+    launch_params["launchTicket"] = preview["launch_ticket"].clone();
+    let plan = runtime.take_quick_action_launch(launch_params).unwrap();
+    assert_eq!(
+        plan.prepared_launch
+            .as_ref()
+            .unwrap()
+            .provenance()
+            .template_ref,
+        profile_ref
+    );
+    assert!(
+        plan.prepared_launch
+            .as_ref()
+            .unwrap()
+            .codex_app_server_developer_instructions()
+            .is_some_and(|instructions| instructions.contains(profile_ref))
+    );
+    assert_eq!(
+        super::launch_session_name(&plan).as_deref(),
+        Some("Scattered Orchestration Finder · Inspect session launch ownership")
+    );
+
+    let mut write_permission = params;
+    write_permission["permission"] = Value::String("acceptEdits".into());
+    let write_plan = runtime.plan_quick_action_launch(write_permission).unwrap();
+    assert_eq!(
+        effective_launch_selection(&write_plan),
+        termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "high")
+    );
+    let mut unknown_profile = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.agent-profile.not-in-the-catalog",
+        "bindings": { "prompt": "Inspect this" }, "attachments": []
+    });
+    assert!(matches!(
+        runtime.plan_quick_action_launch(unknown_profile.clone()),
+        Err(CoreError::InvalidParams(field)) if field == "templateRef"
+    ));
+    unknown_profile["templateRef"] = Value::String(profile_ref.into());
+    unknown_profile["agentId"] = Value::String("gemini".into());
+    assert!(matches!(
+        runtime.plan_quick_action_launch(unknown_profile),
+        Err(CoreError::AgentUnsupported)
+    ));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn agent_profile_resume_preview_reapplies_profile_without_a_first_message() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-core-agent-profile-resume-{}-{}.json",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let profile_ref = "builtin.agent-profile.scattered-orchestration-finder";
+    store
+        .insert_session(
+            &authority,
+            SessionRecord {
+                launch_selection: termloop_domain::AgentLaunchSelection::new(
+                    "default", "plan", "high",
+                ),
+                id: "profile-agent".into(),
+                project_id: "project-1".into(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "claude".into(),
+                    args: vec![],
+                    cwd:
+                        termloop_platform::canonical_existing_directory_path(&std::env::temp_dir())
+                            .unwrap()
+                            .to_string_lossy()
+                            .into_owned(),
+                    agent_id: Some("claude".into()),
+                    template_ref: Some(profile_ref.into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "exited".into(),
+                runtime_epoch: 2,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(
+                    ResumeProvider::Claude,
+                    Uuid::new_v4().to_string(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+            },
+        )
+        .unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 3).unwrap();
+    let mut transport = crate::test_agent_observation_transport(std::env::temp_dir());
+    transport.agents.remove("codex");
+    transport
+        .agents
+        .get_mut("claude")
+        .unwrap()
+        .mcp_http_supported = false;
+    runtime.configure_agent_observations(transport);
+
+    let preview = runtime
+        .preview_agent_resume(json!({ "sessionId": "profile-agent" }))
+        .unwrap();
+    assert_eq!(
+        preview["manifest"]["provenance"]["template_ref"],
+        profile_ref
+    );
+    assert_eq!(
+        preview["manifest"]["transport"]["kind"],
+        "claudeAppendedSystemPrompt"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["kind"],
+        "providerInstructions"
+    );
+    assert_eq!(
+        preview["manifest"]["content_parts"][0]["delivery"],
+        "claudeAppendedSystemPrompt"
+    );
+
+    let _ = std::fs::remove_file(path);
 }
 
 #[test]
@@ -4618,8 +4913,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         observation_token: None,
         mcp_token: None,
         mcp_role: None,
-        worker_prompt: None,
-        worker_system_prompt: None,
+        agent_profile_ref: None,
         steward_system_prompt: None,
         mcp_authorizer: runtime.mcp_authorizer.clone(),
         observation_transport: {

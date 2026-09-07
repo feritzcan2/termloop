@@ -29,6 +29,7 @@ await Promise.all([
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
   cp("src/assets/termloop-main-icon.png", "dist/termloop-main-icon.png"),
   cp("src/assets/ghostty-embedded.conf", "dist/ghostty-embedded.conf"),
+  cp("src/assets/ghostty-light.conf", "dist/ghostty-light.conf"),
   cp("src/assets/fonts/OFL.txt", "dist/JetBrainsMono-OFL.txt")
 ]);
 

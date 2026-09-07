@@ -3,6 +3,7 @@ import type {
   ProjectTaskAutomationGetResult,
   ProjectTaskAutomationSetParams,
   ProjectTaskAutomationSetResult,
+  RemoteBranchDto,
 } from "@termloop/contract/current";
 import {
   agentLaunchDefaults,
@@ -20,11 +21,14 @@ export type ProjectTaskAutomationActions = {
 /// Create worktree / start agent, the two facts a new Task carries. The same
 /// control renders the Project default and an explicit one-shot import choice,
 /// keeping both surfaces aligned without making a provider own the default.
-export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, worktreeHint, agentHint, change }: {
+export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, baseBranches, branchesLoading, branchesError, worktreeHint, agentHint, change }: {
   idPrefix: string;
   value: ProjectTaskAutomationDraft;
   busy: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
+  baseBranches: readonly RemoteBranchDto[];
+  branchesLoading: boolean;
+  branchesError: string | undefined;
   worktreeHint: string;
   agentHint: string;
   change(next: ProjectTaskAutomationDraft): void;
@@ -47,7 +51,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         disabled={busy || startAgent}
         onChange={(event) => change(event.target.checked
           ? { ...value, createWorktree: true }
-          : { createWorktree: false, worktreePrefix: value.worktreePrefix, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null })}
+          : { createWorktree: false, worktreePrefix: value.worktreePrefix, baseRef: value.baseRef, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null })}
       />
       <span><strong>Create worktree</strong><small>{worktreeHint}</small></span>
     </label>
@@ -67,6 +71,21 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
       <span><strong>Start agent</strong><small>{!startAgent && noAgentAvailable ? "No configured agent is currently available." : agentHint}</small></span>
     </label>
     {value.createWorktree ? <>
+      <label htmlFor={`${idPrefix}-base-ref`}>Base branch</label>
+      <select
+        id={`${idPrefix}-base-ref`}
+        value={value.baseRef ?? ""}
+        disabled={busy || branchesLoading || Boolean(branchesError) || baseBranches.length === 0}
+        onChange={(event) => change({ ...value, baseRef: event.target.value })}
+      >
+        {value.baseRef && !baseBranches.some((branch) => branch.exact_ref === value.baseRef)
+          ? <option value={value.baseRef}>{value.baseRef.replace(/^refs\/remotes\//, "")} (unavailable)</option>
+          : null}
+        {!value.baseRef ? <option value="">{branchesLoading ? "Loading remote branches…" : "Choose a remote branch…"}</option> : null}
+        {baseBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
+      </select>
+      {branchesError ? <p className="form-error" role="alert">{branchesError}</p> : null}
+      {!branchesLoading && !branchesError && baseBranches.length === 0 ? <p className="field-help">No remote-tracking branches are available. Fetch the repository first.</p> : null}
       <label htmlFor={`${idPrefix}-worktree-prefix`}>Branch/worktree prefix</label>
       <input
         id={`${idPrefix}-worktree-prefix`}

@@ -1,5 +1,6 @@
 import { desktopApi } from "./desktop-api.js";
 import { parseGhosttyShellShortcut, type GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
+import type { AppearanceTheme } from "../appearance-theme.js";
 
 export type GhosttyGrid = { rows: number; cols: number };
 export type GhosttyFrame = { x: number; y: number; width: number; height: number };
@@ -9,6 +10,7 @@ export type GhosttyBridge = {
   write(surfaceId: number, data: Uint8Array): Promise<void>;
   setFrame(surfaceId: number, x: number, y: number, width: number, height: number): Promise<GhosttyGrid | undefined>;
   setVisible(surfaceId: number, visible: boolean): Promise<void>;
+  setColorScheme(surfaceId: number, theme: AppearanceTheme): Promise<void>;
   snapshotText(surfaceId: number): Promise<string | undefined>;
   snapshotImage(surfaceId: number): Promise<string | undefined>;
   snapshotAndHide(surfaceId: number): Promise<string | undefined>;
@@ -58,6 +60,7 @@ export const ghosttyBridge: GhosttyBridge = {
   setFrame: (surfaceId, x, y, width, height) =>
     desktopApi.ghosttySurfaceSetFrame(surfaceId, x, y, width, height),
   setVisible: (surfaceId, visible) => desktopApi.ghosttySurfaceSetVisible(surfaceId, visible),
+  setColorScheme: (surfaceId, theme) => desktopApi.ghosttySurfaceSetColorScheme(surfaceId, theme),
   snapshotText: (surfaceId) => desktopApi.ghosttySurfaceSnapshotText(surfaceId),
   snapshotImage: (surfaceId) => desktopApi.ghosttySurfaceSnapshotImage(surfaceId),
   snapshotAndHide: (surfaceId) => desktopApi.ghosttySurfaceSnapshotAndHide(surfaceId),

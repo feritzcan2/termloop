@@ -81,6 +81,7 @@ fn project_task_automation_is_strict_and_revision_checked() {
         &serde_json::json!({
             "projectId":"project-1", "createWorktree":true,
             "worktreePrefix":"termloop",
+            "baseRef":"refs/remotes/origin/development",
             "agentId":"codex", "model":"gpt-5.6-sol",
             "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":"Implement and verify.",
@@ -90,8 +91,19 @@ fn project_task_automation_is_strict_and_revision_checked() {
     assert!(!validate_method_params(
         "project.taskAutomationSet",
         &serde_json::json!({
+            "projectId":"project-1", "createWorktree":true,
+            "worktreePrefix":"termloop", "baseRef":null,
+            "agentId":null, "model":null, "permission":null,
+            "reasoning":null, "kickoffMessage":null,
+            "expectedRevision":1
+        })
+    ));
+    assert!(!validate_method_params(
+        "project.taskAutomationSet",
+        &serde_json::json!({
             "projectId":"project-1", "createWorktree":false,
             "worktreePrefix":"termloop",
+            "baseRef":null,
             "agentId":"codex", "model":"gpt-5.6-sol",
             "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":null,
@@ -321,6 +333,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "brief": null,
             "worktreeIntent": "inherit",
             "worktreePrefix": null,
+            "baseRef": null,
             "agentId": null,
             "model": null,
             "permission": null,
@@ -335,6 +348,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "title": "Build API",
             "worktreeIntent": "provision",
             "worktreePrefix": "termloop",
+            "baseRef": "refs/remotes/origin/development",
             "agentId": null,
             "model": null,
             "permission": null,
@@ -349,6 +363,7 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
             "title": "Build API",
             "worktreeIntent": "none",
             "worktreePrefix": null,
+            "baseRef": null,
             "agentId": null,
             "model": "gpt-5.6-sol",
             "permission": null,
@@ -397,87 +412,24 @@ fn generated_method_params_reject_missing_extra_and_wrong_types() {
 }
 
 #[test]
-fn routine_create_accepts_built_in_and_custom_kinds() {
-    for (kind, name) in [
-        ("jira", "Jira issue synchronizer"),
-        ("custom", "Customer pulse"),
-    ] {
-        assert!(validate_method_params(
-            "routine.configurationCreate",
-            &serde_json::json!({
-                "projectId": "project-1",
-                "workerId": "worker-1",
-                "kind": kind,
-                "triggerMode": "schedule",
-                "name": name,
-                "scheduleIntervalSeconds": 900,
-                "actionHandling": "off",
-                "expectedRevision": 7
-            })
-        ));
-    }
-}
-
-#[test]
-fn worker_ping_interval_and_editable_prompts_are_required_and_bounded() {
-    let update = serde_json::json!({
-        "workerId": "worker-1",
-        "name": "Worker 1",
-        "agentId": "codex",
-        "model": "gpt-5.6-sol",
-        "permission": "bypassPermissions",
-        "reasoning": "high",
-        "enabled": true,
-        "pingIntervalSeconds": 60,
-        "workerPrompt": "Handle each Routine carefully.",
-        "systemPrompt": "Answer briefly.",
-        "expectedRevision": 3
+fn routine_create_is_provider_neutral() {
+    let params = serde_json::json!({
+        "projectId": "project-1",
+        "triggerMode": "schedule",
+        "name": "Customer pulse",
+        "scheduleIntervalSeconds": 900,
+        "whileWaiting": {"mode":"off", "instructions":""},
+        "expectedRevision": 7
     });
     assert!(validate_method_params(
-        "worker.configurationUpdate",
-        &update
+        "routine.configurationCreate",
+        &params
     ));
-    let mut missing = update.clone();
-    missing
-        .as_object_mut()
-        .unwrap()
-        .remove("pingIntervalSeconds");
+    let mut classified = params;
+    classified["kind"] = serde_json::json!("jira");
     assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &missing
-    ));
-    let mut too_fast = update;
-    too_fast["pingIntervalSeconds"] = serde_json::json!(59);
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &too_fast
-    ));
-    let mut missing_prompt = serde_json::json!({
-        "workerId": "worker-1",
-        "name": "Worker 1",
-        "agentId": "codex",
-        "model": "default",
-        "permission": "default",
-        "reasoning": "default",
-        "enabled": true,
-        "pingIntervalSeconds": 60,
-        "workerPrompt": "",
-        "systemPrompt": "",
-        "expectedRevision": 3
-    });
-    missing_prompt
-        .as_object_mut()
-        .unwrap()
-        .remove("workerPrompt");
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &missing_prompt
-    ));
-    let mut oversized = missing_prompt;
-    oversized["workerPrompt"] = serde_json::json!("ş".repeat(8_193));
-    assert!(!validate_method_params(
-        "worker.configurationUpdate",
-        &oversized
+        "routine.configurationCreate",
+        &classified
     ));
 }
 
@@ -553,7 +505,12 @@ fn generated_method_results_cover_project_task_and_session_wire_shapes() {
                 { "name": "feature/api", "exact_ref": "refs/heads/feature/api" },
                 { "name": "main", "exact_ref": "refs/heads/main" }
             ],
-            "truncated": false
+            "truncated": false,
+            "base_branches": [
+                { "name": "origin/development", "exact_ref": "refs/remotes/origin/development" },
+                { "name": "origin/main", "exact_ref": "refs/remotes/origin/main" }
+            ],
+            "base_branches_truncated": false
         })
     ));
     assert!(!validate_method_result(
@@ -561,7 +518,9 @@ fn generated_method_results_cover_project_task_and_session_wire_shapes() {
         &serde_json::json!({
             "repository_root": "/tmp/demo",
             "branches": [{ "name": "main", "exact_ref": "main" }],
-            "truncated": false
+            "truncated": false,
+            "base_branches": [],
+            "base_branches_truncated": false
         })
     ));
     assert!(validate_method_result(

@@ -11,7 +11,9 @@ use std::sync::{
     Arc, Mutex as StdMutex, Weak,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
-use termloop_contract::current::{ProjectionInvalidatedPayload, ProjectionTopic};
+use termloop_contract::current::{
+    CompanionWakeReason, ProjectionInvalidatedPayload, ProjectionTopic,
+};
 use termloop_core::CoreError;
 use termloop_terminal::TerminalService;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -209,9 +211,6 @@ fn generated_mcp_tool_catalog()
             }
             if termloop_contract::current::MCP_STEWARD_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Steward);
-            }
-            if termloop_contract::current::MCP_WORKER_TOOLS.contains(&tool_name) {
-                roles.push(termloop_core::McpToolRole::Worker);
             }
             if termloop_contract::current::MCP_IMPROVER_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Improver);
@@ -634,15 +633,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         companion_process_directory.clone(),
         runtime_directory.clone(),
     ));
-    let workers_to_restart = state.core.lock().await.enabled_worker_ids_needing_launch();
-    for worker_id in workers_to_restart {
-        let worker_state = state.clone();
-        tokio::spawn(async move {
-            if let Err(error) = control::launch_current_worker(&worker_id, &worker_state).await {
-                tracing::warn!(%error, %worker_id, "persistent Worker restart failed");
-            }
-        });
-    }
     let server_result = server.await?;
     state.access_plane.shutdown().await;
     server_result?;
@@ -900,7 +890,6 @@ async fn reconcile_terminal_exits(state: AppState) {
                     ProjectionTopic::Session,
                     ProjectionTopic::AgentStatus,
                     ProjectionTopic::Steward,
-                    ProjectionTopic::Worker,
                     ProjectionTopic::Routine,
                     ProjectionTopic::Run,
                 ],
@@ -1096,12 +1085,12 @@ async fn reconcile_agent_runtime_signals(
                     false
                 }
             };
-            acknowledge_confirmed_steward_wakes(&mut core, &companion_wakes);
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, topic, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
         if changed && topic == ProjectionTopic::AgentStatus {
-            // A Worker's turn ending is what makes it wakeable again, and the
+            // A Steward's turn ending is what makes it wakeable again, and the
             // Routine loop is asleep until told that something moved.
             tracker_runtime_wake.notify_one();
         }
@@ -1161,7 +1150,7 @@ async fn reconcile_generated_input_runtime_events(
                     continue;
                 }
             };
-            acknowledge_confirmed_steward_wakes(&mut core, &companion_wakes);
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
@@ -1180,7 +1169,7 @@ async fn reconcile_generated_input_runtime_events(
     }
 }
 
-fn acknowledge_confirmed_steward_wakes(
+fn reconcile_steward_wake_runtime_events(
     core: &mut termloop_core::CoreRuntime,
     companion_wakes: &companion_supervisor::CompanionWakeQueue,
 ) {
@@ -1189,6 +1178,15 @@ fn acknowledge_confirmed_steward_wakes(
             &confirmation.project_id,
             confirmation.generation,
             confirmation.wake_id,
+        );
+    }
+    let project_limit = core.project_count();
+    for wake in core.take_steward_finding_disposition_retries() {
+        companion_wakes.enqueue(
+            wake.project_id,
+            CompanionWakeReason::RoutineFinding,
+            wake.generation,
+            project_limit,
         );
     }
 }

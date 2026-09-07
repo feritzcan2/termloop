@@ -12,7 +12,7 @@ describe("native permission configuration", () => {
   it("keeps the microphone usage description after Expo plugins run in reverse order", () => {
     const expected = app.expo.ios.infoPlist.NSMicrophoneUsageDescription;
 
-    expect(expected).toContain("Steward");
+    expect(expected).toContain("voice message");
     expect(pluginOptions("expo-camera")?.microphonePermission).toBe(expected);
     expect(pluginOptions("expo-audio")?.microphonePermission).toBe(expected);
     expect(pluginOptions("expo-camera")?.recordAudioAndroid).toBe(false);

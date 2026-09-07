@@ -14,6 +14,7 @@ const composerProps = (selectedProject: typeof NUCLEUS | undefined) => ({
   projects: [NUCLEUS, TERMLOOP],
   selectedProject,
   capabilities: [fullAgentCapability("codex")],
+  profiles: [],
   pasteImage: vi.fn(),
   restoreImage: vi.fn(),
   discardImage: vi.fn(),

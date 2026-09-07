@@ -40,6 +40,7 @@ const GEMINI_EXECUTABLE_CANDIDATES: &[&str] = &["gemini"];
 const CLAUDE_MODELS: &[&str] = &["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"];
 const CODEX_MODELS: &[&str] = &[
     "default",
+    "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -188,5 +189,24 @@ mod tests {
         assert!(!supports_generated_input_coordination("unknown"));
         assert!(!supports_tracked_helpers("unknown"));
         assert!(!has_global_resume_identity("unknown"));
+    }
+
+    #[test]
+    fn codex_catalog_exposes_gpt_6_astra_as_the_first_explicit_model() {
+        assert_eq!(
+            agent_descriptor("codex").map(|descriptor| descriptor.models),
+            Some(
+                [
+                    "default",
+                    "gpt-6-astra",
+                    "gpt-5.6-sol",
+                    "gpt-5.6-terra",
+                    "gpt-5.6-luna",
+                    "gpt-5.5",
+                    "gpt-5.5-pro",
+                ]
+                .as_slice()
+            )
+        );
     }
 }

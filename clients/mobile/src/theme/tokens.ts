@@ -1,62 +1,67 @@
 /// The mobile client's colour and geometry vocabulary.
 ///
-/// Mobile uses the desktop shell's surface and accent vocabulary while retaining
-/// phone-native geometry. The same Project should therefore feel like the same
-/// workspace on both clients, without shrinking 44pt targets or 56pt rows to the
-/// desktop sidebar's pointer-sized controls.
+/// Mobile is deliberately light-only. Muted slate surfaces reduce glare while keeping
+/// dense terminal and worktree content readable, and a saturated blue accent carries
+/// selection and primary action. Phone-native geometry remains independent from the palette.
 
 export const color = {
-  bgApp: "#1e2325",
-  bgRaised: "#2b3032",
-  bgSidebar: "#303537",
-  bgHover: "#353a3c",
-  /// Darker than every chrome surface. The terminal is a screen within the
-  /// screen, and it reads as one only if nothing around it is deeper.
-  bgTerminal: "#282c34",
+  bgApp: "#DFE4EC",
+  bgRaised: "#ECEFF4",
+  bgSidebar: "#D4DAE5",
+  bgHover: "#C3CCD9",
+  /// A quiet code canvas: comfortably dimmer than cards without becoming a dark island.
+  bgTerminal: "#D0D7E2",
 
-  border: "#353a3c",
-  borderStrong: "#434749",
-  rule: "rgba(255,255,255,0.08)",
+  border: "#B7C0CF",
+  borderStrong: "#929FB2",
+  rule: "rgba(23,32,51,0.16)",
 
-  text: "#dededf",
-  textSecondary: "#9aa0a1",
-  textMuted: "#5b6062",
+  text: "#172033",
+  textSecondary: "#536079",
+  textMuted: "#596579",
 
-  accent: "#7c5cff",
-  accentStrong: "#a48cff",
-  accentWash: "rgba(124,92,255,0.12)",
+  accent: "#0B609B",
+  accentStrong: "#083D66",
+  accentWash: "rgba(11,96,155,0.16)",
 
-  success: "#5cc995",
-  warning: "#d9aa5f",
-  danger: "#e1757e",
+  success: "#0B6845",
+  successWash: "rgba(11,104,69,0.15)",
+  warning: "#7D4D00",
+  danger: "#A7273E",
+  dangerBorder: "#E28A99",
+  dangerWash: "rgba(167,39,62,0.15)",
+  attention: "#9F3517",
 
-  agentClaude: "#c78cf2",
-  agentCodex: "#66b3ff",
+  agentClaude: "#8C3E0B",
+  agentCodex: "#0B625B",
 
-  onAccent: "#f7f5ff",
-  scrim: "rgba(8,10,11,0.76)",
+  onAccent: "#FFFFFF",
+  shadow: "#10192C",
+  scrim: "rgba(23,32,51,0.42)",
+  mediaScrim: "rgba(16,24,40,0.74)",
+  onMedia: "#FFFFFF",
 } as const;
 
 /// Tone hues. `quiet` renders no spine at all and `done` is stated but never lit,
 /// so neither has a colour here — a settled row must not compete with the one row
 /// that is actually waiting on the user.
 export const toneColor = {
-  working: "#5cc995",
-  interrupted: "#e5b454",
-  review: "#66b3ff",
-  busy: "#e67a14",
-  attention: "#ff8f6b",
-  blocked: "#c93d36",
+  working: "#0B6845",
+  interrupted: "#7D4D00",
+  review: "#125F9C",
+  busy: "#8C3E0B",
+  attention: "#9F3517",
+  blocked: "#A7273E",
 } as const;
 
 /** Subtle row fields make live state glanceable without turning the list neon. */
 export const toneWash = {
-  working: "rgba(92,201,149,0.10)",
-  interrupted: "rgba(229,180,84,0.10)",
-  review: "rgba(102,179,255,0.12)",
-  busy: "rgba(230,122,20,0.11)",
-  attention: "rgba(255,143,107,0.14)",
-  blocked: "rgba(201,61,54,0.14)",
+  working: "rgba(11,104,69,0.14)",
+  interrupted: "rgba(125,77,0,0.14)",
+  review: "rgba(18,95,156,0.14)",
+  busy: "rgba(140,62,11,0.14)",
+  attention: "rgba(159,53,23,0.15)",
+  blocked: "rgba(167,39,62,0.15)",
 } as const;
 
 export const radius = {

@@ -911,6 +911,12 @@ pub(super) fn observe_provisioning_spec(
     {
         return Err(CoreError::InvalidParams("baseRef".into()));
     }
+    if branch_mode == ProvisioningBranchMode::Create
+        && prior.is_none()
+        && !base_ref.as_deref().is_some_and(selectable_remote_base_ref)
+    {
+        return Err(CoreError::InvalidParams("baseRef".into()));
+    }
     if !completed_retry
         && task.branch.is_some()
         && branch_mode == ProvisioningBranchMode::Create
@@ -1015,6 +1021,15 @@ pub(super) fn observe_provisioning_spec(
         }
     }
     Ok(ObservedProvisioningSpec { spec })
+}
+
+fn selectable_remote_base_ref(reference: &str) -> bool {
+    reference
+        .strip_prefix("refs/remotes/")
+        .and_then(|name| name.split_once('/'))
+        .is_some_and(|(remote, branch)| {
+            !remote.is_empty() && !branch.is_empty() && branch != "HEAD"
+        })
 }
 
 pub(super) fn provisioning_marker(operation_id: &str) -> Result<GitReflogMessage, CoreError> {

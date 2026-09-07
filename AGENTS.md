@@ -14,9 +14,6 @@ remote clients.
   runs the full repository test suite.
 - Before editing, read the nearest local `AGENTS.md`. For a cross-boundary
   change, read every affected boundary's `AGENTS.md`.
-- Source code, schemas, tests, and applicable agent rules are authoritative. A
-  nested `AGENTS.md` may narrow these repository rules for its boundary but may
-  not weaken them.
 - Work only in paths required by the user request. Preserve unrelated and
   pre-existing changes; never reset or overwrite another agent's work.
 - Do not create `common/`, `shared/`, or `utils/`. Pure shared concepts belong
@@ -45,8 +42,7 @@ remote clients.
 
 - The canonical day-to-day checkout works on the local `develop` branch. Unless
   the user explicitly requests another branch or an isolated Task worktree,
-  perform requested implementation work there and never switch the human-owned
-  checkout to `main` for ordinary development.
+  perform requested implementation work there.
 - Treat a substantial, fully completed user-requested implementation as one
   delivery. After its required verification passes, commit every change that
   belongs to that completed delivery and push the resulting local `develop`

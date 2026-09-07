@@ -7,7 +7,6 @@ import { agentActivityIsOlder, agentActivityPriority, agentGroupActivityPriority
 import { isAssistantSession } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
 import { SessionRowButton, SessionRowClose, sessionRelationshipLabel } from "./SessionRow.js";
-import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
 import { taskChangeLabel } from "../task-presentation.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
@@ -32,12 +31,6 @@ type ActiveAgentGroupSections = {
   resting: readonly AgentSessionCluster[];
   older: readonly AgentSessionCluster[];
   stopped: readonly AgentSessionCluster[];
-};
-
-type ActiveAgentDetailsState = {
-  expandedSessionId: string | undefined;
-  selectAgent(sessionId: string): void;
-  setExpandedSessionId(sessionId: string | undefined): void;
 };
 
 export type ActiveAgentWorktreeChanges = {
@@ -297,7 +290,6 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   useEffect(() => {
     if (!props.searchOpen) setQuery("");
   }, [props.searchOpen]);
-  const [expandedSessionId, setExpandedSessionId] = useState<string | undefined>(undefined);
   const [clockNowEpochMs, setClockNowEpochMs] = useState(Date.now);
   useEffect(() => {
     if (props.nowEpochMs !== undefined) return;
@@ -313,9 +305,6 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   /// terminal stage remain stable; keeping a row under a stale section label
   /// would make the rail contradict the status it renders.
   const sections = naturalSections;
-  useEffect(() => {
-    if (expandedSessionId && expandedSessionId !== props.selectedSession?.id) setExpandedSessionId(undefined);
-  }, [expandedSessionId, props.selectedSession?.id]);
   const allOrdered = useMemo(() => flattenGroupSections(sections), [sections]);
   const visibleSections = useMemo(() => filterActiveAgentGroupSections(sections, query), [sections, query]);
   const filtering = visibleSections !== sections;
@@ -331,13 +320,6 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
     props.setSearchOpen(false);
     setQuery("");
   };
-  const selectAgent = (sessionId: string) => {
-    setExpandedSessionId((current) => sessionId === props.selectedSession?.id
-      ? (current === sessionId ? undefined : sessionId)
-      : undefined);
-    props.selectSession(sessionId);
-  };
-  const details: ActiveAgentDetailsState = { expandedSessionId, selectAgent, setExpandedSessionId };
   const navigateAgents = (event: ReactKeyboardEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest(".active-agent-search")) return;
     if (!(event.key === "ArrowDown" || event.key === "ArrowUp") || ordered.length === 0) return;
@@ -390,44 +372,42 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
         </div>
       ) : <>
         {visibleSections.actionNeeded.length > 0 ? (
-          <ActiveAgentSection label="Action needed" sessions={visibleSections.actionNeeded} props={props} sessionsById={sessionsById} details={details} />
+          <ActiveAgentSection label="Action needed" sessions={visibleSections.actionNeeded} props={props} sessionsById={sessionsById} />
         ) : null}
         {visibleSections.interrupted.length > 0 ? (
-          <ActiveAgentSection label="Interrupted" sessions={visibleSections.interrupted} props={props} sessionsById={sessionsById} details={details} />
+          <ActiveAgentSection label="Interrupted" sessions={visibleSections.interrupted} props={props} sessionsById={sessionsById} />
         ) : null}
         {visibleSections.inProgress.length > 0 ? (
-          <ActiveAgentSection label="In progress" sessions={visibleSections.inProgress} props={props} sessionsById={sessionsById} details={details} />
+          <ActiveAgentSection label="In progress" sessions={visibleSections.inProgress} props={props} sessionsById={sessionsById} />
         ) : null}
         <ActiveAgentSection
           label="Idle / paused"
           sessions={visibleSections.resting}
           props={props}
           sessionsById={sessionsById}
-          details={details}
           empty={ordered.length === 0}
           emptyLabel={filtering ? "No matching agents" : "None running"}
         />
         {visibleSections.older.length > 0 ? (
-          <ActiveAgentSection label="10m+ ago" sessions={visibleSections.older} props={props} sessionsById={sessionsById} details={details} />
+          <ActiveAgentSection label="10m+ ago" sessions={visibleSections.older} props={props} sessionsById={sessionsById} />
         ) : null}
         {/* Last, because nothing here is running — but present, so a failed
             resume, an exited process, and a stale terminal are reachable from
             the rail that claims to hold every Agent in the Project. Each row
             prints its own lifecycle word and keeps its retry and dismiss. */}
         {visibleSections.stopped.length > 0 ? (
-          <ActiveAgentSection label="Stopped" sessions={visibleSections.stopped} props={props} sessionsById={sessionsById} details={details} />
+          <ActiveAgentSection label="Stopped" sessions={visibleSections.stopped} props={props} sessionsById={sessionsById} />
         ) : null}
       </>}
     </nav>
   );
 }
 
-function ActiveAgentSection({ label, sessions, props, sessionsById, details, empty = false, emptyLabel = "None running" }: {
+function ActiveAgentSection({ label, sessions, props, sessionsById, empty = false, emptyLabel = "None running" }: {
   label: string;
   sessions: readonly AgentSessionCluster[];
   props: ActiveAgentRailProps;
   sessionsById: ReadonlyMap<string, Session>;
-  details: ActiveAgentDetailsState;
   empty?: boolean;
   emptyLabel?: string;
 }) {
@@ -447,9 +427,9 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, details, emp
             >
               {cluster.groups.map(({ source, helpers }) => (
                 <Fragment key={source.id}>
-                  <ActiveAgentRow session={source} props={props} sessionsById={sessionsById} details={details} />
+                  <ActiveAgentRow session={source} props={props} sessionsById={sessionsById} />
                   {helpers.map((helper) => (
-                    <ActiveAgentRow key={helper.id} session={helper} source={source} props={props} sessionsById={sessionsById} details={details} />
+                    <ActiveAgentRow key={helper.id} session={helper} source={source} props={props} sessionsById={sessionsById} />
                   ))}
                 </Fragment>
               ))}
@@ -461,12 +441,11 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, details, emp
   );
 }
 
-function ActiveAgentRow({ session, source, props, sessionsById, details }: {
+function ActiveAgentRow({ session, source, props, sessionsById }: {
   session: Session;
   source?: Session | undefined;
   props: ActiveAgentRailProps;
   sessionsById: ReadonlyMap<string, Session>;
-  details: ActiveAgentDetailsState;
 }) {
   const draggable = useDraggable({
     id: `active-agent:${session.id}`,
@@ -494,9 +473,6 @@ function ActiveAgentRow({ session, source, props, sessionsById, details }: {
   const favorite = props.favoriteSessionIds.has(session.id);
   const agentStatus = props.statusesById.get(session.id);
   const reviewReady = props.reviewReadySessionIds.has(session.id);
-  const detailsExpanded = details.expandedSessionId === session.id;
-  const taskAttached = props.taskAttachedSessionIds.has(session.id)
-    || Boolean(projectedSource && props.taskAttachedSessionIds.has(projectedSource.id));
   const worktreeChanges = props.worktreeChangesBySessionId.get(session.id)
     ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined);
   const row = (
@@ -513,10 +489,9 @@ function ActiveAgentRow({ session, source, props, sessionsById, details }: {
         active={session.id === props.selectedSession?.id}
         visible={props.visibleSessionIds.has(session.id)}
         menuOpen={session.id === props.menuSessionId}
-        detailsExpanded={detailsExpanded}
         dragAttributes={draggable.attributes}
         dragListeners={draggable.listeners}
-        select={() => details.selectAgent(session.id)}
+        select={() => props.selectSession(session.id)}
         openMenu={(x, y, invoker) => props.openSessionMenu(session.id, x, y, invoker)}
         />
         <SessionRowClose
@@ -541,14 +516,6 @@ function ActiveAgentRow({ session, source, props, sessionsById, details }: {
         onClick={(event) => { event.stopPropagation(); props.openTaskChanges(worktreeChanges.taskId); }}
         >{taskChangeLabel(worktreeChanges.changeCount)}</button> : null}
       </div>
-      {agentStatus?.status !== "idle" || reviewReady || detailsExpanded ? <AgentPlanDisclosure
-        session={session}
-        status={agentStatus}
-        selected={session.id === props.selectedSession?.id}
-        expanded={detailsExpanded}
-        setExpanded={(expanded) => details.setExpandedSessionId(expanded ? session.id : undefined)}
-        showWorkspace={taskAttached}
-      /> : null}
     </div>
   );
   if (!source) return row;

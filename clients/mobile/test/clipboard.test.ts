@@ -19,6 +19,12 @@ describe("clipboard bridge", () => {
     );
   });
 
+  it("keeps older native builds running until image paste is requested", async () => {
+    await expect(clipboardBridge.pasteImage()).rejects.toThrow(
+      "Pasting images requires the latest TermLoop app build",
+    );
+  });
+
   it("copies through a native module when the binary provides one", async () => {
     const setStringAsync = vi.fn(async () => true);
     const bridge = createClipboardBridge({ setStringAsync });
@@ -26,5 +32,41 @@ describe("clipboard bridge", () => {
     await bridge.copyText("session-id");
 
     expect(setStringAsync).toHaveBeenCalledWith("session-id");
+  });
+
+  it("reads a copied image only when paste is explicitly requested", async () => {
+    const getImageAsync = vi.fn(async () => ({
+      data: "data:image/jpeg;base64,aW1hZ2U=",
+      size: { width: 1200, height: 800 },
+    }));
+    const bridge = createClipboardBridge({
+      setStringAsync: vi.fn(async () => true),
+      getImageAsync,
+    });
+
+    await expect(bridge.pasteImage()).resolves.toEqual({
+      uri: "data:image/jpeg;base64,aW1hZ2U=",
+      mediaType: "image/jpeg",
+      width: 1200,
+      height: 800,
+    });
+    expect(getImageAsync).toHaveBeenCalledWith({ format: "jpeg", jpegQuality: 0.88 });
+  });
+
+  it("reports an empty or unreadable copied image", async () => {
+    const empty = createClipboardBridge({
+      setStringAsync: vi.fn(async () => true),
+      getImageAsync: vi.fn(async () => null),
+    });
+    const invalid = createClipboardBridge({
+      setStringAsync: vi.fn(async () => true),
+      getImageAsync: vi.fn(async () => ({
+        data: "not-an-image",
+        size: { width: 10, height: 10 },
+      })),
+    });
+
+    await expect(empty.pasteImage()).resolves.toBeNull();
+    await expect(invalid.pasteImage()).rejects.toThrow("copied image could not be read");
   });
 });

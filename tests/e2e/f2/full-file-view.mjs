@@ -73,6 +73,7 @@ try {
   await writeFile(path.join(projectDirectory, "sample.ts"), `${headLines.join("\n")}\n`);
   git(projectDirectory, "add", "--", "sample.ts");
   git(projectDirectory, "commit", "-m", "baseline");
+  git(projectDirectory, "update-ref", "refs/remotes/origin/main", "HEAD");
 
   server = await startServer();
   const record = await readRecord(server.pid);
@@ -81,6 +82,13 @@ try {
     projectId: project.id,
     title: "Change viewer acceptance",
     worktreeIntent: "none",
+    worktreePrefix: null,
+    baseRef: null,
+    agentId: null,
+    model: null,
+    permission: null,
+    reasoning: null,
+    kickoffMessage: null,
   });
   await controlCall(record, "task.provisionWorktree", {
     operationId: crypto.randomUUID(),
@@ -89,7 +97,7 @@ try {
     destinationPath: worktreeDirectory,
     branchName: "feature/full-file-view",
     branchMode: "create",
-    baseRef: "refs/heads/main",
+    baseRef: "refs/remotes/origin/main",
   });
 
   // Commit the binary and oversized baselines first. Anything staged before a

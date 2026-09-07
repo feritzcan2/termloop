@@ -215,9 +215,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: space.md,
     padding: space.lg,
-    backgroundColor: "rgba(30,35,37,.88)",
+    backgroundColor: color.mediaScrim,
   },
-  scanOverlayText: { ...text.body, color: color.text, textAlign: "center" },
+  scanOverlayText: { ...text.body, color: color.onMedia, textAlign: "center" },
   consent: { padding: space.md },
   consentText: { ...text.body, lineHeight: 20 },
 });

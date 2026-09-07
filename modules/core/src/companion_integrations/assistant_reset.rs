@@ -95,7 +95,6 @@ impl CoreRuntime {
             result: json!({
                 "projectId": project_id,
                 "deleted": true,
-                "deletedWorkers": reset.deleted_workers,
                 "deletedRoutines": reset.deleted_routines,
                 "deletedSessions": session_ids.len(),
                 "deletedMessages": reset.deleted_messages,
@@ -156,24 +155,6 @@ mod tests {
             })
             .unwrap();
         runtime
-            .create_worker_configuration(
-                "worker-1".into(),
-                &project_id,
-                "Worker 1".into(),
-                "codex",
-                false,
-                "default".into(),
-                "bypassPermissions".into(),
-                "default".into(),
-                60,
-                String::new(),
-                String::new(),
-                runtime.state_revision(),
-                AssistantAvailability::Unavailable,
-                1,
-            )
-            .unwrap();
-        runtime
             .store
             .insert_session(
                 &runtime.write_authority,
@@ -214,12 +195,9 @@ mod tests {
             runtime.reset_project_assistant(&project_id, 0, 2),
             Err(CoreError::RevisionConflict)
         ));
-        assert_eq!(runtime.store.worker_configurations().len(), 1);
-
         let commit = runtime
             .reset_project_assistant(&project_id, runtime.state_revision(), 2)
             .unwrap();
-        assert_eq!(commit.result["deletedWorkers"], 1);
         assert_eq!(commit.result["deletedSessions"], 1);
         assert_eq!(commit.session_ids, vec!["builder-session".to_owned()]);
         assert!(matches!(
@@ -232,7 +210,6 @@ mod tests {
             .handle("steward.configurationGet", json!({"projectId":project_id}))
             .unwrap();
         assert!(steward["configuration"].is_null());
-        assert!(runtime.store.worker_configurations().is_empty());
         assert!(runtime.store.sessions().is_empty());
         let _ = std::fs::remove_file(&state_path);
         let _ = std::fs::remove_dir_all(state_path.with_extension("project"));

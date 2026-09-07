@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn schema_48_adds_no_inferred_project_task_automation_base_ref() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-migration-automation-base-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 48,
+            "revision": 2,
+            "projects": [{"id":"project-1","name":"Demo","folder_path":"/tmp/demo"}],
+            "project_task_automation_configurations": [{
+                "projectId": "project-1",
+                "createWorktree": true,
+                "worktreePrefix": "termloop",
+                "agentId": null,
+                "model": null,
+                "permission": null,
+                "reasoning": null,
+                "kickoffMessage": null
+            }],
+            "sessions": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store.project_task_automation_configurations()[0].base_ref,
+        None
+    );
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        persisted["project_task_automation_configurations"][0]["baseRef"],
+        serde_json::Value::Null
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn schema_47_adds_no_inferred_task_branch_membership() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-migration-task-branches-{}-{}.json",
@@ -262,10 +306,6 @@ fn schema_34_assigns_the_new_assistant_permission_defaults() {
         store.steward_configurations()[0].permission,
         "bypassPermissions"
     );
-    assert_eq!(
-        store.worker_configurations()[0].permission,
-        "bypassPermissions"
-    );
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
@@ -273,10 +313,7 @@ fn schema_34_assigns_the_new_assistant_permission_defaults() {
         persisted["steward_configurations"][0]["permission"],
         "bypassPermissions"
     );
-    assert_eq!(
-        persisted["worker_configurations"][0]["permission"],
-        "bypassPermissions"
-    );
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -863,7 +900,7 @@ fn v15_migration_preserves_current_state_and_defaults_agent_launch_selection() {
     assert!(store.companion_messages()[0].refs.is_none());
     assert_eq!(store.steward_configurations()[0].generation, 2);
     assert_eq!(store.steward_configurations()[0].system_prompt, "");
-    assert_eq!(store.worker_configurations()[0].generation, 3);
+    assert!(store.state.worker_configurations.is_empty());
     let worker_task = &store.tracker_configurations()[0];
     assert_eq!(worker_task.prompt, "Inspect #product and report.");
     assert_eq!(worker_task.last_attempt_at_epoch_ms, Some(104));
@@ -1115,7 +1152,7 @@ fn v4_migration_preserves_main_project_task_and_session_state() {
     );
     assert!(store.companion_messages().is_empty());
     assert!(store.steward_configurations().is_empty());
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.tracker_configurations().is_empty());
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -1126,7 +1163,7 @@ fn v4_migration_preserves_main_project_task_and_session_state() {
     assert_eq!(persisted["sessions"][0]["id"], "session-main");
     assert_eq!(persisted["companion_messages"], serde_json::json!([]));
     assert_eq!(persisted["steward_configurations"], serde_json::json!([]));
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     assert_eq!(persisted["tracker_configurations"], serde_json::json!([]));
     let _ = std::fs::remove_file(path);
 }
@@ -1201,7 +1238,7 @@ fn v6_migrates_to_an_empty_tracker_configuration_collection() {
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert_eq!(persisted["tracker_configurations"], serde_json::json!([]));
     assert!(persisted.get("tracker_conversation_refs").is_none());
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -1231,7 +1268,7 @@ fn v7_migration_drops_the_retired_tracker_conversation_collection() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert!(persisted.get("tracker_conversation_refs").is_none());
-    assert_eq!(persisted["worker_configurations"], serde_json::json!([]));
+    assert!(persisted.get("worker_configurations").is_none());
     let _ = std::fs::remove_file(path);
 }
 
@@ -1292,7 +1329,7 @@ fn v10_reset_removes_only_retired_tracker_assistant_state() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.projects().len(), 1);
     assert!(store.tracker_configurations().is_empty());
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.sessions().is_empty());
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -1334,7 +1371,7 @@ fn v11_reset_removes_promptless_workers_and_keeps_ordinary_sessions() {
         ]
     })).unwrap()).unwrap();
     let store = Store::open(&path).unwrap();
-    assert!(store.worker_configurations().is_empty());
+    assert!(store.state.worker_configurations.is_empty());
     assert!(store.tracker_configurations().is_empty());
     assert_eq!(store.sessions().len(), 1);
     assert_eq!(store.sessions()[0].id, "ordinary-session");
@@ -1413,6 +1450,7 @@ fn v42_migration_lifts_unanimous_source_task_automation_to_the_project() {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1511,6 +1549,7 @@ fn v44_migration_adds_safe_task_agent_launch_defaults() {
             project_id: "project-1".into(),
             create_worktree: true,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1661,6 +1700,7 @@ fn v42_migration_preserves_legacy_default_automation_fields() {
             project_id: "project-1".into(),
             create_worktree: false,
             worktree_prefix: "termloop".into(),
+            base_ref: None,
             agent_id: None,
             model: None,
             permission: None,
@@ -1697,6 +1737,82 @@ fn v42_migration_does_not_broaden_conflicting_source_automation() {
     let store = Store::open(&path).unwrap();
     assert!(store.project_task_automation_configurations().is_empty());
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn legacy_migrations_remove_routine_kind_and_preserve_playbook_conditions() {
+    let legacy_prompt = "x".repeat(8 * 1024);
+    let legacy_condition = "y".repeat(termloop_domain::PLAYBOOK_EVIDENCE_MAX_BYTES);
+    let expected_prompt = format!("{legacy_prompt}\n\nApplies when: {legacy_condition}");
+    for schema_version in [41, 49] {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-store-routine-kind-v{schema_version}-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+            "schema_version": schema_version,
+            "revision": 7,
+            "projects": [{"id":"project-1","name":"Project","folder_path":"/tmp/project"}],
+            "sessions": [],
+            "mcp_tool_description_overrides": [
+                {"tool":"ask_to","description":"Keep this override."},
+                {"tool":"worker_report_step_verdicts","description":"Remove this override."}
+            ],
+            "worker_configurations": [{
+                "id":"worker-1", "projectId":"project-1", "name":"Worker 1",
+                "agentId":"codex", "model":"gpt-5.6-luna", "permission":"bypassPermissions",
+                "reasoning":"medium", "enabled":false, "pingIntervalSeconds":60,
+                "workerPrompt":"", "systemPrompt":"", "executorSessionId":null,
+                "generation":1, "updatedAtEpochMs":1
+            }],
+            "tracker_configurations": [{
+                "id":"routine-1", "projectId":"project-1", "workerId":"worker-1",
+                "kind":"ciPr", "triggerMode":"onDemand", "name":"Check review",
+                "prompt":legacy_prompt, "stewardInstructions":"",
+                "enabled":false, "scheduleIntervalSeconds":300, "generation":1,
+                "contextMarkdown":"", "contextRevision":1, "recentSourceKeys":[],
+                "relatedTaskIds":[], "actionHandling":"off", "pendingRoutineFindings":[],
+                "lastCheckStartedAtEpochMs":null, "lastAttemptAtEpochMs":null,
+                "lastSuccessfulReportAtEpochMs":null, "updatedAtEpochMs":1
+            }],
+            "playbook_configurations": [{
+                "projectId":"project-1", "revision":1,
+                "activePipelineName":"Delivery", "milestones":[{
+                    "id":"review", "title":"Review approved", "gate":"automatic",
+                    "routineId":"routine-1", "retryDelaySeconds":300,
+                    "condition":legacy_condition, "approver":null
+                }],
+                "savedPipelines":[], "updatedAtEpochMs":1
+            }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.tracker_configurations()[0].name, "Check review");
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+        assert!(persisted["tracker_configurations"][0].get("kind").is_none());
+        assert_eq!(
+            persisted["mcp_tool_description_overrides"],
+            serde_json::json!([{"tool":"ask_to","description":"Keep this override."}])
+        );
+        assert_eq!(
+            persisted["tracker_configurations"][0]["prompt"],
+            expected_prompt
+        );
+        assert!(
+            persisted["playbook_configurations"][0]["milestones"][0]
+                .get("condition")
+                .is_none()
+        );
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 fn legacy_task_source(
