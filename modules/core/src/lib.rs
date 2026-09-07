@@ -11,6 +11,7 @@ mod run_configuration;
 mod settings_improvement;
 mod skills;
 mod task_source;
+mod workflow;
 pub use run_configuration::RunConfigurationImproverBindings;
 mod runtime;
 pub mod session_launch;
@@ -157,7 +158,7 @@ pub struct CoreRuntime {
     pub(crate) mcp_tool_catalog: Vec<McpToolCatalogEntry>,
     pub(crate) mcp_tool_descriptions: McpToolDescriptions,
     pub(crate) ask_to_requests: HashMap<String, session_launch::ask_to::AskToRequest>,
-    pub(crate) ask_to_by_source: HashMap<String, String>,
+    pub(crate) ask_to_by_source: HashMap<String, Vec<String>>,
     pub(crate) ask_to_conversations: HashMap<String, session_launch::ask_to::AskToConversation>,
     pub(crate) ask_to_delivery_completions:
         HashMap<String, session_launch::ask_to::AskToGeneratedInputCompletion>,
@@ -1568,16 +1569,18 @@ impl CoreRuntime {
             Some(GeneratedInputDeliveryState::Confirmed) => {
                 let completion_changed =
                     self.complete_ask_to_generated_input(session_id, runtime_epoch)?;
+                let workflow_prompt_changed =
+                    self.complete_workflow_coordinator_prompt_delivery(session_id, runtime_epoch)?;
                 let assistant_wake_changed =
                     self.complete_assistant_wake_generated_input(session_id, runtime_epoch);
-                if (changed || completion_changed)
+                if (changed || completion_changed || workflow_prompt_changed)
                     && let Some(capability) = self.agent_observations.get_mut(session_id)
                     && capability.runtime_epoch == runtime_epoch
                 {
                     capability.pending_generated_input = None;
                     capability.defer_generated_input_until_hook_response = false;
                 }
-                if changed || completion_changed {
+                if changed || completion_changed || workflow_prompt_changed {
                     let promoted =
                         self.promote_queued_generated_terminal_input(session_id, runtime_epoch);
                     if promoted {
@@ -1586,6 +1589,7 @@ impl CoreRuntime {
                     changed |= promoted;
                 }
                 changed |= completion_changed;
+                changed |= workflow_prompt_changed;
                 changed |= assistant_wake_changed;
             }
             Some(GeneratedInputDeliveryState::ConfirmedUnattributed) if changed => {

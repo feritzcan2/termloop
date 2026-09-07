@@ -13,6 +13,7 @@ mod relocation;
 mod resume;
 mod resume_role;
 pub(crate) mod session_history;
+mod workflow_execution;
 
 pub use ask_to::{
     AskToInput, AskToLaunchCompletion, AskToPlanOutcome, McpAuthorizer, McpPrincipal,
@@ -35,6 +36,7 @@ pub use session_history::{
     ObservedSessionHistoryResume, ObservedSessionHistoryScan, SessionHistoryListPlanOutcome,
     SessionHistoryResumePlan, SessionHistoryScanPlan,
 };
+pub use workflow_execution::{WorkflowDelegateCommit, WorkflowDelegatePlan};
 
 use crate::{
     AgentObservationTransport, AgentRuntimeSignal, CoreError, CoreRuntime,
@@ -161,6 +163,7 @@ pub struct AgentLaunchPlan {
     ask_to_continuation: Option<termloop_domain::AskToContinuation>,
     steward_task_assignment: Option<StewardTaskAssignmentLaunch>,
     task_kickoff: Option<TaskKickoffLaunch>,
+    workflow_launch: Option<WorkflowLaunch>,
 }
 
 pub(crate) struct QuickActionPreviewTicket {
@@ -232,6 +235,17 @@ struct TaskKickoffLaunch {
     brief: Option<String>,
     jira_url: Option<String>,
     kickoff_message: String,
+}
+
+#[derive(Clone)]
+struct WorkflowLaunch {
+    execution_id: String,
+    task_id: String,
+    title: String,
+    brief: Option<String>,
+    jira_url: Option<String>,
+    goal: String,
+    configuration: termloop_domain::WorkflowConfiguration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -689,6 +703,7 @@ impl CoreRuntime {
             ask_to_continuation: None,
             steward_task_assignment: None,
             task_kickoff: None,
+            workflow_launch: None,
         })
     }
 
@@ -1268,8 +1283,31 @@ impl CoreRuntime {
                 })
             || params.get("historyHandle").and_then(Value::as_str)
                 != preview.plan.history_source_handle.as_deref()
+            || params.get("workflowId").and_then(Value::as_str)
+                != preview
+                    .plan
+                    .workflow_launch
+                    .as_ref()
+                    .map(|launch| launch.configuration.id.as_str())
+            || params.get("goal").and_then(Value::as_str)
+                != preview
+                    .plan
+                    .workflow_launch
+                    .as_ref()
+                    .map(|launch| launch.goal.as_str())
         {
             return Err(CoreError::InvalidParams("launchTicket".into()));
+        }
+        if let Some(workflow) = preview.plan.workflow_launch.as_ref() {
+            let current = self
+                .store
+                .workflow_configurations()
+                .iter()
+                .find(|configuration| configuration.id == workflow.configuration.id)
+                .ok_or(CoreError::NotFound)?;
+            if current != &workflow.configuration {
+                return Err(CoreError::RevisionConflict);
+            }
         }
         if let Some(assignment) = preview.plan.steward_task_assignment.as_ref() {
             let current = self.current_task_agent_sessions_for_steward_start(
@@ -1500,6 +1538,42 @@ impl CoreRuntime {
         })
     }
 
+    pub fn plan_task_workflow_launch(
+        &self,
+        params: Value,
+    ) -> Result<TaskWorktreeLaunchPlan, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        let workflow_id = required_string(&params, "workflowId")?;
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        let configuration = self.workflow_configuration(&workflow_id)?;
+        if configuration.project_id != task.project_id {
+            return Err(CoreError::NotFound);
+        }
+        if self.store.workflow_executions().iter().any(|execution| {
+            execution.task_id == task.id
+                && execution.phase != termloop_domain::WorkflowExecutionPhase::Completed
+        }) {
+            return Err(CoreError::WorkflowExecutionActive {
+                task_id: task.id.clone(),
+            });
+        }
+        self.plan_task_worktree_launch(
+            json!({
+                "taskId": task_id,
+                "agentId": configuration.coordinator_agent_id,
+                "model": configuration.launch_selection.model,
+                "permission": configuration.launch_selection.permission,
+                "reasoning": configuration.launch_selection.reasoning,
+            }),
+            true,
+        )
+    }
+
     pub fn complete_task_terminal_launch(
         &mut self,
         observed: ObservedTaskWorktreeLaunch,
@@ -1621,6 +1695,62 @@ impl CoreRuntime {
             brief: task.brief.clone(),
             jira_url: jira_url.map(str::to_owned),
             kickoff_message: kickoff_message.to_owned(),
+        });
+        Ok(plan)
+    }
+
+    pub fn attach_task_workflow(
+        &self,
+        mut plan: AgentLaunchPlan,
+        task_id: &str,
+        workflow_id: &str,
+        goal: &str,
+    ) -> Result<AgentLaunchPlan, CoreError> {
+        if plan
+            .task_guard
+            .as_ref()
+            .is_none_or(|guard| guard.task_id != task_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == plan.project_id)
+            .ok_or(CoreError::CapabilityDenied)?;
+        let configuration = self.workflow_configuration(workflow_id)?;
+        if configuration.project_id != task.project_id
+            || configuration.coordinator_agent_id != plan.agent_id
+            || plan.interactive_options.as_ref() != Some(&configuration.launch_selection)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
+        let jira_url = self
+            .store
+            .issue_links()
+            .iter()
+            .find(|link| link.task_id == task_id && link.provider == IssueLinkProvider::Jira)
+            .and_then(|link| link.url.as_deref());
+        let execution_id = termloop_platform::generate_opaque_id();
+        termloop_invocation::task_workflow_prompt(
+            &execution_id,
+            task_id,
+            &task.title,
+            task.brief.as_deref(),
+            jira_url,
+            goal,
+            &configuration,
+        )
+        .map_err(|_| CoreError::InvalidParams("goal".into()))?;
+        plan.workflow_launch = Some(WorkflowLaunch {
+            execution_id,
+            task_id: task_id.to_owned(),
+            title: task.title.clone(),
+            brief: task.brief.clone(),
+            jira_url: jira_url.map(str::to_owned),
+            goal: goal.to_owned(),
+            configuration,
         });
         Ok(plan)
     }
@@ -1931,7 +2061,32 @@ impl CoreRuntime {
             AgentMcpRole::Interactive | AgentMcpRole::Improver { .. }
         ) && plan.helper_prompt.is_none()
             && plan.steward_task_assignment.is_none();
-        let inserted = if let Some(profile) = plan
+        let inserted = if let Some(workflow) = plan.workflow_launch.as_ref() {
+            let now = termloop_platform::current_epoch_ms();
+            self.store.insert_workflow_coordinator_session(
+                &self.write_authority,
+                session.clone(),
+                termloop_domain::WorkflowExecution {
+                    id: workflow.execution_id.clone(),
+                    project_id: plan.project_id.clone(),
+                    task_id: workflow.task_id.clone(),
+                    configuration: workflow.configuration.clone(),
+                    goal: workflow.goal.clone(),
+                    coordinator_session_id: session.id.clone(),
+                    current_step_index: 0,
+                    review_cycle: 1,
+                    phase: termloop_domain::WorkflowExecutionPhase::AwaitingCoordinator,
+                    coordinator_prompt_pending: false,
+                    current_request_id: None,
+                    participants: Vec::new(),
+                    review_requests: Vec::new(),
+                    step_results: Vec::new(),
+                    review_changes_requested: false,
+                    started_at_epoch_ms: now,
+                    updated_at_epoch_ms: now,
+                },
+            )
+        } else if let Some(profile) = plan
             .quick_action
             .as_ref()
             .and_then(|action| action.personal_agent.as_ref())
@@ -2046,6 +2201,14 @@ impl Drop for AgentLaunchPlan {
 }
 
 impl AgentLaunchPlan {
+    pub fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
+    pub fn is_workflow_launch(&self) -> bool {
+        self.workflow_launch.is_some()
+    }
+
     pub fn fork_task_scope(&self) -> Option<(&str, &str)> {
         self.fork_worktree_plan
             .as_ref()
@@ -2062,9 +2225,21 @@ impl AgentLaunchPlan {
 }
 
 fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
-    plan.quick_action
+    plan.workflow_launch
         .as_ref()
-        .and_then(quick_action_launch_session_name)
+        .map(|workflow| {
+            workflow
+                .configuration
+                .name
+                .chars()
+                .take(SESSION_NAME_MAX_CHARS)
+                .collect()
+        })
+        .or_else(|| {
+            plan.quick_action
+                .as_ref()
+                .and_then(quick_action_launch_session_name)
+        })
         .or_else(|| {
             plan.improver_session_name
                 .as_deref()
@@ -2421,6 +2596,28 @@ fn resolve_interactive_agent_launch_with_transport(
                 mcp,
             )
         }
+    } else if let Some(workflow) = &plan.workflow_launch {
+        let selection = plan.interactive_options.clone().unwrap_or_default();
+        if !managed_worktree {
+            return Err(termloop_invocation::InvocationError::InvalidPromptBinding);
+        }
+        termloop_invocation::task_agent_with_workflow_for_managed_worktree_conversation(
+            &plan.agent_id,
+            &plan.cwd,
+            &selection.model,
+            &selection.permission,
+            &selection.reasoning,
+            &workflow.execution_id,
+            &workflow.task_id,
+            &workflow.title,
+            workflow.brief.as_deref(),
+            workflow.jira_url.as_deref(),
+            &workflow.goal,
+            &workflow.configuration,
+            conversation,
+            observation,
+            mcp,
+        )
     } else if let Some(kickoff) = &plan.task_kickoff {
         let selection = plan.interactive_options.clone().unwrap_or_default();
         if managed_worktree {

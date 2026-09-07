@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
-import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
+import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration, type WorkflowExecution } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentAttention, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { integrationTone, taskChangeCount, taskChangeLabel, taskChangedFileLabel, taskDivergence, taskIntegration, taskPrimaryAction, taskRowAccessibleName, taskRowTone, taskStage, type TaskDivergence, type TaskIntegration, type TaskNextStepKind, type TaskSignalTone, type TaskStage } from "../task-presentation.js";
 import { Icon } from "./Icon.js";
@@ -23,6 +23,7 @@ import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.j
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
+import { TaskWorkflowLaunchers } from "./TaskWorkflows.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { TaskDeveloperNotes } from "./TaskDeveloperNotes.js";
 
@@ -217,6 +218,8 @@ export type TaskRailProps = {
   gitHostProjections: readonly GitHostProjection[];
   branchCommitSummaries: readonly BranchCommitSummary[];
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   sessionsById: ReadonlyMap<string, Session>;
@@ -255,10 +258,13 @@ export type TaskRailProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
+  launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  openWorkflowEditor(workflowId?: string): void;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
+  cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
   repairTaskWorktree(params: TaskRepairWorktreeParams): Promise<string | undefined>;
@@ -393,6 +399,8 @@ export function TaskRail(props: TaskRailProps) {
       gitHostProjection={gitHostByTask.get(task.id)}
       branchCommitSummary={branchCommitsByTask.get(task.id)}
       runConfigurations={props.runConfigurations}
+      workflowConfigurations={props.workflowConfigurations}
+      workflowExecutions={props.workflowExecutions}
       runRuntimes={props.runRuntimes}
       runStateRevision={props.runStateRevision}
       openExternal={props.openExternal}
@@ -417,6 +425,9 @@ export function TaskRail(props: TaskRailProps) {
       agentCapabilities={props.agentCapabilities}
       launchTerminal={props.launchTaskTerminal}
       launchAgent={props.launchTaskAgent}
+      launchWorkflow={props.launchTaskWorkflow}
+      openWorkflowEditor={props.openWorkflowEditor}
+      cancelWorkflowExecution={props.cancelWorkflowExecution}
       runImprovement={props.runImprovement}
       setupRunImprovement={props.setupRunImprovement}
       saveRunConfiguration={props.saveRunConfiguration}
@@ -769,6 +780,8 @@ type TaskGroupProps = {
   gitHostProjection: GitHostProjection | undefined;
   branchCommitSummary: BranchCommitSummary | undefined;
   runConfigurations: readonly RunConfiguration[];
+  workflowConfigurations: readonly WorkflowConfiguration[];
+  workflowExecutions: readonly WorkflowExecution[];
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -793,6 +806,9 @@ type TaskGroupProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTerminal(taskId: string): Promise<string | undefined>;
   launchAgent(taskId: string, agentId: string): Promise<string | undefined>;
+  launchWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  openWorkflowEditor(workflowId?: string): void;
+  cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
@@ -850,6 +866,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// is the same gate the launchers need. Deriving it from the stage keeps the
   /// two from drifting and drops a second `taskWorktreeInlineAction` call.
   const launchable = stage.id === "ready";
+  const workflowExecution = props.workflowExecutions.find((execution) => execution.taskId === task.id);
+  const workflowExecutionVisible = workflowExecution !== undefined;
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
     ? props.branchCommitSummary.count
     : null;
@@ -902,9 +920,18 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     if (collapsed) toggleCollapsed();
     props.openDetail(task.id);
   };
+  /// The execution owns these exact Sessions, so its progress card is their
+  /// only rail home. Unrelated Task Sessions keep the ordinary row anatomy.
+  const workflowSessionIds = useMemo(() => new Set(workflowExecution
+    ? [workflowExecution.coordinatorSessionId, ...workflowExecution.participants.map((participant) => participant.sessionId)]
+    : []), [workflowExecution]);
+  const standaloneSessions = useMemo(
+    () => sessions.filter((session) => !workflowSessionIds.has(session.id)),
+    [sessions, workflowSessionIds],
+  );
   const sessionGroups = useMemo(
-    () => taskSessionGroupsByActivity(sessions, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs, props.agentGroups ?? [], props.detachedRelationshipSessionIds ?? new Set()),
-    [sessions, props.agentGroups, props.detachedRelationshipSessionIds, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs],
+    () => taskSessionGroupsByActivity(standaloneSessions, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs, props.agentGroups ?? [], props.detachedRelationshipSessionIds ?? new Set()),
+    [standaloneSessions, props.agentGroups, props.detachedRelationshipSessionIds, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs],
   );
   const agents = useMemo(
     () => props.agentCapabilities.filter((capability) => capability.available),
@@ -958,6 +985,68 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// sits directly below and the cue would say the same thing twice. Structural
   /// next steps have no expanded counterpart and stay on every row.
   const action = props.deleting ? undefined : taskPrimaryAction(stage, collapsed ? attention : undefined);
+  const workflowManageable = props.workflowConfigurations.length > 0;
+  const taskLaunch = launchable || workflowExecutionVisible || workflowManageable ? (
+    <div className="task-launch" role="group" aria-label={launchable
+      ? `Start a new Session in ${task.title}`
+      : workflowExecutionVisible
+        ? `${task.title} workflow progress`
+        : `Manage workflows for ${task.title}`}>
+      {launchable ? <>
+        <span className="task-launch-label" aria-hidden="true">Start</span>
+        <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
+        {agents.map((capability) => (
+        <button
+          key={capability.agent_id}
+          type="button"
+          className={`task-launch-icon agent-${capability.agent_id}`}
+          title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
+          aria-label={`Start ${capability.label} in ${task.title}`}
+          onClick={() => void props.launchAgent(task.id, capability.agent_id)}
+        ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
+        ))}
+      </> : null}
+      <TaskWorkflowLaunchers
+        task={task}
+        configurations={props.workflowConfigurations}
+        executions={props.workflowExecutions}
+        launchable={launchable}
+        showLaunchers={launchable || workflowManageable}
+        overlayContainer={props.overlayContainer}
+        overlayVisibilityChanged={props.overlayVisibilityChanged}
+        edit={(configuration) => props.openWorkflowEditor(configuration?.id)}
+        launch={props.launchWorkflow}
+        cancel={props.cancelWorkflowExecution}
+        openSession={props.selectSession}
+        sessionPresentation={(sessionId) => {
+          const session = props.sessionsById.get(sessionId);
+          if (!session) return undefined;
+          const state = sessionState(session, props.statusesById.get(sessionId), props.reviewReadySessionIds.has(sessionId));
+          return {
+            agentLabel: agentName(session),
+            stateLabel: state.label ?? (state.id === "idle" ? "Idle" : state.id === "live" ? "Running" : "No status"),
+            tone: state.tone,
+          };
+        }}
+      />
+      {launchable ? <TaskRunLaunchers
+        projectId={task.project_id}
+        task={task}
+        configurations={props.runConfigurations}
+        runtimes={props.runRuntimes}
+        sessionsById={props.sessionsById}
+        stateRevision={props.runStateRevision}
+        launchable={launchable}
+        overlayContainer={props.overlayContainer}
+        overlayVisibilityChanged={props.overlayVisibilityChanged}
+        improvement={props.runImprovement}
+        setupImprovement={props.setupRunImprovement}
+        save={props.saveRunConfiguration}
+        remove={props.deleteRunConfiguration}
+        launch={props.launchTaskRun}
+      /> : null}
+    </div>
+  ) : null;
   return (
     <div
       ref={relocationDrop.setNodeRef}
@@ -1179,6 +1268,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             openExternal={props.openExternal}
             compact
           />
+          {workflowExecutionVisible ? taskLaunch : null}
           {sessionGroups.map((cluster) => (
             <Fragment key={cluster.key}>
               <AgentGroupFrame
@@ -1245,38 +1335,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               </AgentGroupFrame>
             </Fragment>
           ))}
-          {launchable ? (
-            <div className="task-launch" role="group" aria-label={`Start a new Session in ${task.title}`}>
-              <span className="task-launch-label" aria-hidden="true">Start</span>
-              <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
-              {agents.map((capability) => (
-                <button
-                  key={capability.agent_id}
-                  type="button"
-                  className={`task-launch-icon agent-${capability.agent_id}`}
-                  title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
-                  aria-label={`Start ${capability.label} in ${task.title}`}
-                  onClick={() => void props.launchAgent(task.id, capability.agent_id)}
-                ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
-              ))}
-              <TaskRunLaunchers
-                projectId={task.project_id}
-                task={task}
-                configurations={props.runConfigurations}
-                runtimes={props.runRuntimes}
-                sessionsById={props.sessionsById}
-                stateRevision={props.runStateRevision}
-                launchable={launchable}
-                overlayContainer={props.overlayContainer}
-                overlayVisibilityChanged={props.overlayVisibilityChanged}
-                improvement={props.runImprovement}
-                setupImprovement={props.setupRunImprovement}
-                save={props.saveRunConfiguration}
-                remove={props.deleteRunConfiguration}
-                launch={props.launchTaskRun}
-              />
-            </div>
-          ) : null}
+          {!workflowExecutionVisible ? taskLaunch : null}
         </div>
       )}
     </div>
@@ -1288,6 +1347,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.gitHostProjection === right.gitHostProjection
   && left.branchCommitSummary === right.branchCommitSummary
   && left.runConfigurations === right.runConfigurations
+  && left.workflowConfigurations === right.workflowConfigurations
+  && left.workflowExecutions === right.workflowExecutions
   && left.runRuntimes === right.runRuntimes
   && left.runStateRevision === right.runStateRevision
   && left.sessionsById === right.sessionsById
