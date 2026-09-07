@@ -91,6 +91,12 @@ fn agent_library_migrates_persists_and_rolls_back_failed_writes() {
         .unwrap();
     drop(store);
     let store = Store::open(&path).unwrap();
+    assert_eq!(store.agent_library().agents, [agent(), builtin.clone()]);
+    drop(store);
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["schema_version"] = json!(53);
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let store = Store::open(&path).unwrap();
     assert_eq!(store.agent_library().agents, [agent(), builtin]);
     drop(store);
     let _ = std::fs::remove_dir_all(root);

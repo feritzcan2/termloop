@@ -3,7 +3,7 @@ import test from "node:test";
 import { METHODS, READ_ONLY_METHODS, COMPANION_METHODS, validateMethodResult } from "../dist/current.js";
 
 test("agent library uses strict full-control commands and bounded personal profiles", () => {
-  for (const method of ["agent.libraryGet", "agent.profileCreate", "agent.profileUpdate", "agent.profileDelete", "agent.profileFavorite"]) {
+  for (const method of ["agent.creatorPreview", "agent.creatorLaunch", "agent.libraryGet", "agent.profileCreate", "agent.profileUpdate", "agent.profileDelete", "agent.profileFavorite"]) {
     assert.ok(METHODS.includes(method));
     assert.ok(!READ_ONLY_METHODS.includes(method));
     assert.ok(!COMPANION_METHODS.includes(method));

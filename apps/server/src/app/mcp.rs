@@ -22,7 +22,10 @@ use tokio::time::{Duration, Instant};
 
 use super::AppState;
 use super::core_lock::{in_operation, record_operation_duration};
-use super::invalidation::{InvalidationRequest, refresh_task_presence_for_cwd};
+use super::invalidation::{
+    CommitImpact, InvalidationRequest, queue_durable_commit_invalidation,
+    refresh_task_presence_for_cwd,
+};
 
 // 32,768 Unicode scalar bindings can expand to six-byte JSON escapes plus
 // framing. Keep the HTTP cap explicit without silently narrowing the schema.
@@ -180,6 +183,7 @@ async fn tool_call(
 
 fn mcp_role_name(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {
     match role {
+        role if role.is_agent_creator() => "agentCreator",
         termloop_core::session_launch::AgentMcpRole::Interactive => "interactive",
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => "improver",
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => "helper",
@@ -195,6 +199,9 @@ async fn tool_call_inner(
     principal: &termloop_core::McpPrincipal,
     state: &AppState,
 ) -> Response {
+    if principal.role().is_agent_creator() && !protocol::MCP_AGENT_CREATOR_TOOLS.contains(&name) {
+        return core_tool_error(id, &termloop_core::CoreError::CapabilityDenied);
+    }
     if !protocol::validate_mcp_tool_params(name, &arguments) {
         return tool_error(id, "invalidArguments", "invalid arguments", None);
     }
@@ -214,6 +221,26 @@ async fn tool_call_inner(
             None
         };
     let result = match (principal.role(), name) {
+        (role, "agent_library_read") if role.is_agent_creator() => text_result(
+            state
+                .core
+                .lock()
+                .await
+                .read_agent_creator_library(principal),
+        ),
+        (role, "agent_profile_create") if role.is_agent_creator() => {
+            let result = state
+                .core
+                .lock()
+                .await
+                .create_agent_from_creator(principal, arguments);
+            if result.is_ok() {
+                let revision = state.core.lock().await.state_revision();
+                queue_durable_commit_invalidation(state, CommitImpact::AgentLibrary, revision)
+                    .await;
+            }
+            text_result(result)
+        }
         (
             termloop_core::session_launch::AgentMcpRole::Improver { target },
             "configuration_version_read",
@@ -639,6 +666,7 @@ async fn execute_ask_to_launch(
 
 fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {
     match role {
+        role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
             "Interactive Session profile. Use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
         }
@@ -1483,6 +1511,7 @@ fn tools_for_role_with(
     description: impl Fn(&str) -> Option<String>,
 ) -> Vec<Value> {
     let allowed = match role {
+        role if role.is_agent_creator() => protocol::MCP_AGENT_CREATOR_TOOLS,
         termloop_core::session_launch::AgentMcpRole::Interactive => protocol::MCP_INTERACTIVE_TOOLS,
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             protocol::MCP_IMPROVER_TOOLS
@@ -1761,6 +1790,25 @@ mod tests {
             },
             &descriptions,
         );
+        let creator_role = termloop_core::session_launch::AgentMcpRole::Improver {
+            target: termloop_core::ImproverSessionTarget {
+                target_kind: termloop_core::ImproverSessionTargetKind::AgentCreator,
+                target_id: None,
+            },
+        };
+        assert_eq!(mcp_role_name(&creator_role), "agentCreator");
+        assert_eq!(
+            tool_names(&tools_for_role(&creator_role, &descriptions)),
+            [
+                "ask_to",
+                "send_to_agent",
+                "agent_library_read",
+                "agent_profile_create"
+            ]
+        );
+        assert!(!tool_names(&improver).contains(&"agent_profile_create"));
+        assert!(!tool_names(&asker).contains(&"agent_profile_create"));
+        assert!(!tool_names(&steward).contains(&"agent_profile_create"));
         assert_eq!(tool_names(&asker), ["ask_to", "send_to_agent"]);
         assert_eq!(
             tool_names(&helper),

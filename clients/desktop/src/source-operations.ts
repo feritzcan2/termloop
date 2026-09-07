@@ -88,6 +88,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   sessionRestoreDeleted: "termloop:session-restore-deleted",
   agentStatusList: "termloop:agent-status-list",
   agentCapabilityList: "termloop:agent-capability-list",
+  agentCreatorPreview: "termloop:agent-creator-preview",
+  agentCreatorLaunch: "termloop:agent-creator-launch",
   agentLibraryGet: "termloop:agent-library-get",
   agentProfileCreate: "termloop:agent-profile-create",
   agentProfileUpdate: "termloop:agent-profile-update",
