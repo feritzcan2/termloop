@@ -872,7 +872,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// is the same gate the launchers need. Deriving it from the stage keeps the
   /// two from drifting and drops a second `taskWorktreeInlineAction` call.
   const launchable = stage.id === "ready";
-  const workflowExecutionVisible = props.workflowExecutions.some((execution) => execution.taskId === task.id);
+  const workflowExecution = props.workflowExecutions.find((execution) => execution.taskId === task.id);
+  const workflowExecutionVisible = workflowExecution !== undefined;
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
     ? props.branchCommitSummary.count
     : null;
@@ -925,9 +926,18 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     if (collapsed) toggleCollapsed();
     props.openDetail(task.id);
   };
+  /// The execution owns these exact Sessions, so its progress card is their
+  /// only rail home. Unrelated Task Sessions keep the ordinary row anatomy.
+  const workflowSessionIds = useMemo(() => new Set(workflowExecution
+    ? [workflowExecution.coordinatorSessionId, ...workflowExecution.participants.map((participant) => participant.sessionId)]
+    : []), [workflowExecution]);
+  const standaloneSessions = useMemo(
+    () => sessions.filter((session) => !workflowSessionIds.has(session.id)),
+    [sessions, workflowSessionIds],
+  );
   const sessionGroups = useMemo(
-    () => taskSessionGroupsByActivity(sessions, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs, props.agentGroups ?? [], props.detachedRelationshipSessionIds ?? new Set()),
-    [sessions, props.agentGroups, props.detachedRelationshipSessionIds, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs],
+    () => taskSessionGroupsByActivity(standaloneSessions, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs, props.agentGroups ?? [], props.detachedRelationshipSessionIds ?? new Set()),
+    [standaloneSessions, props.agentGroups, props.detachedRelationshipSessionIds, props.statusesById, props.reviewReadySessionIds, props.nowEpochMs],
   );
   const agents = useMemo(
     () => props.agentCapabilities.filter((capability) => capability.available),
@@ -981,6 +991,67 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// sits directly below and the cue would say the same thing twice. Structural
   /// next steps have no expanded counterpart and stay on every row.
   const action = props.deleting ? undefined : taskPrimaryAction(stage, collapsed ? attention : undefined);
+  const taskLaunch = launchable || workflowExecutionVisible ? (
+    <div className="task-launch" role="group" aria-label={launchable ? `Start a new Session in ${task.title}` : `${task.title} workflow progress`}>
+      {launchable ? <>
+        <span className="task-launch-label" aria-hidden="true">Start</span>
+        <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
+        {agents.map((capability) => (
+        <button
+          key={capability.agent_id}
+          type="button"
+          className={`task-launch-icon agent-${capability.agent_id}`}
+          title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
+          aria-label={`Start ${capability.label} in ${task.title}`}
+          onClick={() => void props.launchAgent(task.id, capability.agent_id)}
+        ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
+        ))}
+      </> : null}
+      <TaskWorkflowLaunchers
+        projectId={task.project_id}
+        task={task}
+        configurations={props.workflowConfigurations}
+        executions={props.workflowExecutions}
+        stateRevision={props.workflowStateRevision}
+        agentCapabilities={props.agentCapabilities}
+        launchable={launchable}
+        showLaunchers={launchable}
+        overlayContainer={props.overlayContainer}
+        overlayVisibilityChanged={props.overlayVisibilityChanged}
+        save={props.saveWorkflowConfiguration}
+        remove={props.deleteWorkflowConfiguration}
+        launch={props.launchWorkflow}
+        cancel={props.cancelWorkflowExecution}
+        openSession={props.selectSession}
+        sessionPresentation={(sessionId) => {
+          const session = props.sessionsById.get(sessionId);
+          if (!session) return undefined;
+          const state = sessionState(session, props.statusesById.get(sessionId), props.reviewReadySessionIds.has(sessionId));
+          return {
+            agentLabel: agentName(session),
+            stateLabel: state.label ?? (state.id === "idle" ? "Idle" : state.id === "live" ? "Running" : "No status"),
+            tone: state.tone,
+          };
+        }}
+      />
+      {launchable ? <TaskRunLaunchers
+        projectId={task.project_id}
+        task={task}
+        configurations={props.runConfigurations}
+        runtimes={props.runRuntimes}
+        sessionsById={props.sessionsById}
+        stateRevision={props.runStateRevision}
+        launchable={launchable}
+        overlayContainer={props.overlayContainer}
+        overlayVisibilityChanged={props.overlayVisibilityChanged}
+        improvement={props.runImprovement}
+        setupImprovement={props.setupRunImprovement}
+        save={props.saveRunConfiguration}
+        remove={props.deleteRunConfiguration}
+        launch={props.launchTaskRun}
+      /> : null}
+    </div>
+  ) : null;
   return (
     <div
       ref={relocationDrop.setNodeRef}
@@ -1202,6 +1273,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             openExternal={props.openExternal}
             compact
           />
+          {workflowExecutionVisible ? taskLaunch : null}
           {sessionGroups.map((cluster) => (
             <Fragment key={cluster.key}>
               <AgentGroupFrame
@@ -1268,57 +1340,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               </AgentGroupFrame>
             </Fragment>
           ))}
-          {launchable || workflowExecutionVisible ? (
-            <div className="task-launch" role="group" aria-label={launchable ? `Start a new Session in ${task.title}` : `${task.title} workflow progress`}>
-              {launchable ? <>
-                <span className="task-launch-label" aria-hidden="true">Start</span>
-                <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
-                {agents.map((capability) => (
-                <button
-                  key={capability.agent_id}
-                  type="button"
-                  className={`task-launch-icon agent-${capability.agent_id}`}
-                  title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
-                  aria-label={`Start ${capability.label} in ${task.title}`}
-                  onClick={() => void props.launchAgent(task.id, capability.agent_id)}
-                ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
-                ))}
-              </> : null}
-              <TaskWorkflowLaunchers
-                projectId={task.project_id}
-                task={task}
-                configurations={props.workflowConfigurations}
-                executions={props.workflowExecutions}
-                stateRevision={props.workflowStateRevision}
-                agentCapabilities={props.agentCapabilities}
-                launchable={launchable}
-                showLaunchers={launchable}
-                overlayContainer={props.overlayContainer}
-                overlayVisibilityChanged={props.overlayVisibilityChanged}
-                save={props.saveWorkflowConfiguration}
-                remove={props.deleteWorkflowConfiguration}
-                launch={props.launchWorkflow}
-                cancel={props.cancelWorkflowExecution}
-                openSession={props.selectSession}
-              />
-              {launchable ? <TaskRunLaunchers
-                projectId={task.project_id}
-                task={task}
-                configurations={props.runConfigurations}
-                runtimes={props.runRuntimes}
-                sessionsById={props.sessionsById}
-                stateRevision={props.runStateRevision}
-                launchable={launchable}
-                overlayContainer={props.overlayContainer}
-                overlayVisibilityChanged={props.overlayVisibilityChanged}
-                improvement={props.runImprovement}
-                setupImprovement={props.setupRunImprovement}
-                save={props.saveRunConfiguration}
-                remove={props.deleteRunConfiguration}
-                launch={props.launchTaskRun}
-              /> : null}
-            </div>
-          ) : null}
+          {!workflowExecutionVisible ? taskLaunch : null}
         </div>
       )}
     </div>
