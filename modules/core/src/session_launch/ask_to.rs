@@ -259,6 +259,8 @@ pub enum AskToPlanOutcome {
 pub struct AskToInput {
     pub target: String,
     pub message: String,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
     pub idempotency_key: Option<String>,
     pub conversation_id: Option<String>,
 }
@@ -309,6 +311,26 @@ impl CoreRuntime {
         {
             return Err(CoreError::InvalidParams("askTo".into()));
         }
+        if params.conversation_id.is_some()
+            && (params.model.is_some() || params.reasoning.is_some())
+        {
+            return Err(CoreError::InvalidParams(
+                "model and reasoning apply only to a new Ask-To helper; omit them with conversationId"
+                    .into(),
+            ));
+        }
+        let selection = termloop_domain::AgentLaunchSelection::new(
+            params.model.as_deref().unwrap_or("default"),
+            "default",
+            params.reasoning.as_deref().unwrap_or("default"),
+        );
+        termloop_invocation::validate_agent_configuration(
+            &params.target,
+            &selection.model,
+            &selection.permission,
+            &selection.reasoning,
+        )
+        .map_err(super::invocation_error)?;
         let source_session_id = principal.session_id;
         if let Some(current_id) = self.ask_to_by_source.get(&source_session_id).cloned() {
             let current = self
@@ -420,6 +442,7 @@ impl CoreRuntime {
                 request_id: Some(request_id.clone()),
             },
         )?;
+        plan.interactive_options = Some(selection);
         plan.task_guard = task_guard;
         plan.task_guard_requires_observation = plan.task_guard.is_some();
         plan.helper_prompt = Some((request_id.clone(), params.message));
@@ -1119,6 +1142,8 @@ mod tests {
         AskToInput {
             target: "claude".into(),
             message: "Review this change".into(),
+            model: None,
+            reasoning: None,
             idempotency_key: key.map(str::to_owned),
             conversation_id: None,
         }
@@ -1251,6 +1276,75 @@ mod tests {
         .expect("authentication must not wait for core")
         .unwrap();
         assert_eq!(principal.session_id(), "asker");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn helper_selection_defaults_independently_and_records_explicit_choices() {
+        for (target, model, reasoning) in [
+            ("claude", None, None),
+            ("codex", None, None),
+            ("codex", Some("default"), Some("default")),
+            ("codex", Some("gpt-6-astra"), None),
+            ("codex", None, Some("high")),
+            ("codex", Some("gpt-6-astra"), Some("max")),
+            ("claude", Some("opus"), Some("high")),
+        ] {
+            let (mut runtime, token, root) = runtime_with_asker();
+            let mut params = input(Some("selection-retry"));
+            params.target = target.into();
+            params.model = model.map(str::to_owned);
+            params.reasoning = reasoning.map(str::to_owned);
+            let AskToPlanOutcome::Launch(plan) = runtime.plan_ask_to(&token, params).unwrap()
+            else {
+                panic!("initial call must launch")
+            };
+            assert_eq!(
+                super::super::effective_launch_selection(&plan),
+                termloop_domain::AgentLaunchSelection::new(
+                    model.unwrap_or("default"),
+                    "default",
+                    reasoning.unwrap_or("default"),
+                )
+            );
+            assert!(matches!(plan.mcp_role, AgentMcpRole::Helper { .. }));
+            assert!(matches!(
+                runtime.plan_ask_to(&token, input(Some("selection-retry"))),
+                Ok(AskToPlanOutcome::Existing(_))
+            ));
+            assert_eq!(runtime.ask_to_requests.len(), 1);
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn invalid_or_follow_up_selection_does_not_reserve_a_helper() {
+        let (mut runtime, token, root) = runtime_with_asker();
+        for (target, model, reasoning, conversation_id) in [
+            ("codex", Some("opus"), None, None),
+            ("claude", Some("gpt-6-astra"), None, None),
+            ("codex", Some("unknown"), None, None),
+            ("codex", None, Some("unknown"), None),
+            ("codex", Some("default"), None, Some("existing")),
+            ("codex", None, Some("high"), Some("existing")),
+        ] {
+            let mut params = input(None);
+            params.target = target.into();
+            params.model = model.map(str::to_owned);
+            params.reasoning = reasoning.map(str::to_owned);
+            params.conversation_id = conversation_id.map(str::to_owned);
+            assert!(matches!(
+                runtime.plan_ask_to(&token, params),
+                Err(CoreError::InvalidParams(_))
+            ));
+            assert!(runtime.ask_to_requests.is_empty());
+            assert!(runtime.ask_to_conversations.is_empty());
+            assert!(runtime.ask_to_by_source.is_empty());
+        }
+        assert!(matches!(
+            runtime.plan_ask_to(&token, input(None)),
+            Ok(AskToPlanOutcome::Launch(_))
+        ));
         let _ = std::fs::remove_dir_all(root);
     }
 

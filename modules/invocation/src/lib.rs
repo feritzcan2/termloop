@@ -2787,9 +2787,12 @@ pub fn persistent_assistant_agent(
     Ok(manifest.into_payload())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ask_to_helper_agent_for_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2799,6 +2802,8 @@ pub fn ask_to_helper_agent_for_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2812,6 +2817,8 @@ pub fn ask_to_helper_agent_for_conversation(
 pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2821,6 +2828,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2834,6 +2843,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
 fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2860,9 +2871,9 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
         template,
+        model,
         "default",
-        "default",
-        "default",
+        reasoning,
         None,
         conversation,
         observation,
@@ -5992,6 +6003,8 @@ mod tests {
         let launch = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-1",
             "Review the race.",
@@ -6038,6 +6051,8 @@ mod tests {
         let codex = ask_to_helper_agent_for_conversation(
             "codex",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-3",
             "Write a poem.",
@@ -6063,6 +6078,8 @@ mod tests {
         let literal_placeholder = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-2",
             "Explain {{request_id}} literally.",
