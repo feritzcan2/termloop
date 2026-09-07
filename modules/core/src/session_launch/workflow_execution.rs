@@ -132,6 +132,7 @@ impl CoreRuntime {
             message,
             idempotency_key: Some(idempotency_key),
             conversation_id,
+            launch_selection: step.launch_selection.clone(),
         };
         let outcome = if step.kind == WorkflowStepKind::Review {
             self.plan_parallel_ask_to(token, input)?
@@ -706,6 +707,11 @@ mod tests {
                         instructions: "Challenge the approach.".into(),
                         agent_id: Some("claude".into()),
                         reuse_step_id: None,
+                        launch_selection: Some(AgentLaunchSelection::new(
+                            "default",
+                            "bypassPermissions",
+                            "default",
+                        )),
                     },
                     WorkflowStep {
                         id: "implement".into(),
@@ -714,6 +720,7 @@ mod tests {
                         instructions: "Implement and verify.".into(),
                         agent_id: None,
                         reuse_step_id: None,
+                        launch_selection: None,
                     },
                     WorkflowStep {
                         id: "review-claude".into(),
@@ -722,6 +729,7 @@ mod tests {
                         instructions: "Review with prior context.".into(),
                         agent_id: Some("claude".into()),
                         reuse_step_id: Some("discuss".into()),
+                        launch_selection: None,
                     },
                     WorkflowStep {
                         id: "review-codex".into(),
@@ -730,6 +738,11 @@ mod tests {
                         instructions: "Review independently.".into(),
                         agent_id: Some("codex".into()),
                         reuse_step_id: None,
+                        launch_selection: Some(AgentLaunchSelection::new(
+                            "default",
+                            "bypassPermissions",
+                            "default",
+                        )),
                     },
                     WorkflowStep {
                         id: "fix".into(),
@@ -738,6 +751,7 @@ mod tests {
                         instructions: "Apply the combined findings.".into(),
                         agent_id: None,
                         reuse_step_id: None,
+                        launch_selection: None,
                     },
                 ],
                 generation: 1,

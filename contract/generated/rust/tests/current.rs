@@ -113,6 +113,58 @@ fn project_task_automation_is_strict_and_revision_checked() {
 }
 
 #[test]
+fn workflow_steps_carry_explicit_nullable_launch_selections() {
+    let params = serde_json::json!({
+        "projectId": "project-1",
+        "name": "Discuss and build",
+        "coordinatorAgentId": "codex",
+        "model": "default",
+        "permission": "bypassPermissions",
+        "reasoning": "default",
+        "maxReviewCycles": 2,
+        "steps": [
+            {
+                "id": "discuss",
+                "kind": "discuss",
+                "title": "Discuss",
+                "instructions": "Challenge the approach.",
+                "agentId": "claude",
+                "reuseStepId": null,
+                "model": "opus",
+                "permission": "bypassPermissions",
+                "reasoning": "high"
+            },
+            {
+                "id": "implement",
+                "kind": "implement",
+                "title": "Implement",
+                "instructions": "Implement and verify.",
+                "agentId": null,
+                "reuseStepId": null,
+                "model": null,
+                "permission": null,
+                "reasoning": null
+            }
+        ],
+        "expectedRevision": 1
+    });
+    assert!(validate_method_params(
+        "workflow.configurationCreate",
+        &params
+    ));
+
+    let mut missing_permission = params.clone();
+    missing_permission["steps"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("permission");
+    assert!(!validate_method_params(
+        "workflow.configurationCreate",
+        &missing_permission
+    ));
+}
+
+#[test]
 fn quick_action_image_attachment_is_strict_and_bounded() {
     let attachment = serde_json::json!({
         "attachmentId": "123e4567-e89b-42d3-a456-426614174000",

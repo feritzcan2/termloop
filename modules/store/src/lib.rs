@@ -60,8 +60,9 @@ use termloop_domain::{
 // 51 adds Project-scoped workflow configurations. Version 52 adds one bounded
 // current Core-managed workflow execution per Task, without attempt history.
 // Version 53 adds one replace-in-place result summary per configured step.
-// Version 54 adds durable routing state for parallel review groups.
-const CURRENT_SCHEMA_VERSION: u32 = 54;
+// Version 54 adds durable routing state for parallel review groups. Version 55
+// stores the exact launch selection for each fresh workflow helper.
+const CURRENT_SCHEMA_VERSION: u32 = 55;
 
 pub struct CoreWriteAuthority {
     _private: (),

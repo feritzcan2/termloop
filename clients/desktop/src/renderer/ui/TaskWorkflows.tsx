@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AgentCapabilityDto,
+  AssistantPermission,
   StewardAgentId,
   WorkflowConfigurationCreateParams,
   WorkflowConfigurationDto,
@@ -432,9 +433,14 @@ function WorkflowRunDialog(props: {
 type WorkflowDraft = {
   name: string;
   coordinatorAgentId: StewardAgentId;
+  model: string;
+  permission: AssistantPermission;
+  reasoning: WorkflowReasoning;
   maxReviewCycles: number;
   steps: WorkflowStepDto[];
 };
+
+type WorkflowReasoning = NonNullable<WorkflowStepDto["reasoning"]>;
 
 export function WorkflowEditorPanel(props: {
   projectId: string;
@@ -460,6 +466,7 @@ export function WorkflowEditorPanel(props: {
   const implementation = draft.steps.find((step) => step.kind === "implement");
   const reviews = draft.steps.filter((step) => step.kind === "review");
   const fix = draft.steps.find((step) => step.kind === "fix");
+  const coordinatorAgent = workflowAgent(draft.coordinatorAgentId, agents);
   const dirty = !props.configuration || JSON.stringify(draft) !== JSON.stringify(workflowDraft(props.configuration));
   const canvasDrop = useDroppable({ id: "workflow-canvas-drop" });
 
@@ -472,7 +479,10 @@ export function WorkflowEditorPanel(props: {
   };
   const addStep = (kind: "discuss" | "review") => {
     const helperAgentId: StewardAgentId = kind === "discuss" ? "claude" : "codex";
-    const step = defaultStep(kind, draft.steps, helperAgentId);
+    const step = {
+      ...defaultStep(kind, draft.steps, helperAgentId),
+      ...workflowLaunchDefaults(workflowAgent(helperAgentId, agents)),
+    };
     setDraft((current) => {
       const implementAt = current.steps.findIndex((candidate) => candidate.kind === "implement");
       const fixAt = current.steps.findIndex((candidate) => candidate.kind === "fix");
@@ -491,6 +501,9 @@ export function WorkflowEditorPanel(props: {
       instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.",
       agentId: null,
       reuseStepId: null,
+      model: null,
+      permission: null,
+      reasoning: null,
     };
     setDraft((current) => ({ ...current, steps: [...current.steps, step] }));
     setSelectedStepId(step.id);
@@ -540,9 +553,9 @@ export function WorkflowEditorPanel(props: {
       const shared = {
         name,
         coordinatorAgentId: draft.coordinatorAgentId,
-        model: props.configuration?.model ?? "default",
-        permission: props.configuration?.permission ?? "acceptEdits",
-        reasoning: props.configuration?.reasoning ?? "default",
+        model: draft.model,
+        permission: draft.permission,
+        reasoning: draft.reasoning,
         maxReviewCycles: draft.maxReviewCycles,
         steps,
         expectedRevision: props.stateRevision,
@@ -579,7 +592,14 @@ export function WorkflowEditorPanel(props: {
       <div className="workflow-builder-body workflow-builder-stage-body">
         <div className="workflow-builder-top">
           <div><label htmlFor="workflow-name">Template name</label><input id="workflow-name" autoFocus value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
-          <div><label htmlFor="workflow-coordinator">Coordinator</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => setDraft((current) => ({ ...current, coordinatorAgentId: event.target.value as StewardAgentId }))}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
+          <div><label htmlFor="workflow-coordinator">Coordinator</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => {
+            const coordinatorAgentId = event.target.value as StewardAgentId;
+            const defaults = workflowLaunchDefaults(workflowAgent(coordinatorAgentId, agents));
+            setDraft((current) => ({ ...current, coordinatorAgentId, ...defaults }));
+          }}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
+          <div><label htmlFor="workflow-coordinator-model">Model</label><select id="workflow-coordinator-model" aria-label="Coordinator Model" value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}>{selectionOptions(coordinatorAgent.models, draft.model).map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select></div>
+          <div><label htmlFor="workflow-coordinator-permission">Permission</label><select id="workflow-coordinator-permission" aria-label="Coordinator Permission" value={draft.permission} onChange={(event) => setDraft((current) => ({ ...current, permission: event.target.value as AssistantPermission }))}>{selectionOptions(coordinatorAgent.permissions, draft.permission).map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select></div>
+          <div><label htmlFor="workflow-coordinator-reasoning">Thinking</label><select id="workflow-coordinator-reasoning" aria-label="Coordinator Thinking" value={draft.reasoning} onChange={(event) => setDraft((current) => ({ ...current, reasoning: event.target.value as WorkflowReasoning }))}>{selectionOptions(coordinatorAgent.reasoning, draft.reasoning).map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select></div>
           <div><label htmlFor="workflow-review-cycles">Max review cycles</label><select id="workflow-review-cycles" value={draft.maxReviewCycles} onChange={(event) => setDraft((current) => ({ ...current, maxReviewCycles: Number(event.target.value) }))}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></div>
         </div>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
@@ -646,6 +666,7 @@ export function WorkflowEditorPanel(props: {
                 step={selectedStep}
                 steps={draft.steps}
                 coordinatorAgentId={draft.coordinatorAgentId}
+                coordinatorSelection={{ model: draft.model, permission: draft.permission, reasoning: draft.reasoning }}
                 agents={agents}
                 remove={isHelperStep(selectedStep) ? () => removeStep(selectedStep.id) : undefined}
                 update={(update) => updateStep(selectedStep.id, update)}
@@ -734,6 +755,7 @@ function WorkflowStepInspector(props: {
   step: WorkflowStepDto;
   steps: readonly WorkflowStepDto[];
   coordinatorAgentId: StewardAgentId;
+  coordinatorSelection: WorkflowLaunchSelection;
   agents: readonly WorkflowAgent[];
   remove?: (() => void) | undefined;
   update(update: Partial<WorkflowStepDto>): void;
@@ -747,13 +769,21 @@ function WorkflowStepInspector(props: {
   const participantValue = props.step.reuseStepId
     ? `reuse:${props.step.reuseStepId}`
     : `fresh:${props.step.agentId ?? "claude"}`;
+  const selectedAgent = workflowAgent((props.step.agentId ?? "claude") as StewardAgentId, props.agents);
   const setParticipant = (value: string) => {
     if (value.startsWith("reuse:")) {
       const reused = priorHelpers.find((step) => step.id === value.slice("reuse:".length));
-      if (reused?.agentId) props.update({ agentId: reused.agentId, reuseStepId: reused.id });
+      if (reused?.agentId) props.update({
+        agentId: reused.agentId,
+        reuseStepId: reused.id,
+        model: null,
+        permission: null,
+        reasoning: null,
+      });
       return;
     }
-    props.update({ agentId: value.slice("fresh:".length) as StewardAgentId, reuseStepId: null });
+    const agentId = value.slice("fresh:".length) as StewardAgentId;
+    props.update({ agentId, reuseStepId: null, ...workflowLaunchDefaults(workflowAgent(agentId, props.agents)) });
   };
   return <>
     <header className="workflow-inspector-head">
@@ -770,33 +800,85 @@ function WorkflowStepInspector(props: {
           {props.step.kind === "review" ? priorHelpers.map((step) => <option key={`reuse:${step.id}`} value={`reuse:${step.id}`} disabled={reusedByAnotherReviewer.has(step.id)}>Reuse {agentLabel(step.agentId)} from “{step.title}”{reusedByAnotherReviewer.has(step.id) ? " (already assigned)" : ""}</option>) : null}
         </select>
         <p className="field-help">{props.step.reuseStepId ? "Continues the same helper conversation and context." : "Starts a separate visible helper Session."}</p>
-      </> : <div className="workflow-owned-step"><Icon name={props.coordinatorAgentId === "claude" ? "claude" : "codex"} /><span><b>{agentLabel(props.coordinatorAgentId)} coordinator</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"}</small></span></div>}
+        {props.step.reuseStepId ? <div className="workflow-inherited-launch"><Icon name="link" /><span><b>Launch settings inherited</b><small>Uses the model, permission, and thinking from the original {agentLabel(props.step.agentId)} Session.</small></span></div> : <div className="workflow-step-launch-fields">
+          <label htmlFor={`workflow-${props.step.id}-model`}>Model<select id={`workflow-${props.step.id}-model`} aria-label="Step Model" value={props.step.model ?? "default"} onChange={(event) => props.update({ model: event.target.value })}>{selectionOptions(selectedAgent.models, props.step.model ?? "default").map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select></label>
+          <label htmlFor={`workflow-${props.step.id}-permission`}>Permission<select id={`workflow-${props.step.id}-permission`} aria-label="Step Permission" value={props.step.permission ?? "bypassPermissions"} onChange={(event) => props.update({ permission: event.target.value as AssistantPermission })}>{selectionOptions(selectedAgent.permissions, props.step.permission ?? "bypassPermissions").map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select></label>
+          <label htmlFor={`workflow-${props.step.id}-reasoning`}>Thinking<select id={`workflow-${props.step.id}-reasoning`} aria-label="Step Thinking" value={props.step.reasoning ?? "default"} onChange={(event) => props.update({ reasoning: event.target.value as WorkflowReasoning })}>{selectionOptions(selectedAgent.reasoning, props.step.reasoning ?? "default").map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select></label>
+        </div>}
+      </> : <div className="workflow-owned-step"><Icon name={props.coordinatorAgentId === "claude" ? "claude" : "codex"} /><span><b>{agentLabel(props.coordinatorAgentId)} coordinator</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"} · {workflowLaunchSummary(props.coordinatorSelection)}</small></span></div>}
       <label htmlFor={`workflow-${props.step.id}-instructions`}>Instructions</label>
       <textarea id={`workflow-${props.step.id}-instructions`} rows={7} value={props.step.instructions} maxLength={4096} onChange={(event) => props.update({ instructions: event.target.value })} />
     </div>
   </>;
 }
 
-type WorkflowAgent = { id: StewardAgentId; label: string; available: boolean };
+type WorkflowLaunchSelection = {
+  model: string;
+  permission: AssistantPermission;
+  reasoning: WorkflowReasoning;
+};
+
+type WorkflowAgent = {
+  id: StewardAgentId;
+  label: string;
+  available: boolean;
+  models: readonly string[];
+  permissions: readonly AssistantPermission[];
+  reasoning: readonly WorkflowReasoning[];
+};
 
 function workflowAgents(capabilities: readonly AgentCapabilityDto[]): WorkflowAgent[] {
   const supported: StewardAgentId[] = ["codex", "claude"];
   return supported.map((id) => {
     const capability = capabilities.find((candidate) => candidate.agent_id === id);
-    return { id, label: capability?.label ?? agentLabel(id), available: capability?.available ?? false };
+    return {
+      id,
+      label: capability?.label ?? agentLabel(id),
+      available: capability?.available ?? false,
+      models: capability?.models.length ? capability.models : ["default"],
+      permissions: capability?.permissions.length ? capability.permissions : ["default", "bypassPermissions"],
+      reasoning: capability?.reasoning.length ? capability.reasoning : ["default"],
+    };
   });
+}
+
+function workflowAgent(agentId: StewardAgentId, agents: readonly WorkflowAgent[]): WorkflowAgent {
+  return agents.find((agent) => agent.id === agentId) ?? {
+    id: agentId,
+    label: agentLabel(agentId),
+    available: false,
+    models: ["default"],
+    permissions: ["default", "bypassPermissions"],
+    reasoning: ["default"],
+  };
+}
+
+function workflowLaunchDefaults(agent: WorkflowAgent): WorkflowLaunchSelection {
+  return {
+    model: agent.models.includes("default") ? "default" : agent.models[0] ?? "default",
+    permission: agent.permissions.includes("bypassPermissions")
+      ? "bypassPermissions"
+      : agent.permissions.includes("default") ? "default" : agent.permissions[0] ?? "default",
+    reasoning: agent.reasoning.includes("default") ? "default" : agent.reasoning[0] ?? "default",
+  };
 }
 
 function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft {
   if (configuration) return {
     name: configuration.name,
     coordinatorAgentId: configuration.coordinatorAgentId,
+    model: configuration.model,
+    permission: configuration.permission,
+    reasoning: configuration.reasoning,
     maxReviewCycles: configuration.maxReviewCycles,
     steps: configuration.steps.map((step) => ({ ...step, reuseStepId: step.reuseStepId ?? null })),
   };
   return {
     name: "Discuss, implement, review",
     coordinatorAgentId: "codex",
+    model: "default",
+    permission: "bypassPermissions",
+    reasoning: "default",
     maxReviewCycles: 2,
     steps: initialWorkflowSteps(),
   };
@@ -804,11 +886,11 @@ function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft 
 
 export function initialWorkflowSteps(): WorkflowStepDto[] {
   return [
-    { id: "discuss-claude", kind: "discuss", title: "Challenge the approach", instructions: "Debate the goal, assumptions, and tradeoffs with the coordinator before implementation.", agentId: "claude", reuseStepId: null },
-    { id: "implement", kind: "implement", title: "Implement", instructions: "Implement the agreed solution and run proportionate verification.", agentId: null, reuseStepId: null },
-    { id: "review-claude", kind: "review", title: "Review with prior context", instructions: "Review the current diff against the discussion and report concrete, prioritized findings.", agentId: "claude", reuseStepId: "discuss-claude" },
-    { id: "review-codex", kind: "review", title: "Independent second review", instructions: "Independently inspect the current diff and report concrete, prioritized findings.", agentId: "codex", reuseStepId: null },
-    { id: "fix", kind: "fix", title: "Fix review findings", instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.", agentId: null, reuseStepId: null },
+    { id: "discuss-claude", kind: "discuss", title: "Challenge the approach", instructions: "Debate the goal, assumptions, and tradeoffs with the coordinator before implementation.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "implement", kind: "implement", title: "Implement", instructions: "Implement the agreed solution and run proportionate verification.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
+    { id: "review-claude", kind: "review", title: "Review with prior context", instructions: "Review the current diff against the discussion and report concrete, prioritized findings.", agentId: "claude", reuseStepId: "discuss-claude", model: null, permission: null, reasoning: null },
+    { id: "review-codex", kind: "review", title: "Independent second review", instructions: "Independently inspect the current diff and report concrete, prioritized findings.", agentId: "codex", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "fix", kind: "fix", title: "Fix review findings", instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
   ];
 }
 
@@ -820,6 +902,9 @@ function defaultStep(kind: "discuss" | "review", steps: readonly WorkflowStepDto
     instructions: kind === "discuss" ? "Challenge the current approach and surface tradeoffs." : "Review the current diff and report concrete findings.",
     agentId,
     reuseStepId: null,
+    model: "default",
+    permission: "bypassPermissions",
+    reasoning: "default",
   };
 }
 
@@ -834,7 +919,9 @@ function sanitizeReuse(steps: WorkflowStepDto[]): WorkflowStepDto[] {
   return steps.map((step, index) => {
     if (!step.reuseStepId) return step;
     const source = steps.slice(0, index).find((candidate) => candidate.id === step.reuseStepId);
-    return source && isHelperStep(source) && source.agentId === step.agentId ? step : { ...step, reuseStepId: null };
+    return source && isHelperStep(source) && source.agentId === step.agentId
+      ? step
+      : { ...step, reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" };
   });
 }
 
@@ -866,9 +953,36 @@ function agentLabel(agentId: string | null): string {
 
 function stepOwnerSummary(step: WorkflowStepDto, steps: readonly WorkflowStepDto[], coordinatorAgentId: StewardAgentId): string {
   if (!isHelperStep(step)) return `${agentLabel(coordinatorAgentId)} · coordinator`;
-  if (!step.reuseStepId) return `${agentLabel(step.agentId)} · new conversation`;
+  if (!step.reuseStepId) return `${agentLabel(step.agentId)} · ${workflowLaunchSummary({
+    model: step.model ?? "default",
+    permission: step.permission ?? "bypassPermissions",
+    reasoning: step.reasoning ?? "default",
+  })}`;
   const source = steps.find((candidate) => candidate.id === step.reuseStepId);
   return `${agentLabel(step.agentId)} · reuse ${source?.title ?? step.reuseStepId}`;
+}
+
+function workflowLaunchSummary(selection: WorkflowLaunchSelection): string {
+  return `${workflowModelLabel(selection.model)} · ${workflowPermissionLabel(selection.permission)} · ${workflowReasoningLabel(selection.reasoning)}`;
+}
+
+function workflowModelLabel(model: string): string {
+  return model === "default" ? "Default model" : model;
+}
+
+function workflowPermissionLabel(permission: AssistantPermission): string {
+  if (permission === "bypassPermissions") return "Bypass permissions";
+  if (permission === "acceptEdits") return "Auto edits";
+  if (permission === "plan") return "Plan only";
+  return "Provider default";
+}
+
+function workflowReasoningLabel(reasoning: WorkflowReasoning): string {
+  return reasoning === "default" ? "Default thinking" : `${reasoning[0]?.toUpperCase()}${reasoning.slice(1)}`;
+}
+
+function selectionOptions<T extends string>(options: readonly T[], selected: T): readonly T[] {
+  return options.includes(selected) ? options : [selected, ...options];
 }
 
 function workflowSummary(configuration: WorkflowConfigurationDto): string {
