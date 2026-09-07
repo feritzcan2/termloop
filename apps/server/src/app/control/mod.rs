@@ -584,6 +584,7 @@ pub(in crate::app) enum ClientScope {
 
 #[derive(Clone)]
 pub(in crate::app) struct RemoteControlCredential {
+    pub(in crate::app) device_id: String,
     pub(in crate::app) token: Arc<str>,
     pub(in crate::app) scope: ClientScope,
 }
@@ -916,6 +917,13 @@ mod tests {
         assert!(!scope_allows_method(ClientScope::Hook, "skill.catalogGet"));
         assert!(!cancellation_safe_method("skill.catalogGet"));
         for method in [
+            "agent.authStatusList",
+            "agent.install",
+            "agent.authStart",
+            "agent.authLogout",
+            "agent.authGet",
+            "agent.authCancel",
+            "agent.authSubmitCode",
             "skill.deploymentSet",
             "skill.definitionGet",
             "skill.definitionSave",

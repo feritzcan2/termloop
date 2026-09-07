@@ -1,3 +1,4 @@
+import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { TerminalStatus } from "./TerminalStatus.js";
 import type { TerminalPresentationPort } from "../terminal-presentation.js";
 import type { AgentLibraryController } from "../agent-library.js";
@@ -164,6 +165,7 @@ export type ShellProps = {
   saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
+  agentConnections?: AgentConnectionActions;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   setConnectionProfileEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
@@ -1355,6 +1357,7 @@ export function Shell(props: ShellProps) {
             </div>
           </ProjectCheckoutHeader>
           <WorkspaceViewSwitch
+            setupAgents={() => setSettingsPage("servers")}
             view={workspaceView}
             viewActive={railMode === "workspace"}
             disabled={disabled}
@@ -1994,6 +1997,8 @@ export function Shell(props: ShellProps) {
         changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
         saveNotificationPreferences={props.saveNotificationPreferences}
+        agentConnections={props.agentConnections}
+        initialProfileId={selectedConnectionProfileId}
         list={props.listConnectionProfiles}
         connect={props.connectConnectionProfile}
         setEnabled={props.setConnectionProfileEnabled}
