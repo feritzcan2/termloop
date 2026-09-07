@@ -234,7 +234,7 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             .as_array()
             .is_some_and(|models| models.contains(&json!("fable"))
                 && models.contains(&json!("opus"))
-                && models.contains(&json!("gpt-5.6-sol")))
+                && models.contains(&json!("gpt-6-astra")))
     );
     assert!(validate_mcp_tool_params(
         "task_agent_start",
@@ -251,7 +251,12 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
     ));
     assert!(validate_mcp_tool_params(
         "task_agent_start",
-        &json!({"taskId":"task-1","assignment":"Implement it.","agentId":"codex"})
+        &json!({
+            "taskId":"task-1",
+            "assignment":"Implement it.",
+            "agentId":"codex",
+            "model":"gpt-6-astra"
+        })
     ));
     // The transport keeps one simple object-shaped tool declaration for model
     // callers. Core remains the authority that rejects a model without its
@@ -280,6 +285,22 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             "model":"opus",
             "permission":"default",
             "reasoning":"default",
+            "assignmentDelivered":true,
+            "reusedSession":false,
+            "status":"ready"
+        })
+    ));
+    assert!(validate_mcp_tool_result(
+        "task_agent_start",
+        &json!({
+            "taskId":"task-1",
+            "sessionId":"session-1",
+            "branchName":"termloop/task-1",
+            "worktreePath":"/tmp/task-1",
+            "agentId":"codex",
+            "model":"gpt-6-astra",
+            "permission":"default",
+            "reasoning":"max",
             "assignmentDelivered":true,
             "reusedSession":false,
             "status":"ready"

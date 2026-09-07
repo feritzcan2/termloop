@@ -174,7 +174,12 @@ pub fn normalize_codex_thread_settings(raw: &str) -> Option<CodexThreadSettingsO
         model: settings.model.filter(|model| {
             matches!(
                 model.as_str(),
-                "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.5-pro"
+                "gpt-6-astra"
+                    | "gpt-5.6-sol"
+                    | "gpt-5.6-terra"
+                    | "gpt-5.6-luna"
+                    | "gpt-5.5"
+                    | "gpt-5.5-pro"
             )
         }),
         permission,
@@ -265,6 +270,17 @@ mod tests {
         let observed = normalize_codex_thread_settings(&unsupported).unwrap();
         assert_eq!(observed.model, None);
         assert_eq!(observed.reasoning, None);
+    }
+
+    #[test]
+    fn captures_gpt_6_astra_as_a_replayable_model() {
+        let astra = notification(
+            r#""approvalPolicy":"never","approvalsReviewer":"user","sandboxPolicy":{"type":"dangerFullAccess"},"activePermissionProfile":{"id":":danger-full-access","extends":null},"effort":"max""#,
+        )
+        .replace("gpt-5.6-sol", "gpt-6-astra");
+        let observed = normalize_codex_thread_settings(&astra).unwrap();
+        assert_eq!(observed.model.as_deref(), Some("gpt-6-astra"));
+        assert_eq!(observed.reasoning.as_deref(), Some("max"));
     }
 
     #[test]

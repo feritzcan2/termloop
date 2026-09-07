@@ -107,5 +107,11 @@ test("Steward Task Agent results validate provider/model pairs", () => {
   assert.equal(validateMcpToolResult("task_agent_start", {
     ...result,
     agentId: "codex",
+    model: "gpt-6-astra",
+    reasoning: "max",
+  }), true);
+  assert.equal(validateMcpToolResult("task_agent_start", {
+    ...result,
+    agentId: "codex",
   }), false);
 });

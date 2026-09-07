@@ -32,7 +32,7 @@ const AGENT_ID = /^[a-z](?:[a-z0-9]|-[a-z0-9])*$/u;
 const MAX_REMEMBERED_AGENT_PRESETS = 32;
 export const QUICK_ACTION_AGENT_MODELS: Readonly<Record<QuickActionAgentId, readonly string[]>> = {
   claude: ["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"],
-  codex: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
+  codex: ["default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
   gemini: ["default", "auto", "pro", "flash", "flash-lite"],
 };
 export const QUICK_ACTION_AGENT_PERMISSIONS: readonly QuickActionPermission[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
