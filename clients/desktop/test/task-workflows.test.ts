@@ -209,6 +209,8 @@ describe("Task workflow editor", () => {
     expect(markup).toContain('data-workflow-session-id="claude-session-1"');
     expect(markup).toContain('aria-label="Open Codex — Working"');
     expect(markup).toContain('aria-label="Open Claude — Idle"');
+    expect(markup.match(/data-workflow-session-id="coordinator-1"/gu)).toHaveLength(2);
+    expect(markup).toContain(">same coordinator</em>");
     expect(markup).toContain(">same session</em>");
     expect(markup).toContain(">Details</button>");
     expect(markup).toContain("Finish or stop Discuss, build, review first");
