@@ -18,6 +18,7 @@ import {
 } from "@/presentation/steward-voice-presentation";
 import {
   configureStewardAudioSession,
+  stopVoiceAudioStream,
   stewardVoiceAudioErrorMessage,
 } from "@/platform/steward-voice-audio";
 import { color, geometry, radius, space } from "@/theme/tokens";
@@ -84,7 +85,7 @@ export function AgentVoiceButton({
     captureAttemptRef.current += 1;
     capturingRef.current = false;
     firstBufferRef.current = undefined;
-    if (stream.isStreaming) stream.stop();
+    stopVoiceAudioStream(stream);
     pcmCaptureRef.current = createVoicePcmCapture();
     silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
     setRecorderState({ durationMillis: 0, metering: undefined });
@@ -146,7 +147,7 @@ export function AgentVoiceButton({
     captureAttemptRef.current = attempt;
     capturingRef.current = false;
     firstBufferRef.current = undefined;
-    if (stream.isStreaming) stream.stop();
+    stopVoiceAudioStream(stream);
     transition("transcribing");
     try {
       if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
@@ -193,7 +194,7 @@ export function AgentVoiceButton({
   useEffect(() => () => {
     captureAttemptRef.current += 1;
     capturingRef.current = false;
-    if (streamRef.current.isStreaming) streamRef.current.stop();
+    stopVoiceAudioStream(streamRef.current);
     void deactivateVoiceAudio().catch(() => undefined);
   }, []);
 

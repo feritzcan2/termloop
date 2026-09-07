@@ -1790,10 +1790,13 @@ impl CoreRuntime {
             resolve_quick_action_launch(plan, quick_action, conversation, observation, mcp)
         } else if let Some((request_id, message)) = plan.helper_prompt.as_ref() {
             let mcp = mcp.ok_or(CoreError::AgentUnsupported)?;
+            let selection = plan.interactive_options.clone().unwrap_or_default();
             if managed_worktree {
                 termloop_invocation::ask_to_helper_agent_for_managed_worktree_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
@@ -1804,6 +1807,8 @@ impl CoreRuntime {
                 termloop_invocation::ask_to_helper_agent_for_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
