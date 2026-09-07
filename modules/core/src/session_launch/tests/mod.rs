@@ -4914,6 +4914,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         mcp_token: None,
         mcp_role: None,
         agent_profile_ref: None,
+        personal_agent: None,
         steward_system_prompt: None,
         mcp_authorizer: runtime.mcp_authorizer.clone(),
         observation_transport: {
