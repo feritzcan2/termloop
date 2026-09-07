@@ -48,7 +48,7 @@ const FolderGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.1 2.7a1.7 1.7 0 0 1 3.4 0v1h2.3c.4 0 .7.3.7.7v2.3h1a1.7 1.7 0 0 1 0 3.4h-1v2.3c0 .4-.3.7-.7.7H9.5v-1a1.7 1.7 0 0 0-3.4 0v1H3.8a.7.7 0 0 1-.7-.7V4.4c0-.4.3-.7.7-.7h2.3v-1Z" /></svg>;
 
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
-  profile.agent_ids.includes(capability.agent_id) && capability.permissions.includes(profile.permission);
+  profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
 export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, initialAgent, pasteImage, restoreImage, discardImage, preview, launch, close }: {
   projects: readonly Project[];
@@ -108,7 +108,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   const priorAgentRef = useRef(agentId);
   const selectedCapability = capabilityByAgent.get(agentId);
   const models = selectedCapability?.models ?? ["default"];
-  const permissions = selectedProfile ? [selectedProfile.permission] : selectedCapability?.permissions ?? ["default"];
+  const permissions = selectedCapability?.permissions ?? ["default"];
   const reasoningOptions = selectedCapability?.reasoning ?? ["default"];
   const attachmentIds = useMemo(() => attachment ? [attachment.id] : [], [attachment]);
 
@@ -142,8 +142,11 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     const preset = memory.presets[agentId];
     const capability = capabilityByAgent.get(agentId);
     setModel(preset?.model && capability?.models.includes(preset.model) ? preset.model : "default");
-    setPermission(selectedProfile?.permission ?? (preset?.permission && capability?.permissions.includes(preset.permission)
-      ? preset.permission : defaultAgentPermission(agentId)));
+    setPermission((current) => capability?.permissions.includes(current)
+      ? current
+      : preset?.permission && capability?.permissions.includes(preset.permission)
+        ? preset.permission
+        : defaultAgentPermission(agentId));
     setReasoning(preset?.reasoning && capability?.reasoning.includes(preset.reasoning)
       ? preset.reasoning : "default");
     setPreviewResult(undefined);
@@ -219,7 +222,6 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     const profile = profiles.find((candidate) => candidate.id === nextTemplateRef);
     setTemplateRef(nextTemplateRef);
     if (profile) {
-      setPermission(profile.permission);
       if (!selectedCapability || !profileSupportsCapability(profile, selectedCapability)) {
         const nextAgent = availableCapabilities.find((capability) => profileSupportsCapability(profile, capability));
         if (nextAgent) setAgentId(nextAgent.agent_id as AgentId);
@@ -271,7 +273,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
         </main>
         <div className="quick-action-options">
           <label className="agent"><span>AGENT</span><em aria-hidden="true">{agentId}</em><select aria-label="Agent" value={agentId} onChange={(event) => setAgentId(event.target.value as AgentId)}>{availableAgents.map((agent) => <option key={agent} value={agent}>{agent}</option>)}</select></label>
-          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined} title={selectedProfile?.read_only ? "Permission is fixed by this read-only profile." : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} disabled={selectedProfile?.read_only} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
+          <label className={permission === "bypassPermissions" ? "danger" : permission === "plan" ? "plan" : permission === "acceptEdits" ? "accept" : undefined}><span>PERM</span><em aria-hidden="true">{permissionLabel(agentId, permission)}</em><select aria-label="Permission" value={permission} onChange={(event) => setPermission(event.target.value as Permission)}>{permissions.map((value) => <option key={value} value={value}>{permissionLabel(agentId, value as Permission)}</option>)}</select></label>
           <label><span>MODEL</span><em aria-hidden="true">{modelLabel(agentId, model)}</em><select aria-label="Model" value={model} onChange={(event) => setModel(event.target.value)}>{models.map((value) => <option key={value} value={value}>{modelLabel(agentId, value)}</option>)}</select></label>
           <label><span>REASON</span><em aria-hidden="true">{reasoning}</em><select aria-label="Reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value as Reasoning)}>{reasoningOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           {memory.presets[agentId] ? <small>restored from last run</small> : null}

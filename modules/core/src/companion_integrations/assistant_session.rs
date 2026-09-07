@@ -99,6 +99,7 @@ impl PersistentAssistantLaunchPlan {
                 claude_config_path: &self.observation_transport.claude_mcp_config_path,
                 profile: self.mcp_role.invocation_profile(),
             }),
+            self.launch.codex_app_server_developer_instructions(),
             runtime_signal_sender,
         )
         .map_err(|error| {
