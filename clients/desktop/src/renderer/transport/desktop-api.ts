@@ -140,6 +140,8 @@ import type {
   QuickActionParams,
   AgentProfileDto,
   AgentLibraryResult,
+  AgentCreatorParams,
+  AgentCreatorLaunchParams,
   AgentProfileCreateParams,
   AgentProfileUpdateParams,
   AgentProfileDeleteParams,
@@ -316,6 +318,8 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentCreatorPreview(params: AgentCreatorParams): Promise<QuickActionPreviewResult>;
+  agentCreatorLaunch(params: AgentCreatorLaunchParams): Promise<Session>;
   agentLibraryGet(): Promise<AgentLibraryResult>;
   agentProfileCreate(params: AgentProfileCreateParams): Promise<AgentLibraryResult>;
   agentProfileUpdate(params: AgentProfileUpdateParams): Promise<AgentLibraryResult>;

@@ -113,11 +113,13 @@ type AssistantActions = Pick<StewardPanelProps,
 };
 
 type ImproverSetup =
+  | { kind: "agentCreator"; projectId: string }
   | { kind: "prompt"; projectId: string; target: AssistantPromptImproverTarget }
   | { kind: "run"; projectId: string; target: RunConfigurationImproverTarget }
   | { kind: "settings"; projectId: string; target: SettingsImproverTarget; subject: string };
 
 function improverSetupTitle(setup: ImproverSetup): string {
+  if (setup.kind === "agentCreator") return "Agent Creator settings";
   if (setup.kind === "run") return "Improve run with agent";
   if (setup.kind === "settings") return `Improve ${setup.subject} with agent`;
   return promptImprovementActionLabel(setup.target.surface);
@@ -150,6 +152,7 @@ export type ShellProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   agentProfiles: readonly AgentProfileDto[];
   agentLibrary?: AgentLibraryController;
+  startAgentCreator?(selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
   connection: ConnectionState;
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
@@ -1426,6 +1429,15 @@ export function Shell(props: ShellProps) {
             selectedId={stagePage?.kind === "agent" ? stagePage.id : undefined}
             open={(id) => openStagePage({ kind: "agent", id })}
             create={() => openStagePage({ kind: "agent" })}
+            creator={{
+              available: Boolean(props.selectedProject && props.startAgentCreator),
+              start: async () => {
+                const failure = await props.startAgentCreator?.();
+                if (!failure) dismissStagePages();
+                return failure;
+              },
+              setup: () => { if (props.selectedProject) setImproverSetup({ kind: "agentCreator", projectId: props.selectedProject.id }); },
+            }}
           /> : railMode === "prompts" ? <PromptsRail
             prompts={promptLibrary.value}
             error={promptLibrary.error}
@@ -1947,12 +1959,15 @@ export function Shell(props: ShellProps) {
         title={improverSetupTitle(improverSetup)}
         capabilities={props.agentCapabilities}
         start={async (selection, options) => {
-          const failure = improverSetup.kind === "prompt"
+          const failure = improverSetup.kind === "agentCreator"
+            ? await (props.startAgentCreator?.(selection, options) ?? Promise.resolve("Agent Creator is unavailable."))
+            : improverSetup.kind === "prompt"
             ? await (props.assistantActions.promptImprovement?.start(improverSetup.target, selection, options)
               ?? Promise.resolve("Prompt improvement is unavailable."))
             : improverSetup.kind === "settings"
               ? await props.settingsImprovement.start(improverSetup.target, selection, options)
               : await props.runImprovement.start(improverSetup.projectId, improverSetup.target, selection, options);
+          if (!failure && improverSetup.kind === "agentCreator") dismissStagePages();
           if (!failure && improverSetup.kind === "prompt" && improverSetup.target.surface === "playbook") {
             openPlaybookBuilder();
           }

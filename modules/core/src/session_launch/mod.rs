@@ -1,5 +1,6 @@
 //! Session/agent launch and resume ownership boundary.
 
+mod agent_creator;
 mod agent_library;
 
 mod agent_message;
@@ -257,6 +258,10 @@ pub enum AgentResumeLane {
 }
 
 impl AgentMcpRole {
+    pub fn is_agent_creator(&self) -> bool {
+        matches!(self, Self::Improver { target } if target.target_kind == ImproverSessionTargetKind::AgentCreator && target.target_id.is_none())
+    }
+
     pub(super) fn invocation_profile(&self) -> termloop_invocation::AgentMcpProfile {
         match self {
             Self::Interactive => termloop_invocation::AgentMcpProfile::Interactive,
@@ -2126,6 +2131,12 @@ fn resolve_quick_action_launch(
 }
 
 fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarget> {
+    if plan.mcp_role.is_agent_creator() {
+        return Some(ImproverSessionTarget {
+            target_kind: ImproverSessionTargetKind::AgentCreator,
+            target_id: None,
+        });
+    }
     if let Some(surface) = plan.improver_prompt_surface.as_deref() {
         let target_kind = match surface {
             "stewardInstructions" => ImproverSessionTargetKind::StewardInstructions,

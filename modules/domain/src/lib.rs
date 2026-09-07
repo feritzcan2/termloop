@@ -147,10 +147,14 @@ pub enum McpToolName {
     ConfigurationVersionRead,
     #[serde(rename = "configuration_version_write")]
     ConfigurationVersionWrite,
+    #[serde(rename = "agent_library_read")]
+    AgentLibraryRead,
+    #[serde(rename = "agent_profile_create")]
+    AgentProfileCreate,
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 32] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -181,6 +185,8 @@ impl McpToolName {
         Self::TaskSetStewardBrief,
         Self::ConfigurationVersionRead,
         Self::ConfigurationVersionWrite,
+        Self::AgentLibraryRead,
+        Self::AgentProfileCreate,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -215,6 +221,8 @@ impl McpToolName {
             Self::TaskSetStewardBrief => "task_set_steward_brief",
             Self::ConfigurationVersionRead => "configuration_version_read",
             Self::ConfigurationVersionWrite => "configuration_version_write",
+            Self::AgentLibraryRead => "agent_library_read",
+            Self::AgentProfileCreate => "agent_profile_create",
         }
     }
 }
@@ -256,6 +264,8 @@ impl std::str::FromStr for McpToolName {
             "task_set_steward_brief" => Ok(Self::TaskSetStewardBrief),
             "configuration_version_read" => Ok(Self::ConfigurationVersionRead),
             "configuration_version_write" => Ok(Self::ConfigurationVersionWrite),
+            "agent_library_read" => Ok(Self::AgentLibraryRead),
+            "agent_profile_create" => Ok(Self::AgentProfileCreate),
             _ => Err(()),
         }
     }
@@ -998,6 +1008,7 @@ pub enum ImproverSessionTargetKind {
     SettingsSkill,
     SettingsPrompt,
     SettingsMcpTool,
+    AgentCreator,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1012,13 +1023,15 @@ impl ImproverSessionTarget {
             (
                 ImproverSessionTargetKind::StewardInstructions
                 | ImproverSessionTargetKind::RoutineBuilder
-                | ImproverSessionTargetKind::Playbook,
+                | ImproverSessionTargetKind::Playbook
+                | ImproverSessionTargetKind::AgentCreator,
                 None,
             ) => true,
             (
                 ImproverSessionTargetKind::StewardInstructions
                 | ImproverSessionTargetKind::RoutineBuilder
-                | ImproverSessionTargetKind::Playbook,
+                | ImproverSessionTargetKind::Playbook
+                | ImproverSessionTargetKind::AgentCreator,
                 Some(_),
             ) => false,
             (_, Some(target_id)) => {
@@ -1426,6 +1439,8 @@ mod tests {
                 "task_set_steward_brief",
                 "configuration_version_read",
                 "configuration_version_write",
+                "agent_library_read",
+                "agent_profile_create",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

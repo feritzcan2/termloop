@@ -60,7 +60,8 @@ use termloop_domain::{
 // to the Project Steward. Version 52 adds personal agent profiles and pinned
 // current Session instructions. Version 53 permits user overrides of built-in
 // agent profiles in the same bounded library.
-const CURRENT_SCHEMA_VERSION: u32 = 53;
+// Version 54 adds the current Agent Creator Session target.
+const CURRENT_SCHEMA_VERSION: u32 = 54;
 
 pub struct CoreWriteAuthority {
     _private: (),
