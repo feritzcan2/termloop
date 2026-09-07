@@ -985,8 +985,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// sits directly below and the cue would say the same thing twice. Structural
   /// next steps have no expanded counterpart and stay on every row.
   const action = props.deleting ? undefined : taskPrimaryAction(stage, collapsed ? attention : undefined);
-  const taskLaunch = launchable || workflowExecutionVisible ? (
-    <div className="task-launch" role="group" aria-label={launchable ? `Start a new Session in ${task.title}` : `${task.title} workflow progress`}>
+  const workflowManageable = props.workflowConfigurations.length > 0;
+  const taskLaunch = launchable || workflowExecutionVisible || workflowManageable ? (
+    <div className="task-launch" role="group" aria-label={launchable
+      ? `Start a new Session in ${task.title}`
+      : workflowExecutionVisible
+        ? `${task.title} workflow progress`
+        : `Manage workflows for ${task.title}`}>
       {launchable ? <>
         <span className="task-launch-label" aria-hidden="true">Start</span>
         <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
@@ -1006,7 +1011,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         configurations={props.workflowConfigurations}
         executions={props.workflowExecutions}
         launchable={launchable}
-        showLaunchers={launchable}
+        showLaunchers={launchable || workflowManageable}
         overlayContainer={props.overlayContainer}
         overlayVisibilityChanged={props.overlayVisibilityChanged}
         edit={(configuration) => props.openWorkflowEditor(configuration?.id)}
