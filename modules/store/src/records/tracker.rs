@@ -21,9 +21,6 @@ impl Store {
             .tracker_configurations
             .iter()
             .position(|current| current.id == configuration.id);
-        let worker_matches = self.state.worker_configurations.iter().any(|worker| {
-            worker.id == configuration.worker_id && worker.project_id == configuration.project_id
-        });
         let related_tasks_match = configuration.related_task_ids.iter().all(|task_id| {
             self.state
                 .tasks
@@ -36,7 +33,6 @@ impl Store {
                 .projects
                 .iter()
                 .any(|project| project.id == configuration.project_id)
-            || !worker_matches
             || !related_tasks_match
             || current_index.is_some_and(|index| {
                 self.state.tracker_configurations[index].project_id != configuration.project_id

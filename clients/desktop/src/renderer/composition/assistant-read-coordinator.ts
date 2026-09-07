@@ -108,7 +108,6 @@ export class AssistantReadCoordinator {
 const ASSISTANT_INVALIDATION_TOPICS = new Set([
   "companion",
   "steward",
-  "worker",
   "routine",
   "playbook",
   "session",

@@ -1,3 +1,7 @@
+import type { TerminalPresentation, TerminalPresentationPort } from "../terminal-presentation.js";
+import { TerminalWriteBatcher } from "./output-batcher.js";
+import { TerminalOutputTail, continueReplay } from "./replay-continuity.js";
+import { TerminalReplayBuffer } from "./replay-buffer.js";
 import { sessionKeepsTerminalSurface, type Session } from "../model.js";
 import {
   KIND_ACK,
@@ -23,6 +27,12 @@ export type TerminalAttachmentLike = {
 type AttachmentFactory = (session: Session) => Promise<TerminalAttachmentLike>;
 type Entry = {
   session: Session;
+  presentation: TerminalPresentation;
+  tail: TerminalOutputTail;
+  batcher?: TerminalWriteBatcher;
+  replay?: TerminalReplayBuffer;
+  removeErrorListener?: (() => void) | undefined;
+  readRevision: number;
   surface: TerminalSurface | undefined;
   attachment: TerminalAttachmentLike | undefined;
   attaching: Promise<void> | undefined;
@@ -56,6 +66,49 @@ function sessionHasAttachableTerminal(session: Session): boolean {
 
 export class TerminalPool {
   readonly #entries = new Map<string, Entry>();
+  readonly #presentationListeners = new Set<() => void>();
+  readonly presentationPort: TerminalPresentationPort = {
+    subscribe: (listener) => { this.#presentationListeners.add(listener); return () => this.#presentationListeners.delete(listener); },
+    snapshot: (id) => this.#entries.get(id)?.presentation,
+    read: (id, enabled) => { void this.#read(id, enabled); },
+    recover: (id) => { void this.#recover(id); },
+  };
+
+  #present(entry: Entry, patch: Partial<TerminalPresentation>): void {
+    if (Object.entries(patch).every(([key, value]) => entry.presentation[key as keyof TerminalPresentation] === value)) return;
+    entry.presentation = { ...entry.presentation, ...patch };
+    for (const listener of this.#presentationListeners) listener();
+  }
+
+  async #read(id: string, enabled: boolean): Promise<void> {
+    const entry = this.#entries.get(id);
+    if (!entry?.surface) return;
+    const revision = ++entry.readRevision;
+    if (!enabled) {
+      this.#present(entry, { reading: undefined, unread: false });
+      entry.surface.setVisible?.(this.#visible && entry.presentation.reading === undefined);
+      entry.surface.scrollToBottom?.();
+      return;
+    }
+    entry.batcher?.flush();
+    try {
+      const text = await entry.surface.readText?.() ?? entry.surface.probe()?.text ?? "";
+      if (revision !== entry.readRevision || !entry.mounted) return;
+      this.#present(entry, { reading: text, unread: false });
+      entry.surface.setVisible?.(false);
+    } catch { this.#present(entry, { notice: "The reading view could not be captured." }); }
+  }
+
+  async #recover(id: string): Promise<void> {
+    const entry = this.#entries.get(id);
+    const container = entry?.surface?.container?.();
+    if (!entry || !container) return;
+    this.#disposeRuntime(entry);
+    entry.tail.clear();
+    this.#present(entry, { phase: "connecting", reading: undefined, notice: "Reopening the available recent output." });
+    await this.mount(id, container);
+  }
+
   readonly #resizeOwnershipListeners = new Set<() => void>();
   #resizeOwnershipRevision = 0;
   #visible = true;
@@ -87,6 +140,7 @@ export class TerminalPool {
           // Session descriptor itself is explicitly closed.
           this.#detachAttachment(entry);
         }
+        if (runtimeChanged) { entry.tail.clear(); this.#present(entry, { phase: "connecting", notice: "Terminal runtime changed.", reading: undefined }); }
         if (runtimeChanged && entry.mounted) {
           entry.mountToken = undefined;
           entry.surface?.unmount();
@@ -95,7 +149,7 @@ export class TerminalPool {
           void this.#ensureAttachment(entry);
         }
         if (lifecycleChanged && entry.mounted) {
-          entry.surface?.setVisible?.(this.#visible);
+          entry.surface?.setVisible?.(this.#visible && entry.presentation.reading === undefined);
         }
       }
     }
@@ -103,6 +157,9 @@ export class TerminalPool {
       if (!this.#entries.has(session.id)) {
         this.#entries.set(session.id, {
           session,
+          presentation: { phase: "connecting" },
+          tail: new TerminalOutputTail(),
+          readRevision: 0,
           surface: undefined,
           attachment: undefined,
           attaching: undefined,
@@ -129,6 +186,23 @@ export class TerminalPool {
         () => this.onImagePaste(entry.session.id),
       );
       entry.surface.setAppearanceTheme?.(this.#appearanceTheme);
+      const surface = entry.surface;
+      entry.batcher = new TerminalWriteBatcher((bytes, done) => surface.write(bytes, done));
+      entry.removeErrorListener = surface.onError?.(() => this.#present(entry, { phase: "failed", notice: "Terminal display stopped. Reopen the view to recover." }));
+      entry.replay = new TerminalReplayBuffer((bytes, complete) => {
+        const previous = entry.tail.snapshot();
+        const continuation = continueReplay(previous, bytes);
+        if (!complete) this.#present(entry, { notice: "Recent output is incomplete. Waiting for live output." });
+        if (previous.length && !bytes.length) this.#present(entry, { notice: "Connection restored. Output produced while disconnected may be unavailable." });
+        if (!continuation.continuous && bytes.length) {
+          entry.tail.clear();
+          surface.write(new Uint8Array([27, 99]), () => {});
+          this.#present(entry, { notice: "Earlier output could not be matched. Showing available recent output." });
+        }
+        const ready = () => { if (entry.presentation.phase !== "failed") this.#present(entry, { phase: "live", progress: undefined }); };
+        if (continuation.bytes.length) this.#write(entry, continuation.bytes, ready);
+        else ready();
+      }, (progress) => this.#present(entry, { phase: "replaying", progress }));
     }
     const mountToken = {};
     entry.mounted = true;
@@ -137,7 +211,7 @@ export class TerminalPool {
     const mounting = surface.mount(container, true);
     if (mounting) await mounting;
     if (!entry.mounted || entry.mountToken !== mountToken || entry.surface !== surface) return;
-    entry.surface.setVisible?.(this.#visible);
+    entry.surface.setVisible?.(this.#visible && entry.presentation.reading === undefined);
     if (sessionHasAttachableTerminal(entry.session)) {
       await this.#ensureAttachment(entry);
     }
@@ -173,7 +247,7 @@ export class TerminalPool {
     this.#visible = visible;
     for (const entry of this.#entries.values()) {
       if (entry.mounted) {
-        entry.surface?.setVisible?.(visible);
+        entry.surface?.setVisible?.(visible && entry.presentation.reading === undefined);
       }
     }
   }
@@ -286,7 +360,7 @@ export class TerminalPool {
         // already states that it stopped, so a red transport error would only
         // obscure it. Every other failure stays visible.
         if (sessionStoppedDuringAttach(error)) return;
-        entry.surface?.writeln(`\u001b[31m[terminal connection failed: ${String(error)}]\u001b[0m`);
+        this.#present(entry, { phase: "failed", notice: `Terminal connection failed: ${String(error)}` });
       })
       .finally(() => {
         if (entry.attaching === pending) entry.attaching = undefined;
@@ -304,42 +378,62 @@ export class TerminalPool {
       }
       return;
     }
-    if (!entry.surface) return;
+    if (!entry.surface || entry.attachment !== attachment) return;
+    if (event.type === "inputDelivery") {
+      this.#present(entry, { input: event.state, ...(event.state === "uncertain" ? { notice: "Input delivery unconfirmed. Check the terminal before sending again." } : {}) });
+      return;
+    }
     if (event.type === "gap") {
-      entry.surface.writeln("\u001b[33m[output gap — client was slow]\u001b[0m");
+      entry.tail.clear();
+      this.#present(entry, { notice: "Some output was skipped while this client was catching up." });
       return;
     }
     if (event.type === "inputRejected") {
-      entry.surface.writeln(`\u001b[31m[${event.message}]\u001b[0m`);
+      this.#present(entry, { notice: event.message, input: "uncertain" });
       return;
     }
     if (event.type === "state") {
-      // Transport state belongs to connection chrome, not the PTY byte
-      // stream. Writing retry attempts into the terminal permanently polluted
-      // scrollback and produced one red line for every reconnect backoff tick.
+      entry.batcher?.flush();
+      if (event.state !== "connected") entry.replay?.cancel();
+      this.#present(entry, { phase: event.state === "connected" || event.state === "connecting" ? "connecting" : "reconnecting", progress: undefined });
+      return;
+    }
+    const bytes = new Uint8Array(event.data);
+    if (event.kind === KIND_ACK) { entry.replay?.begin(bytes); return; }
+    if (event.kind === KIND_REPLAY_OUTPUT && entry.replay?.accept(bytes)) {
+      // Staging is separately bounded to 1 MiB. Release transport credit now so
+      // a replay larger than the renderer credit window can finish atomically.
+      attachment.acknowledge(bytes.length, true);
       return;
     }
     if (event.kind === KIND_OUTPUT || event.kind === KIND_REPLAY_OUTPUT) {
-      const bytes = new Uint8Array(event.data);
-      entry.surface.write(bytes, () => {
-        attachment.acknowledge(bytes.byteLength, event.kind === KIND_REPLAY_OUTPUT);
-        const measurement = entry.measurement;
-        if (!measurement) return;
-        entry.measurement = undefined;
-        clearTimeout(measurement.timeout);
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          measurement.resolve(performance.now() - measurement.started);
-        }));
-      });
+      entry.replay?.flush();
+      this.#write(entry, bytes, () => attachment.acknowledge(bytes.length, event.kind === KIND_REPLAY_OUTPUT));
+      this.#present(entry, { phase: "live", progress: undefined });
     } else if (event.kind === KIND_GAP) {
-      entry.surface.writeln("\u001b[33m[daemon output gap]\u001b[0m");
+      if (!entry.replay?.accept()) entry.tail.clear();
+      this.#present(entry, { notice: "Some earlier output is unavailable." });
     } else if (event.kind === KIND_EOF) {
-      if (entry.session.kind !== "Agent") entry.surface.writeln("\u001b[90m[process exited]\u001b[0m");
+      entry.replay?.accept();
+      entry.replay?.flush();
+      entry.batcher?.flush();
+      this.#present(entry, { phase: "exited", progress: undefined });
     } else if (event.kind === KIND_ERROR) {
-      entry.surface.writeln(`\u001b[31m[${decoder.decode(event.data)}]\u001b[0m`);
-    } else if (event.kind === KIND_ACK) {
-      // Attachment is live; no terminal text is needed.
+      this.#present(entry, { phase: "failed", notice: decoder.decode(event.data) });
     }
+  }
+
+  #write(entry: Entry, bytes: Uint8Array, done: () => void): void {
+    entry.tail.append(bytes);
+    if (entry.presentation.reading !== undefined) this.#present(entry, { unread: true });
+    entry.batcher?.push(bytes, () => {
+      done();
+      const measurement = entry.measurement;
+      if (!measurement) return;
+      entry.measurement = undefined;
+      clearTimeout(measurement.timeout);
+      requestAnimationFrame(() => requestAnimationFrame(() => measurement.resolve(performance.now() - measurement.started)));
+    });
   }
 
   #disposeRuntime(entry: Entry): void {
@@ -349,6 +443,8 @@ export class TerminalPool {
       entry.measurement = undefined;
     }
     this.#detachAttachment(entry);
+    entry.removeErrorListener?.();
+    entry.removeErrorListener = undefined;
     entry.surface?.dispose();
     entry.surface = undefined;
     entry.dimensions = undefined;
@@ -357,6 +453,8 @@ export class TerminalPool {
   }
 
   #detachAttachment(entry: Entry): void {
+    entry.batcher?.flush();
+    entry.replay?.cancel();
     entry.attachment?.dispose();
     entry.attachment = undefined;
     entry.attaching = undefined;

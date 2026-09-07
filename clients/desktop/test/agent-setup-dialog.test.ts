@@ -106,19 +106,19 @@ describe("Agent Setup", () => {
         select.dispatchEvent(new Event("change", { bubbles: true }));
       });
     };
-    await choose("Model", "gpt-5.6-luna");
+    await choose("Model", "gpt-6-astra");
     await choose("Permission", "bypassPermissions");
     await choose("Reasoning", "medium");
     await act(async () => host.querySelector<HTMLButtonElement>('button[type="submit"]')?.click());
 
     expect(start).toHaveBeenCalledWith({
       agentId: "codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-astra",
       permission: "bypassPermissions",
       reasoning: "medium",
     });
     expect(readQuickActionMemory().presets.codex).toEqual({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-astra",
       permission: "bypassPermissions",
       reasoning: "medium",
     });

@@ -11,6 +11,8 @@ export const KIND_ERROR = 12;
 export const KIND_FOCUS = 13;
 export const KIND_RESIZE_OWNERSHIP = 14;
 export const KIND_DETACH = 15;
+export const KIND_INPUT_ACK = 16;
+export const KIND_ENABLE_INPUT_ACK = 17;
 
 const encoder = new TextEncoder();
 
@@ -51,6 +53,7 @@ export function decodeFrame(bytes: Uint8Array): {
   sessionId: string;
   epoch: number;
   kind: number;
+  sequence: bigint;
   payload: Uint8Array;
 } {
   if (bytes.byteLength < 41) throw new Error("terminal frame too short");
@@ -61,6 +64,7 @@ export function decodeFrame(bytes: Uint8Array): {
     sessionId: uuidString(bytes.slice(4, 20)),
     epoch: Number(view.getBigUint64(20)),
     kind: bytes[36]!,
+    sequence: view.getBigUint64(28),
     payload: bytes.slice(41, 41 + length),
   };
 }
@@ -77,4 +81,19 @@ export function encodeAcknowledgedBytes(bytes: number): Uint8Array<ArrayBuffer> 
   const payload = new Uint8Array(8);
   new DataView(payload.buffer).setBigUint64(0, BigInt(Math.max(0, Math.floor(bytes))));
   return payload;
+}
+
+export function replayRequestPayload(): Uint8Array {
+  const payload = new Uint8Array(12);
+  payload.set(encoder.encode("TLRQ"));
+  const view = new DataView(payload.buffer);
+  view.setUint32(4, 1024 * 1024);
+  view.setUint32(8, 64 * 1024);
+  return payload;
+}
+export function decodeReplayAck(payload: Uint8Array): { frames: number; bytes: number } | undefined {
+  if (payload.length !== 12 || new TextDecoder().decode(payload.subarray(0, 4)) !== "TLRA") return undefined;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const frames = view.getUint32(4), bytes = view.getUint32(8);
+  return frames <= 256 && bytes <= 1024 * 1024 ? { frames, bytes } : undefined;
 }

@@ -35,6 +35,9 @@
   launch selection; migration never infers it from legacy Sessions.
 - Task worktree generation is monotonic and survives cleanup. Cleanup authority
   is bounded to one current journal and one latest receipt per Task, never history.
+- Task archive authority is one bounded current journal plus one sidecar per
+  suspended Project-scoped Session. Commit/restore are atomic current-state
+  replacements and never retain archive history.
 - Stale-resolution authority is likewise bounded to one current journal and one
   latest receipt; binding/proof clear and receipt replacement are one exact-tuple
   transaction.

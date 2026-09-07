@@ -11,34 +11,6 @@ pub struct ReconciledSessionExits {
 }
 
 impl CoreRuntime {
-    /// Stops and forgets the in-memory half of a persistent assistant Session
-    /// whose owning configuration is about to be deleted atomically. Durable
-    /// descriptor cleanup remains part of the owner-delete Store commit.
-    pub(crate) fn retire_owned_assistant_runtime(
-        &mut self,
-        session_id: &str,
-    ) -> Result<(), CoreError> {
-        if self
-            .terminal
-            .contains_session(session_id)
-            .map_err(terminal_error)?
-        {
-            self.terminal
-                .terminate(session_id)
-                .map_err(terminal_error)?;
-        }
-        self.agent_terminal_holds.remove(session_id);
-        self.agent_observations.remove(session_id);
-        self.forget_ask_to_session(session_id);
-        self.retire_fork_relationship(session_id);
-        self.agent_conversation_activity.remove(session_id);
-        self.resume_ready.remove(session_id);
-        self.resume_failure_reaps.remove(session_id);
-        self.pending_agent_resume_refs.remove(session_id);
-        self.codex_runtimes.remove(session_id);
-        Ok(())
-    }
-
     pub fn terminate_session(
         &mut self,
         params: Value,
@@ -476,7 +448,7 @@ impl CoreRuntime {
         // A failed persistent-assistant resume must remain a stopped provider
         // conversation, not turn into an ordinary shell under the same
         // Session id. The exact configuration binding is retained so Retry can
-        // re-derive the Steward/Worker MCP role and resume that conversation.
+        // re-derive the Steward MCP role and resume that conversation.
         if self.session_is_persistent_assistant_executor(session_id) {
             return Ok(());
         }
@@ -704,7 +676,6 @@ pub(super) fn session_projection(
         "improver_target": session.improver_target.as_ref().map(|target| json!({
             "targetKind": match target.target_kind {
                 termloop_domain::ImproverSessionTargetKind::StewardInstructions => "stewardInstructions",
-                termloop_domain::ImproverSessionTargetKind::WorkerInstructions => "workerInstructions",
                 termloop_domain::ImproverSessionTargetKind::RoutineInstructions => "routineInstructions",
                 termloop_domain::ImproverSessionTargetKind::RoutineBuilder => "routineBuilder",
                 termloop_domain::ImproverSessionTargetKind::Playbook => "playbook",

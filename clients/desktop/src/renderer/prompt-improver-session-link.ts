@@ -53,17 +53,15 @@ export function playbookBuilderSession(
 
 export function routineBuilderSession(
   projectId: string,
-  worker: Readonly<{ id: string; name: string }>,
-  workers: readonly Readonly<{ id: string; name: string }>[],
   sessions: readonly Session[],
 ): Session | undefined {
   return livePromptImproverSession(projectId, {
     surface: "routineBuilder",
-    ownerId: worker.id,
+    ownerId: null,
   }, sessions, {
     templateRef: "builtin.builder.routine",
-    sessionName: `build: Routine for ${worker.name}`,
-    targetNameIsUnique: workers.filter((candidate) => candidate.name === worker.name).length === 1,
+    sessionName: "build: Project Routine",
+    targetNameIsUnique: true,
   });
 }
 

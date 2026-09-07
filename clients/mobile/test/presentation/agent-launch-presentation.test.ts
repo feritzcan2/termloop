@@ -24,7 +24,7 @@ const CAPABILITIES: AgentCapabilityDto[] = [
   {
     agent_id: "codex", label: "Codex", available: true, version: "0.51.0",
     integration_level: "full", degraded_reason: null,
-    models: ["default", "gpt-5.6-sol", "gpt-5.5-pro"],
+    models: ["default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.5-pro"],
     permissions: ["default", "plan"], reasoning: ["default", "high"],
     observation_supported: true, quick_action_supported: true,
     tracked_helpers_supported: true, resume_supported: true, native_fork_supported: true,
@@ -43,13 +43,13 @@ describe("the launch choices a phone offers", () => {
   it("offers each provider its own models and nothing else", () => {
     const options = launchAgentOptions(CAPABILITIES);
     expect(options.find((option) => option.agentId === "claude")?.models).toContain("opus[1m]");
-    expect(options.find((option) => option.agentId === "codex")?.models).toContain("gpt-5.6-sol");
+    expect(options.find((option) => option.agentId === "codex")?.models).toContain("gpt-6-astra");
     expect(options.find((option) => option.agentId === "gemini")?.models).toEqual(["default", "auto", "flash"]);
   });
 
   it("drops a model the newly chosen provider has never heard of", () => {
     expect(coerceModel("codex", "opus[1m]", CAPABILITIES)).toBe("default");
-    expect(coerceModel("codex", "gpt-5.5-pro", CAPABILITIES)).toBe("gpt-5.5-pro");
+    expect(coerceModel("codex", "gpt-6-astra", CAPABILITIES)).toBe("gpt-6-astra");
     expect(coerceModel("gemini", "flash", CAPABILITIES)).toBe("flash");
   });
 
@@ -83,12 +83,12 @@ describe("saved launch choices", () => {
   it("restores supported choices for the same available provider", () => {
     expect(restoreLaunchSelection({
       agentId: "codex",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-astra",
       permission: "plan",
       reasoning: "high",
     }, CAPABILITIES)).toEqual({
       agentId: "codex",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-astra",
       permission: "plan",
       reasoning: "high",
     });

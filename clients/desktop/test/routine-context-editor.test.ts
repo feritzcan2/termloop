@@ -9,7 +9,7 @@ import type { PromptImprovement } from "../src/renderer/ui/PromptImprovement.js"
 
 function routine(id = "routine-1"): RoutineConfigurationDto {
   return {
-    id, projectId: "project-1", workerId: "worker-1",
+    id, projectId: "project-1",
     triggerMode: "schedule", name: "Release memory", instructions: "Inspect the release.",
     whileWaiting: { mode: "off", instructions: "" }, enabled: true, scheduleIntervalSeconds: 300,
     generation: 1, contextMarkdown: "# Current\nKeep this until cleared.", contextRevision: 2,

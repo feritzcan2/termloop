@@ -26,6 +26,8 @@
 
 ## Invariants
 
+- All schema-authored MCP descriptions and other model-facing copy are written
+  in English, including illustrative user-intent examples.
 - PTY output/input is binary framed data, never JSON or base64.
 - Steward presence carries only nullable byte-activity time and active command
   label fields. Companion semantics use a closed kind enum and bounded refs,
@@ -45,6 +47,9 @@
 - Task `jira_url` is a nullable sidecar projection. The Steward setter accepts
   only the exact schema-bounded Jira browse URL and never becomes a control
   method or a Worker/helper tool.
+- Task archive contracts keep `status` at `open | closed`, use required nullable
+  `archived_at_epoch_ms`, require explicit list scope, and expose no Task parent
+  on Session DTOs.
 - Steward self-prompt editing uses generated MCP-only read and update tools with
   no Project or Session selector. Update requires the exact user-message ID,
   the exact complete editable value previously read, and the bounded complete

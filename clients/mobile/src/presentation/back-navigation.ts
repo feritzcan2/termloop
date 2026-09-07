@@ -1,4 +1,4 @@
-export type BackNavigationAction = "back" | "dismissTo" | "fallback";
+export type BackNavigationAction = "back" | "replace" | "fallback";
 
 /// A cold deep link or an OTA reload can restore a detail route without putting
 /// Home underneath it. Calling `back` in that state leaves the native app instead
@@ -7,6 +7,6 @@ export function backNavigationAction(
   canGoBack: boolean,
   hasExplicitDestination: boolean,
 ): BackNavigationAction {
-  if (hasExplicitDestination) return "dismissTo";
+  if (hasExplicitDestination) return "replace";
   return canGoBack ? "back" : "fallback";
 }

@@ -15,8 +15,8 @@ use termloop_contract::current::{
     McpStewardTaskAgentStartParams, McpStewardTaskCreateParams, McpStewardTaskIdParams,
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
     McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
-    RoutineFindingResolveParams, SendToAgentParams, WorkerAssignmentCompleteParams,
-    WorkerAssignmentStatus, WorkerTaskAgentRequestParams, WorkflowDelegateParams,
+    RoutineAssignmentCompleteParams, RoutineAssignmentStatus, RoutineFindingResolveParams,
+    SendToAgentParams, StewardTaskAgentRequestParams, WorkflowDelegateParams,
     WorkflowStepCompleteParams,
 };
 use tokio::time::{Duration, Instant};
@@ -185,7 +185,6 @@ fn mcp_role_name(role: &termloop_core::session_launch::AgentMcpRole) -> &'static
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => "improver",
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => "helper",
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => "steward",
-        termloop_core::session_launch::AgentMcpRole::Worker { .. } => "worker",
     }
 }
 
@@ -287,6 +286,8 @@ async fn tool_call_inner(
                 termloop_core::session_launch::AskToInput {
                     target: target.into(),
                     message: params.message,
+                    model: params.model,
+                    reasoning: params.reasoning,
                     idempotency_key: params.idempotency_key,
                     conversation_id: params.conversation_id,
                     launch_selection: None,
@@ -347,29 +348,10 @@ async fn tool_call_inner(
         (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "task_read") => {
             let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
-            read_tasks(project_id, None, params, state).await
-        }
-        (termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. }, "task_read") => {
-            let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
-                .expect("generated MCP validation precedes decoding");
             read_tasks(project_id, Some(principal.session_id()), params, state).await
         }
         (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "project_read",
-        ) => text_result(
-            state
-                .core
-                .lock()
-                .await
-                .project_projection_for_executor(project_id),
-        ),
-        (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
-            "agent_status_read",
-        )
-        | (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
             "agent_status_read",
         ) => text_result(
             state
@@ -379,7 +361,7 @@ async fn tool_call_inner(
                 .agent_status_projection_for_executor(project_id),
         ),
         (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
+            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "task_agent_transcript_tail_read",
         ) => {
             let params: McpTaskAgentTranscriptTailReadParams = serde_json::from_value(arguments)
@@ -565,25 +547,24 @@ async fn tool_call_inner(
             send_steward_agent_message(project_id, principal.session_id(), params, state).await
         }
         (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
+            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "task_agent_request",
         ) => {
-            let params: WorkerTaskAgentRequestParams = serde_json::from_value(arguments)
+            let params: StewardTaskAgentRequestParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
-            worker_task_agent_request(project_id, principal.session_id(), token, params, state)
+            steward_task_agent_request(project_id, principal.session_id(), token, params, state)
                 .await
         }
         (
-            termloop_core::session_launch::AgentMcpRole::Worker {
-                project_id,
-                worker_id: _,
-            },
-            "worker_get_next_routine",
-        ) => worker_get_next_routine(project_id, principal.session_id(), state).await,
+            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
+            "steward_next_assignment",
+        ) => steward_next_assignment(project_id, principal.session_id(), state).await,
         (
-            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
-            "worker_complete_assignment",
-        ) => worker_complete_assignment(project_id, principal.session_id(), arguments, state).await,
+            termloop_core::session_launch::AgentMcpRole::Steward { project_id },
+            "steward_complete_assignment",
+        ) => {
+            steward_complete_assignment(project_id, principal.session_id(), arguments, state).await
+        }
         _ => Err(termloop_core::CoreError::CapabilityDenied),
     };
     match result {
@@ -693,19 +674,19 @@ async fn execute_ask_to_launch(
     if let Some(error) = plan.observation_warning() {
         tracing::warn!(%error, "helper status runtime unavailable; launching without observation");
     }
-    let (result, state_revision) = {
+    let result = {
         let mut core = state.core.lock().await;
         let result = core.complete_ask_to_launch(request_id, &mut plan);
         if result.is_err() {
             core.fail_ask_to_launch(request_id);
         }
-        (result, core.state_revision())
+        result
     };
     tokio::task::spawn_blocking(move || drop(plan));
     let completion = result?;
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![ProjectionTopic::Session],
-        state_revision,
+        state_revision: completion.state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
     if let Some(cwd) = completion
@@ -728,10 +709,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
         }
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => {
-            "Authenticated Project Steward profile. Follow the visible versioned Steward and wake prompts; the exposed MCP tools enforce Project scope and mutation authority."
-        }
-        termloop_core::session_launch::AgentMcpRole::Worker { .. } => {
-            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. During an exact claimed Playbook step, task_agent_request may send one Task-scoped question or delegated follow-up only to the canonical Agent selected by that Task's successful scoped task_read coordinationAgent projection; the Agent may return a visible handoff to this exact Worker Session. Workers cannot contact any other Agent or launch a replacement."
+            "Authenticated Project Steward profile. Follow the visible versioned Steward and assignment prompts. Claim at most one due assignment, inspect its exact Task identity with task_read, verify provider truth live with the tools available in this Session, then complete the exact claim. You may ask or delegate to only the canonical existing Task Agent selected by task_read; never launch a duplicate."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -756,7 +734,7 @@ fn text_result(
 
 async fn read_tasks(
     project_id: &str,
-    worker_session_id: Option<&str>,
+    assignment_session_id: Option<&str>,
     params: protocol::McpTaskReadParams,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
@@ -773,11 +751,9 @@ async fn read_tasks(
         );
     };
 
-    let worker_claim = if let Some(session_id) = worker_session_id {
-        let check_id = params
-            .check_id
-            .as_deref()
-            .ok_or_else(|| termloop_core::CoreError::InvalidParams("checkId".into()))?;
+    let assignment_claim = if let (Some(session_id), Some(check_id)) =
+        (assignment_session_id, params.check_id.as_deref())
+    {
         let capability = claimed_check(state, project_id, session_id, check_id)?;
         let claimed_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
         if claimed_task_id
@@ -796,7 +772,7 @@ async fn read_tasks(
 
     let (task, agent_statuses, coordination_agent) = {
         let core = state.core.lock().await;
-        if let Some((_, _, capability)) = worker_claim.as_ref() {
+        if let Some((_, _, capability)) = assignment_claim.as_ref() {
             let claimed_task_id = core.tracker_check_task_id(capability)?;
             if claimed_task_id
                 .as_deref()
@@ -811,7 +787,7 @@ async fn read_tasks(
             core.task_coordination_agent_projection_for_executor(project_id, &task_id)?,
         )
     };
-    if let Some((session_id, check_id, _)) = worker_claim {
+    if let Some((session_id, check_id, _)) = assignment_claim {
         let marked =
             state
                 .tracker_report_capabilities
@@ -1191,14 +1167,14 @@ async fn send_steward_agent_message(
     Ok(json!({ "sessionId": params.session_id, "status": "submitting" }))
 }
 
-async fn worker_task_agent_request(
+async fn steward_task_agent_request(
     project_id: &str,
-    worker_session_id: &str,
+    steward_session_id: &str,
     token: &str,
-    params: WorkerTaskAgentRequestParams,
+    params: StewardTaskAgentRequestParams,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let capability = claimed_check(state, project_id, worker_session_id, &params.check_id)?;
+    let capability = claimed_check(state, project_id, steward_session_id, &params.check_id)?;
     let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
     if focused_task_id.as_deref() != Some(params.task_id.as_str()) {
         return Err(termloop_core::CoreError::CapabilityDenied);
@@ -1210,7 +1186,7 @@ async fn worker_task_agent_request(
             .ok()
             .is_some_and(|mut capabilities| {
                 capabilities.task_was_read(
-                    worker_session_id,
+                    steward_session_id,
                     &params.check_id,
                     &params.task_id,
                     super::current_epoch_ms(),
@@ -1232,7 +1208,7 @@ async fn worker_task_agent_request(
     core.send_to_agent(token, &params.session_id, &params.message)
 }
 
-async fn worker_get_next_routine(
+async fn steward_next_assignment(
     project_id: &str,
     session_id: &str,
     state: &AppState,
@@ -1240,7 +1216,7 @@ async fn worker_get_next_routine(
     let now = super::current_epoch_ms();
     let (claim, state_revision) = {
         let mut core = state.core.lock().await;
-        let claim = core.claim_next_worker_routine(
+        let claim = core.claim_next_steward_routine(
             project_id,
             session_id,
             termloop_platform::generate_opaque_id(),
@@ -1248,9 +1224,9 @@ async fn worker_get_next_routine(
         )?;
         (claim, core.state_revision())
     };
-    let invalidation_topics = worker_claim_invalidation_topics(&claim.result);
-    // The first get-next call is the Worker's readiness handshake. Wake the
-    // deadline supervisor so an idle result still arms the next due time.
+    let invalidation_topics = routine_claim_invalidation_topics(&claim.result);
+    // Wake the deadline supervisor so an idle result still arms the next due
+    // time without a periodic assistant handshake.
     state.tracker_runtime_wake.notify_one();
     if let Some(capability) = claim.capability.as_ref() {
         let issued = state
@@ -1265,7 +1241,7 @@ async fn worker_get_next_routine(
                 .core
                 .lock()
                 .await
-                .release_worker_routine_claim(capability);
+                .release_steward_routine_claim(capability);
             return Err(termloop_core::CoreError::TrackerReportInvalid);
         }
     }
@@ -1279,7 +1255,7 @@ async fn worker_get_next_routine(
     text_result(Ok(claim.result))
 }
 
-pub(super) fn worker_claim_invalidation_topics(result: &Value) -> Vec<ProjectionTopic> {
+pub(super) fn routine_claim_invalidation_topics(result: &Value) -> Vec<ProjectionTopic> {
     result
         .get("step")
         .is_some_and(Value::is_object)
@@ -1288,9 +1264,9 @@ pub(super) fn worker_claim_invalidation_topics(result: &Value) -> Vec<Projection
         .collect()
 }
 
-/// The Worker's proof that it holds the current claim it is reporting on.
+/// The Steward's proof that it holds the current claim it is reporting on.
 ///
-/// Every Worker report path proves the same thing: a live capability for this
+/// Every assignment report path proves the same thing: a live capability for this
 /// exact check, held by this exact Session in this exact Project. Keeping it in
 /// one place keeps that gate one decision rather than three.
 fn claimed_check(
@@ -1310,19 +1286,19 @@ fn claimed_check(
             capabilities.lookup(session_id, check_id, super::current_epoch_ms())
         })
         .ok_or(termloop_core::CoreError::CapabilityDenied)?;
-    if capability.project_id != project_id || capability.worker_session_id != session_id {
+    if capability.project_id != project_id || capability.steward_session_id != session_id {
         return Err(termloop_core::CoreError::CapabilityDenied);
     }
     Ok(capability)
 }
 
-async fn worker_complete_assignment(
+async fn steward_complete_assignment(
     project_id: &str,
     session_id: &str,
     arguments: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let params: WorkerAssignmentCompleteParams =
+    let params: RoutineAssignmentCompleteParams =
         serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
     let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
     let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
@@ -1363,20 +1339,20 @@ async fn worker_complete_assignment(
             return Err(termloop_core::CoreError::TrackerReportInvalid);
         }
         let verdict = match params.status {
-            WorkerAssignmentStatus::Satisfied => {
+            RoutineAssignmentStatus::Satisfied => {
                 termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed
             }
-            WorkerAssignmentStatus::Pending => {
+            RoutineAssignmentStatus::Pending => {
                 termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting
             }
-            WorkerAssignmentStatus::Blocked => {
+            RoutineAssignmentStatus::Blocked => {
                 termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked
             }
         };
-        let result = state.core.lock().await.report_worker_step_verdicts(
+        let result = state.core.lock().await.report_steward_step_verdicts(
             &capability,
             vec![
-                termloop_core::companion_integrations::playbook_runtime::WorkerStepVerdict {
+                termloop_core::companion_integrations::playbook_runtime::StewardStepVerdict {
                     task_id,
                     verdict,
                     evidence: params.evidence,
@@ -1385,7 +1361,7 @@ async fn worker_complete_assignment(
             termloop_platform::generate_opaque_id(),
             super::current_epoch_ms(),
         );
-        let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
+        let result = finish_steward_report_attempt(state, session_id, &capability, result).await?;
         if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
             capabilities.revoke_check(session_id, &capability.check_id);
         }
@@ -1400,7 +1376,7 @@ async fn worker_complete_assignment(
         return Ok(json!({ "status": "completed" }));
     }
 
-    if params.status == WorkerAssignmentStatus::Blocked {
+    if params.status == RoutineAssignmentStatus::Blocked {
         if params.expected_context_revision.is_some()
             || params.context_markdown.is_some()
             || params.summary.is_some()
@@ -1415,14 +1391,14 @@ async fn worker_complete_assignment(
         {
             return Err(termloop_core::CoreError::TrackerReportInvalid);
         }
-        let result = state.core.lock().await.report_worker_routine_problem(
+        let result = state.core.lock().await.report_steward_routine_problem(
             &capability,
             params.evidence,
             params.source_references.unwrap_or_default(),
             termloop_platform::generate_opaque_id(),
             super::current_epoch_ms(),
         );
-        let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
+        let result = finish_steward_report_attempt(state, session_id, &capability, result).await?;
         if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
             capabilities.revoke_check(session_id, &capability.check_id);
         }
@@ -1447,18 +1423,18 @@ async fn worker_complete_assignment(
         .findings
         .unwrap_or_default()
         .into_iter()
-        .map(|finding| {
-            termloop_core::companion_integrations::tracker_runtime::WorkerRoutineFinding {
+        .map(
+            |finding| termloop_core::companion_integrations::tracker_runtime::RoutineFinding {
                 id: termloop_platform::generate_opaque_id(),
                 source_key: finding.source_key,
                 summary: finding.summary,
                 evidence: finding.evidence,
                 source_references: finding.source_references,
                 related_task_ids: finding.related_task_ids,
-            }
-        })
+            },
+        )
         .collect();
-    let result = state.core.lock().await.complete_worker_routine(
+    let result = state.core.lock().await.complete_steward_routine(
         &capability,
         expected_context_revision,
         context_markdown,
@@ -1468,16 +1444,16 @@ async fn worker_complete_assignment(
         termloop_platform::generate_opaque_id(),
         super::current_epoch_ms(),
     );
-    let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
+    let result = finish_steward_report_attempt(state, session_id, &capability, result).await?;
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_check(session_id, &capability.check_id);
     }
     let wake_reason = routine_finding_wake(&result);
     finish_routine_report(project_id, state, wake_reason).await;
-    Ok(json!({ "status": worker_routine_completion_status(&result) }))
+    Ok(json!({ "status": routine_completion_status(&result) }))
 }
 
-fn worker_routine_completion_status(result: &Value) -> &'static str {
+fn routine_completion_status(result: &Value) -> &'static str {
     if result["contextMarkdownApplied"] == false {
         "completedContextPreserved"
     } else {
@@ -1497,7 +1473,7 @@ fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
     }
 }
 
-async fn finish_worker_report_attempt<T>(
+async fn finish_steward_report_attempt<T>(
     state: &AppState,
     session_id: &str,
     capability: &termloop_core::companion_integrations::tracker_runtime::TrackerCheckCapability,
@@ -1505,13 +1481,13 @@ async fn finish_worker_report_attempt<T>(
 ) -> Result<T, termloop_core::CoreError> {
     if matches!(result, Err(termloop_core::CoreError::TrackerReportStale)) {
         // The report is no longer admissible, so this exact claim must not be
-        // handed to the Worker again. Releasing by the full claim tuple stays
+        // handed to the Steward again. Releasing by the full claim tuple stays
         // safe even when a reset or edit made its Routine generation stale.
         state
             .core
             .lock()
             .await
-            .release_worker_routine_claim(capability);
+            .release_steward_routine_claim(capability);
         if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
             capabilities.revoke_check(session_id, &capability.check_id);
         }
@@ -1576,7 +1552,6 @@ fn tools_for_role_with(
         }
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => protocol::MCP_HELPER_TOOLS,
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => protocol::MCP_STEWARD_TOOLS,
-        termloop_core::session_launch::AgentMcpRole::Worker { .. } => protocol::MCP_WORKER_TOOLS,
     };
     let definitions: Vec<Value> = serde_json::from_str(protocol::MCP_TOOL_DEFINITIONS_JSON)
         .expect("generated MCP definitions are valid JSON");
@@ -1734,7 +1709,7 @@ fn core_tool_error(id: Value, error: &termloop_core::CoreError) -> Response {
         termloop_core::CoreError::TrackerReportStale => tool_error(
             id,
             "staleCheck",
-            "Routine check expired or changed; call worker_get_next_routine again",
+            "Routine check expired or changed; call steward_next_assignment again",
             None,
         ),
         termloop_core::CoreError::TrackerReportInvalid => {
@@ -1812,13 +1787,13 @@ mod tests {
     #[test]
     fn only_a_step_claim_invalidates_the_playbook_processing_projection() {
         assert_eq!(
-            worker_claim_invalidation_topics(
+            routine_claim_invalidation_topics(
                 &json!({"status":"assigned","step":{"tasks":[{"taskId":"task-1"}]}})
             ),
             vec![ProjectionTopic::Playbook]
         );
-        assert!(worker_claim_invalidation_topics(&json!({"status":"assigned"})).is_empty());
-        assert!(worker_claim_invalidation_topics(&json!({"status":"idle"})).is_empty());
+        assert!(routine_claim_invalidation_topics(&json!({"status":"assigned"})).is_empty());
+        assert!(routine_claim_invalidation_topics(&json!({"status":"idle"})).is_empty());
     }
 
     #[test]
@@ -1846,13 +1821,6 @@ mod tests {
         let steward = tools_for_role(
             &termloop_core::session_launch::AgentMcpRole::Steward {
                 project_id: "project-1".into(),
-            },
-            &descriptions,
-        );
-        let worker = tools_for_role(
-            &termloop_core::session_launch::AgentMcpRole::Worker {
-                project_id: "project-1".into(),
-                worker_id: "worker-1".into(),
             },
             &descriptions,
         );
@@ -1942,15 +1910,11 @@ mod tests {
         assert!(tool_names(&steward).contains(&"routine_finding_resolve"));
         assert!(tool_names(&steward).contains(&"playbook_read"));
         assert!(tool_names(&steward).contains(&"task_set_steward_brief"));
-        assert!(!tool_names(&worker).contains(&"playbook_read"));
-        assert!(!tool_names(&worker).contains(&"routine_finding_resolve"));
-        assert!(!tool_names(&worker).contains(&"task_set_steward_brief"));
         assert!(!tool_names(&asker).contains(&"playbook_read"));
         assert!(!tool_names(&helper).contains(&"task_set_steward_brief"));
         assert!(!tool_names(&steward).contains(&"ask_to"));
-        assert!(!tool_names(&steward).contains(&"worker_complete_assignment"));
-        assert!(tool_names(&worker).contains(&"worker_complete_assignment"));
-        let task_read = worker
+        assert!(tool_names(&steward).contains(&"steward_complete_assignment"));
+        let task_read = steward
             .iter()
             .find(|tool| tool["name"] == "task_read")
             .unwrap();
@@ -1963,20 +1927,8 @@ mod tests {
                 .as_str()
                 .is_some_and(|description| description.contains("successful scoped read"))
         );
-        assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
-        assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
-        assert!(tool_names(&worker).contains(&"task_agent_request"));
-        assert!(!tool_names(&steward).contains(&"task_agent_request"));
-        assert!(!tool_names(&worker).contains(&"send_to_agent"));
-        assert!(!tool_names(&worker).contains(&"worker_complete_routine"));
-        assert!(!tool_names(&worker).contains(&"worker_report_routine_problem"));
-        assert!(!tool_names(&worker).contains(&"worker_report_step_verdicts"));
-        assert!(!tool_names(&worker).contains(&"ask_to"));
-        assert!(!tool_names(&worker).contains(&"task_create"));
-        assert!(!tool_names(&worker).contains(&"task_agent_start"));
-        assert!(!tool_names(&worker).contains(&"task_set_jira_url"));
-        assert!(!tool_names(&worker).contains(&"steward_system_prompt_read"));
-        assert!(!tool_names(&worker).contains(&"steward_system_prompt_update"));
+        assert!(tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
+        assert!(tool_names(&steward).contains(&"task_agent_request"));
         assert!(
             protocol::MCP_TOOLS
                 .iter()
@@ -2005,7 +1957,7 @@ mod tests {
                     "visible `builtin.steward.task-assignment` explicitly supplies the exact Steward Session ID"
                 ))
         );
-        let task_agent_request = worker
+        let task_agent_request = steward
             .iter()
             .find(|tool| tool["name"] == "task_agent_request")
             .unwrap();
@@ -2073,11 +2025,11 @@ mod tests {
     #[test]
     fn worker_completion_names_when_a_newer_user_context_won() {
         assert_eq!(
-            worker_routine_completion_status(&json!({ "contextMarkdownApplied": false })),
+            routine_completion_status(&json!({ "contextMarkdownApplied": false })),
             "completedContextPreserved"
         );
         assert_eq!(
-            worker_routine_completion_status(&json!({ "contextMarkdownApplied": true })),
+            routine_completion_status(&json!({ "contextMarkdownApplied": true })),
             "completed"
         );
     }
@@ -2291,7 +2243,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_worker_claim_tells_the_worker_to_claim_again() {
+    async fn stale_routine_claim_tells_the_steward_to_claim_again() {
         let response = response_json(core_tool_error(
             json!(8),
             &termloop_core::CoreError::TrackerReportStale,
@@ -2302,7 +2254,7 @@ mod tests {
             response["result"]["structuredContent"],
             json!({
                 "code": "staleCheck",
-                "message": "Routine check expired or changed; call worker_get_next_routine again",
+                "message": "Routine check expired or changed; call steward_next_assignment again",
                 "details": null
             })
         );

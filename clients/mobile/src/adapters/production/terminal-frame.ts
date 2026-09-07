@@ -9,6 +9,7 @@ export const KIND_ACK = 11;
 export const KIND_ERROR = 12;
 export const KIND_DETACH = 15;
 export const KIND_INPUT_ACK = 16;
+export const KIND_ENABLE_INPUT_ACK = 17;
 
 const HEADER_BYTES = 41;
 const REPLAY_REQUEST_MAGIC = "TLRQ";

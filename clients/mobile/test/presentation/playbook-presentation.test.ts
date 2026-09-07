@@ -31,7 +31,6 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     retryDelaySeconds: 600,
     completeWhen: "The Task branch has commits.",
     whileWaiting: { mode: "off", instructions: "" },
-    workerId: "worker-1",
     approver: null,
     ...overrides,
   };

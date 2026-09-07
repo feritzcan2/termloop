@@ -36,14 +36,16 @@ describe("appearance theme", () => {
     initializeAppearanceTheme(controllableSystemAppearance(true).query);
   });
 
-  it("defaults invalid or missing stored values to system", () => {
+  it("defaults invalid, missing, or legacy stored values to system", () => {
     expect(readAppearancePreference()).toBe("system");
-    window.localStorage.setItem("termloop.appearance-theme", "purple");
+    window.localStorage.setItem("termloop.appearance-theme", "dark");
+    expect(readAppearancePreference()).toBe("system");
+    window.localStorage.setItem("termloop.appearance-preference", "purple");
     expect(readAppearancePreference()).toBe("system");
   });
 
   it("restores, applies, publishes, and persists an explicit theme", () => {
-    window.localStorage.setItem("termloop.appearance-theme", "light");
+    window.localStorage.setItem("termloop.appearance-preference", "light");
     const themeChanged = vi.fn();
     const preferenceChanged = vi.fn();
     const unsubscribeTheme = subscribeAppearanceTheme(themeChanged);
@@ -58,7 +60,7 @@ describe("appearance theme", () => {
     expect(preferenceChanged).toHaveBeenCalledTimes(1);
 
     setAppearancePreference("dark");
-    expect(window.localStorage.getItem("termloop.appearance-theme")).toBe("dark");
+    expect(window.localStorage.getItem("termloop.appearance-preference")).toBe("dark");
     expect(document.documentElement.dataset.appearance).toBe("dark");
     expect(themeChanged).toHaveBeenCalledTimes(2);
     expect(preferenceChanged).toHaveBeenCalledTimes(2);
@@ -82,7 +84,7 @@ describe("appearance theme", () => {
     expect(changed).toHaveBeenCalledTimes(2);
 
     setAppearancePreference("system");
-    expect(window.localStorage.getItem("termloop.appearance-theme")).toBe("system");
+    expect(window.localStorage.getItem("termloop.appearance-preference")).toBe("system");
     unsubscribe();
   });
 
