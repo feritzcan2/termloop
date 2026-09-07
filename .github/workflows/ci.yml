@@ -81,3 +81,4 @@ jobs:
       - uses: ./.github/actions/native-verify
         with:
           upload-unsigned: "true"
+          cache-pnpm: ${{ matrix.os == 'macos-15' && 'false' || 'true' }}
