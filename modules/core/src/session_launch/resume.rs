@@ -397,6 +397,11 @@ impl AgentResumePlan {
         // until complete_agent_resume promotes this exact token.
         self.register_provisional_mcp();
         if self.agent_id == "codex" {
+            let developer_instructions = self
+                .prepared_launch
+                .as_ref()
+                .and_then(|launch| launch.codex_app_server_developer_instructions())
+                .map(str::to_owned);
             let runtime = start_codex_runtime(
                 &self.session_id,
                 self.runtime_epoch,
@@ -415,6 +420,7 @@ impl AgentResumePlan {
                             .map(super::AgentMcpRole::invocation_profile)
                             .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
                     }),
+                developer_instructions.as_deref(),
                 self.runtime_signal_sender
                     .take()
                     .ok_or(AgentResumePreparationError::ProviderRejected)?,

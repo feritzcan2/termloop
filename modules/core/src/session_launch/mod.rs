@@ -362,6 +362,11 @@ impl AgentLaunchPlan {
         let Some(runtime_signal_sender) = self.runtime_signal_sender.take() else {
             return;
         };
+        let developer_instructions = self
+            .prepared_launch
+            .as_ref()
+            .and_then(|launch| launch.codex_app_server_developer_instructions())
+            .map(str::to_owned);
         // Codex eagerly initializes configured MCP servers while its App
         // Server is still starting. Admit only transport-level traffic before
         // process creation; complete_agent_launch promotes this exact token to
@@ -381,6 +386,7 @@ impl AgentLaunchPlan {
                     claude_config_path: &transport.claude_mcp_config_path,
                     profile: self.mcp_role.invocation_profile(),
                 }),
+            developer_instructions.as_deref(),
             // The sender is installed by `CoreRuntime::plan_agent_launch`.
             runtime_signal_sender,
         ) {
@@ -1363,9 +1369,6 @@ impl CoreRuntime {
                 .contains(&plan.agent_id.as_str())
             {
                 return Err(CoreError::AgentUnsupported);
-            }
-            if permission != profile.permission {
-                return Err(CoreError::InvalidParams("permission".into()));
             }
         }
         termloop_invocation::validate_quick_action_with_attachments(
@@ -2460,6 +2463,7 @@ pub(crate) fn start_codex_runtime(
     managed_worktree: bool,
     provider_process_directory: &Path,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
     signals: Sender<crate::AgentRuntimeSignal>,
 ) -> Result<CodexRuntime, crate::AgentResumePreparationError> {
     let port = termloop_platform::reserve_loopback_port()
@@ -2471,9 +2475,16 @@ pub(crate) fn start_codex_runtime(
             cwd,
             session_id,
             mcp,
+            developer_instructions,
         )
     } else {
-        termloop_invocation::codex_app_server(&upstream_endpoint, cwd, session_id, mcp)
+        termloop_invocation::codex_app_server(
+            &upstream_endpoint,
+            cwd,
+            session_id,
+            mcp,
+            developer_instructions,
+        )
     }
     .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
     let mut process = termloop_platform::spawn_tracked_managed_process_with_environment(
