@@ -927,18 +927,10 @@ impl CoreRuntime {
                     transport,
                 )
             })
-            .is_some_and(|role| {
-                matches!(
-                    role,
-                    AgentMcpRole::Steward { .. }
-                )
-            });
+            .is_some_and(|role| matches!(role, AgentMcpRole::Steward { .. }));
         if session.kind != SessionKind::Agent
             || persistent_assistant
-            || matches!(
-                template,
-                Some("builtin.steward.executor")
-            )
+            || matches!(template, Some("builtin.steward.executor"))
         {
             push_blocker(&mut blockers, "sourceNotOrdinaryAgent");
         }

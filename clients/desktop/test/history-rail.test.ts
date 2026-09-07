@@ -81,17 +81,18 @@ describe("Session History rail", () => {
     const stopped = agent("stopped");
     const helper = agent("helper", { ask_to_source_session_id: "stopped" });
     const forked = agent("forked", { fork_source_session_id: "stopped" });
+    const retiredWorker = agent("worker", { process: { ...stopped.process, template_ref: "builtin.worker.executor" } });
     const values = [
       stopped,
       agent("live", { lifecycle_state: "running" }),
       helper,
       forked,
-      agent("worker", { process: { ...stopped.process, template_ref: "builtin.worker.executor" } }),
+      retiredWorker,
       agent("improver", { process: { ...stopped.process, template_ref: "builtin.improver.skill" } }),
       agent("run", { run_configuration_id: "dev-server" }),
     ];
 
-    expect(inactiveHistorySessions(values)).toEqual([stopped, helper, forked]);
+    expect(inactiveHistorySessions(values)).toEqual([stopped, helper, forked, retiredWorker]);
   });
 
   it("keeps history compact, expands details on demand, and imports through the opaque intent", async () => {
