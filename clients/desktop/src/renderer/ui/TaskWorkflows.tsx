@@ -39,18 +39,14 @@ export type WorkflowSessionPresentation = {
 };
 
 export function TaskWorkflowLaunchers(props: {
-  projectId: string;
   task: Task;
   configurations: readonly WorkflowConfiguration[];
   executions: readonly WorkflowExecution[];
-  stateRevision: number;
-  agentCapabilities: readonly AgentCapabilityDto[];
   launchable: boolean;
   showLaunchers: boolean;
   overlayContainer: Element | undefined;
   overlayVisibilityChanged(visible: boolean): void;
-  save(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
-  remove(workflowId: string): Promise<string | undefined>;
+  edit(configuration: WorkflowConfigurationDto | undefined): void;
   launch(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   cancel(executionId: string): Promise<string | undefined>;
   openSession(sessionId: string): void;
@@ -58,7 +54,6 @@ export function TaskWorkflowLaunchers(props: {
 }) {
   const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
   const executionActive = execution !== undefined && execution.status !== "completed";
-  const [editing, setEditing] = useState<WorkflowConfigurationDto | "new">();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
   const [inspectingExecution, setInspectingExecution] = useState(false);
   const [inspectingResult, setInspectingResult] = useState<{ stepId: string; reviewCycle: number }>();
@@ -71,9 +66,9 @@ export function TaskWorkflowLaunchers(props: {
     : executionActive);
   const { overlayVisibilityChanged } = props;
   useEffect(() => {
-    overlayVisibilityChanged(Boolean(editing || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
+    overlayVisibilityChanged(Boolean(running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
     return () => overlayVisibilityChanged(false);
-  }, [editing, execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
+  }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
     {props.showLaunchers ? <span className="task-launch-divider" aria-hidden="true" /> : null}
@@ -106,7 +101,7 @@ export function TaskWorkflowLaunchers(props: {
           className="run-chip-edit"
           title={`Edit ${configuration.name}`}
           aria-label={`Edit workflow ${configuration.name}`}
-          onClick={() => setEditing(configuration)}
+          onClick={() => props.edit(configuration)}
         ><Icon name="edit" /></button>
       </span>
     )) : null}
@@ -115,7 +110,7 @@ export function TaskWorkflowLaunchers(props: {
       className="workflow-add"
       title="Add workflow"
       aria-label="Add workflow"
-      onClick={() => setEditing("new")}
+      onClick={() => props.edit(undefined)}
     ><Icon name="add" />Workflow</button> : null}
     {execution && progressExpanded ? <WorkflowSidebarProgress
       execution={execution}
@@ -125,15 +120,6 @@ export function TaskWorkflowLaunchers(props: {
       showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
     /> : null}
     <OverlayPortal container={props.overlayContainer}>
-      {editing ? <WorkflowEditorDialog
-        projectId={props.projectId}
-        configuration={editing === "new" ? undefined : editing}
-        stateRevision={props.stateRevision}
-        agentCapabilities={props.agentCapabilities}
-        close={() => setEditing(undefined)}
-        save={props.save}
-        remove={props.remove}
-      /> : null}
       {running ? <WorkflowRunDialog
         task={props.task}
         configuration={running}
@@ -445,7 +431,7 @@ type WorkflowDraft = {
   steps: WorkflowStepDto[];
 };
 
-export function WorkflowEditorDialog(props: {
+export function WorkflowEditorPanel(props: {
   projectId: string;
   configuration?: WorkflowConfigurationDto | undefined;
   stateRevision: number;
@@ -571,14 +557,16 @@ export function WorkflowEditorDialog(props: {
     } finally { setBusy(false); }
   };
 
-  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && props.close()}>
-    <button className="dialog-backdrop" aria-label="Cancel workflow editing" onClick={props.close} />
-    <section className="dialog-card workflow-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-dialog-title">
-      <header className="dialog-header">
-        <div><span className="dialog-eyebrow">{props.configuration ? "Workflow template" : "New workflow template"}</span><h2 id="workflow-dialog-title">{props.configuration?.name ?? "Discuss, implement, review"}</h2></div>
-        <button className="icon-button quiet" aria-label="Close dialog" onClick={props.close}><Icon name="close" /></button>
+  return <section className="stage-editor workflow-editor-stage" aria-labelledby="workflow-editor-title" onKeyDown={(event) => event.key === "Escape" && props.close()}>
+      <header className="stage-editor-head">
+        <div className="stage-editor-title"><span>{props.configuration ? "Workflow template" : "New workflow template"}</span><h2 id="workflow-editor-title">{props.configuration?.name ?? "Discuss, implement, review"}</h2><code>Runs inside each Task worktree</code></div>
+        <div className="stage-editor-actions">
+          {props.configuration ? <button type="button" className="danger-button workflow-delete" disabled={busy} onClick={() => void deleteWorkflow()}>{confirmingDelete ? "Delete workflow" : "Delete"}</button> : null}
+          <button type="button" className="primary-button" disabled={busy} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
+          <button className="icon-button quiet" aria-label="Close workflow editor" onClick={props.close}><Icon name="close" /></button>
+        </div>
       </header>
-      <div className="dialog-body workflow-builder-body">
+      <div className="workflow-builder-body workflow-builder-stage-body">
         <div className="workflow-builder-top">
           <div><label htmlFor="workflow-name">Template name</label><input id="workflow-name" autoFocus value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
           <div><label htmlFor="workflow-coordinator">Coordinator</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => setDraft((current) => ({ ...current, coordinatorAgentId: event.target.value as StewardAgentId }))}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
@@ -657,13 +645,7 @@ export function WorkflowEditorDialog(props: {
         </DndContext>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
-      <footer className="dialog-actions">
-        {props.configuration ? <button type="button" className="danger-button workflow-delete" disabled={busy} onClick={() => void deleteWorkflow()}>{confirmingDelete ? "Delete workflow" : "Delete"}</button> : null}
-        <button type="button" className="secondary-button" disabled={busy} onClick={props.close}>Cancel</button>
-        <button type="button" className="primary-button" disabled={busy} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
-      </footer>
-    </section>
-  </div>;
+  </section>;
 }
 
 function WorkflowPaletteItem(props: {

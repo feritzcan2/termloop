@@ -13,7 +13,7 @@ import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
@@ -220,7 +220,6 @@ export type TaskRailProps = {
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
   workflowExecutions: readonly WorkflowExecution[];
-  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   sessionsById: ReadonlyMap<string, Session>;
@@ -260,12 +259,11 @@ export type TaskRailProps = {
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  openWorkflowEditor(workflowId?: string): void;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
-  saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
-  deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
@@ -403,7 +401,6 @@ export function TaskRail(props: TaskRailProps) {
       runConfigurations={props.runConfigurations}
       workflowConfigurations={props.workflowConfigurations}
       workflowExecutions={props.workflowExecutions}
-      workflowStateRevision={props.workflowStateRevision}
       runRuntimes={props.runRuntimes}
       runStateRevision={props.runStateRevision}
       openExternal={props.openExternal}
@@ -429,13 +426,12 @@ export function TaskRail(props: TaskRailProps) {
       launchTerminal={props.launchTaskTerminal}
       launchAgent={props.launchTaskAgent}
       launchWorkflow={props.launchTaskWorkflow}
+      openWorkflowEditor={props.openWorkflowEditor}
       cancelWorkflowExecution={props.cancelWorkflowExecution}
       runImprovement={props.runImprovement}
       setupRunImprovement={props.setupRunImprovement}
       saveRunConfiguration={props.saveRunConfiguration}
       deleteRunConfiguration={props.deleteRunConfiguration}
-      saveWorkflowConfiguration={props.saveWorkflowConfiguration}
-      deleteWorkflowConfiguration={props.deleteWorkflowConfiguration}
       launchTaskRun={props.launchTaskRun}
       overlayContainer={props.overlayContainer}
       overlayVisibilityChanged={props.overlayVisibilityChanged}
@@ -786,7 +782,6 @@ type TaskGroupProps = {
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
   workflowExecutions: readonly WorkflowExecution[];
-  workflowStateRevision: number;
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -812,13 +807,12 @@ type TaskGroupProps = {
   launchTerminal(taskId: string): Promise<string | undefined>;
   launchAgent(taskId: string, agentId: string): Promise<string | undefined>;
   launchWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  openWorkflowEditor(workflowId?: string): void;
   cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
   deleteRunConfiguration(configurationId: string): Promise<string | undefined>;
-  saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
-  deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   overlayContainer: Element | undefined;
   overlayVisibilityChanged(visible: boolean): void;
@@ -1008,18 +1002,14 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         ))}
       </> : null}
       <TaskWorkflowLaunchers
-        projectId={task.project_id}
         task={task}
         configurations={props.workflowConfigurations}
         executions={props.workflowExecutions}
-        stateRevision={props.workflowStateRevision}
-        agentCapabilities={props.agentCapabilities}
         launchable={launchable}
         showLaunchers={launchable}
         overlayContainer={props.overlayContainer}
         overlayVisibilityChanged={props.overlayVisibilityChanged}
-        save={props.saveWorkflowConfiguration}
-        remove={props.deleteWorkflowConfiguration}
+        edit={(configuration) => props.openWorkflowEditor(configuration?.id)}
         launch={props.launchWorkflow}
         cancel={props.cancelWorkflowExecution}
         openSession={props.selectSession}
@@ -1354,7 +1344,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.runConfigurations === right.runConfigurations
   && left.workflowConfigurations === right.workflowConfigurations
   && left.workflowExecutions === right.workflowExecutions
-  && left.workflowStateRevision === right.workflowStateRevision
   && left.runRuntimes === right.runRuntimes
   && left.runStateRevision === right.runStateRevision
   && left.sessionsById === right.sessionsById

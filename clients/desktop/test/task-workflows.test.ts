@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
 import {
   TaskWorkflowLaunchers,
-  WorkflowEditorDialog,
+  WorkflowEditorPanel,
   initialWorkflowSteps,
   moveWorkflowStep,
   nextStepId,
@@ -110,7 +110,7 @@ const execution: WorkflowExecution = {
 
 describe("Task workflow editor", () => {
   it("shows a compact node canvas with a parallel review join", () => {
-    const markup = renderToStaticMarkup(createElement(WorkflowEditorDialog, {
+    const markup = renderToStaticMarkup(createElement(WorkflowEditorPanel, {
       projectId: "project-1",
       stateRevision: 1,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
@@ -124,6 +124,8 @@ describe("Task workflow editor", () => {
     expect(markup).toContain("2 parallel reviewers");
     expect(markup).toContain("Wait for all");
     expect(markup).toContain("Core combines review outcomes");
+    expect(markup).toContain('class="stage-editor workflow-editor-stage"');
+    expect(markup).not.toContain('role="dialog"');
   });
 
   it("creates stable unique step ids inside the bounded linear workflow", () => {
@@ -162,18 +164,14 @@ describe("Task workflow editor", () => {
 
   it("renders a saved workflow as one Task launcher with an editable workflow entry", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
-      projectId: task.project_id,
       task,
       configurations: [workflow],
       executions: [],
-      stateRevision: 4,
-      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
-      save: vi.fn(),
-      remove: vi.fn(),
+      edit: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
@@ -186,20 +184,47 @@ describe("Task workflow editor", () => {
     expect(markup).toContain('aria-label="Add workflow"');
   });
 
-  it("keeps saved workflows launchable while capability discovery refreshes", () => {
-    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
-      projectId: task.project_id,
+  it("routes edit and create intents to the workspace stage owner", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const edit = vi.fn();
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskWorkflowLaunchers, {
       task,
       configurations: [workflow],
       executions: [],
-      stateRevision: 4,
-      agentCapabilities: [fullAgentCapability("codex", { available: false })],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
-      save: vi.fn(),
-      remove: vi.fn(),
+      edit,
+      launch: vi.fn(),
+      cancel: vi.fn(),
+      openSession: vi.fn(),
+      sessionPresentation: () => undefined,
+    })));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit workflow Discuss, build, review"]')!.click());
+    expect(edit).toHaveBeenLastCalledWith(workflow);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add workflow"]')!.click());
+    expect(edit).toHaveBeenLastCalledWith(undefined);
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("keeps saved workflows launchable while capability discovery refreshes", () => {
+    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
+      task,
+      configurations: [workflow],
+      executions: [],
+      launchable: true,
+      showLaunchers: true,
+      overlayContainer: undefined,
+      overlayVisibilityChanged: vi.fn(),
+      edit: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
@@ -212,18 +237,14 @@ describe("Task workflow editor", () => {
 
   it("shows the Core-owned current step and prevents a second workflow on the same Task", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
-      projectId: task.project_id,
       task,
       configurations: [workflow],
       executions: [execution],
-      stateRevision: 5,
-      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
-      save: vi.fn(),
-      remove: vi.fn(),
+      edit: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
@@ -257,18 +278,14 @@ describe("Task workflow editor", () => {
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     await act(async () => root.render(createElement(TaskWorkflowLaunchers, {
-      projectId: task.project_id,
       task,
       configurations: [workflow],
       executions: [execution],
-      stateRevision: 5,
-      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
-      save: vi.fn(),
-      remove: vi.fn(),
+      edit: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
@@ -288,18 +305,14 @@ describe("Task workflow editor", () => {
 
   it("keeps active progress visible when Task launchers are temporarily unavailable", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
-      projectId: task.project_id,
       task,
       configurations: [workflow],
       executions: [execution],
-      stateRevision: 5,
-      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: false,
       showLaunchers: false,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
-      save: vi.fn(),
-      remove: vi.fn(),
+      edit: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),

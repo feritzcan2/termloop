@@ -735,11 +735,10 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-step-result > small { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; color: var(--sidebar-dim); font: 8.5px/1.35 var(--font-ui); white-space: normal; }
 .workflow-step-waiting { overflow: hidden; color: var(--sidebar-dimmer); font: 8.5px/1.25 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 
-/* The workflow builder is a compact node canvas: discussion is sequential,
+/* The workflow builder owns the terminal stage: discussion is sequential,
    reviews fan out, and Core owns the wait-all join before the optional loop. */
-.dialog-card.workflow-dialog { width: min(1120px,calc(100vw - 40px)); }
-.workflow-dialog .dialog-body { max-height: min(76vh,760px); overflow-y: auto; overscroll-behavior: contain; }
-.workflow-builder-body { padding-top: 14px; }
+.workflow-editor-stage { container: workflow-editor / inline-size; overflow: hidden; background: var(--bg-app); }
+.workflow-builder-stage-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-top: 14px; }
 .workflow-builder-top { display: grid; grid-template-columns: minmax(220px,1fr) 170px 145px; gap: 10px; padding: 0 1px 14px; border-bottom: 1px solid var(--border); }
 .workflow-builder-top label { margin-top: 0 !important; }
 .workflow-builder-grid { display: grid; grid-template-columns: 150px minmax(360px,1fr) minmax(300px,340px); gap: 12px; margin-top: 14px; align-items: start; }
@@ -811,7 +810,7 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-owned-step span { display: grid; gap: 3px; }
 .workflow-owned-step b { color: var(--text); font: 650 10.5px/1 var(--font-ui); }
 .workflow-owned-step small { color: var(--text-muted); font: 9px/1.2 var(--font-ui); }
-.workflow-delete { margin-right: auto; }
+.workflow-editor-stage .workflow-delete { margin-right: 4px; }
 .dialog-card.workflow-run-dialog { width: min(540px,calc(100vw - 40px)); }
 .workflow-run-route { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 16px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
 .workflow-run-node { display: inline-flex; align-items: center; gap: 5px; color: var(--workflow-kind-tone,#7b8790); font: 700 8px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
@@ -865,12 +864,17 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-progress-goal > span { color: var(--text-muted); font: 700 8px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .workflow-progress-goal > p { max-height: 90px; margin: 7px 0 0; overflow: auto; color: var(--text); font: 10.5px/1.45 var(--font-ui); white-space: pre-wrap; }
 .workflow-stop-help { margin: 0 auto 0 0; color: var(--text-muted); font: 9px/1.3 var(--font-ui); }
-@media (max-width: 760px) {
+@container workflow-editor (max-width: 900px) {
+  .workflow-builder-grid { grid-template-columns: 132px minmax(330px,1fr); }
+  .workflow-inspector { grid-column: 1 / -1; }
+}
+@container workflow-editor (max-width: 620px) {
   .workflow-builder-top { grid-template-columns: 1fr 1fr; }
   .workflow-builder-top > div:first-child { grid-column: 1 / -1; }
   .workflow-builder-grid { grid-template-columns: 1fr; }
   .workflow-node-palette { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .workflow-node-palette .plan-head,.workflow-node-palette > p { grid-column: 1 / -1; }
+  .workflow-inspector { grid-column: auto; }
 }
 /* The one line a run Session needs beyond its row: where to open it, how to
    restart it, and why it stopped. */
