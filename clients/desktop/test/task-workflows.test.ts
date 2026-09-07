@@ -1,4 +1,7 @@
-import { createElement } from "react";
+// @vitest-environment jsdom
+
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
@@ -7,6 +10,7 @@ import {
   initialWorkflowSteps,
   moveWorkflowStep,
   nextStepId,
+  workflowStepResultFileName,
 } from "../src/renderer/ui/TaskWorkflows.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
 
@@ -128,6 +132,15 @@ describe("Task workflow editor", () => {
     expect(moveWorkflowStep(steps, "implement", "review-claude")).toBe(steps);
   });
 
+  it("names compact result artifacts by step role and disambiguates multiple reviews", () => {
+    const steps = initialWorkflowSteps();
+    expect(workflowStepResultFileName(steps[0]!, steps)).toBe("decisions.md");
+    expect(workflowStepResultFileName(steps[1]!, steps)).toBe("implementation.md");
+    expect(workflowStepResultFileName(steps[2]!, steps)).toBe("review-claude.md");
+    expect(workflowStepResultFileName(steps[3]!, steps)).toBe("review-codex.md");
+    expect(workflowStepResultFileName(steps[4]!, steps)).toBe("fixes.md");
+  });
+
   it("renders a saved workflow as one Task launcher with an editable workflow entry", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
       projectId: task.project_id,
@@ -203,8 +216,10 @@ describe("Task workflow editor", () => {
     expect(markup).toContain('aria-label="Hide Discuss, build, review workflow steps"');
     expect(markup).toContain("3/3");
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
-    expect(markup).toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
-    expect(markup).toContain("Implemented the workflow state machine and verified focused tests.");
+    expect(markup).toContain('aria-label="Open decisions.md"');
+    expect(markup).toContain('aria-label="Open implementation.md"');
+    expect(markup).not.toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
+    expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).toContain('data-workflow-session-id="coordinator-1"');
     expect(markup).toContain('data-workflow-session-id="claude-session-1"');
     expect(markup).toContain('aria-label="Open Codex — Working"');
@@ -215,6 +230,41 @@ describe("Task workflow editor", () => {
     expect(markup).toContain(">Details</button>");
     expect(markup).toContain("Finish or stop Discuss, build, review first");
     expect(markup).toContain("disabled");
+  });
+
+  it("opens a sidebar result artifact in a focused reader", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskWorkflowLaunchers, {
+      projectId: task.project_id,
+      task,
+      configurations: [workflow],
+      executions: [execution],
+      stateRevision: 5,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      launchable: true,
+      showLaunchers: true,
+      overlayContainer: undefined,
+      overlayVisibilityChanged: vi.fn(),
+      save: vi.fn(),
+      remove: vi.fn(),
+      launch: vi.fn(),
+      cancel: vi.fn(),
+      openSession: vi.fn(),
+      sessionPresentation: () => undefined,
+    })));
+
+    expect(container.textContent).not.toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open decisions.md"]')!.click());
+    const reader = container.querySelector<HTMLElement>('[aria-labelledby="workflow-result-title"]');
+    expect(reader?.textContent).toContain("decisions.md");
+    expect(reader?.textContent).toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
   it("keeps active progress visible when Task launchers are temporarily unavailable", () => {
@@ -238,7 +288,8 @@ describe("Task workflow editor", () => {
     }));
 
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
-    expect(markup).toContain("Implemented the workflow state machine and verified focused tests.");
+    expect(markup).toContain('aria-label="Open implementation.md"');
+    expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).not.toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
     expect(markup).not.toContain('aria-label="Add workflow"');
   });

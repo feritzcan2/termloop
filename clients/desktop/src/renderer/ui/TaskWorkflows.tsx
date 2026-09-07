@@ -60,15 +60,19 @@ export function TaskWorkflowLaunchers(props: {
   const [editing, setEditing] = useState<WorkflowConfigurationDto | "new">();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
   const [inspectingExecution, setInspectingExecution] = useState(false);
+  const [inspectingResult, setInspectingResult] = useState<{ stepId: string; reviewCycle: number }>();
   const [progressPreference, setProgressPreference] = useState<{ executionId: string; expanded: boolean }>();
+  const inspectedStep = execution?.steps.find((step) => step.id === inspectingResult?.stepId);
+  const inspectedResult = execution?.stepResults.find((result) => result.stepId === inspectingResult?.stepId
+    && result.reviewCycle === inspectingResult.reviewCycle);
   const progressExpanded = execution !== undefined && (progressPreference?.executionId === execution.id
     ? progressPreference.expanded
     : executionActive);
   const { overlayVisibilityChanged } = props;
   useEffect(() => {
-    overlayVisibilityChanged(Boolean(editing || running || (inspectingExecution && execution)));
+    overlayVisibilityChanged(Boolean(editing || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
     return () => overlayVisibilityChanged(false);
-  }, [editing, execution, inspectingExecution, overlayVisibilityChanged, running]);
+  }, [editing, execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
     {props.showLaunchers ? <span className="task-launch-divider" aria-hidden="true" /> : null}
@@ -117,6 +121,7 @@ export function TaskWorkflowLaunchers(props: {
       openSession={props.openSession}
       sessionPresentation={props.sessionPresentation}
       showDetails={() => setInspectingExecution(true)}
+      showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
     /> : null}
     <OverlayPortal container={props.overlayContainer}>
       {editing ? <WorkflowEditorDialog
@@ -141,6 +146,14 @@ export function TaskWorkflowLaunchers(props: {
         openSession={props.openSession}
         sessionPresentation={props.sessionPresentation}
       /> : null}
+      {execution && inspectedStep && inspectedResult ? <WorkflowStepResultDialog
+        execution={execution}
+        step={inspectedStep}
+        result={inspectedResult}
+        close={() => setInspectingResult(undefined)}
+        openSession={props.openSession}
+        sessionPresentation={props.sessionPresentation}
+      /> : null}
     </OverlayPortal>
   </>;
 }
@@ -150,6 +163,7 @@ function WorkflowSidebarProgress(props: {
   openSession(sessionId: string): void;
   sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
   showDetails(): void;
+  showResult(step: WorkflowStepDto, result: WorkflowStepResultDto): void;
 }) {
   const currentStep = props.execution.steps[props.execution.currentStepIndex];
   const coordinatorPresentation = props.sessionPresentation(props.execution.coordinatorSessionId);
@@ -186,16 +200,65 @@ function WorkflowSidebarProgress(props: {
               coordinatorSessionId={props.execution.coordinatorSessionId}
               openSession={props.openSession}
             />
-            {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
-              <strong>{workflowStepResultLabel(step.kind, result.outcome)}</strong>
-              {result.reviewCycle < props.execution.reviewCycle ? <em>Cycle {result.reviewCycle}</em> : null}
-              <small>{result.summary}</small>
-            </span> : state === "current" ? <small className="workflow-step-waiting">{workflowPhaseLabel(props.execution, step)}</small> : null}
+            {result ? <button
+              type="button"
+              className={`workflow-result-file outcome-${result.outcome}`}
+              aria-label={`Open ${workflowStepResultFileName(step, props.execution.steps)}`}
+              title={`Open ${workflowStepResultFileName(step, props.execution.steps)}`}
+              onClick={() => props.showResult(step, result)}
+            >
+              <Icon name="fileText" />
+              <span>{workflowStepResultFileName(step, props.execution.steps)}</span>
+              <small>{workflowStepResultLabel(step.kind, result.outcome)}</small>
+            </button> : state === "current" ? <small className="workflow-step-waiting">{workflowPhaseLabel(props.execution, step)}</small> : null}
           </span>
         </li>;
       })}
     </ol>
   </section>;
+}
+
+function WorkflowStepResultDialog(props: {
+  execution: WorkflowExecution;
+  step: WorkflowStepDto;
+  result: WorkflowStepResultDto;
+  close(): void;
+  openSession(sessionId: string): void;
+  sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
+}) {
+  const participantSessionId = workflowStepSessionId(props.execution, props.step);
+  const fileName = workflowStepResultFileName(props.step, props.execution.steps);
+  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && props.close()}>
+    <button className="dialog-backdrop" aria-label={`Close ${fileName}`} onClick={props.close} />
+    <section className="dialog-card workflow-result-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-result-title">
+      <header className="dialog-header">
+        <div>
+          <span className="dialog-eyebrow">Workflow result</span>
+          <h2 id="workflow-result-title"><Icon name="fileText" />{fileName}</h2>
+        </div>
+        <button className="icon-button quiet" aria-label="Close workflow result" onClick={props.close}><Icon name="close" /></button>
+      </header>
+      <div className="dialog-body">
+        <div className="workflow-result-heading">
+          <span className={`workflow-kind kind-${props.step.kind}`}>{stepKindLabel(props.step.kind)}</span>
+          <strong>{props.step.title}</strong>
+          <small>{workflowStepResultLabel(props.step.kind, props.result.outcome)} · cycle {props.result.reviewCycle}</small>
+        </div>
+        <WorkflowParticipantSession
+          step={props.step}
+          steps={props.execution.steps}
+          sessionId={participantSessionId}
+          presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
+          coordinatorSessionId={props.execution.coordinatorSessionId}
+          openSession={props.openSession}
+        />
+        <article className="workflow-result-document"><p>{props.result.summary}</p></article>
+      </div>
+      <footer className="dialog-actions">
+        <button type="button" className="secondary-button" onClick={props.close}>Close</button>
+      </footer>
+    </section>
+  </div>;
 }
 
 function WorkflowExecutionDialog(props: {
@@ -792,4 +855,21 @@ function workflowStepResultLabel(
   if (kind === "discuss") return "Decision";
   if (kind === "fix") return "Fixed";
   return "Completed";
+}
+
+export function workflowStepResultFileName(
+  step: WorkflowStepDto,
+  steps: readonly WorkflowStepDto[],
+): string {
+  if (step.kind === "discuss") return "decisions.md";
+  if (step.kind === "implement") return "implementation.md";
+  if (step.kind === "fix") return "fixes.md";
+  const reviews = steps.filter((candidate) => candidate.kind === "review");
+  if (reviews.length === 1) return "review.md";
+  const suffix = step.id
+    .toLowerCase()
+    .replace(/^review-?/u, "")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+  return `review-${suffix || reviews.indexOf(step) + 1}.md`;
 }
