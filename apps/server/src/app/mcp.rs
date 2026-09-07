@@ -285,6 +285,8 @@ async fn tool_call_inner(
                 termloop_core::session_launch::AskToInput {
                     target: target.into(),
                     message: params.message,
+                    model: params.model,
+                    reasoning: params.reasoning,
                     idempotency_key: params.idempotency_key,
                     conversation_id: params.conversation_id,
                 },

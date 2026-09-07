@@ -533,6 +533,7 @@ fn pending_generated_input_fixture() {
     }
     read_headless_fixture_input(&mut input, &expected_paste);
     let submitted = expected;
+    let mut composer_animation = None;
     // Claude and Codex show the text cursor after rendering pasted composer
     // content. The periodic branch mirrors a multiline Codex composer that
     // grows upward while its final cursor stays fixed; the ordinary branch
@@ -545,15 +546,22 @@ fn pending_generated_input_fixture() {
         );
         std::io::stdout().flush().unwrap();
         if !retain_without_repaint {
-            std::thread::spawn(|| {
+            let (stop_animation, animation_stopped) = std::sync::mpsc::channel::<()>();
+            let animation = std::thread::spawn(move || {
                 for _ in 0..600 {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    if !matches!(
+                        animation_stopped.recv_timeout(std::time::Duration::from_millis(20)),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    ) {
+                        break;
+                    }
                     print!(
                         "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
                     );
                     let _ = std::io::stdout().flush();
                 }
             });
+            composer_animation = Some((stop_animation, animation));
         }
     } else if std::env::var_os("TERMLOOP_TEST_DELAY_COMPOSER_RENDER").is_some() {
         println!("TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026l");
@@ -581,6 +589,12 @@ fn pending_generated_input_fixture() {
         }
         read_headless_fixture_input(&mut input, b"\r");
     }
+    // Stop and join the redraw producer before publishing receipt. Otherwise
+    // its next frame can erase that line before ConPTY emits a screen diff.
+    if let Some((stop_animation, animation)) = composer_animation {
+        let _ = stop_animation.send(());
+        animation.join().unwrap();
+    }
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
         println!(
             "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
@@ -601,6 +615,11 @@ fn pending_generated_input_fixture() {
         println!("TERMLOOP_INITIAL_INPUT_RECEIVED:{submitted}");
     }
     std::io::stdout().flush().unwrap();
+    // The parent owns teardown. Keep the receipt visible instead of allowing
+    // the Rust harness exit to replace the screen before it is observed.
+    let mut unexpected = [0_u8; 1];
+    std::io::Read::read_exact(&mut input, &mut unexpected).unwrap();
+    panic!("fixture received input after the expected submission completed");
 }
 
 #[tokio::test]
@@ -4974,6 +4993,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         mcp_token: None,
         mcp_role: None,
         agent_profile_ref: None,
+        personal_agent: None,
         steward_system_prompt: None,
         mcp_authorizer: runtime.mcp_authorizer.clone(),
         observation_transport: {
