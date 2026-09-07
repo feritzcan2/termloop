@@ -21,6 +21,8 @@ import {
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
   type QuickActionParams,
+  type AgentCreatorParams,
+  type AgentCreatorLaunchParams,
   type AgentProfileCreateParams,
   type AgentProfileUpdateParams,
   type AgentProfileDeleteParams,
@@ -697,6 +699,9 @@ handleIpc("termloop:ghostty-surface-snapshot-and-hide", (event, surfaceId: unkno
   if (!png || png.byteLength > 32 * 1024 * 1024) return undefined;
   return `data:image/png;base64,${png.toString("base64")}`;
 });
+handleIpc("termloop:ghostty-surface-scroll-bottom", (event, surfaceId: unknown) => {
+  requireGhosttyManager(event).scrollToBottom(requireSurfaceId(surfaceId));
+});
 handleIpc("termloop:ghostty-surface-focus", (event, surfaceId: unknown) => {
   requireGhosttyManager(event).focus(requireSurfaceId(surfaceId));
 });
@@ -897,6 +902,8 @@ handleIpc("termloop:layout-save", async (_event, document: unknown) => {
 handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));
 handleIpc("termloop:agent-capability-list", () => controlCall("agent.capabilityList"));
+handleIpc("termloop:agent-creator-preview", (_event, params: AgentCreatorParams) => controlCall("agent.creatorPreview", params));
+handleIpc("termloop:agent-creator-launch", (_event, params: AgentCreatorLaunchParams) => controlCall("agent.creatorLaunch", params));
 handleIpc("termloop:agent-library-get", () => controlCall("agent.libraryGet"));
 handleIpc("termloop:agent-profile-create", (_event, params: AgentProfileCreateParams) => controlCall("agent.profileCreate", params));
 handleIpc("termloop:agent-profile-update", (_event, params: AgentProfileUpdateParams) => controlCall("agent.profileUpdate", params));

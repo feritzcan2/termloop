@@ -35,3 +35,6 @@
 .quick-action:has(.agent-profile-popover) { overflow: visible; }
 .agent-profile-picker > .quick-action-kind { color: var(--qa-text); }
 .agent-profile-picker > .quick-action-kind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.agent-creator-card { margin: 0 10px 14px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.agent-creator-card > p { margin: 8px 0 0; font-size: 11px; color: var(--text-secondary); }

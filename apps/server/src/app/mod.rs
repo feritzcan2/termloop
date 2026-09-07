@@ -212,6 +212,9 @@ fn generated_mcp_tool_catalog()
             if termloop_contract::current::MCP_STEWARD_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Steward);
             }
+            if termloop_contract::current::MCP_AGENT_CREATOR_TOOLS.contains(&tool_name) {
+                roles.push(termloop_core::McpToolRole::AgentCreator);
+            }
             if termloop_contract::current::MCP_IMPROVER_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Improver);
             }

@@ -402,6 +402,21 @@ pub(in crate::app::control) async fn launch_quick_action(
     execute_agent_launch(state, plan).await
 }
 
+pub(in crate::app::control) async fn preview_agent_creator(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    state.core.lock().await.preview_agent_creator(params)
+}
+
+pub(in crate::app::control) async fn launch_agent_creator(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let plan = state.core.lock().await.take_agent_creator_launch(params)?;
+    execute_agent_launch(state, plan).await
+}
+
 pub(in crate::app::control) async fn preview_run_configuration_improver(
     params: serde_json::Value,
     state: &AppState,

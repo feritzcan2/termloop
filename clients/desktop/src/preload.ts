@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld("termloop", {
     ipcRenderer.invoke("termloop:ghostty-surface-snapshot-image", surfaceId),
   ghosttySurfaceSnapshotAndHide: (surfaceId: number) =>
     ipcRenderer.invoke("termloop:ghostty-surface-snapshot-and-hide", surfaceId),
+  ghosttySurfaceScrollBottom: (surfaceId: number) =>
+    ipcRenderer.invoke("termloop:ghostty-surface-scroll-bottom", surfaceId),
   ghosttySurfaceFocus: (surfaceId: number) =>
     ipcRenderer.invoke("termloop:ghostty-surface-focus", surfaceId),
   ghosttySurfaceDiagnosticText: (surfaceId: number) =>

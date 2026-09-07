@@ -149,6 +149,8 @@ import type {
   QuickActionParams,
   AgentProfileDto,
   AgentLibraryResult,
+  AgentCreatorParams,
+  AgentCreatorLaunchParams,
   AgentProfileCreateParams,
   AgentProfileUpdateParams,
   AgentProfileDeleteParams,
@@ -236,6 +238,7 @@ export type DesktopApi = {
   ghosttySurfaceSnapshotText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotImage(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceSnapshotAndHide(surfaceId: number): Promise<string | undefined>;
+  ghosttySurfaceScrollBottom(surfaceId: number): Promise<void>;
   ghosttySurfaceFocus(surfaceId: number): Promise<void>;
   ghosttySurfaceDiagnosticText(surfaceId: number): Promise<string | undefined>;
   ghosttySurfaceDestroy(surfaceId: number): Promise<void>;
@@ -325,6 +328,8 @@ export type DesktopApi = {
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
+  agentCreatorPreview(params: AgentCreatorParams): Promise<QuickActionPreviewResult>;
+  agentCreatorLaunch(params: AgentCreatorLaunchParams): Promise<Session>;
   agentLibraryGet(): Promise<AgentLibraryResult>;
   agentProfileCreate(params: AgentProfileCreateParams): Promise<AgentLibraryResult>;
   agentProfileUpdate(params: AgentProfileUpdateParams): Promise<AgentLibraryResult>;

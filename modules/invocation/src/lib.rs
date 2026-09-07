@@ -108,6 +108,12 @@ const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     ),
 };
 
+const AGENT_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.builder.agent",
+    version: 1,
+    authored_body: include_str!("../../../resources/prompts/builtin.builder.agent.md"),
+};
+
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
     version: 11,
@@ -253,6 +259,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE,
         IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE,
         ROUTINE_BUILDER_TEMPLATE,
+        AGENT_CREATOR_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
         TASK_EVIDENCE_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
@@ -651,6 +658,9 @@ impl SettingsEntryKind {
 }
 
 pub enum ImproverTarget<'a> {
+    AgentCreator {
+        project_name: &'a str,
+    },
     /// One entry of an application-settings catalog: a skill's SKILL.md, a
     /// built-in prompt, or an MCP tool description. The improver has direct
     /// version-write authority over that entry after user confirmation.
@@ -706,12 +716,15 @@ pub enum ImproverTarget<'a> {
     /// The Project's delivery Playbook Builder. Its authenticated MCP profile
     /// reads current state and performs revision-checked complete replacements;
     /// these legacy bindings remain validated for launch compatibility.
-    Playbook { project_name: &'a str },
+    Playbook {
+        project_name: &'a str,
+    },
 }
 
 impl ImproverTarget<'_> {
     pub fn template_ref(&self) -> &'static str {
         match self {
+            Self::AgentCreator { .. } => "builtin.builder.agent",
             Self::SettingsEntry {
                 kind: SettingsEntryKind::Skill,
                 ..
@@ -755,6 +768,10 @@ impl ImproverTarget<'_> {
     fn delivered_prompt(&self) -> Result<String, InvocationError> {
         let template = self.template()?;
         match *self {
+            Self::AgentCreator { project_name } => {
+                bounded_binding(project_name, 200)?;
+                bind_ordered(template.authored_body, &[("project_name", project_name)])
+            }
             Self::SettingsEntry {
                 kind,
                 name,

@@ -11,6 +11,7 @@ use crate::{CoreError, CoreRuntime, store_error};
 pub enum McpToolRole {
     Interactive,
     Improver,
+    AgentCreator,
     Helper,
     Steward,
     Worker,
@@ -21,6 +22,7 @@ impl McpToolRole {
         match self {
             Self::Interactive => "interactive",
             Self::Improver => "improver",
+            Self::AgentCreator => "agentCreator",
             Self::Helper => "helper",
             Self::Steward => "steward",
             Self::Worker => "worker",
@@ -226,7 +228,11 @@ mod tests {
                         },
                         roles: match name {
                             McpToolName::AskTo | McpToolName::SendToAgent => {
-                                vec![McpToolRole::Interactive, McpToolRole::Improver]
+                                vec![
+                                    McpToolRole::Interactive,
+                                    McpToolRole::Improver,
+                                    McpToolRole::AgentCreator,
+                                ]
                             }
                             McpToolName::WorkflowDelegate | McpToolName::WorkflowStepComplete => {
                                 vec![McpToolRole::Interactive]
@@ -237,6 +243,9 @@ mod tests {
                             McpToolName::ConfigurationVersionRead
                             | McpToolName::ConfigurationVersionWrite => vec![McpToolRole::Improver],
                             McpToolName::ReplyToRequest => vec![McpToolRole::Helper],
+                            McpToolName::AgentLibraryRead | McpToolName::AgentProfileCreate => {
+                                vec![McpToolRole::AgentCreator]
+                            }
                             _ => vec![McpToolRole::Steward],
                         },
                     })
