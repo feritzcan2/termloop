@@ -1083,9 +1083,11 @@ fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationErro
     match (agent_id, model) {
         ("claude" | "codex" | "gemini", "default") => Ok(vec![]),
         ("claude", "opus[1m]" | "fable" | "sonnet" | "haiku" | "opus")
-        | ("codex", "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.5-pro") => {
-            Ok(vec!["--model".into(), model.into()])
-        }
+        | (
+            "codex",
+            "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5"
+            | "gpt-5.5-pro",
+        ) => Ok(vec!["--model".into(), model.into()]),
         ("gemini", "auto" | "pro" | "flash" | "flash-lite") => Ok(vec!["-m".into(), model.into()]),
         ("claude" | "codex" | "gemini", _) => Err(InvocationError::UnsupportedModel {
             agent_id: agent_id.to_owned(),
@@ -4722,6 +4724,7 @@ mod tests {
     fn quick_action_accepts_the_compact_current_codex_family() {
         for model in [
             "default",
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
