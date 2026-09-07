@@ -145,6 +145,7 @@ describe("Task workflow editor", () => {
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
+      sessionPresentation: () => undefined,
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
@@ -170,6 +171,7 @@ describe("Task workflow editor", () => {
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
+      sessionPresentation: () => undefined,
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
@@ -193,6 +195,9 @@ describe("Task workflow editor", () => {
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
+      sessionPresentation: (sessionId: string) => sessionId === "coordinator-1"
+        ? { agentLabel: "Codex", stateLabel: "Working", tone: "working" as const }
+        : { agentLabel: "Claude", stateLabel: "Idle", tone: "quiet" as const },
     }));
 
     expect(markup).toContain('aria-label="Hide Discuss, build, review workflow steps"');
@@ -200,7 +205,11 @@ describe("Task workflow editor", () => {
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
     expect(markup).toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
     expect(markup).toContain("Implemented the workflow state machine and verified focused tests.");
-    expect(markup).toContain('title="Open Claude · new conversation"');
+    expect(markup).toContain('data-workflow-session-id="coordinator-1"');
+    expect(markup).toContain('data-workflow-session-id="claude-session-1"');
+    expect(markup).toContain('aria-label="Open Codex — Working"');
+    expect(markup).toContain('aria-label="Open Claude — Idle"');
+    expect(markup).toContain(">same session</em>");
     expect(markup).toContain(">Details</button>");
     expect(markup).toContain("Finish or stop Discuss, build, review first");
     expect(markup).toContain("disabled");
@@ -223,6 +232,7 @@ describe("Task workflow editor", () => {
       launch: vi.fn(),
       cancel: vi.fn(),
       openSession: vi.fn(),
+      sessionPresentation: () => undefined,
     }));
 
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
