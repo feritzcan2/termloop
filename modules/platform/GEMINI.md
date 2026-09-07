@@ -19,6 +19,13 @@
 ## Invariants
 
 - OS conditionals in production daemon code live here.
+- On Windows, persist comparable drive-form canonical paths, opt Git into long
+  paths, and pass filesystem arguments through the subprocess-path helper.
+  Never compare raw verbatim (`\\?\`) paths with Git output.
+- Generated paste bytes pass through the platform encoder. Windows ConPTY uses
+  unframed content followed by settlement-aware Enter; Unix PTYs use
+  `ESC[200~...ESC[201~` bracketed-paste framing. Do not introduce a fixed
+  paste-to-Enter delay.
 - Durable state directories and ephemeral runtime/discovery directories are
   distinct on every OS.
 - A consume-once bounded runtime metadata read removes its exact file whether
