@@ -152,10 +152,20 @@ function WorkflowSidebarProgress(props: {
   showDetails(): void;
 }) {
   const currentStep = props.execution.steps[props.execution.currentStepIndex];
+  const coordinatorPresentation = props.sessionPresentation(props.execution.coordinatorSessionId);
   return <section className="workflow-sidebar-progress" aria-label={`${props.execution.workflowName} workflow progress`}>
     <header>
       <span>{workflowPhaseLabel(props.execution, currentStep)}</span>
       <button type="button" onClick={props.showDetails}>Details</button>
+      <span className="workflow-coordinator-summary">
+        <strong>Coordinator</strong>
+        <WorkflowSessionButton
+          sessionId={props.execution.coordinatorSessionId}
+          presentation={coordinatorPresentation}
+          fallbackLabel="Coordinator"
+          openSession={props.openSession}
+        />
+      </span>
     </header>
     <ol>
       {props.execution.steps.map((step, index) => {
@@ -173,6 +183,7 @@ function WorkflowSidebarProgress(props: {
               steps={props.execution.steps}
               sessionId={participantSessionId}
               presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
+              coordinatorSessionId={props.execution.coordinatorSessionId}
               openSession={props.openSession}
             />
             {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
@@ -217,6 +228,15 @@ function WorkflowExecutionDialog(props: {
         <div className="workflow-progress-current">
           <span>{props.execution.status === "completed" ? "Finished" : currentStep ? `${stepKindLabel(currentStep.kind)} · step ${props.execution.currentStepIndex + 1} of ${props.execution.steps.length}` : "Workflow"}</span>
           <strong>{workflowPhaseLabel(props.execution, currentStep)}</strong>
+          <span className="workflow-coordinator-summary">
+            <small>Coordinator</small>
+            <WorkflowSessionButton
+              sessionId={props.execution.coordinatorSessionId}
+              presentation={props.sessionPresentation(props.execution.coordinatorSessionId)}
+              fallbackLabel="Coordinator"
+              openSession={props.openSession}
+            />
+          </span>
           {props.execution.steps.some((step) => step.kind === "review") && props.execution.status !== "completed"
             ? <small>Review cycle {props.execution.reviewCycle} of {props.execution.maxReviewCycles}</small>
             : null}
@@ -235,6 +255,7 @@ function WorkflowExecutionDialog(props: {
                   steps={props.execution.steps}
                   sessionId={participantSessionId}
                   presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
+                  coordinatorSessionId={props.execution.coordinatorSessionId}
                   openSession={props.openSession}
                 />
                 {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
@@ -264,30 +285,47 @@ function WorkflowParticipantSession(props: {
   steps: readonly WorkflowStepDto[];
   sessionId: string | undefined;
   presentation: WorkflowSessionPresentation | undefined;
+  coordinatorSessionId: string;
   openSession(sessionId: string): void;
 }) {
   const plannedParticipant = workflowStepParticipant(props.step, props.steps);
   const sessionId = props.sessionId;
   if (!sessionId) return <small className="workflow-participant-planned">{plannedParticipant}</small>;
+  return <WorkflowSessionButton
+    sessionId={sessionId}
+    presentation={props.presentation}
+    fallbackLabel={plannedParticipant}
+    badge={sessionId === props.coordinatorSessionId ? "same coordinator" : props.step.reuseStepId ? "same session" : undefined}
+    openSession={props.openSession}
+  />;
+}
+
+function WorkflowSessionButton(props: {
+  sessionId: string;
+  presentation: WorkflowSessionPresentation | undefined;
+  fallbackLabel: string;
+  badge?: string | undefined;
+  openSession(sessionId: string): void;
+}) {
   if (!props.presentation) return <button
     type="button"
     className="workflow-participant-link"
-    title={`Open ${plannedParticipant}`}
-    onClick={() => props.openSession(sessionId)}
-  >{plannedParticipant}</button>;
+    title={`Open ${props.fallbackLabel}`}
+    onClick={() => props.openSession(props.sessionId)}
+  >{props.fallbackLabel}</button>;
   return <button
     type="button"
     className="workflow-participant-session"
     data-tone={props.presentation.tone}
-    data-workflow-session-id={sessionId}
+    data-workflow-session-id={props.sessionId}
     title={`Open ${props.presentation.agentLabel} — ${props.presentation.stateLabel}`}
     aria-label={`Open ${props.presentation.agentLabel} — ${props.presentation.stateLabel}`}
-    onClick={() => props.openSession(sessionId)}
+    onClick={() => props.openSession(props.sessionId)}
   >
     <i aria-hidden="true" />
     <b>{props.presentation.agentLabel}</b>
     <small>{props.presentation.stateLabel}</small>
-    {props.step.reuseStepId ? <em>same session</em> : null}
+    {props.badge ? <em>{props.badge}</em> : null}
   </button>;
 }
 
