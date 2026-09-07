@@ -22,20 +22,20 @@ use super::errors::{git_observation_error_response, response_conflict, response_
 use super::handlers::{
     bind_task_branch, cleanup_task_worktree, close_session, create_skill_definition,
     delete_project, delete_steward_configuration, dismiss_task_worktree_provisioning,
-    dismiss_task_worktree_repair,
-    fork_agent_session, get_context_bank_catalog, get_context_bank_file, get_skill_catalog,
-    get_skill_definition, git_host_pull_request_change_list, git_host_pull_request_diff,
-    git_host_pull_request_list, inspect_task_worktree_cleanup, inspect_task_worktree_repair,
-    launch_agent_session, launch_assistant_prompt_improver, launch_project_run, launch_quick_action,
-    launch_run_configuration_improver,
-    launch_settings_improver, launch_task_run, launch_task_session, list_deleted_sessions,
-    list_session_history, paste_agent_image, preview_agent_session,
-    preview_assistant_prompt_improver, preview_quick_action, preview_relocate_agent_session,
-    preview_relocate_agent_to_project, preview_resume_agent_session,
-    preview_run_configuration_improver, preview_session_history_resume, preview_settings_improver,
-    preview_task_agent_session, project_list_local_branches, project_worktree_change_list,
-    project_worktree_diff, project_worktree_pre_image, project_worktree_summary,
-    provision_task_worktree, relocate_agent_session, repair_provider_history, repair_task_worktree,
+    dismiss_task_worktree_repair, fork_agent_session, get_context_bank_catalog,
+    get_context_bank_file, get_skill_catalog, get_skill_definition,
+    git_host_pull_request_change_list, git_host_pull_request_diff, git_host_pull_request_list,
+    inspect_task_worktree_cleanup, inspect_task_worktree_repair, launch_agent_session,
+    launch_assistant_prompt_improver, launch_project_run, launch_quick_action,
+    launch_run_configuration_improver, launch_settings_improver, launch_task_run,
+    launch_task_session, list_deleted_sessions, list_session_history, paste_agent_image,
+    preview_agent_session, preview_assistant_prompt_improver, preview_quick_action,
+    preview_relocate_agent_session, preview_relocate_agent_to_project,
+    preview_resume_agent_session, preview_run_configuration_improver,
+    preview_session_history_resume, preview_settings_improver, preview_task_agent_session,
+    project_list_local_branches, project_worktree_change_list, project_worktree_diff,
+    project_worktree_pre_image, project_worktree_summary, provision_task_worktree,
+    relocate_agent_session, repair_provider_history, repair_task_worktree,
     resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
     restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
     save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
@@ -1267,10 +1267,7 @@ async fn dispatch_inner(
                     && core.current_enabled_steward_wake(&project_id).is_some();
                 drop(core);
                 if result.is_ok() && state_revision != previous_revision {
-                    let mut topics = vec![
-                        ProjectionTopic::Playbook,
-                        ProjectionTopic::Routine,
-                    ];
+                    let mut topics = vec![ProjectionTopic::Playbook, ProjectionTopic::Routine];
                     if steward_enabled {
                         topics.push(ProjectionTopic::Steward);
                     }
