@@ -6,14 +6,13 @@
 //! ordinary prepare-outside-the-lock Agent sequence the other improvers use.
 
 use std::path::Path;
-use std::sync::atomic::Ordering;
 
 use serde_json::Value;
-use termloop_contract::current::{self as protocol, ProjectionTopic};
+use termloop_contract::current as protocol;
 use termloop_core::{CoreError, SettingsEntryKind, SettingsImproverEntry};
 
-use super::super::super::invalidation::InvalidationRequest;
 use super::super::super::{AppState, current_epoch_ms};
+use super::super::agent_launch::execute_agent_launch;
 
 pub(in crate::app::control) async fn preview_settings_improver(
     params: Value,
@@ -36,33 +35,11 @@ pub(in crate::app::control) async fn launch_settings_improver(
     params: Value,
     state: &AppState,
 ) -> Result<Value, CoreError> {
-    let mut plan = {
+    let plan = {
         let mut core = state.core.lock().await;
         core.take_settings_improver_launch(params)?
     };
-    plan = tokio::task::spawn_blocking(move || {
-        plan.prepare_runtime();
-        plan
-    })
-    .await
-    .map_err(|error| CoreError::Terminal(format!("agent runtime preparation failed: {error}")))?;
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "agent status runtime unavailable");
-    }
-    let (result, state_revision) = {
-        let mut core = state.core.lock().await;
-        let result = core.complete_agent_launch(&mut plan);
-        (result, core.state_revision())
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    if result.is_ok() {
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-    }
-    result
+    execute_agent_launch(state, plan).await
 }
 
 /// Resolves the exact entry an improver launch names. Only the prompt catalog
