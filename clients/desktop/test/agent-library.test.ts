@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentLibraryEntry } from "@termloop/contract/current";
 import { agentDraft, agentGroups, type AgentLibraryController } from "../src/renderer/agent-library.js";
+import { AgentsRail } from "../src/renderer/ui/AgentsRail.js";
 import { AgentProfilePanel } from "../src/renderer/ui/AgentProfilePanel.js";
 import { QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { useAgentLibrary } from "../src/renderer/composition/use-agent-library.js";
@@ -33,6 +34,21 @@ describe("agent library workflows", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
   const button = (text: string) => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === text)!;
+
+  it("offers Creator and Setup separately from the manual editor and surfaces launch failures", async () => {
+    const start = vi.fn().mockResolvedValue("Provider unavailable"); const setup = vi.fn(); const create = vi.fn();
+    const library: AgentLibraryController = { value: { revision: 0, profiles: [] }, loading: false, error: undefined, reload: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), favorite: vi.fn() };
+    const props = { library, selectedId: undefined, open: vi.fn(), create, creator: { available: true, start, setup } };
+    await act(async () => root.render(createElement(AgentsRail, props)));
+    await act(async () => button("Agent Creator").click());
+    expect(start).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Provider unavailable");
+    await act(async () => button("Setup ▾").click());
+    expect(setup).toHaveBeenCalledOnce(); expect(create).not.toHaveBeenCalled();
+    await act(async () => root.render(createElement(AgentsRail, { ...props, creator: { ...props.creator, available: false } })));
+    expect(button("Agent Creator").disabled).toBe(true);
+    expect(button("Setup ▾").disabled).toBe(true);
+  });
 
   it("groups favorites once and searches descriptions", () => {
     expect(agentGroups([profile], "behavior").map((group) => group.profiles.length)).toEqual([1, 0, 0]);

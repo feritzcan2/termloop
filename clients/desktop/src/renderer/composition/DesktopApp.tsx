@@ -1,3 +1,4 @@
+import { openAgentCreator } from "./agent-creator.js";
 import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
@@ -658,6 +659,9 @@ export function DesktopApp() {
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
+  useEffect(() => onProjectionInvalidated(({ profileId, payload }) => {
+    if (profileId === selectedConnectionProfileId && payload.topics.includes("agentLibrary")) agentLibrary.reload();
+  }), [selectedConnectionProfileId, agentLibrary.reload]);
   const localSourceApi = desktopApi.source("local");
   const assistantProjectId = selectedProject?.id ?? "";
   const assistantReadIdentity = useMemo<AssistantReadIdentity>(() => ({
@@ -1031,6 +1035,19 @@ export function DesktopApp() {
       return message;
     }
   }, [selectedSourceApi]);
+  const startAgentCreator = useCallback(async (requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> => {
+    const projectId = presentationStore.getState().selectedProjectId;
+    if (!projectId) return "Open a Project first: Agent Creator runs in its checkout.";
+    try {
+      const session = await openAgentCreator(sourceApiForProject(projectId), projectionStore.getSnapshot().sessions,
+        projectId, requested ?? readLastQuickActionAgentSelection(), retireImproverSession, options);
+      await activateImproverSession(projectId, session);
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
+    }
+  }, []);
+
   /// Improve-with-agent launch and immutable version history for settings.
   /// The Agent activates a new version only after the user tells it to apply.
   const settingsImprovement = useMemo(() => ({
@@ -2199,6 +2216,7 @@ export function DesktopApp() {
       agentCapabilities={agentCapabilities}
       agentProfiles={agentProfiles}
       agentLibrary={agentLibrary}
+      startAgentCreator={startAgentCreator}
       connection={projection.connection}
       connectionMessage={projection.message}
       reconnectSource={async (profileId) => {
