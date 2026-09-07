@@ -59,7 +59,8 @@ use termloop_domain::{
 // capability selection now belongs to the Worker at assignment time. Version
 // 51 adds Project-scoped workflow configurations. Version 52 adds one bounded
 // current Core-managed workflow execution per Task, without attempt history.
-const CURRENT_SCHEMA_VERSION: u32 = 52;
+// Version 53 adds one replace-in-place result summary per configured step.
+const CURRENT_SCHEMA_VERSION: u32 = 53;
 
 pub struct CoreWriteAuthority {
     _private: (),

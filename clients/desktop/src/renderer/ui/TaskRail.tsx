@@ -872,6 +872,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// is the same gate the launchers need. Deriving it from the stage keeps the
   /// two from drifting and drops a second `taskWorktreeInlineAction` call.
   const launchable = stage.id === "ready";
+  const workflowExecutionVisible = props.workflowExecutions.some((execution) => execution.taskId === task.id);
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
     ? props.branchCommitSummary.count
     : null;
@@ -1267,11 +1268,12 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               </AgentGroupFrame>
             </Fragment>
           ))}
-          {launchable ? (
-            <div className="task-launch" role="group" aria-label={`Start a new Session in ${task.title}`}>
-              <span className="task-launch-label" aria-hidden="true">Start</span>
-              <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
-              {agents.map((capability) => (
+          {launchable || workflowExecutionVisible ? (
+            <div className="task-launch" role="group" aria-label={launchable ? `Start a new Session in ${task.title}` : `${task.title} workflow progress`}>
+              {launchable ? <>
+                <span className="task-launch-label" aria-hidden="true">Start</span>
+                <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
+                {agents.map((capability) => (
                 <button
                   key={capability.agent_id}
                   type="button"
@@ -1280,7 +1282,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                   aria-label={`Start ${capability.label} in ${task.title}`}
                   onClick={() => void props.launchAgent(task.id, capability.agent_id)}
                 ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
-              ))}
+                ))}
+              </> : null}
               <TaskWorkflowLaunchers
                 projectId={task.project_id}
                 task={task}
@@ -1289,14 +1292,16 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                 stateRevision={props.workflowStateRevision}
                 agentCapabilities={props.agentCapabilities}
                 launchable={launchable}
+                showLaunchers={launchable}
                 overlayContainer={props.overlayContainer}
                 overlayVisibilityChanged={props.overlayVisibilityChanged}
                 save={props.saveWorkflowConfiguration}
                 remove={props.deleteWorkflowConfiguration}
                 launch={props.launchWorkflow}
                 cancel={props.cancelWorkflowExecution}
+                openSession={props.selectSession}
               />
-              <TaskRunLaunchers
+              {launchable ? <TaskRunLaunchers
                 projectId={task.project_id}
                 task={task}
                 configurations={props.runConfigurations}
@@ -1311,7 +1316,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                 save={props.saveRunConfiguration}
                 remove={props.deleteRunConfiguration}
                 launch={props.launchTaskRun}
-              />
+              /> : null}
             </div>
           ) : null}
         </div>

@@ -12411,6 +12411,37 @@
       "type": "string",
       "enum": ["running", "paused", "completed"]
     },
+    "workflowExecutionParticipantDto": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowExecutionParticipantDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "sessionId"],
+      "properties": {
+        "stepId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sessionId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workflowStepResultOutcome": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepResultOutcome",
+      "type": "string",
+      "enum": ["completed", "approved", "changesRequested", "skipped"]
+    },
+    "workflowStepResultDto": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowStepResultDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "reviewCycle", "outcome", "summary", "completedAtEpochMs"],
+      "properties": {
+        "stepId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "reviewCycle": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "outcome": { "$ref": "#/$defs/workflowStepResultOutcome" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2048, "x-utf8-max-bytes": 2048 },
+        "completedAtEpochMs": { "type": "integer", "minimum": 1 }
+      }
+    },
     "workflowExecutionDto": {
       "x-codegen": true,
       "x-codegen-name": "WorkflowExecutionDto",
@@ -12419,7 +12450,8 @@
       "required": [
         "id", "projectId", "taskId", "workflowId", "workflowGeneration", "workflowName",
         "goal", "coordinatorSessionId", "currentStepIndex", "reviewCycle", "maxReviewCycles",
-        "phase", "status", "steps", "startedAtEpochMs", "updatedAtEpochMs"
+        "phase", "status", "steps", "participants", "stepResults",
+        "startedAtEpochMs", "updatedAtEpochMs"
       ],
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -12439,6 +12471,16 @@
           "type": "array",
           "items": { "$ref": "#/$defs/workflowStepDto" },
           "minItems": 1,
+          "maxItems": 8
+        },
+        "participants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflowExecutionParticipantDto" },
+          "maxItems": 8
+        },
+        "stepResults": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflowStepResultDto" },
           "maxItems": 8
         },
         "startedAtEpochMs": { "type": "integer", "minimum": 1 },
