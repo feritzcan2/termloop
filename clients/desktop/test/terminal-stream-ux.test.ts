@@ -55,9 +55,9 @@ describe("terminal streaming", () => {
     const settled = vi.fn(); const ledger = new InputReceiptLedger(settled);
     ledger.expect(1n, 10); ledger.expect(2n, 20);
     expect(settled).not.toHaveBeenCalled();
-    ledger.accept(2n); expect(settled).toHaveBeenCalledWith(30, true);
+    ledger.accept(2n); expect(settled).toHaveBeenCalledWith(30, true, false);
     ledger.expect(3n, 5); await vi.advanceTimersByTimeAsync(7000);
-    expect(settled).toHaveBeenLastCalledWith(5, false);
+    expect(settled).toHaveBeenLastCalledWith(5, false, false);
     ledger.accept(3n); expect(settled).toHaveBeenCalledTimes(2);
   });
 });

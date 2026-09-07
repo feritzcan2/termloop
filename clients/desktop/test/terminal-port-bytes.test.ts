@@ -31,3 +31,20 @@ describe("TerminalAttachment byte input", () => {
     expect([...new Uint8Array(message.data)]).toEqual([...input]);
   });
 });
+
+it("discards queued input on disconnect and keeps pre-listener transport state", async () => {
+  vi.stubGlobal("window", { termloop: {}, addEventListener: vi.fn() });
+  const { TerminalAttachment } = await import("../src/renderer/transport/terminal-port.js");
+  const postMessage = vi.fn();
+  const port = { onmessage: undefined as ((event: MessageEvent) => void) | undefined, start: vi.fn(), postMessage, close: vi.fn() };
+  const attachment = new TerminalAttachment(port as unknown as MessagePort);
+  attachment.input("do not replay this\r");
+  port.onmessage?.({ data: { type: "state", state: "connectionLost" } } as MessageEvent);
+  const events: unknown[] = [];
+  attachment.onEvent((event) => events.push(event));
+  expect(events).toContainEqual({ type: "inputDelivery", state: "uncertain" });
+  expect(events).toContainEqual({ type: "state", state: "connectionLost" });
+  port.onmessage?.({ data: { type: "inputCredit", bytes: 1024 } } as MessageEvent);
+  expect(postMessage.mock.calls.some(([message]) => message.type === "input")).toBe(false);
+  attachment.dispose();
+});

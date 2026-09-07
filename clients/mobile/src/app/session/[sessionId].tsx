@@ -360,7 +360,8 @@ export default function SessionRoute() {
   };
 
   const submit = async () => {
-    if (voiceBusy) return;
+    if (voiceBusy || imageSending || terminal.submitting) return;
+    const submitted = draft;
     if (selectedImage !== undefined) {
       setImageSending(true);
       try {
@@ -369,15 +370,14 @@ export default function SessionRoute() {
           mediaType: selectedImage.mediaType,
         });
         if (delivered) {
-          setDraft("");
-          setSelectedImage(undefined);
+          setDraft((current) => current === submitted ? "" : current);
+          setSelectedImage((current) => current === selectedImage ? undefined : current);
         }
       } finally {
         setImageSending(false);
       }
       return;
     }
-    const submitted = draft;
     if (await terminal.submit(submitted)) setDraft((current) => current === submitted ? "" : current);
   };
 
