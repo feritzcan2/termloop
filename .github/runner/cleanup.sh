@@ -45,6 +45,8 @@ cache = root.parent.parent / "job-cache"
 if cache.parent.resolve() != cache.parent:
     raise SystemExit("Refusing a cache with a symlinked parent")
 remove(cache)
+# pnpm/action-setup overrides PNPM_HOME and keeps its store in this job install.
+remove(root.parent.parent / "setup-pnpm")
 
 available = shutil.disk_usage(root).free // (1024 ** 3)
 print(f"Runner workspace and job caches cleaned; {available} GiB available")

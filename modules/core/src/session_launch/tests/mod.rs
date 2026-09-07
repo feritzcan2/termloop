@@ -588,7 +588,12 @@ fn pending_generated_input_fixture() {
         std::io::stdout().flush().unwrap();
         read_headless_fixture_input(&mut input, b"\r");
     } else if retain_without_repaint {
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        // Keep the child and its screen unchanged until the parent terminates
+        // it. Exiting the Rust harness makes ConPTY repaint the old transcript,
+        // which is new structural output rather than this no-repaint scenario.
+        let mut unexpected = [0_u8; 1];
+        std::io::Read::read_exact(&mut input, &mut unexpected).unwrap();
+        panic!("fixture received input after the sole expected submit");
     }
     if termloop_platform::host_uses_bracketed_paste_framing() {
         println!("\x1b[?2004lTERMLOOP_INITIAL_INPUT_RECEIVED:{submitted}");
@@ -2108,55 +2113,56 @@ async fn assert_quick_action_initial_input_delivery(
             .pending_generated_input
             .is_some()
     );
-    tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        async {
-            while !String::from_utf8_lossy(&bytes)
-                .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
-            {
-                match output.recv().await.unwrap() {
-                    termloop_terminal::TerminalEvent::Output(chunk) => {
-                        append_headless_output_and_answer_cursor_queries(
-                            &terminal,
-                            "quick-action-ready",
-                            9,
-                            &mut bytes,
-                            &mut answered_cursor_position_queries,
-                            chunk,
-                        );
-                    }
-                    termloop_terminal::TerminalEvent::Gap(_) => {
-                        panic!("fixture output unexpectedly reported a gap")
-                    }
-                    termloop_terminal::TerminalEvent::Eof => {
-                        panic!(
-                            "fixture exited before receiving initial input: {}",
-                            String::from_utf8_lossy(&bytes)
-                        )
+    if !retain_without_repaint {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            async {
+                while !String::from_utf8_lossy(&bytes)
+                    .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
+                {
+                    match output.recv().await.unwrap() {
+                        termloop_terminal::TerminalEvent::Output(chunk) => {
+                            append_headless_output_and_answer_cursor_queries(
+                                &terminal,
+                                "quick-action-ready",
+                                9,
+                                &mut bytes,
+                                &mut answered_cursor_position_queries,
+                                chunk,
+                            );
+                        }
+                        termloop_terminal::TerminalEvent::Gap(_) => {
+                            panic!("fixture output unexpectedly reported a gap")
+                        }
+                        termloop_terminal::TerminalEvent::Eof => {
+                            panic!(
+                                "fixture exited before receiving initial input: {}",
+                                String::from_utf8_lossy(&bytes)
+                            )
+                        }
                     }
                 }
-            }
-        },
-    )
-    .await
-    .unwrap_or_else(|_| {
-        panic!(
-            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
-            runtime.generated_input_delivery_state("quick-action-ready", 9),
-            runtime.generated_input_delivery_failure("quick-action-ready", 9),
-            terminal
-                .input_readiness_snapshot("quick-action-ready", 9)
-                .map(|snapshot| snapshot.facts()),
-            terminal
-                .input_readiness_snapshot("quick-action-ready", 9)
-                .map(|snapshot| snapshot.diagnostics()),
-            generated_input_events.try_recv().ok(),
-            bounded_headless_fixture_output(&bytes),
+            },
         )
-    });
-
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
+                runtime.generated_input_delivery_state("quick-action-ready", 9),
+                runtime.generated_input_delivery_failure("quick-action-ready", 9),
+                terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .map(|snapshot| snapshot.facts()),
+                terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .map(|snapshot| snapshot.diagnostics()),
+                generated_input_events.try_recv().ok(),
+                bounded_headless_fixture_output(&bytes),
+            )
+        });
+    }
     let event = generated_input_events
-        .recv_timeout(std::time::Duration::from_secs(1))
+        .recv_timeout(std::time::Duration::from_secs(5))
         .unwrap();
     assert!(runtime.record_generated_input_runtime_event(event).unwrap());
     assert_eq!(
@@ -2197,10 +2203,12 @@ async fn assert_quick_action_initial_input_delivery(
         let event = generated_input_events
             .recv_timeout(std::time::Duration::from_secs(6))
             .unwrap();
+        let diagnostic = format!("{event:?}");
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
             runtime.generated_input_delivery_state("quick-action-ready", 9),
-            Some(crate::GeneratedInputDeliveryState::Stalled)
+            Some(crate::GeneratedInputDeliveryState::Stalled),
+            "no-repaint fixture received an unexpected transport event: {diagnostic}"
         );
         let diagnostics = runtime
             .generated_input_deliveries
