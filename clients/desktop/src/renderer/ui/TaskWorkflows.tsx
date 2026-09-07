@@ -4,6 +4,7 @@ import {
   PointerSensor,
   closestCenter,
   useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -71,7 +72,7 @@ export function TaskWorkflowLaunchers(props: {
   }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
-    {props.showLaunchers ? <span className="task-launch-divider" aria-hidden="true" /> : null}
+    {props.showLaunchers && props.launchable ? <span className="task-launch-divider" aria-hidden="true" /> : null}
     {execution ? <button
       type="button"
       className={`workflow-execution-chip status-${execution.status}`}
@@ -92,7 +93,11 @@ export function TaskWorkflowLaunchers(props: {
           type="button"
           className="run-chip-start"
           disabled={!props.launchable || executionActive}
-          title={executionActive ? `Finish or stop ${execution?.workflowName ?? "the current workflow"} first` : workflowSummary(configuration)}
+          title={!props.launchable
+            ? "The Task worktree must be ready before this workflow can run"
+            : executionActive
+              ? `Finish or stop ${execution?.workflowName ?? "the current workflow"} first`
+              : workflowSummary(configuration)}
           aria-label={`Run workflow ${configuration.name} in ${props.task.title}`}
           onClick={() => setRunning(configuration)}
         ><Icon name="branch" />{configuration.name}</button>
@@ -455,6 +460,8 @@ export function WorkflowEditorPanel(props: {
   const implementation = draft.steps.find((step) => step.kind === "implement");
   const reviews = draft.steps.filter((step) => step.kind === "review");
   const fix = draft.steps.find((step) => step.kind === "fix");
+  const dirty = !props.configuration || JSON.stringify(draft) !== JSON.stringify(workflowDraft(props.configuration));
+  const canvasDrop = useDroppable({ id: "workflow-canvas-drop" });
 
   const updateStep = (id: string, update: Partial<WorkflowStepDto>) => {
     setDraft((current) => ({
@@ -499,6 +506,8 @@ export function WorkflowEditorPanel(props: {
   const dragEnd = (event: DragEndEvent) => {
     const activeId = String(event.active.id);
     if (activeId.startsWith("palette:")) {
+      const overId = event.over ? String(event.over.id) : undefined;
+      if (!overId || (overId !== "workflow-canvas-drop" && !draft.steps.some((step) => step.id === overId))) return;
       const kind = activeId.slice("palette:".length);
       if (kind === "discuss" || kind === "review") addStep(kind);
       if (kind === "fix" && !fix) addFixStep();
@@ -559,10 +568,11 @@ export function WorkflowEditorPanel(props: {
 
   return <section className="stage-editor workflow-editor-stage" aria-labelledby="workflow-editor-title" onKeyDown={(event) => event.key === "Escape" && props.close()}>
       <header className="stage-editor-head">
-        <div className="stage-editor-title"><span>{props.configuration ? "Workflow template" : "New workflow template"}</span><h2 id="workflow-editor-title">{props.configuration?.name ?? "Discuss, implement, review"}</h2><code>Runs inside each Task worktree</code></div>
+        <div className="stage-editor-title"><span>{props.configuration ? "Workflow template" : "New workflow template"}</span><h2 id="workflow-editor-title">{draft.name || "Untitled workflow"}</h2><code>Reusable in every Task in this Project</code></div>
         <div className="stage-editor-actions">
+          {dirty ? <span className="workflow-unsaved">{props.configuration ? "Unsaved changes" : "New template"}</span> : null}
           {props.configuration ? <button type="button" className="danger-button workflow-delete" disabled={busy} onClick={() => void deleteWorkflow()}>{confirmingDelete ? "Delete workflow" : "Delete"}</button> : null}
-          <button type="button" className="primary-button" disabled={busy} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
+          <button type="button" className="primary-button" disabled={busy || !dirty} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
           <button className="icon-button quiet" aria-label="Close workflow editor" onClick={props.close}><Icon name="close" /></button>
         </div>
       </header>
@@ -575,14 +585,14 @@ export function WorkflowEditorPanel(props: {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
           <div className="workflow-builder-grid">
             <aside className="workflow-node-palette" aria-label="Workflow nodes">
-              <div className="plan-head"><span className="plan-heading">Nodes</span><small className="plan-sub">Drag or click</small></div>
+              <div className="plan-head"><span className="plan-heading">Add node</span><small className="plan-sub">{draft.steps.length}/8</small></div>
               <WorkflowPaletteItem kind="discuss" label="Discussion" disabled={draft.steps.length >= 8} add={() => addStep("discuss")} />
               <WorkflowPaletteItem kind="review" label="Reviewer" disabled={draft.steps.length >= 8} add={() => addStep("review")} />
               <WorkflowPaletteItem kind="fix" label="Fix loop" disabled={draft.steps.length >= 8 || Boolean(fix) || reviews.length === 0} add={addFixStep} />
-              <p>Reviewers run independently. Core waits for every answer before Fix.</p>
+              <p>Drag onto the flow or click to add. Reviewers in the same lane run in parallel.</p>
             </aside>
-            <section className="workflow-pipeline" aria-labelledby="workflow-pipeline-title">
-              <div className="plan-head"><span className="plan-heading" id="workflow-pipeline-title">Canvas</span><small className="plan-sub">Core-managed route</small></div>
+            <section ref={canvasDrop.setNodeRef} className={`workflow-pipeline${canvasDrop.isOver ? " drop-target" : ""}`} aria-labelledby="workflow-pipeline-title">
+              <div className="plan-head"><span className="plan-heading" id="workflow-pipeline-title">Flow</span><small className="plan-sub">Drag nodes to reorder inside a lane</small></div>
               <SortableContext items={draft.steps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
                 <div className="workflow-canvas" role="list" aria-label="Workflow canvas">
                   <WorkflowCoreNode label="Start" detail="Run goal enters here" />
