@@ -2200,15 +2200,28 @@ async fn assert_quick_action_initial_input_delivery(
         assert_eq!(diagnostics.submit_attempts, 2);
         assert!(diagnostics.submit_receipted);
     } else if retain_without_repaint {
+        let readiness = terminal
+            .input_readiness_snapshot("quick-action-ready", 9)
+            .unwrap();
         let event = generated_input_events
             .recv_timeout(std::time::Duration::from_secs(6))
             .unwrap();
         let diagnostic = format!("{event:?}");
+        for _ in 0..64 {
+            match tokio::time::timeout(std::time::Duration::from_millis(1), output.recv()).await {
+                Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) => bytes.extend(chunk),
+                _ => break,
+            }
+        }
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
             runtime.generated_input_delivery_state("quick-action-ready", 9),
             Some(crate::GeneratedInputDeliveryState::Stalled),
-            "no-repaint fixture received an unexpected transport event: {diagnostic}"
+            "no-repaint fixture received an unexpected transport event: {diagnostic}; readiness_before={:?}; readiness_after={:?}; readiness_diagnostics={:?}; output={}",
+            readiness.facts(),
+            readiness.current_facts(),
+            readiness.diagnostics(),
+            bounded_headless_fixture_output(&bytes)
         );
         let diagnostics = runtime
             .generated_input_deliveries

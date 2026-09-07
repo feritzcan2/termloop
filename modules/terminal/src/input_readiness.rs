@@ -53,6 +53,7 @@ struct InputReadinessState {
     synchronized_frame_visible_cursor_position: Option<CursorPosition>,
     synchronized_frame_last_right_angle_prompt_position: Option<CursorPosition>,
     visible_right_angle_prompt_position: Option<CursorPosition>,
+    normalized_prompt_pending: bool,
     completed_frame_cursor_position: Option<CursorPosition>,
     terminal_structure_parser: TerminalStructureParser,
     closed: bool,
@@ -161,6 +162,7 @@ impl InputReadinessTracker {
                     &mut state.alternate_screen_enable_match,
                 ) {
                     state.alternate_screen_active = true;
+                    state.normalized_prompt_pending = false;
                     state.composer_prompt_seen_in_current_alternate_screen = false;
                     state.composer_prompt_seen_after_bracketed_paste = false;
                     state.structural_sequence = state.structural_sequence.saturating_add(1);
@@ -171,6 +173,7 @@ impl InputReadinessTracker {
                     &mut state.alternate_screen_disable_match,
                 ) {
                     state.alternate_screen_active = false;
+                    state.normalized_prompt_pending = false;
                     state.composer_prompt_seen_in_current_alternate_screen = false;
                     state.composer_prompt_seen_after_bracketed_paste = false;
                     state.structural_sequence = state.structural_sequence.saturating_add(1);
@@ -238,6 +241,7 @@ impl InputReadinessTracker {
                         state.right_angle_prompt_count.saturating_add(1);
                     let prompt_position = state.terminal_structure_parser.cursor_position();
                     state.visible_right_angle_prompt_position = Some(prompt_position);
+                    state.normalized_prompt_pending = !state.synchronized_frame_open;
                     if state.synchronized_frame_open {
                         state.synchronized_frame_last_right_angle_prompt_position =
                             Some(prompt_position);
@@ -249,6 +253,7 @@ impl InputReadinessTracker {
                 // normalized stream without weakening the framed Unix path.
                 if showed_cursor
                     && self.accepts_normalized_screen_diff
+                    && state.normalized_prompt_pending
                     && !state.synchronized_frame_open
                     && state.alternate_screen_active
                     && state
@@ -259,6 +264,12 @@ impl InputReadinessTracker {
                         })
                 {
                     record_completed_composer_prompt(&mut state);
+                }
+                if showed_cursor {
+                    // A cursor-only screen diff must not count the remembered
+                    // prompt as newly rendered. Consume each observed prompt
+                    // at its first visible-cursor boundary, across read chunks.
+                    state.normalized_prompt_pending = false;
                 }
                 if record_marker(
                     byte,
@@ -589,6 +600,44 @@ mod tests {
         let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
         assert!(facts.composer_prompt_seen_in_current_alternate_screen);
         assert_eq!(facts.composer_prompt_render_count, 1);
+    }
+
+    #[test]
+    fn conpty_cursor_only_diffs_do_not_recount_a_previous_prompt() {
+        let tracker = InputReadinessTracker {
+            accepts_normalized_screen_diff: true,
+            ..InputReadinessTracker::default()
+        };
+        tracker.record(ALTERNATE_SCREEN_ENABLE);
+        tracker.record("\x1b[20;1H› ready".as_bytes());
+        tracker.record(b"\x1b[20;3H\x1b[?25h");
+        let baseline = tracker.snapshot("session".into(), 7).unwrap().facts();
+        assert_eq!(baseline.composer_prompt_render_count, 1);
+
+        for frame in [
+            b"\x1b[?25l\x1b[?25h".as_slice(),
+            b"\x1b[20;1H\x1b[K> pasted\x1b[20;3H\x1b[?25h",
+            b"\x1b[7;1Hanimation\x1b[20;3H\x1b[?25h",
+        ] {
+            tracker.record(frame);
+            let current = tracker.snapshot("session".into(), 7).unwrap().facts();
+            assert!(current.composer_prompt_seen_in_current_alternate_screen);
+            assert_eq!(
+                current.composer_prompt_render_count,
+                baseline.composer_prompt_render_count
+            );
+        }
+
+        tracker.record("\x1b[20;1H› retained".as_bytes());
+        tracker.record(b"\x1b[20;3H\x1b[?25h");
+        assert_eq!(
+            tracker
+                .snapshot("session".into(), 7)
+                .unwrap()
+                .facts()
+                .composer_prompt_render_count,
+            2
+        );
     }
 
     #[test]
