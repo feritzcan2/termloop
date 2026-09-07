@@ -608,19 +608,19 @@ async fn execute_ask_to_launch(
     if let Some(error) = plan.observation_warning() {
         tracing::warn!(%error, "helper status runtime unavailable; launching without observation");
     }
-    let (result, state_revision) = {
+    let result = {
         let mut core = state.core.lock().await;
         let result = core.complete_ask_to_launch(request_id, &mut plan);
         if result.is_err() {
             core.fail_ask_to_launch(request_id);
         }
-        (result, core.state_revision())
+        result
     };
     tokio::task::spawn_blocking(move || drop(plan));
     let completion = result?;
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![ProjectionTopic::Session],
-        state_revision,
+        state_revision: completion.state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
     if let Some(cwd) = completion

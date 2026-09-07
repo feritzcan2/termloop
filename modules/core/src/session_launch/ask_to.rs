@@ -247,6 +247,7 @@ impl McpAuthorizer {
 pub struct AskToLaunchCompletion {
     pub session: Value,
     pub acknowledgement: Value,
+    pub state_revision: u64,
 }
 
 pub enum AskToPlanOutcome {
@@ -592,15 +593,16 @@ impl CoreRuntime {
         if !source_is_live {
             return Err(CoreError::AskToRequestGone);
         }
-        let session = self.complete_agent_launch(plan)?;
+        let commit = self.complete_agent_launch(plan)?;
         let acknowledgement = self
             .ask_to_requests
             .get(request_id)
             .map(request_value)
             .ok_or(CoreError::AskToRequestUnavailable)?;
         Ok(AskToLaunchCompletion {
-            session,
+            session: commit.session,
             acknowledgement,
+            state_revision: commit.state_revision,
         })
     }
 
