@@ -3,6 +3,7 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  useDraggable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -15,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AgentCapabilityDto,
   StewardAgentId,
@@ -464,7 +465,10 @@ export function WorkflowEditorDialog(props: {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const selectedStep = draft.steps.find((step) => step.id === selectedStepId) ?? draft.steps[0];
-  const implementationIndex = draft.steps.findIndex((step) => step.kind === "implement");
+  const discussions = draft.steps.filter((step) => step.kind === "discuss");
+  const implementation = draft.steps.find((step) => step.kind === "implement");
+  const reviews = draft.steps.filter((step) => step.kind === "review");
+  const fix = draft.steps.find((step) => step.kind === "fix");
 
   const updateStep = (id: string, update: Partial<WorkflowStepDto>) => {
     setDraft((current) => ({
@@ -507,8 +511,15 @@ export function WorkflowEditorDialog(props: {
     setSelectedStepId(remaining[0]?.id);
   };
   const dragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    if (activeId.startsWith("palette:")) {
+      const kind = activeId.slice("palette:".length);
+      if (kind === "discuss" || kind === "review") addStep(kind);
+      if (kind === "fix" && !fix) addFixStep();
+      return;
+    }
     if (!event.over || event.active.id === event.over.id) return;
-    const next = moveWorkflowStep(draft.steps, String(event.active.id), String(event.over.id));
+    const next = moveWorkflowStep(draft.steps, activeId, String(event.over.id));
     if (next === draft.steps) {
       setError("Discussion and review cards can be reordered only inside their own phase.");
       return;
@@ -573,41 +584,77 @@ export function WorkflowEditorDialog(props: {
           <div><label htmlFor="workflow-coordinator">Coordinator</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => setDraft((current) => ({ ...current, coordinatorAgentId: event.target.value as StewardAgentId }))}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
           <div><label htmlFor="workflow-review-cycles">Max review cycles</label><select id="workflow-review-cycles" value={draft.maxReviewCycles} onChange={(event) => setDraft((current) => ({ ...current, maxReviewCycles: Number(event.target.value) }))}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></div>
         </div>
-        <div className="workflow-builder-grid">
-          <section className="workflow-pipeline" aria-labelledby="workflow-pipeline-title">
-            <div className="plan-head"><span className="plan-heading" id="workflow-pipeline-title">Flow</span><small className="plan-sub">Drag to reorder</small></div>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
+          <div className="workflow-builder-grid">
+            <aside className="workflow-node-palette" aria-label="Workflow nodes">
+              <div className="plan-head"><span className="plan-heading">Nodes</span><small className="plan-sub">Drag or click</small></div>
+              <WorkflowPaletteItem kind="discuss" label="Discussion" disabled={draft.steps.length >= 8} add={() => addStep("discuss")} />
+              <WorkflowPaletteItem kind="review" label="Reviewer" disabled={draft.steps.length >= 8} add={() => addStep("review")} />
+              <WorkflowPaletteItem kind="fix" label="Fix loop" disabled={draft.steps.length >= 8 || Boolean(fix) || reviews.length === 0} add={addFixStep} />
+              <p>Reviewers run independently. Core waits for every answer before Fix.</p>
+            </aside>
+            <section className="workflow-pipeline" aria-labelledby="workflow-pipeline-title">
+              <div className="plan-head"><span className="plan-heading" id="workflow-pipeline-title">Canvas</span><small className="plan-sub">Core-managed route</small></div>
               <SortableContext items={draft.steps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
-                <div className="workflow-steps" role="list">
-                  {draft.steps.map((step, index) => <SortableWorkflowStepCard
-                    key={step.id}
-                    step={step}
-                    index={index}
-                    selected={step.id === selectedStep?.id}
+                <div className="workflow-canvas" role="list" aria-label="Workflow canvas">
+                  <WorkflowCoreNode label="Start" detail="Run goal enters here" />
+                  {discussions.length ? <WorkflowCanvasStage label="Discuss in order" className="discussion-stage">
+                    {discussions.map((step) => <SortableWorkflowStepCard
+                      key={step.id}
+                      step={step}
+                      index={draft.steps.indexOf(step)}
+                      selected={step.id === selectedStep?.id}
+                      coordinatorAgentId={draft.coordinatorAgentId}
+                      steps={draft.steps}
+                      select={() => setSelectedStepId(step.id)}
+                    />)}
+                  </WorkflowCanvasStage> : null}
+                  {implementation ? <SortableWorkflowStepCard
+                    step={implementation}
+                    index={draft.steps.indexOf(implementation)}
+                    selected={implementation.id === selectedStep?.id}
                     coordinatorAgentId={draft.coordinatorAgentId}
                     steps={draft.steps}
-                    select={() => setSelectedStepId(step.id)}
-                  />)}
+                    select={() => setSelectedStepId(implementation.id)}
+                  /> : null}
+                  {reviews.length ? <>
+                    <WorkflowCanvasStage label={`${reviews.length} parallel reviewer${reviews.length === 1 ? "" : "s"}`} className="review-stage">
+                      {reviews.map((step) => <SortableWorkflowStepCard
+                        key={step.id}
+                        step={step}
+                        index={draft.steps.indexOf(step)}
+                        selected={step.id === selectedStep?.id}
+                        coordinatorAgentId={draft.coordinatorAgentId}
+                        steps={draft.steps}
+                        select={() => setSelectedStepId(step.id)}
+                      />)}
+                    </WorkflowCanvasStage>
+                    <WorkflowCoreNode label="Wait for all" detail="Core combines review outcomes" join />
+                  </> : null}
+                  {fix ? <SortableWorkflowStepCard
+                    step={fix}
+                    index={draft.steps.indexOf(fix)}
+                    selected={fix.id === selectedStep?.id}
+                    coordinatorAgentId={draft.coordinatorAgentId}
+                    steps={draft.steps}
+                    select={() => setSelectedStepId(fix.id)}
+                  /> : null}
+                  <WorkflowCoreNode label="Done" detail={fix ? "Approved or review limit reached" : "All steps completed"} />
                 </div>
               </SortableContext>
-            </DndContext>
-            <div className="workflow-add-steps">
-              <button type="button" className="secondary-button" disabled={draft.steps.length >= 8 || implementationIndex < 0} onClick={() => addStep("discuss")}><Icon name="add" />Discussion</button>
-              <button type="button" className="secondary-button" disabled={draft.steps.length >= 8 || implementationIndex < 0} onClick={() => addStep("review")}><Icon name="add" />Review</button>
-              {draft.steps.some((step) => step.kind === "fix") ? null : <button type="button" className="secondary-button" disabled={draft.steps.length >= 8 || !draft.steps.some((step) => step.kind === "review")} onClick={addFixStep}><Icon name="add" />Fix</button>}
-            </div>
-          </section>
-          <section className="workflow-inspector" aria-label="Selected workflow step">
-            {selectedStep ? <WorkflowStepInspector
-              step={selectedStep}
-              steps={draft.steps}
-              coordinatorAgentId={draft.coordinatorAgentId}
-              agents={agents}
-              remove={isHelperStep(selectedStep) ? () => removeStep(selectedStep.id) : undefined}
-              update={(update) => updateStep(selectedStep.id, update)}
-            /> : null}
-          </section>
-        </div>
+            </section>
+            <section className="workflow-inspector" aria-label="Selected workflow step">
+              {selectedStep ? <WorkflowStepInspector
+                step={selectedStep}
+                steps={draft.steps}
+                coordinatorAgentId={draft.coordinatorAgentId}
+                agents={agents}
+                remove={isHelperStep(selectedStep) ? () => removeStep(selectedStep.id) : undefined}
+                update={(update) => updateStep(selectedStep.id, update)}
+              /> : null}
+            </section>
+          </div>
+        </DndContext>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
       <footer className="dialog-actions">
@@ -616,6 +663,45 @@ export function WorkflowEditorDialog(props: {
         <button type="button" className="primary-button" disabled={busy} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
       </footer>
     </section>
+  </div>;
+}
+
+function WorkflowPaletteItem(props: {
+  kind: "discuss" | "review" | "fix";
+  label: string;
+  disabled: boolean;
+  add(): void;
+}) {
+  const draggable = useDraggable({ id: `palette:${props.kind}`, disabled: props.disabled });
+  const style = { transform: CSS.Translate.toString(draggable.transform) };
+  return <button
+    ref={draggable.setNodeRef}
+    style={style}
+    type="button"
+    className={`workflow-palette-node kind-${props.kind}${draggable.isDragging ? " dragging" : ""}`}
+    disabled={props.disabled}
+    onClick={props.add}
+    {...draggable.attributes}
+    {...draggable.listeners}
+  >
+    <span aria-hidden="true">+</span>
+    <b>{props.label}</b>
+    <small>{props.kind === "review" ? "Independent Agent" : props.kind === "fix" ? "Coordinator" : "Agent conversation"}</small>
+  </button>;
+}
+
+function WorkflowCanvasStage(props: { label: string; className: string; children: ReactNode }) {
+  return <section className={`workflow-canvas-stage ${props.className}`}>
+    <header><span>{props.label}</span></header>
+    <div>{props.children}</div>
+  </section>;
+}
+
+function WorkflowCoreNode(props: { label: string; detail: string; join?: boolean | undefined }) {
+  return <div className={`workflow-core-node${props.join ? " join" : ""}`} role="listitem">
+    <span>{props.join ? "◇" : "●"}</span>
+    <b>{props.label}</b>
+    <small>{props.detail}</small>
   </div>;
 }
 
@@ -660,7 +746,12 @@ function WorkflowStepInspector(props: {
   remove?: (() => void) | undefined;
   update(update: Partial<WorkflowStepDto>): void;
 }) {
-  const priorHelpers = props.steps.slice(0, props.steps.findIndex((step) => step.id === props.step.id)).filter(isHelperStep);
+  const priorHelpers = props.steps
+    .slice(0, props.steps.findIndex((step) => step.id === props.step.id))
+    .filter((step) => step.kind === "discuss");
+  const reusedByAnotherReviewer = new Set(props.steps
+    .filter((step) => step.kind === "review" && step.id !== props.step.id && step.reuseStepId)
+    .map((step) => step.reuseStepId));
   const participantValue = props.step.reuseStepId
     ? `reuse:${props.step.reuseStepId}`
     : `fresh:${props.step.agentId ?? "claude"}`;
@@ -684,7 +775,7 @@ function WorkflowStepInspector(props: {
         <label htmlFor={`workflow-${props.step.id}-participant`}>Agent conversation</label>
         <select id={`workflow-${props.step.id}-participant`} value={participantValue} onChange={(event) => setParticipant(event.target.value)}>
           {props.agents.map((agent) => <option key={`fresh:${agent.id}`} value={`fresh:${agent.id}`} disabled={!agent.available}>New {agent.label}{agent.available ? "" : " (unavailable)"}</option>)}
-          {props.step.kind === "review" ? priorHelpers.map((step) => <option key={`reuse:${step.id}`} value={`reuse:${step.id}`}>Reuse {agentLabel(step.agentId)} from “{step.title}”</option>) : null}
+          {props.step.kind === "review" ? priorHelpers.map((step) => <option key={`reuse:${step.id}`} value={`reuse:${step.id}`} disabled={reusedByAnotherReviewer.has(step.id)}>Reuse {agentLabel(step.agentId)} from “{step.title}”{reusedByAnotherReviewer.has(step.id) ? " (already assigned)" : ""}</option>) : null}
         </select>
         <p className="field-help">{props.step.reuseStepId ? "Continues the same helper conversation and context." : "Starts a separate visible helper Session."}</p>
       </> : <div className="workflow-owned-step"><Icon name={props.coordinatorAgentId === "claude" ? "claude" : "codex"} /><span><b>{agentLabel(props.coordinatorAgentId)} coordinator</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"}</small></span></div>}
@@ -807,7 +898,10 @@ function workflowStatusLabel(status: WorkflowExecution["status"]): string {
 function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowStepDto | undefined): string {
   if (execution.status === "completed") return "Core completed the workflow";
   if (execution.status === "paused") return "Coordinator stopped — resume its Session or stop this automation";
+  const reviewCount = step?.kind === "review" ? activeReviewIndexes(execution).length : 0;
+  if (execution.phase === "awaitingHelper" && reviewCount) return `Waiting for ${reviewCount} independent reviewer${reviewCount === 1 ? "" : "s"}`;
   if (execution.phase === "awaitingHelper") return `Waiting for ${agentLabel(step?.agentId ?? null)}`;
+  if (execution.phase === "awaitingStepCompletion" && reviewCount) return `All ${reviewCount} review replies delivered — coordinator is recording outcomes`;
   if (execution.phase === "awaitingStepCompletion") return "Helper reply delivered — coordinator is deciding the outcome";
   if (step?.kind === "implement") return "Coordinator is implementing the agreed approach";
   if (step?.kind === "fix") return "Coordinator is applying the combined review findings";
@@ -831,9 +925,22 @@ function workflowStepState(
   result: WorkflowStepResultDto | undefined,
 ): "complete" | "current" | "upcoming" | "skipped" {
   if (execution.status === "completed") return result?.outcome === "skipped" ? "skipped" : "complete";
+  if (activeReviewIndexes(execution).includes(index)) {
+    return result?.reviewCycle === execution.reviewCycle ? "complete" : "current";
+  }
   if (index === execution.currentStepIndex) return "current";
   if (index < execution.currentStepIndex) return result?.outcome === "skipped" ? "skipped" : "complete";
   return "upcoming";
+}
+
+function activeReviewIndexes(execution: WorkflowExecution): number[] {
+  if (execution.steps[execution.currentStepIndex]?.kind !== "review") return [];
+  const indexes: number[] = [];
+  for (let index = execution.currentStepIndex; index < execution.steps.length; index += 1) {
+    if (execution.steps[index]?.kind !== "review") break;
+    indexes.push(index);
+  }
+  return indexes;
 }
 
 function workflowStepSessionId(execution: WorkflowExecution, step: WorkflowStepDto): string | undefined {

@@ -66,7 +66,9 @@ impl WorkflowStep {
     }
 }
 
-/// One named, linear coordinator workflow available to all Tasks in a Project.
+/// One named coordinator workflow available to all Tasks in a Project.
+/// Discussion steps are ordered; one contiguous review group fans out behind
+/// the implementation step and joins before the optional fix loop.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowConfiguration {
@@ -161,6 +163,17 @@ pub struct WorkflowParticipant {
     pub helper_session_id: String,
 }
 
+/// One in-flight helper request in the current parallel review group. The
+/// request identifiers are routing state only; reviewer text remains in the
+/// independent Agent conversations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowReviewRequest {
+    pub step_id: String,
+    pub request_id: String,
+    pub reply_delivered: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WorkflowStepResultOutcome {
@@ -227,6 +240,11 @@ pub struct WorkflowExecution {
     pub coordinator_prompt_pending: bool,
     pub current_request_id: Option<String>,
     pub participants: Vec<WorkflowParticipant>,
+    /// Requests launched for the contiguous REVIEW group at
+    /// `current_step_index`. Empty outside an active review group and cleared
+    /// before another review cycle starts.
+    #[serde(default)]
+    pub review_requests: Vec<WorkflowReviewRequest>,
     #[serde(default)]
     pub step_results: Vec<WorkflowStepResult>,
     pub review_changes_requested: bool,
@@ -244,6 +262,59 @@ impl WorkflowExecution {
     pub fn is_valid(&self) -> bool {
         let step_index = usize::from(self.current_step_index);
         let step_count = self.configuration.steps.len();
+        let active_review_step_ids = self
+            .configuration
+            .steps
+            .get(step_index..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|step| step.kind == WorkflowStepKind::Review)
+            .map(|step| step.id.as_str())
+            .collect::<Vec<_>>();
+        let review_requests_are_valid = self.review_requests.len() <= active_review_step_ids.len()
+            && self
+                .review_requests
+                .iter()
+                .enumerate()
+                .all(|(index, request)| {
+                    active_review_step_ids.contains(&request.step_id.as_str())
+                        && !request.request_id.trim().is_empty()
+                        && request.request_id.len() <= 128
+                        && !self.review_requests[index + 1..].iter().any(|candidate| {
+                            candidate.step_id == request.step_id
+                                || candidate.request_id == request.request_id
+                        })
+                });
+        let active_review_request_state_is_valid = if self
+            .current_step()
+            .is_some_and(|step| step.kind == WorkflowStepKind::Review)
+        {
+            match self.phase {
+                WorkflowExecutionPhase::AwaitingCoordinator => {
+                    self.current_request_id.is_none()
+                        && self.review_requests.len() < active_review_step_ids.len()
+                }
+                WorkflowExecutionPhase::AwaitingHelper => {
+                    self.current_request_id.is_none()
+                        && self.review_requests.len() == active_review_step_ids.len()
+                        && self
+                            .review_requests
+                            .iter()
+                            .any(|request| !request.reply_delivered)
+                }
+                WorkflowExecutionPhase::AwaitingStepCompletion => {
+                    self.current_request_id.is_none()
+                        && self.review_requests.len() == active_review_step_ids.len()
+                        && self
+                            .review_requests
+                            .iter()
+                            .all(|request| request.reply_delivered)
+                }
+                WorkflowExecutionPhase::Completed => false,
+            }
+        } else {
+            self.review_requests.is_empty()
+        };
         let active_step_is_valid = self.current_step().is_some_and(|step| match self.phase {
             WorkflowExecutionPhase::AwaitingCoordinator
             | WorkflowExecutionPhase::AwaitingStepCompletion => true,
@@ -282,14 +353,19 @@ impl WorkflowExecution {
                 }
                 WorkflowExecutionPhase::AwaitingHelper => {
                     active_step_is_valid
-                        && self
-                            .current_request_id
-                            .as_deref()
-                            .is_some_and(|request_id| {
-                                !request_id.trim().is_empty() && request_id.len() <= 128
-                            })
+                        && (self
+                            .current_step()
+                            .is_some_and(|step| step.kind == WorkflowStepKind::Review)
+                            || self
+                                .current_request_id
+                                .as_deref()
+                                .is_some_and(|request_id| {
+                                    !request_id.trim().is_empty() && request_id.len() <= 128
+                                }))
                 }
             }
+            && review_requests_are_valid
+            && active_review_request_state_is_valid
             && self.participants.len() <= self.configuration.steps.len()
             && self
                 .participants
@@ -503,6 +579,7 @@ mod tests {
                     helper_session_id: "helper-1".into(),
                 },
             ],
+            review_requests: vec![],
             step_results: vec![WorkflowStepResult {
                 step_id: "discuss".into(),
                 review_cycle: 1,
@@ -535,6 +612,7 @@ mod tests {
             coordinator_prompt_pending: false,
             current_request_id: None,
             participants: vec![],
+            review_requests: vec![],
             step_results: vec![WorkflowStepResult {
                 step_id: "review".into(),
                 review_cycle: 1,
@@ -552,5 +630,38 @@ mod tests {
             .step_results
             .push(execution.step_results[0].clone());
         assert!(!execution.is_valid());
+    }
+
+    #[test]
+    fn current_execution_models_a_wait_all_review_barrier() {
+        let mut execution = WorkflowExecution {
+            id: "execution-1".into(),
+            project_id: "project-1".into(),
+            task_id: "task-1".into(),
+            configuration: configuration(),
+            goal: "Implement the workflow engine".into(),
+            coordinator_session_id: "coordinator-1".into(),
+            current_step_index: 2,
+            review_cycle: 1,
+            phase: WorkflowExecutionPhase::AwaitingHelper,
+            coordinator_prompt_pending: false,
+            current_request_id: None,
+            participants: vec![],
+            review_requests: vec![WorkflowReviewRequest {
+                step_id: "review".into(),
+                request_id: "request-1".into(),
+                reply_delivered: false,
+            }],
+            step_results: vec![],
+            review_changes_requested: false,
+            started_at_epoch_ms: 1,
+            updated_at_epoch_ms: 1,
+        };
+        assert!(execution.is_valid());
+
+        execution.review_requests[0].reply_delivered = true;
+        assert!(!execution.is_valid());
+        execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
+        assert!(execution.is_valid());
     }
 }

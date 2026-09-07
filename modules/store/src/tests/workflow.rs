@@ -119,6 +119,7 @@ fn execution(
         coordinator_prompt_pending: false,
         current_request_id: None,
         participants: vec![],
+        review_requests: vec![],
         step_results: vec![],
         review_changes_requested: false,
         started_at_epoch_ms: 1,
@@ -236,6 +237,52 @@ fn schema_52_migrates_existing_executions_to_empty_step_results() {
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
     assert_eq!(
         persisted["workflow_executions"][0]["stepResults"],
+        serde_json::json!([])
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn schema_53_migrates_existing_executions_to_empty_review_requests() {
+    let (path, authority, mut store) = open_store("parallel-review-migration");
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .insert_task(&authority, task("task-a", "project-a"))
+        .unwrap();
+    let configuration = store
+        .set_workflow_configuration(
+            &authority,
+            configuration("workflow-1", "project-a"),
+            store.revision(),
+        )
+        .unwrap();
+    store
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("coordinator-1", "project-a"),
+            execution("execution-1", "task-a", "coordinator-1", configuration),
+        )
+        .unwrap();
+    drop(store);
+
+    let mut legacy: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["schema_version"] = serde_json::json!(53);
+    legacy["workflow_executions"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("reviewRequests");
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let migrated = Store::open(&path).unwrap();
+    assert!(migrated.workflow_executions()[0].review_requests.is_empty());
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        persisted["workflow_executions"][0]["reviewRequests"],
         serde_json::json!([])
     );
     let _ = std::fs::remove_file(path);

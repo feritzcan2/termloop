@@ -228,6 +228,9 @@ pub(crate) fn workflow_execution_json(
             "stepId": participant.step_id,
             "sessionId": participant.helper_session_id,
         })).collect::<Vec<_>>(),
+        "activeReviewStepIds": execution.review_requests.iter().map(|request| {
+            request.step_id.clone()
+        }).collect::<Vec<_>>(),
         "stepResults": execution.step_results,
         "startedAtEpochMs": execution.started_at_epoch_ms,
         "updatedAtEpochMs": execution.updated_at_epoch_ms,

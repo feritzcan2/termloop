@@ -735,17 +735,45 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-step-result > small { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; color: var(--sidebar-dim); font: 8.5px/1.35 var(--font-ui); white-space: normal; }
 .workflow-step-waiting { overflow: hidden; color: var(--sidebar-dimmer); font: 8.5px/1.25 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 
-/* Workflow templates are linear, but the builder makes participant identity
-   and conversation reuse visible instead of hiding orchestration in prose. */
-.dialog-card.workflow-dialog { width: min(900px,calc(100vw - 40px)); }
+/* The workflow builder is a compact node canvas: discussion is sequential,
+   reviews fan out, and Core owns the wait-all join before the optional loop. */
+.dialog-card.workflow-dialog { width: min(1120px,calc(100vw - 40px)); }
 .workflow-dialog .dialog-body { max-height: min(76vh,760px); overflow-y: auto; overscroll-behavior: contain; }
 .workflow-builder-body { padding-top: 14px; }
 .workflow-builder-top { display: grid; grid-template-columns: minmax(220px,1fr) 170px 145px; gap: 10px; padding: 0 1px 14px; border-bottom: 1px solid var(--border); }
 .workflow-builder-top label { margin-top: 0 !important; }
-.workflow-builder-grid { display: grid; grid-template-columns: minmax(290px,340px) minmax(320px,1fr); gap: 14px; margin-top: 14px; align-items: start; }
-.workflow-pipeline { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
+.workflow-builder-grid { display: grid; grid-template-columns: 150px minmax(360px,1fr) minmax(300px,340px); gap: 12px; margin-top: 14px; align-items: start; }
+.workflow-node-palette,.workflow-pipeline { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
+.workflow-node-palette { display: grid; align-content: start; gap: 7px; }
+.workflow-node-palette .plan-head { margin-bottom: 3px; }
+.workflow-node-palette > p { margin: 5px 2px 0; color: var(--text-muted); font: 8.5px/1.4 var(--font-ui); }
+.workflow-palette-node { --workflow-tone: #7b8790; display: grid; grid-template-columns: 19px minmax(0,1fr); gap: 3px 6px; align-items: center; padding: 9px 8px; border: 1px solid var(--border); border-left: 3px solid var(--workflow-tone); border-radius: 7px; background: var(--bg-raised); color: var(--text); text-align: left; cursor: grab; touch-action: none; }
+.workflow-palette-node.kind-discuss { --workflow-tone: #5a91a8; }
+.workflow-palette-node.kind-review { --workflow-tone: #d09555; }
+.workflow-palette-node.kind-fix { --workflow-tone: #56a478; }
+.workflow-palette-node > span { grid-row: 1 / 3; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb,var(--workflow-tone) 14%,transparent); color: var(--workflow-tone); font: 800 12px/1 var(--font-mono); }
+.workflow-palette-node b { font: 650 9.5px/1.1 var(--font-ui); }
+.workflow-palette-node small { color: var(--text-muted); font: 7.5px/1.15 var(--font-ui); }
+.workflow-palette-node:hover:not(:disabled),.workflow-palette-node:focus-visible { border-color: color-mix(in srgb,var(--workflow-tone) 50%,var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb,var(--workflow-tone) 10%,transparent); }
+.workflow-palette-node:disabled { opacity: .42; cursor: default; }
+.workflow-palette-node.dragging { z-index: 20; opacity: .75; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 .workflow-pipeline .plan-head { margin: 0 1px 10px; }
-.workflow-steps { display: grid; gap: 7px; }
+.workflow-canvas { position: relative; display: grid; gap: 17px; padding: 7px 8px 9px 25px; }
+.workflow-canvas::before { position: absolute; top: 24px; bottom: 24px; left: 13px; width: 1px; background: color-mix(in srgb,#6b8ed6 42%,var(--border)); content: ""; }
+.workflow-canvas > * { position: relative; }
+.workflow-canvas > *::before { position: absolute; top: 50%; right: 100%; width: 13px; height: 1px; background: color-mix(in srgb,#6b8ed6 42%,var(--border)); content: ""; }
+.workflow-core-node { display: grid; min-height: 38px; grid-template-columns: 21px minmax(0,1fr); align-items: center; gap: 2px 7px; padding: 6px 9px; border: 1px dashed color-mix(in srgb,#6b8ed6 42%,var(--border)); border-radius: 8px; background: color-mix(in srgb,#6b8ed6 6%,var(--bg-raised)); }
+.workflow-core-node > span { grid-row: 1 / 3; display: grid; place-items: center; color: light-dark(#5575b6,#89aaf0); font: 800 12px/1 var(--font-mono); }
+.workflow-core-node > b { color: var(--text); font: 700 9px/1.1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.workflow-core-node > small { color: var(--text-muted); font: 8px/1.2 var(--font-ui); }
+.workflow-core-node.join { border-style: solid; background: color-mix(in srgb,#d09555 7%,var(--bg-raised)); }
+.workflow-canvas-stage { padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb,var(--workflow-stage-tone,#7b8790) 5%,var(--bg-raised)); }
+.workflow-canvas-stage > header { display: flex; align-items: center; margin: -2px 1px 8px; }
+.workflow-canvas-stage > header span { color: var(--workflow-stage-tone,#7b8790); font: 750 7.5px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.workflow-canvas-stage > div { display: grid; gap: 7px; }
+.workflow-canvas-stage.discussion-stage { --workflow-stage-tone: #5a91a8; }
+.workflow-canvas-stage.review-stage { --workflow-stage-tone: #d09555; }
+.workflow-canvas-stage.review-stage > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .workflow-step-card { position: relative; display: flex; min-height: 56px; overflow: hidden; border: 1px solid var(--border); border-left: 3px solid var(--workflow-tone,#7b8790); border-radius: 8px; background: var(--bg-raised); box-shadow: 0 1px 2px rgba(0,0,0,.04); transition: border-color .12s ease,box-shadow .12s ease,opacity .12s ease; }
 .workflow-step-card.kind-discuss { --workflow-tone: #5a91a8; }
 .workflow-step-card.kind-implement { --workflow-tone: #4d94d8; }
@@ -769,9 +797,6 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-drag-handle:hover,.workflow-drag-handle:focus-visible { background: var(--accent-wash); color: var(--accent-strong); }
 .workflow-drag-handle svg { width: 13px; height: 13px; }
 .workflow-step-lock { display: grid; place-items: center; width: 37px; border-left: 1px solid var(--border); color: var(--text-muted); font: 650 7.5px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
-.workflow-add-steps { display: flex; gap: 6px; margin-top: 9px; }
-.workflow-add-steps button { display: inline-flex; align-items: center; gap: 5px; }
-.workflow-add-steps svg { width: 11px; height: 11px; }
 .workflow-inspector { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
 .workflow-inspector-head { display: flex; min-height: 57px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--border); background: light-dark(rgba(15,23,42,.018),rgba(255,255,255,.012)); }
 .workflow-inspector-head > div { display: grid; gap: 6px; }
@@ -844,6 +869,8 @@ button.task-signal.issue:hover { color: var(--warning); }
   .workflow-builder-top { grid-template-columns: 1fr 1fr; }
   .workflow-builder-top > div:first-child { grid-column: 1 / -1; }
   .workflow-builder-grid { grid-template-columns: 1fr; }
+  .workflow-node-palette { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .workflow-node-palette .plan-head,.workflow-node-palette > p { grid-column: 1 / -1; }
 }
 /* The one line a run Session needs beyond its row: where to open it, how to
    restart it, and why it stopped. */

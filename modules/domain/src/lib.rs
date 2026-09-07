@@ -36,7 +36,8 @@ pub use workflow::{
     WORKFLOW_REVIEW_CYCLES_MAX, WORKFLOW_STEP_ID_MAX_BYTES, WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES,
     WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES, WORKFLOW_STEP_TITLE_MAX_BYTES, WORKFLOW_STEPS_MAX,
     WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase, WorkflowParticipant,
-    WorkflowStep, WorkflowStepKind, WorkflowStepResult, WorkflowStepResultOutcome,
+    WorkflowReviewRequest, WorkflowStep, WorkflowStepKind, WorkflowStepResult,
+    WorkflowStepResultOutcome,
 };
 
 mod companion;
