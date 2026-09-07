@@ -2,7 +2,7 @@
 import { execFile } from 'node:child_process';
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, statfs, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
+import path from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { newerVersion, parseVersion, resolveRelease, stageRelease } from './server-release.mjs';
