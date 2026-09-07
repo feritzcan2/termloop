@@ -120,6 +120,7 @@ pub(in crate::app::control) async fn delete_project(
             ProjectionTopic::TaskSource,
             ProjectionTopic::Run,
             ProjectionTopic::Playbook,
+            ProjectionTopic::Workflow,
             ProjectionTopic::GitHost,
         ],
         state_revision,

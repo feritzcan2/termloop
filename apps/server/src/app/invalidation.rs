@@ -38,6 +38,7 @@ pub(super) enum CommitImpact {
     TaskSourceImport,
     Run,
     Playbook,
+    Workflow,
 }
 
 impl CommitImpact {
@@ -64,6 +65,7 @@ impl CommitImpact {
             }
             Self::Run => vec![ProjectionTopic::Run],
             Self::Playbook => vec![ProjectionTopic::Playbook],
+            Self::Workflow => vec![ProjectionTopic::Workflow],
         }
     }
 }
@@ -221,6 +223,7 @@ fn extend_topic_names(topics: &mut BTreeSet<&'static str>, values: Vec<Projectio
             ProjectionTopic::Routine => "routine",
             ProjectionTopic::TaskSource => "taskSource",
             ProjectionTopic::Playbook => "playbook",
+            ProjectionTopic::Workflow => "workflow",
             ProjectionTopic::KeepAwake => "keepAwake",
             ProjectionTopic::Run => "run",
         });
@@ -241,6 +244,7 @@ fn projection_topic(value: &'static str) -> Option<ProjectionTopic> {
         "routine" => Some(ProjectionTopic::Routine),
         "taskSource" => Some(ProjectionTopic::TaskSource),
         "playbook" => Some(ProjectionTopic::Playbook),
+        "workflow" => Some(ProjectionTopic::Workflow),
         "keepAwake" => Some(ProjectionTopic::KeepAwake),
         "run" => Some(ProjectionTopic::Run),
         _ => None,
@@ -307,7 +311,20 @@ pub(super) async fn invalidate_automatic_git_host_task(state: &AppState, task_id
 }
 
 pub(super) async fn publish_agent_resume_invalidation(state: &AppState, session_id: &str) {
-    let cwd = state.core.lock().await.session_cwd(session_id);
+    let (cwd, workflow_redelivery) = {
+        let mut core = state.core.lock().await;
+        let cwd = core.session_cwd(session_id);
+        let workflow_redelivery = core.redeliver_pending_workflow_prompt(session_id);
+        (cwd, workflow_redelivery)
+    };
+    if let Err(error) = workflow_redelivery
+        && !matches!(
+            error,
+            termloop_core::CoreError::NotFound | termloop_core::CoreError::ConversationBusy
+        )
+    {
+        tracing::warn!(%session_id, %error, "workflow step prompt redelivery failed");
+    }
     if let Some(cwd) = cwd {
         refresh_task_presence_for_cwd(state, &cwd).await;
     }
@@ -317,7 +334,11 @@ pub(super) async fn publish_agent_resume_invalidation(state: &AppState, session_
 pub(super) async fn publish_session_invalidation(state: &AppState) {
     let state_revision = state.core.lock().await.state_revision();
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
+        topics: vec![
+            ProjectionTopic::Session,
+            ProjectionTopic::AgentStatus,
+            ProjectionTopic::Workflow,
+        ],
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
@@ -346,6 +367,10 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
         Some(CommitImpact::Steward)
     } else if method.starts_with("runConfiguration.") {
         Some(CommitImpact::Run)
+    } else if method.starts_with("workflow.configuration")
+        || method.starts_with("workflow.execution")
+    {
+        Some(CommitImpact::Workflow)
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
         Some(CommitImpact::Routine)
     } else if method.starts_with("playbook.") {
@@ -471,6 +496,10 @@ mod tests {
         assert_eq!(
             fallback_mutation_impact("session.deleteArchived"),
             Some(CommitImpact::SessionAgent)
+        );
+        assert_eq!(
+            fallback_mutation_impact("workflow.configurationCreate"),
+            Some(CommitImpact::Workflow)
         );
         for dedicated in [
             "project.delete",
