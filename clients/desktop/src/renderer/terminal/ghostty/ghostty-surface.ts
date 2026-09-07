@@ -23,6 +23,7 @@ export class GhosttySurface implements TerminalSurface {
   #surfaceId: number | undefined;
   #createPromise: Promise<number | undefined> | undefined;
   #failed = false;
+  readonly #errorListeners = new Set<() => void>();
   #disposed = false;
   #visible = false;
   #resizeObserver: ResizeObserver | undefined;
@@ -103,6 +104,21 @@ export class GhosttySurface implements TerminalSurface {
     if (this.#surfaceId) void this.bridge.setColorScheme(this.#surfaceId, theme).catch(() => {});
   }
 
+  container(): HTMLElement | undefined { return this.#container; }
+  async readText(): Promise<string | undefined> {
+    await this.#writeTail;
+    return this.#surfaceId ? this.bridge.snapshotText(this.#surfaceId) : undefined;
+  }
+  onError(listener: () => void): () => void {
+    this.#errorListeners.add(listener);
+    if (this.#failed) listener();
+    return () => { this.#errorListeners.delete(listener); };
+  }
+  #fail(): void {
+    this.#failed = true;
+    for (const listener of this.#errorListeners) listener();
+  }
+
   write(data: Uint8Array, callback: () => void): void {
     const bytes = data.slice();
     this.#writeTail = this.#writeTail.then(async () => {
@@ -115,7 +131,7 @@ export class GhosttySurface implements TerminalSurface {
       if (transition === "leave") await this.#retainAlternateScreen(surfaceId);
       await this.bridge.write(surfaceId, bytes);
     }).catch(() => {
-      this.#failed = true;
+      this.#fail();
     }).finally(callback);
   }
 
@@ -228,7 +244,7 @@ export class GhosttySurface implements TerminalSurface {
       await this.bridge.setColorScheme(created.surfaceId, this.#appearanceTheme).catch(() => {});
       this.#removeInputListener = this.bridge.onInput(created.surfaceId, this.onInput);
       this.#removeClosedListener = this.bridge.onClosed(created.surfaceId, () => {
-        this.#failed = true;
+        this.#fail();
         this.#removeInputListener?.();
         this.#removeInputListener = undefined;
       });
@@ -237,7 +253,7 @@ export class GhosttySurface implements TerminalSurface {
       if (frame) this.#updateGrid(created);
       return created.surfaceId;
     }).catch(() => {
-      this.#failed = true;
+      this.#fail();
       return undefined;
     });
     return this.#createPromise;
