@@ -58,8 +58,9 @@ use termloop_domain::{
 // Version 50 removes the retired Routine provider kind from durable state.
 // Version 51 removes persistent Workers and binds Routine execution directly
 // to the Project Steward. Version 52 adds personal agent profiles and pinned
-// current Session instructions.
-const CURRENT_SCHEMA_VERSION: u32 = 52;
+// current Session instructions. Version 53 permits user overrides of built-in
+// agent profiles in the same bounded library.
+const CURRENT_SCHEMA_VERSION: u32 = 53;
 
 pub struct CoreWriteAuthority {
     _private: (),

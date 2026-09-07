@@ -50,14 +50,33 @@ describe("agent library workflows", () => {
     expect(open).toHaveBeenCalledWith(profile.id);
   });
 
-  it("keeps built-ins read only and persists favorites through the named action", async () => {
+  it("edits every built-in field in place and persists favorites through the named action", async () => {
     const favorite = vi.fn().mockResolvedValue(undefined);
-    const library: AgentLibraryController = { value: { revision: 7, profiles: [profile] }, loading: false, error: undefined, reload: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), favorite };
-    await act(async () => root.render(createElement(AgentProfilePanel, { profile: { ...profile, source: "builtIn" }, duplicate: false, library, capabilities, canRun: true, open: vi.fn(), copy: vi.fn(), run: vi.fn(), close: vi.fn() })));
-    expect(container.querySelector("textarea")?.readOnly).toBe(true);
-    expect(button("Save")).toBeUndefined();
+    const update = vi.fn().mockResolvedValue(undefined);
+    const builtin: AgentLibraryEntry = { ...profile, id: "builtin.agent-profile.edge-case-hunter", source: "builtIn" };
+    const library: AgentLibraryController = { value: { revision: 7, profiles: [builtin] }, loading: false, error: undefined, reload: vi.fn(), create: vi.fn(), update, remove: vi.fn(), favorite };
+    await act(async () => root.render(createElement(AgentProfilePanel, { profile: builtin, duplicate: false, library, capabilities, canRun: true, open: vi.fn(), copy: vi.fn(), run: vi.fn(), close: vi.fn() })));
+    expect(container.querySelector("textarea")?.readOnly).toBe(false);
+    expect(button("Save").disabled).toBe(true);
+    expect([...container.querySelectorAll("input,select,textarea")].some((field) => (field as HTMLInputElement).disabled || (field as HTMLInputElement).readOnly)).toBe(false);
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Remove agent from favorites"]')!.click());
-    expect(favorite).toHaveBeenCalledWith(profile.id, false, 7);
+    expect(favorite).toHaveBeenCalledWith(builtin.id, false, 7);
+    for (const [label, value] of [
+      ["Name", "My reviewer"], ["Category", "Release"], ["Description", "Review release behavior"],
+      ["Provider", "codex"], ["Model", "gpt-5.6-sol"], ["Working mode", "acceptEdits"],
+      ["Reasoning", "xhigh"], ["Instructions", "Inspect changes and implement improvements."],
+    ]) {
+      const field = [...container.querySelectorAll("label")].find((entry) => entry.firstChild?.textContent === label)!.querySelector("input,select,textarea")!;
+      const prototype = field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, value);
+        field.dispatchEvent(new Event(field instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+      });
+    }
+    expect(button("Save").disabled).toBe(false);
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(update).toHaveBeenCalledWith({ id: builtin.id, expectedRevision: 7, name: "My reviewer", category: "Release", description: "Review release behavior", agentId: "codex", model: "gpt-5.6-sol", permission: "acceptEdits", reasoning: "xhigh", instructions: "Inspect changes and implement improvements." });
+    expect(library.create).not.toHaveBeenCalled();
   });
 
   it("loads profile defaults through the searchable picker and Escape closes only the picker", async () => {
