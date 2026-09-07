@@ -13,8 +13,9 @@ use tokio::time::{Duration, Instant};
 use super::super::core_lock::{in_operation, record_operation_duration};
 use super::super::health::refresh_all_health_demands;
 use super::super::invalidation::{
-    InvalidationRequest, invalidate_automatic_git_host_task, mutation_topics,
-    refresh_task_presence_for_cwd,
+    CommitImpact, InvalidationRequest, fallback_mutation_impact,
+    invalidate_automatic_git_host_task, queue_changed_commit_invalidation,
+    queue_durable_commit_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::{AppState, current_epoch_ms};
 use super::errors::{git_observation_error_response, response_conflict, response_error};
@@ -296,12 +297,13 @@ fn skill_application_error(
 }
 
 async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (plan, runtimes) = {
+    let (plan, runtimes, prepared_revision) = {
         let mut core = state.core.lock().await;
         let plan = core.prepare_task_archive(params)?;
         let runtimes = core.detach_task_archive_runtimes(&plan);
-        (plan, runtimes)
+        (plan, runtimes, core.state_revision())
     };
+    queue_durable_commit_invalidation(state, CommitImpact::TaskSessionAgent, prepared_revision);
     let terminal = state.terminal.clone();
     let session_ids = plan.session_ids().to_vec();
     let retirement =
@@ -320,39 +322,56 @@ async fn archive_task(params: Value, state: &AppState) -> Result<Value, termloop
             Ok(())
         })
         .await
-        .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))?;
-    if retirement.is_err() {
-        let mut core = state.core.lock().await;
-        core.mark_task_archive_recovery_attention(&plan)?;
+        .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))
+        .and_then(std::convert::identity);
+    if let Err(error) = retirement {
+        tracing::warn!(
+            %error,
+            task_id = plan.task_id(),
+            "Task archive retirement needs recovery attention"
+        );
+        let (recovery, recovery_revision) = {
+            let mut core = state.core.lock().await;
+            let recovery = core.mark_task_archive_recovery_attention(&plan);
+            (recovery, core.state_revision())
+        };
+        queue_changed_commit_invalidation(
+            state,
+            CommitImpact::TaskSessionAgent,
+            prepared_revision,
+            recovery_revision,
+        );
+        recovery?;
         return Err(termloop_core::CoreError::ArchiveRecoveryAttention {
             task_id: plan.task_id().to_owned(),
             operation_id: plan.operation_id().to_owned(),
         });
     }
-    let mut core = state.core.lock().await;
-    let result = core.complete_task_archive(plan)?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
-        state_revision: core.state_revision(),
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    Ok(result)
+    let (result, completed_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.complete_task_archive(plan);
+        (result, core.state_revision())
+    };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        prepared_revision,
+        completed_revision,
+    );
+    result
 }
 
 async fn archive_session(
     params: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let (plan, runtime) = {
+    let (plan, runtime, prepared_revision) = {
         let mut core = state.core.lock().await;
         let plan = core.prepare_session_archive(params)?;
         let runtime = core.detach_session_archive_runtime(&plan);
-        (plan, runtime)
+        (plan, runtime, core.state_revision())
     };
+    queue_durable_commit_invalidation(state, CommitImpact::SessionAgent, prepared_revision);
     let terminal = state.terminal.clone();
     let session_id = plan.session_id().to_owned();
     let retirement = tokio::task::spawn_blocking(move || {
@@ -368,39 +387,58 @@ async fn archive_session(
         Ok::<(), termloop_core::CoreError>(())
     })
     .await
-    .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))?;
-    if retirement.is_err() {
-        let mut core = state.core.lock().await;
-        core.mark_session_archive_recovery_attention(&plan)?;
+    .map_err(|error| termloop_core::CoreError::Terminal(error.to_string()))
+    .and_then(std::convert::identity);
+    if let Err(error) = retirement {
+        tracing::warn!(
+            %error,
+            session_id = plan.session_id(),
+            "Session archive retirement needs recovery attention"
+        );
+        let (recovery, recovery_revision) = {
+            let mut core = state.core.lock().await;
+            let recovery = core.mark_session_archive_recovery_attention(&plan);
+            (recovery, core.state_revision())
+        };
+        queue_changed_commit_invalidation(
+            state,
+            CommitImpact::SessionAgent,
+            prepared_revision,
+            recovery_revision,
+        );
+        recovery?;
         return Err(termloop_core::CoreError::InvalidParams(
             "sessionArchiveRecoveryAttention".into(),
         ));
     }
-    let mut core = state.core.lock().await;
-    let result = core.complete_session_archive(plan)?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
-        state_revision: core.state_revision(),
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    Ok(result)
+    let (result, completed_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.complete_session_archive(plan);
+        (result, core.state_revision())
+    };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::SessionAgent,
+        prepared_revision,
+        completed_revision,
+    );
+    result
 }
 
 async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (result, state_revision) = {
+    let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
-        let result = core.handle("task.restore", params)?;
-        (result, core.state_revision())
+        let previous_revision = core.state_revision();
+        let result = core.handle("task.restore", params);
+        (result, previous_revision, core.state_revision())
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        previous_revision,
         state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
+    );
+    let result = result?;
     let session_ids = result
         .get("resume_session_ids")
         .and_then(Value::as_array)
@@ -414,20 +452,19 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
 }
 
 async fn reopen_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
-    let (result, session_ids, state_revision) = {
+    let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
-        let (result, session_ids) = core.reopen_task_with_resume_plan(params)?;
-        (result, session_ids, core.state_revision())
+        let previous_revision = core.state_revision();
+        let result = core.reopen_task_with_resume_plan(params);
+        (result, previous_revision, core.state_revision())
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ],
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::TaskSessionAgent,
+        previous_revision,
         state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
+    );
+    let (result, session_ids) = result?;
     resume_task_sessions(session_ids, state).await;
     Ok(result)
 }
@@ -463,10 +500,19 @@ async fn restore_archived_session(
         .and_then(Value::as_str)
         .ok_or_else(|| termloop_core::CoreError::InvalidParams("sessionId".into()))?
         .to_owned();
-    let restored = {
+    let (restored, previous_revision, restored_revision) = {
         let mut core = state.core.lock().await;
-        core.handle("session.restoreArchived", params)?
+        let previous_revision = core.state_revision();
+        let restored = core.handle("session.restoreArchived", params);
+        (restored, previous_revision, core.state_revision())
     };
+    queue_changed_commit_invalidation(
+        state,
+        CommitImpact::SessionAgent,
+        previous_revision,
+        restored_revision,
+    );
+    let restored = restored?;
     let preview = preview_resume_agent_session(json!({ "sessionId": session_id }), state).await?;
     let launch_ticket = preview
         .get("launch_ticket")
@@ -1510,13 +1556,13 @@ async fn dispatch_inner(
                 let result = core.handle(&request.method, request.params);
                 let current_revision = core.state_revision();
                 drop(core);
-                let topics = mutation_topics(&request.method);
-                if result.is_ok() && current_revision != previous_revision && !topics.is_empty() {
-                    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-                        topics,
-                        state_revision: current_revision,
-                        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-                    });
+                if let Some(impact) = fallback_mutation_impact(&request.method) {
+                    queue_changed_commit_invalidation(
+                        state,
+                        impact,
+                        previous_revision,
+                        current_revision,
+                    );
                 }
                 result
             }

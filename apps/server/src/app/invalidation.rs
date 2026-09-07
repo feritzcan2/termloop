@@ -13,11 +13,121 @@ use super::{AppState, current_epoch_ms};
 
 const INVALIDATION_COALESCE_WINDOW: Duration = Duration::from_millis(100);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct InvalidationRequest {
     pub(super) topics: Vec<ProjectionTopic>,
     pub(super) state_revision: u64,
     pub(super) observation_sequence: u64,
+}
+
+/// One closed description of the projections changed by a committed control
+/// write. Callers select the lifecycle impact; this module alone translates it
+/// into transport topics and queues the publication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CommitImpact {
+    Project,
+    Task,
+    TaskSessionAgent,
+    Session,
+    SessionAgent,
+    Companion,
+    Steward,
+    Routine,
+    TaskSource,
+    TaskSourceImport,
+    Run,
+    Playbook,
+}
+
+impl CommitImpact {
+    fn topics(self) -> Vec<ProjectionTopic> {
+        match self {
+            Self::Project => vec![ProjectionTopic::Project],
+            Self::Task => vec![ProjectionTopic::Task],
+            Self::TaskSessionAgent => vec![
+                ProjectionTopic::Task,
+                ProjectionTopic::Session,
+                ProjectionTopic::AgentStatus,
+            ],
+            Self::Session => vec![ProjectionTopic::Session],
+            Self::SessionAgent => {
+                vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
+            }
+            Self::Companion => vec![ProjectionTopic::Companion],
+            Self::Steward => vec![ProjectionTopic::Steward],
+            Self::Routine => vec![ProjectionTopic::Routine],
+            Self::TaskSource => vec![ProjectionTopic::TaskSource],
+            Self::TaskSourceImport => {
+                vec![ProjectionTopic::TaskSource, ProjectionTopic::Task]
+            }
+            Self::Run => vec![ProjectionTopic::Run],
+            Self::Playbook => vec![ProjectionTopic::Playbook],
+        }
+    }
+}
+
+fn commit_invalidation(
+    impact: CommitImpact,
+    state_revision: u64,
+    observation_sequence: u64,
+) -> InvalidationRequest {
+    InvalidationRequest {
+        topics: impact.topics(),
+        state_revision,
+        observation_sequence,
+    }
+}
+
+fn changed_commit_invalidation(
+    impact: CommitImpact,
+    previous_revision: u64,
+    current_revision: u64,
+    observation_sequence: u64,
+) -> Option<InvalidationRequest> {
+    (current_revision != previous_revision)
+        .then(|| commit_invalidation(impact, current_revision, observation_sequence))
+}
+
+pub(super) fn queue_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    state_revision: u64,
+    observation_sequence: u64,
+) {
+    let _ = state.invalidation_requests.try_send(commit_invalidation(
+        impact,
+        state_revision,
+        observation_sequence,
+    ));
+}
+
+pub(super) fn queue_durable_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    state_revision: u64,
+) {
+    queue_commit_invalidation(
+        state,
+        impact,
+        state_revision,
+        state.observation_sequence.load(Ordering::Relaxed),
+    );
+}
+
+pub(super) fn queue_changed_commit_invalidation(
+    state: &AppState,
+    impact: CommitImpact,
+    previous_revision: u64,
+    current_revision: u64,
+) {
+    if let Some(invalidation) = changed_commit_invalidation(
+        impact,
+        previous_revision,
+        current_revision,
+        state.observation_sequence.load(Ordering::Relaxed),
+    ) {
+        let _ = state.invalidation_requests.try_send(invalidation);
+    }
 }
 
 pub(super) async fn coalesce_invalidations(
@@ -197,53 +307,106 @@ pub(super) async fn publish_session_invalidation(state: &AppState) {
     });
 }
 
-pub(super) fn mutation_topics(method: &str) -> Vec<ProjectionTopic> {
-    if method.starts_with("steward.configuration") {
-        vec![ProjectionTopic::Steward]
+pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
+    if matches!(
+        method,
+        "project.delete"
+            | "task.archive"
+            | "task.restore"
+            | "task.reopen"
+            | "session.archive"
+            | "session.restoreArchived"
+    ) {
+        None
+    } else if method.starts_with("steward.configuration") {
+        Some(CommitImpact::Steward)
     } else if method.starts_with("runConfiguration.") {
-        vec![ProjectionTopic::Run]
+        Some(CommitImpact::Run)
     } else if method.starts_with("routine.configuration") || method == "routine.contextUpdate" {
-        vec![ProjectionTopic::Routine]
+        Some(CommitImpact::Routine)
     } else if method.starts_with("playbook.") {
-        vec![ProjectionTopic::Playbook]
+        Some(CommitImpact::Playbook)
     } else if method.starts_with("companion.transcript") {
-        vec![ProjectionTopic::Companion]
-    } else if method == "project.delete" {
-        vec![
-            ProjectionTopic::Project,
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-            ProjectionTopic::Companion,
-            ProjectionTopic::Steward,
-            ProjectionTopic::Routine,
-            ProjectionTopic::Run,
-            ProjectionTopic::Playbook,
-            ProjectionTopic::GitHost,
-        ]
+        Some(CommitImpact::Companion)
     } else if method.starts_with("project.") {
-        vec![ProjectionTopic::Project]
+        Some(CommitImpact::Project)
     } else if matches!(
         method,
-        "task.archive" | "task.restore" | "task.abandonArchive" | "task.deleteArchived"
+        "task.abandonArchive" | "task.deleteArchived"
     ) {
-        vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Session,
-            ProjectionTopic::AgentStatus,
-        ]
+        Some(CommitImpact::TaskSessionAgent)
     } else if method.starts_with("task.") {
-        vec![ProjectionTopic::Task]
+        Some(CommitImpact::Task)
     } else if method.starts_with("session.") {
-        if matches!(
-            method,
-            "session.archive" | "session.restoreArchived" | "session.deleteArchived"
-        ) {
-            vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
+        if method == "session.deleteArchived" {
+            Some(CommitImpact::SessionAgent)
         } else {
-            vec![ProjectionTopic::Session]
+            Some(CommitImpact::Session)
         }
     } else {
-        vec![]
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_impacts_own_ordered_projection_topic_sets() {
+        assert_eq!(
+            commit_invalidation(CommitImpact::TaskSessionAgent, 9, 11),
+            InvalidationRequest {
+                topics: vec![
+                    ProjectionTopic::Task,
+                    ProjectionTopic::Session,
+                    ProjectionTopic::AgentStatus,
+                ],
+                state_revision: 9,
+                observation_sequence: 11,
+            }
+        );
+        assert_eq!(
+            commit_invalidation(CommitImpact::TaskSourceImport, 12, 14).topics,
+            vec![ProjectionTopic::TaskSource, ProjectionTopic::Task]
+        );
+    }
+
+    #[test]
+    fn changed_commit_invalidates_the_new_revision_and_no_op_does_not() {
+        assert_eq!(
+            changed_commit_invalidation(CommitImpact::SessionAgent, 20, 21, 34),
+            Some(InvalidationRequest {
+                topics: vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus],
+                state_revision: 21,
+                observation_sequence: 34,
+            })
+        );
+        assert_eq!(
+            changed_commit_invalidation(CommitImpact::SessionAgent, 21, 21, 34),
+            None
+        );
+    }
+
+    #[test]
+    fn fallback_policy_contains_only_lifecycles_dispatched_through_core_handle() {
+        assert_eq!(
+            fallback_mutation_impact("task.abandonArchive"),
+            Some(CommitImpact::TaskSessionAgent)
+        );
+        assert_eq!(
+            fallback_mutation_impact("session.deleteArchived"),
+            Some(CommitImpact::SessionAgent)
+        );
+        for dedicated in [
+            "project.delete",
+            "task.archive",
+            "task.restore",
+            "task.reopen",
+            "session.archive",
+            "session.restoreArchived",
+        ] {
+            assert_eq!(fallback_mutation_impact(dedicated), None, "{dedicated}");
+        }
     }
 }
