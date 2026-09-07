@@ -31,7 +31,7 @@ describe("Quick Action composer", () => {
     }));
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('aria-label="Run in Project"');
-    expect(markup).toContain('aria-label="Agent"');
+    expect(markup).toContain('aria-label="Provider"');
     expect(markup).toContain('aria-label="Agent profile"');
     expect(markup).toContain('aria-label="Model"');
     expect(markup).toContain('aria-label="Permission"');
@@ -40,7 +40,7 @@ describe("Quick Action composer", () => {
     expect(markup).toContain("Fable");
     expect(markup).toContain("bypass");
     expect(markup).toContain("What would you like to run?");
-    expect(markup).toContain("Scattered Orchestration Finder · Architecture");
+    expect(markup).toContain('aria-haspopup="listbox"');
     expect(markup).toContain("Advanced 0");
     expect(markup).toContain("⌘↵");
     expect(markup).toContain("Worktree");

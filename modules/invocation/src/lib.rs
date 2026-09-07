@@ -3,7 +3,9 @@
 mod assistant;
 mod codex_config;
 mod manifest;
+mod personal_agent;
 mod profiles;
+pub use personal_agent::personal_agent_for_conversation;
 mod submission;
 
 pub use manifest::{
@@ -232,6 +234,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
+        personal_agent::PERSONAL_AGENT_TEMPLATE,
         profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,
         profiles::EDGE_CASE_HUNTER_TEMPLATE,
         profiles::TEST_GAP_FINDER_TEMPLATE,

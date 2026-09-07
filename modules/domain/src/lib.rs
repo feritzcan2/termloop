@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
 
+mod agent_library;
+pub use agent_library::{
+    AGENT_INSTRUCTIONS_MAX, AgentLibrary, PERSONAL_AGENTS_MAX, PersonalAgent, SessionAgentProfile,
+    valid_personal_agent_id,
+};
+
 mod archive;
 pub use archive::{
     SessionArchiveOperation, SessionArchiveOperationState, TaskArchiveOperation,

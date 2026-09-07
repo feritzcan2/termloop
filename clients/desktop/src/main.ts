@@ -21,6 +21,10 @@ import {
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
   type QuickActionParams,
+  type AgentProfileCreateParams,
+  type AgentProfileUpdateParams,
+  type AgentProfileDeleteParams,
+  type AgentProfileFavoriteParams,
   type QuickActionLaunchParams,
   type ResultFor,
   type TaskProvisionWorktreeParams,
@@ -887,6 +891,11 @@ handleIpc("termloop:layout-save", async (_event, document: unknown) => {
 handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));
 handleIpc("termloop:agent-capability-list", () => controlCall("agent.capabilityList"));
+handleIpc("termloop:agent-library-get", () => controlCall("agent.libraryGet"));
+handleIpc("termloop:agent-profile-create", (_event, params: AgentProfileCreateParams) => controlCall("agent.profileCreate", params));
+handleIpc("termloop:agent-profile-update", (_event, params: AgentProfileUpdateParams) => controlCall("agent.profileUpdate", params));
+handleIpc("termloop:agent-profile-delete", (_event, params: AgentProfileDeleteParams) => controlCall("agent.profileDelete", params));
+handleIpc("termloop:agent-profile-favorite", (_event, params: AgentProfileFavoriteParams) => controlCall("agent.profileFavorite", params));
 handleIpc("termloop:agent-profile-list", () => controlCall("agent.profileList"));
 handleIpc("termloop:steward-configuration-get", (_event, projectId: string) =>
   controlCall("steward.configurationGet", { projectId }),

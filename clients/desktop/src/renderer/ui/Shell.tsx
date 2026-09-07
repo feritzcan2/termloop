@@ -1,3 +1,6 @@
+import type { AgentLibraryController } from "../agent-library.js";
+import { AgentsRail } from "./AgentsRail.js";
+import { AgentProfilePanel } from "./AgentProfilePanel.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
@@ -144,6 +147,7 @@ export type ShellProps = {
   agentStatuses: readonly AgentStatus[];
   agentCapabilities: readonly AgentCapabilityDto[];
   agentProfiles: readonly AgentProfileDto[];
+  agentLibrary?: AgentLibraryController;
   connection: ConnectionState;
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
@@ -361,10 +365,11 @@ export function openImproverSession(
 
 /// Which list owns the sidebar. Skills, MCP, and Prompts are peers of the
 /// Workspace rail rather than dialogs, so the tab row above them never moves.
-export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts";
+export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts" | "agents";
 
 /// The page currently covering the terminal stage, addressed by what it edits.
 export type StagePage =
+  | { kind: "agent"; id?: string; duplicate?: boolean }
   | { kind: "skill"; id: string }
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
@@ -513,6 +518,11 @@ export function Shell(props: ShellProps) {
   const [shortcutSettingsOpen, setShortcutSettingsOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
   const [quickActionAgent, setQuickActionAgent] = useState<string>();
+  const [quickActionProfile, setQuickActionProfile] = useState<string>();
+  useEffect(() => {
+    setQuickActionOpen(false); setQuickActionProfile(undefined);
+    setStagePage((page) => page?.kind === "agent" ? undefined : page);
+  }, [props.selectedProject?.connectionProfileId]);
   const [improverSetup, setImproverSetup] = useState<ImproverSetup>();
   const openPromptImproverSetup = useCallback((target: AssistantPromptImproverTarget) => {
     if (!props.selectedProject) return;
@@ -1288,13 +1298,16 @@ export function Shell(props: ShellProps) {
           <header className="brand-row">
             <div className="brand-cluster">
               <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /></span><strong>TermLoop</strong></div>
-              <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
-              <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
-              <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
-              <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
             </div>
             <div className="brand-actions"><button className="icon-button quiet" title="Command palette" aria-label="Open command palette" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={openCommandPalette}><Icon name="search" /></button><button className="icon-button quiet" title="Add Project" aria-label="Add Project" onClick={props.openProjectDialog}><Icon name="add" /></button></div>
           </header>
+          <nav className="agent-library-navigation" aria-label="Libraries">
+            <button className="agent-library-trigger prompt-settings-trigger" type="button" aria-pressed={railMode === "agents"} onClick={() => { toggleRail("agents"); props.agentLibrary?.reload(); }}><span aria-hidden="true" /><strong>Agents</strong></button>
+            <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
+            <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
+            <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
+            <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
+          </nav>
           <ProjectCheckoutHeader
             {...(props.selectedProject
               ? { changes: { summary: props.projectWorktreeSummary, open: () => setChangesPresentation({ kind: "project" }) } }
@@ -1405,6 +1418,11 @@ export function Shell(props: ShellProps) {
               )
               : undefined}
             reload={mcpLibrary.reload}
+          /> : railMode === "agents" && props.agentLibrary ? <AgentsRail
+            library={props.agentLibrary}
+            selectedId={stagePage?.kind === "agent" ? stagePage.id : undefined}
+            open={(id) => openStagePage({ kind: "agent", id })}
+            create={() => openStagePage({ kind: "agent" })}
           /> : railMode === "prompts" ? <PromptsRail
             prompts={promptLibrary.value}
             error={promptLibrary.error}
@@ -1699,7 +1717,20 @@ export function Shell(props: ShellProps) {
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
-            /> : stagePage?.kind === "skill" ? <SkillEditorPanel
+            /> : stagePage?.kind === "agent" && props.agentLibrary ? (
+              props.agentLibrary.value && (!stagePage.id || props.agentLibrary.value.profiles.some((profile) => profile.id === stagePage.id)) ? <AgentProfilePanel
+                key={`${props.selectedProject?.connectionProfileId}:${stagePage.id ?? "new"}:${Boolean(stagePage.duplicate)}`}
+                profile={props.agentLibrary.value.profiles.find((profile) => profile.id === stagePage.id)}
+                duplicate={Boolean(stagePage.duplicate)}
+                library={props.agentLibrary}
+                capabilities={props.agentCapabilities}
+                canRun={Boolean(props.selectedProject) && props.agentCapabilities.some((capability) => capability.available && capability.quick_action_supported && ["codex", "claude"].includes(capability.agent_id))}
+                open={(id) => openStagePage({ kind: "agent", id })}
+                copy={(id) => openStagePage({ kind: "agent", id, duplicate: true })}
+                run={(id) => { setQuickActionProfile(id); setQuickActionOpen(true); }}
+                close={() => setStagePage(undefined)}
+              /> : <StageEditorPlaceholder label="Agent" error={props.agentLibrary.error} loaded={Boolean(props.agentLibrary.value)} close={() => setStagePage(undefined)} />
+            ) : stagePage?.kind === "skill" ? <SkillEditorPanel
               key={stagePage.id}
               skillId={stagePage.id}
               load={props.loadSkillDefinition}
@@ -1894,14 +1925,17 @@ export function Shell(props: ShellProps) {
         ))}
         selectedProject={props.selectedProject}
         capabilities={props.agentCapabilities}
-        profiles={props.agentProfiles}
+        profiles={props.agentLibrary?.value?.profiles ?? props.agentProfiles}
+        libraryProfiles={props.agentLibrary?.value?.profiles ?? []}
+        initialTemplateRef={quickActionProfile}
+        manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); setRailMode("agents"); props.agentLibrary?.reload(); }}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}
         discardImage={props.discardQuickActionImage}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
-        close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); }}
+        close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}
       /> : null}
       {improverSetup && props.selectedProject ? <AgentSetupDialog
         project={props.selectedProject}

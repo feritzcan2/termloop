@@ -30,6 +30,7 @@ pub struct AgentResumePlan {
     pub(super) mcp_token: Option<String>,
     pub(super) mcp_role: Option<super::AgentMcpRole>,
     pub(super) agent_profile_ref: Option<String>,
+    pub(super) personal_agent: Option<termloop_domain::PersonalAgent>,
     pub(super) steward_system_prompt: Option<String>,
     pub(super) mcp_authorizer: super::McpAuthorizer,
     pub(super) observation_transport: AgentObservationTransport,
@@ -311,6 +312,21 @@ impl AgentResumePlan {
                 )
             };
             return launch.map_err(|_| AgentResumePreparationError::ProviderRejected);
+        }
+        if let Some(profile) = &self.personal_agent {
+            return termloop_invocation::personal_agent_for_conversation(
+                profile,
+                &self.agent_id,
+                &self.cwd,
+                &self.launch_selection,
+                None,
+                &[],
+                conversation,
+                observation,
+                mcp,
+                self.managed_worktree_trust,
+            )
+            .map_err(|_| AgentResumePreparationError::ProviderRejected);
         }
         if let Some(profile_ref) = &self.agent_profile_ref {
             let launch = if self.managed_worktree_trust {
@@ -683,6 +699,19 @@ impl CoreRuntime {
                     mcp,
                 )
             }
+        } else if let Some(profile) = self.store.session_agent_profile(&session_id) {
+            termloop_invocation::personal_agent_for_conversation(
+                profile,
+                agent_id,
+                &session.process.cwd,
+                &session.launch_selection,
+                None,
+                &[],
+                termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                observation,
+                mcp,
+                managed_worktree_trust,
+            )
         } else if let Some(profile_ref) = agent_profile_ref {
             if managed_worktree_trust {
                 termloop_invocation::configured_agent_profile_for_managed_worktree_conversation_resume(
@@ -1096,6 +1125,7 @@ impl CoreRuntime {
                 mcp_token,
                 mcp_role,
                 agent_profile_ref,
+                personal_agent: self.store.session_agent_profile(&session.id).cloned(),
                 steward_system_prompt,
                 mcp_authorizer: self.mcp_authorizer.clone(),
                 observation_transport: transport,
