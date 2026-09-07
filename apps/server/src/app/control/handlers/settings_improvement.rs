@@ -152,6 +152,7 @@ fn role_summary(roles: &[protocol::McpToolRole]) -> String {
             protocol::McpToolRole::Helper => "Ask-To helpers",
             protocol::McpToolRole::Steward => "the Project Steward",
             protocol::McpToolRole::Improver => "Improve Agents",
+            protocol::McpToolRole::AgentCreator => "Agent Creator",
         })
         .collect();
     match labels.len() {

@@ -1445,6 +1445,12 @@ async fn dispatch_inner(
             "project.delete" => delete_project(request.params, state).await,
             "quickAction.preview" => preview_quick_action(request.params, state).await,
             "quickAction.launch" => launch_quick_action(request.params, state).await,
+            "agent.creatorPreview" => {
+                super::handlers::preview_agent_creator(request.params, state).await
+            }
+            "agent.creatorLaunch" => {
+                super::handlers::launch_agent_creator(request.params, state).await
+            }
             "runConfiguration.improvePreview" => {
                 preview_run_configuration_improver(request.params, state).await
             }
