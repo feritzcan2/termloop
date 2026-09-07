@@ -1932,6 +1932,37 @@ async fn assert_quick_action_initial_input_delivery(
             None,
             "thread identity alone must not release generated input"
         );
+        if retain_without_repaint {
+            // This case promises no output after the sole submit. Establish
+            // the fixture's initial composer before publishing App Server
+            // idle: that structured signal already authorizes paste delivery.
+            // Otherwise ConPTY's delayed startup screen diff can move the
+            // cursor after paste, settle it, then render the paste after Enter.
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while !terminal
+                    .input_readiness_snapshot("quick-action-ready", 9)
+                    .unwrap()
+                    .facts()
+                    .composer_prompt_seen_in_current_alternate_screen
+                {
+                    match output.recv().await.unwrap() {
+                        termloop_terminal::TerminalEvent::Output(chunk) => {
+                            append_headless_output_and_answer_cursor_queries(
+                                &terminal,
+                                "quick-action-ready",
+                                9,
+                                &mut bytes,
+                                &mut answered_cursor_position_queries,
+                                chunk,
+                            );
+                        }
+                        event => panic!("fixture lost its initial composer: {event:?}"),
+                    }
+                }
+            })
+            .await
+            .expect("no-repaint fixture must render its initial composer before structured idle");
+        }
         runtime
             .record_app_server_observation(
                 "quick-action-ready",
@@ -1960,15 +1991,17 @@ async fn assert_quick_action_initial_input_delivery(
                 )
                 .unwrap();
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let diagnostics = runtime
-            .generated_input_deliveries
-            .diagnostics("quick-action-ready", 9)
-            .unwrap();
-        assert!(
-            !diagnostics.paste_receipted,
-            "Codex startup output must not receive the paste before its composer glyph renders"
-        );
+        if !retain_without_repaint {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let diagnostics = runtime
+                .generated_input_deliveries
+                .diagnostics("quick-action-ready", 9)
+                .unwrap();
+            assert!(
+                !diagnostics.paste_receipted,
+                "Codex startup output must not receive the paste before its composer glyph renders"
+            );
+        }
     } else {
         runtime
             .record_agent_observation(
