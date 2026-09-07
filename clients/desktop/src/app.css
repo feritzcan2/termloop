@@ -720,6 +720,13 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-participant-session > b { overflow: hidden; color: inherit; font: 650 8.5px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 .workflow-participant-session > small { flex: none; overflow: visible; color: var(--sidebar-dimmer); font: 8px/1.2 var(--font-ui); white-space: nowrap; }
 .workflow-participant-session > em { flex: none; color: light-dark(#5575b6,#89aaf0); font: 700 7px/1 var(--font-mono); font-style: normal; letter-spacing: .03em; text-transform: uppercase; }
+.workflow-result-file { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 4px; min-height: 19px; padding: 2px 5px; border: 1px solid color-mix(in srgb,#6b8ed6 25%,var(--border)); border-radius: 4px; background: color-mix(in srgb,#6b8ed6 6%,transparent); color: light-dark(#5575b6,#89aaf0); text-align: left; }
+.workflow-result-file:hover { border-color: color-mix(in srgb,#6b8ed6 58%,var(--border)); background: var(--accent-wash); color: var(--accent-strong); }
+.workflow-result-file > svg { flex: none; width: 10px; height: 10px; }
+.workflow-result-file > span { overflow: hidden; font: 650 8.5px/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-result-file > small { flex: none; color: #4ba675; font: 700 7px/1 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.workflow-result-file.outcome-changesRequested > small { color: #d09555; }
+.workflow-result-file.outcome-skipped > small { color: var(--sidebar-dimmer); }
 .workflow-step-result { display: grid; grid-template-columns: auto auto; justify-content: start; align-items: baseline; gap: 3px 5px; min-width: 0; }
 .workflow-step-result > strong { color: #4ba675; font: 750 7.5px/1.2 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
 .workflow-step-result.outcome-changesRequested > strong { color: #d09555; }
@@ -787,6 +794,15 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-run-dialog textarea { min-height: 112px; max-height: 260px; }
 .workflow-run-dialog .primary-button { display: inline-flex; align-items: center; gap: 6px; }
 .workflow-run-dialog .primary-button svg { width: 11px; height: 11px; }
+.dialog-card.workflow-result-dialog { width: min(620px,calc(100vw - 40px)); }
+.workflow-result-dialog .dialog-header h2 { display: flex; align-items: center; gap: 7px; }
+.workflow-result-dialog .dialog-header h2 svg { width: 15px; height: 15px; color: light-dark(#5575b6,#89aaf0); }
+.workflow-result-dialog .dialog-body { display: grid; gap: 10px; }
+.workflow-result-heading { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 6px 8px; }
+.workflow-result-heading > strong { overflow: hidden; color: var(--text); font: 650 12px/1.25 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-result-heading > small { grid-column: 1 / -1; color: var(--text-muted); font: 8.5px/1.2 var(--font-mono); text-transform: uppercase; }
+.workflow-result-document { min-height: 150px; max-height: min(52vh,480px); overflow: auto; padding: 14px 15px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
+.workflow-result-document > p { margin: 0; overflow-wrap: anywhere; color: var(--text); font: 11px/1.55 var(--font-ui); white-space: pre-wrap; }
 .dialog-card.workflow-progress-dialog { width: min(570px,calc(100vw - 40px)); }
 .workflow-progress-dialog .dialog-header { gap: 10px; }
 .workflow-progress-dialog .dialog-header > div { min-width: 0; margin-right: auto; }
