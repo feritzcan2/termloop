@@ -26,9 +26,9 @@ use termloop_domain::{
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
     TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorktreeCleanupOperation, WorktreeCleanupReceipt,
-    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
-    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    WorktreeCleanupOperation, WorktreeCleanupReceipt, WorktreeProvisioningOperation,
+    WorktreeRepairOperation, WorktreeRepairReceipt, WorktreeStaleResolutionOperation,
+    WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink

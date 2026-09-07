@@ -16,10 +16,7 @@ use crate::{CoreError, CoreRuntime, store_error};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersistentAssistantIdentity {
-    Steward {
-        project_id: String,
-        generation: u64,
-    },
+    Steward { project_id: String, generation: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,8 +165,7 @@ impl PendingAssistantWakeDelivery {
 
     pub(crate) fn runtime_epoch(&self) -> u64 {
         match self {
-            Self::Steward { runtime_epoch, .. }
-            | Self::StewardAssignment { runtime_epoch, .. } => {
+            Self::Steward { runtime_epoch, .. } | Self::StewardAssignment { runtime_epoch, .. } => {
                 *runtime_epoch
             }
         }
@@ -177,8 +173,9 @@ impl PendingAssistantWakeDelivery {
 
     pub(crate) fn submission(&self) -> &termloop_invocation::GeneratedTerminalSubmission {
         match self {
-            Self::Steward { submission, .. }
-            | Self::StewardAssignment { submission, .. } => submission,
+            Self::Steward { submission, .. } | Self::StewardAssignment { submission, .. } => {
+                submission
+            }
         }
     }
 
@@ -1090,7 +1087,6 @@ mod tests {
         };
         assert!(steward.is_same_steward_wake("project", 3, 13, "steward", 7));
         assert!(!steward.is_same_steward_wake("project", 3, 14, "steward", 7));
-
     }
 
     #[test]
@@ -1100,11 +1096,8 @@ mod tests {
             "routine": {"id":"routine-1", "instructions":"Inspect the live provider."},
             "step": {"milestoneId":"review", "tasks":[{"taskId":"task-1"}]}
         });
-        let wake = compose_steward_assignment_wake(
-            "0123456789abcdef0123456789abcdef",
-            &assignment,
-        )
-        .unwrap();
+        let wake = compose_steward_assignment_wake("0123456789abcdef0123456789abcdef", &assignment)
+            .unwrap();
         let delivered = wake.delivered_preview();
 
         assert!(delivered.contains("Exact assigned Routine"));

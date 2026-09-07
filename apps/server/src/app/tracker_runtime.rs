@@ -237,14 +237,10 @@ async fn deliver_due_steward_wake(
         Ok(claim) => claim,
         Err(error) => {
             tracing::warn!(project_id = wake.project_id, %error, "Steward assignment claim failed");
-            state
-                .core
-                .lock()
-                .await
-                .fail_steward_assignment_delivery(
-                    &wake,
-                    now.saturating_add(WAKE_DELIVERY_RETRY_MS),
-                );
+            state.core.lock().await.fail_steward_assignment_delivery(
+                &wake,
+                now.saturating_add(WAKE_DELIVERY_RETRY_MS),
+            );
             state.tracker_runtime_wake.notify_one();
             return;
         }
@@ -262,10 +258,7 @@ async fn deliver_due_steward_wake(
     if !issued {
         let mut core = state.core.lock().await;
         core.release_steward_routine_claim(capability);
-        core.fail_steward_assignment_delivery(
-            &wake,
-            now.saturating_add(WAKE_DELIVERY_RETRY_MS),
-        );
+        core.fail_steward_assignment_delivery(&wake, now.saturating_add(WAKE_DELIVERY_RETRY_MS));
         state.tracker_runtime_wake.notify_one();
         return;
     }
@@ -336,9 +329,8 @@ mod tests {
             generation: 1,
             claimed_at_epoch_ms: 0,
             deadline_epoch_ms,
-            worker_id: format!("worker-{id}"),
-            worker_generation: 1,
-            worker_session_id: format!("session-{id}"),
+            steward_generation: 1,
+            steward_session_id: format!("session-{id}"),
         }
     }
 

@@ -674,14 +674,11 @@ impl Store {
                 continue;
             }
             changed = true;
-            let legacy_assistant_template =
-                session
-                    .process
-                    .template_ref
-                    .as_deref()
-                    .is_some_and(|template| {
-                        template == "builtin.steward.executor"
-                    });
+            let legacy_assistant_template = session
+                .process
+                .template_ref
+                .as_deref()
+                .is_some_and(|template| template == "builtin.steward.executor");
             if legacy_assistant_template && !configured_assistant {
                 session.lifecycle_state = "exited".into();
                 session.resume_failure = None;
@@ -756,10 +753,7 @@ impl Store {
                         && session.kind == SessionKind::Agent
                         && matches!(
                             session.process.template_ref.as_deref(),
-                            Some(
-                                "builtin.assistant.activation"
-                                    | "builtin.steward.executor"
-                            )
+                            Some("builtin.assistant.activation" | "builtin.steward.executor")
                         )
             })
             .map(|session| session.id.as_str())
