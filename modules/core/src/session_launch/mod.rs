@@ -53,6 +53,11 @@ const QUICK_ACTION_PREVIEW_TTL: Duration = Duration::from_secs(30);
 const MAX_QUICK_ACTION_PREVIEWS: usize = 64;
 const SESSION_NAME_MAX_CHARS: usize = 80;
 
+pub struct AgentLaunchCommit {
+    pub session: Value,
+    pub state_revision: u64,
+}
+
 pub struct CodexRuntime {
     process: termloop_platform::ManagedProcess,
     bridge: termloop_agents::CodexAppServerBridge,
@@ -1633,7 +1638,7 @@ impl CoreRuntime {
     pub fn complete_agent_launch(
         &mut self,
         plan: &mut AgentLaunchPlan,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<AgentLaunchCommit, CoreError> {
         if !self.project_exists(&plan.project_id) {
             return Err(CoreError::NotFound);
         }
@@ -1935,12 +1940,15 @@ impl CoreRuntime {
             self.store
                 .insert_session(&self.write_authority, session.clone())
         };
-        if let Err(error) = inserted {
-            let _ = self.terminal.terminate(&session.id);
-            self.agent_observations.remove(&session.id);
-            self.mcp_authorizer.remove(&session.id);
-            return Err(store_error(error));
-        }
+        let state_revision = match inserted {
+            Ok(revision) => revision,
+            Err(error) => {
+                let _ = self.terminal.terminate(&session.id);
+                self.agent_observations.remove(&session.id);
+                self.mcp_authorizer.remove(&session.id);
+                return Err(store_error(error));
+            }
+        };
         if let Some(source_session_id) = plan.fork_source_session_id.as_ref() {
             self.fork_source_session_ids
                 .insert(session.id.clone(), source_session_id.clone());
@@ -1950,7 +1958,10 @@ impl CoreRuntime {
             self.codex_runtimes.insert(session.id.clone(), runtime);
         }
         self.consume_history_handle(plan);
-        Ok(self.project_session(&session))
+        Ok(AgentLaunchCommit {
+            session: self.project_session(&session),
+            state_revision,
+        })
     }
 
     pub(crate) fn ensure_launch_not_reserved(&self, cwd: &Path) -> Result<(), CoreError> {

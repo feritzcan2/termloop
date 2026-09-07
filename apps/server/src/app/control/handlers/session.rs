@@ -20,42 +20,14 @@ use super::super::super::invalidation::{
     InvalidationRequest, publish_agent_resume_invalidation, publish_session_invalidation,
     refresh_task_presence_for_cwd,
 };
+use super::super::agent_launch::execute_agent_launch;
 
 pub(in crate::app::control) async fn launch_agent_session(
     params: serde_json::Value,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
-    let mut plan = state.core.lock().await.take_agent_launch(params)?;
-    plan = tokio::task::spawn_blocking(move || {
-        plan.prepare_runtime();
-        plan
-    })
-    .await
-    .map_err(|error| CoreError::Terminal(format!("agent runtime preparation failed: {error}")))?;
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "agent status runtime unavailable");
-    }
-    let (result, state_revision) = {
-        let mut core = state.core.lock().await;
-        let result = core.complete_agent_launch(&mut plan);
-        (result, core.state_revision())
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    if let Ok(value) = &result {
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-        if let Some(cwd) = value
-            .get("process")
-            .and_then(|process| process.get("cwd"))
-            .and_then(serde_json::Value::as_str)
-        {
-            refresh_task_presence_for_cwd(state, cwd).await;
-        }
-    }
-    result
+    let plan = state.core.lock().await.take_agent_launch(params)?;
+    execute_agent_launch(state, plan).await
 }
 
 pub(in crate::app::control) async fn fork_agent_session(
@@ -264,12 +236,12 @@ async fn fork_agent_session_once(
     let result = {
         let mut core = state.core.lock().await;
         match core.complete_agent_launch(&mut plan) {
-            Ok(value) => {
+            Ok(commit) => {
                 match state
                     .terminal
                     .set_exit_replay_retention(&session_id, runtime_epoch, true)
                 {
-                    Ok(()) => Ok(value),
+                    Ok(()) => Ok(commit.session),
                     Err(error) => Err(AgentForkAttemptFailure::with_child(
                         CoreError::Terminal(error.to_string()),
                         &session_id,
@@ -420,36 +392,14 @@ pub(in crate::app::control) async fn launch_quick_action(
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
     state.attachments.hydrate_quick_action(&mut params).await?;
-    let mut plan = {
+    let plan = {
         let mut core = state.core.lock().await;
         core.take_quick_action_launch(params)?
     };
     // Preview cached the exact semantic payload. Runtime preparation may bind
     // invocation's single-use Codex loopback placeholder, but cannot append or
     // reinterpret provider arguments.
-    plan = tokio::task::spawn_blocking(move || {
-        plan.prepare_runtime();
-        plan
-    })
-    .await
-    .map_err(|error| CoreError::Terminal(format!("agent runtime preparation failed: {error}")))?;
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "agent status runtime unavailable");
-    }
-    let (result, state_revision) = {
-        let mut core = state.core.lock().await;
-        let result = core.complete_agent_launch(&mut plan);
-        (result, core.state_revision())
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    if result.is_ok() {
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-    }
-    result
+    execute_agent_launch(state, plan).await
 }
 
 pub(in crate::app::control) async fn preview_run_configuration_improver(
@@ -470,33 +420,11 @@ pub(in crate::app::control) async fn launch_run_configuration_improver(
     params: serde_json::Value,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
-    let mut plan = {
+    let plan = {
         let mut core = state.core.lock().await;
         core.take_run_configuration_improver_launch(params)?
     };
-    plan = tokio::task::spawn_blocking(move || {
-        plan.prepare_runtime();
-        plan
-    })
-    .await
-    .map_err(|error| CoreError::Terminal(format!("agent runtime preparation failed: {error}")))?;
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "agent status runtime unavailable");
-    }
-    let (result, state_revision) = {
-        let mut core = state.core.lock().await;
-        let result = core.complete_agent_launch(&mut plan);
-        (result, core.state_revision())
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    if result.is_ok() {
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-    }
-    result
+    execute_agent_launch(state, plan).await
 }
 
 pub(in crate::app) async fn launch_task_session(
@@ -517,42 +445,12 @@ pub(in crate::app) async fn launch_task_session(
         {
             return Err(CoreError::AgentUnsupported);
         }
-        let mut agent_plan = state.core.lock().await.take_agent_launch(params)?;
-        agent_plan = tokio::task::spawn_blocking(move || {
-            agent_plan.prepare_runtime();
-            agent_plan
-        })
-        .await
-        .map_err(|error| {
-            CoreError::Terminal(format!("agent runtime preparation failed: {error}"))
-        })?;
-        if let Some(error) = agent_plan.observation_warning() {
-            tracing::warn!(%error, "agent status runtime unavailable");
-        }
-        let result = state
-            .core
-            .lock()
-            .await
-            .complete_agent_launch(&mut agent_plan)?;
-        tokio::task::spawn_blocking(move || drop(agent_plan));
-        let state_revision = state.core.lock().await.state_revision();
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Session],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-        if let Some(cwd) = result
-            .get("process")
-            .and_then(|process| process.get("cwd"))
-            .and_then(serde_json::Value::as_str)
-        {
-            refresh_task_presence_for_cwd(state, cwd).await;
-        }
-        return Ok(result);
+        let agent_plan = state.core.lock().await.take_agent_launch(params)?;
+        return execute_agent_launch(state, agent_plan).await;
     }
     let plan = {
         let core = state.core.lock().await;
-        core.plan_task_worktree_launch(params, agent)?
+        core.plan_task_worktree_launch(params, false)?
     };
     let task_id = plan.task_id().to_owned();
     let project_id = plan.project_id().to_owned();
@@ -569,26 +467,7 @@ pub(in crate::app) async fn launch_task_session(
         .await
         .map_err(|error| CoreError::Store(format!("Task launch observation failed: {error}")))??;
     drop(permit);
-    let result = if agent {
-        let mut agent_plan = {
-            let core = state.core.lock().await;
-            core.complete_task_agent_launch_plan(observed)?
-        };
-        agent_plan = tokio::task::spawn_blocking(move || {
-            agent_plan.prepare_runtime();
-            agent_plan
-        })
-        .await
-        .map_err(|error| {
-            CoreError::Terminal(format!("agent runtime preparation failed: {error}"))
-        })?;
-        let result = {
-            let mut core = state.core.lock().await;
-            core.complete_agent_launch(&mut agent_plan)
-        };
-        tokio::task::spawn_blocking(move || drop(agent_plan));
-        result
-    } else {
+    let result = {
         let mut core = state.core.lock().await;
         core.complete_task_terminal_launch(observed)
     }?;
