@@ -95,6 +95,15 @@ describe("server agent account settings", () => {
     expect(container.textContent).toContain("Cancelling…");
   });
 
+  it("keeps setup disabled when a failed operation still owns an unfinished process", async () => {
+    const api = actions(); vi.mocked(api.list).mockResolvedValue([{ ...status, busy: true, operation: { ...operation, phase: "failed", verificationUrl: null, userCode: null, message: "Restart this server before retrying setup." } }]);
+    await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
+    expect(button("Sign in").disabled).toBe(true);
+    expect(button("Update CLI").disabled).toBe(true);
+    expect(container.textContent).toContain("Restart this server");
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
   it("does not expose or replace another client's setup attempt", async () => {
     const api = actions(); vi.mocked(api.list).mockResolvedValue([{ ...status, busy: true, operation: null }]);
     await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
