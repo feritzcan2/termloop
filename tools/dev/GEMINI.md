@@ -12,14 +12,20 @@
   and both processes survived the stability gate. Confirm a later independent
   `status` reports `Supervisor: ready` and `Build: current`. Window activation
   is best effort because macOS Accessibility permission may be unavailable.
-- `--main` is human-only unless the user explicitly asks an agent to operate the
-  main profile. Never substitute it for a missing feature tag.
+- `--main` is human-only. Agents must never start, restart, or stop it, even when
+  the user asks for validation intended for `main`. Never substitute it for a
+  missing feature tag.
 - Stop only with the same checkout and tag. Never use global `pkill`, basename
   matching, repository-prefix scans, or signals based on an unverified PID.
 - Multiple feature tags may intentionally run against one checkout; each has
   isolated state/runtime/desktop/logs and an exact LaunchAgent. When a checkout
   no longer exists, discover its recorded profile with `list` and unload it
   using `stop-profile --profile <exact-profile>`.
+- Reclaim finished feature profiles with
+  `prune [--profile <exact-profile>] [--older-than DAYS] [--keep COUNT]
+  [--legacy-builds] [--apply]`. Without `--apply` it only previews. It never
+  considers `main`, never removes a profile whose supervisor is running, and
+  routes every removal through `stop-profile` first.
 
 ## Invariants
 
@@ -36,7 +42,14 @@
   force termination may target only descendants proven beneath the exact owned
   PID after that window.
 - Profile state/runtime/desktop/log paths remain isolated and outside the repo.
-  Do not delete or prune them implicitly.
+  Do not delete or prune them implicitly. `prune --apply` is the only sanctioned
+  removal path, and it deletes only a validated non-symlinked leaf directly under
+  the profiles root that still carries launcher profile leaves.
+- Tagged profiles of one checkout share `<checkout>/target/dev-profiles` as their
+  Cargo target directory, because they build byte-identical binaries. It stays
+  separate from the primary `target/debug` so profile builds never invalidate the
+  developer's warm artifacts. Do not reintroduce a per-profile build directory;
+  concurrent tag builds are expected to queue on Cargo's directory lock.
 - The invoking shell's PATH and UTF-8 locale are snapshotted into the private
   plist and verified by the supervisor before children launch. Do not replace
   them with launchd's minimal defaults.

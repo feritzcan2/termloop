@@ -12,6 +12,8 @@
 
 ## Invariants
 
+- All provider-authored model instructions are written in English; input text
+  remains user-owned and may use any language.
 - Providers hold no authoritative Task state and do not add provider fields to
   Task records. Durable `IssueLink` state is written by `core` through `store`.
 - Jira normalization accepts only an exact secret-free HTTPS browse URL; fuzzy
