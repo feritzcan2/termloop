@@ -9,7 +9,7 @@ import type {
   TerminalBufferProbe,
   TerminalSurface,
 } from "../src/renderer/terminal/surface.js";
-import { KIND_OUTPUT, KIND_REPLAY_OUTPUT } from "../src/utility/terminal-frame.js";
+import { KIND_EOF, KIND_OUTPUT, KIND_REPLAY_OUTPUT } from "../src/utility/terminal-frame.js";
 
 class FakeSurface implements TerminalSurface {
   mounted = false;
@@ -589,6 +589,7 @@ describe("TerminalPool", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(surface.probeValue.text).not.toContain("terminal connection failed");
+    expect(pool.presentationPort.snapshot(value.id)?.phase).toBe("exited");
   });
 
   it("still reports a genuine transport failure", async () => {
@@ -620,5 +621,87 @@ describe("TerminalPool", () => {
     pool.setVisible(false);
     pool.setVisible(true);
     expect(surfaces[0]!.visibility).toEqual([true, false, true]);
+  });
+});
+
+describe("TerminalPool stream presentation", () => {
+  const ack = (frames: number, bytes: number) => {
+    const data = new Uint8Array(12); data.set(new TextEncoder().encode("TLRA"));
+    const view = new DataView(data.buffer); view.setUint32(4, frames); view.setUint32(8, bytes);
+    return { type: "frame" as const, kind: 11, data: data.buffer };
+  };
+  it("does not revive an exited terminal when a replay write completes later", async () => {
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    const consumed: (() => void)[] = [];
+    surface.write = (_bytes, done) => { consumed.push(done); };
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([session("exiting")]); await pool.mount("exiting", {} as HTMLElement);
+    attachment.emit(ack(1, 1));
+    attachment.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: new Uint8Array([65]).buffer });
+    attachment.emit({ type: "frame", kind: KIND_EOF, data: new ArrayBuffer(0) });
+    consumed.forEach((done) => done());
+    expect(pool.presentationPort.snapshot("exiting")?.phase).toBe("exited");
+    pool.dispose();
+  });
+  it("keeps renderer failure visible while transport events continue", async () => {
+    let fail: (() => void) | undefined;
+    const surface = Object.assign(new FakeSurface(), {
+      onError(listener: () => void) { fail = listener; return () => { fail = undefined; }; },
+    });
+    const attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([session("failed")]); await pool.mount("failed", {} as HTMLElement);
+    fail?.();
+    attachment.emit({ type: "state", state: "connected" });
+    attachment.emit({ type: "frame", kind: KIND_OUTPUT, data: new Uint8Array([65]).buffer });
+    expect(pool.presentationPort.snapshot("failed")?.phase).toBe("failed");
+    expect(pool.presentationPort.snapshot("failed")?.notice).toContain("Reopen");
+    pool.dispose();
+  });
+  it("preserves the screen across reconnect and does not append the same replay twice", async () => {
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    const value = session("stream");
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([value]); await pool.mount(value.id, {} as HTMLElement);
+    const bytes = new TextEncoder().encode("a complete retained output boundary\n");
+    attachment.emit({ type: "frame", kind: KIND_OUTPUT, data: bytes.buffer });
+    attachment.emit({ type: "state", state: "connectionLost" });
+    expect(pool.presentationPort.snapshot(value.id)?.phase).toBe("reconnecting");
+    expect(surface.probeValue.text).toBe(new TextDecoder().decode(bytes));
+    attachment.emit(ack(1, bytes.length));
+    attachment.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: bytes.buffer });
+    expect(surface.probeValue.text).toBe(new TextDecoder().decode(bytes));
+    expect(pool.presentationPort.snapshot(value.id)?.phase).toBe("live");
+    pool.dispose();
+  });
+  it("stages a replay larger than output credit without waiting for the entire screen to render", async () => {
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([session("large")]); await pool.mount("large", {} as HTMLElement);
+    attachment.emit(ack(16, 1024 * 1024));
+    for (let index = 0; index < 16; index++) {
+      attachment.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: new Uint8Array(64 * 1024).fill(120).buffer });
+      expect(attachment.replayAcknowledged).toBe((index + 1) * 64 * 1024);
+    }
+    expect(surface.probeValue.text.length).toBe(1024 * 1024);
+    expect(pool.presentationPort.snapshot("large")?.phase).toBe("live");
+    pool.dispose();
+  });
+  it("keeps a reading snapshot stable while live output continues and reports gaps outside the PTY", async () => {
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([session("read")]); await pool.mount("read", {} as HTMLElement);
+    attachment.emit({ type: "frame", kind: KIND_OUTPUT, data: new TextEncoder().encode("first").buffer });
+    pool.presentationPort.read("read", true);
+    await vi.waitFor(() => expect(pool.presentationPort.snapshot("read")?.reading).toBe("first"));
+    attachment.emit({ type: "frame", kind: KIND_OUTPUT, data: new TextEncoder().encode("second").buffer });
+    attachment.emit({ type: "gap" });
+    expect(pool.presentationPort.snapshot("read")).toMatchObject({ reading: "first", unread: true });
+    expect(surface.markers).toEqual([]);
+    expect(pool.presentationPort.snapshot("read")?.notice).toContain("skipped");
+    pool.presentationPort.read("read", false);
+    expect(pool.presentationPort.snapshot("read")?.reading).toBeUndefined();
+    expect(surface.visibility.at(-1)).toBe(true);
+    pool.dispose();
   });
 });

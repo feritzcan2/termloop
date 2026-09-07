@@ -549,7 +549,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        50..=55 => {
+        50..=56 => {
             migrate_v50_to_v51_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
