@@ -2539,6 +2539,10 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
         )
         .unwrap();
     let launch = resolve_interactive_agent_launch(&plan).unwrap();
+    assert_eq!(
+        launch.provenance().template_ref,
+        "builtin.steward.task-assignment"
+    );
     assert!(launch.initial_input().is_some_and(|input| {
         input.contains("Jira issue: https://example.atlassian.net/browse/TERM-42")
     }));
@@ -2949,6 +2953,118 @@ fn quick_action_preview_is_project_scoped_and_matches_versioned_delivery() {
     assert_eq!(runtime.quick_action_previews.len(), 63);
     assert_eq!(runtime.state_revision(), revision);
     assert!(runtime.store.sessions().is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn shared_preview_tickets_reject_cross_flow_redemption_and_remain_single_use() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-cross-flow-launch-ticket-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let improver_params = json!({
+        "projectId": project["id"], "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.improver.run-configuration-new",
+        "bindings": { "newKind": "devServer" }
+    });
+    let quick_action_params = json!({
+        "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.quick-action.free-prompt",
+        "bindings": { "prompt": "Inspect this" }, "attachments": []
+    });
+
+    let improver_preview = runtime
+        .preview_run_configuration_improver(improver_params.clone())
+        .unwrap();
+    let mut wrong_quick_action = quick_action_params.clone();
+    wrong_quick_action["launchTicket"] = improver_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_quick_action_launch(wrong_quick_action),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+    let mut spent_improver = improver_params.clone();
+    spent_improver["launchTicket"] = improver_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_run_configuration_improver_launch(spent_improver),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+
+    let quick_action_preview = runtime
+        .preview_quick_action(quick_action_params.clone())
+        .unwrap();
+    let mut wrong_improver = improver_params;
+    wrong_improver["launchTicket"] = quick_action_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_run_configuration_improver_launch(wrong_improver),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+    let mut spent_quick_action = quick_action_params;
+    spent_quick_action["launchTicket"] = quick_action_preview["launch_ticket"].clone();
+    assert!(matches!(
+        runtime.take_quick_action_launch(spent_quick_action),
+        Err(CoreError::InvalidParams(field)) if field == "launchTicket"
+    ));
+
+    assert!(runtime.store.sessions().is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn codex_runtime_preparation_failure_rejects_a_redeemed_improver_payload() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-improver-runtime-failure-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let state = root.join("state.json");
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(&state).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    // A regular file cannot contain the runtime ownership record. This forces
+    // preparation to fail whether or not the Codex executable is installed.
+    runtime.configure_agent_observations(crate::test_agent_observation_transport(state));
+    let params = json!({
+        "projectId": project["id"], "agentId": "codex", "model": "default",
+        "permission": "plan", "reasoning": "default",
+        "templateRef": "builtin.improver.run-configuration-new",
+        "bindings": { "newKind": "devServer" }
+    });
+    let preview = runtime
+        .preview_run_configuration_improver(params.clone())
+        .unwrap();
+    assert_eq!(
+        preview["template_ref"],
+        "builtin.improver.run-configuration-new"
+    );
+    let mut launch_params = params;
+    launch_params["launchTicket"] = preview["launch_ticket"].clone();
+    let mut plan = runtime
+        .take_run_configuration_improver_launch(launch_params)
+        .unwrap();
+
+    plan.prepare_runtime();
+    assert!(plan.observation_warning().is_some());
+    assert!(plan.prepared_launch.is_none());
+    assert!(matches!(
+        runtime.complete_agent_launch(&mut plan),
+        Err(CoreError::AgentCapabilityUnproven)
+    ));
+    assert!(runtime.store.sessions().is_empty());
+
     let _ = std::fs::remove_dir_all(root);
 }
 
