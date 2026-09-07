@@ -1316,7 +1316,7 @@
           ]
         },
         "model": {
-          "description": "Explicit user-requested model for agentId. Omit to use that provider's default model. Claude models: opus[1m], fable, sonnet, haiku, opus. Codex models: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-pro.",
+          "description": "Explicit user-requested model for agentId. Omit to use that provider's default model. Claude models: opus[1m], fable, sonnet, haiku, opus. Codex models: gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-pro.",
           "type": "string",
           "enum": [
             "default",
@@ -1325,6 +1325,7 @@
             "sonnet",
             "haiku",
             "opus",
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
@@ -1386,6 +1387,7 @@
             "sonnet",
             "haiku",
             "opus",
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
@@ -1468,6 +1470,7 @@
                 "type": "string",
                 "enum": [
                   "default",
+                  "gpt-6-astra",
                   "gpt-5.6-sol",
                   "gpt-5.6-terra",
                   "gpt-5.6-luna",

@@ -352,7 +352,7 @@ export const fixtureAgentCapabilities: AgentCapabilityDto[] = [
   {
     agent_id: "codex", label: "Codex", available: true, version: "0.51.0",
     integration_level: "full", degraded_reason: null,
-    models: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
+    models: ["default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
     permissions: ["default", "acceptEdits", "plan", "bypassPermissions"],
     reasoning: ["default", "low", "medium", "high", "xhigh", "max"],
     observation_supported: true, quick_action_supported: true,

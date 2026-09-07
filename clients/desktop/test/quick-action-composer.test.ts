@@ -64,7 +64,7 @@ describe("Quick Action composer", () => {
   it("keeps provider model choices explicit", () => {
     expect(QUICK_ACTION_MODELS.claude).toEqual(["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"]);
     expect(QUICK_ACTION_MODELS.codex).toEqual([
-      "default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro",
+      "default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro",
     ]);
     expect(QUICK_ACTION_MODELS.gemini).toEqual(["default", "auto", "pro", "flash", "flash-lite"]);
     expect(QUICK_ACTION_PERMISSIONS).toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
