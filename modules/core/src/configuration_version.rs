@@ -496,6 +496,7 @@ impl CoreRuntime {
     ) -> Result<(Value, ConfigurationApplicationEffects), CoreError> {
         let mut effects = ConfigurationApplicationEffects::default();
         let activated_target = match plan.target.target_kind {
+            ImproverSessionTargetKind::AgentCreator => return Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot = parse_snapshot(&plan.content)?;
                 let previous_session_id = self.steward_executor_session_id(&plan.project_id);
@@ -737,6 +738,7 @@ impl CoreRuntime {
     ) -> Result<String, CoreError> {
         let invalid = || CoreError::InvalidParams("content".into());
         match target.target_kind {
+            ImproverSessionTargetKind::AgentCreator => Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot =
                     serde_json::from_str(content).map_err(|_| invalid())?;
@@ -1009,6 +1011,7 @@ pub fn target_kind_wire(kind: ImproverSessionTargetKind) -> &'static str {
         ImproverSessionTargetKind::SettingsSkill => "settingsSkill",
         ImproverSessionTargetKind::SettingsPrompt => "settingsPrompt",
         ImproverSessionTargetKind::SettingsMcpTool => "settingsMcpTool",
+        ImproverSessionTargetKind::AgentCreator => "agentCreator",
     }
 }
 

@@ -1112,6 +1112,15 @@ static Napi::Value FocusSurface(const Napi::CallbackInfo &info) {
   return env.Undefined();
 }
 
+static Napi::Value ScrollSurfaceToBottom(const Napi::CallbackInfo &info) {
+  SurfaceEntry *e = entryForId(info[0].As<Napi::Number>().Uint32Value());
+  if (e != nullptr) {
+    const char action[] = "scroll_to_bottom";
+    ghostty_surface_binding_action(e->surface, action, sizeof(action) - 1);
+  }
+  return info.Env().Undefined();
+}
+
 static Napi::Value SurfaceSize(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   SurfaceEntry *e =
@@ -1263,6 +1272,7 @@ static Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setSurfaceColorScheme",
               Napi::Function::New(env, SetSurfaceColorScheme));
   exports.Set("focusSurface", Napi::Function::New(env, FocusSurface));
+  exports.Set("scrollSurfaceToBottom", Napi::Function::New(env, ScrollSurfaceToBottom));
   exports.Set("surfaceSize", Napi::Function::New(env, SurfaceSize));
   exports.Set("surfacePng", Napi::Function::New(env, SurfacePng));
   exports.Set("surfaceText", Napi::Function::New(env, SurfaceText));

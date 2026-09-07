@@ -28,13 +28,14 @@ pub(super) use prompt_improvement::{
 pub(in crate::app) use session::reconcile_agent_resumes_after_start;
 pub(in crate::app) use session::terminate_session;
 pub(super) use session::{
-    close_session, fork_agent_session, launch_agent_session, launch_quick_action,
-    launch_run_configuration_improver, list_deleted_sessions, list_session_history,
-    paste_agent_image, preview_agent_session, preview_quick_action, preview_relocate_agent_session,
-    preview_relocate_agent_to_project, preview_resume_agent_session,
-    preview_run_configuration_improver, preview_session_history_resume, relocate_agent_session,
-    repair_provider_history, restart_agent_session, restart_agents_for_client_launch,
-    restore_deleted_session, resume_agent_session, session_history_preview,
+    close_session, fork_agent_session, launch_agent_creator, launch_agent_session,
+    launch_quick_action, launch_run_configuration_improver, list_deleted_sessions,
+    list_session_history, paste_agent_image, preview_agent_creator, preview_agent_session,
+    preview_quick_action, preview_relocate_agent_session, preview_relocate_agent_to_project,
+    preview_resume_agent_session, preview_run_configuration_improver,
+    preview_session_history_resume, relocate_agent_session, repair_provider_history,
+    restart_agent_session, restart_agents_for_client_launch, restore_deleted_session,
+    resume_agent_session, session_history_preview,
 };
 pub(in crate::app) use session::{
     launch_project_run, launch_task_run, launch_task_session, preview_steward_task_agent_session,

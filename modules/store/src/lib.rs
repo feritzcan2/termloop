@@ -62,8 +62,9 @@ use termloop_domain::{
 // agent profiles in the same bounded library. Versions 51 through 55 were also
 // independently used by the workflow branch for configurations, executions,
 // sidebar results, parallel review routing, and fresh-helper launch selections.
-// Version 56 is the first integrated state containing both feature families.
-const CURRENT_SCHEMA_VERSION: u32 = 56;
+// Version 54 adds the current Agent Creator Session target.
+// Version 57 is the first integrated state containing all three feature families.
+const CURRENT_SCHEMA_VERSION: u32 = 57;
 
 pub struct CoreWriteAuthority {
     _private: (),

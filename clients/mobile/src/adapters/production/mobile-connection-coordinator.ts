@@ -88,6 +88,7 @@ interface TerminalSubscription {
   replayReceivedFrames: number;
   replayDroppedFrames: number;
   replayEof: boolean;
+  replayReady: boolean;
   firstResolve: (() => void) | undefined;
   firstReject: ((cause: Error) => void) | undefined;
   readonly reconnectWaiters: Set<{
@@ -231,6 +232,7 @@ export class MobileConnectionCoordinator {
       replayReceivedFrames: 0,
       replayDroppedFrames: 0,
       replayEof: false,
+      replayReady: false,
       firstResolve,
       firstReject,
       reconnectWaiters: new Set(),
@@ -836,6 +838,7 @@ export class MobileConnectionCoordinator {
     subscription.awaitingAck = true;
     subscription.lastInboundSequence = 0n;
     this.clearReplay(subscription);
+    subscription.replayReady = false;
     socket.send(encodeFrame(
       subscription.sessionId,
       subscription.runtimeEpoch,
@@ -1236,7 +1239,10 @@ export class MobileConnectionCoordinator {
     if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0) subscription.onEvent({ type: "replay", bytes });
     if (eof) subscription.onEvent({ type: "eof" });
-    subscription.onEvent({ type: "ready" });
+    if (!subscription.replayReady) {
+      subscription.replayReady = true;
+      subscription.onEvent({ type: "ready" });
+    }
     if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
       this.reportTerminal(subscription, "replay_received", {
         bytes: bytes.byteLength,

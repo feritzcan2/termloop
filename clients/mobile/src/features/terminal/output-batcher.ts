@@ -8,7 +8,7 @@ export class TerminalOutputBatcher {
   private timer: ReturnType<typeof setTimeout> | undefined;
   constructor(private readonly emit: (event: TerminalEvent) => void) {}
   push(event: TerminalEvent): void {
-    if (event.type !== "live") {
+    if (event.type !== "live" || event.bytes.byteLength === 0) {
       this.flush();
       this.emit(event);
       return;
