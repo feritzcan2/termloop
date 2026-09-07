@@ -27,8 +27,15 @@ import type {
   WorkflowStepResultDto,
 } from "@termloop/contract/current";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
+import type { RowTone } from "../row-tone.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
+
+export type WorkflowSessionPresentation = {
+  agentLabel: string;
+  stateLabel: string;
+  tone: RowTone;
+};
 
 export function TaskWorkflowLaunchers(props: {
   projectId: string;
@@ -46,6 +53,7 @@ export function TaskWorkflowLaunchers(props: {
   launch(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
   cancel(executionId: string): Promise<string | undefined>;
   openSession(sessionId: string): void;
+  sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
 }) {
   const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
   const executionActive = execution !== undefined && execution.status !== "completed";
@@ -107,6 +115,7 @@ export function TaskWorkflowLaunchers(props: {
     {execution && progressExpanded ? <WorkflowSidebarProgress
       execution={execution}
       openSession={props.openSession}
+      sessionPresentation={props.sessionPresentation}
       showDetails={() => setInspectingExecution(true)}
     /> : null}
     <OverlayPortal container={props.overlayContainer}>
@@ -130,6 +139,7 @@ export function TaskWorkflowLaunchers(props: {
         close={() => setInspectingExecution(false)}
         cancel={props.cancel}
         openSession={props.openSession}
+        sessionPresentation={props.sessionPresentation}
       /> : null}
     </OverlayPortal>
   </>;
@@ -138,6 +148,7 @@ export function TaskWorkflowLaunchers(props: {
 function WorkflowSidebarProgress(props: {
   execution: WorkflowExecution;
   openSession(sessionId: string): void;
+  sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
   showDetails(): void;
 }) {
   const currentStep = props.execution.steps[props.execution.currentStepIndex];
@@ -156,13 +167,14 @@ function WorkflowSidebarProgress(props: {
           <span className="workflow-sidebar-step-copy">
             <span className="workflow-sidebar-step-head">
               <b>{step.title}</b>
-              {participantSessionId ? <button
-                type="button"
-                className="workflow-participant-link"
-                title={`Open ${workflowStepParticipant(step, props.execution.steps)}`}
-                onClick={() => props.openSession(participantSessionId)}
-              >{workflowStepParticipant(step, props.execution.steps)}</button> : <small>{workflowStepParticipant(step, props.execution.steps)}</small>}
             </span>
+            <WorkflowParticipantSession
+              step={step}
+              steps={props.execution.steps}
+              sessionId={participantSessionId}
+              presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
+              openSession={props.openSession}
+            />
             {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
               <strong>{workflowStepResultLabel(step.kind, result.outcome)}</strong>
               {result.reviewCycle < props.execution.reviewCycle ? <em>Cycle {result.reviewCycle}</em> : null}
@@ -180,6 +192,7 @@ function WorkflowExecutionDialog(props: {
   close(): void;
   cancel(executionId: string): Promise<string | undefined>;
   openSession(sessionId: string): void;
+  sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -217,11 +230,13 @@ function WorkflowExecutionDialog(props: {
               <span className="workflow-progress-marker">{state === "complete" ? "✓" : state === "skipped" ? "–" : index + 1}</span>
               <span>
                 <b>{step.title}</b>
-                {participantSessionId ? <button
-                  type="button"
-                  className="workflow-participant-link"
-                  onClick={() => props.openSession(participantSessionId)}
-                >{workflowStepParticipant(step, props.execution.steps)}</button> : <small>{workflowStepParticipant(step, props.execution.steps)}</small>}
+                <WorkflowParticipantSession
+                  step={step}
+                  steps={props.execution.steps}
+                  sessionId={participantSessionId}
+                  presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
+                  openSession={props.openSession}
+                />
                 {result ? <span className={`workflow-step-result outcome-${result.outcome}`}>
                   <strong>{workflowStepResultLabel(step.kind, result.outcome)}</strong>
                   {result.reviewCycle < props.execution.reviewCycle ? <em>Cycle {result.reviewCycle}</em> : null}
@@ -242,6 +257,38 @@ function WorkflowExecutionDialog(props: {
       </footer>
     </section>
   </div>;
+}
+
+function WorkflowParticipantSession(props: {
+  step: WorkflowStepDto;
+  steps: readonly WorkflowStepDto[];
+  sessionId: string | undefined;
+  presentation: WorkflowSessionPresentation | undefined;
+  openSession(sessionId: string): void;
+}) {
+  const plannedParticipant = workflowStepParticipant(props.step, props.steps);
+  const sessionId = props.sessionId;
+  if (!sessionId) return <small className="workflow-participant-planned">{plannedParticipant}</small>;
+  if (!props.presentation) return <button
+    type="button"
+    className="workflow-participant-link"
+    title={`Open ${plannedParticipant}`}
+    onClick={() => props.openSession(sessionId)}
+  >{plannedParticipant}</button>;
+  return <button
+    type="button"
+    className="workflow-participant-session"
+    data-tone={props.presentation.tone}
+    data-workflow-session-id={sessionId}
+    title={`Open ${props.presentation.agentLabel} — ${props.presentation.stateLabel}`}
+    aria-label={`Open ${props.presentation.agentLabel} — ${props.presentation.stateLabel}`}
+    onClick={() => props.openSession(sessionId)}
+  >
+    <i aria-hidden="true" />
+    <b>{props.presentation.agentLabel}</b>
+    <small>{props.presentation.stateLabel}</small>
+    {props.step.reuseStepId ? <em>same session</em> : null}
+  </button>;
 }
 
 function WorkflowRunDialog(props: {
