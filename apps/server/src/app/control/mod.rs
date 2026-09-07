@@ -625,6 +625,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "mcp.toolSettingsGet"
             | "steward.configurationGet"
             | "runConfiguration.list"
+            | "workflow.configurationList"
             | "run.runtimeList"
             | "routine.configurationList"
             | "routine.runtimeList"

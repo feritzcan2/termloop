@@ -35,6 +35,17 @@ pub use run_configuration::{
     RunConfigurationKind, RunSetupMark, RunSetupPolicy,
 };
 
+mod workflow;
+pub use workflow::{
+    WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WORKFLOW_EXECUTION_ID_MAX_BYTES,
+    WORKFLOW_GOAL_MAX_BYTES, WORKFLOW_ID_MAX_BYTES, WORKFLOW_NAME_MAX_BYTES,
+    WORKFLOW_REVIEW_CYCLES_MAX, WORKFLOW_STEP_ID_MAX_BYTES, WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES,
+    WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES, WORKFLOW_STEP_TITLE_MAX_BYTES, WORKFLOW_STEPS_MAX,
+    WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase, WorkflowParticipant,
+    WorkflowReviewRequest, WorkflowStep, WorkflowStepKind, WorkflowStepResult,
+    WorkflowStepResultOutcome,
+};
+
 mod companion;
 
 mod project_task_automation;
@@ -93,6 +104,10 @@ pub enum McpToolName {
     SendToAgent,
     #[serde(rename = "reply_to_request")]
     ReplyToRequest,
+    #[serde(rename = "workflow_delegate")]
+    WorkflowDelegate,
+    #[serde(rename = "workflow_step_complete")]
+    WorkflowStepComplete,
     #[serde(rename = "project_read")]
     ProjectRead,
     #[serde(rename = "task_read")]
@@ -154,10 +169,12 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 34] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
+        Self::WorkflowDelegate,
+        Self::WorkflowStepComplete,
         Self::ProjectRead,
         Self::TaskRead,
         Self::AgentStatusRead,
@@ -194,6 +211,8 @@ impl McpToolName {
             Self::AskTo => "ask_to",
             Self::SendToAgent => "send_to_agent",
             Self::ReplyToRequest => "reply_to_request",
+            Self::WorkflowDelegate => "workflow_delegate",
+            Self::WorkflowStepComplete => "workflow_step_complete",
             Self::ProjectRead => "project_read",
             Self::TaskRead => "task_read",
             Self::AgentStatusRead => "agent_status_read",
@@ -235,6 +254,8 @@ impl std::str::FromStr for McpToolName {
             "ask_to" => Ok(Self::AskTo),
             "send_to_agent" => Ok(Self::SendToAgent),
             "reply_to_request" => Ok(Self::ReplyToRequest),
+            "workflow_delegate" => Ok(Self::WorkflowDelegate),
+            "workflow_step_complete" => Ok(Self::WorkflowStepComplete),
             "project_read" => Ok(Self::ProjectRead),
             "task_read" => Ok(Self::TaskRead),
             "agent_status_read" => Ok(Self::AgentStatusRead),
@@ -1412,6 +1433,8 @@ mod tests {
                 "ask_to",
                 "send_to_agent",
                 "reply_to_request",
+                "workflow_delegate",
+                "workflow_step_complete",
                 "project_read",
                 "task_read",
                 "agent_status_read",
