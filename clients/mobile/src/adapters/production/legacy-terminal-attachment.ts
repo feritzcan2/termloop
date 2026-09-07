@@ -73,6 +73,7 @@ export async function attachTerminal(
   let replayReceivedFrames = 0;
   let replayDroppedFrames = 0;
   let replayEof = false;
+  let replayReady = false;
   let inbound = Promise.resolve();
   let successfulConnections = 0;
   let connectionAttempt = 0;
@@ -160,7 +161,7 @@ export async function attachTerminal(
     if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0) onEvent({ type: "replay", bytes });
     if (eof) onEvent({ type: "eof" });
-    onEvent({ type: "ready" });
+    if (!replayReady) { replayReady = true; onEvent({ type: "ready" }); }
     if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
       report("replay_received", {
         bytes: bytes.byteLength,
@@ -378,6 +379,7 @@ export async function attachTerminal(
       }
       clearAuthenticationTimer();
       authenticated = true;
+      replayReady = false;
       clearStabilityTimer();
       stabilityTimer = setTimeout(() => {
         if (socket !== source || !authenticated || detached) return;
@@ -481,6 +483,7 @@ export async function attachTerminal(
         throw new Error("Terminal is not connected.");
       }
       const target = socket;
+      inputReceipts.assertCapacity(Math.ceil(bytes.byteLength / MAX_INPUT_FRAME_BYTES));
       const pending: Promise<void>[] = [];
       onEvent({ type: "inputDelivery", state: "sending" });
       try {
@@ -543,7 +546,7 @@ export async function attachTerminal(
       }
       const stale = socket;
       inputReceipts.clear();
-    socket = undefined;
+      socket = undefined;
       authenticated = false;
       clearConnectionTimer();
       clearAuthenticationTimer();
@@ -571,7 +574,7 @@ export async function attachTerminal(
       settleReconnectWaiters(new Error("Terminal is detached."));
       socket?.close();
       inputReceipts.clear();
-    socket = undefined;
+      socket = undefined;
     },
   };
 }

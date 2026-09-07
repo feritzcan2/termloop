@@ -137,7 +137,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   return (
     <View style={styles.surface}>
       <View style={styles.readingBar}>
-        <Text style={styles.notice} accessibilityLiveRegion="polite">{loading?.label ?? (held ? "Reading paused · session keeps running" : "Live")}{loading?.percent === undefined ? "" : ` · ${loading.percent}%`}</Text>
+        <Text style={styles.notice} accessibilityLiveRegion="polite">{loading?.label ?? (buffer.stream === "exited" ? "Process exited" : buffer.stream === "detached" ? "Disconnected" : held ? "Reading paused · session keeps running" : "Live")}{loading?.percent === undefined ? "" : ` · ${loading.percent}%`}</Text>
         <Pressable accessibilityRole="button" onPress={() => held ? jumpToLive() : setHeld(buffer)}>
           <Text style={styles.notice}>{held ? "Return to live" : "Pause to read"}</Text>
         </Pressable>
@@ -159,7 +159,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
               ? outputLines.slice(rows.start, rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
               : shown.screen.slice(rows.start, rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
             <View style={{ height: rows.after }} />
-            {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight }]} numberOfLines={1} selectable>{shown.pending}</Text> : null}
+            {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{shown.pending}</Text> : null}
           </View>
         </ScrollView>
       </ScrollView>
@@ -207,7 +207,7 @@ const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lin
   lineHeight: number;
 }) {
   return (
-    <Text style={[styles.output, { fontSize, lineHeight }]} numberOfLines={1} selectable>
+    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
       {spans.length === 0
         ? " "
         : spans.map((span, index) => (
@@ -222,24 +222,10 @@ function TerminalLineText({ line, fontSize, lineHeight }: {
   fontSize: number;
   lineHeight: number;
 }) {
-  if (line.kind === "gap") {
-    return (
-      <Text style={[styles.gap, { fontSize: Math.max(10, fontSize - 1), lineHeight }]} numberOfLines={1}>
-        {`⋯ ${line.text} ⋯`}
-      </Text>
-    );
-  }
-  if (line.kind === "notice") {
-    return (
-      <Text style={[styles.notice, { fontSize: Math.max(10, fontSize - 1), lineHeight }]} numberOfLines={1}>
-        {line.text}
-      </Text>
-    );
-  }
   /// Selectable so a long-press can copy a line without the view owning a clipboard
   /// dependency of its own.
   return (
-    <Text style={[styles.output, { fontSize, lineHeight }]} numberOfLines={1} selectable>
+    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
       {line.text.length === 0 ? " " : line.text}
     </Text>
   );
@@ -266,7 +252,6 @@ const styles = StyleSheet.create({
   /// line is free to push the content box past the screen and become scrollable.
   horizontal: { minWidth: "100%" },
   output: { color: color.text, fontFamily: fontFamily.mono },
-  gap: { color: color.warning, fontFamily: fontFamily.mono, fontStyle: "italic" },
   notice: { color: color.textMuted, fontFamily: fontFamily.mono },
   capNotice: {
     color: color.textMuted,
