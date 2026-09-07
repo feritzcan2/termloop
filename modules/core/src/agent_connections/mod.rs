@@ -92,15 +92,21 @@ impl Operation {
     }
 }
 
+#[derive(Clone, Default)]
+struct SetupControl {
+    cancel: Arc<AtomicBool>,
+    unreaped: Arc<Mutex<Option<termloop_platform::ManagedProcess>>>,
+}
+
 struct Job {
     owner: [u8; 32],
     operation: Arc<Mutex<Operation>>,
-    cancel: Arc<AtomicBool>,
+    control: SetupControl,
     input: mpsc::SyncSender<Vec<u8>>,
 }
 impl Drop for Job {
     fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Release);
+        self.control.cancel.store(true, Ordering::Release);
     }
 }
 
@@ -140,7 +146,10 @@ impl AgentConnections {
                     let jobs = self.jobs.lock().unwrap();
                     let job = jobs.get(&provider);
                     (
-                        job.is_some_and(|job| job.operation.lock().unwrap().active()),
+                        job.is_some_and(|job| {
+                            job.operation.lock().unwrap().active()
+                                || job.control.unreaped.lock().unwrap().is_some()
+                        }),
                         job.filter(|job| job.owner == owner(credential))
                             .map(|job| job.operation.lock().unwrap().clone()),
                     )
@@ -161,6 +170,11 @@ impl AgentConnections {
     ) -> Result<Operation, &'static str> {
         let mut jobs = self.jobs.lock().unwrap();
         if let Some(job) = jobs.get(&provider) {
+            if job.control.unreaped.lock().unwrap().is_some() {
+                return Err(
+                    "Restart this server to recover an unfinished provider process before starting setup again.",
+                );
+            }
             let operation = job.operation.lock().unwrap();
             if operation.active() {
                 return if job.owner == owner(credential) && operation.action == action {
@@ -182,12 +196,12 @@ impl AgentConnections {
             expires_at_epoch_ms: termloop_platform::current_epoch_ms() + 15 * 60 * 1000,
         };
         let snapshot = Arc::new(Mutex::new(operation.clone()));
-        let cancel = Arc::new(AtomicBool::new(false));
+        let control = SetupControl::default();
         let (input, receiver) = mpsc::sync_channel(8);
         let job = Job {
             owner: owner(credential),
             operation: snapshot.clone(),
-            cancel: cancel.clone(),
+            control: control.clone(),
             input: input.clone(),
         };
         let registry = self.registry.clone();
@@ -195,7 +209,7 @@ impl AgentConnections {
             .name("agent-account-setup".into())
             .spawn(move || {
                 provider::run(
-                    provider, action, snapshot, cancel, input, receiver, registry,
+                    provider, action, snapshot, control, input, receiver, registry,
                 );
             })
             .map_err(|_| "Could not start account setup.")?;
@@ -222,7 +236,7 @@ impl AgentConnections {
     ) -> Result<Operation, &'static str> {
         let jobs = self.jobs.lock().unwrap();
         let job = owned_job(&jobs, provider, id, credential)?;
-        job.cancel.store(true, Ordering::Release);
+        job.control.cancel.store(true, Ordering::Release);
         // Keep the reservation until the worker has reaped its child tree.
         let mut operation = job.operation.lock().unwrap();
         if operation.active() {
@@ -250,7 +264,10 @@ impl AgentConnections {
         let jobs = self.jobs.lock().unwrap();
         let job = owned_job(&jobs, provider, id, credential)?;
         let mut operation = job.operation.lock().unwrap();
-        if !operation.active() || !operation.accepts_code || job.cancel.load(Ordering::Acquire) {
+        if !operation.active()
+            || !operation.accepts_code
+            || job.control.cancel.load(Ordering::Acquire)
+        {
             return Err("This sign-in attempt is not waiting for a code.");
         }
         job.input

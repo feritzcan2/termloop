@@ -8,7 +8,7 @@ fn fixture() -> (AgentConnections, mpsc::Receiver<Vec<u8>>) {
         Job {
             owner: owner("first-device"),
             input,
-            cancel: Arc::new(AtomicBool::new(false)),
+            control: SetupControl::default(),
             operation: Arc::new(Mutex::new(Operation {
                 agent_id: Provider::Claude,
                 operation_id: "attempt".into(),
@@ -82,6 +82,50 @@ fn cancellation_hides_challenge_and_reserves_until_process_cleanup() {
             .submit_code(Provider::Claude, "attempt", "first-device", "code")
             .is_err()
     );
+}
+
+#[test]
+fn failed_cleanup_keeps_provider_reserved_for_every_device() {
+    let (manager, _) = fixture();
+    let process = termloop_platform::spawn_managed_process(
+        std::env::current_exe().unwrap().to_str().unwrap(),
+        &["--list".into()],
+        &std::env::temp_dir(),
+    )
+    .unwrap();
+    {
+        let jobs = manager.jobs.lock().unwrap();
+        let job = jobs.get(&Provider::Claude).unwrap();
+        *job.control.unreaped.lock().unwrap() = Some(process);
+        job.operation
+            .lock()
+            .unwrap()
+            .finish(Phase::Failed, "Cleanup failed");
+    }
+    for device in ["first-device", "second-device"] {
+        for action in [Action::SignIn, Action::SignOut, Action::Install] {
+            assert!(manager.start(Provider::Claude, action, device).is_err());
+        }
+    }
+    assert_eq!(
+        manager
+            .operation(Provider::Claude, "attempt", "first-device")
+            .unwrap()
+            .phase,
+        Phase::Failed,
+    );
+    let jobs = manager.jobs.lock().unwrap();
+    assert_eq!(jobs.len(), 1);
+    jobs.get(&Provider::Claude)
+        .unwrap()
+        .control
+        .unreaped
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .terminate()
+        .unwrap();
 }
 
 #[test]
