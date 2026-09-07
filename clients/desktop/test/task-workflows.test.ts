@@ -78,6 +78,26 @@ const execution: WorkflowExecution = {
   phase: "awaitingHelper",
   status: "running",
   steps: workflow.steps,
+  participants: [
+    { stepId: "discuss", sessionId: "claude-session-1" },
+    { stepId: "review", sessionId: "claude-session-1" },
+  ],
+  stepResults: [
+    {
+      stepId: "discuss",
+      reviewCycle: 1,
+      outcome: "completed",
+      summary: "Use a Core-owned linear workflow and persist bounded step summaries.",
+      completedAtEpochMs: 2,
+    },
+    {
+      stepId: "implement",
+      reviewCycle: 1,
+      outcome: "completed",
+      summary: "Implemented the workflow state machine and verified focused tests.",
+      completedAtEpochMs: 2,
+    },
+  ],
   startedAtEpochMs: 1,
   updatedAtEpochMs: 2,
 };
@@ -117,12 +137,14 @@ describe("Task workflow editor", () => {
       stateRevision: 4,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
+      showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
       save: vi.fn(),
       remove: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
+      openSession: vi.fn(),
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
@@ -140,12 +162,14 @@ describe("Task workflow editor", () => {
       stateRevision: 4,
       agentCapabilities: [fullAgentCapability("codex", { available: false })],
       launchable: true,
+      showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
       save: vi.fn(),
       remove: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
+      openSession: vi.fn(),
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
@@ -161,17 +185,49 @@ describe("Task workflow editor", () => {
       stateRevision: 5,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       launchable: true,
+      showLaunchers: true,
       overlayContainer: undefined,
       overlayVisibilityChanged: vi.fn(),
       save: vi.fn(),
       remove: vi.fn(),
       launch: vi.fn(),
       cancel: vi.fn(),
+      openSession: vi.fn(),
     }));
 
-    expect(markup).toContain('aria-label="Open Discuss, build, review workflow progress"');
+    expect(markup).toContain('aria-label="Hide Discuss, build, review workflow steps"');
     expect(markup).toContain("3/3");
+    expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
+    expect(markup).toContain("Use a Core-owned linear workflow and persist bounded step summaries.");
+    expect(markup).toContain("Implemented the workflow state machine and verified focused tests.");
+    expect(markup).toContain('title="Open Claude · new conversation"');
+    expect(markup).toContain(">Details</button>");
     expect(markup).toContain("Finish or stop Discuss, build, review first");
     expect(markup).toContain("disabled");
+  });
+
+  it("keeps active progress visible when Task launchers are temporarily unavailable", () => {
+    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
+      projectId: task.project_id,
+      task,
+      configurations: [workflow],
+      executions: [execution],
+      stateRevision: 5,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      launchable: false,
+      showLaunchers: false,
+      overlayContainer: undefined,
+      overlayVisibilityChanged: vi.fn(),
+      save: vi.fn(),
+      remove: vi.fn(),
+      launch: vi.fn(),
+      cancel: vi.fn(),
+      openSession: vi.fn(),
+    }));
+
+    expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
+    expect(markup).toContain("Implemented the workflow state machine and verified focused tests.");
+    expect(markup).not.toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
+    expect(markup).not.toContain('aria-label="Add workflow"');
   });
 });

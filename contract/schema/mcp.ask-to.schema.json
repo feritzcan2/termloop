@@ -82,7 +82,7 @@
       }
     },
     "workflow_step_complete": {
-      "description": "Complete only the current step of the active Core-managed workflow. For DISCUSS, IMPLEMENT, and FIX use completed. For REVIEW use approved when no actionable change remains or changesRequested when the configured Fix step must address findings. Core validates the coordinator, current step, helper-reply delivery, outcome, review cycle, and next transition. After an accepted call, stop the current turn; TermLoop delivers the next step automatically.",
+      "description": "Complete only the current step of the active Core-managed workflow and report its concise result for the workflow sidebar. For DISCUSS, IMPLEMENT, and FIX use completed. For REVIEW use approved when no actionable change remains or changesRequested when the configured Fix step must address findings. Summary is the coordinator's bounded result report, not copied provider transcript or reasoning. Core validates the coordinator, current step, helper-reply delivery, outcome, review cycle, and next transition. After an accepted call, stop the current turn; TermLoop delivers the next step automatically.",
       "role": "interactive",
       "params": {
         "$ref": "#/$defs/workflowStepCompleteParams"
@@ -875,9 +875,16 @@
       "x-codegen-name": "WorkflowStepCompleteParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["outcome"],
+      "required": ["outcome", "summary"],
       "properties": {
-        "outcome": { "$ref": "#/$defs/workflowStepOutcome" }
+        "outcome": { "$ref": "#/$defs/workflowStepOutcome" },
+        "summary": {
+          "description": "Concise user-facing report of what this step decided, changed, verified, or found.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "x-utf8-max-bytes": 2048
+        }
       }
     },
     "workflowActionResult": {

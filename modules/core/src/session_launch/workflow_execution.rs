@@ -2,8 +2,9 @@
 
 use serde_json::{Value, json};
 use termloop_domain::{
-    IssueLinkProvider, WorkflowExecution, WorkflowExecutionPhase, WorkflowParticipant,
-    WorkflowStepKind,
+    IssueLinkProvider, WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES, WorkflowExecution,
+    WorkflowExecutionPhase, WorkflowParticipant, WorkflowStepKind, WorkflowStepResult,
+    WorkflowStepResultOutcome,
 };
 
 use crate::{CoreError, CoreRuntime, store_error};
@@ -226,7 +227,15 @@ impl CoreRuntime {
         &mut self,
         token: &str,
         outcome: &str,
+        summary: String,
     ) -> Result<Value, CoreError> {
+        let summary = summary.trim().to_owned();
+        if summary.is_empty()
+            || summary.len() > WORKFLOW_STEP_RESULT_SUMMARY_MAX_BYTES
+            || summary.contains('\0')
+        {
+            return Err(CoreError::InvalidParams("summary".into()));
+        }
         let principal = self.mcp_authorizer.authenticate(token)?;
         let expected = self
             .store
@@ -257,15 +266,50 @@ impl CoreRuntime {
             return Err(CoreError::WorkflowExecutionState);
         }
 
+        let result_outcome = match outcome {
+            "completed" => WorkflowStepResultOutcome::Completed,
+            "approved" => WorkflowStepResultOutcome::Approved,
+            "changesRequested" => WorkflowStepResultOutcome::ChangesRequested,
+            _ => return Err(CoreError::WorkflowExecutionState),
+        };
+        let completed_at_epoch_ms = termloop_platform::current_epoch_ms();
         let mut replacement = expected.clone();
         if step.kind == WorkflowStepKind::Review && outcome == "changesRequested" {
             replacement.review_changes_requested = true;
         }
-        advance_execution(&mut replacement, step.kind);
+        replacement.updated_at_epoch_ms = completed_at_epoch_ms;
+        upsert_step_result(
+            &mut replacement,
+            WorkflowStepResult {
+                step_id: step.id,
+                review_cycle: expected.review_cycle,
+                outcome: result_outcome,
+                summary,
+                completed_at_epoch_ms,
+            },
+        );
+        let skipped_step_index = advance_execution(&mut replacement, step.kind);
+        if let Some(skipped_step_id) = skipped_step_index.and_then(|index| {
+            replacement
+                .configuration
+                .steps
+                .get(index)
+                .map(|step| step.id.clone())
+        }) {
+            upsert_step_result(
+                &mut replacement,
+                WorkflowStepResult {
+                    step_id: skipped_step_id,
+                    review_cycle: expected.review_cycle,
+                    outcome: WorkflowStepResultOutcome::Skipped,
+                    summary: "No review changes were requested.".into(),
+                    completed_at_epoch_ms,
+                },
+            );
+        }
         if replacement.phase != WorkflowExecutionPhase::Completed {
             replacement.coordinator_prompt_pending = true;
         }
-        replacement.updated_at_epoch_ms = termloop_platform::current_epoch_ms();
         let next_prompt = if replacement.phase == WorkflowExecutionPhase::Completed {
             None
         } else {
@@ -424,7 +468,10 @@ impl CoreRuntime {
     }
 }
 
-fn advance_execution(execution: &mut WorkflowExecution, completed_kind: WorkflowStepKind) {
+fn advance_execution(
+    execution: &mut WorkflowExecution,
+    completed_kind: WorkflowStepKind,
+) -> Option<usize> {
     let step_count = execution.configuration.steps.len();
     let next_index = usize::from(execution.current_step_index) + 1;
     if completed_kind == WorkflowStepKind::Fix {
@@ -440,10 +487,10 @@ fn advance_execution(execution: &mut WorkflowExecution, completed_kind: Workflow
             execution.review_cycle += 1;
             execution.review_changes_requested = false;
             execution.phase = WorkflowExecutionPhase::AwaitingCoordinator;
-            return;
+            return None;
         }
         complete_execution(execution, step_count);
-        return;
+        return None;
     }
     if completed_kind == WorkflowStepKind::Review {
         match execution.configuration.steps.get(next_index) {
@@ -451,12 +498,12 @@ fn advance_execution(execution: &mut WorkflowExecution, completed_kind: Workflow
             Some(next) if next.kind == WorkflowStepKind::Fix => {
                 if !execution.review_changes_requested {
                     complete_execution(execution, step_count);
-                    return;
+                    return Some(next_index);
                 }
             }
             None => {
                 complete_execution(execution, step_count);
-                return;
+                return None;
             }
             Some(_) => {}
         }
@@ -467,6 +514,19 @@ fn advance_execution(execution: &mut WorkflowExecution, completed_kind: Workflow
         execution.current_step_index = next_index as u8;
         execution.phase = WorkflowExecutionPhase::AwaitingCoordinator;
         execution.current_request_id = None;
+    }
+    None
+}
+
+fn upsert_step_result(execution: &mut WorkflowExecution, result: WorkflowStepResult) {
+    if let Some(current) = execution
+        .step_results
+        .iter_mut()
+        .find(|current| current.step_id == result.step_id)
+    {
+        *current = result;
+    } else {
+        execution.step_results.push(result);
     }
 }
 
@@ -560,6 +620,7 @@ mod tests {
             coordinator_prompt_pending: false,
             current_request_id: None,
             participants: vec![],
+            step_results: vec![],
             review_changes_requested: false,
             started_at_epoch_ms: 1,
             updated_at_epoch_ms: 1,
@@ -569,12 +630,18 @@ mod tests {
     #[test]
     fn approved_review_group_skips_the_optional_fix_step() {
         let mut execution = execution();
-        advance_execution(&mut execution, WorkflowStepKind::Review);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            None
+        );
         assert_eq!(execution.current_step_index, 3);
         assert_eq!(execution.phase, WorkflowExecutionPhase::AwaitingCoordinator);
 
         execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        advance_execution(&mut execution, WorkflowStepKind::Review);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            Some(4)
+        );
         assert_eq!(execution.current_step_index, 5);
         assert_eq!(execution.phase, WorkflowExecutionPhase::Completed);
     }
@@ -583,23 +650,73 @@ mod tests {
     fn combined_findings_run_fix_then_repeat_the_whole_review_group() {
         let mut execution = execution();
         execution.review_changes_requested = true;
-        advance_execution(&mut execution, WorkflowStepKind::Review);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            None
+        );
         execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        advance_execution(&mut execution, WorkflowStepKind::Review);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            None
+        );
         assert_eq!(execution.current_step_index, 4);
 
-        advance_execution(&mut execution, WorkflowStepKind::Fix);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Fix),
+            None
+        );
         assert_eq!(execution.current_step_index, 2);
         assert_eq!(execution.review_cycle, 2);
         assert!(!execution.review_changes_requested);
 
         execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
-        advance_execution(&mut execution, WorkflowStepKind::Review);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            None
+        );
         execution.phase = WorkflowExecutionPhase::AwaitingStepCompletion;
         execution.review_changes_requested = true;
-        advance_execution(&mut execution, WorkflowStepKind::Review);
-        advance_execution(&mut execution, WorkflowStepKind::Fix);
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Review),
+            None
+        );
+        assert_eq!(
+            advance_execution(&mut execution, WorkflowStepKind::Fix),
+            None
+        );
         assert_eq!(execution.current_step_index, 5);
         assert_eq!(execution.phase, WorkflowExecutionPhase::Completed);
+    }
+
+    #[test]
+    fn step_results_keep_only_the_latest_result_for_each_configured_step() {
+        let mut execution = execution();
+        upsert_step_result(
+            &mut execution,
+            WorkflowStepResult {
+                step_id: "review-claude".into(),
+                review_cycle: 1,
+                outcome: WorkflowStepResultOutcome::ChangesRequested,
+                summary: "First review found an issue.".into(),
+                completed_at_epoch_ms: 2,
+            },
+        );
+        upsert_step_result(
+            &mut execution,
+            WorkflowStepResult {
+                step_id: "review-claude".into(),
+                review_cycle: 2,
+                outcome: WorkflowStepResultOutcome::Approved,
+                summary: "Second review approved the fix.".into(),
+                completed_at_epoch_ms: 3,
+            },
+        );
+
+        assert_eq!(execution.step_results.len(), 1);
+        assert_eq!(execution.step_results[0].review_cycle, 2);
+        assert_eq!(
+            execution.step_results[0].summary,
+            "Second review approved the fix."
+        );
     }
 }
