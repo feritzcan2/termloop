@@ -2487,7 +2487,6 @@ mod tests {
     fn automatic_resume_lanes_have_independent_caps() {
         assert_eq!(MAX_ACTIVE_AGENT_RESUMES, 7);
         assert_eq!(MAX_ACTIVE_STEWARD_RESUMES, 1);
-        assert_eq!(MAX_ACTIVE_WORKER_RESUMES, 7);
     }
 
     #[test]

@@ -637,5 +637,4 @@ mod tests {
         };
         assert!(configuration.is_valid());
     }
-
 }

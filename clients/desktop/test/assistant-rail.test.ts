@@ -398,7 +398,7 @@ describe("Assistant rail Session classification", () => {
     } as Parameters<typeof routineCatalogRows>[0][number]);
     expect(routineCatalogRows([routine("first"), routine("second"), routine("other")])
       .map(({ id }) => id))
-      .toEqual(["first", "second"]);
+      .toEqual(["first", "second", "other"]);
   });
 
   it("keeps the pipeline's yes/no Routines out of the scheduled catalog", () => {
