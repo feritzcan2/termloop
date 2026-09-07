@@ -325,8 +325,7 @@ async fn tool_call_inner(
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "agent_status_read",
-        )
-        => text_result(
+        ) => text_result(
             state
                 .core
                 .lock()
@@ -535,7 +534,9 @@ async fn tool_call_inner(
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "steward_complete_assignment",
-        ) => steward_complete_assignment(project_id, principal.session_id(), arguments, state).await,
+        ) => {
+            steward_complete_assignment(project_id, principal.session_id(), arguments, state).await
+        }
         _ => Err(termloop_core::CoreError::CapabilityDenied),
     };
     match result {
@@ -1357,16 +1358,16 @@ async fn steward_complete_assignment(
         .findings
         .unwrap_or_default()
         .into_iter()
-        .map(|finding| {
-            termloop_core::companion_integrations::tracker_runtime::RoutineFinding {
+        .map(
+            |finding| termloop_core::companion_integrations::tracker_runtime::RoutineFinding {
                 id: termloop_platform::generate_opaque_id(),
                 source_key: finding.source_key,
                 summary: finding.summary,
                 evidence: finding.evidence,
                 source_references: finding.source_references,
                 related_task_ids: finding.related_task_ids,
-            }
-        })
+            },
+        )
         .collect();
     let result = state.core.lock().await.complete_steward_routine(
         &capability,
@@ -1721,13 +1722,13 @@ mod tests {
     #[test]
     fn only_a_step_claim_invalidates_the_playbook_processing_projection() {
         assert_eq!(
-            worker_claim_invalidation_topics(
+            routine_claim_invalidation_topics(
                 &json!({"status":"assigned","step":{"tasks":[{"taskId":"task-1"}]}})
             ),
             vec![ProjectionTopic::Playbook]
         );
-        assert!(worker_claim_invalidation_topics(&json!({"status":"assigned"})).is_empty());
-        assert!(worker_claim_invalidation_topics(&json!({"status":"idle"})).is_empty());
+        assert!(routine_claim_invalidation_topics(&json!({"status":"assigned"})).is_empty());
+        assert!(routine_claim_invalidation_topics(&json!({"status":"idle"})).is_empty());
     }
 
     #[test]
@@ -1755,13 +1756,6 @@ mod tests {
         let steward = tools_for_role(
             &termloop_core::session_launch::AgentMcpRole::Steward {
                 project_id: "project-1".into(),
-            },
-            &descriptions,
-        );
-        let worker = tools_for_role(
-            &termloop_core::session_launch::AgentMcpRole::Worker {
-                project_id: "project-1".into(),
-                worker_id: "worker-1".into(),
             },
             &descriptions,
         );
@@ -1843,15 +1837,11 @@ mod tests {
         assert!(tool_names(&steward).contains(&"routine_finding_resolve"));
         assert!(tool_names(&steward).contains(&"playbook_read"));
         assert!(tool_names(&steward).contains(&"task_set_steward_brief"));
-        assert!(!tool_names(&worker).contains(&"playbook_read"));
-        assert!(!tool_names(&worker).contains(&"routine_finding_resolve"));
-        assert!(!tool_names(&worker).contains(&"task_set_steward_brief"));
         assert!(!tool_names(&asker).contains(&"playbook_read"));
         assert!(!tool_names(&helper).contains(&"task_set_steward_brief"));
         assert!(!tool_names(&steward).contains(&"ask_to"));
-        assert!(!tool_names(&steward).contains(&"worker_complete_assignment"));
-        assert!(tool_names(&worker).contains(&"worker_complete_assignment"));
-        let task_read = worker
+        assert!(tool_names(&steward).contains(&"steward_complete_assignment"));
+        let task_read = steward
             .iter()
             .find(|tool| tool["name"] == "task_read")
             .unwrap();
@@ -1864,20 +1854,8 @@ mod tests {
                 .as_str()
                 .is_some_and(|description| description.contains("successful scoped read"))
         );
-        assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
-        assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
-        assert!(tool_names(&worker).contains(&"task_agent_request"));
-        assert!(!tool_names(&steward).contains(&"task_agent_request"));
-        assert!(!tool_names(&worker).contains(&"send_to_agent"));
-        assert!(!tool_names(&worker).contains(&"worker_complete_routine"));
-        assert!(!tool_names(&worker).contains(&"worker_report_routine_problem"));
-        assert!(!tool_names(&worker).contains(&"worker_report_step_verdicts"));
-        assert!(!tool_names(&worker).contains(&"ask_to"));
-        assert!(!tool_names(&worker).contains(&"task_create"));
-        assert!(!tool_names(&worker).contains(&"task_agent_start"));
-        assert!(!tool_names(&worker).contains(&"task_set_jira_url"));
-        assert!(!tool_names(&worker).contains(&"steward_system_prompt_read"));
-        assert!(!tool_names(&worker).contains(&"steward_system_prompt_update"));
+        assert!(tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
+        assert!(tool_names(&steward).contains(&"task_agent_request"));
         assert!(
             protocol::MCP_TOOLS
                 .iter()
@@ -1906,7 +1884,7 @@ mod tests {
                     "visible `builtin.steward.task-assignment` explicitly supplies the exact Steward Session ID"
                 ))
         );
-        let task_agent_request = worker
+        let task_agent_request = steward
             .iter()
             .find(|tool| tool["name"] == "task_agent_request")
             .unwrap();
@@ -1974,11 +1952,11 @@ mod tests {
     #[test]
     fn worker_completion_names_when_a_newer_user_context_won() {
         assert_eq!(
-            worker_routine_completion_status(&json!({ "contextMarkdownApplied": false })),
+            routine_completion_status(&json!({ "contextMarkdownApplied": false })),
             "completedContextPreserved"
         );
         assert_eq!(
-            worker_routine_completion_status(&json!({ "contextMarkdownApplied": true })),
+            routine_completion_status(&json!({ "contextMarkdownApplied": true })),
             "completed"
         );
     }
@@ -2192,7 +2170,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_worker_claim_tells_the_worker_to_claim_again() {
+    async fn stale_routine_claim_tells_the_steward_to_claim_again() {
         let response = response_json(core_tool_error(
             json!(8),
             &termloop_core::CoreError::TrackerReportStale,
@@ -2203,7 +2181,7 @@ mod tests {
             response["result"]["structuredContent"],
             json!({
                 "code": "staleCheck",
-                "message": "Routine check expired or changed; call worker_get_next_routine again",
+                "message": "Routine check expired or changed; call steward_next_assignment again",
                 "details": null
             })
         );

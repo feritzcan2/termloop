@@ -71,9 +71,7 @@ impl AssistantPromptTarget {
         let well_formed = match surface {
             AssistantPromptSurface::StewardInstructions
             | AssistantPromptSurface::RoutineBuilder
-            | AssistantPromptSurface::Playbook => {
-                owner_id.is_none()
-            }
+            | AssistantPromptSurface::Playbook => owner_id.is_none(),
             AssistantPromptSurface::RoutineInstructions => owner_id.is_some(),
         };
         well_formed

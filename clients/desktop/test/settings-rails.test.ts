@@ -55,7 +55,7 @@ describe("Settings rails", () => {
       reload: vi.fn(),
     })));
 
-    expect(groupLabels()).toEqual(["Interactive", "Helper", "Steward", "Worker"]);
+    expect(groupLabels()).toEqual(["Interactive", "Helper", "Steward"]);
     const [interactive, helper, steward] = groups();
     expect(interactive?.querySelector("button.rail-group-head")?.getAttribute("aria-expanded")).toBe("true");
     expect(interactive?.textContent).toContain("Ask another agent");
@@ -89,9 +89,9 @@ describe("Settings rails", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    expect(groupLabels()).toEqual(["Steward", "Worker"]);
+    expect(groupLabels()).toEqual(["Steward"]);
     const rows = [...container.querySelectorAll<HTMLElement>(".rail-row")];
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     expect(rows.every((row) => row.classList.contains("selected"))).toBe(true);
     expect(rows[0]?.querySelector(".rail-row-open")?.getAttribute("aria-current")).toBe("true");
   });
