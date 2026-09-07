@@ -1,6 +1,6 @@
 {
   "name": "@termloop/desktop",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -8,7 +8,7 @@
     "build": "pnpm --filter @termloop/contract build && node build.mjs",
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
-    "test": "pnpm build && vitest run && electron . --smoke",
+    "test": "node --test native/ghostty-host/*.test.mjs && pnpm build && vitest run && electron . --smoke",
     "smoke": "pnpm build && electron . --smoke",
     "native:ghostty": "node-gyp rebuild --directory native/ghostty-host --target=43.3.0 --dist-url=https://electronjs.org/headers",
     "native:ghostty:dev": "node native/ghostty-host/build-dev.mjs",

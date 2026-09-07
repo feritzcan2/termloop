@@ -3,6 +3,9 @@
 mod assistant;
 mod codex_config;
 mod manifest;
+mod personal_agent;
+mod profiles;
+pub use personal_agent::personal_agent_for_conversation;
 mod submission;
 
 pub use manifest::{
@@ -10,6 +13,7 @@ pub use manifest::{
     InspectableGeneratedFile, InspectableLaunchManifest, InspectableLaunchTarget,
     InspectableLimitation, InspectableProvenance, InspectableTransport,
 };
+pub use profiles::{AgentProfile, agent_profile, agent_profiles};
 pub use submission::GeneratedTerminalSubmission;
 
 use codex_config::CodexProjectTrust;
@@ -24,8 +28,8 @@ pub use assistant::{
     ProvenancedPrompt, assistant_activation_message, assistant_wake_message,
     default_assistant_launch_selection, default_steward_system_prompt,
     editable_steward_system_prompt, editable_steward_system_prompt_from_effective,
-    effective_steward_system_prompt, effective_worker_prompt, executor_prompt,
-    resolved_steward_system_prompt, tracker_assignment_prompt,
+    effective_steward_system_prompt, executor_prompt, resolved_steward_system_prompt,
+    tracker_assignment_prompt,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,8 +51,9 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     authored_body: include_str!("../../../resources/prompts/builtin.agent.interactive.md"),
 };
 const CODEX_DISABLE_STARTUP_UPDATE_CHECK: &str = "check_for_update_on_startup=false";
+pub const QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF: &str = "builtin.quick-action.free-prompt";
 const QUICK_ACTION_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.quick-action.free-prompt",
+    id: QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF,
     version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.quick-action.free-prompt.md"),
 };
@@ -95,17 +100,9 @@ const IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE: PromptTemplate = PromptTemplate {
     ),
 };
 
-const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.improver.worker-instructions",
-    version: 9,
-    authored_body: include_str!(
-        "../../../resources/prompts/builtin.improver.worker-instructions.md"
-    ),
-};
-
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 11,
+    version: 12,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -113,37 +110,31 @@ const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
-    version: 10,
+    version: 11,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.routine.md"),
 };
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 19,
+    version: 20,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 37,
+    version: 38,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
-};
-
-const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.worker.executor",
-    version: 25,
-    authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
 const ROUTINE_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.routine",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.routine.md"),
 };
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 9,
+    version: 10,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -249,19 +240,22 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
+        personal_agent::PERSONAL_AGENT_TEMPLATE,
+        profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,
+        profiles::EDGE_CASE_HUNTER_TEMPLATE,
+        profiles::TEST_GAP_FINDER_TEMPLATE,
+        profiles::ARCHITECTURE_BOUNDARY_REVIEWER_TEMPLATE,
         IMPROVER_RUN_CONFIGURATION_TEMPLATE,
         IMPROVER_RUN_CONFIGURATION_NEW_TEMPLATE,
         IMPROVER_STEWARD_INSTRUCTIONS_TEMPLATE,
         IMPROVER_SKILL_DEFINITION_TEMPLATE,
         IMPROVER_PROMPT_ASSET_TEMPLATE,
         IMPROVER_MCP_TOOL_DESCRIPTION_TEMPLATE,
-        IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE,
         IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE,
         ROUTINE_BUILDER_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
         TASK_EVIDENCE_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
-        WORKER_EXECUTOR_TEMPLATE,
         ROUTINE_TRACKER_TEMPLATE,
         STEP_CHECK_TRACKER_TEMPLATE,
         ASSISTANT_WAKE_TEMPLATE,
@@ -435,10 +429,184 @@ pub fn quick_action_agent_with_attachments_for_conversation(
     .map(ResolvedLaunchManifest::into_payload)
 }
 
+/// Resolves a catalog-backed Agent Profile as persistent provider instructions
+/// while preserving the caller's task as the first visible conversation
+/// message. Profiles are deliberately limited to the providers that can accept
+/// an inspectable launch-scoped instruction layer.
+#[allow(clippy::too_many_arguments)]
+pub fn profile_quick_action_agent_with_attachments_for_conversation(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    prompt: &str,
+    attachments: &[QuickActionImageAttachment],
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    let profile = validate_agent_profile_selection(profile_ref, agent_id)?;
+    validate_quick_action_with_attachments(
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        prompt,
+        attachments,
+    )?;
+    let provider_instructions = profile_provider_instructions(profile, mcp.as_ref())?;
+    let mut resolved = resolve_launch_manifest_with_attachments(
+        agent_id,
+        cwd,
+        profile.template(),
+        model,
+        permission,
+        reasoning,
+        Some(prompt),
+        conversation,
+        observation,
+        mcp,
+        Some(profile.template()),
+        Some(&provider_instructions),
+        attachments,
+    )?;
+    let delivered_prompt = resolved
+        .delivered_prompt
+        .as_deref()
+        .expect("profile Quick Action always resolves a first message");
+    resolved.inspectable.provenance.delivered_digest =
+        content_digest(&format!("{provider_instructions}\n\n{delivered_prompt}"));
+    finalize_digest(&mut resolved.inspectable);
+    resolved.bindings = vec![
+        ("profileRef".into(), profile.id.into()),
+        ("prompt".into(), prompt.into()),
+    ];
+    Ok(resolved.into_payload())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn configured_agent_profile_for_conversation_resume(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+        profile_ref,
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        conversation,
+        observation,
+        mcp,
+        CodexProjectTrust::Inherit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn configured_agent_profile_for_managed_worktree_conversation_resume(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+        profile_ref,
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        conversation,
+        observation,
+        mcp,
+        CodexProjectTrust::TermLoopManagedWorktree,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn configured_agent_profile_for_conversation_resume_with_codex_project_trust(
+    profile_ref: &str,
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+    codex_project_trust: CodexProjectTrust,
+) -> Result<LaunchPayload, InvocationError> {
+    let profile = validate_agent_profile_selection(profile_ref, agent_id)?;
+    validate_agent_configuration(agent_id, model, permission, reasoning)?;
+    let provider_instructions = profile_provider_instructions(profile, mcp.as_ref())?;
+    resolve_launch_manifest_with_attachments_and_codex_project_trust(
+        agent_id,
+        cwd,
+        profile.template(),
+        model,
+        permission,
+        reasoning,
+        None,
+        conversation,
+        observation,
+        mcp,
+        Some(profile.template()),
+        Some(&provider_instructions),
+        &[],
+        codex_project_trust,
+    )
+    .map(ResolvedLaunchManifest::into_payload)
+}
+
+fn validate_agent_profile_selection(
+    profile_ref: &str,
+    agent_id: &str,
+) -> Result<&'static AgentProfile, InvocationError> {
+    let profile = agent_profile(profile_ref).ok_or(InvocationError::TemplateMissing)?;
+    if !profile.user_invocable || !profile.supported_agent_ids.contains(&agent_id) {
+        return Err(InvocationError::UnsupportedAgent(agent_id.to_owned()));
+    }
+    Ok(profile)
+}
+
+fn profile_provider_instructions(
+    profile: &AgentProfile,
+    mcp: Option<&AgentMcpLaunch<'_>>,
+) -> Result<String, InvocationError> {
+    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
+        format!(
+            "{}\n\n{}",
+            INTERACTIVE_AGENT_TEMPLATE.authored_body,
+            profile.instructions()
+        )
+    } else {
+        profile.instructions().to_owned()
+    };
+    if instructions.len() > 64 * 1024 {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    Ok(instructions)
+}
+
 fn quick_action_template() -> Result<&'static PromptTemplate, InvocationError> {
     let template = prompt_templates()
         .iter()
-        .find(|template| template.id == "builtin.quick-action.free-prompt")
+        .find(|template| template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF)
         .ok_or(InvocationError::TemplateMissing)?;
     if !template
         .authored_body
@@ -518,34 +686,21 @@ pub enum ImproverTarget<'a> {
         built_in_instructions: &'a str,
         max_bytes: usize,
     },
-    /// One Worker's editable instructions, which apply to every Routine that
-    /// Worker runs.
-    WorkerInstructions {
-        worker_id: &'a str,
-        worker_name: &'a str,
-        built_in_instructions: &'a str,
-        /// One line per Routine this Worker runs, so the improver can tell a
-        /// shared convention from a single check's detail.
-        routine_summary: &'a str,
-        max_bytes: usize,
-    },
     /// One Routine's editable instructions — the surface that says where the
     /// answer to its recurring question actually comes from.
     RoutineInstructions {
         routine_id: &'a str,
         routine_name: &'a str,
-        worker_name: &'a str,
+        project_name: &'a str,
         /// The built-in prompt for this Routine's kind.
         built_in_instructions: &'a str,
         max_bytes: usize,
     },
-    /// A new scheduled Routine under one exact Worker. The Builder proposes
-    /// both the Worker's factual observation and the Steward's independent
+    /// A new scheduled Routine for one exact Project. The Builder proposes
+    /// both the factual observation and the Steward's response
     /// response policy; no Routine exists until the user accepts it.
     RoutineBuilder {
         project_name: &'a str,
-        worker_id: &'a str,
-        worker_name: &'a str,
         routine_summary: &'a str,
     },
     /// The Project's delivery Playbook Builder. Its authenticated MCP profile
@@ -572,7 +727,6 @@ impl ImproverTarget<'_> {
             Self::RunConfiguration { .. } => "builtin.improver.run-configuration",
             Self::NewRunConfiguration { .. } => "builtin.improver.run-configuration-new",
             Self::StewardInstructions { .. } => "builtin.improver.steward-instructions",
-            Self::WorkerInstructions { .. } => "builtin.improver.worker-instructions",
             Self::RoutineInstructions { .. } => "builtin.improver.routine-instructions",
             Self::RoutineBuilder { .. } => "builtin.builder.routine",
             Self::Playbook { .. } => "builtin.builder.playbook",
@@ -672,45 +826,22 @@ impl ImproverTarget<'_> {
                     ],
                 )
             }
-            Self::WorkerInstructions {
-                worker_id,
-                worker_name,
-                built_in_instructions,
-                routine_summary,
-                max_bytes,
-            } => {
-                bounded_binding(worker_id, 64)?;
-                bounded_binding(worker_name, 200)?;
-                bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
-                bounded_document(routine_summary, false, PROMPT_DOCUMENT_MAX_BYTES)?;
-                bind_ordered(
-                    template.authored_body,
-                    &[
-                        ("worker_name", worker_name),
-                        ("built_in_instructions", built_in_instructions),
-                        ("routine_summary", routine_summary),
-                        ("max_bytes", &max_bytes.to_string()),
-                        ("owner_id", worker_id),
-                        ("task_evidence_policy", task_evidence_policy_body()),
-                    ],
-                )
-            }
             Self::RoutineInstructions {
                 routine_id,
                 routine_name,
-                worker_name,
+                project_name,
                 built_in_instructions,
                 max_bytes,
             } => {
                 bounded_binding(routine_id, 64)?;
                 bounded_binding(routine_name, 200)?;
-                bounded_binding(worker_name, 200)?;
+                bounded_binding(project_name, 200)?;
                 bounded_document(built_in_instructions, false, PROMPT_DOCUMENT_MAX_BYTES)?;
                 bind_ordered(
                     template.authored_body,
                     &[
                         ("routine_name", routine_name),
-                        ("worker_name", worker_name),
+                        ("project_name", project_name),
                         ("built_in_instructions", built_in_instructions),
                         ("owner_id", routine_id),
                         ("max_bytes", &max_bytes.to_string()),
@@ -720,13 +851,9 @@ impl ImproverTarget<'_> {
             }
             Self::RoutineBuilder {
                 project_name,
-                worker_id,
-                worker_name,
                 routine_summary,
             } => {
                 bounded_binding(project_name, 200)?;
-                bounded_binding(worker_id, 64)?;
-                bounded_binding(worker_name, 200)?;
                 bounded_embedded_document(
                     routine_summary,
                     false,
@@ -735,10 +862,8 @@ impl ImproverTarget<'_> {
                 bind_ordered(
                     template.authored_body,
                     &[
-                        ("worker_name", worker_name),
                         ("project_name", project_name),
                         ("routine_summary", routine_summary),
-                        ("worker_id", worker_id),
                         ("task_evidence_policy", task_evidence_policy_body()),
                     ],
                 )
@@ -763,9 +888,9 @@ impl ImproverTarget<'_> {
 /// somewhere other than TermLoop's own bounded state.
 const PROMPT_DOCUMENT_MAX_BYTES: usize = 64 * 1024;
 
-/// A Routine Builder receives one serialized inventory for every Routine on a
-/// Worker. The inventory can legitimately exceed the per-document limit when
-/// a Worker owns several fully configured Routines. Keep enough headroom for
+/// A Routine Builder receives one serialized inventory for every Routine in a
+/// Project. The inventory can legitimately exceed the per-document limit when
+/// a Project owns several fully configured Routines. Keep enough headroom for
 /// the authored prompt inside the terminal input ceiling.
 const ROUTINE_BUILDER_SUMMARY_MAX_BYTES: usize = 160 * 1024;
 
@@ -968,9 +1093,11 @@ fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationErro
     match (agent_id, model) {
         ("claude" | "codex" | "gemini", "default") => Ok(vec![]),
         ("claude", "opus[1m]" | "fable" | "sonnet" | "haiku" | "opus")
-        | ("codex", "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.5-pro") => {
-            Ok(vec!["--model".into(), model.into()])
-        }
+        | (
+            "codex",
+            "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5"
+            | "gpt-5.5-pro",
+        ) => Ok(vec!["--model".into(), model.into()]),
         ("gemini", "auto" | "pro" | "flash" | "flash-lite") => Ok(vec!["-m".into(), model.into()]),
         ("claude" | "codex" | "gemini", _) => Err(InvocationError::UnsupportedModel {
             agent_id: agent_id.to_owned(),
@@ -1268,7 +1395,7 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
             ]);
         }
     }
-    if template.id == "builtin.quick-action.free-prompt"
+    if template.id == QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
         || model != "default"
         || permission != "default"
         || reasoning != "default"
@@ -1537,6 +1664,11 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
             template_ref: template.id.to_owned(),
             template_version: template.version,
         },
+        codex_app_server_developer_instructions: if agent_id == "codex" {
+            delivered_provider_instructions.map(str::to_owned)
+        } else {
+            None
+        },
         initial_input: prompt
             .map(|_| InitialInputDelivery::submitted(&delivered))
             .transpose()?,
@@ -1608,7 +1740,7 @@ fn mcp_manifest_args(
     agent_id: &str,
     mcp: &AgentMcpLaunch<'_>,
 ) -> Result<Vec<ResolvedArgument>, InvocationError> {
-    Ok(mcp_args(agent_id, mcp)?
+    Ok(mcp_args(agent_id, mcp, true)?
         .into_iter()
         .enumerate()
         .map(|(position, value)| {
@@ -1799,6 +1931,7 @@ pub struct LaunchPayload {
     args: Vec<String>,
     environment: termloop_platform::LaunchEnvironment,
     provenance: Provenance,
+    codex_app_server_developer_instructions: Option<String>,
     initial_input: Option<InitialInputDelivery>,
     inspectable: InspectableLaunchManifest,
     bindings: Vec<(String, String)>,
@@ -1810,6 +1943,7 @@ struct ResolvedLaunchManifest {
     arguments: Vec<ResolvedArgument>,
     environment: termloop_platform::LaunchEnvironment,
     provenance: Provenance,
+    codex_app_server_developer_instructions: Option<String>,
     initial_input: Option<InitialInputDelivery>,
     inspectable: InspectableLaunchManifest,
     bindings: Vec<(String, String)>,
@@ -1858,6 +1992,7 @@ impl ResolvedLaunchManifest {
                 .collect(),
             environment: self.environment,
             provenance: self.provenance,
+            codex_app_server_developer_instructions: self.codex_app_server_developer_instructions,
             initial_input: self.initial_input,
             inspectable: self.inspectable,
             bindings: self.bindings,
@@ -1919,7 +2054,6 @@ pub enum AgentMcpProfile {
     Interactive,
     Improver,
     Steward,
-    Worker,
     Helper,
 }
 
@@ -1936,7 +2070,6 @@ pub struct PersistentAssistantLaunch<'a> {
     pub reasoning: &'a str,
     pub role: ExecutorRole,
     pub system_prompt: Option<&'a str>,
-    pub worker_prompt: Option<&'a str>,
     pub cwd: &'a str,
     pub conversation: AgentConversationLaunch<'a>,
     pub observation: Option<AgentObservationLaunch<'a>>,
@@ -1983,12 +2116,14 @@ pub fn codex_app_server(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
         cwd,
         session_id,
         mcp,
+        developer_instructions,
         CodexProjectTrust::Inherit,
     )
 }
@@ -1998,12 +2133,14 @@ pub fn codex_app_server_for_managed_worktree(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
         cwd,
         session_id,
         mcp,
+        developer_instructions,
         CodexProjectTrust::TermLoopManagedWorktree,
     )
 }
@@ -2013,6 +2150,7 @@ fn codex_app_server_with_project_trust(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     let mut args = vec![
@@ -2030,8 +2168,11 @@ fn codex_app_server_with_project_trust(
     // must inherit the same Agent-only Cargo target as the terminal client.
     let mut environment = agent_launch_environment(cwd, Some(session_id));
     if let Some(mcp) = mcp {
-        args.extend(mcp_args("codex", &mcp)?);
+        args.extend(mcp_args("codex", &mcp, developer_instructions.is_none())?);
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
+    }
+    if let Some(instructions) = developer_instructions {
+        args.extend(codex_developer_instructions_args(instructions)?);
     }
     args.extend([
         "-c".to_owned(),
@@ -2145,6 +2286,9 @@ impl LaunchPayload {
     }
     pub fn environment_keys(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
         self.environment.keys()
+    }
+    pub fn codex_app_server_developer_instructions(&self) -> Option<&str> {
+        self.codex_app_server_developer_instructions.as_deref()
     }
     pub fn initial_input(&self) -> Option<&str> {
         self.initial_input
@@ -2606,40 +2750,22 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
     .map(ResolvedLaunchManifest::into_payload)
 }
 
-/// Resolves a persistent Steward or Worker through the same inspected manifest
+/// Resolves a persistent Steward through the same inspected manifest
 /// used by ordinary interactive Agents. The authenticated HTTP MCP principal,
 /// not prompt text or provider argv, fixes the role-specific tool catalog.
 pub fn persistent_assistant_agent(
     configuration: PersistentAssistantLaunch<'_>,
 ) -> Result<LaunchPayload, InvocationError> {
-    if !matches!(
-        configuration.role,
-        ExecutorRole::Steward | ExecutorRole::Worker
-    ) {
+    if configuration.role != ExecutorRole::Steward {
         return Err(InvocationError::InvalidAssistantConfiguration);
     }
     let instruction_template = configuration.role.template();
     assistant::validate_template_asset(instruction_template)?;
-    let (provider_instructions, bindings) = match (
-        configuration.role,
-        configuration.worker_prompt,
-        configuration.system_prompt,
-    ) {
-        (ExecutorRole::Steward, None, Some(prompt)) if prompt.len() <= 16 * 1024 => (
+    let (provider_instructions, bindings) = match configuration.system_prompt {
+        Some(prompt) if prompt.len() <= 16 * 1024 => (
             assistant::effective_steward_system_prompt(prompt),
             vec![("systemPrompt".into(), prompt.trim().to_owned())],
         ),
-        (ExecutorRole::Worker, Some(worker_prompt), Some(system_prompt))
-            if worker_prompt.len() <= 16 * 1024 && system_prompt.len() <= 16 * 1024 =>
-        {
-            (
-                assistant::effective_worker_prompt(worker_prompt, system_prompt),
-                vec![
-                    ("workerPrompt".into(), worker_prompt.trim().to_owned()),
-                    ("systemPrompt".into(), system_prompt.trim().to_owned()),
-                ],
-            )
-        }
         _ => return Err(InvocationError::InvalidAssistantConfiguration),
     };
     validate_agent_configuration(
@@ -2668,9 +2794,12 @@ pub fn persistent_assistant_agent(
     Ok(manifest.into_payload())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ask_to_helper_agent_for_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2680,6 +2809,8 @@ pub fn ask_to_helper_agent_for_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2693,6 +2824,8 @@ pub fn ask_to_helper_agent_for_conversation(
 pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2702,6 +2835,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
+        model,
+        reasoning,
         conversation,
         request_id,
         message,
@@ -2715,6 +2850,8 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
 fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
     agent_id: &str,
     cwd: &str,
+    model: &str,
+    reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
@@ -2741,9 +2878,9 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
         template,
+        model,
         "default",
-        "default",
-        "default",
+        reasoning,
         None,
         conversation,
         observation,
@@ -3834,11 +3971,27 @@ fn observation_environment_conflicts(
     ) && termloop_platform::gemini_cli_system_defaults_source_present(environment)
 }
 
-fn mcp_args(agent_id: &str, mcp: &AgentMcpLaunch<'_>) -> Result<Vec<String>, InvocationError> {
+fn codex_developer_instructions_args(instructions: &str) -> Result<[String; 2], InvocationError> {
+    if instructions.trim().is_empty() || instructions.len() > 64 * 1024 {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    let instructions = serde_json::to_string(instructions)
+        .map_err(|_| InvocationError::InvalidDeveloperInstructions)?;
+    Ok([
+        "-c".into(),
+        format!("developer_instructions={instructions}"),
+    ])
+}
+
+fn mcp_args(
+    agent_id: &str,
+    mcp: &AgentMcpLaunch<'_>,
+    include_interactive_instructions: bool,
+) -> Result<Vec<String>, InvocationError> {
     match agent_id {
         "claude" => {
             let mut args = vec!["--mcp-config".into(), mcp.claude_config_path.into()];
-            if mcp.profile.includes_interactive_instructions() {
+            if include_interactive_instructions && mcp.profile.includes_interactive_instructions() {
                 args.extend([
                     "--append-system-prompt".into(),
                     INTERACTIVE_AGENT_TEMPLATE.authored_body.into(),
@@ -3855,13 +4008,10 @@ fn mcp_args(agent_id: &str, mcp: &AgentMcpLaunch<'_>) -> Result<Vec<String>, Inv
                 "-c".into(),
                 "mcp_servers.termloop_next.bearer_token_env_var=\"TERMLOOP_MCP_TOKEN\"".into(),
             ];
-            if mcp.profile.includes_interactive_instructions() {
-                let instructions = serde_json::to_string(INTERACTIVE_AGENT_TEMPLATE.authored_body)
-                    .map_err(|_| InvocationError::InvalidDeveloperInstructions)?;
-                args.extend([
-                    "-c".into(),
-                    format!("developer_instructions={instructions}"),
-                ]);
+            if include_interactive_instructions && mcp.profile.includes_interactive_instructions() {
+                args.extend(codex_developer_instructions_args(
+                    INTERACTIVE_AGENT_TEMPLATE.authored_body,
+                )?);
             }
             Ok(args)
         }
@@ -4051,11 +4201,11 @@ mod tests {
     #[test]
     fn routines_use_one_provider_neutral_evidence_policy() {
         let cases = [
-            (ExecutorRole::Routine, "builtin.tracker.routine", 2),
+            (ExecutorRole::Routine, "builtin.tracker.routine", 3),
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                9,
+                10,
             ),
         ];
 
@@ -4070,7 +4220,7 @@ mod tests {
                 "{template_ref}"
             );
             assert!(
-                delivered.contains("worker_complete_assignment"),
+                delivered.contains("steward_complete_assignment"),
                 "{template_ref}"
             );
             assert!(delivered.contains("satisfied"), "{template_ref}");
@@ -4239,24 +4389,17 @@ mod tests {
                 built_in_instructions: "Protected Steward behavior.",
                 max_bytes: 16_384,
             },
-            ImproverTarget::WorkerInstructions {
-                worker_id: "wkr-1",
-                worker_name: "Delivery Worker",
-                built_in_instructions: "Protected Worker behavior.",
-                routine_summary: r#"{"routines":[]}"#,
-                max_bytes: 16_384,
-            },
             ImproverTarget::RoutineInstructions {
+                project_name: "Nucleus",
                 routine_id: "rtn-1",
                 routine_name: "PR approved",
-                worker_name: "Delivery Worker",
+
                 built_in_instructions: "Protected Routine behavior.",
                 max_bytes: 9_216,
             },
             ImproverTarget::RoutineBuilder {
                 project_name: "Nucleus",
-                worker_id: "wkr-1",
-                worker_name: "Delivery Worker",
+
                 routine_summary: r#"{"routines":[]}"#,
             },
             ImproverTarget::Playbook {
@@ -4298,39 +4441,27 @@ mod tests {
     fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
         let targets = [
             (
-                ImproverTarget::WorkerInstructions {
-                    worker_id: "wkr-1",
-                    worker_name: "Delivery Worker",
-                    built_in_instructions: "Protected Worker behavior.",
-                    routine_summary: r#"{"routines":[]}"#,
-                    max_bytes: 16_384,
-                },
-                9,
-            ),
-            (
                 ImproverTarget::RoutineInstructions {
+                    project_name: "Nucleus",
                     routine_id: "rtn-1",
                     routine_name: "PR approved",
-                    worker_name: "Delivery Worker",
                     built_in_instructions: "Protected Routine behavior.",
                     max_bytes: 9_216,
                 },
-                11,
+                12,
             ),
             (
                 ImproverTarget::RoutineBuilder {
                     project_name: "Nucleus",
-                    worker_id: "wkr-1",
-                    worker_name: "Delivery Worker",
                     routine_summary: r#"{"routines":[]}"#,
                 },
-                10,
+                11,
             ),
             (
                 ImproverTarget::Playbook {
                     project_name: "Nucleus",
                 },
-                19,
+                20,
             ),
         ];
 
@@ -4371,8 +4502,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 19);
-        assert_eq!(launch.provenance().template_version, 19);
+        assert_eq!(template.version, 20);
+        assert_eq!(launch.provenance().template_version, 20);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -4386,19 +4517,17 @@ mod tests {
             "\"activePipelineName\"",
             "\"milestones\"",
             "\"savedPipelines\"",
-            "\"workerId\"",
-            "\"preferredWorkerAgentId\"",
             "Every saved pipeline contains exactly",
-            "`completeWhen`, `whileWaiting`, `workerId`",
+            "`completeWhen`, `whileWaiting`",
             "never send probe",
             "authoritative only for TermLoop-owned Task identity",
             "Worker's cwd or HEAD",
             "task_agent_request",
-            "Worker-to-Agent coordination among the recommended options",
+            "Steward-to-Agent coordination among the recommended options",
             "`coordinationAgent` projection",
             "sole authority",
-            "never require the Worker to re-prove Agent",
-            "Worker to attempt",
+            "never require the Steward to re-prove Agent",
+            "Steward to attempt",
             "ordinary unmet evidence and is `pending`",
             "Routines have no provider kind",
         ] {
@@ -4408,7 +4537,6 @@ mod tests {
             "`schemaVersion`",
             "`activePipelineId`",
             "`pipelines`",
-            "`workers`",
             "`routines`",
         ] {
             assert!(
@@ -4479,9 +4607,10 @@ mod tests {
             "default",
             "default",
             ImproverTarget::RoutineInstructions {
+                project_name: "Nucleus",
                 routine_id: "rtn-9",
                 routine_name: "PR approved",
-                worker_name: "Delivery Worker",
+
                 built_in_instructions: "Write {{entry_content}} elsewhere.",
                 max_bytes: 9_216,
             },
@@ -4512,6 +4641,195 @@ mod tests {
                 "Inspect this\nthen run tests\tcarefully",
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn agent_profile_catalog_is_versioned_and_read_only() {
+        assert_eq!(agent_profiles().len(), 4);
+        for profile in agent_profiles() {
+            assert_eq!(profile.permission, "plan");
+            assert!(profile.read_only);
+            assert!(profile.user_invocable);
+            assert_eq!(profile.supported_agent_ids, ["claude", "codex"]);
+            assert!(
+                profile
+                    .instructions()
+                    .contains(&format!("id: `{}`", profile.id))
+            );
+            assert!(
+                profile
+                    .instructions()
+                    .contains(&format!("version: `{}`", profile.version))
+            );
+            assert!(
+                prompt_templates()
+                    .iter()
+                    .any(|template| template.id == profile.id)
+            );
+        }
+    }
+
+    #[test]
+    fn agent_profile_keeps_instructions_separate_from_the_user_task() {
+        let profile = agent_profiles()[0];
+        let launch = profile_quick_action_agent_with_attachments_for_conversation(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            "Inspect session launch ownership",
+            &[],
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(launch.provenance().template_ref, profile.id);
+        assert_eq!(launch.provenance().template_version, profile.version);
+        assert_eq!(
+            launch.delivered_prompt(),
+            Some("Inspect session launch ownership")
+        );
+        assert_eq!(
+            launch.bindings().collect::<Vec<_>>(),
+            vec![
+                ("profileRef", profile.id),
+                ("prompt", "Inspect session launch ownership"),
+            ]
+        );
+        let content = &launch.inspectable_manifest().content_parts;
+        assert_eq!(content[0].kind, "firstMessage");
+        assert_eq!(content[0].content, "Inspect session launch ownership");
+        assert_eq!(content[1].kind, "providerInstructions");
+        assert_eq!(content[1].content, profile.instructions());
+    }
+
+    #[test]
+    fn agent_profile_accepts_user_permission_and_rejects_unsupported_provider() {
+        let profile = agent_profiles()[0];
+        let launch = |agent_id, permission| {
+            profile_quick_action_agent_with_attachments_for_conversation(
+                profile.id,
+                agent_id,
+                "/tmp/project",
+                "default",
+                permission,
+                "default",
+                "Inspect this",
+                &[],
+                AgentConversationLaunch::Fresh { resume_ref: None },
+                None,
+                None,
+            )
+        };
+        for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
+            let launch = launch("codex", permission).unwrap();
+            assert_eq!(launch.inspectable_manifest().target.permission, permission);
+        }
+        assert!(matches!(
+            launch("gemini", "plan"),
+            Err(InvocationError::UnsupportedAgent(agent_id)) if agent_id == "gemini"
+        ));
+    }
+
+    #[test]
+    fn agent_profile_resume_reapplies_instructions_without_a_new_user_message() {
+        let profile = agent_profiles()[0];
+        let resume_ref = termloop_domain::ResumeRef::for_provider(
+            termloop_domain::ResumeProvider::Codex,
+            "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035".into(),
+        )
+        .unwrap();
+        let launch = configured_agent_profile_for_conversation_resume(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            AgentConversationLaunch::Resume {
+                resume_ref: &resume_ref,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(launch.provenance().template_ref, profile.id);
+        assert_eq!(launch.initial_input(), None);
+        assert_eq!(launch.delivered_prompt(), None);
+        assert_eq!(
+            launch.inspectable_manifest().transport.kind,
+            "codexDeveloperInstructions"
+        );
+        assert_eq!(launch.inspectable_manifest().content_parts.len(), 1);
+        assert_eq!(
+            launch.inspectable_manifest().content_parts[0].kind,
+            "providerInstructions"
+        );
+    }
+
+    #[test]
+    fn agent_profile_preserves_the_interactive_termloop_protocol() {
+        let profile = agent_profiles()[0];
+        let launch = profile_quick_action_agent_with_attachments_for_conversation(
+            profile.id,
+            "codex",
+            "/tmp/project",
+            "default",
+            "plan",
+            "default",
+            "Inspect this workflow",
+            &[],
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            Some(AgentMcpLaunch {
+                endpoint: "http://127.0.0.1:4567/mcp",
+                token: "private-token",
+                claude_config_path: "/tmp/claude-mcp.json",
+                profile: AgentMcpProfile::Interactive,
+            }),
+        )
+        .unwrap();
+
+        let instructions = &launch.inspectable_manifest().content_parts[1].content;
+        assert!(instructions.contains("use `ask_to`"));
+        assert!(instructions.contains("write-side operations"));
+        assert_eq!(
+            launch.codex_app_server_developer_instructions(),
+            Some(instructions.as_str())
+        );
+        let app_server = codex_app_server(
+            "ws://127.0.0.1:4567",
+            "/tmp/project",
+            "profile-session",
+            Some(AgentMcpLaunch {
+                endpoint: "http://127.0.0.1:4567/mcp",
+                token: "private-token",
+                claude_config_path: "/tmp/claude-mcp.json",
+                profile: AgentMcpProfile::Interactive,
+            }),
+            Some(instructions),
+        )
+        .unwrap();
+        let developer_instructions = app_server_args(&app_server)
+            .windows(2)
+            .filter(|arguments| {
+                arguments[0] == "-c" && arguments[1].starts_with("developer_instructions=")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(developer_instructions.len(), 1);
+        assert!(developer_instructions[0][1].contains(profile.id));
+        assert!(developer_instructions[0][1].contains("Interactive agent launch"));
+        assert!(
+            !launch
+                .args()
+                .iter()
+                .any(|argument| argument == "private-token")
         );
     }
 
@@ -4666,6 +4984,7 @@ mod tests {
     fn quick_action_accepts_the_compact_current_codex_family() {
         for model in [
             "default",
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
@@ -4907,7 +5226,7 @@ mod tests {
                 reasoning: "default",
                 role: ExecutorRole::Steward,
                 system_prompt: Some(""),
-                worker_prompt: None,
+
                 cwd: "/tmp/project",
                 conversation: AgentConversationLaunch::Fresh { resume_ref: None },
                 observation: None,
@@ -4961,14 +5280,14 @@ mod tests {
         }
 
         for agent_id in ["codex", "claude"] {
-            let worker = persistent_assistant_agent(PersistentAssistantLaunch {
+            let steward = persistent_assistant_agent(PersistentAssistantLaunch {
                 agent_id,
                 model: "default",
                 permission: "default",
                 reasoning: "default",
-                role: ExecutorRole::Worker,
+                role: ExecutorRole::Steward,
                 system_prompt: Some("Answer briefly in Turkish."),
-                worker_prompt: Some("Summarize each Routine in one sentence."),
+
                 cwd: "/tmp/project",
                 conversation: AgentConversationLaunch::Fresh { resume_ref: None },
                 observation: None,
@@ -4976,80 +5295,61 @@ mod tests {
                     endpoint: "http://127.0.0.1:1234/mcp",
                     token: "runtime-secret",
                     claude_config_path: "/tmp/termloop-agent-mcp.json",
-                    profile: AgentMcpProfile::Worker,
+                    profile: AgentMcpProfile::Steward,
                 },
             })
             .unwrap();
-            assert!(
-                !worker
-                    .args()
-                    .iter()
-                    .any(|argument| argument.contains("bypass"))
-            );
-            assert_eq!(worker.inspectable_manifest().target.permission, "default");
-            let instructions = worker
+            assert!(!steward.args().iter().any(|argument| matches!(
+                argument.as_str(),
+                "--dangerously-skip-permissions" | "--dangerously-bypass-approvals-and-sandbox"
+            )));
+            assert_eq!(steward.inspectable_manifest().target.permission, "default");
+            let instructions = steward
                 .inspectable_manifest()
                 .content_parts
                 .iter()
                 .find(|part| part.id == "persistent-assistant-instructions")
-                .expect("visible native Worker instructions");
+                .expect("visible native Steward instructions");
             assert_eq!(instructions.kind, "providerInstructions");
-            assert!(instructions.content.contains("Configured Worker prompt"));
-            assert!(instructions.content.contains("Configured System prompt"));
             assert!(
                 instructions
                     .content
-                    .contains("task_agent_transcript_tail_read")
+                    .starts_with(default_steward_system_prompt())
+            );
+            assert!(instructions.content.ends_with("Answer briefly in Turkish."));
+            assert!(
+                instructions
+                    .content
+                    .contains("canonical Session ID returned by the scoped `task_read`")
             );
             assert!(instructions.content.contains("task_agent_request"));
             match agent_id {
-                "codex" => assert!(worker.args().iter().any(|argument| {
+                "codex" => assert!(steward.args().iter().any(|argument| {
                     argument.starts_with("developer_instructions=")
-                        && argument.contains("Configured Worker prompt")
-                        && argument.contains("Configured System prompt")
+                        && argument.contains("Answer briefly in Turkish.")
                 })),
-                "claude" => assert!(worker.args().windows(2).any(|arguments| {
+                "claude" => assert!(steward.args().windows(2).any(|arguments| {
                     arguments[0] == "--append-system-prompt"
-                        && arguments[1].contains("Configured Worker prompt")
-                        && arguments[1].contains("Configured System prompt")
+                        && arguments[1].contains("Answer briefly in Turkish.")
                 })),
                 _ => unreachable!(),
             }
-            assert!(worker.initial_input().is_some_and(|input| {
-                input.contains("worker_get_next_routine")
-                    && input.contains("worker_complete_assignment")
-                    && !input.contains("## Configured Worker prompt")
-                    && !input.contains("Summarize each Routine in one sentence.")
+            assert!(steward.initial_input().is_some_and(|input| {
+                input.contains("Persistent Assistant Activation")
+                    && !input.contains("Answer briefly in Turkish.")
                     && input.ends_with('\r')
             }));
             assert_eq!(
-                worker.bindings().collect::<Vec<_>>(),
-                vec![
-                    ("workerPrompt", "Summarize each Routine in one sentence."),
-                    ("systemPrompt", "Answer briefly in Turkish."),
-                ]
+                steward.bindings().collect::<Vec<_>>(),
+                vec![("systemPrompt", "Answer briefly in Turkish."),]
             );
             assert!(
-                worker
+                steward
                     .initial_input_sequence()
                     .and_then(|sequence| sequence.last())
                     .is_some_and(|input| input.as_slice() == b"\r")
             );
         }
-    }
-
-    #[test]
-    fn persistent_worker_single_editor_suffix_round_trips_without_added_text() {
-        let built_in = assistant::effective_worker_prompt("", "");
-        let editable = "Handle Slack checks and summarize only new messages.";
-        assert_eq!(
-            assistant::effective_worker_prompt("", editable),
-            format!("{built_in}\n\n{editable}")
-        );
-        assert_eq!(
-            assistant::effective_worker_prompt(editable, ""),
-            format!("{built_in}\n\n{editable}")
-        );
     }
 
     #[test]
@@ -5062,7 +5362,7 @@ mod tests {
             reasoning: "high",
             role: ExecutorRole::Steward,
             system_prompt: Some(custom),
-            worker_prompt: None,
+
             cwd: "/tmp/project",
             conversation: AgentConversationLaunch::Fresh { resume_ref: None },
             observation: None,
@@ -5136,8 +5436,14 @@ mod tests {
             "spawn tuple does not carry the inspected target"
         );
 
-        let app_server =
-            codex_app_server("ws://127.0.0.1:4567", "/tmp/project", "session-1", None).unwrap();
+        let app_server = codex_app_server(
+            "ws://127.0.0.1:4567",
+            "/tmp/project",
+            "session-1",
+            None,
+            None,
+        )
+        .unwrap();
         assert!(
             std::path::Path::new(app_server.program()).is_absolute(),
             "{:?}",
@@ -5572,6 +5878,7 @@ mod tests {
             cwd,
             "managed-session",
             None,
+            None,
         )
         .unwrap();
         assert!(
@@ -5580,7 +5887,7 @@ mod tests {
                 .any(|arguments| { arguments[0] == "-c" && arguments[1] == expected })
         );
         let project_app_server =
-            codex_app_server("ws://127.0.0.1:4567", cwd, "project-session", None).unwrap();
+            codex_app_server("ws://127.0.0.1:4567", cwd, "project-session", None, None).unwrap();
         assert!(
             app_server_args(&project_app_server)
                 .iter()
@@ -5941,6 +6248,7 @@ mod tests {
                 claude_config_path: "/unused.json",
                 profile: AgentMcpProfile::Interactive,
             }),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -5973,6 +6281,8 @@ mod tests {
         let launch = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-1",
             "Review the race.",
@@ -6019,6 +6329,8 @@ mod tests {
         let codex = ask_to_helper_agent_for_conversation(
             "codex",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-3",
             "Write a poem.",
@@ -6044,6 +6356,8 @@ mod tests {
         let literal_placeholder = ask_to_helper_agent_for_conversation(
             "claude",
             "/tmp/project",
+            "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-2",
             "Explain {{request_id}} literally.",
@@ -6198,7 +6512,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 37);
+        assert_eq!(prompt.provenance().template_version, 38);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6301,7 +6615,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("A finding is a Worker's factual observation")
+                .contains("A finding is a prior assignment's factual observation")
         );
         assert!(
             prompt
@@ -6384,7 +6698,11 @@ mod tests {
                 .authored_preview()
                 .contains("Every current `ask` or `auto` finding must leave the wake")
         );
-        assert!(prompt.authored_preview().contains("use `task_agent_start`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Call `task_agent_start` only")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -6413,7 +6731,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("The Worker remains the sole authority")
+                .contains("a later exact assignment must independently")
         );
         assert!(
             prompt
@@ -6429,7 +6747,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("Do not run repository, provider, build, test")
+                .contains("provider connectors, CLIs, and bounded repository inspection")
         );
 
         let retired =
@@ -6484,28 +6802,30 @@ mod tests {
 
     #[test]
     fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
-        let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 25);
-        let worker = worker.authored_preview();
-        assert!(worker.contains("stage title is only a label"));
-        assert!(worker.contains("purpose-built connector"));
-        assert!(worker.contains("cached UI projection is display-only"));
-        assert!(worker.contains("observed branch family"));
-        assert!(worker.contains("worker_complete_assignment"));
-        assert!(worker.contains("`satisfied`"));
-        assert!(worker.contains("`pending`"));
-        assert!(worker.contains("`blocked`"));
-        assert!(worker.contains("task_agent_request"));
-        assert!(!worker.contains("pullRequestCandidatesByBaseBranch"));
-        assert!(!worker.contains("Azure"));
+        let steward = executor_prompt(ExecutorRole::Steward).unwrap();
+        assert_eq!(steward.provenance().template_version, 38);
+        let steward = steward.authored_preview();
+        assert!(steward.contains("stage title is only a label"));
+        assert!(steward.contains("steward_complete_assignment"));
+        assert!(steward.contains("`satisfied`"));
+        assert!(steward.contains("`pending`"));
+        assert!(steward.contains("`blocked`"));
+        assert!(steward.contains("task_agent_request"));
+        assert!(!steward.contains("pullRequestCandidatesByBaseBranch"));
+        assert!(!steward.contains("Azure"));
+
+        assert!(steward.contains("provider connectors, CLIs"));
+        assert!(steward.contains("canonical Session ID returned by the scoped `task_read`"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 9);
+        assert_eq!(step.provenance().template_version, 10);
+        assert!(step.delivered_preview().contains("purpose-built connector"));
+        assert!(step.delivered_preview().contains("observed branch family"));
         assert!(step.delivered_preview().contains("title is only a label"));
         assert!(step.delivered_preview().contains("`completeWhen`"));
         assert!(
             step.delivered_preview()
-                .contains("worker_complete_assignment")
+                .contains("steward_complete_assignment")
         );
         assert!(step.delivered_preview().contains("canonical Agent"));
         assert!(
@@ -6516,13 +6836,13 @@ mod tests {
     }
 
     #[test]
-    fn direct_worker_wake_accepts_assignment_with_full_routine_memory() {
+    fn direct_steward_wake_accepts_assignment_with_full_routine_memory() {
         let assignment = format!(
             r#"{{"status":"assigned","context":{{"markdown":"{}"}}}}"#,
             "x".repeat(80 * 1024)
         );
         let wake = assistant_wake_message(
-            ExecutorRole::Worker,
+            ExecutorRole::Steward,
             AssistantWakeReason::ScheduledCheck,
             Some("0123456789abcdef0123456789abcdef"),
             Some(&assignment),

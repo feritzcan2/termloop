@@ -265,6 +265,7 @@ export class MobileConnectionCoordinator {
           && this.inputReceipts.size + inputFrames > MAX_PENDING_INPUT_RECEIPTS) {
           throw new Error("Too much terminal input is awaiting delivery.");
         }
+        subscription.onEvent({ type: "inputDelivery", state: "sending" });
         const receipts: Promise<void>[] = [];
         try {
           for (let offset = 0; offset < bytes.byteLength; offset += MAX_INPUT_FRAME_BYTES) {
@@ -282,6 +283,7 @@ export class MobileConnectionCoordinator {
             ));
           }
           await Promise.all(receipts);
+          subscription.onEvent({ type: "inputDelivery", state: inputReceiptSource === "daemon" ? "confirmed" : "sent" });
           this.reportTerminal(subscription, "input_delivered", {
             inputBytes: bytes.byteLength,
             inputFrames,
@@ -289,6 +291,7 @@ export class MobileConnectionCoordinator {
             receiptSource: inputReceiptSource,
           });
         } catch (cause: unknown) {
+          subscription.onEvent({ type: "inputDelivery", state: "uncertain" });
           this.rejectInputReceipts(subscription, new Error("Terminal input delivery failed."));
           await Promise.allSettled(receipts);
           this.reportTerminal(subscription, "input_send_failed", {
@@ -735,11 +738,15 @@ export class MobileConnectionCoordinator {
         subscription.replayExpectedFrames = replay.frameCount;
         subscription.replayExpectedBytes = replay.outputBytes;
         subscription.replayReceivedFrames = 0;
+        subscription.onEvent({ type: "replayProgress", receivedBytes: 0, totalBytes: replay.outputBytes });
         this.reportTerminal(subscription, "replay_negotiated", {
           replayFrames: replay.frameCount,
           replayBytes: replay.outputBytes,
         });
         if (replay.frameCount === 0) this.flushReplay(subscription);
+        else subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), 5_000);
+      } else {
+        subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), REPLAY_BATCH_SETTLE_MS);
       }
       subscription.awaitingAck = false;
       subscription.attachedCount += 1;
@@ -1202,6 +1209,7 @@ export class MobileConnectionCoordinator {
       return false;
     }
     subscription.replayReceivedFrames += 1;
+    subscription.onEvent({ type: "replayProgress", receivedBytes: subscription.replayBytes, totalBytes: subscription.replayExpectedBytes ?? 0 });
     if (subscription.replayReceivedFrames === expected) this.flushReplay(subscription);
     return true;
   }
@@ -1223,10 +1231,12 @@ export class MobileConnectionCoordinator {
       offset += chunk.byteLength;
     }
     const chunks = subscription.replayChunks.length;
+    if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || replayBytes !== expectedBytes)) subscription.onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     this.clearReplay(subscription);
     if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
     if (bytes.byteLength > 0) subscription.onEvent({ type: "replay", bytes });
     if (eof) subscription.onEvent({ type: "eof" });
+    subscription.onEvent({ type: "ready" });
     if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
       this.reportTerminal(subscription, "replay_received", {
         bytes: bytes.byteLength,

@@ -1,9 +1,10 @@
+import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { dismissibleFailedProvisioningOperationId, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, ConfigurationVersionDto, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -189,32 +190,19 @@ async function legacyAssistantImproverIdentity(
     targetNameIsUnique: true,
   };
   if (target.surface === "routineBuilder") {
-    try {
-      const configurations = (await sourceApiForProject(projectId).workerConfigurationList({ projectId })).configurations;
-      const worker = configurations.find((candidate) => candidate.id === target.ownerId);
-      if (!worker) return undefined;
-      return {
-        templateRef: "builtin.builder.routine",
-        sessionName: `build: Routine for ${worker.name}`,
-        targetNameIsUnique: configurations.filter((candidate) => candidate.name === worker.name).length === 1,
-      };
-    } catch {
-      return undefined;
-    }
+    return {
+      templateRef: "builtin.builder.routine",
+      sessionName: "build: Project Routine",
+      targetNameIsUnique: true,
+    };
   }
   try {
-    const configurations = target.surface === "workerInstructions"
-      ? (await sourceApiForProject(projectId).workerConfigurationList({ projectId })).configurations
-      : (await sourceApiForProject(projectId).routineConfigurationList({ projectId })).configurations;
+    const configurations = (await sourceApiForProject(projectId).routineConfigurationList({ projectId })).configurations;
     const configuration = configurations.find((candidate) => candidate.id === target.ownerId);
     if (!configuration) return undefined;
     return {
-      templateRef: target.surface === "workerInstructions"
-        ? "builtin.improver.worker-instructions"
-        : "builtin.improver.routine-instructions",
-      sessionName: target.surface === "workerInstructions"
-        ? `improve: ${configuration.name} instructions`
-        : `improve: ${configuration.name}`,
+      templateRef: "builtin.improver.routine-instructions",
+      sessionName: `improve: ${configuration.name}`,
       targetNameIsUnique: configurations.filter((candidate) => candidate.name === configuration.name).length === 1,
     };
   } catch {
@@ -615,6 +603,7 @@ export function DesktopApp() {
   // not expose diagnostics in a packaged release.
   const [isPackaged, setIsPackaged] = useState(true);
   const [agentCapabilities, setAgentCapabilities] = useState<AgentCapabilityDto[]>([]);
+  const [agentProfiles, setAgentProfiles] = useState<AgentProfileDto[]>([]);
   const [assistantRefreshToken, setAssistantRefreshToken] = useState(0);
   const [keepAwakeRefreshToken, setKeepAwakeRefreshToken] = useState(0);
   const [taskSourceRefreshToken, setTaskSourceRefreshToken] = useState(0);
@@ -673,6 +662,7 @@ export function DesktopApp() {
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
+  const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
   const localSourceApi = desktopApi.source("local");
   const assistantProjectId = selectedProject?.id ?? "";
   const assistantReadIdentity = useMemo<AssistantReadIdentity>(() => ({
@@ -705,11 +695,19 @@ export function DesktopApp() {
   useEffect(() => {
     if (projection.connection !== "connected") {
       setAgentCapabilities([]);
+      setAgentProfiles([]);
       return;
     }
     let active = true;
-    void selectedSourceApi.agentCapabilityList().then((value) => { if (active) setAgentCapabilities(value); }).catch(() => {
+    void selectedSourceApi.agentCapabilityList().then((capabilities) => {
+      if (active) setAgentCapabilities(capabilities);
+    }).catch(() => {
       if (active) setAgentCapabilities([]);
+    });
+    void selectedSourceApi.agentProfileList().then((profiles) => {
+      if (active) setAgentProfiles(profiles);
+    }).catch(() => {
+      if (active) setAgentProfiles([]);
     });
     return () => { active = false; };
   }, [projection.connection, selectedProject?.connectionProfileId]);
@@ -972,10 +970,10 @@ export function DesktopApp() {
       return message;
     }
   }, []);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string) => {
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string) => {
     try {
       const session = requireQuickActionSession(
-        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, prompt, attachmentIds, launchTicket),
+        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket),
         projectId,
       );
       await refreshProjection();
@@ -2083,7 +2081,6 @@ export function DesktopApp() {
   const promptImprovement = useMemo(() => {
     const templateRef = (target: AssistantPromptImproverTarget) =>
       target.surface === "stewardInstructions" ? "builtin.improver.steward-instructions" as const
-      : target.surface === "workerInstructions" ? "builtin.improver.worker-instructions" as const
       : target.surface === "routineInstructions" ? "builtin.improver.routine-instructions" as const
       : target.surface === "routineBuilder" ? "builtin.builder.routine" as const
       : "builtin.builder.playbook" as const;
@@ -2282,6 +2279,8 @@ export function DesktopApp() {
       deletingTaskIds={deletingTaskIds}
       agentStatuses={presentedAgentStatuses}
       agentCapabilities={agentCapabilities}
+      agentProfiles={agentProfiles}
+      agentLibrary={agentLibrary}
       connection={projection.connection}
       connectionMessage={projection.message}
       reconnectSource={async (profileId) => {
@@ -2400,7 +2399,7 @@ export function DesktopApp() {
       loadSessionHistory={loadSessionHistory}
       loadSessionHistoryPreview={loadSessionHistoryPreview}
       resumeHistorySession={resumeHistorySession}
-      previewQuickAction={(projectId, agentId, model, permission, reasoning, prompt, attachmentIds) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, prompt, attachmentIds)}
+      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={(attachmentId) => {
         const identity = connectionAttachmentIdentity(attachmentId);
@@ -2494,6 +2493,7 @@ export function DesktopApp() {
       resizeLayoutSplit={resizeLayoutSplit}
       closePane={closePane}
       clearPane={clearPane}
+      terminalPresentation={terminalPool.presentationPort}
       terminalResizeOwner={(sessionId) => terminalPool.resizeOwnership(sessionId)}
       reorderSession={reorderSession}
       agentGroups={selectedProject ? presentation.agentGroupsByProject[selectedProject.id] ?? [] : []}

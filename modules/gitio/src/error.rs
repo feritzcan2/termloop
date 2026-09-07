@@ -202,6 +202,9 @@ pub(crate) fn repository_failure(
     if contains(
         stderr,
         b"not a git repository (or any of the parent directories)",
+    ) || contains(
+        stderr,
+        b"not a git repository (or any parent up to mount point ",
     ) {
         GitError::NotRepository
     } else if contains(stderr, b"not a git repository:") {
@@ -280,6 +283,14 @@ mod tests {
                 GitOperation::RepositoryIdentity,
                 exit,
                 b"fatal: not a git repository (or any of the parent directories): .git"
+            ),
+            GitError::NotRepository
+        ));
+        assert!(matches!(
+            repository_failure(
+                GitOperation::RepositoryIdentity,
+                exit,
+                b"fatal: not a git repository (or any parent up to mount point /private-mount)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)."
             ),
             GitError::NotRepository
         ));

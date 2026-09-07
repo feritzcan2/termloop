@@ -14,6 +14,8 @@ import {
 import { scrollSequence } from "@/presentation/terminal-scroll";
 import { TerminalScreenProjection } from "@/presentation/terminal-screen";
 import { attachedImageMessage } from "@/presentation/terminal-image-message";
+import { submitTerminalTurn } from "./submit-terminal-turn";
+import { TerminalOutputBatcher } from "./output-batcher";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
 import {
   appendTerminalOutputTail,
@@ -48,10 +50,6 @@ const keyBytes: Record<TerminalKey, readonly number[]> = {
   enter: [0x0d],
 };
 
-/// Text and its newline are two writes with a gap between them. An agent TUI that
-/// reads a line and immediately redraws can otherwise consume the newline while the
-/// pasted text is still arriving, and the turn is submitted half-written.
-const SUBMIT_SETTLE_MS = 60;
 const INITIAL_ATTACH_RETRY_MS = 1_000;
 const MAX_ATTACH_RETRY_MS = 30_000;
 
@@ -66,7 +64,8 @@ export interface TerminalSession {
   /// A failed image staging request does not invalidate an otherwise-live terminal
   /// attachment. Keep its error separate so the user can still type normally.
   readonly imageError: string | undefined;
-  submit: (text: string) => void;
+  submit: (text: string) => Promise<boolean>;
+  readonly submitting: boolean;
   /// Uploads a selected image to the Session's ignored runtime directory, then
   /// sends one normal terminal turn that names the image and includes the text.
   submitWithImage: (text: string, image: SelectedImage) => Promise<boolean>;
@@ -90,6 +89,8 @@ export function useTerminalSession(
   const runtime = useMobileRuntime();
   const lifecycle = useAppLifecycle();
   const [buffer, setBuffer] = useState<TerminalBuffer>(emptyTerminalBuffer);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [reconnectRevision, setReconnectRevision] = useState(0);
@@ -99,7 +100,6 @@ export function useTerminalSession(
   /// Held in a ref, not in the effect's closure, because a scroll gesture needs to ask
   /// it what the program said about mouse tracking long after the attach ran.
   const projection = useRef<TerminalScreenProjection | undefined>(undefined);
-  const submitTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const encoder = useMemo(() => new TextEncoder(), []);
 
   const sessionId = session?.id;
@@ -156,6 +156,7 @@ export function useTerminalSession(
           bufferRef.current = {
             ...emptyTerminalBuffer(),
             nextLineId: bufferRef.current.nextLineId,
+            continuityNotice: "Earlier output could not be matched. Showing the available recent output.",
           };
         }
         effectiveEvent = { type: "replay", bytes: continuation.bytes };
@@ -190,12 +191,13 @@ export function useTerminalSession(
     /// The runtime epoch is passed through unchanged. It is a fencing identity, not a
     /// counter, so the client neither compares nor increments it — it hands back the
     /// exact value the projection gave and lets the daemon refuse a stale one.
+    const batcher = new TerminalOutputBatcher(onEvent);
     const attach = () => {
       if (!active) return;
       runtime.terminal.attach(
         connectionId,
         { id: sessionId, runtime_epoch: runtimeEpoch },
-        onEvent,
+        (event) => batcher.push(event),
       ).then(
         (value) => {
           if (active) {
@@ -223,9 +225,8 @@ export function useTerminalSession(
     attach();
 
     return () => {
+      batcher.flush();
       active = false;
-      for (const timer of submitTimers.current) clearTimeout(timer);
-      submitTimers.current.clear();
       if (attachRetry !== undefined) clearTimeout(attachRetry);
       const retainedProjection = projection.current;
       const detached = detachTerminalBuffer(bufferRef.current);
@@ -286,19 +287,17 @@ export function useTerminalSession(
     });
   }, []);
 
-  const submit = useCallback((text: string) => {
+  const submit = useCallback(async (text: string): Promise<boolean> => {
     const open = attachment.current;
-    if (!canSend || open === undefined || text.length === 0) return;
-    void deliver(open, encoder.encode(text)).then((delivered) => {
-      if (!delivered || attachment.current !== open) return;
-      const timer = setTimeout(() => {
-        submitTimers.current.delete(timer);
-        if (attachment.current === open) {
-          void deliver(open, new Uint8Array(keyBytes.enter));
-        }
-      }, SUBMIT_SETTLE_MS);
-      submitTimers.current.add(timer);
-    });
+    if (!canSend || open === undefined || text.length === 0 || submittingRef.current) return false;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      return await submitTerminalTurn(open, encoder.encode(text), () => attachment.current === open, deliver);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   }, [canSend, deliver, encoder]);
 
   const submitWithImage = useCallback(async (text: string, image: SelectedImage): Promise<boolean> => {
@@ -317,17 +316,7 @@ export function useTerminalSession(
       await open.reconnect();
       if (attachment.current !== open) return false;
       const message = attachedImageMessage(attachmentPath, text);
-      const delivered = await deliver(open, encoder.encode(message));
-      if (!delivered || attachment.current !== open) return false;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          submitTimers.current.delete(timer);
-          if (attachment.current === open) void deliver(open, new Uint8Array(keyBytes.enter));
-          resolve();
-        }, SUBMIT_SETTLE_MS);
-        submitTimers.current.add(timer);
-      });
-      return attachment.current === open;
+      return await submitTerminalTurn(open, encoder.encode(message), () => attachment.current === open, deliver);
     } catch (cause: unknown) {
       /// Even a failed HTTP upload may have invalidated the old iOS socket. Start a
       /// bounded refresh so ordinary typing recovers without closing the app.
@@ -347,6 +336,7 @@ export function useTerminalSession(
 
   return {
     buffer,
+    submitting,
     capNotice: terminalCapNotice(buffer),
     canSend,
     error,

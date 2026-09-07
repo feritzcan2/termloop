@@ -27,14 +27,12 @@ export function promptImprovementActionLabel(
     case "routineBuilder": return "Add Routine with agent";
     case "routineInstructions": return "Improve this Routine";
     case "stewardInstructions": return "Improve Steward defaults";
-    case "workerInstructions": return "Improve Worker defaults";
   }
 }
 
 export function assistantVersionTarget(target: AssistantPromptImproverTarget): VersionedConfigurationTarget {
   switch (target.surface) {
     case "stewardInstructions": return { kind: "stewardInstructions", targetId: null };
-    case "workerInstructions": return { kind: "workerInstructions", targetId: target.ownerId };
     case "routineInstructions": return { kind: "routineInstructions", targetId: target.ownerId };
     case "routineBuilder": return { kind: "routineBuilder", targetId: target.ownerId };
     case "playbook": return { kind: "playbook", targetId: null };

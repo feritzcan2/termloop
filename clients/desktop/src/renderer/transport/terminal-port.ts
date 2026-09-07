@@ -9,6 +9,7 @@ const MAX_QUEUED_INPUT_BYTES = 1024 * 1024;
 
 export type AttachmentState = "connecting" | "connected" | "connectionLost" | "gatewayProcessLost";
 export type AttachmentEvent =
+  | { type: "inputDelivery"; state: "sending" | "confirmed" | "uncertain" }
   | { type: "frame"; kind: number; data: ArrayBuffer }
   | { type: "gap" }
   | { type: "inputRejected"; message: string }
@@ -62,14 +63,24 @@ export class TerminalAttachment {
       if (event.data.type === "inputCredit") {
         this.#inputCredit += Math.max(0, event.data.bytes);
         this.#flushInput();
-      } else if (this.#listener) {
-        this.#listener(event.data);
-      } else {
-        if (this.#pendingEvents.length === 16) this.#pendingEvents.shift();
-        this.#pendingEvents.push(event.data);
+        return;
       }
+      if (event.data.type === "state" && event.data.state !== "connected") {
+        if (this.#queuedInputBytes) this.#publish({ type: "inputDelivery", state: "uncertain" });
+        this.#inputQueue = [];
+        this.#queuedInputBytes = 0;
+      }
+      this.#publish(event.data);
     };
     port.start();
+  }
+
+  #publish(event: AttachmentEvent): void {
+    if (this.#listener) this.#listener(event);
+    else {
+      if (this.#pendingEvents.length === 16) this.#pendingEvents.shift();
+      this.#pendingEvents.push(event);
+    }
   }
 
   onEvent(listener: (event: AttachmentEvent) => void): () => void {

@@ -89,9 +89,14 @@ jobs:
         with:
           version: 10.14.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: runner.os != 'macOS'
         with:
           node-version: 22
           cache: pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: runner.os == 'macOS'
+        with:
+          node-version: 22
       - name: Verify pinned Zig for Ghostty
         if: runner.os == 'macOS'
         shell: bash
@@ -259,12 +264,14 @@ jobs:
           cp target/release/skills-manager-cli "$server_dir/skills-manager-cli"
           cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl"
           chmod +x "$server_dir/termloop-server" "$server_dir/termloop-companion" "$server_dir/skills-manager-cli" "$server_dir/termloopctl"
-          tar -C "$server_dir" -czf "$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.tar.gz" .
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            tar -C "$server_dir" -czf "$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.tar.gz" .
+          fi
           find clients/desktop/out -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print0 |
             while IFS= read -r -d '' file; do
               cp "$file" "$asset_dir/"
             done
-          test "$(find "$asset_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')" -ge 4
+          test "$(find "$asset_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')" -ge 3
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
@@ -272,8 +279,36 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-server-linux:
+    needs: confirm-candidate
+    runs-on: [self-hosted, Linux, X64, netcup]
+    timeout-minutes: 90
+    env:
+      TERMLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Validate release tag
+        shell: bash
+        run: test "$TERMLOOP_RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+      - uses: ./.github/actions/headless-linux
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-server-linux-x64
+          path: ${{ runner.temp }}/server-release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
-    needs: build
+    needs: [build, build-server-linux]
     runs-on: ubuntu-24.04
     environment: production
     env:
@@ -313,8 +348,8 @@ jobs:
             "termloop-desktop-macos-universal-$version.dmg"
             "termloop-desktop-macos-universal-$version.zip"
             "termloop-server-linux-x64-$version.tar.gz"
-            "termloop-desktop-linux-x64-$version.AppImage"
-            "termloop-desktop-linux-x64-$version.deb"
+            "termloop-desktop-linux-x86_64-$version.AppImage"
+            "termloop-desktop-linux-amd64-$version.deb"
             "latest-mac.yml"
             "latest-linux.yml"
           )
@@ -330,7 +365,7 @@ jobs:
               exit 1
             fi
           done < <(find release-assets -maxdepth 1 -type f)
-          (cd release-assets && sha256sum * > SHA256SUMS)
+          (cd release-assets && sha256sum -- * > SHA256SUMS)
       - name: Publish desktop update feed atomically
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID || secrets.CF_R2_ACCESS_KEY_ID }}
@@ -349,8 +384,8 @@ jobs:
           payloads=(
             "termloop-desktop-macos-universal-$version.dmg"
             "termloop-desktop-macos-universal-$version.zip"
-            "termloop-desktop-linux-x64-$version.AppImage"
-            "termloop-desktop-linux-x64-$version.deb"
+            "termloop-desktop-linux-x86_64-$version.AppImage"
+            "termloop-desktop-linux-amd64-$version.deb"
           )
           while IFS= read -r blockmap; do
             payloads+=("${blockmap##*/}")

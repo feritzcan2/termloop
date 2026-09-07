@@ -1,5 +1,7 @@
 //! Session/agent launch and resume ownership boundary.
 
+mod agent_library;
+
 mod agent_message;
 pub mod archive;
 pub(crate) mod ask_to;
@@ -54,6 +56,11 @@ use uuid::Uuid;
 const QUICK_ACTION_PREVIEW_TTL: Duration = Duration::from_secs(30);
 const MAX_QUICK_ACTION_PREVIEWS: usize = 64;
 const SESSION_NAME_MAX_CHARS: usize = 80;
+
+pub struct AgentLaunchCommit {
+    pub session: Value,
+    pub state_revision: u64,
+}
 
 pub struct CodexRuntime {
     process: termloop_platform::ManagedProcess,
@@ -204,6 +211,8 @@ pub(crate) use relocation::SessionRelocationPreviewTicket;
 #[derive(Clone)]
 struct QuickActionLaunch {
     selection: AgentLaunchSelection,
+    template_ref: String,
+    personal_agent: Option<termloop_domain::PersonalAgent>,
     prompt: String,
     attachments: Vec<termloop_invocation::QuickActionImageAttachment>,
 }
@@ -250,10 +259,6 @@ pub enum AgentMcpRole {
     Steward {
         project_id: String,
     },
-    Worker {
-        project_id: String,
-        worker_id: String,
-    },
     Helper {
         request_id: Option<String>,
     },
@@ -263,7 +268,6 @@ pub enum AgentMcpRole {
 pub enum AgentResumeLane {
     Ordinary,
     Steward,
-    Worker,
 }
 
 impl AgentMcpRole {
@@ -272,7 +276,6 @@ impl AgentMcpRole {
             Self::Interactive => termloop_invocation::AgentMcpProfile::Interactive,
             Self::Improver { .. } => termloop_invocation::AgentMcpProfile::Improver,
             Self::Steward { .. } => termloop_invocation::AgentMcpProfile::Steward,
-            Self::Worker { .. } => termloop_invocation::AgentMcpProfile::Worker,
             Self::Helper { .. } => termloop_invocation::AgentMcpProfile::Helper,
         }
     }
@@ -280,7 +283,6 @@ impl AgentMcpRole {
     fn resume_lane(&self) -> AgentResumeLane {
         match self {
             Self::Steward { .. } => AgentResumeLane::Steward,
-            Self::Worker { .. } => AgentResumeLane::Worker,
             Self::Interactive | Self::Improver { .. } | Self::Helper { .. } => {
                 AgentResumeLane::Ordinary
             }
@@ -377,6 +379,11 @@ impl AgentLaunchPlan {
         let Some(runtime_signal_sender) = self.runtime_signal_sender.take() else {
             return;
         };
+        let developer_instructions = self
+            .prepared_launch
+            .as_ref()
+            .and_then(|launch| launch.codex_app_server_developer_instructions())
+            .map(str::to_owned);
         // Codex eagerly initializes configured MCP servers while its App
         // Server is still starting. Admit only transport-level traffic before
         // process creation; complete_agent_launch promotes this exact token to
@@ -396,6 +403,7 @@ impl AgentLaunchPlan {
                     claude_config_path: &transport.claude_mcp_config_path,
                     profile: self.mcp_role.invocation_profile(),
                 }),
+            developer_instructions.as_deref(),
             // The sender is installed by `CoreRuntime::plan_agent_launch`.
             runtime_signal_sender,
         ) {
@@ -416,7 +424,8 @@ impl AgentLaunchPlan {
                 if let Some(launch) = self.prepared_launch.as_mut()
                     && launch.bind_codex_app_server_endpoint(endpoint).is_err()
                 {
-                    // Re-resolve from the typed plan below rather than ever
+                    // Re-resolve from the typed plan below, or fail closed when
+                    // it cannot preserve the reviewed content, rather than ever
                     // spawning the preview placeholder as real argv.
                     self.prepared_launch = None;
                 }
@@ -424,10 +433,11 @@ impl AgentLaunchPlan {
             }
             Err(error) => {
                 self.revoke_provisional_mcp();
-                // A Quick Action preview can carry only invocation's private
-                // runtime placeholder. If observation preparation fails,
-                // discard that payload and resolve a normal fresh launch
-                // below; never pass the placeholder to Codex as an endpoint.
+                // A preview can carry only invocation's private runtime
+                // placeholder. If observation preparation fails, discard that
+                // payload; completion may re-resolve only from a lossless typed
+                // plan and otherwise fails closed. Never pass the placeholder
+                // to Codex as an endpoint.
                 self.prepared_launch = None;
                 self.observation_warning = Some(error.to_string());
             }
@@ -781,21 +791,12 @@ impl CoreRuntime {
             .expect("quick action plan")
             .clone();
         let (observation, mcp) = preview_transport_bindings(&plan);
-        let launch = termloop_invocation::quick_action_agent_with_attachments_for_conversation(
-            &plan.agent_id,
-            &plan.cwd,
-            &quick_action.selection.model,
-            &quick_action.selection.permission,
-            &quick_action.selection.reasoning,
-            &quick_action.prompt,
-            &quick_action.attachments,
-            termloop_invocation::AgentConversationLaunch::Fresh {
-                resume_ref: plan.resume_ref.as_ref(),
-            },
-            observation,
-            mcp,
-        )
-        .map_err(invocation_error)?;
+        let conversation = termloop_invocation::AgentConversationLaunch::Fresh {
+            resume_ref: plan.resume_ref.as_ref(),
+        };
+        let launch =
+            resolve_quick_action_launch(&plan, &quick_action, conversation, observation, mcp)
+                .map_err(invocation_error)?;
         let delivered_preview = launch
             .delivered_prompt()
             .expect("Quick Action launch has a delivered prompt")
@@ -909,6 +910,9 @@ impl CoreRuntime {
             .quick_action_previews
             .remove(position)
             .expect("ticket position came from the same bounded queue");
+        if !matches!(&preview.plan.mcp_role, AgentMcpRole::Improver { .. }) {
+            return Err(CoreError::InvalidParams("launchTicket".into()));
+        }
         let selection = preview.plan.interactive_options.clone().unwrap_or_default();
         let matches = params.get("projectId").and_then(Value::as_str)
             == Some(preview.plan.project_id.as_str())
@@ -959,7 +963,7 @@ impl CoreRuntime {
     /// caller's own permission selection and no `bypassPermissions`. A
     /// every improver receives the same target-bound immutable-version profile.
     /// It works in the Project's own checkout because
-    /// deciding what a Steward, Worker, or Routine should be told means reading
+    /// deciding what a Steward or Routine should be told means reading
     /// this repository. Every fact it is given — the built-in part it may not
     /// change and the current editable value — is resolved here
     /// from durable state and rendered by `invocation`, so the client cannot
@@ -995,9 +999,6 @@ impl CoreRuntime {
                 target_kind: match bindings.surface() {
                     crate::AssistantPromptSurface::StewardInstructions => {
                         ImproverSessionTargetKind::StewardInstructions
-                    }
-                    crate::AssistantPromptSurface::WorkerInstructions => {
-                        ImproverSessionTargetKind::WorkerInstructions
                     }
                     crate::AssistantPromptSurface::RoutineInstructions => {
                         ImproverSessionTargetKind::RoutineInstructions
@@ -1346,7 +1347,7 @@ impl CoreRuntime {
             .plan
             .quick_action
             .as_ref()
-            .expect("quick action plan");
+            .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
         let prompt = params
             .get("bindings")
             .and_then(|bindings| bindings.get("prompt"))
@@ -1365,7 +1366,7 @@ impl CoreRuntime {
             && params.get("reasoning").and_then(Value::as_str)
                 == Some(quick_action.selection.reasoning.as_str())
             && params.get("templateRef").and_then(Value::as_str)
-                == Some("builtin.quick-action.free-prompt")
+                == Some(quick_action.template_ref.as_str())
             && prompt == Some(quick_action.prompt.as_str())
             && attachments == quick_action.attachments;
         if !matches {
@@ -1385,8 +1386,18 @@ impl CoreRuntime {
     }
 
     pub fn plan_quick_action_launch(&self, params: Value) -> Result<AgentLaunchPlan, CoreError> {
-        if params.get("templateRef").and_then(Value::as_str)
-            != Some("builtin.quick-action.free-prompt")
+        let template_ref = required_string(&params, "templateRef")?;
+        let personal_agent = self
+            .store
+            .agent_library()
+            .agents
+            .iter()
+            .find(|profile| profile.id == template_ref)
+            .cloned();
+        let profile = termloop_invocation::agent_profile(&template_ref);
+        if template_ref != termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+            && personal_agent.is_none()
+            && profile.is_none_or(|profile| !profile.user_invocable)
         {
             return Err(CoreError::InvalidParams("templateRef".into()));
         }
@@ -1402,6 +1413,16 @@ impl CoreRuntime {
             .to_owned();
         let attachments = quick_action_attachments(&params)?;
         let mut plan = self.plan_agent_launch(params)?;
+        if personal_agent.is_some() && !matches!(plan.agent_id.as_str(), "codex" | "claude") {
+            return Err(CoreError::AgentUnsupported);
+        }
+        if let Some(profile) = profile
+            && !profile
+                .supported_agent_ids
+                .contains(&plan.agent_id.as_str())
+        {
+            return Err(CoreError::AgentUnsupported);
+        }
         termloop_invocation::validate_quick_action_with_attachments(
             &plan.agent_id,
             &model,
@@ -1413,10 +1434,34 @@ impl CoreRuntime {
         .map_err(invocation_error)?;
         plan.quick_action = Some(QuickActionLaunch {
             selection: AgentLaunchSelection::new(&model, &permission, &reasoning),
+            template_ref,
+            personal_agent,
             prompt,
             attachments,
         });
         Ok(plan)
+    }
+
+    pub fn agent_profile_list(&self) -> Value {
+        let mut profiles = self.agent_library_get().expect("agent library projection")["profiles"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for profile in &mut profiles {
+            if let Some(object) = profile.as_object_mut() {
+                for key in [
+                    "source",
+                    "instructions",
+                    "favorite",
+                    "default_agent_id",
+                    "default_model",
+                    "default_reasoning",
+                ] {
+                    object.remove(key);
+                }
+            }
+        }
+        Value::Array(profiles)
     }
 
     pub fn plan_task_worktree_launch(
@@ -1742,7 +1787,7 @@ impl CoreRuntime {
     pub fn complete_agent_launch(
         &mut self,
         plan: &mut AgentLaunchPlan,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<AgentLaunchCommit, CoreError> {
         if !self.project_exists(&plan.project_id) {
             return Err(CoreError::NotFound);
         }
@@ -1884,24 +1929,16 @@ impl CoreRuntime {
         let launch = if let Some(launch) = plan.prepared_launch.take() {
             Ok(launch)
         } else if let Some(quick_action) = &plan.quick_action {
-            termloop_invocation::quick_action_agent_with_attachments_for_conversation(
-                &plan.agent_id,
-                &plan.cwd,
-                &quick_action.selection.model,
-                &quick_action.selection.permission,
-                &quick_action.selection.reasoning,
-                &quick_action.prompt,
-                &quick_action.attachments,
-                conversation,
-                observation,
-                mcp,
-            )
+            resolve_quick_action_launch(plan, quick_action, conversation, observation, mcp)
         } else if let Some((request_id, message)) = plan.helper_prompt.as_ref() {
             let mcp = mcp.ok_or(CoreError::AgentUnsupported)?;
+            let selection = plan.interactive_options.clone().unwrap_or_default();
             if managed_worktree {
                 termloop_invocation::ask_to_helper_agent_for_managed_worktree_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
@@ -1912,6 +1949,8 @@ impl CoreRuntime {
                 termloop_invocation::ask_to_helper_agent_for_conversation(
                     &plan.agent_id,
                     &plan.cwd,
+                    &selection.model,
+                    &selection.reasoning,
                     conversation,
                     request_id,
                     message,
@@ -1919,46 +1958,15 @@ impl CoreRuntime {
                     mcp,
                 )
             }
-        } else if let Some(options) = &plan.interactive_options {
-            if managed_worktree {
-                termloop_invocation::configured_interactive_agent_for_managed_worktree_conversation(
-                    &plan.agent_id,
-                    &plan.cwd,
-                    &options.model,
-                    &options.permission,
-                    &options.reasoning,
-                    conversation,
-                    observation,
-                    mcp,
-                )
-            } else {
-                termloop_invocation::configured_interactive_agent_for_conversation(
-                    &plan.agent_id,
-                    &plan.cwd,
-                    &options.model,
-                    &options.permission,
-                    &options.reasoning,
-                    conversation,
-                    observation,
-                    mcp,
-                )
-            }
-        } else if managed_worktree {
-            termloop_invocation::interactive_agent_for_managed_worktree_conversation(
-                &plan.agent_id,
-                &plan.cwd,
-                conversation,
-                observation,
-                mcp,
-            )
+        } else if matches!(&plan.mcp_role, AgentMcpRole::Improver { .. }) {
+            // Improve previews own the only exact copy of their target-aware
+            // invocation payload. If Codex runtime preparation discarded that
+            // placeholder-bearing payload, no typed fallback can reproduce the
+            // reviewed prompt, so fail instead of launching an interactive
+            // Agent under the Improver capability.
+            return Err(CoreError::AgentCapabilityUnproven);
         } else {
-            termloop_invocation::interactive_agent_for_conversation(
-                &plan.agent_id,
-                &plan.cwd,
-                conversation,
-                observation,
-                mcp,
-            )
+            resolve_interactive_agent_launch_with_transport(plan, conversation, observation, mcp)
         }
         .map_err(invocation_error)?;
         let program = launch.program().to_owned();
@@ -2073,6 +2081,17 @@ impl CoreRuntime {
                     updated_at_epoch_ms: now,
                 },
             )
+        } else if let Some(profile) = plan
+            .quick_action
+            .as_ref()
+            .and_then(|action| action.personal_agent.as_ref())
+        {
+            self.store.insert_personal_agent_session(
+                &self.write_authority,
+                session.clone(),
+                profile.clone(),
+                remember_launch_selection,
+            )
         } else if remember_launch_selection {
             self.store
                 .insert_session_and_remember_agent_launch(&self.write_authority, session.clone())
@@ -2080,12 +2099,15 @@ impl CoreRuntime {
             self.store
                 .insert_session(&self.write_authority, session.clone())
         };
-        if let Err(error) = inserted {
-            let _ = self.terminal.terminate(&session.id);
-            self.agent_observations.remove(&session.id);
-            self.mcp_authorizer.remove(&session.id);
-            return Err(store_error(error));
-        }
+        let state_revision = match inserted {
+            Ok(revision) => revision,
+            Err(error) => {
+                let _ = self.terminal.terminate(&session.id);
+                self.agent_observations.remove(&session.id);
+                self.mcp_authorizer.remove(&session.id);
+                return Err(store_error(error));
+            }
+        };
         if let Some(source_session_id) = plan.fork_source_session_id.as_ref() {
             self.fork_source_session_ids
                 .insert(session.id.clone(), source_session_id.clone());
@@ -2095,7 +2117,10 @@ impl CoreRuntime {
             self.codex_runtimes.insert(session.id.clone(), runtime);
         }
         self.consume_history_handle(plan);
-        Ok(self.project_session(&session))
+        Ok(AgentLaunchCommit {
+            session: self.project_session(&session),
+            state_revision,
+        })
     }
 
     pub(crate) fn ensure_launch_not_reserved(&self, cwd: &Path) -> Result<(), CoreError> {
@@ -2208,7 +2233,7 @@ fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
         .or_else(|| {
             plan.quick_action
                 .as_ref()
-                .and_then(|quick_action| quick_action_session_name(&quick_action.prompt))
+                .and_then(quick_action_launch_session_name)
         })
         .or_else(|| {
             plan.improver_session_name
@@ -2223,11 +2248,62 @@ fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
         .or_else(|| plan.fork_name.clone())
 }
 
+fn resolve_quick_action_launch(
+    plan: &AgentLaunchPlan,
+    quick_action: &QuickActionLaunch,
+    conversation: termloop_invocation::AgentConversationLaunch<'_>,
+    observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
+    mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
+) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
+    if let Some(profile) = &quick_action.personal_agent {
+        termloop_invocation::personal_agent_for_conversation(
+            profile,
+            &plan.agent_id,
+            &plan.cwd,
+            &quick_action.selection,
+            Some(&quick_action.prompt),
+            &quick_action.attachments,
+            conversation,
+            observation,
+            mcp,
+            false,
+        )
+    } else if quick_action.template_ref
+        == termloop_invocation::QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF
+    {
+        termloop_invocation::quick_action_agent_with_attachments_for_conversation(
+            &plan.agent_id,
+            &plan.cwd,
+            &quick_action.selection.model,
+            &quick_action.selection.permission,
+            &quick_action.selection.reasoning,
+            &quick_action.prompt,
+            &quick_action.attachments,
+            conversation,
+            observation,
+            mcp,
+        )
+    } else {
+        termloop_invocation::profile_quick_action_agent_with_attachments_for_conversation(
+            &quick_action.template_ref,
+            &plan.agent_id,
+            &plan.cwd,
+            &quick_action.selection.model,
+            &quick_action.selection.permission,
+            &quick_action.selection.reasoning,
+            &quick_action.prompt,
+            &quick_action.attachments,
+            conversation,
+            observation,
+            mcp,
+        )
+    }
+}
+
 fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarget> {
     if let Some(surface) = plan.improver_prompt_surface.as_deref() {
         let target_kind = match surface {
             "stewardInstructions" => ImproverSessionTargetKind::StewardInstructions,
-            "workerInstructions" => ImproverSessionTargetKind::WorkerInstructions,
             "routineInstructions" => ImproverSessionTargetKind::RoutineInstructions,
             "routineBuilder" => ImproverSessionTargetKind::RoutineBuilder,
             "playbook" => ImproverSessionTargetKind::Playbook,
@@ -2265,6 +2341,21 @@ fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarg
             target_kind: ImproverSessionTargetKind::NewRunConfiguration,
             target_id: Some(kind.clone()),
         })
+}
+
+fn quick_action_launch_session_name(quick_action: &QuickActionLaunch) -> Option<String> {
+    let first_line = quick_action.prompt.trim().lines().next()?.trim();
+    let raw_name = quick_action
+        .personal_agent
+        .as_ref()
+        .map(|profile| profile.name.as_str())
+        .or_else(|| {
+            termloop_invocation::agent_profile(&quick_action.template_ref)
+                .map(|profile| profile.name)
+        })
+        .map(|name| format!("{name} · {first_line}"))
+        .unwrap_or_else(|| first_line.to_owned());
+    quick_action_session_name(&raw_name)
 }
 
 fn quick_action_session_name(prompt: &str) -> Option<String> {
@@ -2446,6 +2537,16 @@ fn resolve_interactive_agent_launch(
                 profile: plan.mcp_role.invocation_profile(),
             })
     });
+    resolve_interactive_agent_launch_with_transport(plan, conversation, observation, mcp)
+        .map_err(invocation_error)
+}
+
+fn resolve_interactive_agent_launch_with_transport(
+    plan: &AgentLaunchPlan,
+    conversation: termloop_invocation::AgentConversationLaunch<'_>,
+    observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
+    mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
+) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
     let managed_worktree = plan.has_observed_managed_worktree();
     if let Some(assignment) = &plan.steward_task_assignment {
         let selection = plan.interactive_options.clone().unwrap_or_default();
@@ -2487,7 +2588,7 @@ fn resolve_interactive_agent_launch(
     } else if let Some(workflow) = &plan.workflow_launch {
         let selection = plan.interactive_options.clone().unwrap_or_default();
         if !managed_worktree {
-            return Err(CoreError::CapabilityDenied);
+            return Err(termloop_invocation::InvocationError::InvalidPromptBinding);
         }
         termloop_invocation::task_agent_with_workflow_for_managed_worktree_conversation(
             &plan.agent_id,
@@ -2582,9 +2683,9 @@ fn resolve_interactive_agent_launch(
             mcp,
         )
     }
-    .map_err(invocation_error)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_codex_runtime(
     session_id: &str,
     runtime_epoch: u64,
@@ -2592,6 +2693,7 @@ pub(crate) fn start_codex_runtime(
     managed_worktree: bool,
     provider_process_directory: &Path,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
     signals: Sender<crate::AgentRuntimeSignal>,
 ) -> Result<CodexRuntime, crate::AgentResumePreparationError> {
     let port = termloop_platform::reserve_loopback_port()
@@ -2603,9 +2705,16 @@ pub(crate) fn start_codex_runtime(
             cwd,
             session_id,
             mcp,
+            developer_instructions,
         )
     } else {
-        termloop_invocation::codex_app_server(&upstream_endpoint, cwd, session_id, mcp)
+        termloop_invocation::codex_app_server(
+            &upstream_endpoint,
+            cwd,
+            session_id,
+            mcp,
+            developer_instructions,
+        )
     }
     .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
     let mut process = termloop_platform::spawn_tracked_managed_process_with_environment(

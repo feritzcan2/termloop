@@ -6,33 +6,14 @@ use termloop_contract::current::{
 
 #[test]
 fn routine_configuration_surface_is_strict_and_scoped() {
-    for method in [
-        "worker.configurationList",
-        "worker.configurationCreate",
-        "worker.configurationUpdate",
-        "worker.configurationDelete",
-        "routine.runNow",
-    ] {
-        assert!(METHODS.contains(&method));
-    }
-    assert!(READ_ONLY_METHODS.contains(&"worker.configurationList"));
+    assert!(METHODS.contains(&"routine.runNow"));
+    assert!(!METHODS.contains(&"worker.configurationList"));
+    assert!(!METHODS.contains(&"worker.configurationCreate"));
+    assert!(!METHODS.contains(&"worker.configurationUpdate"));
+    assert!(!METHODS.contains(&"worker.configurationDelete"));
     assert!(!METHODS.contains(&"worker.ready"));
-    assert!(COMPANION_METHODS.contains(&"worker.configurationList"));
-    assert!(!READ_ONLY_METHODS.contains(&"worker.configurationCreate"));
-    assert!(!COMPANION_METHODS.contains(&"worker.configurationUpdate"));
     assert!(!METHODS.contains(&"worker.taskBoard"));
     assert!(!READ_ONLY_METHODS.contains(&"routine.runNow"));
-    assert!(validate_method_params(
-        "worker.configurationCreate",
-        &json!({
-            "projectId":"project-1", "name":"Worker 1", "agentId":"codex",
-            "enabled":true,
-            "model":"default", "permission":"default", "reasoning":"default",
-            "pingIntervalSeconds":60,
-            "workerPrompt":"", "systemPrompt":"",
-            "expectedRevision":1
-        })
-    ));
     for method in [
         "routine.configurationList",
         "routine.configurationCreate",
@@ -50,7 +31,7 @@ fn routine_configuration_surface_is_strict_and_scoped() {
         "routine.configurationCreate",
         &json!({
             "projectId":"project-1", "triggerMode":"schedule", "name":"Project follow-ups",
-            "workerId":"worker-1", "scheduleIntervalSeconds":300,
+            "scheduleIntervalSeconds":300,
             "whileWaiting":{"mode":"off","instructions":""},
             "expectedRevision":1
         })
@@ -59,7 +40,7 @@ fn routine_configuration_surface_is_strict_and_scoped() {
         "routine.configurationCreate",
         &json!({
             "projectId":"project-1", "triggerMode":"schedule", "name":"Project follow-ups",
-            "workerId":"worker-1", "agentId":"codex", "scheduleIntervalSeconds":300,
+            "agentId":"codex", "scheduleIntervalSeconds":300,
             "whileWaiting":{"mode":"off","instructions":""},
             "expectedRevision":1
         })
@@ -68,36 +49,12 @@ fn routine_configuration_surface_is_strict_and_scoped() {
 
 #[test]
 fn routine_configuration_result_is_current_field_bounded_and_not_count_limited() {
-    assert!(validate_method_result(
-        "worker.configurationList",
-        &json!({
-            "configurations":[{
-                "id":"worker-1", "projectId":"project-1", "name":"Worker 1",
-                "agentId":"codex", "model":"gpt-5.6-sol",
-                "permission":"bypassPermissions", "reasoning":"high", "enabled":true,
-                "pingIntervalSeconds":60,
-                "workerPrompt":"Handle Slack Routines.",
-                "systemPrompt":"Answer briefly.",
-                "executorSessionId":"session-1", "generation":2,
-                "updatedAtEpochMs":1
-            }],
-            "promptContexts":[{
-                "workerId":"worker-1",
-                "initialPrompt":"Activate the persistent Worker.",
-                "instructionsPrompt":"Protected runtime. Handle Slack Routines. Answer briefly.",
-                "instructionDelivery":"codexDeveloperInstructions",
-                "protectedPrompt":"Protected runtime.",
-                "wakePrompt":"Claim the next due Routine."
-            }],
-            "stateRevision":2
-        })
-    ));
     let configurations = (0..20)
         .map(|index| {
             json!({
                 "id":format!("routine-{index}"), "projectId":"project-1",
                 "triggerMode":"schedule",
-                "name":format!("Project follow-ups {index}"), "workerId":"worker-1", "enabled":false,
+                "name":format!("Project follow-ups {index}"), "enabled":false,
                 "scheduleIntervalSeconds":300,
                 "instructions":"Visible assignment instructions", "generation":1,
                 "whileWaiting":{"mode":"off","instructions":"Propose creating a Task for a new blocking follow-up."},
@@ -123,7 +80,7 @@ fn routine_configuration_result_is_current_field_bounded_and_not_count_limited()
             "routineId":"routine-1", "triggerMode":"schedule", "name":"Project follow-ups",
             "instructions":"Inspect the configured source and report current facts.",
             "whileWaiting":{"mode":"ask","instructions":"Propose a response only for a blocking follow-up."},
-            "workerId":"worker-1", "enabled":true,
+            "enabled":true,
             "scheduleIntervalSeconds":300,
             "expectedRevision":2
         })
@@ -136,7 +93,7 @@ fn routine_reports_are_natural_language_bounded_and_not_client_attributed() {
     assert!(COMPANION_METHODS.contains(&"routine.runtimeList"));
     assert!(!METHODS.contains(&"steward.report"));
     assert!(!validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({
             "checkId":"check-1", "status":"satisfied",
             "evidence":"A current Task likely needs attention.",
@@ -145,7 +102,7 @@ fn routine_reports_are_natural_language_bounded_and_not_client_attributed() {
         })
     ));
     assert!(validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({
             "checkId":"check-1", "status":"satisfied",
             "evidence":"The recurring scan completed.",
@@ -164,7 +121,7 @@ fn routine_reports_are_natural_language_bounded_and_not_client_attributed() {
         })
     ));
     assert!(!validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({
             "checkId":"check-1", "status":"satisfied", "evidence":"Inspected current state.",
             "expectedContextRevision":1,
@@ -175,7 +132,7 @@ fn routine_reports_are_natural_language_bounded_and_not_client_attributed() {
         })
     ));
     assert!(validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({
             "checkId":"check-1", "status":"blocked",
             "evidence":"The configured provider binding is unavailable.",
@@ -183,7 +140,7 @@ fn routine_reports_are_natural_language_bounded_and_not_client_attributed() {
         })
     ));
     assert!(!validate_mcp_tool_params(
-        "worker_complete_assignment",
+        "steward_complete_assignment",
         &json!({
             "checkId":"check-1", "status":"warning", "evidence":"unsupported status",
             "sourceReferences":[], "findings":[], "relatedTaskIds":[]

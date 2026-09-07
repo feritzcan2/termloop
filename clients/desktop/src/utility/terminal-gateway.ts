@@ -1,3 +1,4 @@
+import { InputReceiptLedger } from "./input-receipts.js";
 import WebSocket, { type RawData } from "ws";
 import {
   ACCESS_PROTOCOL_IDENTITY,
@@ -15,6 +16,9 @@ import {
   KIND_ERROR,
   KIND_FOCUS,
   KIND_INPUT,
+  KIND_INPUT_ACK,
+  KIND_ENABLE_INPUT_ACK,
+  replayRequestPayload,
   KIND_RESIZE,
   KIND_RESIZE_OWNERSHIP,
   decodeFrame,
@@ -50,6 +54,7 @@ type Attachment = {
   queue: QueuedFrame[];
   gapPending: boolean;
   attached: boolean;
+  receipts: InputReceiptLedger;
   attachRetryMs: number;
   attachRetryTimer: ReturnType<typeof setTimeout> | undefined;
 };
@@ -117,6 +122,10 @@ function addAttachment(sessionId: string, runtimeEpoch: number, port: Electron.M
     queue: [],
     gapPending: false,
     attached: false,
+    receipts: new InputReceiptLedger((bytes, confirmed) => {
+      port.postMessage({ type: "inputCredit", bytes });
+      port.postMessage({ type: "inputDelivery", state: confirmed ? "confirmed" : "uncertain" });
+    }),
     attachRetryMs: INITIAL_ATTACH_RETRY_MS,
     attachRetryTimer: undefined,
   };
@@ -136,6 +145,7 @@ function removeAttachment(sessionId: string, port: Electron.MessagePortMain): vo
   const current = attachments.get(sessionId);
   if (current?.port !== port) return;
   clearAttachmentRetry(current);
+  current.receipts.clear();
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(encodeFrame(
       current.sessionId,
@@ -174,12 +184,12 @@ function handlePortMessage(attachment: Attachment, message: PortMessage): void {
       attachment.port.postMessage({ type: "inputRejected", message: "terminal connection is unavailable" });
       return;
     }
+    const inputSequence = attachment.sequence++;
+    attachment.receipts.expect(inputSequence, payload.byteLength);
+    attachment.port.postMessage({ type: "inputDelivery", state: "sending" });
     socket.send(
-      encodeFrame(attachment.sessionId, attachment.runtimeEpoch, attachment.sequence++, KIND_INPUT, payload),
-      (error) => {
-        attachment.port.postMessage({ type: "inputCredit", bytes: payload.byteLength });
-        if (error) attachment.port.postMessage({ type: "inputRejected", message: "terminal input could not be delivered" });
-      },
+      encodeFrame(attachment.sessionId, attachment.runtimeEpoch, inputSequence, KIND_INPUT, payload),
+      (error) => { if (error) attachment.receipts.clear(); },
     );
   } else if (message.type === "resize") {
     attachment.dimensions = { rows: message.rows, cols: message.cols };
@@ -325,6 +335,7 @@ async function connect(): Promise<void> {
     return;
   }
   socket = nextSocket;
+  socket.send(encodeFrame("00000000-0000-0000-0000-000000000000", 0, 0n, KIND_ENABLE_INPUT_ACK));
   reconnectDelay = INITIAL_RECONNECT_MS;
   nextSocket.on("message", (raw, binary) => {
     if (binary) handleSocketMessage(raw);
@@ -343,6 +354,7 @@ function handleSocketClosed(closed: WebSocket): void {
   for (const attachment of attachments.values()) {
     clearAttachmentRetry(attachment);
     attachment.attached = false;
+    attachment.receipts.clear();
   }
   broadcastState("connectionLost");
   process.parentPort.postMessage({ type: "state", state: "connectionLost" });
@@ -367,6 +379,7 @@ function sendAttach(attachment: Attachment): void {
     attachment.runtimeEpoch,
     attachment.sequence++,
     KIND_ATTACH,
+    replayRequestPayload(),
   ));
   if (attachment.dimensions) sendResize(attachment);
 }
@@ -392,6 +405,7 @@ function handleSocketMessage(raw: RawData): void {
   }
   const attachment = attachments.get(frame.sessionId);
   if (!attachment || attachment.runtimeEpoch !== frame.epoch) return;
+  if (frame.kind === KIND_INPUT_ACK) { attachment.receipts.accept(frame.sequence); return; }
   if (frame.kind === KIND_ERROR && !attachment.attached) {
     // A resume projection can reach the desktop just before its replacement
     // PTY is registered. Keep that attach race out of terminal scrollback and

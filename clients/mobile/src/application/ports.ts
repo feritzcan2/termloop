@@ -288,6 +288,10 @@ export interface StewardPort {
 }
 
 export type TerminalEvent =
+  | { type: "notice"; message: string }
+  | { type: "replayProgress"; receivedBytes: number; totalBytes: number }
+  | { type: "ready" }
+  | { type: "inputDelivery"; state: "sending" | "confirmed" | "sent" | "uncertain" }
   | { type: "reset" }
   | { type: "replay"; bytes: Uint8Array }
   | { type: "live"; bytes: Uint8Array }

@@ -39,7 +39,7 @@ export function ScreenHeader({ title, subtitle, back, backFallback, center, righ
         <Pressable
           onPress={() => {
             const action = backNavigationAction(router.canGoBack(), backFallback !== undefined);
-            if (action === "dismissTo") router.dismissTo(backFallback!);
+            if (action === "replace") router.replace(backFallback!);
             else if (action === "back") router.back();
             else router.replace("/");
           }}

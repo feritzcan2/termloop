@@ -3,6 +3,23 @@ const AUDIO_SESSION_HANDOFF_MS = 180;
 
 type Wait = (milliseconds: number) => Promise<void>;
 
+export interface StoppableVoiceAudioStream {
+  readonly isStreaming: boolean;
+  stop(): void;
+}
+
+/// `useAudioStream` owns the native shared object and can dispose it before a
+/// consumer component's unmount cleanup runs. Both reading `isStreaming` and
+/// calling `stop` then throw a synchronous Expo FunctionCallException, so every
+/// best-effort cleanup must tolerate an already-released stream.
+export function stopVoiceAudioStream(stream: StoppableVoiceAudioStream): void {
+  try {
+    if (stream.isStreaming) stream.stop();
+  } catch {
+    // The hook has already stopped and released this native stream.
+  }
+}
+
 /// Expo's audio stream deactivates AVAudioSession as it stops. iOS can briefly
 /// return `!pri` while that recording-to-playback handoff settles, so retry only
 /// that transient condition and leave every other failure untouched.

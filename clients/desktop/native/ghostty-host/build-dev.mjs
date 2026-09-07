@@ -9,6 +9,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { findGhosttySdk, withGhosttySdk } from "./macos-sdk.mjs";
 
 if (process.platform !== "darwin") {
   throw new Error("the Ghostty native host can only be built on macOS");
@@ -29,9 +30,10 @@ const electronVersion = packageJson.devDependencies.electron;
 const nativeArch = process.arch === "x64" ? "x86_64" : process.arch;
 const nodeGyp = path.join(desktopDir, "node_modules", ".bin", "node-gyp");
 
-function execute(command, args, cwd, capture = false) {
+function execute(command, args, cwd, capture = false, env = process.env) {
   const result = spawnSync(command, args, {
     cwd,
+    env,
     encoding: capture ? "utf8" : undefined,
     stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
   });
@@ -103,6 +105,7 @@ if (!existsSync(nodeGyp)) {
 }
 const nodeGypVersion = execute(nodeGyp, ["--version"], hostDir, true);
 const xcodeVersion = execute("xcodebuild", ["-version"], repositoryDir, true);
+const ghosttySdk = findGhosttySdk();
 const ghosttyDiff = execute("git", ["diff", "--binary", "HEAD", "--"], ghosttyDir, true);
 const fingerprint = hashInputs(
   [
@@ -113,9 +116,11 @@ const fingerprint = hashInputs(
     zigVersion,
     nodeGypVersion,
     xcodeVersion,
+    ghosttySdk,
   ],
   [
     scriptPath,
+    path.join(hostDir, "macos-sdk.mjs"),
     path.join(hostDir, "binding.gyp"),
     ...collectFiles(path.join(hostDir, "src")),
   ],
@@ -138,7 +143,8 @@ if (
 }
 
 console.log(`Building Ghostty native host for Electron ${electronVersion} (${process.arch})...`);
-execute(
+console.log(`Ghostty SDK: ${ghosttySdk}`);
+withGhosttySdk(ghosttySdk, (env) => execute(
   "zig",
   [
     "build",
@@ -148,7 +154,9 @@ execute(
     "-Doptimize=ReleaseFast",
   ],
   ghosttyDir,
-);
+  false,
+  env,
+));
 execute(
   nodeGyp,
   [

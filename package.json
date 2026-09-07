@@ -1,6 +1,6 @@
 {
   "name": "termloop",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "private": true,
   "packageManager": "pnpm@10.14.0",
   "engines": {
@@ -21,8 +21,8 @@
     "rust:check": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
     "check:dev-launcher": "bash -n tools/dev/termloop-dev tools/dev/termloop-dev-supervisor tools/dev/test-termloop-dev",
     "test:dev-launcher": "bash tools/dev/test-termloop-dev",
-    "check": "pnpm contract:drift && pnpm rust:check && pnpm -r --if-present check && pnpm architecture:dag && pnpm architecture:boundaries && pnpm ci:git-owner && pnpm ci:provider-owner && pnpm check:version && pnpm check:dev-launcher",
-    "test": "cargo test --workspace && pnpm -r --if-present test && pnpm architecture:violation-fixtures && pnpm architecture:dag-fixtures && pnpm test:dev-launcher",
+    "check": "pnpm contract:drift && pnpm rust:check && pnpm -r --if-present check && pnpm architecture:dag && pnpm architecture:boundaries && pnpm ci:git-owner && pnpm ci:provider-owner && pnpm check:version && pnpm check:dev-launcher && pnpm check:server-management",
+    "test": "cargo test --workspace && pnpm -r --if-present test && pnpm architecture:violation-fixtures && pnpm architecture:dag-fixtures && pnpm test:dev-launcher && pnpm test:server-management",
     "acceptance:s0": "node tests/e2e/s0/acceptance.mjs",
     "acceptance:f1-session-navigation": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/session-navigation.mjs",
     "acceptance:f1-pane-layout": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/pane-layout.mjs",
@@ -51,7 +51,9 @@
     "f1:packaged-spike": "pnpm --filter @termloop/desktop package:dir && cargo build -p termloop-server && node spikes/f1-desktop-foundation/playwright-electron.mjs --packaged",
     "f1:agent-signal-spike": "node spikes/f1-agent-signals/run.mjs",
     "acceptance:mcp-ask-to": "node tests/e2e/mcp/acceptance.mjs",
-    "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs"
+    "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs",
+    "check:server-management": "node --check tools/server/termloop-server-manager.mjs && node --check tools/server/server-release.mjs && node --check tools/release/package-server.mjs && bash -n tools/server/install.sh .github/runner/cleanup.sh",
+    "test:server-management": "node --test tools/server/*.test.mjs"
   },
   "devDependencies": {
     "playwright": "1.55.0",

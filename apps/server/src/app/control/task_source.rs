@@ -10,7 +10,9 @@ use termloop_platform::{SecureCredentialError, SecureCredentialKey, SecureSecret
 use tokio::sync::Mutex;
 
 use super::super::AppState;
-use super::super::invalidation::InvalidationRequest;
+use super::super::invalidation::{
+    CommitImpact, queue_commit_invalidation, queue_durable_commit_invalidation,
+};
 
 const JIRA_CREDENTIAL_SERVICE: &str = "dev.termloop.task-source.jira";
 const TASK_SOURCE_SCHEDULER_TICK: tokio::time::Duration = tokio::time::Duration::from_secs(30);
@@ -374,7 +376,7 @@ pub(super) async fn create(params: Value, state: &AppState) -> Result<Value, Cor
         &view.configuration.id,
         TaskSourceCredentialPresence::None,
     );
-    publish(state, mutation.state_revision, view.observation_sequence);
+    publish(state, mutation.state_revision, view.observation_sequence).await;
     Ok(json!({
         "source": task_source_view_json(&view, "none"),
         "stateRevision": mutation.state_revision,
@@ -408,7 +410,7 @@ pub(super) async fn update(params: Value, state: &AppState) -> Result<Value, Cor
         (mutation, view)
     };
     let credential_state = cached_credential_state(state, &view.configuration.id);
-    publish(state, mutation.state_revision, view.observation_sequence);
+    publish(state, mutation.state_revision, view.observation_sequence).await;
     Ok(json!({
         "source": task_source_view_json(&view, credential_state),
         "stateRevision": mutation.state_revision,
@@ -449,7 +451,7 @@ pub(super) async fn credentials_set(params: Value, state: &AppState) -> Result<V
     state
         .observation_sequence
         .fetch_max(sequence, Ordering::Relaxed);
-    publish(state, state_revision, sequence);
+    publish(state, state_revision, sequence).await;
     Ok(json!({"sourceId": params.source_id, "credentialState": "present"}))
 }
 
@@ -482,7 +484,7 @@ pub(super) async fn delete(params: Value, state: &AppState) -> Result<Value, Cor
     };
     drop(escrow);
     forget_credential_state(state, &params.source_id);
-    publish(state, deleted.state_revision, 0);
+    publish(state, deleted.state_revision, 0).await;
     Ok(json!({
         "sourceId": deleted.source_id,
         "deleted": true,
@@ -543,11 +545,8 @@ pub(super) async fn refresh(params: Value, state: &AppState) -> Result<Value, Co
     state
         .observation_sequence
         .fetch_max(applied.observation_sequence, Ordering::Relaxed);
-    publish(
-        state,
-        state.core.lock().await.state_revision(),
-        applied.observation_sequence,
-    );
+    let state_revision = state.core.lock().await.state_revision();
+    publish(state, state_revision, applied.observation_sequence).await;
     let automations = if failure.is_none() {
         super::super::task_automation::auto_import_after_refresh(
             &applied.source_id,
@@ -620,11 +619,12 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
         let changed = imported.state_revision != before_revision;
         (imported, changed)
     };
-    publish_import(
+    queue_durable_commit_invalidation(
         state,
+        CommitImpact::TaskSourceImport,
         imported.state_revision,
-        params.expected_observation_sequence,
-    );
+    )
+    .await;
     let automation = if changed {
         Some(
             super::super::task_automation::action_for_task(
@@ -671,7 +671,7 @@ pub(super) async fn candidate_ignore(
             ignored,
             super::super::current_epoch_ms(),
         )?;
-    publish(state, state_revision, candidate.observation_sequence);
+    publish(state, state_revision, candidate.observation_sequence).await;
     Ok(json!({
         "candidate": task_source_candidate_json(&candidate),
         "sourceGeneration": source_generation,
@@ -932,23 +932,14 @@ fn refresh_lock(state: &AppState, source_id: &str) -> Arc<Mutex<()>> {
     lock
 }
 
-fn publish(state: &AppState, state_revision: u64, observation_sequence: u64) {
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![protocol::ProjectionTopic::TaskSource],
+async fn publish(state: &AppState, state_revision: u64, observation_sequence: u64) {
+    queue_commit_invalidation(
+        state,
+        CommitImpact::TaskSource,
         state_revision,
         observation_sequence,
-    });
-}
-
-fn publish_import(state: &AppState, state_revision: u64, observation_sequence: u64) {
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            protocol::ProjectionTopic::TaskSource,
-            protocol::ProjectionTopic::Task,
-        ],
-        state_revision,
-        observation_sequence,
-    });
+    )
+    .await;
 }
 
 #[cfg(test)]

@@ -1,10 +1,17 @@
-/// Terminal attachment has no byte total, so it cannot expose real download progress.
-/// Advance quickly at first, then stop short of completion until output actually
-/// arrives. Reaching 100 therefore always means the terminal has content to reveal.
-export function nextTerminalLoadingProgress(current: number, hasContent: boolean): number {
-  if (hasContent) return 100;
-  if (current < 70) return Math.min(70, current + 4);
-  if (current < 90) return Math.min(90, current + 2);
-  if (current < 98) return current + 1;
-  return 98;
+import type { TerminalBuffer } from "./terminal-buffer";
+
+export function terminalLoading(buffer: TerminalBuffer): { label: string; percent?: number } | undefined {
+  if (buffer.stream === "exited" || buffer.stream === "detached") return undefined;
+  if (buffer.stream === "reconnecting") return { label: "Reconnecting · last output retained" };
+  const progress = buffer.replayProgress;
+  if (progress) {
+    return {
+      label: "Loading recent output",
+      ...(progress.totalBytes > 0 ? {
+        percent: Math.max(0, Math.min(100, Math.floor(progress.receivedBytes / progress.totalBytes * 100))),
+      } : {}),
+    };
+  }
+  if (buffer.ready) return undefined;
+  return { label: buffer.stream === "attaching" ? "Connecting to terminal" : "Waiting for terminal" };
 }

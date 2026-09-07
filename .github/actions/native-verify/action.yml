@@ -42,6 +42,8 @@ runs:
       if: runner.os == 'macOS'
       with:
         version: 0.15.2
+        # Persistent runners retain these directories without a remote cache upload.
+        use-cache: ${{ runner.environment == 'github-hosted' }}
     - name: Verify pinned Zig for Ghostty
       if: runner.os == 'macOS'
       shell: bash
@@ -136,6 +138,12 @@ runs:
         else
           pnpm --filter @termloop/desktop package:dir
         fi
+    - name: Verify runner cleanup boundaries
+      if: runner.os == 'Linux'
+      shell: bash
+      run: python3 .github/runner/test-cleanup.py
+    - uses: ./.github/actions/headless-linux
+      if: inputs.run-full-gate == 'true' && runner.os == 'Linux'
     - name: Verify macOS app bundle integrity
       if: inputs.run-full-gate == 'true' && runner.os == 'macOS'
       shell: bash
@@ -157,3 +165,4 @@ runs:
           target/release/skills-manager-cli*
           clients/cli/dist/
           clients/desktop/out/
+          ${{ runner.temp }}/server-release-assets/

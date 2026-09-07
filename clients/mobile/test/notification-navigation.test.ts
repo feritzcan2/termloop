@@ -4,6 +4,7 @@ import {
   notificationDestination,
   notificationDestinationFromRemote,
   notificationRoute,
+  notificationRouteStack,
   resolveNotificationConnectionId,
 } from "../src/features/notifications/notification-navigation";
 
@@ -13,7 +14,12 @@ describe("notification navigation", () => {
       connectionId: "mac-2",
       sessionId: "session-codex",
       projectId: "project-1",
-    })).toEqual({ kind: "session", connectionId: "mac-2", sessionId: "session-codex" });
+    })).toEqual({
+      kind: "session",
+      connectionId: "mac-2",
+      projectId: "project-1",
+      sessionId: "session-codex",
+    });
   });
 
   it("keeps Steward chat on its Project instead of opening a synthetic Session", () => {
@@ -85,5 +91,24 @@ describe("notification navigation", () => {
       pathname: "/session/[sessionId]",
       params: { sessionId: "session-codex", connectionId: "mac-2" },
     });
+  });
+
+  it("seeds the owning Project beneath a notification-opened Agent", () => {
+    expect(notificationRouteStack({
+      kind: "session",
+      connectionId: "mac-2",
+      projectId: "project-2",
+      sessionId: "session-codex",
+    }, "mac-2")).toEqual([{
+      pathname: "/project/[projectId]",
+      params: { projectId: "project-2", connectionId: "mac-2" },
+    }, {
+      pathname: "/session/[sessionId]",
+      params: {
+        sessionId: "session-codex",
+        connectionId: "mac-2",
+        projectId: "project-2",
+      },
+    }]);
   });
 });

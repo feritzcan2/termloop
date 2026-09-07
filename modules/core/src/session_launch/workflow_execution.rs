@@ -130,6 +130,8 @@ impl CoreRuntime {
         let input = AskToInput {
             target,
             message,
+            model: None,
+            reasoning: None,
             idempotency_key: Some(idempotency_key),
             conversation_id,
             launch_selection: step.launch_selection.clone(),

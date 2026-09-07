@@ -21,8 +21,8 @@ describe("Shell navigation from the changes editor", () => {
   it("closes project-scoped settings pages when the Project changes", () => {
     expect(stagePageAfterProjectChange({ kind: "skill", id: "skill-a" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "contextFile", id: "context-a" })).toBeUndefined();
-    expect(stagePageAfterProjectChange({ kind: "taskSources" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "workflow", id: "workflow-a" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "taskSettings" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "mcpTool", id: "tool-a" }))
       .toEqual({ kind: "mcpTool", id: "tool-a" });
     expect(stagePageAfterProjectChange({ kind: "prompt", id: "prompt-a" }))

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { assistantRefusalMessage, isRevisionConflict, playbookPipelineWorkerId } from "./StewardPanel.js";
+import { assistantRefusalMessage, isRevisionConflict } from "./StewardPanel.js";
 import {
   adoptTemplateInto,
   changeMilestoneRetryAt,
@@ -21,6 +21,7 @@ import type {
   AgentCapabilityDto,
   StewardAgentId,
   StewardConfigurationDeleteResult,
+  StewardConfigurationDto,
   StewardConfigurationGetResult,
   StewardConfigurationSetResult,
   RoutineConfigurationCreateParams,
@@ -38,12 +39,6 @@ import type {
   PlaybookUpdateParams,
   RoutineRunNowResult,
   RoutineRuntimeListResult,
-  WorkerConfigurationCreateParams,
-  WorkerConfigurationDeleteResult,
-  WorkerConfigurationDto,
-  WorkerConfigurationListResult,
-  WorkerConfigurationMutationResult,
-  WorkerConfigurationUpdateParams,
 } from "@termloop/contract/current";
 import type { AgentStatus, Session, Task } from "../model.js";
 import {
@@ -65,20 +60,18 @@ import { persistentAssistantStatus, routineDisplayStatus, statusExplanation } fr
 export function isAssistantSession(session: Session): boolean {
   const template = session.process.template_ref;
   return template === "builtin.assistant.activation"
-    || template === "builtin.steward.executor"
-    || template === "builtin.worker.executor";
+    || template === "builtin.steward.executor";
 }
 
 export type AssistantView = "chat" | "terminal" | "configuration" | "context" | "builder";
 export type AssistantSelection =
   | { kind: "steward"; initialView?: "chat" | "terminal" | "configuration" | "builder" }
-  | { kind: "worker"; workerId: string; initialView?: "terminal" | "configuration" }
   | { kind: "routine"; routineId: string; initialView?: "context" };
 
 export type AssistantLaunchDefaults = Readonly<{
   model: string;
-  permission: WorkerConfigurationDto["permission"];
-  reasoning: WorkerConfigurationDto["reasoning"];
+  permission: StewardConfigurationDto["permission"];
+  reasoning: StewardConfigurationDto["reasoning"];
 }>;
 
 export function defaultAssistantLaunchSelection(agentId: StewardAgentId): AssistantLaunchDefaults {
@@ -133,7 +126,7 @@ export function assistantInitialView(selection: AssistantSelection): AssistantVi
     return selection.initialView ?? "chat";
   }
   if (selection.initialView) return selection.initialView;
-  return selection.kind === "worker" ? "terminal" : "context";
+  return "context";
 }
 
 export function assistantSelectionMatches(
@@ -141,7 +134,6 @@ export function assistantSelectionMatches(
   candidate: AssistantSelection,
 ): boolean {
   if (!current || current.kind !== candidate.kind) return false;
-  if (current.kind === "worker" && candidate.kind === "worker") return current.workerId === candidate.workerId;
   if (current.kind === "routine" && candidate.kind === "routine") return current.routineId === candidate.routineId;
   return current.kind === "steward";
 }
@@ -157,24 +149,14 @@ export function routineIntervalLabel(seconds: number): string {
   return `Every ${seconds}s`;
 }
 
-export function workerPingIntervalLabel(seconds: number): string {
-  return `Heartbeat · ${routineIntervalLabel(seconds)}`;
-}
-
-export function workerPingIntervalSeconds(minutes: number): number {
-  return minutes * 60;
-}
-
 export function customRoutineParams(
   projectId: string,
-  workerId: string,
   name: string,
   intervalMinutes: number,
   expectedRevision: number,
 ): RoutineConfigurationCreateParams {
   return {
     projectId,
-    workerId,
     triggerMode: "schedule",
     name: name.trim(),
     scheduleIntervalSeconds: intervalMinutes * 60,
@@ -183,15 +165,15 @@ export function customRoutineParams(
   };
 }
 
-export function openCheckingWorkerTerminal(
+export function openCheckingStewardTerminal(
   status: ReturnType<typeof routineDisplayStatus> | undefined,
-  worker: WorkerConfigurationDto,
+  steward: StewardConfigurationDto,
   selectSession: (sessionId: string) => void,
   openDetails: (selection: AssistantSelection) => void,
 ): boolean {
-  if (status?.tone !== "checking" || !worker.executorSessionId) return false;
-  selectSession(worker.executorSessionId);
-  openDetails({ kind: "worker", workerId: worker.id, initialView: "terminal" });
+  if (status?.tone !== "checking" || !steward.executorSessionId) return false;
+  selectSession(steward.executorSessionId);
+  openDetails({ kind: "steward", initialView: "terminal" });
   return true;
 }
 
@@ -201,14 +183,13 @@ export function persistentAssistantIsActive(status: AgentStatus | undefined): bo
     || status?.status === "awaitingInput";
 }
 
-/** The Worker's scheduled Routines: the ones that go looking for work on a
+/** The Project's scheduled Routines: the ones that go looking for work on a
     cadence and can open a Task. A Playbook step's on-demand completion Routine
     is listed separately. */
 export function routineCatalogRows(
-  workerId: string,
   routines: readonly RoutineConfigurationDto[],
 ): RoutineConfigurationDto[] {
-  return routines.filter((routine) => routine.workerId === workerId && routine.triggerMode !== "onDemand");
+  return routines.filter((routine) => routine.triggerMode !== "onDemand");
 }
 
 /** A step Routine has no schedule at all: it runs for the one focused Task when
@@ -269,9 +250,6 @@ export function stepRoutineIndex(playbook: PlaybookGetResult["playbook"]): {
 
 export type PlaybookStepNode = Readonly<{
   routine: RoutineConfigurationDto;
-  /** The Worker that evaluates this check; undefined only for an off-board
-      check whose Worker row is mid-delete. */
-  worker: WorkerConfigurationDto | undefined;
   /** Position on the active board; undefined for a kept or orphaned check. */
   step: number | undefined;
   keptPipeline: string | undefined;
@@ -331,24 +309,19 @@ export function requestPlaybookBuilderSetup(
 }
 
 /** The Playbook is one Project-level pipeline, so the rail draws it as one
-    numbered list in board order regardless of which Worker evaluates each
-    step. Checks belonging to kept pipelines — or to no step at all — trail
+    numbered list in board order. Checks belonging to kept pipelines — or to no step at all — trail
     in their own off-board group instead of interleaving with the steps. */
 export function playbookStepBoard(
-  workers: readonly WorkerConfigurationDto[],
   routines: readonly RoutineConfigurationDto[],
   index: ReturnType<typeof stepRoutineIndex>,
 ): { steps: PlaybookStepNode[]; offBoard: PlaybookStepNode[] } {
-  const workerById = new Map(workers.map((worker) => [worker.id, worker]));
-  const owned = routines.filter((routine) =>
-    routine.triggerMode === "onDemand" && workerById.has(routine.workerId));
+  const owned = routines.filter((routine) => routine.triggerMode === "onDemand");
   const byId = new Map(owned.map((routine) => [routine.id, routine]));
   const steps = index.activeRoutineIds.flatMap((routineId, at) => {
     const routine = byId.get(routineId);
     if (!routine) return [];
     return [{
       routine,
-      worker: workerById.get(routine.workerId),
       step: at,
       keptPipeline: undefined,
       retryDelaySeconds: index.retryDelayByRoutine.get(routineId),
@@ -359,7 +332,6 @@ export function playbookStepBoard(
     .filter((routine) => !active.has(routine.id))
     .map((routine) => ({
       routine,
-      worker: workerById.get(routine.workerId),
       step: undefined,
       keptPipeline: index.keptPipelineByRoutine.get(routine.id),
       retryDelaySeconds: index.retryDelayByRoutine.get(routine.id),
@@ -367,19 +339,9 @@ export function playbookStepBoard(
   return { steps, offBoard };
 }
 
-/** The one question asked before a Worker goes. It names what leaves with it,
-    because the Routines and the pipeline questions they answered are not
-    visible from the row being deleted. */
-export function workerDeletionQuestion(routines: number): string {
-  if (routines === 0) return "Delete this Worker?";
-  const questions = routines === 1 ? "1 Routine" : `${routines} Routines`;
-  return `Delete this Worker and its ${questions}?`;
-}
-
-export function stewardDeletionQuestion(workers: number, routines: number): string {
-  const workerCopy = workers === 1 ? "1 Worker" : `${workers} Workers`;
+export function stewardDeletionQuestion(routines: number): string {
   const routineCopy = routines === 1 ? "1 Routine" : `${routines} Routines`;
-  return `Delete the Steward and reset assistants? ${workerCopy}, ${routineCopy}, the Playbook, chat, and assistant sessions will be deleted.`;
+  return `Delete the Steward and reset assistants? ${routineCopy}, the Playbook, chat, and assistant sessions will be deleted.`;
 }
 
 export function routineTimingLabel(routine: RoutineConfigurationDto, health: RoutineHealthDto | undefined): string {
@@ -404,12 +366,8 @@ type Props = {
   selection: AssistantSelection | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   getSteward(): Promise<StewardConfigurationGetResult>;
-  setSteward(agentId: StewardAgentId, model: string, permission: WorkerConfigurationDto["permission"], reasoning: WorkerConfigurationDto["reasoning"], enabled: boolean, systemPrompt: string, expectedRevision: number): Promise<StewardConfigurationSetResult>;
+  setSteward(agentId: StewardAgentId, model: string, permission: StewardConfigurationDto["permission"], reasoning: StewardConfigurationDto["reasoning"], enabled: boolean, systemPrompt: string, expectedRevision: number): Promise<StewardConfigurationSetResult>;
   deleteSteward(expectedRevision: number): Promise<StewardConfigurationDeleteResult>;
-  listWorkers(): Promise<WorkerConfigurationListResult>;
-  createWorker(params: WorkerConfigurationCreateParams): Promise<WorkerConfigurationMutationResult>;
-  updateWorker(params: WorkerConfigurationUpdateParams): Promise<WorkerConfigurationMutationResult>;
-  deleteWorker(workerId: string, expectedRevision: number): Promise<WorkerConfigurationDeleteResult>;
   listRoutines(): Promise<RoutineConfigurationListResult>;
   listRuntime(): Promise<RoutineRuntimeListResult>;
   /** The rail is the one place the pipeline is seen and minimally adjusted:
@@ -424,7 +382,6 @@ type Props = {
   deleteRoutine(routineId: string, expectedRevision: number): Promise<RoutineConfigurationDeleteResult>;
   improvement: PromptImprovement | undefined;
   setupPromptImprovement(target: import("@termloop/contract/current").AssistantPromptImproverTarget): void;
-  restartWorker(workerId: string): Promise<string | null>;
   restartSteward(): Promise<string | null>;
   selectSession(sessionId: string): void;
   openImproverTerminal(sessionId: string): void;
@@ -436,8 +393,6 @@ type Props = {
 type AssistantRailSnapshot = {
   steward: StewardConfigurationGetResult["configuration"];
   stewardRevision: number;
-  workers: WorkerConfigurationDto[];
-  workerRevision: number;
   routines: RoutineConfigurationDto[];
   routineRevision: number;
   health: RoutineHealthDto[];
@@ -448,8 +403,6 @@ function emptyAssistantRailSnapshot(): AssistantRailSnapshot {
   return {
     steward: null,
     stewardRevision: 0,
-    workers: [],
-    workerRevision: 0,
     routines: [],
     routineRevision: 0,
     health: [],
@@ -459,7 +412,6 @@ function emptyAssistantRailSnapshot(): AssistantRailSnapshot {
 
 function assistantRailSnapshot(
   steward: StewardConfigurationGetResult,
-  workers: WorkerConfigurationListResult,
   routines: RoutineConfigurationListResult,
   runtime: RoutineRuntimeListResult,
   playbook: PlaybookGetResult,
@@ -467,8 +419,6 @@ function assistantRailSnapshot(
   return {
     steward: steward.configuration,
     stewardRevision: steward.stateRevision,
-    workers: workers.configurations,
-    workerRevision: workers.stateRevision,
     routines: routines.configurations,
     routineRevision: routines.stateRevision,
     health: runtime.health,
@@ -481,8 +431,7 @@ export function AssistantRail(props: Props) {
   // Every write cites the global store revision, and only mutation handlers
   // read it — never render. A ref, because a retry has to see the revision the
   // refresh just fetched rather than the one its closure captured.
-  const revisions = useRef({ steward: 0, worker: 0, routine: 0 });
-  const [workers, setWorkers] = useState<WorkerConfigurationDto[]>([]);
+  const revisions = useRef({ steward: 0, routine: 0 });
   const [routines, setRoutines] = useState<RoutineConfigurationDto[]>([]);
   const [health, setHealth] = useState<RoutineHealthDto[]>([]);
   // The saved document itself: the pipeline the rail draws, and the base
@@ -494,8 +443,6 @@ export function AssistantRail(props: Props) {
     setSnapshotProjectId(projectId);
     setSteward(snapshot.steward);
     revisions.current.steward = snapshot.stewardRevision;
-    setWorkers(snapshot.workers);
-    revisions.current.worker = snapshot.workerRevision;
     setRoutines(snapshot.routines);
     revisions.current.routine = snapshot.routineRevision;
     setHealth(snapshot.health);
@@ -512,26 +459,20 @@ export function AssistantRail(props: Props) {
     snapshotsByProject.current.set(props.projectId, {
       steward,
       stewardRevision: revisions.current.steward,
-      workers,
-      workerRevision: revisions.current.worker,
       routines,
       routineRevision: revisions.current.routine,
       health,
       playbook: playbookDoc,
     });
-  }, [health, playbookDoc, props.projectId, routines, snapshotProjectId, steward, workers]);
+  }, [health, playbookDoc, props.projectId, routines, snapshotProjectId, steward]);
   const stepIndex = useMemo(() => stepRoutineIndex(playbookDoc), [playbookDoc]);
   const playbookName = playbookDoc?.activePipelineName ?? "";
   const [failed, setFailed] = useState(false);
-  const [restartingWorkerId, setRestartingWorkerId] = useState<string>();
   const [restartingSteward, setRestartingSteward] = useState(false);
-  const [routineDraft, setRoutineDraft] = useState<{ workerId: string; name: string; intervalMinutes: string }>();
-  const [pingDraft, setPingDraft] = useState<{ workerId: string; intervalMinutes: string }>();
+  const [routineDraft, setRoutineDraft] = useState<{ name: string; intervalMinutes: string }>();
   const [mutatingKey, setMutatingKey] = useState<string>();
   const [draggedTaskId, setDraggedTaskId] = useState<string>();
   const [dropRoutineId, setDropRoutineId] = useState<string>();
-  /// Which Worker row is asking its one deletion question right now.
-  const [confirmingWorkerId, setConfirmingWorkerId] = useState<string>();
   const [confirmingSteward, setConfirmingSteward] = useState(false);
   /// Which pipeline step is asking its one removal question right now.
   const [confirmingStepId, setConfirmingStepId] = useState<string>();
@@ -566,7 +507,6 @@ export function AssistantRail(props: Props) {
   const [pipelineJustCreated, setPipelineJustCreated] = useState(false);
   useEffect(() => {
     setRoutineDraft(undefined);
-    setPingDraft(undefined);
     setConfirmingSteward(false);
     setTemplatesRevealed(false);
     setPipelineJustCreated(false);
@@ -578,9 +518,9 @@ export function AssistantRail(props: Props) {
     const projectId = props.projectId;
     setFailed(false);
     setActionError(undefined);
-    void Promise.all([props.getSteward(), props.listWorkers(), props.listRoutines(), props.listRuntime(), props.getPlaybook()])
-      .then(([stewardResult, workerResult, routineResult, runtimeResult, playbookResult]) => {
-        const snapshot = assistantRailSnapshot(stewardResult, workerResult, routineResult, runtimeResult, playbookResult);
+    void Promise.all([props.getSteward(), props.listRoutines(), props.listRuntime(), props.getPlaybook()])
+      .then(([stewardResult, routineResult, runtimeResult, playbookResult]) => {
+        const snapshot = assistantRailSnapshot(stewardResult, routineResult, runtimeResult, playbookResult);
         snapshotsByProject.current.set(projectId, snapshot);
         if (current) applySnapshot(projectId, snapshot);
       })
@@ -591,21 +531,20 @@ export function AssistantRail(props: Props) {
   const healthByRoutine = useMemo(() => new Map(health.map((value) => [value.routineId, value])), [health]);
   const capabilityByAgent = useMemo(() => new Map(props.agentCapabilities.map((capability) => [capability.agent_id, capability])), [props.agentCapabilities]);
   const renderedTaskRoutineIds = useMemo(() => {
-    const workerIds = new Set(workers.map((worker) => worker.id));
     return new Set(routines
-      .filter((routine) => routine.triggerMode === "onDemand" && workerIds.has(routine.workerId))
+      .filter((routine) => routine.triggerMode === "onDemand")
       .map((routine) => routine.id));
-  }, [routines, workers]);
+  }, [routines]);
   const taskPlacement = useMemo(
     () => assistantTaskPlacement(props.tasks, props.playbookRuntime, renderedTaskRoutineIds),
     [props.tasks, props.playbookRuntime, renderedTaskRoutineIds],
   );
 
   const refreshSnapshots = async () => {
-    const [stewardResult, workerResult, routineResult, runtimeResult, playbookResult] = await Promise.all([
-      props.getSteward(), props.listWorkers(), props.listRoutines(), props.listRuntime(), props.getPlaybook(),
+    const [stewardResult, routineResult, runtimeResult, playbookResult] = await Promise.all([
+      props.getSteward(), props.listRoutines(), props.listRuntime(), props.getPlaybook(),
     ]);
-    const snapshot = assistantRailSnapshot(stewardResult, workerResult, routineResult, runtimeResult, playbookResult);
+    const snapshot = assistantRailSnapshot(stewardResult, routineResult, runtimeResult, playbookResult);
     snapshotsByProject.current.set(props.projectId, snapshot);
     applySnapshot(props.projectId, snapshot);
   };
@@ -707,7 +646,6 @@ export function AssistantRail(props: Props) {
   const removeSteward = () => guard("steward", async () => {
     const result = await props.deleteSteward(revisions.current.steward);
     setSteward(null);
-    setWorkers([]);
     setRoutines([]);
     setHealth([]);
     setPlaybookDoc(null);
@@ -715,72 +653,8 @@ export function AssistantRail(props: Props) {
     setPipelineJustCreated(false);
     setTemplatesRevealed(false);
     revisions.current.steward = result.stateRevision;
-    revisions.current.worker = result.stateRevision;
     revisions.current.routine = result.stateRevision;
   });
-  const applyWorker = (worker: WorkerConfigurationDto, agentId: StewardAgentId, enabled: boolean) => guard(worker.id, async () => {
-    const launch = worker.agentId === agentId
-      ? { model: worker.model, permission: worker.permission, reasoning: worker.reasoning }
-      : defaultAssistantLaunchSelection(agentId);
-    const result = await props.updateWorker({
-      workerId: worker.id, name: worker.name, agentId, enabled,
-      model: launch.model, permission: launch.permission, reasoning: launch.reasoning,
-      pingIntervalSeconds: worker.pingIntervalSeconds,
-      workerPrompt: worker.workerPrompt, systemPrompt: worker.systemPrompt,
-      expectedRevision: revisions.current.worker,
-    });
-    setWorkers((values) => values.map((value) => value.id === worker.id ? result.configuration : value));
-    revisions.current.worker = result.stateRevision;
-  });
-  const addWorker = () => guard("add-worker", async () => {
-    const agentId: StewardAgentId = capabilityByAgent.get("codex")?.available
-      ? "codex"
-      : capabilityByAgent.get("claude")?.available ? "claude" : "codex";
-    const launch = defaultAssistantLaunchSelection(agentId);
-    const created = await props.createWorker({
-      projectId: props.projectId, name: `Worker ${workers.length + 1}`, agentId, expectedRevision: revisions.current.worker,
-      enabled: true,
-      model: launch.model, permission: launch.permission, reasoning: launch.reasoning,
-      pingIntervalSeconds: 60, workerPrompt: "", systemPrompt: "",
-    });
-    setWorkers((values) => [...values, created.configuration]);
-    revisions.current.worker = created.stateRevision;
-    props.openDetails({ kind: "worker", workerId: created.configuration.id, initialView: "configuration" });
-  });
-  const removeWorker = (worker: WorkerConfigurationDto) => guard(worker.id, async () => {
-    const result = await props.deleteWorker(worker.id, revisions.current.worker);
-    setWorkers((values) => values.filter((value) => value.id !== worker.id));
-    setRoutines((values) => values.filter((value) => value.workerId !== worker.id));
-    revisions.current.worker = result.stateRevision;
-    revisions.current.routine = result.stateRevision;
-    const playbookResult = await props.getPlaybook();
-    setPlaybookDoc(playbookResult.playbook);
-  });
-  const saveWorkerPing = (worker: WorkerConfigurationDto, intervalMinutesText: string) => {
-    const intervalMinutes = Number(intervalMinutesText);
-    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 1440) {
-      setActionError("Choose a Worker heartbeat interval from 1 minute to 24 hours.");
-      return;
-    }
-    guard(`worker-ping-${worker.id}`, async () => {
-      const result = await props.updateWorker({
-        workerId: worker.id,
-        name: worker.name,
-        agentId: worker.agentId,
-        model: worker.model,
-        permission: worker.permission,
-        reasoning: worker.reasoning,
-        enabled: worker.enabled,
-        pingIntervalSeconds: workerPingIntervalSeconds(intervalMinutes),
-        workerPrompt: worker.workerPrompt,
-        systemPrompt: worker.systemPrompt,
-        expectedRevision: revisions.current.worker,
-      });
-      setWorkers((values) => values.map((value) => value.id === worker.id ? result.configuration : value));
-      revisions.current.worker = result.stateRevision;
-      setPingDraft(undefined);
-    });
-  };
   const toggleRoutine = (
     routine: RoutineConfigurationDto,
     enabled: boolean,
@@ -788,7 +662,6 @@ export function AssistantRail(props: Props) {
     const result = await props.updateRoutine({
       routineId: routine.id,
       triggerMode: routine.triggerMode,
-      workerId: routine.workerId,
       name: routine.name,
       instructions: routine.instructions,
       whileWaiting: routine.whileWaiting,
@@ -815,10 +688,9 @@ export function AssistantRail(props: Props) {
       setActionError("Choose an interval from 1 minute to 24 hours.");
       return;
     }
-    guard(`create-routine-${draft.workerId}`, async () => {
+    guard("create-routine", async () => {
       const result = await props.createRoutine(customRoutineParams(
         props.projectId,
-        draft.workerId,
         name,
         intervalMinutes,
         revisions.current.routine,
@@ -843,7 +715,6 @@ export function AssistantRail(props: Props) {
      re-read the latest Playbook, apply the one local change, submit against
      the just-read revisions. guard() retries a lost revision race, and the
      mutation function re-derives from the fresh read each attempt. */
-  const preferredWorkerAgentId: StewardAgentId = capabilityByAgent.get("codex")?.available ? "codex" : "claude";
   const savePlaybook = (key: string, mutate: (draft: PlaybookDraft) => PlaybookDraft | undefined) =>
     guard(key, async () => {
       const latest = await props.getPlaybook();
@@ -855,8 +726,6 @@ export function AssistantRail(props: Props) {
         next,
         latest.playbook?.revision ?? 0,
         latest,
-        playbookPipelineWorkerId(latest.playbook, routines, workers) ?? null,
-        preferredWorkerAgentId,
       );
       if (decision.kind === "conflict") throw new Error("state revision changed");
       const outcome = await props.updatePlaybook(decision.params);
@@ -903,124 +772,69 @@ export function AssistantRail(props: Props) {
       <span className="ap-switch" aria-hidden="true" />
     </label>;
 
-  const assistantRow = (options: {
-    key: string; title: string; agentId: StewardAgentId | null; role: string;
-    enabled: boolean; sessionId: string | null; selection: AssistantSelection; child?: boolean;
-    worker?: WorkerConfigurationDto;
-  }) => {
-    const { key, title, agentId, role, enabled, sessionId, selection, child, worker } = options;
-    /* Until the Playbook exists the Steward row is a status line, not a door:
-       opening its empty workspace would only offer the same Build CTA again. */
-    const rowLocked = selection.kind === "steward" && firstRunLocked;
+  const assistantRow = () => {
+    const title = "Project Steward";
+    const sessionId = steward?.executorSessionId ?? null;
     const session = sessionId ? sessions.get(sessionId) : undefined;
-    const running = session?.lifecycle_state === "running";
-    const restarting = selection.kind === "steward"
-      ? restartingSteward
-      : selection.kind === "worker" && restartingWorkerId === selection.workerId;
+    const enabled = steward?.enabled ?? false;
     const agentStatus = sessionId ? props.statusesById.get(sessionId) : undefined;
     const status = persistentAssistantStatus({
       enabled,
-      running,
-      restarting,
+      running: session?.lifecycle_state === "running",
+      restarting: restartingSteward,
       active: persistentAssistantIsActive(agentStatus),
       generatedInputDelivery: agentStatus?.generatedInputDelivery,
     });
-    // Deleting a Worker deletes the Routines that ran on it and the pipeline
-    // questions they answered, so the row says how many before it asks. One
-    // question, asked once: the previous rail disabled this button instead and
-    // left the user with a Worker they could see and could not remove.
-    const workerRoutines = worker ? routines.filter((routine) => routine.workerId === worker.id).length : 0;
-    const workerArmed = worker !== undefined && confirmingWorkerId === worker.id;
-    const stewardArmed = selection.kind === "steward" && confirmingSteward;
-    return <div key={key} className={`ar-row${child ? " child" : ""}${assistantSelectionMatches(props.selection, selection) ? " selected" : ""}${enabled ? "" : " off"}`}>
-      <button type="button" className="ar-main" disabled={rowLocked}
-        title={rowLocked ? "Build the Playbook below first — the Steward turns on once it exists" : statusExplanation(status)}
-        onClick={() => {
-        if (selection.kind === "worker" && sessionId && session) props.selectSession(sessionId);
-        props.openDetails(selection);
-      }}>
-        <span className={`ar-avatar${agentId ? ` agent-${agentId}` : ""}`} aria-hidden="true">
-          <Icon name={agentId ?? "agent"} />
+    const selection = { kind: "steward" as const };
+    return <div className={`ar-row${assistantSelectionMatches(props.selection, selection) ? " selected" : ""}${enabled ? "" : " off"}`}>
+      <button type="button" className="ar-main" disabled={firstRunLocked}
+        title={firstRunLocked ? "Build the Playbook below first — the Steward turns on once it exists" : statusExplanation(status)}
+        onClick={() => props.openDetails(selection)}>
+        <span className={`ar-avatar${steward?.agentId ? ` agent-${steward.agentId}` : ""}`} aria-hidden="true">
+          <Icon name={steward?.agentId ?? "agent"} />
           <i className={`ar-dot ${status.tone}`} />
         </span>
         <span className="ar-copy">
           <strong>{title}</strong>
-          <small>
-            {stewardArmed
-              ? <em className="ar-state danger">{stewardDeletionQuestion(workers.length, routines.length)}</em>
-              : workerArmed
-              ? <em className="ar-state danger">{workerDeletionQuestion(workerRoutines)}</em>
-              : <><em className={`ar-state ${status.tone}`}>{status.label}</em>
-                <span>{status.detail ?? role}</span></>}
+          <small>{confirmingSteward
+            ? <em className="ar-state danger">{stewardDeletionQuestion(routines.length)}</em>
+            : <><em className={`ar-state ${status.tone}`}>{status.label}</em>
+              <span>{status.detail ?? (firstRunLocked ? "turns on after the Playbook" : steward ? "coordinator" : "Not configured")}</span></>}
           </small>
         </span>
       </button>
       <span className="ar-controls">
         <span className="ar-quick">
-          {selection.kind === "steward" ? <button type="button" className="ar-action" aria-label={`Restart ${title}`}
-            title={`Restart ${title}`} disabled={!enabled || restarting} onClick={() => {
+          <button type="button" className="ar-action" aria-label={`Restart ${title}`}
+            title={`Restart ${title}`} disabled={!enabled || restartingSteward} onClick={() => {
               setRestartingSteward(true);
               void props.restartSteward().then((nextSessionId) => {
                 if (!nextSessionId) return;
                 props.selectSession(nextSessionId);
                 props.openDetails({ kind: "steward", initialView: "terminal" });
               }).finally(() => setRestartingSteward(false));
-            }}><Icon name="reopen" /></button> : null}
-          {selection.kind === "worker" ? <button type="button" className="ar-action" aria-label={`Restart ${title}`}
-            title={`Restart ${title}`} disabled={!enabled || restarting} onClick={() => {
-              setRestartingWorkerId(selection.workerId);
-              void props.restartWorker(selection.workerId).then((nextSessionId) => {
-                if (!nextSessionId) return;
-                props.selectSession(nextSessionId);
-                props.openDetails({ kind: "worker", workerId: selection.workerId, initialView: "terminal" });
-              }).finally(() => setRestartingWorkerId((current) => current === selection.workerId ? undefined : current));
-            }}><Icon name="reopen" /></button> : null}
-          {selection.kind === "worker" ? <button type="button" className="ar-action" aria-label={`Configure ${title} prompts`}
-            title={`Configure ${title} prompts`} onClick={() => {
-              props.openDetails({ kind: "worker", workerId: selection.workerId, initialView: "configuration" });
-            }}><Icon name="edit" /></button> : null}
+            }}><Icon name="reopen" /></button>
           <button type="button" className="ar-action" aria-label={`Open ${title} terminal`} title={`Open ${title} terminal`}
             disabled={!sessionId || !session} onClick={() => {
               if (!sessionId || !session) return;
               props.selectSession(sessionId);
-              props.openDetails(selection.kind === "steward"
-                ? { kind: "steward", initialView: "terminal" }
-                : { kind: "worker", workerId: selection.kind === "worker" ? selection.workerId : "", initialView: "terminal" });
+              props.openDetails({ kind: "steward", initialView: "terminal" });
             }}><Icon name="terminal" /></button>
-          {selection.kind === "steward" && steward && stewardArmed ? <button type="button" className="ar-action" aria-label={`Keep ${title}`}
+          {steward && confirmingSteward ? <button type="button" className="ar-action" aria-label={`Keep ${title}`}
             title={`Keep ${title}`} onClick={() => setConfirmingSteward(false)}><Icon name="close" /></button> : null}
-          {selection.kind === "steward" && steward ? <button type="button" className={`ar-action danger${stewardArmed ? " armed" : ""}`}
-            aria-label={stewardArmed ? `Yes, delete ${title} and reset assistants` : `Remove ${title}`}
-            title={stewardArmed ? `Yes, delete ${title} and reset assistants` : `Remove ${title}`}
+          {steward ? <button type="button" className={`ar-action danger${confirmingSteward ? " armed" : ""}`}
+            aria-label={confirmingSteward ? `Yes, delete ${title} and reset assistants` : `Remove ${title}`}
+            title={confirmingSteward ? `Yes, delete ${title} and reset assistants` : `Remove ${title}`}
             disabled={mutatingKey === "steward"}
             onClick={() => {
-              if (!stewardArmed) { setConfirmingSteward(true); setActionError(undefined); return; }
+              if (!confirmingSteward) { setConfirmingSteward(true); setActionError(undefined); return; }
               void removeSteward();
             }}><Icon name="trash" /></button> : null}
-          {worker && workerArmed ? <button type="button" className="ar-action" aria-label={`Keep ${title}`}
-            title={`Keep ${title}`} onClick={() => setConfirmingWorkerId(undefined)}><Icon name="close" /></button> : null}
-          {worker ? <button type="button" className={`ar-action danger${workerArmed ? " armed" : ""}`}
-            aria-label={workerArmed ? `Yes, delete ${title}` : `Remove ${title}`}
-            title={workerArmed ? `Yes, delete ${title}` : `Remove ${title}`}
-            disabled={mutatingKey === worker.id}
-            onClick={() => {
-              if (!workerArmed) { setConfirmingWorkerId(worker.id); setActionError(undefined); return; }
-              setConfirmingWorkerId(undefined);
-              removeWorker(worker);
-            }}><Icon name="trash" /></button> : null}
         </span>
-        {selection.kind === "steward" && firstRunLocked
-          ? null
-          : <>
-            {powerSwitch(key, title, enabled,
-              selection.kind === "steward"
-                ? (next) => applySteward(steward?.agentId ?? "codex", next)
-                : (next) => { if (worker) applyWorker(worker, worker.agentId, next); })}
-            {agentSwitch(key, title, agentId,
-              selection.kind === "steward"
-                ? (next) => applySteward(next, steward?.enabled ?? false)
-                : (next) => { if (worker) applyWorker(worker, next, worker.enabled); })}
-          </>}
+        {firstRunLocked ? null : <>
+          {powerSwitch("steward", title, enabled, (next) => applySteward(steward?.agentId ?? "codex", next))}
+          {agentSwitch("steward", title, steward?.agentId ?? null, (next) => applySteward(next, enabled))}
+        </>}
       </span>
     </div>;
   };
@@ -1029,7 +843,7 @@ export function AssistantRail(props: Props) {
       the delivery board numbers them; off-board checks share the row shape but
       sit dimmed in their own trailing group. */
   const stepNode = (node: PlaybookStepNode) => {
-    const { routine, worker, step, keptPipeline } = node;
+    const { routine, step, keptPipeline } = node;
     const current = healthByRoutine.get(routine.id);
     const selection = { kind: "routine" as const, routineId: routine.id };
     const improver = routinePromptImproverSession(props.projectId, routine, routines, props.sessions);
@@ -1107,11 +921,11 @@ export function AssistantRail(props: Props) {
                 void removeStep(step);
               }}><Icon name="trash" /></button>
           </span> : null}
-          {status.tone === "checking" && worker?.executorSessionId ? <button type="button"
+          {status.tone === "checking" && steward?.executorSessionId ? <button type="button"
             className="ar-flag checking actionable"
-            aria-label={`Open ${worker.name} terminal`}
-            title={`Open ${worker.name} terminal`}
-            onClick={() => openCheckingWorkerTerminal(status, worker, props.selectSession, props.openDetails)}>{status.label}</button>
+            aria-label="Open Project Steward terminal"
+            title="Open Project Steward terminal"
+            onClick={() => openCheckingStewardTerminal(status, steward, props.selectSession, props.openDetails)}>{status.label}</button>
             : null}
           {improver ? <span className={`ar-step-improver-group${props.selectedSessionId === improver.id ? " selected" : ""}`}>
             <button type="button"
@@ -1150,10 +964,9 @@ export function AssistantRail(props: Props) {
     </div>;
   };
 
-  const board = playbookStepBoard(workers, routines, stepIndex);
+  const board = playbookStepBoard(routines, stepIndex);
   /// One first-run lock for the whole assistant hierarchy: until the Playbook
-  /// exists the Steward row is inert and adding Workers is parked too — they
-  /// would run a pipeline that does not exist yet.
+  /// exists the Steward row remains an inert status line.
   const firstRunLocked = stewardControlsLocked(steward?.enabled ?? false, board.steps.length);
   const playbookBusy = mutatingKey?.startsWith("playbook-") ?? false;
   const startPlaybookBuilder = () => {
@@ -1183,13 +996,8 @@ export function AssistantRail(props: Props) {
     </div>
     {failed ? <p className="assistant-empty">Assistant status is unavailable.</p> : null}
     {actionError ? <p className="ar-add-error" role="alert">{actionError}</p> : null}
-    {assistantRow({
-      key: "steward", title: "Project Steward", agentId: steward?.agentId ?? null,
-      role: firstRunLocked ? "turns on after the Playbook" : steward ? "coordinator" : "Not configured",
-      enabled: steward?.enabled ?? false,
-      sessionId: steward?.executorSessionId ?? null, selection: { kind: "steward" },
-    })}
-    <div className="ar-tree" aria-label="Steward workers">
+    {assistantRow()}
+    <div className="ar-tree" aria-label="Steward routines">
       <div className="ar-playbook" aria-label="Project Playbook">
         <div className="ar-playbook-controls">
           <span className="ar-routines-label">{playbookName ? `Playbook · ${playbookName}` : "Playbook"}</span>
@@ -1241,7 +1049,7 @@ export function AssistantRail(props: Props) {
         {buildCtaVisible ? <ol className="ar-pl-flow" aria-label="How the assistant starts">
           <li>An agent drafts this Project&apos;s pipeline with you</li>
           <li>The Steward turns on and walks Tasks through it</li>
-          <li>Workers run the recurring checks</li>
+          <li>The Steward verifies each due step and advances the Task</li>
         </ol> : null}
         {stewardEnableOfferVisible(pipelineJustCreated, steward?.enabled ?? false, board.steps.length)
           ? <div className="ar-pl-turn-on">
@@ -1293,47 +1101,12 @@ export function AssistantRail(props: Props) {
           {board.offBoard.map(stepNode)}
         </div> : null}
       </div>
-      {workers.map((worker) => {
-        const workerRoutines = routines.filter((routine) => routine.workerId === worker.id);
-        return <div className="ar-branch" key={worker.id}>
-        {assistantRow({
-          key: `worker-${worker.id}`,
-          title: worker.name,
-          agentId: worker.agentId,
-          role: "worker",
-          enabled: worker.enabled,
-          sessionId: worker.executorSessionId,
-          selection: { kind: "worker", workerId: worker.id },
-          child: true,
-          worker,
-        })}
-        {pingDraft?.workerId === worker.id ? <form className="ar-worker-ping-edit"
-          aria-label={`Configure heartbeat interval for ${worker.name}`}
-          onSubmit={(event) => { event.preventDefault(); saveWorkerPing(worker, pingDraft.intervalMinutes); }}>
-          <span>Heartbeat every</span>
-          <label className="ar-routine-interval" title="Worker heartbeat interval in minutes">
-            <input type="number" min="1" max="1440" step="1" autoFocus
-              aria-label="Worker heartbeat interval in minutes" value={pingDraft.intervalMinutes}
-              disabled={mutatingKey === `worker-ping-${worker.id}`}
-              onChange={(event) => setPingDraft({ workerId: worker.id, intervalMinutes: event.target.value })} />
-            <span>m</span>
-          </label>
-          <button type="submit" className="ar-create-confirm"
-            disabled={mutatingKey === `worker-ping-${worker.id}`}>Save</button>
-          <button type="button" className="ar-kind-cancel" aria-label="Cancel Worker heartbeat interval"
-            disabled={mutatingKey === `worker-ping-${worker.id}`}
-            onClick={() => { setPingDraft(undefined); setActionError(undefined); }}><Icon name="close" /></button>
-        </form> : <button type="button" className="ar-worker-ping"
-          aria-label={`Configure heartbeat interval for ${worker.name}`}
-          onClick={() => {
-            setPingDraft({ workerId: worker.id, intervalMinutes: String(worker.pingIntervalSeconds / 60) });
-            setActionError(undefined);
-          }}><span>{workerPingIntervalLabel(worker.pingIntervalSeconds)}</span><Icon name="edit" /></button>}
+      <div className="ar-branch">
         <div className="ar-routines">
           {/* Scheduled Routines only: the ones that go looking for work on a
               cadence. Playbook step checks live on the pipeline above. */}
           <span className="ar-routines-label">Scheduled checks</span>
-          {routineCatalogRows(worker.id, routines).map((routine) => {
+          {routineCatalogRows(routines).map((routine) => {
             const current = healthByRoutine.get(routine.id);
             const selection = { kind: "routine" as const, routineId: routine.id };
             const rowKey = `routine-${routine.id}`;
@@ -1350,11 +1123,11 @@ export function AssistantRail(props: Props) {
                 </span>
               </button>
               <span className="ar-routine-actions">
-                {status.tone === "checking" && worker.executorSessionId ? <button type="button"
+                {status.tone === "checking" && steward?.executorSessionId ? <button type="button"
                   className="ar-flag checking actionable"
-                  aria-label={`Open ${worker.name} terminal`}
-                  title={`Open ${worker.name} terminal`}
-                  onClick={() => openCheckingWorkerTerminal(status, worker, props.selectSession, props.openDetails)}>{status.label}</button>
+                  aria-label="Open Project Steward terminal"
+                  title="Open Project Steward terminal"
+                  onClick={() => openCheckingStewardTerminal(status, steward, props.selectSession, props.openDetails)}>{status.label}</button>
                   : <span className={`ar-flag ${status.tone}`}>{status.label}</span>}
                 {powerSwitch(rowKey, routine.name, routine.enabled,
                   (next) => toggleRoutine(routine, next))}
@@ -1366,56 +1139,42 @@ export function AssistantRail(props: Props) {
           })}
           <RoutineBuilderControl
             projectId={props.projectId}
-            worker={worker}
-            workers={workers}
             sessions={props.sessions}
             selectedSessionId={props.selectedSessionId}
             improvement={props.improvement}
-            mutating={mutatingKey === `build-routine-${worker.id}`}
-            startSetup={() => props.setupPromptImprovement({ surface: "routineBuilder", ownerId: worker.id })}
+            mutating={mutatingKey === "build-routine"}
+            startSetup={() => props.setupPromptImprovement({ surface: "routineBuilder", ownerId: null })}
             openTerminal={props.openImproverTerminal}
             dismissSession={props.dismissImproverSession}
             reload={refreshSnapshots}
           />
-          {routineDraft?.workerId === worker.id ? <form className="ar-routine-create" aria-label={`Create Routine for ${worker.name}`}
+          {routineDraft ? <form className="ar-routine-create" aria-label="Create Project Routine"
             onSubmit={(event) => { event.preventDefault(); createRoutine(routineDraft); }}>
             <input className="ar-routine-name" aria-label="Routine name" placeholder="Routine name" maxLength={80} autoFocus
-              value={routineDraft.name} disabled={mutatingKey === `create-routine-${worker.id}`}
+              value={routineDraft.name} disabled={mutatingKey === "create-routine"}
               onChange={(event) => setRoutineDraft({ ...routineDraft, name: event.target.value })} />
             <label className="ar-routine-interval" title="Run interval in minutes">
               <input type="number" min="1" max="1440" step="1" aria-label="Routine interval in minutes"
-                value={routineDraft.intervalMinutes} disabled={mutatingKey === `create-routine-${worker.id}`}
+                value={routineDraft.intervalMinutes} disabled={mutatingKey === "create-routine"}
                 onChange={(event) => setRoutineDraft({ ...routineDraft, intervalMinutes: event.target.value })} />
               <span>m</span>
             </label>
-            <button type="submit" className="ar-create-confirm" disabled={mutatingKey === `create-routine-${worker.id}`}>Create</button>
+            <button type="submit" className="ar-create-confirm" disabled={mutatingKey === "create-routine"}>Create</button>
             <button type="button" className="ar-kind-cancel" aria-label="Cancel creating Routine"
-              disabled={mutatingKey === `create-routine-${worker.id}`}
+              disabled={mutatingKey === "create-routine"}
               onClick={() => { setRoutineDraft(undefined); setActionError(undefined); }}><Icon name="close" /></button>
           </form> : <button type="button" className="ar-add sub" onClick={() => {
-            setRoutineDraft({ workerId: worker.id, name: "", intervalMinutes: "60" });
+            setRoutineDraft({ name: "", intervalMinutes: "60" });
             setActionError(undefined);
           }}><Icon name="add" />Create Routine</button>}
         </div>
-      </div>;
-      })}
-      {workers.length === 0 ? <p className="assistant-empty">{firstRunLocked
-        ? (playbookBuilder
-          ? "Workers arrive once the Builder finishes the Playbook."
-          : "Workers arrive after the Playbook — create it with the agent first.")
-        : "No Workers yet. The Steward delegates routines to Workers."}</p> : null}
-      {firstRunLocked ? null : <button type="button" className="ar-add" disabled={mutatingKey === "add-worker"}
-        onClick={addWorker}>
-        <Icon name="add" />{mutatingKey === "add-worker" ? "Adding worker…" : "Add worker"}
-      </button>}
+      </div>
     </div>
   </section>;
 }
 
 function RoutineBuilderControl(props: {
   projectId: string;
-  worker: WorkerConfigurationDto;
-  workers: readonly WorkerConfigurationDto[];
   sessions: readonly Session[];
   selectedSessionId: string | undefined;
   improvement: PromptImprovement | undefined;
@@ -1427,27 +1186,27 @@ function RoutineBuilderControl(props: {
 }) {
   const target = useMemo(() => ({
     surface: "routineBuilder" as const,
-    ownerId: props.worker.id,
-  }), [props.worker.id]);
+    ownerId: null,
+  }), []);
   const builder = usePromptImprovement(props.improvement, target, { watch: true });
-  const session = routineBuilderSession(props.projectId, props.worker, props.workers, props.sessions);
+  const session = routineBuilderSession(props.projectId, props.sessions);
   const sessionAgent = session?.process.agent_id === "claude"
     ? "claude"
     : session?.process.agent_id === "codex" ? "codex" : "agent";
-  return <div className="ar-routine-builder" aria-label={`Routine Builder for ${props.worker.name}`}>
+  return <div className="ar-routine-builder" aria-label="Project Routine Builder">
     {session ? <span className={`ar-step-improver-group${props.selectedSessionId === session.id ? " selected" : ""}`}>
       <button type="button" className="ar-step-improver" title="Open Routine Builder terminal"
         onClick={() => props.openTerminal(session.id)}>
         <Icon name={sessionAgent} /><span>Routine Builder</span><i className="ready" aria-hidden="true" />
       </button>
       <button type="button" className="ar-step-improver-close" title="Close Builder"
-        aria-label={`Close Routine Builder for ${props.worker.name}`}
+        aria-label="Close Project Routine Builder"
         onClick={() => props.dismissSession(session.id)}><Icon name="close" /></button>
     </span> : null}
     <PromptImproveButton
       improvement={props.improvement}
       busy={builder.busy || props.mutating}
-      title={session ? "Resume this Worker's Routine Builder" : "Build a Routine with an agent"}
+      title={session ? "Resume the Project Routine Builder" : "Build a Routine with an agent"}
       label={session ? "Continue Routine builder" : promptImprovementActionLabel("routineBuilder")}
       start={() => { void builder.start(); }}
       setup={props.startSetup}
