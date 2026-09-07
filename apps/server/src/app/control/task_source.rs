@@ -10,7 +10,7 @@ use termloop_platform::{SecureCredentialError, SecureCredentialKey, SecureSecret
 use tokio::sync::Mutex;
 
 use super::super::AppState;
-use super::super::invalidation::InvalidationRequest;
+use super::super::invalidation::{CommitImpact, queue_commit_invalidation};
 
 const JIRA_CREDENTIAL_SERVICE: &str = "dev.termloop.task-source.jira";
 const TASK_SOURCE_SCHEDULER_TICK: tokio::time::Duration = tokio::time::Duration::from_secs(30);
@@ -933,22 +933,21 @@ fn refresh_lock(state: &AppState, source_id: &str) -> Arc<Mutex<()>> {
 }
 
 fn publish(state: &AppState, state_revision: u64, observation_sequence: u64) {
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![protocol::ProjectionTopic::TaskSource],
+    queue_commit_invalidation(
+        state,
+        CommitImpact::TaskSource,
         state_revision,
         observation_sequence,
-    });
+    );
 }
 
 fn publish_import(state: &AppState, state_revision: u64, observation_sequence: u64) {
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            protocol::ProjectionTopic::TaskSource,
-            protocol::ProjectionTopic::Task,
-        ],
+    queue_commit_invalidation(
+        state,
+        CommitImpact::TaskSourceImport,
         state_revision,
         observation_sequence,
-    });
+    );
 }
 
 #[cfg(test)]
