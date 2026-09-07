@@ -13,11 +13,14 @@
 
 ## Invariants
 
+- Project is the durable top-level product scope.
 - Task status is only `open | closed`; its worktree is optional, and a worktree
   binding implies a branch binding.
 - IssueLink is a provider-neutral sidecar value; never add provider or remote
   fields to `TaskRecord`.
 - Session is Project-scoped. Task presence and Active Agents are derived.
+- Archive is a nullable Task current-state marker, never a third status. Archive
+  suspension values remain sidecars and never make Sessions Task children.
 - A Session name is optional user-authored current state; never add rename history.
 - An Ask-To helper Session may carry one nullable caller ID and one bounded
   current continuation descriptor containing only conversation/request IDs.

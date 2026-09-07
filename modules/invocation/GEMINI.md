@@ -13,6 +13,8 @@
 
 ## Invariants
 
+- All TermLoop-authored prompt prose and model-facing instructions are written
+  in English; user-provided multilingual content remains an explicit binding.
 - Every TermLoop-generated launch resolves to `templateRef + bindings` and a
   user-visible delivered preview. A non-empty arbitrary string is not provenance.
 - No production inline/fallback prompt. Add or change the visible asset instead.
@@ -39,10 +41,12 @@
 - Native conversation fork uses the same visible interactive template and adds
   no generated prompt; only invocation may compose its private provider argv.
 - Direct user terminal input is outside prompt provenance.
-- Accepted post-launch generated input is limited to the Ask-To follow-up and
-  final reply, same-Project Steward coordination message, and initial Task
-  assignment delivery.
-  Compose every visible prompt and terminal-safe submission byte here.
+- Every accepted generated terminal input—launch/resume initial input, Ask-To
+  request/follow-up/final reply, handover and agent message, Task assignment,
+  Steward/Companion/Worker message or wake, and any future equivalent—must be
+  composed here as one immutable, provenance-bearing
+  `GeneratedTerminalSubmission`. Compose every visible prompt and terminal-safe
+  submission byte here; no later layer may append, replay, or recompose it.
 - Task assignment may render an optional canonical Jira URL supplied
   from core's sidecar projection; an absent URL must not change delivered text.
 - Agent-specific environment additions are explicit, runtime-only, and visible

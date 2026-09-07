@@ -55,6 +55,9 @@
   connection failure; renderer reload/later reconnect must not create another.
   Missing Session references stay visible, and no screen restoration is
   promised.
+- Task archive UI renders the daemon preview and dedicated archived list.
+  Restore follows returned Session IDs through the existing inspected resume
+  pipeline; it never infers Session ownership or starts a process from layout.
 - Stale binding forget and separately acknowledged stale-folder disposal are
   composed only from named generated commands. UI renders typed gates and never
   gains direct filesystem authority.
