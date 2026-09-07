@@ -5,11 +5,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use termloop_domain::{
     AgentLaunchSelection, WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase,
-    WorkflowStep,
+    WorkflowStep, WorkflowStepKind,
 };
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WorkflowConfigurationInput {
     name: String,
     coordinator_agent_id: String,
@@ -19,6 +17,33 @@ struct WorkflowConfigurationInput {
     max_review_cycles: u8,
     steps: Vec<WorkflowStep>,
     expected_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkflowConfigurationWireInput {
+    name: String,
+    coordinator_agent_id: String,
+    model: String,
+    permission: String,
+    reasoning: String,
+    max_review_cycles: u8,
+    steps: Vec<WorkflowStepInput>,
+    expected_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkflowStepInput {
+    id: String,
+    kind: WorkflowStepKind,
+    title: String,
+    instructions: String,
+    agent_id: Option<String>,
+    reuse_step_id: Option<String>,
+    model: Option<String>,
+    permission: Option<String>,
+    reasoning: Option<String>,
 }
 
 impl CoreRuntime {
@@ -223,7 +248,7 @@ pub(crate) fn workflow_execution_json(
         "maxReviewCycles": execution.configuration.max_review_cycles,
         "phase": execution.phase,
         "status": status,
-        "steps": execution.configuration.steps,
+        "steps": execution.configuration.steps.iter().map(workflow_step_json).collect::<Vec<_>>(),
         "participants": execution.participants.iter().map(|participant| json!({
             "stepId": participant.step_id,
             "sessionId": participant.helper_session_id,
@@ -243,7 +268,44 @@ fn parse_workflow_input(mut params: Value) -> Result<WorkflowConfigurationInput,
         .ok_or_else(|| CoreError::InvalidParams("params".into()))?;
     object.remove("projectId");
     object.remove("workflowId");
-    serde_json::from_value(params).map_err(|_| CoreError::InvalidParams("workflow".into()))
+    let input: WorkflowConfigurationWireInput =
+        serde_json::from_value(params).map_err(|_| CoreError::InvalidParams("workflow".into()))?;
+    let steps = input
+        .steps
+        .into_iter()
+        .map(|step| {
+            let launch_selection = match (step.model, step.permission, step.reasoning) {
+                (Some(model), Some(permission), Some(reasoning)) => {
+                    Some(AgentLaunchSelection::new(&model, &permission, &reasoning))
+                }
+                (None, None, None) => None,
+                _ => {
+                    return Err(CoreError::InvalidParams(
+                        "workflow step launch options".into(),
+                    ));
+                }
+            };
+            Ok(WorkflowStep {
+                id: step.id,
+                kind: step.kind,
+                title: step.title,
+                instructions: step.instructions,
+                agent_id: step.agent_id,
+                reuse_step_id: step.reuse_step_id,
+                launch_selection,
+            })
+        })
+        .collect::<Result<Vec<_>, CoreError>>()?;
+    Ok(WorkflowConfigurationInput {
+        name: input.name,
+        coordinator_agent_id: input.coordinator_agent_id,
+        model: input.model,
+        permission: input.permission,
+        reasoning: input.reasoning,
+        max_review_cycles: input.max_review_cycles,
+        steps,
+        expected_revision: input.expected_revision,
+    })
 }
 
 pub(crate) fn workflow_configuration_json(configuration: &WorkflowConfiguration) -> Value {
@@ -256,9 +318,23 @@ pub(crate) fn workflow_configuration_json(configuration: &WorkflowConfiguration)
         "permission": configuration.launch_selection.permission,
         "reasoning": configuration.launch_selection.reasoning,
         "maxReviewCycles": configuration.max_review_cycles,
-        "steps": configuration.steps,
+        "steps": configuration.steps.iter().map(workflow_step_json).collect::<Vec<_>>(),
         "generation": configuration.generation,
         "updatedAtEpochMs": configuration.updated_at_epoch_ms,
+    })
+}
+
+fn workflow_step_json(step: &WorkflowStep) -> Value {
+    json!({
+        "id": step.id,
+        "kind": step.kind,
+        "title": step.title,
+        "instructions": step.instructions,
+        "agentId": step.agent_id,
+        "reuseStepId": step.reuse_step_id,
+        "model": step.launch_selection.as_ref().map(|selection| selection.model.as_str()),
+        "permission": step.launch_selection.as_ref().map(|selection| selection.permission.as_str()),
+        "reasoning": step.launch_selection.as_ref().map(|selection| selection.reasoning.as_str()),
     })
 }
 
@@ -280,14 +356,22 @@ mod tests {
                     "kind": "discuss",
                     "title": "Discuss",
                     "instructions": "Challenge the approach.",
-                    "agentId": "claude"
+                    "agentId": "claude",
+                    "reuseStepId": null,
+                    "model": "default",
+                    "permission": "bypassPermissions",
+                    "reasoning": "default"
                 },
                 {
                     "id": "implement",
                     "kind": "implement",
                     "title": "Implement",
                     "instructions": "Implement and verify.",
-                    "agentId": null
+                    "agentId": null,
+                    "reuseStepId": null,
+                    "model": null,
+                    "permission": null,
+                    "reasoning": null
                 }
             ],
             "expectedRevision": 0

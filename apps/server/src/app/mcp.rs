@@ -289,6 +289,7 @@ async fn tool_call_inner(
                     message: params.message,
                     idempotency_key: params.idempotency_key,
                     conversation_id: params.conversation_id,
+                    launch_selection: None,
                 },
                 state,
             )

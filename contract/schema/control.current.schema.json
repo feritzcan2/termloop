@@ -12147,7 +12147,10 @@
         "title",
         "instructions",
         "agentId",
-        "reuseStepId"
+        "reuseStepId",
+        "model",
+        "permission",
+        "reasoning"
       ],
       "properties": {
         "id": {
@@ -12190,6 +12193,39 @@
               "minLength": 1,
               "maxLength": 64,
               "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "permission": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/assistantPermission"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["default", "low", "medium", "high", "xhigh", "max"]
             },
             {
               "type": "null"

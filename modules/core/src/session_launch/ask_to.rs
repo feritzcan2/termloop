@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use termloop_domain::AskToContinuation;
+use termloop_domain::{AgentLaunchSelection, AskToContinuation};
 use uuid::Uuid;
 
 use crate::{CoreError, CoreRuntime, store_error};
@@ -260,6 +260,9 @@ pub struct AskToInput {
     pub message: String,
     pub idempotency_key: Option<String>,
     pub conversation_id: Option<String>,
+    /// Internal workflow launches may select the exact fresh helper
+    /// configuration. Ordinary Ask-To callers leave this unset.
+    pub launch_selection: Option<AgentLaunchSelection>,
 }
 
 impl CoreRuntime {
@@ -320,6 +323,7 @@ impl CoreRuntime {
                 .conversation_id
                 .as_ref()
                 .is_some_and(|id| id.trim().is_empty() || id.chars().count() > 128)
+            || (params.conversation_id.is_some() && params.launch_selection.is_some())
             || params
                 .message
                 .chars()
@@ -391,6 +395,15 @@ impl CoreRuntime {
         }
 
         let target = params.target;
+        if let Some(selection) = params.launch_selection.as_ref() {
+            termloop_invocation::validate_agent_configuration(
+                &target,
+                &selection.model,
+                &selection.permission,
+                &selection.reasoning,
+            )
+            .map_err(|_| CoreError::InvalidParams("askTo launch options".into()))?;
+        }
         self.observation_transport
             .as_ref()
             .filter(|transport| transport.mcp_http_supported(&target))
@@ -452,6 +465,7 @@ impl CoreRuntime {
                 request_id: Some(request_id.clone()),
             },
         )?;
+        plan.interactive_options = params.launch_selection;
         plan.task_guard = task_guard;
         plan.task_guard_requires_observation = plan.task_guard.is_some();
         plan.helper_prompt = Some((request_id.clone(), params.message));
@@ -1191,12 +1205,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn fresh_helper_plan_applies_an_internal_workflow_launch_selection() {
+        let (mut runtime, token, root) = runtime_with_asker();
+        let mut request = input(None);
+        request.launch_selection = Some(AgentLaunchSelection::new(
+            "default",
+            "bypassPermissions",
+            "high",
+        ));
+
+        let AskToPlanOutcome::Launch(plan) = runtime.plan_ask_to(&token, request).unwrap() else {
+            panic!("fresh helper must produce a launch plan");
+        };
+        assert_eq!(
+            plan.interactive_options,
+            Some(AgentLaunchSelection::new(
+                "default",
+                "bypassPermissions",
+                "high",
+            ))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn input(key: Option<&str>) -> AskToInput {
         AskToInput {
             target: "claude".into(),
             message: "Review this change".into(),
             idempotency_key: key.map(str::to_owned),
             conversation_id: None,
+            launch_selection: None,
         }
     }
 

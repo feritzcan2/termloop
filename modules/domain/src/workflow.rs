@@ -44,6 +44,10 @@ pub struct WorkflowStep {
     /// and use the same helper Agent.
     #[serde(default)]
     pub reuse_step_id: Option<String>,
+    /// Fresh helper conversations carry their exact launch selection. Reused
+    /// conversations inherit the selection already stored on that Session.
+    #[serde(default)]
+    pub launch_selection: Option<AgentLaunchSelection>,
 }
 
 impl WorkflowStep {
@@ -52,11 +56,21 @@ impl WorkflowStep {
             && bounded_text(&self.title, WORKFLOW_STEP_TITLE_MAX_BYTES)
             && bounded_text(&self.instructions, WORKFLOW_STEP_INSTRUCTIONS_MAX_BYTES)
             && match self.kind {
-                WorkflowStepKind::Discuss | WorkflowStepKind::Review => self
-                    .agent_id
-                    .as_deref()
-                    .is_some_and(agent_id_is_well_formed),
-                WorkflowStepKind::Implement | WorkflowStepKind::Fix => self.agent_id.is_none(),
+                WorkflowStepKind::Discuss | WorkflowStepKind::Review => {
+                    self.agent_id
+                        .as_deref()
+                        .is_some_and(agent_id_is_well_formed)
+                        && match self.reuse_step_id {
+                            Some(_) => self.launch_selection.is_none(),
+                            None => self
+                                .launch_selection
+                                .as_ref()
+                                .is_some_and(AgentLaunchSelection::is_well_formed),
+                        }
+                }
+                WorkflowStepKind::Implement | WorkflowStepKind::Fix => {
+                    self.agent_id.is_none() && self.launch_selection.is_none()
+                }
             }
             && (self.kind == WorkflowStepKind::Review || self.reuse_step_id.is_none())
             && self
@@ -451,6 +465,11 @@ mod tests {
                     instructions: "Debate the approach and surface tradeoffs.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: None,
+                    launch_selection: Some(AgentLaunchSelection::new(
+                        "default",
+                        "bypassPermissions",
+                        "default",
+                    )),
                 },
                 WorkflowStep {
                     id: "implement".into(),
@@ -459,6 +478,7 @@ mod tests {
                     instructions: "Implement the agreed solution and verify it.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    launch_selection: None,
                 },
                 WorkflowStep {
                     id: "review".into(),
@@ -467,6 +487,7 @@ mod tests {
                     instructions: "Review the diff and report concrete findings.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: Some("discuss".into()),
+                    launch_selection: None,
                 },
                 WorkflowStep {
                     id: "fix".into(),
@@ -475,6 +496,7 @@ mod tests {
                     instructions: "Apply the accepted review findings and verify again.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    launch_selection: None,
                 },
             ],
             generation: 1,
@@ -525,6 +547,21 @@ mod tests {
 
         let mut value = configuration();
         value.steps[0].reuse_step_id = Some("review".into());
+        assert!(!value.is_valid());
+    }
+
+    #[test]
+    fn workflow_fresh_helpers_select_launch_options_and_reuse_inherits_them() {
+        let mut value = configuration();
+        value.steps[0].launch_selection = None;
+        assert!(!value.is_valid());
+
+        let mut value = configuration();
+        value.steps[2].launch_selection = Some(AgentLaunchSelection::default());
+        assert!(!value.is_valid());
+
+        let mut value = configuration();
+        value.steps[1].launch_selection = Some(AgentLaunchSelection::default());
         assert!(!value.is_valid());
     }
 

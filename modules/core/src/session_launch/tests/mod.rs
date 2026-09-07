@@ -2626,11 +2626,11 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
         "reasoning": "default",
         "maxReviewCycles": 2,
         "steps": [
-            { "id": "discuss", "kind": "discuss", "title": "Discuss", "instructions": "Challenge the approach.", "agentId": "claude", "reuseStepId": null },
-            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement and verify.", "agentId": null, "reuseStepId": null },
-            { "id": "review-claude", "kind": "review", "title": "Review with context", "instructions": "Review the diff.", "agentId": "claude", "reuseStepId": "discuss" },
-            { "id": "review-codex", "kind": "review", "title": "Independent review", "instructions": "Review the diff independently.", "agentId": "codex", "reuseStepId": null },
-            { "id": "fix", "kind": "fix", "title": "Fix", "instructions": "Apply the combined findings.", "agentId": null, "reuseStepId": null }
+            { "id": "discuss", "kind": "discuss", "title": "Discuss", "instructions": "Challenge the approach.", "agentId": "claude", "reuseStepId": null, "model": "default", "permission": "bypassPermissions", "reasoning": "high" },
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement and verify.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null },
+            { "id": "review-claude", "kind": "review", "title": "Review with context", "instructions": "Review the diff.", "agentId": "claude", "reuseStepId": "discuss", "model": null, "permission": null, "reasoning": null },
+            { "id": "review-codex", "kind": "review", "title": "Independent review", "instructions": "Review the diff independently.", "agentId": "codex", "reuseStepId": null, "model": "gpt-5.6-sol", "permission": "bypassPermissions", "reasoning": "xhigh" },
+            { "id": "fix", "kind": "fix", "title": "Fix", "instructions": "Apply the combined findings.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null }
         ],
         "expectedRevision": runtime.state_revision()
     });
@@ -2638,6 +2638,24 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
         .handle("workflow.configurationCreate", create)
         .unwrap();
     let workflow_id = created["configuration"]["id"].as_str().unwrap().to_owned();
+    let saved_workflow = runtime.workflow_configuration(&workflow_id).unwrap();
+    assert_eq!(
+        saved_workflow.steps[0].launch_selection,
+        Some(AgentLaunchSelection::new(
+            "default",
+            "bypassPermissions",
+            "high",
+        ))
+    );
+    assert!(saved_workflow.steps[2].launch_selection.is_none());
+    assert_eq!(
+        saved_workflow.steps[3].launch_selection,
+        Some(AgentLaunchSelection::new(
+            "gpt-5.6-sol",
+            "bypassPermissions",
+            "xhigh",
+        ))
+    );
 
     let mut plan = runtime
         .plan_agent_launch(json!({
@@ -2732,7 +2750,7 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
         "reasoning": "default",
         "maxReviewCycles": 2,
         "steps": [
-            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement the updated approach.", "agentId": null, "reuseStepId": null }
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement the updated approach.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null }
         ],
         "expectedRevision": runtime.state_revision()
     });

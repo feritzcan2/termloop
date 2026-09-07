@@ -188,7 +188,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:8dc465e038de6b3e2d66e68efd6200454860d9188f3750884c2e70b2b40b6971";
+    "sha256:9fb0727be52e6f0971915239f8ecac19d783345d4e2090baee4a5f717c8f820f";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5396,6 +5396,12 @@ pub struct WorkflowStepDto {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub reuse_step_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<AssistantPermission>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21088,6 +21094,20 @@ fn validate_workflow_step_dto(value: &Value) -> bool {
                         && contract_pattern_matches("^[A-Za-z0-9_-]+$", text)
                 }) || field.is_null())
             })
+            && object.get("model").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object
+                .get("permission")
+                .is_some_and(|field| (validate_assistant_permission(field) || field.is_null()))
+            && object.get("reasoning").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+                }) || field.is_null())
+            })
             && object.keys().all(|key| {
                 [
                     "id",
@@ -21096,6 +21116,9 @@ fn validate_workflow_step_dto(value: &Value) -> bool {
                     "instructions",
                     "agentId",
                     "reuseStepId",
+                    "model",
+                    "permission",
+                    "reasoning",
                 ]
                 .contains(&key.as_str())
             })
