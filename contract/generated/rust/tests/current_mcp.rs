@@ -153,6 +153,36 @@ fn ask_to_tool_validation_is_strict_and_generated() {
 }
 
 #[test]
+fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
+    for params in [
+        json!({"target":"codex","message":"review"}),
+        json!({"target":"codex","message":"review","model":"default","reasoning":"default"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","reasoning":"high"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-astra","reasoning":"max"}),
+        json!({"target":"claude","message":"review","model":"opus","reasoning":"high"}),
+        json!({"target":"codex","message":"review","conversationId":"existing"}),
+    ] {
+        assert!(validate_mcp_tool_params("ask_to", &params), "{params}");
+        let decoded: termloop_contract::current::AskToParams =
+            serde_json::from_value(params.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), params);
+    }
+    for params in [
+        json!({"target":"codex","message":"review","model":"opus"}),
+        json!({"target":"claude","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","model":"unknown"}),
+        json!({"target":"codex","message":"review","reasoning":"unknown"}),
+        json!({"target":"codex","message":"review","model":null}),
+        json!({"target":"codex","message":"review","reasoning":null}),
+        json!({"target":"codex","message":"review","conversationId":"existing","model":"default"}),
+        json!({"target":"codex","message":"review","conversationId":"existing","reasoning":"high"}),
+    ] {
+        assert!(!validate_mcp_tool_params("ask_to", &params), "{params}");
+    }
+}
+
+#[test]
 fn send_to_agent_requires_an_exact_session_id_and_strict_result() {
     let session_id = "123e4567-e89b-42d3-a456-426614174000";
     assert!(validate_mcp_tool_params(

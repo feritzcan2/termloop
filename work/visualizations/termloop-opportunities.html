@@ -1,0 +1,320 @@
+<div id="tl-opportunities" aria-label="TermLoop Opportunities concept">
+  <style>
+    #tl-opportunities {
+      --tl-bg: light-dark(#ffffff, #18191c);
+      --tl-sidebar: light-dark(#f4f5f7, #131416);
+      --tl-soft: light-dark(#f6f7f9, #202226);
+      --tl-selected: light-dark(#edf1fa, #262d3e);
+      --tl-text: light-dark(#252932, #e5e7ed);
+      --tl-muted: light-dark(#606776, #a0a6b2);
+      --tl-line: light-dark(#dfe2e8, #303238);
+      --tl-accent: light-dark(#3b56b0, #a4b8ff);
+      --tl-action: light-dark(#344eab, #b9c8ff);
+      --tl-action-text: light-dark(#ffffff, #192340);
+      --tl-success: light-dark(#297246, #89cba4);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--tl-text);
+      background: var(--tl-bg);
+      border: 1px solid var(--tl-line);
+      border-radius: 10px;
+      overflow: clip;
+      text-align: left;
+      isolation: isolate;
+    }
+    #tl-opportunities * { box-sizing: border-box; }
+    #tl-opportunities [hidden] { display: none !important; }
+    #tl-opportunities button, #tl-opportunities select { font: inherit; }
+    #tl-opportunities button { cursor: pointer; }
+    #tl-opportunities button:disabled { cursor: default; opacity: .5; }
+    #tl-opportunities button:focus-visible, #tl-opportunities select:focus-visible { outline: 2px solid var(--tl-accent); outline-offset: 3px; }
+    #tl-opportunities h2, #tl-opportunities h3, #tl-opportunities p { margin: 0; }
+    #tl-opportunities h2 { font-size: 20px; font-weight: 500; line-height: 1.3; }
+    #tl-opportunities h3 { font-size: 18px; font-weight: 500; line-height: 1.4; }
+    #tl-opportunities strong { font-weight: 500; }
+    #tl-opportunities .tl-muted { color: var(--tl-muted); }
+    #tl-opportunities .tl-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--tl-line); background: var(--tl-sidebar); font-size: 12px; }
+    #tl-opportunities .tl-brand { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    #tl-opportunities .tl-brand-mark { font-family: ui-monospace, monospace; color: var(--tl-accent); }
+    #tl-opportunities .tl-frame { display: grid; grid-template-columns: 152px minmax(0, 1fr); }
+    #tl-opportunities .tl-sidebar { padding: 18px 10px; background: var(--tl-sidebar); border-right: 1px solid var(--tl-line); }
+    #tl-opportunities .tl-project { padding: 0 10px 22px; }
+    #tl-opportunities .tl-branch { font-family: ui-monospace, monospace; font-size: 11px; color: var(--tl-muted); margin-top: 4px; }
+    #tl-opportunities .tl-nav { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 6px; color: var(--tl-muted); margin-bottom: 3px; }
+    #tl-opportunities .tl-nav-active { background: var(--tl-selected); color: var(--tl-text); }
+    #tl-opportunities .tl-nav svg { width: 16px; height: 16px; flex-shrink: 0; }
+    #tl-opportunities .tl-nav-count { margin-left: auto; font-size: 11px; }
+    #tl-opportunities .tl-nav-label { font-size: 11px; color: var(--tl-muted); padding: 22px 10px 8px; }
+    #tl-opportunities .tl-content { min-width: 0; }
+    #tl-opportunities .tl-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 24px 24px 18px; }
+    #tl-opportunities .tl-heading p { color: var(--tl-muted); margin-top: 6px; font-size: 12px; }
+    #tl-opportunities .tl-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 1px solid var(--tl-line); border-radius: 6px; background: var(--tl-bg); color: var(--tl-text); white-space: nowrap; }
+    #tl-opportunities .tl-button:hover { background: var(--tl-soft); }
+    #tl-opportunities .tl-button svg { width: 14px; height: 14px; }
+    #tl-opportunities .tl-primary { background: var(--tl-action); color: var(--tl-action-text); border-color: transparent; }
+    #tl-opportunities .tl-primary:hover { background: var(--tl-action); filter: brightness(.94); }
+    #tl-opportunities .tl-ghost { border-color: transparent; background: transparent; color: var(--tl-muted); }
+    #tl-opportunities .tl-usage { margin: 0 24px 20px; padding: 10px 12px; background: var(--tl-soft); border-radius: 6px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; }
+    #tl-opportunities .tl-usage-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tl-muted); flex-shrink: 0; }
+    #tl-opportunities .tl-usage-meta { margin-left: auto; color: var(--tl-muted); }
+    #tl-opportunities .tl-tabs { display: flex; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--tl-line); }
+    #tl-opportunities .tl-tab { padding: 0 0 11px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--tl-muted); }
+    #tl-opportunities .tl-tab[aria-selected="true"] { border-bottom-color: var(--tl-accent); color: var(--tl-text); }
+    #tl-opportunities .tl-tab-count { margin-left: 5px; font-size: 11px; }
+    #tl-opportunities .tl-workspace { display: grid; grid-template-columns: minmax(230px, .85fr) minmax(0, 1.15fr); min-height: 435px; }
+    #tl-opportunities .tl-list { padding: 12px; border-right: 1px solid var(--tl-line); }
+    #tl-opportunities .tl-item { display: block; width: 100%; text-align: left; padding: 14px 12px; background: transparent; color: var(--tl-text); border: 1px solid transparent; border-radius: 7px; margin-bottom: 7px; white-space: normal; }
+    #tl-opportunities .tl-item:hover { background: var(--tl-soft); }
+    #tl-opportunities .tl-item[aria-pressed="true"] { background: var(--tl-selected); border-color: var(--tl-line); }
+    #tl-opportunities .tl-category { font-size: 11px; color: var(--tl-muted); display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+    #tl-opportunities .tl-category svg { width: 13px; height: 13px; }
+    #tl-opportunities .tl-item-title { display: block; font-weight: 500; }
+    #tl-opportunities .tl-item-desc { display: block; color: var(--tl-muted); font-size: 12px; margin: 6px 0 10px; }
+    #tl-opportunities .tl-item-meta { display: block; color: var(--tl-muted); font-size: 11px; }
+    #tl-opportunities .tl-detail { padding: 24px; min-width: 0; display: flex; flex-direction: column; align-items: stretch; }
+    #tl-opportunities .tl-detail-head { margin-bottom: 21px; }
+    #tl-opportunities .tl-detail-meta { color: var(--tl-muted); margin-top: 8px; font-size: 12px; }
+    #tl-opportunities .tl-section { margin-bottom: 20px; }
+    #tl-opportunities .tl-label { font-size: 12px; font-weight: 500; margin-bottom: 7px; display: block; }
+    #tl-opportunities .tl-section p { font-size: 12px; color: var(--tl-muted); }
+    #tl-opportunities .tl-evidence { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 5px; }
+    #tl-opportunities .tl-evidence span { color: var(--tl-muted); background: var(--tl-soft); padding: 3px 6px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 11px; overflow-wrap: anywhere; }
+    #tl-opportunities .tl-outcome { margin: 0; padding-left: 16px; font-size: 12px; color: var(--tl-muted); }
+    #tl-opportunities .tl-outcome li + li { margin-top: 4px; }
+    #tl-opportunities .tl-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--tl-line); }
+    #tl-opportunities .tl-launch-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 12px; margin-bottom: 14px; }
+    #tl-opportunities select { color: var(--tl-text); background: var(--tl-soft); border: 1px solid var(--tl-line); border-radius: 5px; padding: 5px 8px; max-width: 100%; }
+    #tl-opportunities .tl-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    #tl-opportunities .tl-footnote { font-size: 11px; color: var(--tl-muted); margin-top: 10px; }
+    #tl-opportunities .tl-empty { padding: 28px 10px; color: var(--tl-muted); font-size: 12px; }
+    #tl-opportunities .tl-status { color: var(--tl-success); font-size: 12px; margin-bottom: 12px; }
+    #tl-opportunities .tl-toast { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--tl-line); padding: 9px 24px; color: var(--tl-muted); background: var(--tl-soft); font-size: 12px; }
+    #tl-opportunities .tl-toast:empty { display: none; }
+    #tl-opportunities[data-layout="cards"] .tl-workspace { grid-template-columns: 1fr; }
+    #tl-opportunities[data-layout="cards"] .tl-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-right: 0; border-bottom: 1px solid var(--tl-line); }
+    #tl-opportunities[data-layout="cards"] .tl-item { margin: 0; border-color: var(--tl-line); }
+    #tl-opportunities[data-layout="cards"] .tl-detail { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; }
+    #tl-opportunities[data-layout="cards"] .tl-detail-head, #tl-opportunities[data-layout="cards"] .tl-footer { grid-column: 1 / -1; }
+    @media (max-width: 800px) {
+      #tl-opportunities .tl-frame { grid-template-columns: 125px minmax(0, 1fr); }
+      #tl-opportunities .tl-sidebar { padding-left: 6px; padding-right: 6px; }
+      #tl-opportunities .tl-nav { gap: 7px; padding-left: 6px; font-size: 12px; }
+      #tl-opportunities .tl-heading { padding: 20px 16px 16px; }
+      #tl-opportunities .tl-heading p { max-width: 210px; }
+      #tl-opportunities .tl-usage { margin-left: 16px; margin-right: 16px; }
+      #tl-opportunities .tl-workspace { grid-template-columns: minmax(190px, .8fr) minmax(0, 1.2fr); }
+      #tl-opportunities .tl-list { padding: 8px; }
+      #tl-opportunities .tl-detail { padding: 20px 16px; }
+    }
+    @media (max-width: 650px) {
+      #tl-opportunities .tl-frame { grid-template-columns: 1fr; }
+      #tl-opportunities .tl-sidebar { display: none; }
+      #tl-opportunities .tl-workspace { grid-template-columns: 1fr; min-height: 0; }
+      #tl-opportunities .tl-list { border-right: 0; border-bottom: 1px solid var(--tl-line); }
+      #tl-opportunities .tl-item { padding: 11px; }
+      #tl-opportunities .tl-item-desc { display: none; }
+      #tl-opportunities .tl-item-meta { margin-top: 5px; }
+      #tl-opportunities .tl-heading { flex-wrap: wrap; gap: 12px; }
+      #tl-opportunities .tl-heading p { max-width: none; }
+      #tl-opportunities .tl-usage-meta { margin-left: 0; }
+      #tl-opportunities[data-layout="cards"] .tl-list, #tl-opportunities[data-layout="cards"] .tl-detail { grid-template-columns: 1fr; }
+    }
+    @media (pointer: coarse) {
+      #tl-opportunities button, #tl-opportunities select { min-height: 44px; }
+      #tl-opportunities select { font-size: 16px; }
+    }
+  </style>
+  <div class="tl-titlebar">
+    <div class="tl-brand"><span class="tl-brand-mark">&gt;_</span> TermLoop <span class="tl-muted">/ termloop</span></div>
+    <span class="tl-muted">Concept · sample data</span>
+  </div>
+  <div class="tl-frame">
+    <aside class="tl-sidebar" aria-label="Project navigation preview">
+      <div class="tl-project"><strong>termloop</strong><div class="tl-branch">⑂ develop</div></div>
+      <div class="tl-nav"><i data-lucide="terminal" aria-hidden="true"></i> Sessions</div>
+      <div class="tl-nav"><i data-lucide="list-todo" aria-hidden="true"></i> Tasks <span class="tl-nav-count" id="tl-task-count">8</span></div>
+      <div class="tl-nav tl-nav-active" aria-current="page"><i data-lucide="sparkles" aria-hidden="true"></i> Opportunities</div>
+      <div class="tl-nav-label">AUTOMATION</div>
+      <div class="tl-nav"><i data-lucide="bot" aria-hidden="true"></i> Steward</div>
+      <div class="tl-nav"><i data-lucide="repeat-2" aria-hidden="true"></i> Routines</div>
+    </aside>
+    <main class="tl-content">
+      <div class="tl-heading">
+        <div><h2>Opportunities</h2><p>A useful next step for your project.</p></div>
+        <button type="button" class="tl-button" id="tl-find"><i data-lucide="sparkles" aria-hidden="true"></i> Find suggestions</button>
+      </div>
+      <div class="tl-usage" aria-label="Subscription usage">
+        <span class="tl-usage-dot" aria-hidden="true"></span><span id="tl-usage-value">Usage unavailable</span>
+        <span class="tl-usage-meta" id="tl-usage-meta">You can still find and start suggestions.</span>
+      </div>
+      <div class="tl-tabs" role="tablist" aria-label="Opportunity status">
+        <button type="button" class="tl-tab" id="tl-tab-suggested" role="tab" aria-selected="true" aria-controls="tl-panel" data-tab="suggested">Suggested <span class="tl-tab-count" id="tl-count-suggested">3</span></button>
+        <button type="button" class="tl-tab" id="tl-tab-started" role="tab" aria-selected="false" aria-controls="tl-panel" data-tab="started">Started <span class="tl-tab-count" id="tl-count-started">0</span></button>
+      </div>
+      <div class="tl-workspace" id="tl-panel" role="tabpanel" aria-labelledby="tl-tab-suggested">
+        <div class="tl-list" id="tl-list" aria-label="Suggested work"></div>
+        <section class="tl-detail" id="tl-detail" aria-label="Opportunity details"></section>
+      </div>
+      <div class="tl-toast" id="tl-toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById("tl-opportunities");
+      const q = (selector) => root.querySelector(selector);
+      const design = { layout: "split", usageAvailable: false };
+      const items = [
+        {
+          id: "reconnect", category: "Reliability", icon: "shield-check",
+          title: "Cover reconnect edge cases",
+          description: "Two recovery paths need a regression test.",
+          size: "Small", review: "Low",
+          why: "Recent reconnect changes introduce two recovery paths without a matching test: a sleeping device and an interrupted session.",
+          evidence: ["Recent reconnect changes", "Recovery tests"],
+          outcomes: ["Tests for both recovery paths", "A focused fix if a test exposes a bug"],
+          boundary: "Keep the current reconnect behavior and public API.",
+          state: "suggested", agent: "Codex"
+        },
+        {
+          id: "shortcuts", category: "Product", icon: "command",
+          title: "Switch tasks from the keyboard",
+          description: "Turn a deferred idea into a small, usable feature.",
+          size: "Medium", review: "Medium",
+          why: "A recent task discussion left keyboard navigation as a follow-up. The existing task list provides a bounded starting point.",
+          evidence: ["Task discussion", "Task list"],
+          outcomes: ["Shortcuts for next and previous task", "Focused checks for selection and keyboard focus"],
+          boundary: "Follow existing shortcuts and avoid a new command palette.",
+          state: "suggested", agent: "Codex"
+        },
+        {
+          id: "restore", category: "Investigation", icon: "timer",
+          title: "Find what slows project restore",
+          description: "Get measurements before deciding on a fix.",
+          size: "Medium", review: "Low",
+          why: "A project note mentions slow restores with many sessions. A targeted investigation can establish where the time is spent.",
+          evidence: ["Project note", "Session restoration"],
+          outcomes: ["A repeatable local measurement", "A short finding with the next recommended change"],
+          boundary: "Deliver findings first; implementation is a separate task.",
+          state: "suggested", agent: "Claude"
+        }
+      ];
+      let activeTab = "suggested";
+      let selectedId = "reconnect";
+      let lastRemoved = null;
+      function icons() {
+        if (globalThis.lucide) globalThis.lucide.createIcons({ attrs: { width: 16, height: 16 } });
+      }
+      function notice(message, undo) {
+        const toast = q("#tl-toast");
+        toast.replaceChildren(document.createTextNode(message));
+        if (undo) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "tl-button tl-ghost";
+          button.textContent = "Undo";
+          button.addEventListener("click", () => {
+            if (!lastRemoved) return;
+            lastRemoved.state = "suggested";
+            selectedId = lastRemoved.id;
+            activeTab = "suggested";
+            lastRemoved = null;
+            render();
+            notice("Suggestion restored.");
+          });
+          toast.append(button);
+        }
+      }
+      function render() {
+        root.dataset.layout = design.layout;
+        q("#tl-usage-value").textContent = design.usageAvailable ? "Claude · 62% remaining" : "Usage unavailable";
+        q("#tl-usage-meta").textContent = design.usageAvailable ? "Resets in 18h · Your reserve: 25%" : "You can still find and start suggestions.";
+        const visible = items.filter((item) => item.state === activeTab);
+        if (!visible.some((item) => item.id === selectedId)) selectedId = visible[0]?.id ?? null;
+        const selected = visible.find((item) => item.id === selectedId);
+        const count = (state) => items.filter((item) => item.state === state).length;
+        q("#tl-count-suggested").textContent = count("suggested");
+        q("#tl-count-started").textContent = count("started");
+        q("#tl-task-count").textContent = 8 + count("started");
+        q("#tl-panel").setAttribute("aria-labelledby", "tl-tab-" + activeTab);
+        root.querySelectorAll("[data-tab]").forEach((button) => {
+          button.setAttribute("aria-selected", String(button.dataset.tab === activeTab));
+        });
+        q("#tl-list").innerHTML = visible.length ? visible.map((item) =>
+          '<button type="button" class="tl-item" data-item="' + item.id + '" aria-pressed="' + (item.id === selectedId) + '">' +
+            '<span class="tl-category"><i data-lucide="' + item.icon + '" aria-hidden="true"></i>' + item.category + '</span>' +
+            '<span class="tl-item-title">' + item.title + '</span>' +
+            '<span class="tl-item-desc">' + item.description + '</span>' +
+            '<span class="tl-item-meta">' + (item.state === "started" ? "Task created · " + item.agent : item.size + " effort · " + item.review.toLowerCase() + " review") + '</span>' +
+          '</button>'
+        ).join("") : '<p class="tl-empty">' + (activeTab === "started" ? "Tasks you start appear here." : "No more suggestions to review.") + '</p>';
+        root.querySelectorAll("[data-item]").forEach((button) => {
+          button.addEventListener("click", () => { selectedId = button.dataset.item; render(); });
+        });
+        if (!selected) {
+          q("#tl-detail").innerHTML = '<p class="tl-empty">' + (activeTab === "started" ? "Pick a suggestion to create your first task." : "Find suggestions again when your project changes.") + '</p>';
+          icons();
+          return;
+        }
+        const started = selected.state === "started";
+        q("#tl-detail").innerHTML =
+          '<div class="tl-detail-head">' +
+            (started ? '<div class="tl-status">✓ Task created</div>' : '<div class="tl-category">' + selected.category + '</div>') +
+            '<h3>' + selected.title + '</h3>' +
+            '<p class="tl-detail-meta">' + (started ? selected.agent + " · Separate worktree" : selected.size + " effort · " + selected.review + " review load") + '</p>' +
+          '</div>' +
+          '<div class="tl-section"><span class="tl-label">Why this is worth doing</span><p>' + selected.why + '</p>' +
+            '<div class="tl-evidence">' + selected.evidence.map((source) => '<span>' + source + '</span>').join("") + '</div>' +
+          '</div>' +
+          '<div class="tl-section"><span class="tl-label">What you get</span><ul class="tl-outcome">' +
+            selected.outcomes.map((outcome) => '<li>' + outcome + '</li>').join("") + '</ul>' +
+          '</div>' +
+          '<div class="tl-footer">' +
+            (started ?
+              '<p class="tl-footnote">The scope and completion criteria are attached to the task.</p><div class="tl-actions" style="margin-top:12px"><button type="button" class="tl-button tl-primary" id="tl-open-task">Open task <i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div>' :
+              '<div class="tl-launch-options"><label for="tl-agent">Agent</label><select id="tl-agent"><option' + (selected.agent === "Codex" ? " selected" : "") + '>Codex</option><option' + (selected.agent === "Claude" ? " selected" : "") + '>Claude</option></select><span class="tl-muted">Separate worktree</span></div>' +
+              '<div class="tl-actions"><button type="button" class="tl-button tl-primary" id="tl-start"><i data-lucide="play" aria-hidden="true"></i> Start task</button><button type="button" class="tl-button tl-ghost" id="tl-later">Later</button><button type="button" class="tl-button tl-ghost" id="tl-dismiss">Dismiss</button></div>' +
+              '<p class="tl-footnote">' + selected.boundary + '</p>') +
+          '</div>';
+        if (started) {
+          q("#tl-open-task").addEventListener("click", () => {
+            const detail = q("#tl-detail");
+            detail.innerHTML = '<div class="tl-detail-head"><div class="tl-category">Tasks / ' + selected.category + '</div><h3>' + selected.title + '</h3><p class="tl-detail-meta">Queued · ' + selected.agent + '</p></div><div class="tl-section"><span class="tl-label">Completion criteria</span><ul class="tl-outcome">' + selected.outcomes.map((outcome) => '<li>' + outcome + '</li>').join("") + '</ul></div><div class="tl-section"><span class="tl-label">Scope</span><p>' + selected.boundary + '</p></div><div class="tl-footer"><button type="button" class="tl-button" id="tl-back">Back to opportunity</button></div>';
+            q("#tl-back").addEventListener("click", render);
+          });
+        } else {
+          q("#tl-agent").addEventListener("change", (event) => { selected.agent = event.target.value; });
+          q("#tl-start").addEventListener("click", () => {
+            selected.state = "started";
+            activeTab = "started";
+            render();
+            notice("Task created in this preview. No agent was launched.");
+          });
+          for (const action of ["later", "dismiss"]) {
+            q("#tl-" + action).addEventListener("click", () => {
+              selected.state = action;
+              lastRemoved = selected;
+              render();
+              notice(action === "later" ? "Saved for later." : "Suggestion dismissed.", true);
+            });
+          }
+        }
+        icons();
+      }
+      root.querySelectorAll("[data-tab]").forEach((button) => {
+        button.addEventListener("click", () => { activeTab = button.dataset.tab; render(); });
+      });
+      q("#tl-find").addEventListener("click", () => {
+        activeTab = "suggested";
+        render();
+        notice("Demo scan complete. No new suggestions; existing suggestions were kept.");
+      });
+      render();
+      if (globalThis.Tweak) {
+        const tweak = new globalThis.Tweak({ container: root, onChange: render });
+        tweak.addSelect(design, "layout", { label: "Yerleşim", options: [{ label: "Liste + detay", value: "split" }, { label: "Kartlar + detay", value: "cards" }] });
+        tweak.addToggle(design, "usageAvailable", { label: "Kullanım bilgisi mevcut" });
+      }
+    })();
+  </script>
+</div>
