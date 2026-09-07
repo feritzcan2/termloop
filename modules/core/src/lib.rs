@@ -158,7 +158,7 @@ pub struct CoreRuntime {
     pub(crate) mcp_tool_catalog: Vec<McpToolCatalogEntry>,
     pub(crate) mcp_tool_descriptions: McpToolDescriptions,
     pub(crate) ask_to_requests: HashMap<String, session_launch::ask_to::AskToRequest>,
-    pub(crate) ask_to_by_source: HashMap<String, String>,
+    pub(crate) ask_to_by_source: HashMap<String, Vec<String>>,
     pub(crate) ask_to_conversations: HashMap<String, session_launch::ask_to::AskToConversation>,
     pub(crate) ask_to_delivery_completions:
         HashMap<String, session_launch::ask_to::AskToGeneratedInputCompletion>,
