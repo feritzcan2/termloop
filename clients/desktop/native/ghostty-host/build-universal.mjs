@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { findGhosttySdk, withGhosttySdk } from "./macos-sdk.mjs";
 
 if (process.platform !== "darwin") {
   throw new Error("the Ghostty native host can only be built on macOS");
@@ -15,8 +16,8 @@ const ghosttyDir = path.join(repositoryDir, "vendor", "ghostty");
 const addon = path.join(hostDir, "build", "Release", "ghostty_host.node");
 const scratch = mkdtempSync(path.join(tmpdir(), "termloop-ghostty-universal-"));
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
+function run(command, args, cwd, env = process.env) {
+  const result = spawnSync(command, args, { cwd, stdio: "inherit", env });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} exited with status ${String(result.status)}`);
@@ -34,13 +35,15 @@ function buildAddon(arch, destination) {
 }
 
 try {
-  run("zig", [
+  const sdk = findGhosttySdk();
+  console.log(`Ghostty SDK: ${sdk}`);
+  withGhosttySdk(sdk, (env) => run("zig", [
     "build",
     "-Demit-xcframework",
     "-Demit-macos-app=false",
     "-Dxcframework-target=universal",
     "-Doptimize=ReleaseFast",
-  ], ghosttyDir);
+  ], ghosttyDir, env));
 
   const arm64 = path.join(scratch, "ghostty_host-arm64.node");
   const x64 = path.join(scratch, "ghostty_host-x64.node");
