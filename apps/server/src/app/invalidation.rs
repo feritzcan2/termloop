@@ -88,20 +88,31 @@ fn changed_commit_invalidation(
         .then(|| commit_invalidation(impact, current_revision, observation_sequence))
 }
 
-pub(super) fn queue_commit_invalidation(
+pub(super) async fn queue_commit_invalidation(
     state: &AppState,
     impact: CommitImpact,
     state_revision: u64,
     observation_sequence: u64,
 ) {
-    let _ = state.invalidation_requests.try_send(commit_invalidation(
-        impact,
-        state_revision,
-        observation_sequence,
-    ));
+    queue_invalidation(
+        &state.invalidation_requests,
+        commit_invalidation(impact, state_revision, observation_sequence),
+    )
+    .await;
 }
 
-pub(super) fn queue_durable_commit_invalidation(
+/// Await backpressure so a full queue cannot silently lose a committed
+/// revision. Callers must release the serialized Core lock before entering.
+async fn queue_invalidation(
+    sender: &mpsc::Sender<InvalidationRequest>,
+    invalidation: InvalidationRequest,
+) {
+    if sender.send(invalidation).await.is_err() {
+        tracing::warn!("Committed write invalidation queue is closed");
+    }
+}
+
+pub(super) async fn queue_durable_commit_invalidation(
     state: &AppState,
     impact: CommitImpact,
     state_revision: u64,
@@ -111,10 +122,11 @@ pub(super) fn queue_durable_commit_invalidation(
         impact,
         state_revision,
         state.observation_sequence.load(Ordering::Relaxed),
-    );
+    )
+    .await;
 }
 
-pub(super) fn queue_changed_commit_invalidation(
+pub(super) async fn queue_changed_commit_invalidation(
     state: &AppState,
     impact: CommitImpact,
     previous_revision: u64,
@@ -126,7 +138,7 @@ pub(super) fn queue_changed_commit_invalidation(
         current_revision,
         state.observation_sequence.load(Ordering::Relaxed),
     ) {
-        let _ = state.invalidation_requests.try_send(invalidation);
+        queue_invalidation(&state.invalidation_requests, invalidation).await;
     }
 }
 
@@ -330,10 +342,7 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
         Some(CommitImpact::Companion)
     } else if method.starts_with("project.") {
         Some(CommitImpact::Project)
-    } else if matches!(
-        method,
-        "task.abandonArchive" | "task.deleteArchived"
-    ) {
+    } else if matches!(method, "task.abandonArchive" | "task.deleteArchived") {
         Some(CommitImpact::TaskSessionAgent)
     } else if method.starts_with("task.") {
         Some(CommitImpact::Task)
@@ -385,6 +394,36 @@ mod tests {
         assert_eq!(
             changed_commit_invalidation(CommitImpact::SessionAgent, 21, 21, 34),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_invalidation_waits_for_queue_capacity_instead_of_dropping() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        sender
+            .send(commit_invalidation(CommitImpact::Task, 1, 2))
+            .await
+            .expect("test invalidation receiver remains open");
+
+        let queued_sender = sender.clone();
+        let queued = tokio::spawn(async move {
+            queue_invalidation(
+                &queued_sender,
+                commit_invalidation(CommitImpact::Session, 3, 4),
+            )
+            .await;
+        });
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+
+        assert_eq!(
+            receiver.recv().await,
+            Some(commit_invalidation(CommitImpact::Task, 1, 2))
+        );
+        queued.await.expect("queued invalidation task completes");
+        assert_eq!(
+            receiver.recv().await,
+            Some(commit_invalidation(CommitImpact::Session, 3, 4))
         );
     }
 

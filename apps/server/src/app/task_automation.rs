@@ -63,7 +63,8 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
         state
             .observation_sequence
             .load(std::sync::atomic::Ordering::Relaxed),
-    );
+    )
+    .await;
     spawn(vec![action], state);
     Ok(task)
 }
@@ -135,7 +136,8 @@ pub(super) async fn auto_import_after_refresh(
             CommitImpact::TaskSourceImport,
             state_revision,
             observation_sequence,
-        );
+        )
+        .await;
     }
     Ok(actions)
 }
