@@ -59,6 +59,26 @@ describe("connection-scoped desktop identities", () => {
     expect(project?.providerModelId).toBe("model-a");
   });
 
+  it("keeps agent profile catalog identities provider-neutral", () => {
+    const profile = {
+      id: "builtin.agent-profile.test-gap-finder",
+      name: "Test Gap Finder",
+      description: "Find missing tests.",
+      category: "Quality",
+      version: 1,
+      permission: "plan",
+      read_only: true,
+      user_invocable: true,
+      agent_ids: ["claude", "codex"],
+    };
+
+    expect(decorateConnectionEntities(profile, { connectionProfileId: REMOTE_PROFILE }))
+      .toEqual(profile);
+    const personal = { ...profile, id: "custom.agent-profile.reviewer", instructions: "Inspect", source: "personal" };
+    expect(decorateConnectionEntities({ revision: 1, profiles: [personal] }, { connectionProfileId: REMOTE_PROFILE }))
+      .toEqual({ revision: 1, profiles: [personal] });
+  });
+
   it("scopes narrow invalidation id lists for source-local patch refreshes", () => {
     const payload = decorateConnectionEntities({
       topics: ["task"],

@@ -86,7 +86,11 @@ interface ComposerImage {
 }
 
 export default function SessionRoute() {
-  const { sessionId, connectionId } = useLocalSearchParams<{ sessionId: string; connectionId?: string }>();
+  const { sessionId, connectionId, projectId: routeProjectId } = useLocalSearchParams<{
+    sessionId: string;
+    connectionId?: string;
+    projectId?: string;
+  }>();
   const router = useRouter();
   const focused = useIsFocused();
   const connections = useConnections();
@@ -116,6 +120,11 @@ export default function SessionRoute() {
   const session = selectingRouteConnection || unresolvedScopedRoute
     ? undefined
     : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
+  const backProjectId = session?.project_id ?? routeProjectId;
+  const backProjectRoute = backProjectId === undefined ? undefined : {
+    pathname: "/project/[projectId]" as const,
+    params: connectionRouteParams(resolvedRouteConnectionId ?? connectionId, { projectId: backProjectId }),
+  };
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
   const changesTaskId = useMemo(() => {
     if (store.overview === undefined || session?.kind !== "Agent") return undefined;
@@ -246,7 +255,12 @@ export default function SessionRoute() {
             );
     return (
       <Screen edges={["top", "bottom"]}>
-        <ScreenHeader back="Project" title="Session" right={<MockBadge />} />
+        <ScreenHeader
+          back="Project"
+          backFallback={backProjectRoute}
+          title="Session"
+          right={<MockBadge />}
+        />
         <View style={styles.centre}>
           {placeholder}
         </View>
@@ -363,8 +377,8 @@ export default function SessionRoute() {
       }
       return;
     }
-    terminal.submit(draft);
-    setDraft("");
+    const submitted = draft;
+    if (await terminal.submit(submitted)) setDraft((current) => current === submitted ? "" : current);
   };
 
   return (
@@ -372,10 +386,7 @@ export default function SessionRoute() {
       <View style={styles.header}>
         <ScreenHeader
           back="Project"
-          backFallback={{
-            pathname: "/project/[projectId]",
-            params: connectionRouteParams(connections.selectedId, { projectId: session.project_id }),
-          }}
+          backFallback={backProjectRoute}
           center={
             <View style={styles.identityZone}>
               <Text style={styles.identity} numberOfLines={1}>{identity}</Text>
@@ -436,6 +447,8 @@ export default function SessionRoute() {
           <Banner kind="danger" message={terminal.error ?? terminal.imageError!} />
         </View>
       )}
+
+      {terminal.buffer.inputDelivery ? <View style={styles.notice}><Text style={styles.subDetail} accessibilityLiveRegion="polite">{({ sending: "Sending to terminal…", confirmed: "Input reached the terminal", sent: "Sent · terminal receipt unavailable", uncertain: "Delivery unconfirmed · check the terminal before sending again" })[terminal.buffer.inputDelivery]}</Text></View> : null}
 
       <View style={[styles.terminal, dimmed && styles.dimmed]}>
         <TerminalView
@@ -581,13 +594,13 @@ export default function SessionRoute() {
               )}
               <Pressable
                 onPress={() => void submit()}
-                disabled={!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
+                disabled={!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
                 accessibilityRole="button"
                 accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
                 style={({ pressed }) => [
                   styles.send,
                   pressed && styles.sendPressed,
-                  (!terminal.canSend || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
+                  (!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
                 ]}
               >
                 {imageSending

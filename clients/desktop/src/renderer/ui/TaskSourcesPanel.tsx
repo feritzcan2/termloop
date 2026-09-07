@@ -125,7 +125,7 @@ type Editor = { kind: "create" } | { kind: "edit"; sourceId: string };
 
 type Notice = { tone: "info" | "error"; text: string };
 
-/// The single Task page: the rule every new Task starts with, the Jira sources
+/// The Task settings page: the rule every new Task starts with, the Jira sources
 /// that create Tasks, and the review queue of the selected source. Reads are
 /// refetched on invalidation;
 /// every write carries the revision/generation the page last saw, and a stale
@@ -410,14 +410,14 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
   const editingSource = editor && editor.kind !== "create" ? sources?.find((source) => source.id === editor.sourceId) : undefined;
 
   return (
-    <section className="stage-editor task-sources" aria-label="Tasks">
+    <section className="stage-editor task-sources" aria-label="Task Settings">
       <header className="stage-editor-head">
         <div className="stage-editor-title">
-          <span>Tasks</span>
+          <span>Task Settings</span>
           <h2>{props.projectName}</h2>
         </div>
         <div className="stage-editor-actions">
-          <button className="icon-button quiet" type="button" aria-label="Close Tasks" onClick={props.close}><Icon name="close" /></button>
+          <button className="icon-button quiet" type="button" aria-label="Close Task Settings" onClick={props.close}><Icon name="close" /></button>
         </div>
       </header>
 

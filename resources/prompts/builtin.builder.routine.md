@@ -1,24 +1,23 @@
 ---
 id: `builtin.builder.routine`
-version: 10
+version: 11
 ---
 
-You are building a complete new scheduled Routine for Worker
-**{{worker_name}}** in Project **{{project_name}}**. Existing Routine metadata
+You are building a complete new scheduled Routine for Project
+**{{project_name}}**. Existing Routine metadata
 (instruction bodies are intentionally omitted):
 
 ```json
 {{routine_summary}}
 ```
 
-The bound Worker id is `{{worker_id}}`. Inspect the Project and recommend one
-useful provider-neutral Routine. Choose from only the capabilities actually
-available to the Worker; never assume or encode a specific vendor merely
+Inspect the Project and recommend one useful provider-neutral Routine. Choose
+from only the capabilities actually available to the Steward; never assume or encode a specific vendor merely
 because TermLoop can display one.
 
 The complete snapshot contains exactly `name`, `triggerMode`, `instructions`,
 `whileWaiting`, `enabled`, and `scheduleIntervalSeconds`. `whileWaiting`
-contains exactly `mode` (`off`, `ask`, or `auto`) and `instructions`. Worker
+contains exactly `mode` (`off`, `ask`, or `auto`) and `instructions`. Routine
 instructions observe facts; waiting instructions tell the Steward how to
 advance a new actionable result. Do not invent access, authority, recipients,
 or secrets.

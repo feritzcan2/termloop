@@ -21,6 +21,11 @@ impl CoreRuntime {
 
     pub fn handle(&mut self, method: &str, params: Value) -> Result<Value, CoreError> {
         match method {
+            "agent.libraryGet" => self.agent_library_get(),
+            "agent.profileCreate" => self.create_agent_profile(params),
+            "agent.profileUpdate" => self.update_agent_profile(params),
+            "agent.profileDelete" => self.delete_agent_profile(params),
+            "agent.profileFavorite" => self.favorite_agent_profile(params),
             "mcp.toolSettingsGet" => self.mcp_tool_settings_get(),
             "mcp.toolDescriptionUpdate" => self.update_mcp_tool_description(params),
             "mcp.toolDescriptionReset" => self.reset_mcp_tool_description(params),
@@ -71,7 +76,6 @@ impl CoreRuntime {
             "companion.transcriptList" => self.list_companion_transcript(params),
             "companion.transcriptClear" => self.clear_companion_transcript(params),
             "steward.configurationGet" => self.get_steward_configuration(params),
-            "worker.configurationList" => self.list_worker_configurations(params),
             "runConfiguration.list" => self.list_run_configurations(params),
             "runConfiguration.create" => self.create_run_configuration(params),
             "runConfiguration.update" => self.update_run_configuration(params),

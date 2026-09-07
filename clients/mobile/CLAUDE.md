@@ -27,7 +27,8 @@
 - Connection metadata and navigation are client-local. Credentials use the
   platform secure store and never enter logs, URLs, fixture data, or ordinary
   local storage. The owner-generated paste bootstrap provisions current-daemon
-  credentials through an injected port; presentation never reads parsed values.
+  credentials through an injected port; presentation never reads the parsed
+  values.
 - Do not introduce Workspace, Run, Attempt, board columns, or stored Active
   Agent entities.
 

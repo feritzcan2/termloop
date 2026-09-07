@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 import { QUICK_ACTION_MODELS, QUICK_ACTION_PERMISSIONS, QUICK_ACTION_REASONING, QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { fullAgentCapability, launchOnlyGeminiCapability, observableGeminiCapability } from "./agent-capability-fixture.js";
 
+const scatteredProfile = {
+  id: "builtin.agent-profile.scattered-orchestration-finder",
+  name: "Scattered Orchestration Finder",
+  description: "Find one workflow whose orchestration is spread across unrelated owners.",
+  category: "Architecture",
+  version: 1,
+  permission: "plan" as const,
+  read_only: true,
+  user_invocable: true,
+  agent_ids: ["claude", "codex"],
+};
+
 describe("Quick Action composer", () => {
   it("renders Project, agent, model, prompt, preview, and launch controls", () => {
     const markup = renderToStaticMarkup(createElement(QuickActionComposer, {
@@ -14,11 +26,13 @@ describe("Quick Action composer", () => {
         fullAgentCapability("codex"),
         launchOnlyGeminiCapability(),
       ],
+      profiles: [scatteredProfile],
       pasteImage: vi.fn(), restoreImage: vi.fn(), discardImage: vi.fn(), preview: vi.fn(), launch: vi.fn(), close: vi.fn(),
     }));
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('aria-label="Run in Project"');
-    expect(markup).toContain('aria-label="Agent"');
+    expect(markup).toContain('aria-label="Provider"');
+    expect(markup).toContain('aria-label="Agent profile"');
     expect(markup).toContain('aria-label="Model"');
     expect(markup).toContain('aria-label="Permission"');
     expect(markup).toContain('aria-label="Reasoning"');
@@ -26,6 +40,7 @@ describe("Quick Action composer", () => {
     expect(markup).toContain("Fable");
     expect(markup).toContain("bypass");
     expect(markup).toContain("What would you like to run?");
+    expect(markup).toContain('aria-haspopup="listbox"');
     expect(markup).toContain("Advanced 0");
     expect(markup).toContain("⌘↵");
     expect(markup).toContain("Worktree");
@@ -37,6 +52,7 @@ describe("Quick Action composer", () => {
       projects: [{ id: "project-1", name: "TermNext", folder_path: "/tmp/termnext" }],
       selectedProject: { id: "project-1", name: "TermNext", folder_path: "/tmp/termnext" },
       capabilities: [observableGeminiCapability()],
+      profiles: [],
       initialAgent: "gemini",
       pasteImage: vi.fn(), restoreImage: vi.fn(), discardImage: vi.fn(), preview: vi.fn(), launch: vi.fn(), close: vi.fn(),
     }));
@@ -48,7 +64,7 @@ describe("Quick Action composer", () => {
   it("keeps provider model choices explicit", () => {
     expect(QUICK_ACTION_MODELS.claude).toEqual(["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"]);
     expect(QUICK_ACTION_MODELS.codex).toEqual([
-      "default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro",
+      "default", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro",
     ]);
     expect(QUICK_ACTION_MODELS.gemini).toEqual(["default", "auto", "pro", "flash", "flash-lite"]);
     expect(QUICK_ACTION_PERMISSIONS).toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);

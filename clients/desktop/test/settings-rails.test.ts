@@ -14,7 +14,7 @@ const settings: McpToolSettingsResult = {
   tools: [
     { name: "ask_to", title: "Ask another agent", canonicalDescription: "Canonical", effectiveDescription: "Ask another agent for help.", customized: true, roles: ["interactive"] },
     { name: "reply_to_request", title: "Reply to a request", canonicalDescription: "Canonical", effectiveDescription: "Answer the agent that asked.", customized: false, roles: ["helper"] },
-    { name: "project_read", title: "Read the Project", canonicalDescription: "Canonical", effectiveDescription: "Read Project projections.", customized: false, roles: ["steward", "worker"] },
+    { name: "project_read", title: "Read the Project", canonicalDescription: "Canonical", effectiveDescription: "Read Project projections.", customized: false, roles: ["steward"] },
   ],
 };
 
@@ -55,7 +55,7 @@ describe("Settings rails", () => {
       reload: vi.fn(),
     })));
 
-    expect(groupLabels()).toEqual(["Interactive", "Helper", "Steward", "Worker"]);
+    expect(groupLabels()).toEqual(["Interactive", "Helper", "Steward"]);
     const [interactive, helper, steward] = groups();
     expect(interactive?.querySelector("button.rail-group-head")?.getAttribute("aria-expanded")).toBe("true");
     expect(interactive?.textContent).toContain("Ask another agent");
@@ -89,9 +89,9 @@ describe("Settings rails", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    expect(groupLabels()).toEqual(["Steward", "Worker"]);
+    expect(groupLabels()).toEqual(["Steward"]);
     const rows = [...container.querySelectorAll<HTMLElement>(".rail-row")];
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     expect(rows.every((row) => row.classList.contains("selected"))).toBe(true);
     expect(rows[0]?.querySelector(".rail-row-open")?.getAttribute("aria-current")).toBe("true");
   });

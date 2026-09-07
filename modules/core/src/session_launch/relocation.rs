@@ -360,7 +360,6 @@ impl CoreRuntime {
             &session,
             self.store.sessions(),
             self.store.steward_configurations(),
-            self.store.worker_configurations(),
             transport,
         )
         .unwrap_or(AgentMcpRole::Interactive);
@@ -675,8 +674,8 @@ impl CoreRuntime {
             observation_token: preview.observation_token,
             mcp_token: preview.mcp_token,
             mcp_role: Some(preview.mcp_role),
-            worker_prompt: None,
-            worker_system_prompt: None,
+            agent_profile_ref: None,
+            personal_agent: self.store.session_agent_profile(&session.id).cloned(),
             steward_system_prompt: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,
@@ -925,22 +924,13 @@ impl CoreRuntime {
                     session,
                     self.store.sessions(),
                     self.store.steward_configurations(),
-                    self.store.worker_configurations(),
                     transport,
                 )
             })
-            .is_some_and(|role| {
-                matches!(
-                    role,
-                    AgentMcpRole::Steward { .. } | AgentMcpRole::Worker { .. }
-                )
-            });
+            .is_some_and(|role| matches!(role, AgentMcpRole::Steward { .. }));
         if session.kind != SessionKind::Agent
             || persistent_assistant
-            || matches!(
-                template,
-                Some("builtin.steward.executor" | "builtin.worker.executor")
-            )
+            || matches!(template, Some("builtin.steward.executor"))
         {
             push_blocker(&mut blockers, "sourceNotOrdinaryAgent");
         }
@@ -951,7 +941,6 @@ impl CoreRuntime {
                         session,
                         self.store.sessions(),
                         self.store.steward_configurations(),
-                        self.store.worker_configurations(),
                         transport,
                     ),
                     Some(AgentMcpRole::Helper { .. })

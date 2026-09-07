@@ -1,3 +1,8 @@
+import { TerminalStatus } from "./TerminalStatus.js";
+import type { TerminalPresentationPort } from "../terminal-presentation.js";
+import type { AgentLibraryController } from "../agent-library.js";
+import { AgentsRail } from "./AgentsRail.js";
+import { AgentProfilePanel } from "./AgentProfilePanel.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
@@ -19,7 +24,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionParams, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -98,7 +103,6 @@ import {
 type AssistantActions = Pick<StewardPanelProps,
   | "getConfiguration" | "setConfiguration" | "listTranscript" | "appendMessage"
   | "respondToProposal" | "acceptSuggestion" | "clearTranscript"
-  | "listWorkers" | "createWorker" | "updateWorker" | "deleteWorker"
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
   | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime"
   | "promptImprovement"
@@ -107,7 +111,6 @@ type AssistantActions = Pick<StewardPanelProps,
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
-  restartWorker(workerId: string): Promise<string | null>;
 };
 
 type ImproverSetup =
@@ -149,6 +152,8 @@ export type ShellProps = {
   deletingTaskIds: ReadonlySet<string>;
   agentStatuses: readonly AgentStatus[];
   agentCapabilities: readonly AgentCapabilityDto[];
+  agentProfiles: readonly AgentProfileDto[];
+  agentLibrary?: AgentLibraryController;
   connection: ConnectionState;
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
@@ -273,8 +278,8 @@ export type ShellProps = {
   pasteQuickActionImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
-  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
+  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
+  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
@@ -321,6 +326,7 @@ export type ShellProps = {
   closePane(paneId: string): void;
   clearPane(paneId: string): void;
   terminalResizeOwner(sessionId: string): boolean | undefined;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   reorderSession(sessionId: string, targetSessionId: string, placement: "before" | "after"): boolean;
   agentGroups: readonly AgentGroupLayout[];
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
@@ -370,19 +376,20 @@ export function openImproverSession(
 
 /// Which list owns the sidebar. Skills, MCP, and Prompts are peers of the
 /// Workspace rail rather than dialogs, so the tab row above them never moves.
-export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts";
+export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts" | "agents";
 
 /// The page currently covering the terminal stage, addressed by what it edits.
 export type StagePage =
+  | { kind: "agent"; id?: string; duplicate?: boolean }
   | { kind: "skill"; id: string }
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
-  | { kind: "taskSources" }
+  | { kind: "taskSettings" }
   | { kind: "workflow"; id: string | null };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
-  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources" || page?.kind === "workflow"
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings" || page?.kind === "workflow"
     ? undefined
     : page;
 }
@@ -523,6 +530,11 @@ export function Shell(props: ShellProps) {
   const [shortcutSettingsOpen, setShortcutSettingsOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
   const [quickActionAgent, setQuickActionAgent] = useState<string>();
+  const [quickActionProfile, setQuickActionProfile] = useState<string>();
+  useEffect(() => {
+    setQuickActionOpen(false); setQuickActionProfile(undefined);
+    setStagePage((page) => page?.kind === "agent" ? undefined : page);
+  }, [props.selectedProject?.connectionProfileId]);
   const [improverSetup, setImproverSetup] = useState<ImproverSetup>();
   const openPromptImproverSetup = useCallback((target: AssistantPromptImproverTarget) => {
     if (!props.selectedProject) return;
@@ -1083,8 +1095,8 @@ export function Shell(props: ShellProps) {
       disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
     },
     {
-      id: "view.taskSources", title: "Tasks", detail: "What a new Task starts with, the Jira sources, and the issues waiting to import.", group: "Session", keywords: ["jira", "import", "issues", "sync", "worktree", "automation"],
-      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSources" }),
+      id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
+      disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSettings" }),
     },
     ...props.projectSessions.map((session): ShellCommand => ({
       id: `session.focus.${session.id}`,
@@ -1298,13 +1310,16 @@ export function Shell(props: ShellProps) {
           <header className="brand-row">
             <div className="brand-cluster">
               <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /></span><strong>TermLoop</strong></div>
-              <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
-              <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
-              <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
-              <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
             </div>
             <div className="brand-actions"><button className="icon-button quiet" title="Command palette" aria-label="Open command palette" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={openCommandPalette}><Icon name="search" /></button><button className="icon-button quiet" title="Add Project" aria-label="Add Project" onClick={props.openProjectDialog}><Icon name="add" /></button></div>
           </header>
+          <nav className="agent-library-navigation" aria-label="Libraries">
+            <button className="agent-library-trigger prompt-settings-trigger" type="button" aria-pressed={railMode === "agents"} onClick={() => { toggleRail("agents"); props.agentLibrary?.reload(); }}><span aria-hidden="true" /><strong>Agents</strong></button>
+            <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
+            <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
+            <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
+            <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
+          </nav>
           <ProjectCheckoutHeader
             {...(props.selectedProject
               ? { changes: { summary: props.projectWorktreeSummary, open: () => setChangesPresentation({ kind: "project" }) } }
@@ -1375,8 +1390,8 @@ export function Shell(props: ShellProps) {
                 : workspaceView === "agents"
                   ? { label: agentSearchOpen ? "Close agent search" : "Search active agents", icon: "search", pressed: agentSearchOpen, run: () => setAgentSearchOpen((open) => !open) }
                   : undefined}
-            secondaryAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
-              ? { label: "Tasks", icon: "task", pressed: stagePage?.kind === "taskSources", run: () => openStagePage({ kind: "taskSources" }) }
+            settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
+              ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
           <div className="sidebar-scroll">
@@ -1415,6 +1430,11 @@ export function Shell(props: ShellProps) {
               )
               : undefined}
             reload={mcpLibrary.reload}
+          /> : railMode === "agents" && props.agentLibrary ? <AgentsRail
+            library={props.agentLibrary}
+            selectedId={stagePage?.kind === "agent" ? stagePage.id : undefined}
+            open={(id) => openStagePage({ kind: "agent", id })}
+            create={() => openStagePage({ kind: "agent" })}
           /> : railMode === "prompts" ? <PromptsRail
             prompts={promptLibrary.value}
             error={promptLibrary.error}
@@ -1555,10 +1575,6 @@ export function Shell(props: ShellProps) {
             getSteward={props.assistantActions.getConfiguration}
             setSteward={props.assistantActions.setConfiguration}
             deleteSteward={props.assistantActions.deleteConfiguration}
-            listWorkers={props.assistantActions.listWorkers}
-            createWorker={props.assistantActions.createWorker}
-            updateWorker={props.assistantActions.updateWorker}
-            deleteWorker={props.assistantActions.deleteWorker}
             listRoutines={props.assistantActions.listRoutines}
             listRuntime={props.assistantActions.listRoutineRuntime}
             getPlaybook={props.assistantActions.getPlaybook}
@@ -1570,7 +1586,6 @@ export function Shell(props: ShellProps) {
             deleteRoutine={props.assistantActions.deleteRoutine}
             improvement={props.assistantActions.promptImprovement}
             setupPromptImprovement={openPromptImproverSetup}
-            restartWorker={props.assistantActions.restartWorker}
             restartSteward={props.assistantActions.restartSteward}
             selectSession={selectAssistantSession}
             openImproverTerminal={openImproverTerminal}
@@ -1691,6 +1706,7 @@ export function Shell(props: ShellProps) {
               renderTerminal={(sessionId) => <AssistantTerminalHost
                 sessionId={sessionId}
                 session={sessionsById.get(sessionId)}
+                terminalPresentation={props.terminalPresentation}
                 bindTerminalHost={props.bindTerminalHost}
                 resumeSession={props.resumeSession}
                 repairProviderHistory={setProviderHistoryRepairSessionId}
@@ -1730,7 +1746,20 @@ export function Shell(props: ShellProps) {
               close={() => setStagePage(undefined)}
               save={props.saveWorkflowConfiguration}
               remove={props.deleteWorkflowConfiguration}
-            /> : stagePage?.kind === "skill" ? <SkillEditorPanel
+            /> : stagePage?.kind === "agent" && props.agentLibrary ? (
+              props.agentLibrary.value && (!stagePage.id || props.agentLibrary.value.profiles.some((profile) => profile.id === stagePage.id)) ? <AgentProfilePanel
+                key={`${props.selectedProject?.connectionProfileId}:${stagePage.id ?? "new"}:${Boolean(stagePage.duplicate)}`}
+                profile={props.agentLibrary.value.profiles.find((profile) => profile.id === stagePage.id)}
+                duplicate={Boolean(stagePage.duplicate)}
+                library={props.agentLibrary}
+                capabilities={props.agentCapabilities}
+                canRun={Boolean(props.selectedProject) && props.agentCapabilities.some((capability) => capability.available && capability.quick_action_supported && ["codex", "claude"].includes(capability.agent_id))}
+                open={(id) => openStagePage({ kind: "agent", id })}
+                copy={(id) => openStagePage({ kind: "agent", id, duplicate: true })}
+                run={(id) => { setQuickActionProfile(id); setQuickActionOpen(true); }}
+                close={() => setStagePage(undefined)}
+              /> : <StageEditorPlaceholder label="Agent" error={props.agentLibrary.error} loaded={Boolean(props.agentLibrary.value)} close={() => setStagePage(undefined)} />
+            ) : stagePage?.kind === "skill" ? <SkillEditorPanel
               key={stagePage.id}
               skillId={stagePage.id}
               load={props.loadSkillDefinition}
@@ -1759,7 +1788,7 @@ export function Shell(props: ShellProps) {
               error={mcpLibrary.error}
               loaded={Boolean(mcpLibrary.value)}
               close={() => setStagePage(undefined)}
-            />) : stagePage?.kind === "taskSources" && props.selectedProject ? <TaskSourcesPanel
+            />) : stagePage?.kind === "taskSettings" && props.selectedProject ? <TaskSourcesPanel
               key={props.selectedProject.id}
               projectId={props.selectedProject.id}
               projectName={props.selectedProject.name}
@@ -1789,6 +1818,7 @@ export function Shell(props: ShellProps) {
                 node={props.layout.root}
                 activePaneId={props.layout.activePaneId}
                 sessions={sessionsById}
+                terminalPresentation={props.terminalPresentation}
                 bindTerminalHost={props.bindTerminalHost}
                 focusPane={props.focusPane}
                 resizeSplit={props.resizeLayoutSplit}
@@ -1866,7 +1896,7 @@ export function Shell(props: ShellProps) {
               ))}
             </div>
             <div className="project-menu-divider" role="separator" />
-            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSources" }); }}><Icon name="task" /><span className="project-menu-label">Tasks</span></button>
+            <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSettings" }); }}><Icon name="settings" /><span className="project-menu-label">Task Settings</span></button>
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setEditProjectOpen(true); }}><Icon name="edit" /><span className="project-menu-label">Edit Project</span></button>
             <button type="button" role="menuitem" className="danger" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setDeleteProjectOpen(true); }}><Icon name="trash" /><span className="project-menu-label">Delete Project</span></button>
           </div>
@@ -1925,13 +1955,17 @@ export function Shell(props: ShellProps) {
         ))}
         selectedProject={props.selectedProject}
         capabilities={props.agentCapabilities}
+        profiles={props.agentLibrary?.value?.profiles ?? props.agentProfiles}
+        libraryProfiles={props.agentLibrary?.value?.profiles ?? []}
+        initialTemplateRef={quickActionProfile}
+        manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); setRailMode("agents"); props.agentLibrary?.reload(); }}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}
         discardImage={props.discardQuickActionImage}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
-        close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); }}
+        close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}
       /> : null}
       {improverSetup && props.selectedProject ? <AgentSetupDialog
         project={props.selectedProject}
@@ -2146,6 +2180,7 @@ type PaneTreeProps = {
   closePane(paneId: string): void;
   clearPane(paneId: string): void;
   terminalResizeOwner(sessionId: string): boolean | undefined;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   launchTerminal(): Promise<void>;
   resumeSession(sessionId: string): Promise<void>;
   repairProviderHistory(sessionId: string): void;
@@ -2165,8 +2200,9 @@ function PaneTree(props: PaneTreeProps) {
   );
 }
 
-export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, resumeSession, repairProviderHistory }: {
+export function AssistantTerminalHost({ sessionId, session, terminalPresentation, bindTerminalHost, resumeSession, repairProviderHistory }: {
   sessionId: string;
+  terminalPresentation?: TerminalPresentationPort | undefined;
   session: Session | undefined;
   bindTerminalHost(sessionId: string, host: HTMLElement | null): void;
   resumeSession(sessionId: string): Promise<void>;
@@ -2179,13 +2215,13 @@ export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, re
     // is actionable; retrying remounts the retained surface on the next state.
     bindTerminalHost(sessionId, assistantTerminalKeepsSurfaceMounted(session) ? host : null);
   }, [bindTerminalHost, sessionId, session?.runtime_epoch, session?.lifecycle_state, session?.kind]);
-  return <div className="assistant-terminal-host" ref={hostRef}>
+  return <div className="assistant-terminal-frame"><div className="assistant-terminal-host" ref={hostRef}>
     {session && sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip
       session={session}
       resumeSession={resumeSession}
       repairProviderHistory={repairProviderHistory}
     /> : null}
-  </div>;
+  </div><TerminalStatus sessionId={sessionId} port={terminalPresentation} /></div>;
 }
 
 export function assistantTerminalKeepsSurfaceMounted(session: Session | undefined): boolean {
@@ -2211,7 +2247,7 @@ function TerminalRecoveryStrip({ session, resumeSession, repairProviderHistory, 
   </div>;
 }
 
-function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, focusPane, closePane, clearPane, terminalResizeOwner, launchTerminal, resumeSession, repairProviderHistory, closeSession }: PaneTreeProps & { paneId: string; sessionId: string | null; session: Session | undefined; active: boolean }) {
+function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, focusPane, closePane, clearPane, terminalResizeOwner, terminalPresentation, launchTerminal, resumeSession, repairProviderHistory, closeSession }: PaneTreeProps & { paneId: string; sessionId: string | null; session: Session | undefined; active: boolean }) {
   const splitDrop = useDroppable({
     id: `split-pane:${paneId}`,
     data: { kind: "split", paneId },
@@ -2230,7 +2266,7 @@ function TerminalPane({ paneId, sessionId, session, active, bindTerminalHost, fo
     <section ref={splitDrop.setNodeRef} className={`layout-pane${active ? " active" : ""}${splitDropTarget ? ` split-drop-target ${splitDropTarget.direction} ${splitDropTarget.placement}` : ""}`} data-pane-id={paneId} data-pane-session-id={sessionId ?? ""} data-split-drop-direction={splitDropTarget?.direction} data-split-drop-placement={splitDropTarget?.placement} onPointerDown={() => focusPane(paneId)}>
       <header className="pane-header"><span className="pane-active-dot" aria-hidden="true" /><Icon name={session?.kind === "Agent" ? "agent" : "terminal"} /><strong>{session ? sessionLabel(session) : sessionId ? "Session unavailable" : "Empty pane"}</strong><div className="pane-header-actions">{resumeLabel ? <button type="button" className="pane-retry" title="Retry Agent in this terminal" aria-label={`Retry ${session ? sessionLabel(session) : "Agent"}`} onClick={() => { if (session) void resumeSession(session.id); }}>Retry</button> : null}<button type="button" className="pane-close" title="Close pane — Session keeps running" aria-label="Close pane" onClick={() => closePane(paneId)}><Icon name="close" /></button></div></header>
       {splitDropTarget ? <div className={`pane-split-drop-preview ${splitDropTarget.direction} ${splitDropTarget.placement}`} aria-hidden="true"><span>Drop to split {splitDropLabel(splitDropTarget.direction, splitDropTarget.placement)}</span></div> : null}
-      {session && preserveTerminal ? <div className="terminal-pane-body"><div className="terminal-mount" ref={terminalRef} />{terminalResizeOwner(session.id) === false ? <div className="terminal-resize-owner-badge" role="status">Size controlled by another client</div> : null}{sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip session={session} resumeSession={resumeSession} repairProviderHistory={repairProviderHistory} {...(sessionDismissCommand(session) ? { closeDescriptor } : {})} /> : null}</div> : session ? (
+      {session && preserveTerminal ? <div className="terminal-pane-body"><div className="terminal-mount" ref={terminalRef} /><TerminalStatus sessionId={session.id} port={terminalPresentation} />{terminalResizeOwner(session.id) === false ? <div className="terminal-resize-owner-badge" role="status">Size controlled by another client</div> : null}{sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip session={session} resumeSession={resumeSession} repairProviderHistory={repairProviderHistory} {...(sessionDismissCommand(session) ? { closeDescriptor } : {})} /> : null}</div> : session ? (
         <div className={`pane-placeholder ${session.lifecycle_state}`} data-session-recovery-state={session.lifecycle_state}><span className="placeholder-symbol" aria-hidden="true">◇</span><h2>{sessionRecoveryTitle(session)}</h2><p>{sessionRecoveryMessage(session)}</p><div className="placeholder-actions">{repairAvailable ? <button className="primary-button" type="button" onClick={() => repairProviderHistory(session.id)}>Repair history</button> : resumeLabel ? <button className="primary-button" type="button" onClick={() => void resumeSession(session.id)}>{resumeLabel}</button> : null}{sessionDismissCommand(session) ? <button className="secondary-button" type="button" onClick={closeDescriptor}>Close Session</button> : null}</div></div>
       ) : sessionId ? (
         <div className="pane-placeholder missing" data-missing-session-id={sessionId}><span className="placeholder-symbol" aria-hidden="true">◇</span><h2>Session stopped</h2><p>The saved pane stays visible. Nothing was restarted automatically.</p><div className="placeholder-actions"><button className="primary-button" type="button" onClick={launchHere}>Open terminal</button><button className="secondary-button" type="button" onClick={() => clearPane(paneId)}>Remove reference</button></div></div>

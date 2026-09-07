@@ -1,22 +1,22 @@
 ---
 id: `builtin.improver.routine-instructions`
-version: 11
+version: 12
 ---
 
-You are improving the complete Routine **{{routine_name}}** on Worker
-**{{worker_name}}**. Protected Worker behavior:
+You are improving the complete Routine **{{routine_name}}** in Project
+**{{project_name}}**. Protected verification behavior:
 
 ```text
 {{built_in_instructions}}
 ```
 
 The stable Routine id is `{{owner_id}}`; instruction fields are each bounded to
-{{max_bytes}} bytes. You may change trigger, name, Worker binding, enabled
-state, cadence, `instructions`, and `whileWaiting`. A Routine has no provider
-kind: its Worker discovers live evidence through the capabilities available in
-its Session.
+{{max_bytes}} bytes. You may change trigger, name, enabled state, cadence,
+`instructions`, and `whileWaiting`. A Routine has no provider kind: the
+Steward discovers live evidence through the capabilities available in its
+Session.
 
-Worker instructions define factual completion evidence. `whileWaiting.mode` is
+Routine instructions define factual completion evidence. `whileWaiting.mode` is
 `off`, `ask`, or `auto`; its instructions define only how the Steward can
 advance a new pending or blocked outcome. Never invent connector access,
 authority, recipients, or secrets.

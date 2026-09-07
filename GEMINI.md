@@ -14,9 +14,6 @@ remote clients.
   runs the full repository test suite.
 - Before editing, read the nearest local `AGENTS.md`. For a cross-boundary
   change, read every affected boundary's `AGENTS.md`.
-- Source code, schemas, tests, and applicable agent rules are authoritative. A
-  nested `AGENTS.md` may narrow these repository rules for its boundary but may
-  not weaken them.
 - Work only in paths required by the user request. Preserve unrelated and
   pre-existing changes; never reset or overwrite another agent's work.
 - Do not create `common/`, `shared/`, or `utils/`. Pure shared concepts belong
@@ -40,6 +37,28 @@ remote clients.
   failing diagnostics. The final response lists changed paths, commands and
   results, skipped or unmeasured cases, remaining risks, and material
   assumptions.
+
+## Git workflow
+
+- The canonical day-to-day checkout works on the local `develop` branch. Unless
+  the user explicitly requests another branch or an isolated Task worktree,
+  perform requested implementation work there.
+- Treat a substantial, fully completed user-requested implementation as one
+  delivery. After its required verification passes, commit every change that
+  belongs to that completed delivery and push the resulting local `develop`
+  commit to `origin/develop` without waiting for a separate commit or push
+  request.
+- Do not create or push checkpoint commits for small edits, partial progress,
+  experiments, failing work, or an incomplete larger task unless the user asks.
+  Preserve unrelated or concurrent work and never include it in the delivery
+  commit.
+- Before pushing, fetch `origin`. If `origin/develop` advanced, integrate it
+  into local `develop` without rewriting published history, preserve both sides,
+  and rerun proportionate verification on the integrated result. Never force
+  push `develop`.
+- After pushing, verify local `develop` and `origin/develop` resolve to the same
+  commit and that no completed-delivery changes remain uncommitted. Promotion to
+  `main` remains a separate explicit workflow governed by `.github/AGENTS.md`.
 
 ## Operational rules
 

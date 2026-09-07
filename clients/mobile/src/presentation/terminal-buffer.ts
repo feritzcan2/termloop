@@ -51,6 +51,11 @@ export type TerminalStreamState =
   | "exited";
 
 export interface TerminalBuffer {
+  readonly ready?: boolean;
+  readonly replayProgress?: { receivedBytes: number; totalBytes: number } | undefined;
+  readonly inputDelivery?: "sending" | "confirmed" | "sent" | "uncertain";
+  readonly outputRevision?: number;
+  readonly continuityNotice?: string;
   readonly lines: readonly TerminalLine[];
   /// Current VT screen reconstructed by the DOM-free terminal projector, as styled
   /// spans. Undefined means no stream has proved it owns a grid, and the small
@@ -248,9 +253,17 @@ export function reduceTerminalEvent(
     case "reset":
       return { ...emptyTerminalBuffer(), nextLineId: buffer.nextLineId };
     case "replay":
-      return ingestBytes(buffer, event.bytes, options.decode, options.screenActive === true);
+      return ingestBytes({ ...buffer, outputRevision: (buffer.outputRevision ?? 0) + 1 }, event.bytes, options.decode, options.screenActive === true);
     case "live":
-      return ingestBytes(buffer, event.bytes, options.decode, options.screenActive === true);
+      return ingestBytes({ ...buffer, ready: true, replayProgress: undefined, outputRevision: (buffer.outputRevision ?? 0) + 1 }, event.bytes, options.decode, options.screenActive === true);
+    case "replayProgress":
+      return { ...buffer, ready: false, replayProgress: event };
+    case "ready":
+      return buffer.ready && !buffer.replayProgress ? buffer : { ...buffer, ready: true, replayProgress: undefined };
+    case "notice":
+      return { ...buffer, continuityNotice: event.message };
+    case "inputDelivery":
+      return { ...buffer, inputDelivery: event.state };
     case "gap": {
       return appendGap(flushPending(buffer), event.droppedFrames);
     }
@@ -262,11 +275,11 @@ export function reduceTerminalEvent(
     case "state":
       switch (event.state) {
         case "connecting":
-          return { ...buffer, stream: "attaching" };
+          return { ...buffer, stream: "attaching", ready: false, replayProgress: undefined };
         case "connected":
           return { ...buffer, stream: "live" };
         case "connectionLost":
-          return { ...buffer, stream: "reconnecting" };
+          return { ...buffer, stream: "reconnecting", ready: false, replayProgress: undefined };
       }
   }
 }
