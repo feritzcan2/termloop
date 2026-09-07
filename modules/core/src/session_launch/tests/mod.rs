@@ -3008,6 +3008,13 @@ fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
             .template_ref,
         profile_ref
     );
+    assert!(
+        plan.prepared_launch
+            .as_ref()
+            .unwrap()
+            .codex_app_server_developer_instructions()
+            .is_some_and(|instructions| instructions.contains(profile_ref))
+    );
     assert_eq!(
         super::launch_session_name(&plan).as_deref(),
         Some("Scattered Orchestration Finder · Inspect session launch ownership")
@@ -3015,10 +3022,11 @@ fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
 
     let mut write_permission = params;
     write_permission["permission"] = Value::String("acceptEdits".into());
-    assert!(matches!(
-        runtime.plan_quick_action_launch(write_permission),
-        Err(CoreError::InvalidParams(field)) if field == "permission"
-    ));
+    let write_plan = runtime.plan_quick_action_launch(write_permission).unwrap();
+    assert_eq!(
+        effective_launch_selection(&write_plan),
+        termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "high")
+    );
     let mut unknown_profile = json!({
         "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
         "permission": "plan", "reasoning": "default",

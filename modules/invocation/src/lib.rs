@@ -437,7 +437,7 @@ pub fn profile_quick_action_agent_with_attachments_for_conversation(
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: Option<AgentMcpLaunch<'_>>,
 ) -> Result<LaunchPayload, InvocationError> {
-    let profile = validate_agent_profile_selection(profile_ref, agent_id, permission)?;
+    let profile = validate_agent_profile_selection(profile_ref, agent_id)?;
     validate_quick_action_with_attachments(
         agent_id,
         model,
@@ -541,7 +541,7 @@ fn configured_agent_profile_for_conversation_resume_with_codex_project_trust(
     mcp: Option<AgentMcpLaunch<'_>>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<LaunchPayload, InvocationError> {
-    let profile = validate_agent_profile_selection(profile_ref, agent_id, permission)?;
+    let profile = validate_agent_profile_selection(profile_ref, agent_id)?;
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
     let provider_instructions = profile_provider_instructions(profile, mcp.as_ref())?;
     resolve_launch_manifest_with_attachments_and_codex_project_trust(
@@ -566,17 +566,10 @@ fn configured_agent_profile_for_conversation_resume_with_codex_project_trust(
 fn validate_agent_profile_selection(
     profile_ref: &str,
     agent_id: &str,
-    permission: &str,
 ) -> Result<&'static AgentProfile, InvocationError> {
     let profile = agent_profile(profile_ref).ok_or(InvocationError::TemplateMissing)?;
     if !profile.user_invocable || !profile.supported_agent_ids.contains(&agent_id) {
         return Err(InvocationError::UnsupportedAgent(agent_id.to_owned()));
-    }
-    if permission != profile.permission {
-        return Err(InvocationError::UnsupportedPermission {
-            agent_id: agent_id.to_owned(),
-            permission: permission.to_owned(),
-        });
     }
     Ok(profile)
 }
@@ -1662,6 +1655,11 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
             template_ref: template.id.to_owned(),
             template_version: template.version,
         },
+        codex_app_server_developer_instructions: if agent_id == "codex" {
+            delivered_provider_instructions.map(str::to_owned)
+        } else {
+            None
+        },
         initial_input: prompt
             .map(|_| InitialInputDelivery::submitted(&delivered))
             .transpose()?,
@@ -1733,7 +1731,7 @@ fn mcp_manifest_args(
     agent_id: &str,
     mcp: &AgentMcpLaunch<'_>,
 ) -> Result<Vec<ResolvedArgument>, InvocationError> {
-    Ok(mcp_args(agent_id, mcp)?
+    Ok(mcp_args(agent_id, mcp, true)?
         .into_iter()
         .enumerate()
         .map(|(position, value)| {
@@ -1924,6 +1922,7 @@ pub struct LaunchPayload {
     args: Vec<String>,
     environment: termloop_platform::LaunchEnvironment,
     provenance: Provenance,
+    codex_app_server_developer_instructions: Option<String>,
     initial_input: Option<InitialInputDelivery>,
     inspectable: InspectableLaunchManifest,
     bindings: Vec<(String, String)>,
@@ -1935,6 +1934,7 @@ struct ResolvedLaunchManifest {
     arguments: Vec<ResolvedArgument>,
     environment: termloop_platform::LaunchEnvironment,
     provenance: Provenance,
+    codex_app_server_developer_instructions: Option<String>,
     initial_input: Option<InitialInputDelivery>,
     inspectable: InspectableLaunchManifest,
     bindings: Vec<(String, String)>,
@@ -1983,6 +1983,7 @@ impl ResolvedLaunchManifest {
                 .collect(),
             environment: self.environment,
             provenance: self.provenance,
+            codex_app_server_developer_instructions: self.codex_app_server_developer_instructions,
             initial_input: self.initial_input,
             inspectable: self.inspectable,
             bindings: self.bindings,
@@ -2106,12 +2107,14 @@ pub fn codex_app_server(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
         cwd,
         session_id,
         mcp,
+        developer_instructions,
         CodexProjectTrust::Inherit,
     )
 }
@@ -2121,12 +2124,14 @@ pub fn codex_app_server_for_managed_worktree(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
         cwd,
         session_id,
         mcp,
+        developer_instructions,
         CodexProjectTrust::TermLoopManagedWorktree,
     )
 }
@@ -2136,6 +2141,7 @@ fn codex_app_server_with_project_trust(
     cwd: &str,
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
+    developer_instructions: Option<&str>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     let mut args = vec![
@@ -2153,8 +2159,11 @@ fn codex_app_server_with_project_trust(
     // must inherit the same Agent-only Cargo target as the terminal client.
     let mut environment = agent_launch_environment(cwd, Some(session_id));
     if let Some(mcp) = mcp {
-        args.extend(mcp_args("codex", &mcp)?);
+        args.extend(mcp_args("codex", &mcp, developer_instructions.is_none())?);
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
+    }
+    if let Some(instructions) = developer_instructions {
+        args.extend(codex_developer_instructions_args(instructions)?);
     }
     args.extend([
         "-c".to_owned(),
@@ -2268,6 +2277,9 @@ impl LaunchPayload {
     }
     pub fn environment_keys(&self) -> impl Iterator<Item = &std::ffi::OsStr> {
         self.environment.keys()
+    }
+    pub fn codex_app_server_developer_instructions(&self) -> Option<&str> {
+        self.codex_app_server_developer_instructions.as_deref()
     }
     pub fn initial_input(&self) -> Option<&str> {
         self.initial_input
@@ -3676,11 +3688,27 @@ fn observation_environment_conflicts(
     ) && termloop_platform::gemini_cli_system_defaults_source_present(environment)
 }
 
-fn mcp_args(agent_id: &str, mcp: &AgentMcpLaunch<'_>) -> Result<Vec<String>, InvocationError> {
+fn codex_developer_instructions_args(instructions: &str) -> Result<[String; 2], InvocationError> {
+    if instructions.trim().is_empty() || instructions.len() > 64 * 1024 {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    let instructions = serde_json::to_string(instructions)
+        .map_err(|_| InvocationError::InvalidDeveloperInstructions)?;
+    Ok([
+        "-c".into(),
+        format!("developer_instructions={instructions}"),
+    ])
+}
+
+fn mcp_args(
+    agent_id: &str,
+    mcp: &AgentMcpLaunch<'_>,
+    include_interactive_instructions: bool,
+) -> Result<Vec<String>, InvocationError> {
     match agent_id {
         "claude" => {
             let mut args = vec!["--mcp-config".into(), mcp.claude_config_path.into()];
-            if mcp.profile.includes_interactive_instructions() {
+            if include_interactive_instructions && mcp.profile.includes_interactive_instructions() {
                 args.extend([
                     "--append-system-prompt".into(),
                     INTERACTIVE_AGENT_TEMPLATE.authored_body.into(),
@@ -3697,13 +3725,10 @@ fn mcp_args(agent_id: &str, mcp: &AgentMcpLaunch<'_>) -> Result<Vec<String>, Inv
                 "-c".into(),
                 "mcp_servers.termloop_next.bearer_token_env_var=\"TERMLOOP_MCP_TOKEN\"".into(),
             ];
-            if mcp.profile.includes_interactive_instructions() {
-                let instructions = serde_json::to_string(INTERACTIVE_AGENT_TEMPLATE.authored_body)
-                    .map_err(|_| InvocationError::InvalidDeveloperInstructions)?;
-                args.extend([
-                    "-c".into(),
-                    format!("developer_instructions={instructions}"),
-                ]);
+            if include_interactive_instructions && mcp.profile.includes_interactive_instructions() {
+                args.extend(codex_developer_instructions_args(
+                    INTERACTIVE_AGENT_TEMPLATE.authored_body,
+                )?);
             }
             Ok(args)
         }
@@ -4422,7 +4447,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_profile_rejects_write_permission_and_unsupported_provider() {
+    fn agent_profile_accepts_user_permission_and_rejects_unsupported_provider() {
         let profile = agent_profiles()[0];
         let launch = |agent_id, permission| {
             profile_quick_action_agent_with_attachments_for_conversation(
@@ -4439,10 +4464,10 @@ mod tests {
                 None,
             )
         };
-        assert!(matches!(
-            launch("codex", "acceptEdits"),
-            Err(InvocationError::UnsupportedPermission { .. })
-        ));
+        for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
+            let launch = launch("codex", permission).unwrap();
+            assert_eq!(launch.inspectable_manifest().target.permission, permission);
+        }
         assert!(matches!(
             launch("gemini", "plan"),
             Err(InvocationError::UnsupportedAgent(agent_id)) if agent_id == "gemini"
@@ -4512,6 +4537,32 @@ mod tests {
         let instructions = &launch.inspectable_manifest().content_parts[1].content;
         assert!(instructions.contains("use `ask_to`"));
         assert!(instructions.contains("write-side operations"));
+        assert_eq!(
+            launch.codex_app_server_developer_instructions(),
+            Some(instructions.as_str())
+        );
+        let app_server = codex_app_server(
+            "ws://127.0.0.1:4567",
+            "/tmp/project",
+            "profile-session",
+            Some(AgentMcpLaunch {
+                endpoint: "http://127.0.0.1:4567/mcp",
+                token: "private-token",
+                claude_config_path: "/tmp/claude-mcp.json",
+                profile: AgentMcpProfile::Interactive,
+            }),
+            Some(instructions),
+        )
+        .unwrap();
+        let developer_instructions = app_server_args(&app_server)
+            .windows(2)
+            .filter(|arguments| {
+                arguments[0] == "-c" && arguments[1].starts_with("developer_instructions=")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(developer_instructions.len(), 1);
+        assert!(developer_instructions[0][1].contains(profile.id));
+        assert!(developer_instructions[0][1].contains("Interactive agent launch"));
         assert!(
             !launch
                 .args()
@@ -5133,8 +5184,14 @@ mod tests {
             "spawn tuple does not carry the inspected target"
         );
 
-        let app_server =
-            codex_app_server("ws://127.0.0.1:4567", "/tmp/project", "session-1", None).unwrap();
+        let app_server = codex_app_server(
+            "ws://127.0.0.1:4567",
+            "/tmp/project",
+            "session-1",
+            None,
+            None,
+        )
+        .unwrap();
         assert!(
             std::path::Path::new(app_server.program()).is_absolute(),
             "{:?}",
@@ -5569,6 +5626,7 @@ mod tests {
             cwd,
             "managed-session",
             None,
+            None,
         )
         .unwrap();
         assert!(
@@ -5577,7 +5635,7 @@ mod tests {
                 .any(|arguments| { arguments[0] == "-c" && arguments[1] == expected })
         );
         let project_app_server =
-            codex_app_server("ws://127.0.0.1:4567", cwd, "project-session", None).unwrap();
+            codex_app_server("ws://127.0.0.1:4567", cwd, "project-session", None, None).unwrap();
         assert!(
             app_server_args(&project_app_server)
                 .iter()
@@ -5938,6 +5996,7 @@ mod tests {
                 claude_config_path: "/unused.json",
                 profile: AgentMcpProfile::Interactive,
             }),
+            None,
         )
         .unwrap();
         assert_eq!(

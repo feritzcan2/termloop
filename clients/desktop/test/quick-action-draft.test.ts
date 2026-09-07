@@ -84,7 +84,7 @@ describe("Quick Action draft", () => {
       .toBe(attachment.previewDataUrl);
   });
 
-  it("locks a read-only Agent Profile to plan permission", async () => {
+  it("keeps Agent Profile permission user-selectable", async () => {
     const props = {
       ...composerProps(),
       profiles: [{
@@ -111,12 +111,21 @@ describe("Quick Action draft", () => {
     });
 
     const permission = container.querySelector<HTMLSelectElement>('select[aria-label="Permission"]');
-    expect(permission?.value).toBe("plan");
-    expect(permission?.disabled).toBe(true);
+    expect(permission?.value).toBe("default");
+    expect(permission?.disabled).toBe(false);
+    expect([...permission?.options ?? []].map((option) => option.value))
+      .toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
+    await act(async () => {
+      if (!permission) return;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set
+        ?.call(permission, "bypassPermissions");
+      permission.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(permission?.value).toBe("bypassPermissions");
     expect(container.querySelector('label[for="quick-action-prompt"]')?.textContent).toBe("Scope / task");
   });
 
-  it("keeps a profile's fixed permission when selecting it switches providers", async () => {
+  it("keeps permission selectable when a profile switches providers", async () => {
     const props = {
       ...composerProps(),
       initialAgent: "gemini",
@@ -145,7 +154,7 @@ describe("Quick Action draft", () => {
 
     expect(container.querySelector<HTMLSelectElement>('select[aria-label="Agent"]')?.value).toBe("codex");
     const permission = container.querySelector<HTMLSelectElement>('select[aria-label="Permission"]');
-    expect(permission?.value).toBe("plan");
-    expect(permission?.disabled).toBe(true);
+    expect(permission?.value).toBe("default");
+    expect(permission?.disabled).toBe(false);
   });
 });
