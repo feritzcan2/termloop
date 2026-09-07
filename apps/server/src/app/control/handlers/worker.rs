@@ -25,6 +25,9 @@ fn permission_name(permission: protocol::AssistantPermission) -> &'static str {
 fn availability(state: &AppState, agent_id: &str) -> termloop_core::AssistantAvailability {
     if state
         .agent_capabilities
+        .lock()
+        .unwrap()
+        .clone()
         .iter()
         .any(|capability| capability.agent_id == agent_id && capability.available)
     {

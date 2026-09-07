@@ -1,0 +1,30 @@
+.agent-connections { display: grid; gap: 16px; }
+.agent-server-select { margin: 0 0 20px; }
+.agent-server-select select { width: 100%; min-height: 38px; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); background: var(--bg-raised); }
+.agent-account-scope { margin: 0; padding: 12px 14px; border-left: 3px solid var(--accent-strong); border-radius: 4px; background: var(--accent-wash); color: var(--text-secondary); font: 12px/1.6 var(--font-ui); }
+.agent-account-list { display: grid; gap: 14px; }
+.agent-account-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
+.agent-account-card > header { display: flex; align-items: center; gap: 12px; }
+.agent-account-card h4 { margin: 0 0 4px; font-size: 14px; }
+.agent-account-icon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 10px; font: 700 17px var(--font-mono); background: var(--bg); }
+.agent-account-icon svg { width: 22px; height: 22px; }
+.agent-account-icon.claude { color: light-dark(#aa532b, #e8a180); font-size: 26px; }
+.agent-account-badge { margin-left: auto; padding: 5px 8px; border-radius: 6px; background: var(--accent-wash); color: var(--text-secondary); font: 600 10px/1.3 var(--font-ui); }
+.agent-account-badge.connected { color: light-dark(#187a4c, #80d5aa); background: light-dark(#e4f6ec, #203d32); }
+.agent-account-steps { display: flex; gap: 8px; margin: 18px 0; padding: 0; list-style: none; }
+.agent-account-steps li { flex: 1; padding: 7px 0; border-top: 2px solid var(--border); color: var(--text-secondary); font: 11px/1.4 var(--font-ui); }
+.agent-account-steps .done { border-color: light-dark(#269664, #68be92); color: var(--text); }
+.agent-account-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.agent-account-card button, .conn-manage { min-height: 32px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text); font: 600 11px/1.4 var(--font-ui); cursor: pointer; }
+.agent-account-card button:disabled { cursor: default; opacity: .5; }
+.agent-account-card button:hover:not(:disabled), .conn-manage:hover { background: var(--accent-wash); }
+.agent-account-card .conn-primary { border-color: var(--accent-strong); background: var(--accent-wash); color: var(--accent-strong); }
+.agent-account-card .conn-danger { color: light-dark(#b32635, #ed8e9b); }
+.agent-auth-progress { display: grid; justify-items: start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; font: 12px/1.5 var(--font-ui); }
+.agent-auth-progress p { margin: 0; }
+.agent-auth-progress small { color: var(--text-secondary); }
+.agent-auth-progress form { display: grid; gap: 10px; width: 100%; }
+.agent-device-code { display: grid; gap: 5px; }
+.agent-device-code span { color: var(--text-secondary); font-size: 10px; }
+.agent-device-code code { user-select: all; padding: 6px 10px; border-radius: 6px; background: var(--bg); font: 700 23px/1.4 var(--font-mono); letter-spacing: .08em; }
+@media (max-width: 640px) { .agent-account-card > header { flex-wrap: wrap; } .agent-account-badge { margin-left: 0; } .conn-card-actions { flex-wrap: wrap; justify-content: flex-end; } }

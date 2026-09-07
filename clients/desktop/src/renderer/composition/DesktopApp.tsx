@@ -1,3 +1,4 @@
+import type { AgentConnectionActions } from "../ui/AgentConnectionsPanel.js";
 import { openAgentCreator } from "./agent-creator.js";
 import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -599,6 +600,7 @@ export function DesktopApp() {
   // not expose diagnostics in a packaged release.
   const [isPackaged, setIsPackaged] = useState(true);
   const [agentCapabilities, setAgentCapabilities] = useState<AgentCapabilityDto[]>([]);
+  const [agentCapabilityRevision, setAgentCapabilityRevision] = useState(0);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileDto[]>([]);
   const [assistantRefreshToken, setAssistantRefreshToken] = useState(0);
   const [keepAwakeRefreshToken, setKeepAwakeRefreshToken] = useState(0);
@@ -663,6 +665,23 @@ export function DesktopApp() {
     if (profileId === selectedConnectionProfileId && payload.topics.includes("agentLibrary")) agentLibrary.reload();
   }), [selectedConnectionProfileId, agentLibrary.reload]);
   const localSourceApi = desktopApi.source("local");
+  const agentConnections = useMemo<AgentConnectionActions>(() => ({
+    list: async (profileId) => {
+      const api = desktopApi.source(profileId);
+      const statuses = await api.agentAuthStatusList();
+      setAgentCapabilityRevision((revision) => revision + 1);
+      return statuses;
+    },
+    start: (profileId, agentId, action) => {
+      const api = desktopApi.source(profileId);
+      return action === "install" ? api.agentInstall({ agentId }) : action === "signOut" ? api.agentAuthLogout({ agentId }) : api.agentAuthStart({ agentId });
+    },
+    get: (profileId, params) => desktopApi.source(profileId).agentAuthGet(params),
+    cancel: (profileId, params) => desktopApi.source(profileId).agentAuthCancel(params),
+    submitCode: (profileId, params) => desktopApi.source(profileId).agentAuthSubmitCode(params),
+    openSignIn: (profileId, params) => desktopApi.source(profileId).agentAuthOpen(params),
+  }), []);
+
   const assistantProjectId = selectedProject?.id ?? "";
   const assistantReadIdentity = useMemo<AssistantReadIdentity>(() => ({
     profileId: selectedConnectionProfileId,
@@ -709,7 +728,7 @@ export function DesktopApp() {
       if (active) setAgentProfiles([]);
     });
     return () => { active = false; };
-  }, [projection.connection, selectedProject?.connectionProfileId]);
+  }, [projection.connection, selectedProject?.connectionProfileId, agentCapabilityRevision]);
   const projectLayout = selectedProject ? presentation.layoutsByProject[selectedProject.id] : undefined;
   const visibleSessionIds = useMemo(
     () => new Set(projectLayout ? panes(projectLayout).flatMap((pane) => pane.sessionId ? [pane.sessionId] : []) : []),
@@ -2235,6 +2254,7 @@ export function DesktopApp() {
       saveVoiceCredentials={localSourceApi.voiceCredentialsSet}
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
+      agentConnections={agentConnections}
       listConnectionProfiles={desktopApi.connectionProfileList}
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);

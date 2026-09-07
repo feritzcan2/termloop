@@ -130,7 +130,7 @@ export function SettingsDialog({
               <>
                 <div className="settings-page-header">
                   <h3>Servers</h3>
-                  <p>Connect to other TermLoop computers or share this one.</p>
+                  <p>Manage your computers, agent accounts and remote access.</p>
                 </div>
                 <ConnectionProfilesDialog {...connectionProps} embedded close={close} />
               </>
