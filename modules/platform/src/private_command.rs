@@ -30,6 +30,40 @@ pub enum PrivateCommandExit {
     OutputLimit,
 }
 
+/// A failed cleanup returns the owned handle to its caller. The caller must
+/// retain it and keep the operation reserved until recovery, not start a
+/// replacement child while the original tree's ownership is uncertain.
+pub struct PrivateCommandFailure {
+    unreaped: Option<crate::ManagedProcess>,
+}
+
+impl PrivateCommandFailure {
+    pub fn into_unreaped_process(self) -> Option<crate::ManagedProcess> {
+        self.unreaped
+    }
+}
+
+impl std::fmt::Debug for PrivateCommandFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PrivateCommandFailure")
+            .field("cleanup_required", &self.unreaped.is_some())
+            .finish()
+    }
+}
+
+impl From<PlatformError> for PrivateCommandFailure {
+    fn from(_: PlatformError) -> Self {
+        Self { unreaped: None }
+    }
+}
+
+impl From<io::Error> for PrivateCommandFailure {
+    fn from(_: io::Error) -> Self {
+        Self { unreaped: None }
+    }
+}
+
 /// `input` must be a bounded channel. Each submission is limited to 4 KiB.
 /// A separate writer ensures a child that does not read cannot block timeout
 /// or cancellation. A tracked RAII process owns the entire child tree.
@@ -38,7 +72,7 @@ pub fn run_private_command(
     input: mpsc::Receiver<Vec<u8>>,
     cancel: Arc<AtomicBool>,
     mut output: impl FnMut(&[u8], bool),
-) -> Result<PrivateCommandExit, PlatformError> {
+) -> Result<PrivateCommandExit, PrivateCommandFailure> {
     if cancel.load(Ordering::Acquire) {
         return Ok(PrivateCommandExit::Cancelled);
     }
@@ -86,7 +120,7 @@ pub fn run_private_command(
     let deadline = Instant::now() + request.timeout;
     let mut total = 0usize;
     let mut exit_status = None;
-    let result = (|| {
+    let result = (|| -> Result<PrivateCommandExit, PlatformError> {
         loop {
             if cancel.load(Ordering::Acquire) {
                 return Ok(PrivateCommandExit::Cancelled);
@@ -126,8 +160,12 @@ pub fn run_private_command(
         let _ = out_reader.join();
         let _ = err_reader.join();
     }
-    cleanup?;
-    result
+    if cleanup.is_err() {
+        return Err(PrivateCommandFailure {
+            unreaped: Some(process),
+        });
+    }
+    result.map_err(Into::into)
 }
 
 fn read_chunks(
@@ -234,6 +272,37 @@ mod tests {
         assert_eq!(result, PrivateCommandExit::Exited(true));
         assert!(String::from_utf8_lossy(&retained).contains("confirmed"));
         assert!(!directory.join("child.process").exists());
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn cleanup_failure_returns_the_owned_process_for_recovery() {
+        let request = request("dialogue");
+        let directory = request.cwd.clone();
+        let record = request.record_path.clone();
+        let (input, receiver) = mpsc::sync_channel(8);
+        let mut retained = Vec::new();
+        let mut sent = false;
+        let failure = run_private_command(
+            request,
+            receiver,
+            Arc::new(AtomicBool::new(false)),
+            |bytes, _| {
+                retained.extend_from_slice(bytes);
+                if !sent && String::from_utf8_lossy(&retained).contains("challenge") {
+                    // Force a real OS cleanup failure after the child was owned.
+                    std::fs::remove_file(&record).unwrap();
+                    std::fs::create_dir(&record).unwrap();
+                    input.try_send(b"reply\n".to_vec()).unwrap();
+                    sent = true;
+                }
+            },
+        )
+        .unwrap_err();
+        let mut process = failure.into_unreaped_process().expect("retained ownership");
+        assert!(process.try_wait().unwrap().is_some());
+        process.terminate().unwrap();
+        std::fs::remove_dir(record).unwrap();
         std::fs::remove_dir(directory).unwrap();
     }
 

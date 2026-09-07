@@ -61,7 +61,7 @@ function AgentAccountCard({ status, profileId, actions, refresh }: { status: Age
   const mounted = useRef(true);
   const intent = useRef(0);
   const active = operationActive(operation);
-  const busy = active || pending || (status.busy && !status.operation);
+  const busy = active || pending || status.busy;
   useEffect(() => { setOperation(status.operation); }, [status.operation]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
