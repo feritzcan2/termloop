@@ -1,6 +1,6 @@
 use super::{Action, Operation, Phase, Provider, SetupControl, Status};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, atomic::Ordering, mpsc};
 use std::time::Duration;
 use termloop_agents::AgentAccountContext;
@@ -210,7 +210,7 @@ fn run_inner(
         failed: false,
     };
     let outcome = run_private_command(PrivateCommandRequest {
-        program, args, cwd: home, environment, timeout: Duration::from_secs(15 * 60), output_limit: 256 * 1024,
+        program, args, cwd: home.clone(), environment, timeout: Duration::from_secs(15 * 60), output_limit: 256 * 1024,
         record_path: registry.join(format!("{operation_id}.process")),
     }, receiver, cancel.clone(), |bytes, stderr| {
         if action != Action::SignIn || (structured && stderr) { return; }
@@ -252,10 +252,8 @@ fn run_inner(
                     "Installation finished but the CLI is not discoverable. Check this server’s PATH.",
                 );
             }
-            if action == Action::SignIn && status(account, true).auth_state != "signedIn" {
-                return Err(
-                    "The provider did not confirm sign-in. Refresh or start a new attempt.",
-                );
+            if action == Action::SignIn {
+                complete_sign_in(account, &home, status(account, true).auth_state)?;
             }
             Ok(true)
         }
@@ -268,6 +266,44 @@ fn run_inner(
             "The provider command failed. Check network access and the CLI installation, then retry.",
         ),
     }
+}
+
+fn complete_sign_in(
+    account: &AgentAccountContext,
+    home: &Path,
+    auth_state: &str,
+) -> Result<(), &'static str> {
+    if auth_state != "signedIn" {
+        return Err("The provider did not confirm sign-in. Refresh or start a new attempt.");
+    }
+    if account.agent_id != "claude" {
+        return Ok(());
+    }
+
+    // `claude auth login` can persist valid OAuth credentials without completing
+    // the interactive CLI's first-run flow. Record only that completion after
+    // verified sign-in; project trust and permission choices remain Claude's.
+    let path = account
+        .config_directory
+        .as_deref()
+        .unwrap_or(home)
+        .join(".claude.json");
+    let error = "Signed in, but Claude’s first-run setup could not be completed. Open Claude once on this server, then retry.";
+    let bytes = termloop_platform::read_bounded_file(&path, 1024 * 1024).map_err(|_| error)?;
+    let mut config: Value = serde_json::from_slice(&bytes).map_err(|_| error)?;
+    let config_object = config.as_object_mut().ok_or(error)?;
+    if config_object.get("hasCompletedOnboarding") == Some(&json!(true)) {
+        return Ok(());
+    }
+    config_object.insert("hasCompletedOnboarding".into(), json!(true));
+    let updated = serde_json::to_vec_pretty(&config).map_err(|_| error)?;
+    // Preserve concurrent provider updates rather than replacing an observed
+    // stale config. The atomic primitive also rejects symlinks/non-files.
+    if termloop_platform::read_bounded_file(&path, 1024 * 1024).map_err(|_| error)? != bytes {
+        return Err(error);
+    }
+    termloop_platform::atomic_replace_file_preserving_permissions(&path, &updated)
+        .map_err(|_| error)
 }
 
 struct Dialogue {
@@ -378,6 +414,105 @@ fn claude_login_url(bytes: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verified_claude_sign_in_completes_only_the_selected_accounts_first_run() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-claude-onboarding-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let home = root.join("home");
+        let named = root.join("work");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&named).unwrap();
+        let original = json!({
+            "oauthAccount": {"accountUuid":"provider-owned"},
+            "theme":"light",
+            "projects":{"/work":{"hasTrustDialogAccepted":false}},
+            "bypassPermissionsModeAccepted":false
+        });
+        for directory in [&home, &named] {
+            std::fs::write(directory.join(".claude.json"), original.to_string()).unwrap();
+            std::fs::write(directory.join(".credentials.json"), "untouched credentials").unwrap();
+        }
+        let mut account = AgentAccountContext {
+            agent_id: "claude".into(),
+            account_id: "work".into(),
+            name: "Work".into(),
+            config_directory: Some(named.clone()),
+        };
+        for auth_state in ["signedOut", "unknown"] {
+            assert!(complete_sign_in(&account, &home, auth_state).is_err());
+            assert_eq!(
+                std::fs::read_to_string(named.join(".claude.json")).unwrap(),
+                original.to_string()
+            );
+        }
+        complete_sign_in(&account, &home, "signedIn").unwrap();
+        let mut expected = original.clone();
+        expected["hasCompletedOnboarding"] = json!(true);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&std::fs::read(named.join(".claude.json")).unwrap())
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.join(".claude.json")).unwrap(),
+            original.to_string()
+        );
+        let completed = std::fs::read(named.join(".claude.json")).unwrap();
+        complete_sign_in(&account, &home, "signedIn").unwrap();
+        assert_eq!(
+            std::fs::read(named.join(".claude.json")).unwrap(),
+            completed
+        );
+        account.account_id = "default".into();
+        account.config_directory = None;
+        complete_sign_in(&account, &home, "signedIn").unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&std::fs::read(home.join(".claude.json")).unwrap())
+                .unwrap(),
+            expected
+        );
+        for directory in [&home, &named] {
+            assert_eq!(
+                std::fs::read_to_string(directory.join(".credentials.json")).unwrap(),
+                "untouched credentials"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_first_run_preserves_invalid_config_and_codex_never_requires_it() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-claude-invalid-config-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut account = AgentAccountContext {
+            agent_id: "claude".into(),
+            account_id: "default".into(),
+            name: "Default".into(),
+            config_directory: None,
+        };
+        let path = root.join(".claude.json");
+        assert!(complete_sign_in(&account, &root, "signedIn").is_err());
+        assert!(!path.exists());
+        for invalid in ["{\"partial\":", "[]", "null"] {
+            std::fs::write(&path, invalid).unwrap();
+            assert!(complete_sign_in(&account, &root, "signedIn").is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), invalid);
+        }
+        let oversized = vec![b' '; 1024 * 1024 + 1];
+        std::fs::write(&path, &oversized).unwrap();
+        assert!(complete_sign_in(&account, &root, "signedIn").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), oversized);
+        account.agent_id = "codex".into();
+        complete_sign_in(&account, &root, "signedIn").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), oversized);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn challenge_urls_are_exact_provider_origins_and_complete_stream_values() {
