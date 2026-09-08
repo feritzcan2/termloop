@@ -12,6 +12,7 @@ mod project;
 mod project_task_automation;
 mod run_configuration;
 mod session;
+mod session_admission;
 mod steward;
 mod task;
 pub(crate) mod task_branch;

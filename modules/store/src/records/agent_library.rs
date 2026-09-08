@@ -1,5 +1,6 @@
-use termloop_domain::{AgentLibrary, PersonalAgent, SessionAgentProfile, SessionRecord};
+use termloop_domain::{AgentLibrary, PersonalAgent, SessionRecord};
 
+use super::session_admission::FreshSessionAdmission;
 use crate::{CoreWriteAuthority, CurrentState, Store, StoreError};
 
 impl Store {
@@ -100,45 +101,49 @@ impl Store {
 
     pub fn insert_personal_agent_session(
         &mut self,
-        authority: &CoreWriteAuthority,
+        _authority: &CoreWriteAuthority,
         session: SessionRecord,
         agent: PersonalAgent,
         remember: bool,
     ) -> Result<u64, StoreError> {
-        if !agent.is_valid()
-            || self.session_agent_profile(&session.id).is_some()
-            || !session_matches_agent_profile(&session, &agent)
-            || session.launch_selection.model != agent.selection.model
-            || session.launch_selection.permission != agent.selection.permission
-            || session.launch_selection.reasoning != agent.selection.reasoning
-            || agent
-                .selection
-                .account_id
-                .as_ref()
-                .is_some_and(|account_id| {
-                    session.launch_selection.account_id.as_ref() != Some(account_id)
-                })
-            || (session.process.template_ref.as_deref() == Some("builtin.agent.ask-to-helper")
-                && (session.ask_to_source_session_id.is_none()
-                    || session.ask_to_continuation.is_none()))
-        {
-            return Err(StoreError::ConstraintViolation);
-        }
-        let previous = self.state.clone();
-        self.state.session_agent_profiles.push(SessionAgentProfile {
-            session_id: session.id.clone(),
-            agent,
-        });
-        let result = if remember {
-            self.insert_session_and_remember_agent_launch(authority, session)
-        } else {
-            self.insert_session(authority, session)
-        };
-        if result.is_err() {
-            self.state = previous;
-        }
-        result
+        self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::PersonalAgent {
+                agent: &agent,
+                remember_launch: remember,
+            },
+        )
     }
+}
+
+pub(super) fn validate_personal_agent_session(
+    state: &CurrentState,
+    session: &SessionRecord,
+    agent: &PersonalAgent,
+) -> Result<(), StoreError> {
+    if !agent.is_valid()
+        || state
+            .session_agent_profiles
+            .iter()
+            .any(|entry| entry.session_id == session.id)
+        || !session_matches_agent_profile(session, agent)
+        || session.launch_selection.model != agent.selection.model
+        || session.launch_selection.permission != agent.selection.permission
+        || session.launch_selection.reasoning != agent.selection.reasoning
+        || agent
+            .selection
+            .account_id
+            .as_ref()
+            .is_some_and(|account_id| {
+                session.launch_selection.account_id.as_ref() != Some(account_id)
+            })
+        || (session.process.template_ref.as_deref() == Some("builtin.agent.ask-to-helper")
+            && (session.ask_to_source_session_id.is_none()
+                || session.ask_to_continuation.is_none()))
+    {
+        return Err(StoreError::ConstraintViolation);
+    }
+    Ok(())
 }
 
 pub(crate) fn prune_session_profiles(state: &mut CurrentState) {

@@ -1,10 +1,11 @@
 use termloop_domain::{
-    AgentConversationReadiness, AgentConversationReadinessRecord, SavedAgentLaunchSelection,
-    SessionKind, SessionRecord, WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX, WorkflowConfiguration,
-    WorkflowExecution, WorkflowExecutionPhase,
+    SavedAgentLaunchSelection, SessionKind, SessionRecord, WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX,
+    WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase,
 };
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
+use super::session_admission::FreshSessionAdmission;
+use crate::CurrentState;
 
 impl Store {
     pub fn workflow_configurations(&self) -> &[WorkflowConfiguration] {
@@ -95,48 +96,12 @@ impl Store {
         session: SessionRecord,
         execution: WorkflowExecution,
     ) -> Result<u64, StoreError> {
-        if session.kind != SessionKind::Agent
-            || session.id != execution.coordinator_session_id
-            || session.project_id != execution.project_id
-            || session.process.agent_id.as_deref()
-                != Some(execution.configuration.coordinator_agent_id.as_str())
-            || !execution.is_valid()
-            || self
-                .state
-                .sessions
-                .iter()
-                .any(|value| value.id == session.id)
-            || self.state.workflow_executions.iter().any(|current| {
-                current.task_id == execution.task_id
-                    && current.phase != WorkflowExecutionPhase::Completed
-            })
-        {
-            return Err(StoreError::ConstraintViolation);
-        }
-        let task_exists =
-            self.state.tasks.iter().any(|task| {
-                task.id == execution.task_id && task.project_id == execution.project_id
-            });
-        let preference = session.process.agent_id.as_deref().map(|agent_id| {
-            SavedAgentLaunchSelection::new(agent_id, session.launch_selection.clone())
-        });
-        if !task_exists || preference.as_ref().is_none_or(|value| !value.is_valid()) {
-            return Err(StoreError::ConstraintViolation);
-        }
-        let previous = self.state.clone();
-        self.state
-            .workflow_executions
-            .retain(|current| current.task_id != execution.task_id);
-        self.state.workflow_executions.push(execution);
-        self.state.last_agent_launch_selection = preference;
-        self.state
-            .agent_conversation_readiness
-            .push(AgentConversationReadinessRecord {
-                session_id: session.id.clone(),
-                readiness: AgentConversationReadiness::Unconfirmed,
-            });
-        self.state.sessions.push(session);
-        self.commit_or_restore(previous)
+        self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::Workflow {
+                execution: &execution,
+            },
+        )
     }
 
     pub fn replace_workflow_execution(
@@ -193,4 +158,49 @@ impl Store {
         self.commit_or_restore(previous)?;
         Ok(removed)
     }
+}
+
+pub(super) fn validate_workflow_coordinator_session(
+    state: &CurrentState,
+    session: &SessionRecord,
+    execution: &WorkflowExecution,
+) -> Result<SavedAgentLaunchSelection, StoreError> {
+    if session.kind != SessionKind::Agent
+        || session.id != execution.coordinator_session_id
+        || session.project_id != execution.project_id
+        || session.process.agent_id.as_deref()
+            != Some(execution.configuration.coordinator_agent_id.as_str())
+        || !execution.is_valid()
+        || state.sessions.iter().any(|value| value.id == session.id)
+        || state.workflow_executions.iter().any(|current| {
+            current.task_id == execution.task_id
+                && current.phase != WorkflowExecutionPhase::Completed
+        })
+    {
+        return Err(StoreError::ConstraintViolation);
+    }
+    let task_exists = state
+        .tasks
+        .iter()
+        .any(|task| task.id == execution.task_id && task.project_id == execution.project_id);
+    let preference =
+        session.process.agent_id.as_deref().map(|agent_id| {
+            SavedAgentLaunchSelection::new(agent_id, session.launch_selection.clone())
+        });
+    if !task_exists {
+        return Err(StoreError::ConstraintViolation);
+    }
+    preference
+        .filter(SavedAgentLaunchSelection::is_valid)
+        .ok_or(StoreError::ConstraintViolation)
+}
+
+pub(super) fn apply_workflow_coordinator_execution(
+    state: &mut CurrentState,
+    execution: &WorkflowExecution,
+) {
+    state
+        .workflow_executions
+        .retain(|current| current.task_id != execution.task_id);
+    state.workflow_executions.push(execution.clone());
 }

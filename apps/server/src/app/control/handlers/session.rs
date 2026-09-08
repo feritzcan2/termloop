@@ -20,8 +20,9 @@ use super::super::super::gates::{
     MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
 };
 use super::super::super::invalidation::{
-    CommittedSessionMutation, InvalidationRequest, finish_session_mutation_with_cleanup,
-    publish_agent_resume_invalidation, publish_session_invalidation, refresh_task_presence_for_cwd,
+    CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
+    finish_session_mutation_with_cleanup, publish_agent_resume_invalidation,
+    publish_session_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::agent_launch::execute_agent_launch;
 
@@ -278,7 +279,7 @@ async fn fork_agent_session_once(
             Ok(()) => state
                 .terminal
                 .set_exit_replay_retention(&session_id, runtime_epoch, false)
-                .map(|()| core.state_revision())
+                .map(|()| CommittedSessionMutation::fork_confirmed(&value, core.state_revision()))
                 .map_err(|error| {
                     AgentForkAttemptFailure::with_child(
                         CoreError::Terminal(error.to_string()),
@@ -293,20 +294,10 @@ async fn fork_agent_session_once(
             )),
         }
     };
-    let state_revision = confirmation?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = value
-        .get("process")
-        .and_then(|process| process.get("cwd"))
-        .and_then(serde_json::Value::as_str)
-    {
-        refresh_task_presence_for_cwd(state, cwd).await;
-    }
-    Ok(value)
+    let effects = confirmation?;
+    finish_session_mutation(state, effects, Ok(value))
+        .await
+        .map_err(Into::into)
 }
 
 pub(in crate::app::control) async fn preview_agent_session(
@@ -488,29 +479,14 @@ pub(in crate::app) async fn launch_task_session(
         .await
         .map_err(|error| CoreError::Store(format!("Task launch observation failed: {error}")))??;
     drop(permit);
-    let result = {
+    let (result, effects) = {
         let mut core = state.core.lock().await;
-        core.complete_task_terminal_launch(observed)
-    }?;
-    let state_revision = state.core.lock().await.state_revision();
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Session,
-            ProjectionTopic::Steward,
-            ProjectionTopic::Routine,
-            ProjectionTopic::Workflow,
-        ],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = result
-        .get("process")
-        .and_then(|process| process.get("cwd"))
-        .and_then(serde_json::Value::as_str)
-    {
-        refresh_task_presence_for_cwd(state, cwd).await;
-    }
-    Ok(result)
+        let result = core.complete_task_terminal_launch(observed)?;
+        let effects =
+            CommittedSessionMutation::task_terminal_launched(&result, core.state_revision());
+        (result, effects)
+    };
+    finish_session_mutation(state, effects, Ok(result)).await
 }
 
 pub(in crate::app) async fn launch_task_run(
@@ -562,12 +538,12 @@ pub(in crate::app) async fn launch_task_run(
         .await
         .map_err(|error| CoreError::Store(format!("Task run observation failed: {error}")))??;
     drop(permit);
-    let (result, state_revision) = {
+    let (result, effects) = {
         let mut core = state.core.lock().await;
-        let result = core.complete_task_run_launch(observed, &configuration_id, force_setup);
-        (result, core.state_revision())
+        let result = core.complete_task_run_launch(observed, &configuration_id, force_setup)?;
+        let effects = CommittedSessionMutation::run_launched(&result, core.state_revision());
+        (result, effects)
     };
-    let result = result?;
     if let Some(session_id) = result
         .get("id")
         .and_then(serde_json::Value::as_str)
@@ -575,19 +551,7 @@ pub(in crate::app) async fn launch_task_run(
     {
         observe_run_terminal(session_id, state.clone());
     }
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::Run],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = result
-        .get("process")
-        .and_then(|process| process.get("cwd"))
-        .and_then(serde_json::Value::as_str)
-    {
-        refresh_task_presence_for_cwd(state, cwd).await;
-    }
-    Ok(result)
+    finish_session_mutation(state, effects, Ok(result)).await
 }
 
 pub(in crate::app) async fn launch_project_run(
@@ -620,12 +584,13 @@ pub(in crate::app) async fn launch_project_run(
         }
         replace_previous_run_session(&session_id, state).await?;
     }
-    let (result, state_revision) = {
+    let (result, effects) = {
         let mut core = state.core.lock().await;
-        let result = core.complete_project_run_launch(&project_id, &configuration_id, force_setup);
-        (result, core.state_revision())
+        let result =
+            core.complete_project_run_launch(&project_id, &configuration_id, force_setup)?;
+        let effects = CommittedSessionMutation::run_launched(&result, core.state_revision());
+        (result, effects)
     };
-    let result = result?;
     if let Some(session_id) = result
         .get("id")
         .and_then(serde_json::Value::as_str)
@@ -633,19 +598,7 @@ pub(in crate::app) async fn launch_project_run(
     {
         observe_run_terminal(session_id, state.clone());
     }
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session, ProjectionTopic::Run],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = result
-        .get("process")
-        .and_then(|process| process.get("cwd"))
-        .and_then(serde_json::Value::as_str)
-    {
-        refresh_task_presence_for_cwd(state, cwd).await;
-    }
-    Ok(result)
+    finish_session_mutation(state, effects, Ok(result)).await
 }
 
 /// Restart means one run keeps one Session, so the replaced process is both
