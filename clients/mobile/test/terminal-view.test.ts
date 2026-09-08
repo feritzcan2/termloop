@@ -1,5 +1,6 @@
 import { build } from "esbuild";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -26,7 +27,7 @@ describe("terminal native layout", () => {
       Platform: { OS: "ios", select: (values: { ios: string }) => values.ios },
     };
     const bundle = await build({
-      entryPoints: [new URL("../src/components/terminal-view.tsx", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("../src/components/terminal-view.tsx", import.meta.url))],
       bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic",
       external: ["react", "react-native", "react/jsx-runtime"],
     });
