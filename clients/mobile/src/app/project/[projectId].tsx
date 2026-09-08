@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
-import { Banner, Card, CardDivider, EmptyState, SectionHeader, StatePill } from "@/components/primitives";
+import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader, StatePill } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
@@ -229,6 +229,10 @@ export default function ProjectRoute() {
               </>
             ) : (
               <View style={styles.section}>
+                <SecondaryButton label="Workflow templates" onPress={() => router.push({
+                  pathname: "/workflows/[projectId]",
+                  params: connectionRouteParams(connections.selectedId, { projectId }),
+                })} />
                 <SectionHeader label="Open tasks" trailing={<Text style={styles.count}>{model.counts.tasks}</Text>} />
                 {model.tasks.length === 0 ? (
                   <EmptyState

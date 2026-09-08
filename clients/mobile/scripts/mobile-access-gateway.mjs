@@ -109,6 +109,7 @@ const MOBILE_CONTROL_METHODS = new Set([
   "session.list",
   "agent.statusList",
   "agent.capabilityList",
+  "workflow.configurationList",
   "task.list",
   "steward.configurationGet",
 ]);
@@ -123,6 +124,12 @@ const MOBILE_CONTROL_METHODS = new Set([
 /// lifecycle and coordination entries back the mobile long-press menu; they remain
 /// exact methods rather than turning the owner credential into arbitrary forwarding.
 const MOBILE_FULL_CONTROL_METHODS = new Set([
+  // The phone edits the same Project templates as desktop. Agent profiles are
+  // read-only here even though the daemon requires a full credential to read them.
+  "agent.libraryGet",
+  "workflow.configurationCreate",
+  "workflow.configurationUpdate",
+  "workflow.configurationDelete",
   // Worktree content reads are full-control in the daemon contract. Keeping
   // them named here gives the phone a bounded review surface without exposing
   // any broader Git or filesystem authority.
@@ -1849,7 +1856,7 @@ function subscribeMobileInvalidations(runtime, client, connectionId) {
         token: runtime.readOnlyToken,
         method: "control.subscribe",
         params: {
-          topics: ["project", "task", "session", "agentStatus", "companion", "steward", "worker", "routine", "keepAwake"],
+          topics: ["project", "task", "session", "agentStatus", "companion", "steward", "worker", "routine", "keepAwake", "workflow"],
         },
       }));
     });

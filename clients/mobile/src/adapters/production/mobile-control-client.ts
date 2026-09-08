@@ -1,5 +1,9 @@
 import type {
   AgentCapabilityDto,
+  AgentLibraryGetResult,
+  WorkflowConfigurationListResult,
+  WorkflowConfigurationMutationResult,
+  WorkflowConfigurationDeleteResult,
   AgentLaunchPreviewResult,
   AgentStatusDto,
   CompanionProposalRespondResult,
@@ -53,6 +57,11 @@ type MobileControlMethod =
   | "session.list"
   | "agent.statusList"
   | "agent.capabilityList"
+  | "agent.libraryGet"
+  | "workflow.configurationList"
+  | "workflow.configurationCreate"
+  | "workflow.configurationUpdate"
+  | "workflow.configurationDelete"
   | "task.list"
   | "task.worktreeChangeList"
   | "task.worktreeDiff"
@@ -92,6 +101,11 @@ interface MobileControlResults {
   "session.list": SessionDto[];
   "agent.statusList": AgentStatusDto[];
   "agent.capabilityList": AgentCapabilityDto[];
+  "agent.libraryGet": AgentLibraryGetResult;
+  "workflow.configurationList": WorkflowConfigurationListResult;
+  "workflow.configurationCreate": WorkflowConfigurationMutationResult;
+  "workflow.configurationUpdate": WorkflowConfigurationMutationResult;
+  "workflow.configurationDelete": WorkflowConfigurationDeleteResult;
   "task.list": TaskPageDto;
   "task.worktreeChangeList": TaskWorktreeChangeListResult;
   "task.worktreeDiff": TaskWorktreeDiffResult;
@@ -168,6 +182,8 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
   "session.list",
   "agent.statusList",
   "agent.capabilityList",
+  "agent.libraryGet",
+  "workflow.configurationList",
   "task.list",
   "task.worktreeChangeList",
   "task.worktreeDiff",
@@ -666,6 +682,11 @@ function decodeResult<M extends MobileControlMethod>(
       return value as MobileControlResults[M];
     }
     case "agent.capabilityList":
+    case "agent.libraryGet":
+    case "workflow.configurationList":
+    case "workflow.configurationCreate":
+    case "workflow.configurationUpdate":
+    case "workflow.configurationDelete":
       if (!validateMethodResult(method, value)) throw incompatible(method);
       return value as MobileControlResults[M];
     case "steward.configurationGet":
