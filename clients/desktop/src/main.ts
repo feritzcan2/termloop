@@ -49,6 +49,7 @@ import {
 } from "./main/daemon-lifecycle.js";
 import { TerminalGatewayRegistry, gatewayEntry } from "./main/terminal-gateway.js";
 import { ConnectionRegistry, LOCAL_CONNECTION_PROFILE_ID } from "./main/connection-registry.js";
+import { ConnectionProfileLifecycle } from "./main/connection-profile-lifecycle.js";
 import { currentConnectionProfileId, sourceAwareIpcHandle } from "./main/ipc-source-context.js";
 import { connectionEntityKey } from "./connection-scope.js";
 import { interactiveTaskCreateParams } from "./task-automation-transport.js";
@@ -182,6 +183,7 @@ const gateways = new TerminalGatewayRegistry(
   gatewayEntry(directory),
   (profileId) => connections.connectionConfig(profileId),
 );
+const profileLifecycle = new ConnectionProfileLifecycle(connectionProfiles(), connections, gateways, forwardManager);
 
 function prompts(): PromptAssetStore {
   promptAssetStore ??= new PromptAssetStore(
@@ -1393,25 +1395,15 @@ handleIpc("termloop:connection-profile-reconnect", async (event, profileId: stri
 });
 handleIpc("termloop:connection-profile-connect", async (event, input: ConnectionProfileConnectInput) => {
   requireMainRenderer(event);
-  const result = await connectionProfiles().connect(input);
-  await connections.sync();
-  return result;
+  return profileLifecycle.connect(input);
 });
 handleIpc("termloop:connection-profile-set-enabled", async (event, profileId: string, enabled: boolean) => {
   requireMainRenderer(event);
-  await connectionProfiles().setEnabled(profileId, enabled);
-  await connections.sync();
-  gateways.retain(new Set(await connections.enabledProfileIds()));
-  if (!enabled) forwardManager.stopProfile(profileId);
-  return connections.summaries();
+  return profileLifecycle.setEnabled(profileId, enabled);
 });
 handleIpc("termloop:connection-profile-remove", async (event, profileId: string) => {
   requireMainRenderer(event);
-  await connectionProfiles().remove(profileId);
-  await connections.sync();
-  gateways.retain(new Set(await connections.enabledProfileIds()));
-  forwardManager.stopProfile(profileId);
-  return connections.summaries();
+  return profileLifecycle.remove(profileId);
 });
 handleIpc("termloop:tailscale-server-discover", async (event) => {
   requireMainRenderer(event);

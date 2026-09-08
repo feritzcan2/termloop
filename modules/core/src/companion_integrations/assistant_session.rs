@@ -495,13 +495,8 @@ impl CoreRuntime {
         self.store
             .delete_session_descriptor(&self.write_authority, session_id)
             .map_err(crate::store_error)?;
-        self.agent_observations.remove(session_id);
-        self.mcp_authorizer.remove(session_id);
-        self.pending_assistant_wake_deliveries.remove(session_id);
-        self.agent_conversation_activity.remove(session_id);
-        self.resume_ready.remove(session_id);
-        self.resume_failure_reaps.remove(session_id);
-        self.pending_agent_resume_refs.remove(session_id);
+        let retired_runtime = self.retire_closed_session_runtime(session_id);
+        debug_assert!(retired_runtime.is_none());
         Ok(Some(target))
     }
 
