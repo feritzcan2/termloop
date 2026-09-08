@@ -17,6 +17,8 @@ export interface TaskBrowserItem {
   readonly row: TaskRow;
   readonly task: TaskDto;
   readonly status: string;
+  readonly statusDetail: string | undefined;
+  readonly agentActionLabel: string;
   readonly filter: Exclude<TaskFilter, "all">;
   readonly issueKey: string | undefined;
   readonly changeCount: number | undefined;
@@ -48,7 +50,7 @@ export function buildTaskBrowserItems(
 ): TaskBrowserItem[] {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const agentsById = new Map(agents.map((agent) => [agent.sessionId, agent]));
-  return rows.flatMap((row) => {
+  return rows.flatMap<TaskBrowserItem>((row) => {
     const task = tasksById.get(row.taskId);
     if (task === undefined) return [];
     const agent = (task.worktree_presence?.attached_sessions ?? [])
@@ -62,9 +64,23 @@ export function buildTaskBrowserItems(
         : row.stage.id === "ready" ? "ready" : "setup";
     const status = row.stage.tone === "blocked" || row.stage.id === "provisioning"
       ? stageLabels[row.stage.id]
-      : row.attention?.label ?? (row.stage.id === "ready" && agent ? "Agent available" : stageLabels[row.stage.id]);
-    return [{ row, task, status, filter, agent, issueKey: task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined, changeCount: taskChangeCount(task) }];
-  });
+      : row.attention?.tone === "attention" ? "Waiting for you"
+        : row.attention?.tone === "review" ? "Ready for review"
+          : row.attention?.tone === "working" ? "Agent working"
+            : row.stage.id === "ready" && agent ? "Agent available" : stageLabels[row.stage.id];
+    const statusDetail = row.stage.tone === "blocked" ? "Needs a fix on your Mac."
+      : row.attention?.tone === "attention" ? `${row.attention.agent} needs your reply to continue.`
+        : row.attention?.tone === "review" ? `${row.attention.agent}'s work is ready to review.`
+          : row.attention?.tone === "working" ? `${row.attention.agent} is working on this task.` : undefined;
+    const agentActionLabel = row.attention?.tone === "attention" ? "Reply now"
+      : row.attention?.tone === "review" ? "Review now"
+        : row.attention?.tone === "working" ? "View progress" : "Open agent";
+    return [{ row, task, status, statusDetail, agentActionLabel, filter, agent, issueKey: task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined, changeCount: taskChangeCount(task) }];
+  }).sort((left, right) => filterPriority(left.filter) - filterPriority(right.filter));
+}
+
+function filterPriority(filter: TaskBrowserItem["filter"]): number {
+  return filter === "attention" ? 0 : filter === "active" ? 1 : 2;
 }
 
 export function filterTaskItems(items: readonly TaskBrowserItem[], filter: TaskFilter, query: string): TaskBrowserItem[] {
