@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { newerVersion, parseVersion, resolveRelease, stageRelease } from './server-release.mjs';
+import { newerVersion, parseVersion, resolveRelease, stageRelease, stageSourceArchive } from './server-release.mjs';
 
 const execute = promisify(execFile);
 const serverUnit = 'termloop-next.service';
@@ -60,10 +60,15 @@ export async function currentRelease(paths) {
   if (!(await lstat(paths.current)).isSymbolicLink()) throw new Error('Managed current release must be a symbolic link');
   const directory = path.resolve(paths.root, await readlink(paths.current));
   if (path.dirname(directory) !== paths.releases) throw new Error('Current release points outside the managed releases directory');
-  const version = path.basename(directory);
-  parseVersion(version);
+  const directoryName = path.basename(directory);
   const manifest = JSON.parse(await readFile(path.join(directory, 'server-package.json'), 'utf8'));
-  if (manifest.schema !== 1 || manifest.version !== version) throw new Error('Invalid installed release identity');
+  const version = manifest.version;
+  parseVersion(version);
+  if (directoryName.startsWith('source-')) {
+    if (manifest.schema !== 1 || !/^[a-f0-9]{40}$/.test(manifest.commit) || directoryName !== `source-${manifest.commit}`) throw new Error('Invalid installed source identity');
+    return { version, directory, sourceCommit: manifest.commit };
+  }
+  if (manifest.schema !== 1 || directoryName !== version) throw new Error('Invalid installed release identity');
   return { version, directory };
 }
 
@@ -160,27 +165,28 @@ export async function activateRelease(paths, next, previous, service = { stop: (
   }
 }
 
-async function pruneReleases(paths, keep) {
+export async function pruneReleases(paths, keep) {
   for (const name of await readdir(paths.releases)) {
-    if (keep.has(name) || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(name)) continue;
+    if (keep.has(name) || !/^(?:(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)|source-[a-f0-9]{40})$/.test(name)) continue;
     const directory = path.join(paths.releases, name);
     if (!(await lstat(directory)).isDirectory() || !await exists(path.join(directory, '.archive-sha256'))) continue;
     await rm(directory, { recursive: true });
   }
 }
 
-export async function runManager(action, version, paths = installationPaths()) {
+export async function runManager(action, version, paths = installationPaths(), sourceArchive) {
+  if (sourceArchive !== undefined && (action !== 'install' || version !== undefined)) throw new Error('A source archive is supported only by install, without --version');
   const previous = await currentRelease(paths);
   if (action === 'status') {
-    return { installed: !!previous, version: previous?.version, running: await isActive(serverUnit), autoUpdate: await isActive(timerUnit), installDirectory: paths.root, stateDirectory: paths.state };
+    return { installed: !!previous, version: previous?.version, sourceCommit: previous?.sourceCommit, running: await isActive(serverUnit), autoUpdate: await isActive(timerUnit), installDirectory: paths.root, stateDirectory: paths.state };
   }
   if (action === 'update' && !previous) throw new Error('Install the managed TermLoop server first');
   const linger = await execute('loginctl', ['show-user', String(process.getuid()), '--property=Linger', '--value'], { timeout: 5000 });
   if (linger.stdout.trim() !== 'yes') throw new Error(`Enable background services first: sudo loginctl enable-linger ${os.userInfo().username}`);
   if (action === 'update' && !await isActive(serverUnit)) return { updated: false, reason: 'Server is stopped; automatic updates preserve that choice', version: previous.version };
   if (!previous && await exists(path.join(paths.units, serverUnit))) throw new Error('An unmanaged TermLoop service already exists; refusing to replace it');
-  const release = await resolveRelease(version);
-  if (previous && !newerVersion(release.version, previous.version)) return { updated: false, version: previous.version, reason: 'Already up to date; downgrades are not automatic' };
+  let release = sourceArchive === undefined ? await resolveRelease(version) : undefined;
+  if (release && previous && !newerVersion(release.version, previous.version)) return { updated: false, version: previous.version, sourceCommit: previous.sourceCommit, reason: 'Already up to date; downgrades are not automatic' };
   await mkdir(paths.releases, { recursive: true, mode: 0o700 });
   await mkdir(paths.units, { recursive: true, mode: 0o700 });
   // The process lock excludes live downloads and snapshots from another update.
@@ -190,12 +196,24 @@ export async function runManager(action, version, paths = installationPaths()) {
   const space = await statfs(paths.root);
   if (space.bavail * space.bsize < 1024 * 1024 * 1024) throw new Error('At least 1 GiB free is required to download and unpack a server update');
   const stage = await mkdtemp(path.join(paths.root, '.download-'));
-  const directory = path.join(paths.releases, release.version);
   try {
-    const payload = await stageRelease(release, stage);
+    let payload;
+    let directoryName;
+    if (sourceArchive !== undefined) {
+      const source = await stageSourceArchive(sourceArchive, stage);
+      if (previous && newerVersion(previous.version, source.version)) throw new Error('Source installs cannot downgrade the installed server');
+      release = { version: source.version, sha256: source.sha256, sourceCommit: source.commit };
+      payload = source.payload;
+      directoryName = `source-${source.commit}`;
+    } else {
+      payload = await stageRelease(release, stage);
+      directoryName = release.version;
+    }
+    const directory = path.join(paths.releases, directoryName);
     if (await exists(directory)) {
       const recorded = (await readFile(path.join(directory, '.archive-sha256'), 'utf8')).trim();
       if (recorded !== release.sha256) throw new Error('An existing version directory has a different archive identity');
+      if (previous?.directory === directory) return { updated: false, version: release.version, sourceCommit: release.sourceCommit, reason: 'Already using this source build' };
     } else {
       await rename(payload, directory);
     }
@@ -214,9 +232,9 @@ export async function runManager(action, version, paths = installationPaths()) {
     }
     await systemd(['enable', serverUnit]);
     await systemd(['enable', '--now', timerUnit]);
-    await pruneReleases(paths, new Set([release.version, previous?.version].filter(Boolean)));
-    await atomicFile(path.join(paths.root, 'last-update.json'), JSON.stringify({ version: release.version, previousVersion: previous?.version, updatedAt: new Date().toISOString() }) + '\n');
-    return { updated: true, version: release.version, previousVersion: previous?.version, autoUpdate: true };
+    await pruneReleases(paths, new Set([directoryName, previous && path.basename(previous.directory)].filter(Boolean)));
+    await atomicFile(path.join(paths.root, 'last-update.json'), JSON.stringify({ version: release.version, sourceCommit: release.sourceCommit, previousVersion: previous?.version, updatedAt: new Date().toISOString() }) + '\n');
+    return { updated: true, version: release.version, sourceCommit: release.sourceCommit, previousVersion: previous?.version, autoUpdate: true };
   } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
@@ -224,9 +242,12 @@ async function main() {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Managed server installation currently supports Linux x64');
   if (process.getuid?.() === 0) throw new Error('Run the server installer as the user who will own the server, without sudo');
   const [action = 'install', ...args] = process.argv.slice(2);
-  if (!['install', 'update', 'status'].includes(action)) throw new Error('Usage: install.sh [install|update|status] [--version=X.Y.Z]');
+  if (!['install', 'update', 'status'].includes(action)) throw new Error('Usage: install.sh [install|update|status] [--version=X.Y.Z | --source-archive=/path/package.tar.gz]');
   const versionArg = args.find((arg) => arg.startsWith('--version='));
-  if (args.some((arg) => arg !== '--locked' && arg !== versionArg)) throw new Error('Unknown server installer option');
+  const sourceArg = args.find((arg) => arg.startsWith('--source-archive='));
+  if (args.some((arg) => arg !== '--locked' && arg !== versionArg && arg !== sourceArg)) throw new Error('Unknown server installer option');
+  if (sourceArg !== undefined && (action !== 'install' || versionArg !== undefined || !sourceArg.slice('--source-archive='.length))) throw new Error('Use install --source-archive=/path/package.tar.gz without --version');
+  const sourceArchive = sourceArg === undefined ? undefined : path.resolve(sourceArg.slice('--source-archive='.length));
   const version = versionArg?.slice('--version='.length);
   if (version !== undefined) parseVersion(version);
   const paths = installationPaths();
@@ -238,7 +259,7 @@ async function main() {
     } catch (error) { throw new Error(error.stderr?.trim() || 'Another server update is running or the update failed'); }
     return;
   }
-  console.log(JSON.stringify(await runManager(action, version, paths)));
+  console.log(JSON.stringify(await runManager(action, version, paths, sourceArchive)));
 }
 
 if (process.argv[1] && await realpath(process.argv[1]).catch(() => '') === fileURLToPath(import.meta.url)) {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -89,9 +89,24 @@ export function validateArchiveListing(names, verbose) {
 export async function stageRelease(release, stage, request = fetch) {
   const archive = join(stage, 'download.tar.gz');
   await writeFile(archive, await download(release.url, maxArchiveBytes, request), { mode: 0o600 });
+  return (await unpackArchive(archive, stage, release)).payload;
+}
+
+export async function stageSourceArchive(source, stage) {
+  const metadata = await stat(source);
+  if (!metadata.isFile() || metadata.size > maxArchiveBytes) throw new Error('Source archive must be a file smaller than 256 MiB');
+  const archive = join(stage, 'download.tar.gz');
+  await copyFile(source, archive);
+  await chmod(archive, 0o600);
+  if ((await stat(archive)).size > maxArchiveBytes) throw new Error('Source archive exceeds its size limit');
+  return unpackArchive(archive, stage);
+}
+
+async function unpackArchive(archive, stage, expected) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(archive)) hash.update(chunk);
-  if (hash.digest('hex') !== release.sha256) throw new Error('Server archive checksum mismatch');
+  const sha256 = hash.digest('hex');
+  if (expected && sha256 !== expected.sha256) throw new Error('Server archive checksum mismatch');
   const options = { timeout: 60_000, maxBuffer: 128 * 1024 };
   const names = await execute('tar', ['-tzf', archive], options);
   const verbose = await execute('tar', ['-tvzf', archive], options);
@@ -108,10 +123,11 @@ export async function stageRelease(release, stage, request = fetch) {
   }
   if (size > 512 * 1024 * 1024) throw new Error('Unpacked server package exceeds its size limit');
   const manifest = JSON.parse(await readFile(join(payload, 'server-package.json'), 'utf8'));
-  if (manifest.schema !== 1 || manifest.version !== release.version || manifest.platform !== 'linux' || manifest.arch !== 'x64'
+  parseVersion(manifest.version);
+  if (manifest.schema !== 1 || (expected && manifest.version !== expected.version) || manifest.platform !== 'linux' || manifest.arch !== 'x64'
     || manifest.target !== 'x86_64-unknown-linux-musl' || !/^[a-f0-9]{40}$/.test(manifest.commit)) {
     throw new Error('Server package identity does not match the requested Linux release');
   }
-  await writeFile(join(payload, '.archive-sha256'), release.sha256 + '\n', { mode: 0o600 });
-  return payload;
+  await writeFile(join(payload, '.archive-sha256'), sha256 + '\n', { mode: 0o600 });
+  return { payload, version: manifest.version, commit: manifest.commit, sha256 };
 }
