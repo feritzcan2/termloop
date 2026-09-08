@@ -64,7 +64,9 @@ use termloop_domain::{
 // sidebar results, parallel review routing, and fresh-helper launch selections.
 // Version 54 adds the current Agent Creator Session target.
 // Version 57 is the first integrated state containing all three feature families.
-const CURRENT_SCHEMA_VERSION: u32 = 58;
+// Version 58 centralizes Session mutation completion and activation. Version 59
+// adds optional Agent Library profile references to workflow helper steps.
+const CURRENT_SCHEMA_VERSION: u32 = 59;
 
 pub struct CoreWriteAuthority {
     _private: (),

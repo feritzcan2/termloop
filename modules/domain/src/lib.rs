@@ -9,7 +9,7 @@ pub use agent_accounts::{
 mod agent_library;
 pub use agent_library::{
     AGENT_INSTRUCTIONS_MAX, AgentLibrary, PERSONAL_AGENTS_MAX, PersonalAgent, SessionAgentProfile,
-    valid_personal_agent_id,
+    valid_agent_profile_id, valid_personal_agent_id,
 };
 
 mod archive;

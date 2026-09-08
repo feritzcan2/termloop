@@ -1469,6 +1469,7 @@ export function Shell(props: ShellProps) {
             runConfigurations={props.runConfigurations}
             workflowConfigurations={props.workflowConfigurations}
             workflowExecutions={props.workflowExecutions}
+            agentProfiles={props.agentLibrary?.value?.profiles ?? []}
             runRuntimes={props.runRuntimes}
             runStateRevision={props.runStateRevision}
             sessionsById={sessionsById}
@@ -1760,6 +1761,7 @@ export function Shell(props: ShellProps) {
                 : undefined}
               stateRevision={props.workflowStateRevision}
               agentCapabilities={props.agentCapabilities}
+              agentProfiles={props.agentLibrary?.value?.profiles ?? []}
               close={() => setStagePage(undefined)}
               save={props.saveWorkflowConfiguration}
               remove={props.deleteWorkflowConfiguration}

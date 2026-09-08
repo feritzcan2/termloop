@@ -815,6 +815,15 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-inspector-fields > label:first-child { margin-top: 0 !important; }
 .workflow-inspector-fields .field-help { margin: 6px 1px 0; }
 .workflow-inspector-fields textarea { min-height: 118px; max-height: 240px; }
+.workflow-agent-template { display: grid; gap: 6px; margin-top: 13px; }
+.workflow-agent-template > label { margin: 0 !important; color: var(--text-muted); font: 700 8px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.workflow-agent-template > select { min-width: 0; border-color: color-mix(in srgb,#d09555 30%,var(--border)); background: color-mix(in srgb,#d09555 5%,var(--bg-raised)); font-weight: 650; }
+.workflow-agent-template-summary { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid color-mix(in srgb,#d09555 35%,var(--border)); border-radius: 8px; background: color-mix(in srgb,#d09555 6%,var(--bg-raised)); }
+.workflow-agent-template-summary > span:first-child { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; background: color-mix(in srgb,#d09555 16%,transparent); color: light-dark(#9b692f,#e2ae6e); font: 800 12px/1 var(--font-mono); }
+.workflow-agent-template-summary > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
+.workflow-agent-template-summary b { color: var(--text); font: 650 10px/1.15 var(--font-ui); }
+.workflow-agent-template-summary small { overflow: hidden; color: var(--text-muted); font: 8.5px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workflow-agent-template-summary em { padding: 3px 5px; border-radius: 4px; background: color-mix(in srgb,#d09555 11%,transparent); color: light-dark(#8c622f,#d6a666); font: 700 7px/1 var(--font-mono); font-style: normal; letter-spacing: .04em; text-transform: uppercase; }
 .workflow-step-launch-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(rgba(15,23,42,.025),rgba(255,255,255,.018)); }
 .workflow-step-launch-fields > label { display: grid; gap: 6px; margin: 0 !important; color: var(--text-muted); font: 700 8px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
 .workflow-step-launch-fields > label:first-child { grid-column: 1 / -1; }

@@ -161,6 +161,7 @@ pub struct AgentLaunchPlan {
     mcp_role: AgentMcpRole,
     mcp_token: Option<String>,
     helper_prompt: Option<(String, String)>,
+    helper_agent_profile: Option<termloop_domain::PersonalAgent>,
     ask_to_source_session_id: Option<String>,
     ask_to_continuation: Option<termloop_domain::AskToContinuation>,
     steward_task_assignment: Option<StewardTaskAssignmentLaunch>,
@@ -727,6 +728,7 @@ impl CoreRuntime {
             mcp_token,
             mcp_role,
             helper_prompt: None,
+            helper_agent_profile: None,
             ask_to_source_session_id: None,
             ask_to_continuation: None,
             steward_task_assignment: None,
@@ -1609,6 +1611,7 @@ impl CoreRuntime {
         if configuration.project_id != task.project_id {
             return Err(CoreError::NotFound);
         }
+        self.validate_workflow_agent_profiles(&configuration.steps)?;
         if self.store.workflow_executions().iter().any(|execution| {
             execution.task_id == task.id
                 && execution.phase != termloop_domain::WorkflowExecutionPhase::Completed
@@ -1784,6 +1787,7 @@ impl CoreRuntime {
         {
             return Err(CoreError::CapabilityDenied);
         }
+        self.validate_workflow_agent_profiles(&configuration.steps)?;
         let jira_url = self
             .store
             .issue_links()
@@ -2007,24 +2011,28 @@ impl CoreRuntime {
                     &plan.agent_id,
                     &plan.cwd,
                     &selection.model,
+                    &selection.permission,
                     &selection.reasoning,
                     conversation,
                     request_id,
                     message,
                     observation,
                     mcp,
+                    plan.helper_agent_profile.as_ref(),
                 )
             } else {
                 termloop_invocation::ask_to_helper_agent_for_conversation(
                     &plan.agent_id,
                     &plan.cwd,
                     &selection.model,
+                    &selection.permission,
                     &selection.reasoning,
                     conversation,
                     request_id,
                     message,
                     observation,
                     mcp,
+                    plan.helper_agent_profile.as_ref(),
                 )
             }
         } else if matches!(&plan.mcp_role, AgentMcpRole::Improver { .. }) {
@@ -2160,6 +2168,13 @@ impl CoreRuntime {
                 session.clone(),
                 profile.clone(),
                 remember_launch_selection,
+            )
+        } else if let Some(profile) = plan.helper_agent_profile.as_ref() {
+            self.store.insert_personal_agent_session(
+                &self.write_authority,
+                session.clone(),
+                profile.clone(),
+                false,
             )
         } else if remember_launch_selection {
             self.store
@@ -2303,6 +2318,11 @@ fn launch_session_name(plan: &AgentLaunchPlan) -> Option<String> {
             plan.quick_action
                 .as_ref()
                 .and_then(quick_action_launch_session_name)
+        })
+        .or_else(|| {
+            plan.helper_agent_profile
+                .as_ref()
+                .map(|profile| profile.name.chars().take(SESSION_NAME_MAX_CHARS).collect())
         })
         .or_else(|| {
             plan.improver_session_name

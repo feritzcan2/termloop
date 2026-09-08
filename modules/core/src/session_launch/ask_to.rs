@@ -266,6 +266,9 @@ pub struct AskToInput {
     /// Internal workflow launches may select the exact fresh helper
     /// configuration. Ordinary Ask-To callers leave this unset.
     pub launch_selection: Option<AgentLaunchSelection>,
+    /// Internal workflow launches may pin one Agent Library profile to the
+    /// fresh helper Session. Reused helpers inherit their saved profile.
+    pub agent_profile: Option<termloop_domain::PersonalAgent>,
 }
 
 impl CoreRuntime {
@@ -326,7 +329,8 @@ impl CoreRuntime {
                 .conversation_id
                 .as_ref()
                 .is_some_and(|id| id.trim().is_empty() || id.chars().count() > 128)
-            || (params.conversation_id.is_some() && params.launch_selection.is_some())
+            || (params.conversation_id.is_some()
+                && (params.launch_selection.is_some() || params.agent_profile.is_some()))
             || params
                 .message
                 .chars()
@@ -418,14 +422,22 @@ impl CoreRuntime {
         }
 
         let target = params.target;
-        if let Some(selection) = params.launch_selection.as_ref() {
-            termloop_invocation::validate_agent_configuration(
-                &target,
-                &selection.model,
-                &selection.permission,
-                &selection.reasoning,
-            )
-            .map_err(|_| CoreError::InvalidParams("askTo launch options".into()))?;
+        let launch_selection = params.launch_selection.clone().unwrap_or(selection);
+        termloop_invocation::validate_agent_configuration(
+            &target,
+            &launch_selection.model,
+            &launch_selection.permission,
+            &launch_selection.reasoning,
+        )
+        .map_err(|_| CoreError::InvalidParams("askTo launch options".into()))?;
+        if let Some(profile) = params.agent_profile.as_ref()
+            && (!profile.is_valid()
+                || profile.agent_id != target
+                || profile.selection.model != launch_selection.model
+                || profile.selection.permission != launch_selection.permission
+                || profile.selection.reasoning != launch_selection.reasoning)
+        {
+            return Err(CoreError::InvalidParams("askTo agent profile".into()));
         }
         self.observation_transport
             .as_ref()
@@ -488,7 +500,8 @@ impl CoreRuntime {
                 request_id: Some(request_id.clone()),
             },
         )?;
-        plan.interactive_options = params.launch_selection.or(Some(selection));
+        plan.interactive_options = Some(launch_selection);
+        plan.helper_agent_profile = params.agent_profile;
         plan.set_account(
             self.resolve_agent_account(
                 &target,
@@ -1241,11 +1254,18 @@ mod tests {
     fn fresh_helper_plan_applies_an_internal_workflow_launch_selection() {
         let (mut runtime, token, root) = runtime_with_asker();
         let mut request = input(None);
-        request.launch_selection = Some(AgentLaunchSelection::new(
-            "default",
-            "bypassPermissions",
-            "high",
-        ));
+        let selection = AgentLaunchSelection::new("default", "bypassPermissions", "high");
+        request.launch_selection = Some(selection.clone());
+        request.agent_profile = Some(termloop_domain::PersonalAgent {
+            id: "builtin.agent-profile.edge-case-hunter".into(),
+            version: 2,
+            name: "Edge Case Hunter".into(),
+            description: "Probe boundary conditions and failure paths.".into(),
+            category: "Quality".into(),
+            instructions: "Inspect the change for edge cases.".into(),
+            agent_id: "claude".into(),
+            selection: selection.clone(),
+        });
 
         let AskToPlanOutcome::Launch(plan) = runtime.plan_ask_to(&token, request).unwrap() else {
             panic!("fresh helper must produce a launch plan");
@@ -1257,6 +1277,16 @@ mod tests {
                 "bypassPermissions",
                 "high",
             ))
+        );
+        assert_eq!(
+            plan.helper_agent_profile
+                .as_ref()
+                .map(|profile| profile.id.as_str()),
+            Some("builtin.agent-profile.edge-case-hunter")
+        );
+        assert_eq!(
+            super::super::launch_session_name(&plan).as_deref(),
+            Some("Edge Case Hunter")
         );
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1270,6 +1300,7 @@ mod tests {
             idempotency_key: key.map(str::to_owned),
             conversation_id: None,
             launch_selection: None,
+            agent_profile: None,
         }
     }
 

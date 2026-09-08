@@ -1,3 +1,4 @@
+use termloop_domain::{AgentLaunchSelection, PersonalAgent};
 use termloop_invocation::{
     AgentConversationLaunch, AgentMcpLaunch, AgentMcpProfile, InvocationError,
     ask_to_helper_agent_for_conversation, ask_to_helper_agent_for_managed_worktree_conversation,
@@ -33,12 +34,14 @@ fn initial_helper_selection_matches_manifest_and_provider_arguments() {
                 provider,
                 "/tmp/project",
                 model,
+                "default",
                 reasoning,
                 AgentConversationLaunch::Fresh { resume_ref: None },
                 "request-1",
                 "Review the change.",
                 None,
                 helper_mcp(),
+                None,
             )
             .unwrap();
             let manifest = launch.inspectable_manifest();
@@ -90,12 +93,14 @@ fn helper_selection_rejects_unsupported_provider_settings() {
             "codex",
             "/tmp/project",
             model,
+            "default",
             reasoning,
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-1",
             "Review the change.",
             None,
             helper_mcp(),
+            None,
         );
         assert!(matches!(
             result,
@@ -103,6 +108,92 @@ fn helper_selection_rejects_unsupported_provider_settings() {
                 | Err(InvocationError::UnsupportedReasoning { .. })
         ));
     }
+}
+
+#[test]
+fn helper_launch_applies_and_exposes_the_pinned_agent_profile() {
+    let profile = PersonalAgent {
+        id: "builtin.agent-profile.edge-case-hunter".into(),
+        version: 2,
+        name: "Edge Case Hunter".into(),
+        description: "Probe boundary conditions and failure paths.".into(),
+        category: "Quality".into(),
+        instructions: "EDGE-CASE-HUNTER-MARKER: inspect races and failure paths.".into(),
+        agent_id: "codex".into(),
+        selection: AgentLaunchSelection::new("default", "plan", "high"),
+    };
+    let launch = ask_to_helper_agent_for_conversation(
+        "codex",
+        "/tmp/project",
+        "default",
+        "plan",
+        "high",
+        AgentConversationLaunch::Fresh { resume_ref: None },
+        "request-profiled-review",
+        "Review the completed implementation.",
+        None,
+        helper_mcp(),
+        Some(&profile),
+    )
+    .unwrap();
+
+    assert_eq!(
+        launch.provenance().template_ref,
+        "builtin.agent.ask-to-helper"
+    );
+    assert_eq!(launch.inspectable_manifest().target.permission, "plan");
+    assert_eq!(launch.inspectable_manifest().target.reasoning, "high");
+    assert!(
+        launch
+            .bindings()
+            .any(|binding| binding == ("profileRef", profile.id.as_str()))
+    );
+    assert!(
+        launch
+            .inspectable_manifest()
+            .content_parts
+            .iter()
+            .any(|part| {
+                part.kind == "providerInstructions"
+                    && part.content.contains("EDGE-CASE-HUNTER-MARKER")
+            })
+    );
+
+    let resume_ref = termloop_domain::ResumeRef::for_provider(
+        termloop_domain::ResumeProvider::Codex,
+        "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035".into(),
+    )
+    .unwrap();
+    let resumed = configured_ask_to_helper_for_conversation_resume(
+        "codex",
+        "/tmp/project",
+        "default",
+        "plan",
+        "high",
+        None,
+        AgentConversationLaunch::Resume {
+            resume_ref: &resume_ref,
+        },
+        None,
+        Some(helper_mcp()),
+        Some(&profile),
+    )
+    .unwrap();
+    assert!(
+        resumed
+            .bindings()
+            .any(|binding| binding == ("profileRef", profile.id.as_str()))
+    );
+    assert!(
+        resumed
+            .inspectable_manifest()
+            .content_parts
+            .iter()
+            .any(|part| {
+                part.kind == "providerInstructions"
+                    && part.content.contains("EDGE-CASE-HUNTER-MARKER")
+            })
+    );
 }
 
 #[test]
@@ -138,6 +229,7 @@ fn helper_resume_reapplies_the_saved_model_and_reasoning() {
             },
             None,
             Some(helper_mcp()),
+            None,
         )
         .unwrap();
         assert_eq!(launch.inspectable_manifest().target.model, model);

@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AgentCapabilityDto,
+  AgentLibraryEntry,
   AssistantPermission,
   StewardAgentId,
   WorkflowConfigurationCreateParams,
@@ -33,6 +34,7 @@ import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js
 import type { RowTone } from "../row-tone.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
+import { WorkflowAgentTemplateSelect } from "./WorkflowAgentTemplateSelect.js";
 
 export type WorkflowSessionPresentation = {
   agentLabel: string;
@@ -44,6 +46,7 @@ export function TaskWorkflowLaunchers(props: {
   task: Task;
   configurations: readonly WorkflowConfiguration[];
   executions: readonly WorkflowExecution[];
+  agentProfiles: readonly AgentLibraryEntry[];
   launchable: boolean;
   showLaunchers: boolean;
   overlayContainer: Element | undefined;
@@ -120,6 +123,7 @@ export function TaskWorkflowLaunchers(props: {
     ><Icon name="add" />Workflow</button> : null}
     {execution && progressExpanded ? <WorkflowSidebarProgress
       execution={execution}
+      agentProfiles={props.agentProfiles}
       openSession={props.openSession}
       sessionPresentation={props.sessionPresentation}
       showDetails={() => setInspectingExecution(true)}
@@ -134,6 +138,7 @@ export function TaskWorkflowLaunchers(props: {
       /> : null}
       {inspectingExecution && execution ? <WorkflowExecutionDialog
         execution={execution}
+        agentProfiles={props.agentProfiles}
         close={() => setInspectingExecution(false)}
         cancel={props.cancel}
         openSession={props.openSession}
@@ -141,6 +146,7 @@ export function TaskWorkflowLaunchers(props: {
       /> : null}
       {execution && inspectedStep && inspectedResult ? <WorkflowStepResultDialog
         execution={execution}
+        agentProfiles={props.agentProfiles}
         step={inspectedStep}
         result={inspectedResult}
         close={() => setInspectingResult(undefined)}
@@ -153,6 +159,7 @@ export function TaskWorkflowLaunchers(props: {
 
 function WorkflowSidebarProgress(props: {
   execution: WorkflowExecution;
+  agentProfiles: readonly AgentLibraryEntry[];
   openSession(sessionId: string): void;
   sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
   showDetails(): void;
@@ -188,6 +195,7 @@ function WorkflowSidebarProgress(props: {
             <WorkflowParticipantSession
               step={step}
               steps={props.execution.steps}
+              agentProfiles={props.agentProfiles}
               sessionId={participantSessionId}
               presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
               coordinatorSessionId={props.execution.coordinatorSessionId}
@@ -213,6 +221,7 @@ function WorkflowSidebarProgress(props: {
 
 function WorkflowStepResultDialog(props: {
   execution: WorkflowExecution;
+  agentProfiles: readonly AgentLibraryEntry[];
   step: WorkflowStepDto;
   result: WorkflowStepResultDto;
   close(): void;
@@ -240,6 +249,7 @@ function WorkflowStepResultDialog(props: {
         <WorkflowParticipantSession
           step={props.step}
           steps={props.execution.steps}
+          agentProfiles={props.agentProfiles}
           sessionId={participantSessionId}
           presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
           coordinatorSessionId={props.execution.coordinatorSessionId}
@@ -256,6 +266,7 @@ function WorkflowStepResultDialog(props: {
 
 function WorkflowExecutionDialog(props: {
   execution: WorkflowExecution;
+  agentProfiles: readonly AgentLibraryEntry[];
   close(): void;
   cancel(executionId: string): Promise<string | undefined>;
   openSession(sessionId: string): void;
@@ -309,6 +320,7 @@ function WorkflowExecutionDialog(props: {
                 <WorkflowParticipantSession
                   step={step}
                   steps={props.execution.steps}
+                  agentProfiles={props.agentProfiles}
                   sessionId={participantSessionId}
                   presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
                   coordinatorSessionId={props.execution.coordinatorSessionId}
@@ -339,12 +351,13 @@ function WorkflowExecutionDialog(props: {
 function WorkflowParticipantSession(props: {
   step: WorkflowStepDto;
   steps: readonly WorkflowStepDto[];
+  agentProfiles: readonly AgentLibraryEntry[];
   sessionId: string | undefined;
   presentation: WorkflowSessionPresentation | undefined;
   coordinatorSessionId: string;
   openSession(sessionId: string): void;
 }) {
-  const plannedParticipant = workflowStepParticipant(props.step, props.steps);
+  const plannedParticipant = workflowStepParticipant(props.step, props.steps, props.agentProfiles);
   const sessionId = props.sessionId;
   if (!sessionId) return <small className="workflow-participant-planned">{plannedParticipant}</small>;
   return <WorkflowSessionButton
@@ -447,6 +460,7 @@ export function WorkflowEditorPanel(props: {
   configuration?: WorkflowConfigurationDto | undefined;
   stateRevision: number;
   agentCapabilities: readonly AgentCapabilityDto[];
+  agentProfiles: readonly AgentLibraryEntry[];
   close(): void;
   save(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   remove(workflowId: string): Promise<string | undefined>;
@@ -501,6 +515,7 @@ export function WorkflowEditorPanel(props: {
       instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.",
       agentId: null,
       reuseStepId: null,
+      profileRef: null,
       model: null,
       permission: null,
       reasoning: null,
@@ -543,6 +558,7 @@ export function WorkflowEditorPanel(props: {
       title: step.title.trim(),
       instructions: step.instructions.trim(),
       reuseStepId: step.reuseStepId ?? null,
+      profileRef: step.profileRef ?? null,
     }));
     if (!name || steps.some((step) => !step.title || !step.instructions)) {
       setError("Enter a name, title, and instruction for every step.");
@@ -624,6 +640,7 @@ export function WorkflowEditorPanel(props: {
                       selected={step.id === selectedStep?.id}
                       coordinatorAgentId={draft.coordinatorAgentId}
                       steps={draft.steps}
+                      agentProfiles={props.agentProfiles}
                       select={() => setSelectedStepId(step.id)}
                     />)}
                   </WorkflowCanvasStage> : null}
@@ -633,6 +650,7 @@ export function WorkflowEditorPanel(props: {
                     selected={implementation.id === selectedStep?.id}
                     coordinatorAgentId={draft.coordinatorAgentId}
                     steps={draft.steps}
+                    agentProfiles={props.agentProfiles}
                     select={() => setSelectedStepId(implementation.id)}
                   /> : null}
                   {reviews.length ? <>
@@ -644,6 +662,7 @@ export function WorkflowEditorPanel(props: {
                         selected={step.id === selectedStep?.id}
                         coordinatorAgentId={draft.coordinatorAgentId}
                         steps={draft.steps}
+                        agentProfiles={props.agentProfiles}
                         select={() => setSelectedStepId(step.id)}
                       />)}
                     </WorkflowCanvasStage>
@@ -655,6 +674,7 @@ export function WorkflowEditorPanel(props: {
                     selected={fix.id === selectedStep?.id}
                     coordinatorAgentId={draft.coordinatorAgentId}
                     steps={draft.steps}
+                    agentProfiles={props.agentProfiles}
                     select={() => setSelectedStepId(fix.id)}
                   /> : null}
                   <WorkflowCoreNode label="Done" detail={fix ? "Approved or review limit reached" : "All steps completed"} />
@@ -668,6 +688,7 @@ export function WorkflowEditorPanel(props: {
                 coordinatorAgentId={draft.coordinatorAgentId}
                 coordinatorSelection={{ model: draft.model, permission: draft.permission, reasoning: draft.reasoning }}
                 agents={agents}
+                agentProfiles={props.agentProfiles}
                 remove={isHelperStep(selectedStep) ? () => removeStep(selectedStep.id) : undefined}
                 update={(update) => updateStep(selectedStep.id, update)}
               /> : null}
@@ -724,6 +745,7 @@ function SortableWorkflowStepCard(props: {
   selected: boolean;
   coordinatorAgentId: StewardAgentId;
   steps: readonly WorkflowStepDto[];
+  agentProfiles: readonly AgentLibraryEntry[];
   select(): void;
 }) {
   const movable = isHelperStep(props.step);
@@ -737,7 +759,7 @@ function SortableWorkflowStepCard(props: {
   >
     <button type="button" className="workflow-step-select" aria-pressed={props.selected} onClick={props.select}>
       <span className="workflow-step-number">{props.index + 1}</span>
-      <span className="workflow-step-copy"><b>{props.step.title}</b><small>{stepOwnerSummary(props.step, props.steps, props.coordinatorAgentId)}</small></span>
+      <span className="workflow-step-copy"><b>{props.step.title}</b><small>{stepOwnerSummary(props.step, props.steps, props.coordinatorAgentId, props.agentProfiles)}</small></span>
       <span className={`workflow-kind kind-${props.step.kind}`}>{stepKindLabel(props.step.kind)}</span>
     </button>
     {movable ? <button
@@ -757,6 +779,7 @@ function WorkflowStepInspector(props: {
   coordinatorAgentId: StewardAgentId;
   coordinatorSelection: WorkflowLaunchSelection;
   agents: readonly WorkflowAgent[];
+  agentProfiles: readonly AgentLibraryEntry[];
   remove?: (() => void) | undefined;
   update(update: Partial<WorkflowStepDto>): void;
 }) {
@@ -770,12 +793,14 @@ function WorkflowStepInspector(props: {
     ? `reuse:${props.step.reuseStepId}`
     : `fresh:${props.step.agentId ?? "claude"}`;
   const selectedAgent = workflowAgent((props.step.agentId ?? "claude") as StewardAgentId, props.agents);
+  const selectedProfile = props.agentProfiles.find((profile) => profile.id === props.step.profileRef);
   const setParticipant = (value: string) => {
     if (value.startsWith("reuse:")) {
       const reused = priorHelpers.find((step) => step.id === value.slice("reuse:".length));
       if (reused?.agentId) props.update({
         agentId: reused.agentId,
         reuseStepId: reused.id,
+        profileRef: null,
         model: null,
         permission: null,
         reasoning: null,
@@ -783,7 +808,34 @@ function WorkflowStepInspector(props: {
       return;
     }
     const agentId = value.slice("fresh:".length) as StewardAgentId;
-    props.update({ agentId, reuseStepId: null, ...workflowLaunchDefaults(workflowAgent(agentId, props.agents)) });
+    const agent = workflowAgent(agentId, props.agents);
+    const profile = selectedProfile?.agent_ids.includes(agentId) ? selectedProfile : undefined;
+    props.update({
+      agentId,
+      reuseStepId: null,
+      profileRef: profile?.id ?? null,
+      ...(profile ? workflowProfileLaunchSelection(profile, agent) : workflowLaunchDefaults(agent)),
+    });
+  };
+  const selectProfile = (profileRef: string | null) => {
+    if (!profileRef) { props.update({ profileRef: null }); return; }
+    const profile = props.agentProfiles.find((candidate) => candidate.id === profileRef && candidate.user_invocable);
+    if (!profile) return;
+    const currentAgent = props.step.agentId
+      ? workflowAgent(props.step.agentId, props.agents)
+      : undefined;
+    const agent = props.agents.find((candidate) => candidate.id === profile.default_agent_id
+      && candidate.available
+      && profile.agent_ids.includes(candidate.id))
+      ?? (currentAgent?.available && profile.agent_ids.includes(currentAgent.id) ? currentAgent : undefined)
+      ?? props.agents.find((candidate) => candidate.available && profile.agent_ids.includes(candidate.id));
+    if (!agent) return;
+    props.update({
+      agentId: agent.id,
+      reuseStepId: null,
+      profileRef: profile.id,
+      ...workflowProfileLaunchSelection(profile, agent),
+    });
   };
   return <>
     <header className="workflow-inspector-head">
@@ -800,11 +852,20 @@ function WorkflowStepInspector(props: {
           {props.step.kind === "review" ? priorHelpers.map((step) => <option key={`reuse:${step.id}`} value={`reuse:${step.id}`} disabled={reusedByAnotherReviewer.has(step.id)}>Reuse {agentLabel(step.agentId)} from “{step.title}”{reusedByAnotherReviewer.has(step.id) ? " (already assigned)" : ""}</option>) : null}
         </select>
         <p className="field-help">{props.step.reuseStepId ? "Continues the same helper conversation and context." : "Starts a separate visible helper Session."}</p>
-        {props.step.reuseStepId ? <div className="workflow-inherited-launch"><Icon name="link" /><span><b>Launch settings inherited</b><small>Uses the model, permission, and thinking from the original {agentLabel(props.step.agentId)} Session.</small></span></div> : <div className="workflow-step-launch-fields">
+        {props.step.reuseStepId ? <div className="workflow-inherited-launch"><Icon name="link" /><span><b>Agent and launch settings inherited</b><small>Uses the template, model, permission, and thinking from the original {agentLabel(props.step.agentId)} Session.</small></span></div> : <>
+          <WorkflowAgentTemplateSelect
+            id={`workflow-${props.step.id}-profile`}
+            profiles={props.agentProfiles}
+            agentId={(props.step.agentId ?? "claude") as StewardAgentId}
+            value={props.step.profileRef}
+            select={selectProfile}
+          />
+          <div className="workflow-step-launch-fields">
           <label htmlFor={`workflow-${props.step.id}-model`}>Model<select id={`workflow-${props.step.id}-model`} aria-label="Step Model" value={props.step.model ?? "default"} onChange={(event) => props.update({ model: event.target.value })}>{selectionOptions(selectedAgent.models, props.step.model ?? "default").map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select></label>
           <label htmlFor={`workflow-${props.step.id}-permission`}>Permission<select id={`workflow-${props.step.id}-permission`} aria-label="Step Permission" value={props.step.permission ?? "bypassPermissions"} onChange={(event) => props.update({ permission: event.target.value as AssistantPermission })}>{selectionOptions(selectedAgent.permissions, props.step.permission ?? "bypassPermissions").map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select></label>
           <label htmlFor={`workflow-${props.step.id}-reasoning`}>Thinking<select id={`workflow-${props.step.id}-reasoning`} aria-label="Step Thinking" value={props.step.reasoning ?? "default"} onChange={(event) => props.update({ reasoning: event.target.value as WorkflowReasoning })}>{selectionOptions(selectedAgent.reasoning, props.step.reasoning ?? "default").map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select></label>
-        </div>}
+          </div>
+        </>}
       </> : <div className="workflow-owned-step"><Icon name={props.coordinatorAgentId === "claude" ? "claude" : "codex"} /><span><b>{agentLabel(props.coordinatorAgentId)} coordinator</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"} · {workflowLaunchSummary(props.coordinatorSelection)}</small></span></div>}
       <label htmlFor={`workflow-${props.step.id}-instructions`}>Instructions</label>
       <textarea id={`workflow-${props.step.id}-instructions`} rows={7} value={props.step.instructions} maxLength={4096} onChange={(event) => props.update({ instructions: event.target.value })} />
@@ -863,6 +924,23 @@ function workflowLaunchDefaults(agent: WorkflowAgent): WorkflowLaunchSelection {
   };
 }
 
+function workflowProfileLaunchSelection(
+  profile: AgentLibraryEntry,
+  agent: WorkflowAgent,
+): WorkflowLaunchSelection {
+  return {
+    model: agent.models.includes(profile.default_model)
+      ? profile.default_model
+      : agent.models.includes("default") ? "default" : agent.models[0] ?? "default",
+    permission: agent.permissions.includes(profile.permission)
+      ? profile.permission
+      : agent.permissions.includes("default") ? "default" : agent.permissions[0] ?? "default",
+    reasoning: agent.reasoning.includes(profile.default_reasoning)
+      ? profile.default_reasoning
+      : agent.reasoning.includes("default") ? "default" : agent.reasoning[0] ?? "default",
+  };
+}
+
 function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft {
   if (configuration) return {
     name: configuration.name,
@@ -871,7 +949,11 @@ function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft 
     permission: configuration.permission,
     reasoning: configuration.reasoning,
     maxReviewCycles: configuration.maxReviewCycles,
-    steps: configuration.steps.map((step) => ({ ...step, reuseStepId: step.reuseStepId ?? null })),
+    steps: configuration.steps.map((step) => ({
+      ...step,
+      reuseStepId: step.reuseStepId ?? null,
+      profileRef: step.profileRef ?? null,
+    })),
   };
   return {
     name: "Discuss, implement, review",
@@ -886,11 +968,11 @@ function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft 
 
 export function initialWorkflowSteps(): WorkflowStepDto[] {
   return [
-    { id: "discuss-claude", kind: "discuss", title: "Challenge the approach", instructions: "Debate the goal, assumptions, and tradeoffs with the coordinator before implementation.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
-    { id: "implement", kind: "implement", title: "Implement", instructions: "Implement the agreed solution and run proportionate verification.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
-    { id: "review-claude", kind: "review", title: "Review with prior context", instructions: "Review the current diff against the discussion and report concrete, prioritized findings.", agentId: "claude", reuseStepId: "discuss-claude", model: null, permission: null, reasoning: null },
-    { id: "review-codex", kind: "review", title: "Independent second review", instructions: "Independently inspect the current diff and report concrete, prioritized findings.", agentId: "codex", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
-    { id: "fix", kind: "fix", title: "Fix review findings", instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
+    { id: "discuss-claude", kind: "discuss", title: "Challenge the approach", instructions: "Debate the goal, assumptions, and tradeoffs with the coordinator before implementation.", agentId: "claude", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "implement", kind: "implement", title: "Implement", instructions: "Implement the agreed solution and run proportionate verification.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
+    { id: "review-claude", kind: "review", title: "Review with prior context", instructions: "Review the current diff against the discussion and report concrete, prioritized findings.", agentId: "claude", reuseStepId: "discuss-claude", profileRef: null, model: null, permission: null, reasoning: null },
+    { id: "review-codex", kind: "review", title: "Independent second review", instructions: "Independently inspect the current diff and report concrete, prioritized findings.", agentId: "codex", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "fix", kind: "fix", title: "Fix review findings", instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
   ];
 }
 
@@ -902,6 +984,7 @@ function defaultStep(kind: "discuss" | "review", steps: readonly WorkflowStepDto
     instructions: kind === "discuss" ? "Challenge the current approach and surface tradeoffs." : "Review the current diff and report concrete findings.",
     agentId,
     reuseStepId: null,
+    profileRef: null,
     model: "default",
     permission: "bypassPermissions",
     reasoning: "default",
@@ -920,8 +1003,8 @@ function sanitizeReuse(steps: WorkflowStepDto[]): WorkflowStepDto[] {
     if (!step.reuseStepId) return step;
     const source = steps.slice(0, index).find((candidate) => candidate.id === step.reuseStepId);
     return source && isHelperStep(source) && source.agentId === step.agentId
-      ? step
-      : { ...step, reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" };
+      ? { ...step, profileRef: null }
+      : { ...step, reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" };
   });
 }
 
@@ -951,15 +1034,20 @@ function agentLabel(agentId: string | null): string {
   return agentId ?? "Agent";
 }
 
-function stepOwnerSummary(step: WorkflowStepDto, steps: readonly WorkflowStepDto[], coordinatorAgentId: StewardAgentId): string {
+function stepOwnerSummary(
+  step: WorkflowStepDto,
+  steps: readonly WorkflowStepDto[],
+  coordinatorAgentId: StewardAgentId,
+  agentProfiles: readonly AgentLibraryEntry[],
+): string {
   if (!isHelperStep(step)) return `${agentLabel(coordinatorAgentId)} · coordinator`;
-  if (!step.reuseStepId) return `${agentLabel(step.agentId)} · ${workflowLaunchSummary({
+  if (!step.reuseStepId) return `${workflowAgentProfileLabel(step, agentProfiles)} · ${workflowLaunchSummary({
     model: step.model ?? "default",
     permission: step.permission ?? "bypassPermissions",
     reasoning: step.reasoning ?? "default",
   })}`;
   const source = steps.find((candidate) => candidate.id === step.reuseStepId);
-  return `${agentLabel(step.agentId)} · reuse ${source?.title ?? step.reuseStepId}`;
+  return `${workflowAgentProfileLabel(source ?? step, agentProfiles)} · reuse ${source?.title ?? step.reuseStepId}`;
 }
 
 function workflowLaunchSummary(selection: WorkflowLaunchSelection): string {
@@ -1014,11 +1102,22 @@ function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowStepDto 
   return "Coordinator is starting this step";
 }
 
-function workflowStepParticipant(step: WorkflowStepDto, steps: readonly WorkflowStepDto[]): string {
+function workflowStepParticipant(
+  step: WorkflowStepDto,
+  steps: readonly WorkflowStepDto[],
+  agentProfiles: readonly AgentLibraryEntry[],
+): string {
   if (!isHelperStep(step)) return "Coordinator";
-  if (!step.reuseStepId) return `${agentLabel(step.agentId)} · new conversation`;
+  if (!step.reuseStepId) return `${workflowAgentProfileLabel(step, agentProfiles)} · new conversation`;
   const source = steps.find((candidate) => candidate.id === step.reuseStepId);
-  return `${agentLabel(step.agentId)} · reuse “${source?.title ?? step.reuseStepId}”`;
+  return `${workflowAgentProfileLabel(source ?? step, agentProfiles)} · reuse “${source?.title ?? step.reuseStepId}”`;
+}
+
+function workflowAgentProfileLabel(
+  step: WorkflowStepDto,
+  agentProfiles: readonly AgentLibraryEntry[],
+): string {
+  return agentProfiles.find((profile) => profile.id === step.profileRef)?.name ?? agentLabel(step.agentId);
 }
 
 function workflowStepResult(execution: WorkflowExecution, stepId: string): WorkflowStepResultDto | undefined {

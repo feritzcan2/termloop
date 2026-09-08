@@ -36,6 +36,10 @@ pub fn valid_personal_agent_id(id: &str) -> bool {
     valid_profile_id(id, "custom.agent-profile.")
 }
 
+pub fn valid_agent_profile_id(id: &str) -> bool {
+    valid_personal_agent_id(id) || valid_profile_id(id, "builtin.agent-profile.")
+}
+
 fn valid_profile_id(id: &str, prefix: &str) -> bool {
     id.strip_prefix(prefix).is_some_and(|slug| {
         id.len() <= 128
