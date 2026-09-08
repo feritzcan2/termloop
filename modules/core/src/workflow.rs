@@ -4,8 +4,8 @@ use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use termloop_domain::{
-    AgentLaunchSelection, WorkflowConfiguration, WorkflowExecution, WorkflowExecutionPhase,
-    WorkflowStep, WorkflowStepKind,
+    AgentLaunchSelection, PersonalAgent, WorkflowConfiguration, WorkflowExecution,
+    WorkflowExecutionPhase, WorkflowStep, WorkflowStepKind,
 };
 
 struct WorkflowConfigurationInput {
@@ -41,6 +41,7 @@ struct WorkflowStepInput {
     instructions: String,
     agent_id: Option<String>,
     reuse_step_id: Option<String>,
+    profile_ref: Option<String>,
     model: Option<String>,
     permission: Option<String>,
     reasoning: Option<String>,
@@ -82,6 +83,7 @@ impl CoreRuntime {
             return Err(CoreError::NotFound);
         }
         let input = parse_workflow_input(params)?;
+        self.validate_workflow_agent_profiles(&input.steps)?;
         let configuration = WorkflowConfiguration {
             id: termloop_platform::generate_opaque_id(),
             project_id,
@@ -117,6 +119,7 @@ impl CoreRuntime {
     ) -> Result<Value, CoreError> {
         let workflow_id = required_string(&params, "workflowId")?;
         let input = parse_workflow_input(params)?;
+        self.validate_workflow_agent_profiles(&input.steps)?;
         let current = self
             .store
             .workflow_configurations()
@@ -215,6 +218,70 @@ impl CoreRuntime {
             "stateRevision": self.store.revision(),
         }))
     }
+
+    pub(crate) fn validate_workflow_agent_profiles(
+        &self,
+        steps: &[WorkflowStep],
+    ) -> Result<(), CoreError> {
+        for step in steps {
+            self.workflow_agent_profile(step)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn workflow_agent_profile(
+        &self,
+        step: &WorkflowStep,
+    ) -> Result<Option<PersonalAgent>, CoreError> {
+        let Some(profile_ref) = step.profile_ref.as_deref() else {
+            return Ok(None);
+        };
+        let agent_id = step
+            .agent_id
+            .as_deref()
+            .ok_or_else(|| CoreError::InvalidParams("workflow profileRef".into()))?;
+        let selection = step
+            .launch_selection
+            .as_ref()
+            .ok_or_else(|| CoreError::InvalidParams("workflow profileRef".into()))?;
+        let mut profile = if let Some(saved) = self
+            .store
+            .agent_library()
+            .agents
+            .iter()
+            .find(|candidate| candidate.id == profile_ref)
+        {
+            saved.clone()
+        } else {
+            let built_in = termloop_invocation::agent_profile(profile_ref)
+                .filter(|profile| profile.user_invocable)
+                .filter(|profile| profile.supported_agent_ids.contains(&agent_id))
+                .ok_or_else(|| CoreError::InvalidParams("workflow profileRef".into()))?;
+            PersonalAgent {
+                id: built_in.id.into(),
+                version: built_in.version,
+                name: built_in.name.into(),
+                description: built_in.description.into(),
+                category: built_in.category.into(),
+                instructions: built_in.instructions().into(),
+                agent_id: agent_id.into(),
+                selection: selection.clone(),
+            }
+        };
+        profile.agent_id = agent_id.into();
+        profile.selection = selection.clone();
+        if !profile.is_valid() {
+            return Err(CoreError::InvalidParams("workflow profileRef".into()));
+        }
+        termloop_invocation::validate_agent_configuration(
+            agent_id,
+            &selection.model,
+            &selection.permission,
+            &selection.reasoning,
+        )
+        .map_err(|_| CoreError::InvalidParams("workflow profileRef".into()))?;
+        Ok(Some(profile))
+    }
 }
 
 pub(crate) fn workflow_execution_json(
@@ -292,6 +359,7 @@ fn parse_workflow_input(mut params: Value) -> Result<WorkflowConfigurationInput,
                 instructions: step.instructions,
                 agent_id: step.agent_id,
                 reuse_step_id: step.reuse_step_id,
+                profile_ref: step.profile_ref,
                 launch_selection,
             })
         })
@@ -332,6 +400,7 @@ fn workflow_step_json(step: &WorkflowStep) -> Value {
         "instructions": step.instructions,
         "agentId": step.agent_id,
         "reuseStepId": step.reuse_step_id,
+        "profileRef": step.profile_ref,
         "model": step.launch_selection.as_ref().map(|selection| selection.model.as_str()),
         "permission": step.launch_selection.as_ref().map(|selection| selection.permission.as_str()),
         "reasoning": step.launch_selection.as_ref().map(|selection| selection.reasoning.as_str()),
@@ -358,6 +427,7 @@ mod tests {
                     "instructions": "Challenge the approach.",
                     "agentId": "claude",
                     "reuseStepId": null,
+                    "profileRef": null,
                     "model": "default",
                     "permission": "bypassPermissions",
                     "reasoning": "default"
@@ -369,6 +439,7 @@ mod tests {
                     "instructions": "Implement and verify.",
                     "agentId": null,
                     "reuseStepId": null,
+                    "profileRef": null,
                     "model": null,
                     "permission": null,
                     "reasoning": null

@@ -11986,6 +11986,7 @@
         "instructions",
         "agentId",
         "reuseStepId",
+        "profileRef",
         "model",
         "permission",
         "reasoning"
@@ -12031,6 +12032,19 @@
               "minLength": 1,
               "maxLength": 64,
               "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileRef": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$"
             },
             {
               "type": "null"

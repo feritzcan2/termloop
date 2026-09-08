@@ -13,7 +13,7 @@ import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentLibraryEntry, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
@@ -220,6 +220,7 @@ export type TaskRailProps = {
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
   workflowExecutions: readonly WorkflowExecution[];
+  agentProfiles: readonly AgentLibraryEntry[];
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   sessionsById: ReadonlyMap<string, Session>;
@@ -401,6 +402,7 @@ export function TaskRail(props: TaskRailProps) {
       runConfigurations={props.runConfigurations}
       workflowConfigurations={props.workflowConfigurations}
       workflowExecutions={props.workflowExecutions}
+      agentProfiles={props.agentProfiles}
       runRuntimes={props.runRuntimes}
       runStateRevision={props.runStateRevision}
       openExternal={props.openExternal}
@@ -782,6 +784,7 @@ type TaskGroupProps = {
   runConfigurations: readonly RunConfiguration[];
   workflowConfigurations: readonly WorkflowConfiguration[];
   workflowExecutions: readonly WorkflowExecution[];
+  agentProfiles: readonly AgentLibraryEntry[];
   runRuntimes: readonly RunRuntime[];
   runStateRevision: number;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -1010,6 +1013,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         task={task}
         configurations={props.workflowConfigurations}
         executions={props.workflowExecutions}
+        agentProfiles={props.agentProfiles}
         launchable={launchable}
         showLaunchers={launchable || workflowManageable}
         overlayContainer={props.overlayContainer}
