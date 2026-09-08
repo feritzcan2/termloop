@@ -1,11 +1,11 @@
 use termloop_domain::{
-    AgentConversationReadiness, AgentConversationReadinessRecord, ResumeFailureReason, ResumeRef,
-    SavedAgentLaunchSelection, SessionKind, SessionRecord,
+    AgentConversationReadiness, ResumeFailureReason, ResumeRef, SessionKind, SessionRecord,
 };
 
 use crate::migration::provider_matches_agent;
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
+use super::session_admission::FreshSessionAdmission;
 
 impl Store {
     /// Removes an assistant Session admission whose process never started,
@@ -54,25 +54,12 @@ impl Store {
         _authority: &CoreWriteAuthority,
         session: SessionRecord,
     ) -> Result<u64, StoreError> {
-        if self
-            .state
-            .sessions
-            .iter()
-            .any(|value| value.id == session.id)
-        {
-            return Err(StoreError::AlreadyExists);
-        }
-        let previous = self.state.clone();
-        if session.kind == SessionKind::Agent {
-            self.state
-                .agent_conversation_readiness
-                .push(AgentConversationReadinessRecord {
-                    session_id: session.id.clone(),
-                    readiness: AgentConversationReadiness::Unconfirmed,
-                });
-        }
-        self.state.sessions.push(session);
-        self.commit_or_restore(previous)
+        self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::Standalone {
+                remember_launch: false,
+            },
+        )
     }
 
     pub fn insert_session_and_remember_agent_launch(
@@ -80,33 +67,12 @@ impl Store {
         _authority: &CoreWriteAuthority,
         session: SessionRecord,
     ) -> Result<u64, StoreError> {
-        if self
-            .state
-            .sessions
-            .iter()
-            .any(|value| value.id == session.id)
-        {
-            return Err(StoreError::AlreadyExists);
-        }
-        let agent_id = session
-            .process
-            .agent_id
-            .as_deref()
-            .ok_or(StoreError::ConstraintViolation)?;
-        let preference = SavedAgentLaunchSelection::new(agent_id, session.launch_selection.clone());
-        if session.kind != SessionKind::Agent || !preference.is_valid() {
-            return Err(StoreError::ConstraintViolation);
-        }
-        let previous = self.state.clone();
-        self.state.last_agent_launch_selection = Some(preference);
-        self.state
-            .agent_conversation_readiness
-            .push(AgentConversationReadinessRecord {
-                session_id: session.id.clone(),
-                readiness: AgentConversationReadiness::Unconfirmed,
-            });
-        self.state.sessions.push(session);
-        self.commit_or_restore(previous)
+        self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::Standalone {
+                remember_launch: true,
+            },
+        )
     }
 
     pub fn mark_agent_conversation_resumable(

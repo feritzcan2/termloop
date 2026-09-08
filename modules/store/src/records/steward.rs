@@ -1,11 +1,12 @@
 use termloop_domain::{
-    AgentConversationReadiness, AgentConversationReadinessRecord, ImproverSessionTargetKind,
-    ResumeRef, SessionKind, SessionRecord, StewardConfiguration,
+    ImproverSessionTargetKind, ResumeRef, SessionKind, SessionRecord, StewardConfiguration,
 };
 
 use crate::migration::provider_matches_agent;
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
+use super::session_admission::FreshSessionAdmission;
+use crate::CurrentState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectAssistantReset {
@@ -260,65 +261,21 @@ impl Store {
         generation: u64,
         updated_at_epoch_ms: u64,
     ) -> Result<StewardConfiguration, StoreError> {
-        if session.project_id != project_id
-            || session.kind != SessionKind::Agent
-            || session.lifecycle_state != "running"
-            || self
-                .state
-                .sessions
-                .iter()
-                .any(|candidate| candidate.id == session.id)
-        {
-            return Err(StoreError::ConstraintViolation);
-        }
-        let configuration = self
+        self.admit_fresh_session(
+            session,
+            FreshSessionAdmission::Steward {
+                project_id,
+                generation,
+                updated_at_epoch_ms,
+            },
+        )?;
+        Ok(self
             .state
             .steward_configurations
             .iter()
             .find(|configuration| configuration.project_id == project_id)
-            .cloned()
-            .ok_or(StoreError::NotFound)?;
-        if !configuration.enabled
-            || configuration.generation != generation
-            || configuration.executor_session_id.is_some()
-            || session.process.agent_id.as_deref()
-                != Some(match configuration.agent_id {
-                    termloop_domain::StewardAgentId::Claude => "claude",
-                    termloop_domain::StewardAgentId::Codex => "codex",
-                })
-            || session.resume_ref.as_ref().is_some_and(|conversation_ref| {
-                !conversation_ref.validate()
-                    || !provider_matches_agent(
-                        conversation_ref.provider,
-                        session.process.agent_id.as_deref(),
-                    )
-            })
-        {
-            return Err(StoreError::RevisionConflict);
-        }
-        let previous = self.state.clone();
-        self.state
-            .agent_conversation_readiness
-            .push(AgentConversationReadinessRecord {
-                session_id: session.id.clone(),
-                readiness: AgentConversationReadiness::Unconfirmed,
-            });
-        self.state.sessions.push(session.clone());
-        self.state
-            .steward_conversation_refs
-            .retain(|conversation| conversation.project_id != project_id);
-        let configuration = self
-            .state
-            .steward_configurations
-            .iter_mut()
-            .find(|configuration| configuration.project_id == project_id)
-            .expect("configuration was proven above");
-        configuration.executor_session_id = Some(session.id);
-        configuration.updated_at_epoch_ms = updated_at_epoch_ms;
-        let configuration = configuration.clone();
-        let _ = super::session::remove_obsolete_assistant_sessions(&mut self.state);
-        self.commit_or_restore(previous)?;
-        Ok(configuration)
+            .expect("configuration was proven during admission")
+            .clone())
     }
 
     pub fn steward_project_for_executor_session(&self, session_id: &str) -> Option<&str> {
@@ -328,6 +285,67 @@ impl Store {
             .find(|configuration| configuration.executor_session_id.as_deref() == Some(session_id))
             .map(|configuration| configuration.project_id.as_str())
     }
+}
+
+pub(super) fn validate_steward_executor_session(
+    state: &CurrentState,
+    session: &SessionRecord,
+    project_id: &str,
+    generation: u64,
+) -> Result<(), StoreError> {
+    if session.project_id != project_id
+        || session.kind != SessionKind::Agent
+        || session.lifecycle_state != "running"
+        || state
+            .sessions
+            .iter()
+            .any(|candidate| candidate.id == session.id)
+    {
+        return Err(StoreError::ConstraintViolation);
+    }
+    let configuration = state
+        .steward_configurations
+        .iter()
+        .find(|configuration| configuration.project_id == project_id)
+        .ok_or(StoreError::NotFound)?;
+    if !configuration.enabled
+        || configuration.generation != generation
+        || configuration.executor_session_id.is_some()
+        || session.process.agent_id.as_deref()
+            != Some(match configuration.agent_id {
+                termloop_domain::StewardAgentId::Claude => "claude",
+                termloop_domain::StewardAgentId::Codex => "codex",
+            })
+        || session.resume_ref.as_ref().is_some_and(|conversation_ref| {
+            !conversation_ref.validate()
+                || !provider_matches_agent(
+                    conversation_ref.provider,
+                    session.process.agent_id.as_deref(),
+                )
+        })
+    {
+        return Err(StoreError::RevisionConflict);
+    }
+    Ok(())
+}
+
+pub(super) fn apply_steward_executor_session(
+    state: &mut CurrentState,
+    session_id: String,
+    project_id: &str,
+    updated_at_epoch_ms: u64,
+) {
+    state
+        .steward_conversation_refs
+        .retain(|conversation| conversation.project_id != project_id);
+    let configuration = state
+        .steward_configurations
+        .iter_mut()
+        .find(|configuration| configuration.project_id == project_id)
+        .expect("configuration was proven during admission");
+    configuration.executor_session_id = Some(session_id);
+    configuration.updated_at_epoch_ms = updated_at_epoch_ms;
+    let _ = super::session::remove_obsolete_assistant_sessions(state);
 }
 
 fn session_is_project_assistant(session: &SessionRecord) -> bool {

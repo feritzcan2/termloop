@@ -5,7 +5,7 @@ use termloop_domain::{
     WorkflowExecutionPhase, WorkflowStep, WorkflowStepKind,
 };
 
-fn project(id: &str) -> ProjectRecord {
+pub(super) fn project(id: &str) -> ProjectRecord {
     ProjectRecord {
         id: id.into(),
         name: id.into(),
@@ -13,7 +13,7 @@ fn project(id: &str) -> ProjectRecord {
     }
 }
 
-fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
+pub(super) fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
     WorkflowConfiguration {
         id: id.into(),
         project_id: project_id.into(),
@@ -62,7 +62,7 @@ fn configuration(id: &str, project_id: &str) -> WorkflowConfiguration {
     }
 }
 
-fn task(id: &str, project_id: &str) -> TaskRecord {
+pub(super) fn task(id: &str, project_id: &str) -> TaskRecord {
     TaskRecord {
         id: id.into(),
         project_id: project_id.into(),
@@ -82,7 +82,7 @@ fn task(id: &str, project_id: &str) -> TaskRecord {
     }
 }
 
-fn coordinator_session(id: &str, project_id: &str) -> SessionRecord {
+pub(super) fn coordinator_session(id: &str, project_id: &str) -> SessionRecord {
     SessionRecord {
         id: id.into(),
         project_id: project_id.into(),
@@ -110,7 +110,7 @@ fn coordinator_session(id: &str, project_id: &str) -> SessionRecord {
     }
 }
 
-fn execution(
+pub(super) fn execution(
     id: &str,
     task_id: &str,
     coordinator_session_id: &str,
