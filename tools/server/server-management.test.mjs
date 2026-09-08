@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readlink, rename, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { activateRelease, currentRelease, installationPaths, serviceDefinitions } from './termloop-server-manager.mjs';
-import { newerVersion, packageFiles, parseVersion, resolveRelease, stageRelease, validateArchiveListing } from './server-release.mjs';
+import { activateRelease, currentRelease, installationPaths, pruneReleases, runManager, serviceDefinitions } from './termloop-server-manager.mjs';
+import { newerVersion, packageFiles, parseVersion, resolveRelease, stageRelease, stageSourceArchive, validateArchiveListing } from './server-release.mjs';
 
 const execute = promisify(execFile);
 const native = { skip: process.platform === 'win32' ? 'Linux server filesystem management uses Unix symlinks and tar' : false };
@@ -163,4 +163,94 @@ test('snapshot failure restarts the unchanged previous server', native, async (c
   }), /Refusing to snapshot/);
   assert.equal((await currentRelease(paths)).version, previous.version);
   assert.deepEqual(events, ['stop', 'start', '2.0.1']);
+});
+
+async function sourcePackage(paths, overrides = {}) {
+  const directory = await mkdtemp(path.join(paths.root, 'source-package-'));
+  const payload = path.join(directory, 'payload');
+  await mkdir(payload);
+  for (const name of packageFiles) await writeFile(path.join(payload, name), 'fixture');
+  const manifest = { schema: 1, version: '2.0.4', platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-musl', commit: 'a'.repeat(40), ...overrides };
+  await writeFile(path.join(payload, 'server-package.json'), JSON.stringify(manifest));
+  const archive = path.join(directory, 'server.tar.gz');
+  await execute('tar', ['-C', payload, '-czf', archive, '.']);
+  const stage = path.join(directory, 'stage');
+  await mkdir(stage);
+  return { archive, stage, payload };
+}
+
+test('local source archives are validated and recorded without fetching a release', native, async (context) => {
+  const paths = await fixture(context);
+  const { archive, stage } = await sourcePackage(paths);
+  const bytes = await readFile(archive);
+  const result = await stageSourceArchive(archive, stage);
+  assert.equal(result.version, '2.0.4');
+  assert.equal(result.commit, 'a'.repeat(40));
+  assert.equal(result.sha256, createHash('sha256').update(bytes).digest('hex'));
+  assert.equal((await readFile(path.join(result.payload, '.archive-sha256'), 'utf8')).trim(), result.sha256);
+  assert.deepEqual(await readFile(archive), bytes);
+});
+
+test('local archives reject unsupported targets and symlink payloads', native, async (context) => {
+  const paths = await fixture(context);
+  const wrong = await sourcePackage(paths, { target: 'aarch64-apple-darwin' });
+  await assert.rejects(stageSourceArchive(wrong.archive, wrong.stage), /identity does not match/);
+  const linked = await sourcePackage(paths);
+  await rm(path.join(linked.payload, 'termloop-server'));
+  await symlink('/etc/passwd', path.join(linked.payload, 'termloop-server'));
+  await execute('tar', ['-C', linked.payload, '-czf', linked.archive, '.']);
+  await assert.rejects(stageSourceArchive(linked.archive, linked.stage), /only regular files/);
+});
+
+test('source installs preserve stable rollback and can advance to a newer stable release', native, async (context) => {
+  const paths = await fixture(context);
+  const previous = await release(paths, '2.0.4');
+  await symlink('releases/2.0.4', paths.current);
+  await mkdir(paths.state);
+  await writeFile(path.join(paths.state, 'state.v1.json'), 'user data');
+  const { archive, stage } = await sourcePackage(paths);
+  const source = await stageSourceArchive(archive, stage);
+  const directory = path.join(paths.releases, `source-${source.commit}`);
+  await rename(source.payload, directory);
+  const services = { stop: async () => {}, start: async () => {}, healthy: async () => {} };
+  await activateRelease(paths, { directory, version: source.version }, previous, services);
+  const installed = await currentRelease(paths);
+  assert.deepEqual(installed, { directory, version: '2.0.4', sourceCommit: source.commit });
+  assert.equal(newerVersion('2.0.4', installed.version), false);
+  assert.equal(newerVersion('2.0.5', installed.version), true);
+  assert.equal(await readFile(path.join(previous.directory, 'server-package.json'), 'utf8'), JSON.stringify({ schema: 1, version: '2.0.4' }));
+  const next = await release(paths, '2.0.5');
+  await activateRelease(paths, next, installed, services);
+  assert.deepEqual(await currentRelease(paths), next);
+  assert.equal(await readFile(path.join(paths.state, 'state.v1.json'), 'utf8'), 'user data');
+});
+
+test('source directory identity must match its manifest commit', native, async (context) => {
+  const paths = await fixture(context);
+  const directory = path.join(paths.releases, `source-${'a'.repeat(40)}`);
+  await mkdir(directory);
+  await writeFile(path.join(directory, 'server-package.json'), JSON.stringify({ schema: 1, version: '2.0.4', commit: 'b'.repeat(40) }));
+  await symlink(path.relative(paths.root, directory), paths.current);
+  await assert.rejects(currentRelease(paths), /Invalid installed source identity/);
+});
+
+test('cleanup retains the previous source build and removes only marked managed history', native, async (context) => {
+  const paths = await fixture(context);
+  const previous = `source-${'a'.repeat(40)}`;
+  const expired = `source-${'b'.repeat(40)}`;
+  const unmarked = `source-${'c'.repeat(40)}`;
+  for (const name of ['2.0.5', previous, expired, unmarked, 'user-data']) {
+    const directory = path.join(paths.releases, name);
+    await mkdir(directory);
+    if (name !== unmarked) await writeFile(path.join(directory, '.archive-sha256'), 'fixture');
+  }
+  await pruneReleases(paths, new Set(['2.0.5', previous]));
+  await assert.rejects(readFile(path.join(paths.releases, expired, '.archive-sha256')), { code: 'ENOENT' });
+  for (const name of ['2.0.5', previous, 'user-data']) assert.equal(await readFile(path.join(paths.releases, name, '.archive-sha256'), 'utf8'), 'fixture');
+  assert.ok((await stat(path.join(paths.releases, unmarked))).isDirectory());
+});
+
+test('source archives cannot change the automatic update or status action', async () => {
+  for (const action of ['update', 'status']) await assert.rejects(runManager(action, undefined, undefined, '/tmp/source.tar.gz'), /only by install/);
+  await assert.rejects(runManager('install', '2.0.4', undefined, '/tmp/source.tar.gz'), /without --version/);
 });
