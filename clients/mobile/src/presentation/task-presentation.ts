@@ -57,6 +57,7 @@ export interface TaskGlanceAgent {
   readonly title: string;
   readonly stateLabel: string;
   readonly tone: RowTone;
+  readonly attachable?: boolean;
 }
 
 /// The plain-language answer shown before any branch, worktree, or pipeline detail.
@@ -76,11 +77,20 @@ export function taskAtAGlance(
       tone: attention.tone,
     };
   }
-  if (agents.length > 0) {
+  const working = agents.filter((agent) => agent.attachable !== false && (agent.tone === "working" || agent.tone === "busy"));
+  if (working.length > 0) {
     return {
-      title: `${agents.length} active ${agents.length === 1 ? "agent" : "agents"}`,
+      title: `${working.length} ${working.length === 1 ? "agent" : "agents"} working`,
       detail: "Work is in progress. Open an agent below to see its latest output.",
       tone: "working",
+    };
+  }
+  const available = agents.filter((agent) => agent.attachable !== false);
+  if (available.length > 0) {
+    return {
+      title: `${available.length} ${available.length === 1 ? "agent" : "agents"} available`,
+      detail: "Open an attached agent to continue its conversation.",
+      tone: "quiet",
     };
   }
   switch (stage.id) {
