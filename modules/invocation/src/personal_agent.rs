@@ -11,6 +11,35 @@ pub(super) const PERSONAL_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     authored_body: include_str!("../../../resources/prompts/builtin.agent.personal.md"),
 };
 
+pub(super) fn personal_agent_provider_instructions(
+    profile: &PersonalAgent,
+    mcp: Option<&AgentMcpLaunch<'_>>,
+) -> Result<String, InvocationError> {
+    if !profile.is_valid() {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    let instructions = crate::bind_ordered(
+        PERSONAL_AGENT_TEMPLATE.authored_body,
+        &[
+            ("profileRef", profile.id.as_str()),
+            ("profileVersion", profile.version.to_string().as_str()),
+            ("instructions", profile.instructions.as_str()),
+        ],
+    )?;
+    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
+        format!(
+            "{}\n\n{instructions}",
+            crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
+        )
+    } else {
+        instructions
+    };
+    if instructions.len() > 64 * 1024 {
+        return Err(InvocationError::InvalidDeveloperInstructions);
+    }
+    Ok(instructions)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn personal_agent_for_conversation(
     profile: &PersonalAgent,
@@ -24,9 +53,6 @@ pub fn personal_agent_for_conversation(
     mcp: Option<AgentMcpLaunch<'_>>,
     managed_worktree: bool,
 ) -> Result<LaunchPayload, InvocationError> {
-    if !profile.is_valid() {
-        return Err(InvocationError::InvalidDeveloperInstructions);
-    }
     if !matches!(agent_id, "claude" | "codex") {
         return Err(InvocationError::UnsupportedAgent(agent_id.to_owned()));
     }
@@ -46,28 +72,7 @@ pub fn personal_agent_for_conversation(
             attachments,
         )?;
     }
-    let instructions = crate::bind_ordered(
-        PERSONAL_AGENT_TEMPLATE.authored_body,
-        &[
-            ("profileRef", profile.id.as_str()),
-            ("profileVersion", profile.version.to_string().as_str()),
-            ("instructions", profile.instructions.as_str()),
-        ],
-    )?;
-    let instructions = if mcp
-        .as_ref()
-        .is_some_and(|mcp| mcp.profile.includes_interactive_instructions())
-    {
-        format!(
-            "{}\n\n{instructions}",
-            crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
-        )
-    } else {
-        instructions
-    };
-    if instructions.len() > 64 * 1024 {
-        return Err(InvocationError::InvalidDeveloperInstructions);
-    }
+    let instructions = personal_agent_provider_instructions(profile, mcp.as_ref())?;
     let mut resolved = crate::resolve_launch_manifest_with_attachments_and_codex_project_trust(
         agent_id,
         cwd,

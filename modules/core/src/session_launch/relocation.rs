@@ -401,6 +401,7 @@ impl CoreRuntime {
                 conversation,
                 observation,
                 mcp,
+                self.store.session_agent_profile(&session.id),
             )
         } else {
             termloop_invocation::configured_interactive_agent_for_project_relocation(

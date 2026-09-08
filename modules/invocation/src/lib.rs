@@ -2736,6 +2736,7 @@ pub fn configured_ask_to_helper_for_conversation_resume(
     conversation: AgentConversationLaunch<'_>,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: Option<AgentMcpLaunch<'_>>,
+    profile: Option<&termloop_domain::PersonalAgent>,
 ) -> Result<LaunchPayload, InvocationError> {
     configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
         agent_id,
@@ -2747,6 +2748,7 @@ pub fn configured_ask_to_helper_for_conversation_resume(
         conversation,
         observation,
         mcp,
+        profile,
         CodexProjectTrust::Inherit,
     )
 }
@@ -2762,6 +2764,7 @@ pub fn configured_ask_to_helper_for_managed_worktree_conversation_resume(
     conversation: AgentConversationLaunch<'_>,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: Option<AgentMcpLaunch<'_>>,
+    profile: Option<&termloop_domain::PersonalAgent>,
 ) -> Result<LaunchPayload, InvocationError> {
     configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
         agent_id,
@@ -2773,6 +2776,7 @@ pub fn configured_ask_to_helper_for_managed_worktree_conversation_resume(
         conversation,
         observation,
         mcp,
+        profile,
         CodexProjectTrust::TermLoopManagedWorktree,
     )
 }
@@ -2788,6 +2792,7 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
     conversation: AgentConversationLaunch<'_>,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: Option<AgentMcpLaunch<'_>>,
+    profile: Option<&termloop_domain::PersonalAgent>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<LaunchPayload, InvocationError> {
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
@@ -2810,7 +2815,10 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
             bind_ordered(template.authored_body, &[("request_id", request_id)])
         })
         .transpose()?;
-    resolve_launch_manifest_with_codex_project_trust(
+    let provider_instructions = profile
+        .map(|profile| personal_agent::personal_agent_provider_instructions(profile, mcp.as_ref()))
+        .transpose()?;
+    let mut resolved = resolve_launch_manifest_with_attachments_and_codex_project_trust(
         agent_id,
         cwd,
         template,
@@ -2821,9 +2829,20 @@ fn configured_ask_to_helper_for_conversation_resume_with_codex_project_trust(
         conversation,
         observation,
         mcp,
+        profile.map(|_| &personal_agent::PERSONAL_AGENT_TEMPLATE),
+        provider_instructions.as_deref(),
+        &[],
         codex_project_trust,
-    )
-    .map(ResolvedLaunchManifest::into_payload)
+    )?;
+    if let Some(profile) = profile {
+        resolved
+            .bindings
+            .push(("profileRef".into(), profile.id.clone()));
+        resolved
+            .bindings
+            .push(("profileVersion".into(), profile.version.to_string()));
+    }
+    Ok(resolved.into_payload())
 }
 
 /// Resolves a persistent Steward through the same inspected manifest
@@ -2875,23 +2894,27 @@ pub fn ask_to_helper_agent_for_conversation(
     agent_id: &str,
     cwd: &str,
     model: &str,
+    permission: &str,
     reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: AgentMcpLaunch<'_>,
+    profile: Option<&termloop_domain::PersonalAgent>,
 ) -> Result<LaunchPayload, InvocationError> {
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
         model,
+        permission,
         reasoning,
         conversation,
         request_id,
         message,
         observation,
         mcp,
+        profile,
         CodexProjectTrust::Inherit,
     )
 }
@@ -2901,23 +2924,27 @@ pub fn ask_to_helper_agent_for_managed_worktree_conversation(
     agent_id: &str,
     cwd: &str,
     model: &str,
+    permission: &str,
     reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: AgentMcpLaunch<'_>,
+    profile: Option<&termloop_domain::PersonalAgent>,
 ) -> Result<LaunchPayload, InvocationError> {
     ask_to_helper_agent_for_conversation_with_codex_project_trust(
         agent_id,
         cwd,
         model,
+        permission,
         reasoning,
         conversation,
         request_id,
         message,
         observation,
         mcp,
+        profile,
         CodexProjectTrust::TermLoopManagedWorktree,
     )
 }
@@ -2927,12 +2954,14 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
     agent_id: &str,
     cwd: &str,
     model: &str,
+    permission: &str,
     reasoning: &str,
     conversation: AgentConversationLaunch<'_>,
     request_id: &str,
     message: &str,
     observation: Option<AgentObservationLaunch<'_>>,
     mcp: AgentMcpLaunch<'_>,
+    profile: Option<&termloop_domain::PersonalAgent>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<LaunchPayload, InvocationError> {
     if request_id.trim().is_empty() || message.trim().is_empty() {
@@ -2950,17 +2979,23 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
         return Err(InvocationError::UnprovenancedPrompt);
     }
     let delivered = bind_ask_to_prompt(template.authored_body, request_id, message)?;
-    let mut resolved = resolve_launch_manifest_with_codex_project_trust(
+    let provider_instructions = profile
+        .map(|profile| personal_agent::personal_agent_provider_instructions(profile, Some(&mcp)))
+        .transpose()?;
+    let mut resolved = resolve_launch_manifest_with_attachments_and_codex_project_trust(
         agent_id,
         cwd,
         template,
         model,
-        "default",
+        permission,
         reasoning,
         None,
         conversation,
         observation,
         Some(mcp),
+        profile.map(|_| &personal_agent::PERSONAL_AGENT_TEMPLATE),
+        provider_instructions.as_deref(),
+        &[],
         codex_project_trust,
     )?;
     // Both providers use option parsers before their positional prompt.
@@ -2978,15 +3013,28 @@ fn ask_to_helper_agent_for_conversation_with_codex_project_trust(
         ("request_id".into(), request_id.into()),
         ("message".into(), message.into()),
     ];
+    if let Some(profile) = profile {
+        resolved
+            .bindings
+            .push(("profileRef".into(), profile.id.clone()));
+        resolved
+            .bindings
+            .push(("profileVersion".into(), profile.version.to_string()));
+    }
     resolved.delivered_prompt = Some(delivered.clone());
-    resolved.inspectable.provenance.delivered_digest = content_digest(&delivered);
-    resolved.inspectable.content_parts = vec![content_part(
+    resolved.inspectable.provenance.delivered_digest = content_digest(
+        &provider_instructions
+            .as_deref()
+            .map(|instructions| format!("{instructions}\n\n{delivered}"))
+            .unwrap_or_else(|| delivered.clone()),
+    );
+    resolved.inspectable.content_parts.push(content_part(
         "first-message",
         "firstMessage",
         format!("resources/prompts/{}", template.id),
         "argv",
         &delivered,
-    )];
+    ));
     resolved.inspectable.transport = transport("argv", &delivered);
     resolved.inspectable.arguments = resolved
         .arguments
@@ -3493,6 +3541,10 @@ fn compose_task_workflow(
             .map_err(|_| InvocationError::InvalidPromptBinding)?;
         if let Some(agent_id) = &step.agent_id {
             writeln!(workflow_steps, "   Helper Agent: {agent_id}")
+                .map_err(|_| InvocationError::InvalidPromptBinding)?;
+        }
+        if let Some(profile_ref) = &step.profile_ref {
+            writeln!(workflow_steps, "   Agent template: {profile_ref}")
                 .map_err(|_| InvocationError::InvalidPromptBinding)?;
         }
         if let Some(reuse_step_id) = &step.reuse_step_id {
@@ -6373,6 +6425,7 @@ mod tests {
             "/tmp/project",
             "default",
             "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-1",
             "Review the race.",
@@ -6383,6 +6436,7 @@ mod tests {
                 claude_config_path: "/private/runtime/agent-mcp.json",
                 profile: AgentMcpProfile::Helper,
             },
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -6421,6 +6475,7 @@ mod tests {
             "/tmp/project",
             "default",
             "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-3",
             "Write a poem.",
@@ -6431,6 +6486,7 @@ mod tests {
                 claude_config_path: "/unused.json",
                 profile: AgentMcpProfile::Helper,
             },
+            None,
         )
         .unwrap();
         let codex_delimiter = codex
@@ -6448,6 +6504,7 @@ mod tests {
             "/tmp/project",
             "default",
             "default",
+            "default",
             AgentConversationLaunch::Fresh { resume_ref: None },
             "request-2",
             "Explain {{request_id}} literally.",
@@ -6458,6 +6515,7 @@ mod tests {
                 claude_config_path: "/private/runtime/agent-mcp.json",
                 profile: AgentMcpProfile::Helper,
             },
+            None,
         )
         .unwrap();
         assert!(
@@ -6492,6 +6550,7 @@ mod tests {
                 claude_config_path: "/private/runtime/agent-mcp.json",
                 profile: AgentMcpProfile::Helper,
             }),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -6517,6 +6576,7 @@ mod tests {
             AgentConversationLaunch::Resume {
                 resume_ref: &resume_ref,
             },
+            None,
             None,
             None,
         )
@@ -7236,6 +7296,7 @@ mod tests {
                     instructions: "Surface tradeoffs before implementation.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: Some(termloop_domain::AgentLaunchSelection::new(
                         "default",
                         "bypassPermissions",
@@ -7249,6 +7310,7 @@ mod tests {
                     instructions: "Implement and run focused tests.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: None,
                 },
                 termloop_domain::WorkflowStep {
@@ -7258,6 +7320,7 @@ mod tests {
                     instructions: "Inspect the diff for concrete defects.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: Some("discuss".into()),
+                    profile_ref: None,
                     launch_selection: None,
                 },
                 termloop_domain::WorkflowStep {
@@ -7267,6 +7330,7 @@ mod tests {
                     instructions: "Inspect the diff independently.".into(),
                     agent_id: Some("codex".into()),
                     reuse_step_id: None,
+                    profile_ref: Some("builtin.agent-profile.edge-case-hunter".into()),
                     launch_selection: Some(termloop_domain::AgentLaunchSelection::new(
                         "default",
                         "bypassPermissions",
@@ -7280,6 +7344,7 @@ mod tests {
                     instructions: "Apply the accepted combined findings.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: None,
                 },
             ],
@@ -7388,7 +7453,9 @@ mod tests {
             "builtin.agent.task-workflow"
         );
         assert!(launch.initial_input().is_some_and(|input| {
-            input.contains("Discuss, build, review") && input.contains("Helper Agent: claude")
+            input.contains("Discuss, build, review")
+                && input.contains("Helper Agent: claude")
+                && input.contains("Agent template: builtin.agent-profile.edge-case-hunter")
         }));
     }
 

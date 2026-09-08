@@ -145,6 +145,7 @@ fn same_millisecond_task_mutations_still_advance_updated_at() {
 }
 
 mod agent_accounts;
+mod agent_library;
 mod agent_plan;
 mod archive;
 mod branch_binding;

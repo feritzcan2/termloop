@@ -195,9 +195,9 @@ function workflowExecution(coordinatorSessionId: string, participantSessionId: s
     phase: "awaitingCoordinator",
     status: "running",
     steps: [
-      { id: "discuss", kind: "discuss", title: "Challenge the approach", instructions: "Discuss.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
-      { id: "implement", kind: "implement", title: "Implement", instructions: "Build.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
-      { id: "review", kind: "review", title: "Independent review", instructions: "Review.", agentId: "claude", reuseStepId: "discuss", model: null, permission: null, reasoning: null },
+      { id: "discuss", kind: "discuss", title: "Challenge the approach", instructions: "Discuss.", agentId: "claude", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+      { id: "implement", kind: "implement", title: "Implement", instructions: "Build.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
+      { id: "review", kind: "review", title: "Independent review", instructions: "Review.", agentId: "claude", reuseStepId: "discuss", profileRef: null, model: null, permission: null, reasoning: null },
     ],
     participants: [
       { stepId: "discuss", sessionId: participantSessionId },
@@ -230,6 +230,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     runConfigurations: options.runConfigurations ?? [],
     workflowConfigurations: [],
     workflowExecutions: options.workflowExecutions ?? [],
+    agentProfiles: [],
     runRuntimes: options.runRuntimes ?? [],
     runStateRevision: 0,
     runImprovement: { start: unused, versions: unused, restore: unused },

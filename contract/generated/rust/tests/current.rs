@@ -114,7 +114,7 @@ fn project_task_automation_is_strict_and_revision_checked() {
 }
 
 #[test]
-fn workflow_steps_carry_explicit_nullable_launch_selections() {
+fn workflow_steps_carry_explicit_nullable_launch_selections_and_agent_profiles() {
     let params = serde_json::json!({
         "projectId": "project-1",
         "name": "Discuss and build",
@@ -131,6 +131,7 @@ fn workflow_steps_carry_explicit_nullable_launch_selections() {
                 "instructions": "Challenge the approach.",
                 "agentId": "claude",
                 "reuseStepId": null,
+                "profileRef": "builtin.agent-profile.edge-case-hunter",
                 "model": "opus",
                 "permission": "bypassPermissions",
                 "reasoning": "high"
@@ -142,6 +143,7 @@ fn workflow_steps_carry_explicit_nullable_launch_selections() {
                 "instructions": "Implement and verify.",
                 "agentId": null,
                 "reuseStepId": null,
+                "profileRef": null,
                 "model": null,
                 "permission": null,
                 "reasoning": null
@@ -162,6 +164,13 @@ fn workflow_steps_carry_explicit_nullable_launch_selections() {
     assert!(!validate_method_params(
         "workflow.configurationCreate",
         &missing_permission
+    ));
+
+    let mut malformed_profile = params.clone();
+    malformed_profile["steps"][0]["profileRef"] = serde_json::json!("edge case hunter");
+    assert!(!validate_method_params(
+        "workflow.configurationCreate",
+        &malformed_profile
     ));
 }
 

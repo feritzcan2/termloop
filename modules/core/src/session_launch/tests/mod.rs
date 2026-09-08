@@ -2706,14 +2706,20 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
         "reasoning": "default",
         "maxReviewCycles": 2,
         "steps": [
-            { "id": "discuss", "kind": "discuss", "title": "Discuss", "instructions": "Challenge the approach.", "agentId": "claude", "reuseStepId": null, "model": "default", "permission": "bypassPermissions", "reasoning": "high" },
-            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement and verify.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null },
-            { "id": "review-claude", "kind": "review", "title": "Review with context", "instructions": "Review the diff.", "agentId": "claude", "reuseStepId": "discuss", "model": null, "permission": null, "reasoning": null },
-            { "id": "review-codex", "kind": "review", "title": "Independent review", "instructions": "Review the diff independently.", "agentId": "codex", "reuseStepId": null, "model": "gpt-5.6-sol", "permission": "bypassPermissions", "reasoning": "xhigh" },
-            { "id": "fix", "kind": "fix", "title": "Fix", "instructions": "Apply the combined findings.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null }
+            { "id": "discuss", "kind": "discuss", "title": "Discuss", "instructions": "Challenge the approach.", "agentId": "claude", "reuseStepId": null, "profileRef": null, "model": "default", "permission": "bypassPermissions", "reasoning": "high" },
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement and verify.", "agentId": null, "reuseStepId": null, "profileRef": null, "model": null, "permission": null, "reasoning": null },
+            { "id": "review-claude", "kind": "review", "title": "Review with context", "instructions": "Review the diff.", "agentId": "claude", "reuseStepId": "discuss", "profileRef": null, "model": null, "permission": null, "reasoning": null },
+            { "id": "review-codex", "kind": "review", "title": "Independent review", "instructions": "Review the diff independently.", "agentId": "codex", "reuseStepId": null, "profileRef": "builtin.agent-profile.edge-case-hunter", "model": "default", "permission": "plan", "reasoning": "high" },
+            { "id": "fix", "kind": "fix", "title": "Fix", "instructions": "Apply the combined findings.", "agentId": null, "reuseStepId": null, "profileRef": null, "model": null, "permission": null, "reasoning": null }
         ],
         "expectedRevision": runtime.state_revision()
     });
+    let mut missing_profile = create.clone();
+    missing_profile["steps"][3]["profileRef"] = json!("custom.agent-profile.missing");
+    assert!(matches!(
+        runtime.handle("workflow.configurationCreate", missing_profile),
+        Err(CoreError::InvalidParams(field)) if field == "workflow profileRef"
+    ));
     let created = runtime
         .handle("workflow.configurationCreate", create)
         .unwrap();
@@ -2730,11 +2736,11 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
     assert!(saved_workflow.steps[2].launch_selection.is_none());
     assert_eq!(
         saved_workflow.steps[3].launch_selection,
-        Some(AgentLaunchSelection::new(
-            "gpt-5.6-sol",
-            "bypassPermissions",
-            "xhigh",
-        ))
+        Some(AgentLaunchSelection::new("default", "plan", "high",))
+    );
+    assert_eq!(
+        saved_workflow.steps[3].profile_ref.as_deref(),
+        Some("builtin.agent-profile.edge-case-hunter")
     );
 
     let mut plan = runtime
@@ -2830,7 +2836,7 @@ fn workflow_launch_uses_saved_steps_and_rejects_a_stale_preview() {
         "reasoning": "default",
         "maxReviewCycles": 2,
         "steps": [
-            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement the updated approach.", "agentId": null, "reuseStepId": null, "model": null, "permission": null, "reasoning": null }
+            { "id": "implement", "kind": "implement", "title": "Implement", "instructions": "Implement the updated approach.", "agentId": null, "reuseStepId": null, "profileRef": null, "model": null, "permission": null, "reasoning": null }
         ],
         "expectedRevision": runtime.state_revision()
     });

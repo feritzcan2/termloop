@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { WorkflowConfigurationCreateParams, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
 import {
   TaskWorkflowLaunchers,
@@ -14,6 +15,24 @@ import {
   workflowStepResultFileName,
 } from "../src/renderer/ui/TaskWorkflows.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
+
+const edgeCaseHunter = {
+  id: "builtin.agent-profile.edge-case-hunter",
+  name: "Edge Case Hunter",
+  description: "Probe a behavior for boundary conditions, races, and failure-path gaps.",
+  category: "Quality",
+  version: 2,
+  permission: "plan" as const,
+  read_only: true,
+  user_invocable: true,
+  agent_ids: ["claude", "codex"],
+  source: "builtIn" as const,
+  instructions: "Find the highest-risk edge cases.",
+  favorite: true,
+  default_agent_id: "codex" as const,
+  default_model: "default",
+  default_reasoning: "high" as const,
+};
 
 const task: Task = {
   id: "task-1",
@@ -60,9 +79,9 @@ const workflow: WorkflowConfiguration = {
   reasoning: "default",
   maxReviewCycles: 2,
   steps: [
-    { id: "discuss", kind: "discuss", title: "Discuss", instructions: "Challenge the approach.", agentId: "claude", reuseStepId: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
-    { id: "implement", kind: "implement", title: "Implement", instructions: "Build it.", agentId: null, reuseStepId: null, model: null, permission: null, reasoning: null },
-    { id: "review", kind: "review", title: "Review", instructions: "Review the diff.", agentId: "claude", reuseStepId: "discuss", model: null, permission: null, reasoning: null },
+    { id: "discuss", kind: "discuss", title: "Discuss", instructions: "Challenge the approach.", agentId: "claude", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
+    { id: "implement", kind: "implement", title: "Implement", instructions: "Build it.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
+    { id: "review", kind: "review", title: "Review", instructions: "Review the diff.", agentId: "claude", reuseStepId: "discuss", profileRef: null, model: null, permission: null, reasoning: null },
   ],
   generation: 1,
   updatedAtEpochMs: 1,
@@ -114,6 +133,7 @@ describe("Task workflow editor", () => {
       projectId: "project-1",
       stateRevision: 1,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      agentProfiles: [edgeCaseHunter],
       close: vi.fn(),
       save: vi.fn(),
       remove: vi.fn(),
@@ -137,6 +157,7 @@ describe("Task workflow editor", () => {
       projectId: "project-1",
       stateRevision: 1,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      agentProfiles: [edgeCaseHunter],
       close: vi.fn(),
       save: vi.fn(),
       remove: vi.fn(),
@@ -148,6 +169,48 @@ describe("Task workflow editor", () => {
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Model"]')?.value).toBe("default");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Permission"]')?.value).toBe("bypassPermissions");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Thinking"]')?.value).toBe("default");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("applies a saved Agent template and its launch defaults to an independent reviewer", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const save = vi.fn(async (_params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams) => workflow);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(WorkflowEditorPanel, {
+      projectId: "project-1",
+      stateRevision: 1,
+      agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+      agentProfiles: [edgeCaseHunter],
+      close: vi.fn(),
+      save,
+      remove: vi.fn(),
+    })));
+
+    const review = [...container.querySelectorAll<HTMLButtonElement>(".workflow-step-select")]
+      .find((button) => button.textContent?.includes("Independent second review"));
+    await act(async () => review!.click());
+    const template = container.querySelector<HTMLSelectElement>('[aria-label="Agent template"]')!;
+    await act(async () => {
+      template.value = edgeCaseHunter.id;
+      template.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Edge Case Hunter");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Permission"]')?.value).toBe("plan");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Thinking"]')?.value).toBe("high");
+    await act(async () => container.querySelector<HTMLButtonElement>(".stage-editor-actions .primary-button")!.click());
+    const saved = save.mock.calls[0]?.[0];
+    expect(saved?.steps.find((step) => step.id === "review-codex")).toEqual(expect.objectContaining({
+      agentId: "codex",
+      profileRef: edgeCaseHunter.id,
+      permission: "plan",
+      reasoning: "high",
+    }));
 
     await act(async () => root.unmount());
     container.remove();
@@ -193,6 +256,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [],
+      agentProfiles: [edgeCaseHunter],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
@@ -220,6 +284,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [],
+      agentProfiles: [edgeCaseHunter],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
@@ -246,6 +311,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [],
+      agentProfiles: [edgeCaseHunter],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
@@ -266,6 +332,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [execution],
+      agentProfiles: [edgeCaseHunter],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
@@ -307,6 +374,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [execution],
+      agentProfiles: [edgeCaseHunter],
       launchable: true,
       showLaunchers: true,
       overlayContainer: undefined,
@@ -334,6 +402,7 @@ describe("Task workflow editor", () => {
       task,
       configurations: [workflow],
       executions: [execution],
+      agentProfiles: [edgeCaseHunter],
       launchable: false,
       showLaunchers: false,
       overlayContainer: undefined,

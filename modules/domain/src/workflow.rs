@@ -5,7 +5,7 @@
 //! can enforce the next step and conversation reuse across daemon restarts;
 //! completed attempts and execution history are never accumulated.
 
-use crate::{AgentLaunchSelection, agent_id_is_well_formed};
+use crate::{AgentLaunchSelection, agent_id_is_well_formed, valid_agent_profile_id};
 
 pub const WORKFLOW_CONFIGURATIONS_PER_PROJECT_MAX: usize = 16;
 pub const WORKFLOW_STEPS_MAX: usize = 8;
@@ -44,6 +44,11 @@ pub struct WorkflowStep {
     /// and use the same helper Agent.
     #[serde(default)]
     pub reuse_step_id: Option<String>,
+    /// Optional Agent Library profile applied to a fresh discussion or review
+    /// helper. Reused conversations inherit the profile already pinned to the
+    /// original helper Session.
+    #[serde(default)]
+    pub profile_ref: Option<String>,
     /// Fresh helper conversations carry their exact launch selection. Reused
     /// conversations inherit the selection already stored on that Session.
     #[serde(default)]
@@ -67,12 +72,19 @@ impl WorkflowStep {
                                 .as_ref()
                                 .is_some_and(AgentLaunchSelection::is_well_formed),
                         }
+                        && self
+                            .profile_ref
+                            .as_deref()
+                            .is_none_or(valid_agent_profile_id)
                 }
                 WorkflowStepKind::Implement | WorkflowStepKind::Fix => {
-                    self.agent_id.is_none() && self.launch_selection.is_none()
+                    self.agent_id.is_none()
+                        && self.launch_selection.is_none()
+                        && self.profile_ref.is_none()
                 }
             }
             && (self.kind == WorkflowStepKind::Review || self.reuse_step_id.is_none())
+            && (self.reuse_step_id.is_none() || self.profile_ref.is_none())
             && self
                 .reuse_step_id
                 .as_deref()
@@ -465,6 +477,7 @@ mod tests {
                     instructions: "Debate the approach and surface tradeoffs.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: Some(AgentLaunchSelection::new(
                         "default",
                         "bypassPermissions",
@@ -478,6 +491,7 @@ mod tests {
                     instructions: "Implement the agreed solution and verify it.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: None,
                 },
                 WorkflowStep {
@@ -487,6 +501,7 @@ mod tests {
                     instructions: "Review the diff and report concrete findings.".into(),
                     agent_id: Some("claude".into()),
                     reuse_step_id: Some("discuss".into()),
+                    profile_ref: None,
                     launch_selection: None,
                 },
                 WorkflowStep {
@@ -496,6 +511,7 @@ mod tests {
                     instructions: "Apply the accepted review findings and verify again.".into(),
                     agent_id: None,
                     reuse_step_id: None,
+                    profile_ref: None,
                     launch_selection: None,
                 },
             ],
@@ -563,6 +579,27 @@ mod tests {
         let mut value = configuration();
         value.steps[1].launch_selection = Some(AgentLaunchSelection::default());
         assert!(!value.is_valid());
+    }
+
+    #[test]
+    fn workflow_agent_profiles_belong_only_to_fresh_helpers() {
+        let mut value = configuration();
+        value.steps[0].profile_ref = Some("builtin.agent-profile.edge-case-hunter".into());
+        assert!(value.is_valid());
+
+        value.steps[0].profile_ref = Some("custom.agent-profile.my-reviewer".into());
+        assert!(value.is_valid());
+
+        value.steps[0].profile_ref = Some("builtin.agent-profile.Bad_Profile".into());
+        assert!(!value.is_valid());
+
+        let mut reused = configuration();
+        reused.steps[2].profile_ref = Some("builtin.agent-profile.edge-case-hunter".into());
+        assert!(!reused.is_valid());
+
+        let mut coordinator = configuration();
+        coordinator.steps[1].profile_ref = Some("builtin.agent-profile.edge-case-hunter".into());
+        assert!(!coordinator.is_valid());
     }
 
     #[test]

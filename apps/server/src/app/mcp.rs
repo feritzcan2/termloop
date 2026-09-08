@@ -318,6 +318,7 @@ async fn tool_call_inner(
                     idempotency_key: params.idempotency_key,
                     conversation_id: params.conversation_id,
                     launch_selection: None,
+                    agent_profile: None,
                 },
                 state,
             )
