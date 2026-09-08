@@ -3,6 +3,7 @@
 mod agent_accounts;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod provider_observation_ingress;
+mod session_retirement;
 
 use crate::{CoreError, CoreRuntime};
 use serde_json::Value;

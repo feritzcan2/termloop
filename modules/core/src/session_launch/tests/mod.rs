@@ -3358,7 +3358,12 @@ fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
 
     let preview = runtime.preview_quick_action(params.clone()).unwrap();
     assert_eq!(preview["template_ref"], profile_ref);
-    assert_eq!(preview["template_version"], 1);
+    assert_eq!(
+        preview["template_version"],
+        termloop_invocation::agent_profile(profile_ref)
+            .unwrap()
+            .version
+    );
     assert_eq!(
         preview["manifest"]["provenance"]["template_ref"],
         profile_ref

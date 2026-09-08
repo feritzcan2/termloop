@@ -24,8 +24,8 @@ use tokio::time::{Duration, Instant};
 use super::AppState;
 use super::core_lock::{in_operation, record_operation_duration};
 use super::invalidation::{
-    CommitImpact, InvalidationRequest, queue_durable_commit_invalidation,
-    refresh_task_presence_for_cwd,
+    CommitImpact, CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
+    queue_durable_commit_invalidation,
 };
 
 // 32,768 Unicode scalar bindings can expand to six-byte JSON escapes plus
@@ -711,20 +711,9 @@ async fn execute_ask_to_launch(
     };
     tokio::task::spawn_blocking(move || drop(plan));
     let completion = result?;
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Session],
-        state_revision: completion.state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = completion
-        .session
-        .get("process")
-        .and_then(|process| process.get("cwd"))
-        .and_then(Value::as_str)
-    {
-        refresh_task_presence_for_cwd(state, cwd).await;
-    }
-    Ok(completion.acknowledgement)
+    let effects =
+        CommittedSessionMutation::launched(&completion.session, completion.state_revision, false);
+    finish_session_mutation(state, effects, Ok(completion.acknowledgement)).await
 }
 
 fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {

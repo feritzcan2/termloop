@@ -90,6 +90,35 @@ function pullRequest(number: number): GitHostProjection["matches"][number] {
 }
 
 describe("scoped Task projection merge", () => {
+  it("applies a delayed Task patch to its originating Project after navigation", () => {
+    const store = new ProjectionStore();
+    const projectA = { ...task("one", 1), project_id: "project-a" };
+    const projectB = { ...task("two", 1), project_id: "project-b" };
+    store.activateProjectSnapshot("project-a");
+    store.applySelectedProjectSnapshot("project-a", [projectA]);
+    store.applySelectedProjectSnapshot("project-b", [projectB]);
+
+    // A launch in A is still completing when the user navigates to B.
+    store.activateProjectSnapshot("project-b");
+    const refreshedA = { ...projectA, title: "Agent launched" };
+    store.applyTaskPatch([projectA.id], [refreshedA], "project-a");
+    expect(store.getSnapshot().tasks).toEqual([projectB]);
+    store.activateProjectSnapshot("project-a");
+    expect(store.getSnapshot().tasks).toEqual([refreshedA]);
+  });
+
+  it("does not seed a new inactive Project's patch with the active Project's Tasks", () => {
+    const store = new ProjectionStore();
+    const projectA = { ...task("one", 1), project_id: "project-a" };
+    const projectB = { ...task("two", 1), project_id: "project-b" };
+    store.activateProjectSnapshot("project-a");
+    store.applySelectedProjectSnapshot("project-a", [projectA]);
+    store.applyTaskPatch([projectB.id], [projectB], "project-b");
+    expect(store.getSnapshot().tasks).toEqual([projectA]);
+    store.activateProjectSnapshot("project-b");
+    expect(store.getSnapshot().tasks).toEqual([projectB]);
+  });
+
   it("restores each Project snapshot immediately and ignores inactive refreshes", () => {
     const store = new ProjectionStore();
     const projectA = { ...task("one", 1), project_id: "project-a" };

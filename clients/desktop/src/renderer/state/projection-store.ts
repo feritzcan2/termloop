@@ -256,11 +256,13 @@ export class ProjectionStore {
     this.#emit();
   }
 
-  applyTaskPatch(requestedIds: readonly string[], tasks: readonly Task[]): void {
+  applyTaskPatch(requestedIds: readonly string[], tasks: readonly Task[], projectId = this.#selectedProjectId): void {
+    const snapshot = projectId ? this.#snapshotForProject(projectId) ?? emptySelectedProjectSnapshot() : undefined;
+    const currentTasks = snapshot?.tasks ?? this.#state.tasks;
     const requested = new Set(requestedIds);
     const incoming = new Map(tasks.map((task) => [task.id, task]));
     let changed = false;
-    const next = this.#state.tasks.flatMap((current) => {
+    const next = currentTasks.flatMap((current) => {
       if (!requested.has(current.id)) return [current];
       const replacement = incoming.get(current.id);
       incoming.delete(current.id);
@@ -278,6 +280,10 @@ export class ProjectionStore {
       next.sort((left, right) => left.rank - right.rank);
     }
     if (!changed) return;
+    if (projectId && snapshot) {
+      this.#projectSnapshots.set(projectId, { ...snapshot, tasks: next });
+      if (projectId !== this.#selectedProjectId) return;
+    }
     this.#state = { ...this.#state, tasks: next };
     this.#emit();
   }
