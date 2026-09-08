@@ -12,7 +12,6 @@ use super::changes::{display_path, kind_name, project_diff_content};
 use crate::{CoreError, CoreRuntime, required_string};
 
 const COMMIT_OBSERVATION_CAP: usize = 64;
-const COMMIT_OBSERVATION_TTL_MS: u64 = 60_000;
 const ALL_CHANGES_ID: &str = "all";
 
 #[derive(Clone)]
@@ -28,7 +27,6 @@ struct CachedCommitObservation {
     repository_common_dir: PathBuf,
     range: Option<BranchRangeSnapshot>,
     all_entries: Option<Vec<CommitChangeEntry>>,
-    expires_at_epoch_ms: u64,
     commits: Vec<CachedCommit>,
 }
 
@@ -48,6 +46,8 @@ enum BranchChangeTarget {
 }
 
 #[derive(Default)]
+// Commit targets are immutable OIDs, with branch ownership revalidated on each
+// read. Keep active observations through LRU retention instead of a review timer.
 pub(crate) struct BranchCommitObservationCache {
     entries: VecDeque<CachedCommitObservation>,
     next_sequence: u64,
@@ -60,11 +60,6 @@ impl BranchCommitObservationCache {
             .retain(|observation| !task_ids.contains(&observation.task_id));
     }
 
-    fn retain_fresh(&mut self, now: u64) {
-        self.entries
-            .retain(|observation| observation.expires_at_epoch_ms > now);
-    }
-
     fn insert(
         &mut self,
         task_id: String,
@@ -72,9 +67,7 @@ impl BranchCommitObservationCache {
         repository_common_dir: PathBuf,
         range: Option<BranchRangeSnapshot>,
         commits: Vec<BranchCommit>,
-        now: u64,
     ) -> Result<String, CoreError> {
-        self.retain_fresh(now);
         self.next_sequence = self
             .next_sequence
             .checked_add(1)
@@ -87,7 +80,6 @@ impl BranchCommitObservationCache {
             repository_common_dir,
             range,
             all_entries: None,
-            expires_at_epoch_ms: now.saturating_add(COMMIT_OBSERVATION_TTL_MS),
             commits: commits
                 .into_iter()
                 .map(|commit| CachedCommit {
@@ -107,12 +99,11 @@ impl BranchCommitObservationCache {
         task_id: &str,
         observation_id: &str,
         commit_id: &str,
-        now: u64,
     ) -> Option<(TaskCommitBranchSelection, PathBuf, BranchChangeTarget)> {
-        self.retain_fresh(now);
-        let observation = self.entries.iter().find(|observation| {
+        let position = self.entries.iter().position(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
         })?;
+        let observation = &self.entries[position];
         let target = if commit_id == ALL_CHANGES_ID {
             let range = observation.range.as_ref()?;
             BranchChangeTarget::All {
@@ -123,11 +114,14 @@ impl BranchCommitObservationCache {
             let index = opaque_index(commit_id, "commit-")?;
             BranchChangeTarget::Commit(observation.commits.get(index)?.commit.clone())
         };
-        Some((
+        let result = (
             observation.selection.clone(),
             observation.repository_common_dir.clone(),
             target,
-        ))
+        );
+        let observation = self.entries.remove(position)?;
+        self.entries.push_back(observation);
+        Some(result)
     }
 
     fn store_entries(
@@ -136,14 +130,13 @@ impl BranchCommitObservationCache {
         observation_id: &str,
         commit_id: &str,
         entries: Vec<CommitChangeEntry>,
-        now: u64,
     ) -> bool {
-        self.retain_fresh(now);
-        let Some(observation) = self.entries.iter_mut().find(|observation| {
+        let Some(position) = self.entries.iter().position(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
         }) else {
             return false;
         };
+        let observation = &mut self.entries[position];
         if commit_id == ALL_CHANGES_ID {
             observation.all_entries = Some(entries);
         } else {
@@ -155,6 +148,8 @@ impl BranchCommitObservationCache {
             };
             commit.entries = Some(entries);
         }
+        let observation = self.entries.remove(position).expect("matched observation");
+        self.entries.push_back(observation);
         true
     }
 
@@ -164,15 +159,12 @@ impl BranchCommitObservationCache {
         observation_id: &str,
         commit_id: &str,
         entry_id: &str,
-        now: u64,
     ) -> Option<(
         TaskCommitBranchSelection,
         PathBuf,
         BranchChangeTarget,
         CommitChangeEntry,
     )> {
-        let (selection, common_dir, target) =
-            self.target(task_id, observation_id, commit_id, now)?;
         let observation = self.entries.iter().find(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
         })?;
@@ -184,6 +176,8 @@ impl BranchCommitObservationCache {
             observation.commits.get(commit_index)?.entries.as_ref()?
         };
         let entry = entries.get(entry_index)?.clone();
+        // An invalid entry must not make an unused observation recent.
+        let (selection, common_dir, target) = self.target(task_id, observation_id, commit_id)?;
         Some((selection, common_dir, target, entry))
     }
 }
@@ -408,7 +402,6 @@ impl CoreRuntime {
                     branch_tip_oid,
                 }),
             commits,
-            termloop_platform::current_epoch_ms(),
         )?;
         Ok(json!({
             "task_id": observed.plan.task_id,
@@ -434,12 +427,7 @@ impl CoreRuntime {
         let commit_id = required_string(&params, "commitId")?;
         let (selection, repository_common_dir, target) = self
             .branch_commit_observations
-            .target(
-                &task_id,
-                &observation_id,
-                &commit_id,
-                termloop_platform::current_epoch_ms(),
-            )
+            .target(&task_id, &observation_id, &commit_id)
             .ok_or(CoreError::BranchMutationConflict)?;
         let project_id = self.revalidate_task_commit_branch_selection(&task_id, &selection)?;
         Ok(TaskBranchCommitChangeListPlan {
@@ -473,7 +461,6 @@ impl CoreRuntime {
             &observed.plan.observation_id,
             &observed.plan.commit_id,
             entries,
-            termloop_platform::current_epoch_ms(),
         ) {
             return Err(CoreError::BranchMutationConflict);
         }
@@ -497,13 +484,7 @@ impl CoreRuntime {
         let entry_id = required_string(&params, "entryId")?;
         let (selection, repository_common_dir, target, entry) = self
             .branch_commit_observations
-            .diff_target(
-                &task_id,
-                &observation_id,
-                &commit_id,
-                &entry_id,
-                termloop_platform::current_epoch_ms(),
-            )
+            .diff_target(&task_id, &observation_id, &commit_id, &entry_id)
             .ok_or(CoreError::BranchMutationConflict)?;
         let project_id = self.revalidate_task_commit_branch_selection(&task_id, &selection)?;
         Ok(TaskBranchCommitDiffPlan {
@@ -743,7 +724,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn observation_cache_is_bounded_and_expires() {
+    fn observation_cache_keeps_active_targets_and_evicts_unused_observations() {
         let mut cache = BranchCommitObservationCache::default();
         let binding = TaskBranchBinding {
             repository_root: "/repo".into(),
@@ -760,29 +741,56 @@ mod tests {
             role: "primary",
             held_by_task_id: None,
         };
-        for index in 0..(COMMIT_OBSERVATION_CAP + 2) {
+        let range = BranchRangeSnapshot {
+            base_oid: ObjectId::from_hex(b"1111111111111111111111111111111111111111".to_vec())
+                .unwrap(),
+            branch_tip_oid: ObjectId::from_hex(
+                b"2222222222222222222222222222222222222222".to_vec(),
+            )
+            .unwrap(),
+        };
+        let insert = |cache: &mut BranchCommitObservationCache| {
             cache
                 .insert(
-                    format!("task-{index}"),
+                    "task".into(),
                     selection.clone(),
                     PathBuf::from("/repo/.git"),
-                    Some(BranchRangeSnapshot {
-                        base_oid: ObjectId::from_hex(
-                            b"1111111111111111111111111111111111111111".to_vec(),
-                        )
-                        .unwrap(),
-                        branch_tip_oid: ObjectId::from_hex(
-                            b"2222222222222222222222222222222222222222".to_vec(),
-                        )
-                        .unwrap(),
-                    }),
+                    Some(range.clone()),
                     vec![],
-                    10,
                 )
-                .unwrap();
+                .unwrap()
+        };
+        let active = insert(&mut cache);
+        let loading = insert(&mut cache);
+        let unused = insert(&mut cache);
+        for _ in 0..(COMMIT_OBSERVATION_CAP * 2) {
+            let (observed_selection, _, target) = cache.target("task", &active, "all").unwrap();
+            assert_eq!(observed_selection, selection);
+            let BranchChangeTarget::All {
+                base_oid,
+                branch_tip_oid,
+            } = target
+            else {
+                panic!("expected branch range");
+            };
+            assert_eq!(base_oid, range.base_oid);
+            assert_eq!(branch_tip_oid, range.branch_tip_oid);
+            assert!(cache.store_entries("task", &loading, "all", vec![]));
+            assert!(cache.target("other-task", &unused, "all").is_none());
+            assert!(cache.target("task", &unused, "commit-999").is_none());
+            assert!(!cache.store_entries("task", &unused, "commit-999", vec![]));
+            assert!(
+                cache
+                    .diff_target("task", &unused, "all", "entry-999")
+                    .is_none()
+            );
+            insert(&mut cache);
         }
         assert_eq!(cache.entries.len(), COMMIT_OBSERVATION_CAP);
-        cache.retain_fresh(10 + COMMIT_OBSERVATION_TTL_MS);
+        assert!(cache.target("task", &unused, "all").is_none());
+        assert!(cache.target("task", &active, "all").is_some());
+        assert!(cache.target("task", &loading, "all").is_some());
+        cache.retain_outside_tasks(&std::collections::HashSet::from(["task".into()]));
         assert!(cache.entries.is_empty());
     }
 }

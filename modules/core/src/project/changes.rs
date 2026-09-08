@@ -13,7 +13,6 @@ use termloop_gitio::{
 use crate::{CoreError, CoreRuntime, required_string};
 
 const OBSERVATION_CAP: usize = 64;
-const OBSERVATION_TTL_MS: u64 = 60_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ProjectCheckoutProof {
@@ -64,11 +63,12 @@ pub struct ObservedProjectWorktreePreImage {
 struct CachedProjectChangeObservation {
     observation_id: String,
     proof: ProjectCheckoutProof,
-    expires_at_epoch_ms: u64,
     entries: Vec<WorktreeChangeEntry>,
 }
 
 #[derive(Default)]
+// Entry selections have no time limit. Content reads revalidate the checkout;
+// LRU eviction and Project deletion bound the lifetime of these in-memory lists.
 pub(crate) struct ProjectChangeObservationCache {
     entries: VecDeque<CachedProjectChangeObservation>,
     next_sequence: u64,
@@ -83,18 +83,11 @@ impl ProjectChangeObservationCache {
             .retain(|observation| observation.proof.project_id != project_id);
     }
 
-    fn retain_fresh(&mut self, now: u64) {
-        self.entries
-            .retain(|observation| observation.expires_at_epoch_ms > now);
-    }
-
     fn insert(
         &mut self,
         proof: ProjectCheckoutProof,
         entries: Vec<WorktreeChangeEntry>,
-        now: u64,
     ) -> Result<String, CoreError> {
-        self.retain_fresh(now);
         self.next_sequence = self.next_sequence.checked_add(1).ok_or_else(|| {
             CoreError::Store("Project change observation sequence overflow".into())
         })?;
@@ -102,7 +95,6 @@ impl ProjectChangeObservationCache {
         self.entries.push_back(CachedProjectChangeObservation {
             observation_id: observation_id.clone(),
             proof,
-            expires_at_epoch_ms: now.saturating_add(OBSERVATION_TTL_MS),
             entries,
         });
         while self.entries.len() > OBSERVATION_CAP {
@@ -116,19 +108,18 @@ impl ProjectChangeObservationCache {
         project_id: &str,
         observation_id: &str,
         entry_id: &str,
-        now: u64,
     ) -> Option<(ProjectCheckoutProof, WorktreeChangeEntry)> {
-        self.retain_fresh(now);
-        let observation = self.entries.iter().find(|observation| {
+        let position = self.entries.iter().position(|observation| {
             observation.proof.project_id == project_id
                 && observation.observation_id == observation_id
         })?;
+        let observation = &self.entries[position];
         let index = entry_id.strip_prefix("entry-")?.parse::<usize>().ok()?;
-        observation
-            .entries
-            .get(index)
-            .cloned()
-            .map(|entry| (observation.proof.clone(), entry))
+        let entry = observation.entries.get(index)?.clone();
+        let proof = observation.proof.clone();
+        let observation = self.entries.remove(position)?;
+        self.entries.push_back(observation);
+        Some((proof, entry))
     }
 }
 
@@ -212,11 +203,7 @@ impl CoreRuntime {
             .map(|(index, entry)| project_change_entry(index, entry))
             .collect::<Result<Vec<_>, _>>()?;
         let project_id = proof.project_id.clone();
-        let observation_id = self.project_change_observations.insert(
-            proof,
-            entries,
-            termloop_platform::current_epoch_ms(),
-        )?;
+        let observation_id = self.project_change_observations.insert(proof, entries)?;
         Ok(json!({
             "project_id": project_id,
             "observation_id": observation_id,
@@ -284,12 +271,10 @@ impl CoreRuntime {
         let project_id = required_string(&params, "projectId")?;
         let observation_id = required_string(&params, "observationId")?;
         let entry_id = required_string(&params, "entryId")?;
-        let Some((proof, entry)) = self.project_change_observations.lookup(
-            &project_id,
-            &observation_id,
-            &entry_id,
-            termloop_platform::current_epoch_ms(),
-        ) else {
+        let Some((proof, entry)) =
+            self.project_change_observations
+                .lookup(&project_id, &observation_id, &entry_id)
+        else {
             return Err(CoreError::RepositoryUnavailable);
         };
         self.revalidate_project_folder(&proof)?;
@@ -505,7 +490,7 @@ mod tests {
             .unwrap();
 
         // The cached observation held this Project's changed-file list, so it
-        // goes with the Project rather than waiting out its own TTL.
+        // goes with the Project rather than waiting for capacity eviction.
         assert!(runtime.project_change_observations.entries.is_empty());
         assert!(
             runtime
@@ -581,6 +566,64 @@ mod tests {
             .complete_project_worktree_pre_image(pre_image_plan.observe())
             .unwrap();
         assert_eq!(pre_image["state"], "content");
+
+        // Capacity pressure keeps the actively reviewed list, while invalid
+        // requests cannot pin an otherwise unused observation in the cache.
+        let cached = &runtime.project_change_observations.entries[0];
+        let proof = cached.proof.clone();
+        let entries = cached.entries.clone();
+        let unused = runtime
+            .project_change_observations
+            .insert(proof.clone(), entries.clone())
+            .unwrap();
+        for _ in 0..(OBSERVATION_CAP * 2) {
+            runtime
+                .plan_project_worktree_pre_image(json!({
+                    "projectId": project_id,
+                    "observationId": observation_id,
+                    "entryId": entry_id,
+                }))
+                .unwrap();
+            assert!(
+                runtime
+                    .project_change_observations
+                    .lookup("other-project", &unused, entry_id)
+                    .is_none()
+            );
+            assert!(
+                runtime
+                    .project_change_observations
+                    .lookup(project_id, &unused, "entry-999")
+                    .is_none()
+            );
+            runtime
+                .project_change_observations
+                .insert(proof.clone(), entries.clone())
+                .unwrap();
+        }
+        assert_eq!(
+            runtime.project_change_observations.entries.len(),
+            OBSERVATION_CAP
+        );
+        assert!(
+            runtime
+                .project_change_observations
+                .lookup(project_id, &unused, entry_id)
+                .is_none()
+        );
+        let plan = runtime
+            .plan_project_worktree_diff(json!({
+                "projectId": project_id,
+                "observationId": observation_id,
+                "entryId": entry_id,
+            }))
+            .unwrap();
+        assert_eq!(
+            runtime
+                .complete_project_worktree_diff(plan.observe())
+                .unwrap()["state"],
+            "patch"
+        );
         assert_eq!(runtime.state_revision(), revision);
 
         drop(runtime);
