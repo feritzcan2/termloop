@@ -40,7 +40,7 @@ import {
 } from "@/presentation/task-presentation";
 import { taskAttachedAgents } from "@/presentation/task-browser";
 import type { RowTone } from "@/presentation/tone";
-import { color, geometry, space, toneColor } from "@/theme/tokens";
+import { color, geometry, space, toneColor, toneWash } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
 /// Task detail keeps Task/worktree recovery read-only while attached Session rows
@@ -174,11 +174,13 @@ export default function TaskRoute() {
         ) : null}
         {tab === "overview" ? (
           <>
-            <Card>
+            <Card style={glance.tone === "quiet" || glance.tone === "done" ? undefined : { borderLeftWidth: 4, borderLeftColor: statusColor(glance.tone), backgroundColor: toneWash[glance.tone] }}>
               <View style={styles.glance}>
                 <View style={styles.glanceHead}>
                   <View style={[styles.glanceDot, { backgroundColor: statusColor(glance.tone) }]} />
-                  <Text style={styles.glanceLabel}>CURRENT STATUS</Text>
+                  <Text style={[styles.glanceLabel, { color: statusColor(glance.tone) }]}>
+                    {glance.tone === "working" ? "WORKING NOW" : glance.tone === "attention" ? "WAITING FOR YOU" : glance.tone === "review" ? "READY FOR REVIEW" : "CURRENT STATUS"}
+                  </Text>
                 </View>
                 <Text style={styles.glanceTitle}>{glance.title}</Text>
                 <Text style={styles.glanceDetail}>{glance.detail}</Text>
