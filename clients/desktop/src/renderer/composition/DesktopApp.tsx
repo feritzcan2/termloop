@@ -39,7 +39,11 @@ import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionL
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { retryAgentSession } from "./session-resume.js";
-import { createSessionActivation, type SessionActivationContext } from "./session-activation.js";
+import {
+  createSessionActivation,
+  type SessionActivationContext,
+  type SessionActivationIntent,
+} from "./session-activation.js";
 import {
   relocateAgentToProjectWithStartupRetry,
   relocateAgentToTaskWithStartupRetry,
@@ -214,7 +218,10 @@ async function legacyAssistantImproverIdentity(
   }
 }
 
-const activateSession = createSessionActivation({
+const {
+  capture: captureSessionActivation,
+  activate: activateSession,
+} = createSessionActivation({
   upsertSession: (session) => projectionStore.upsertSession(session),
   reconcileTerminals: () => terminalPool.reconcile(projectionStore.getSnapshot().sessions),
   refreshProject: async ({ projectId, connectionProfileId }) => {
@@ -226,6 +233,14 @@ const activateSession = createSessionActivation({
     reconcileSourceProjection(availableProfiles);
   },
   refreshTasks: refreshProjectTaskProjection,
+  navigationRevision: () => presentationStore.getState().navigationRevision,
+  hasProject: (projectId) => projectionStore.getSnapshot().projects.some((project) => project.id === projectId),
+  hasSession: (sessionId) => projectionStore.getSnapshot().sessions.some((session) => session.id === sessionId),
+  reportRefreshFailure: (error) => {
+    projectionStore.setMessage(
+      `Session launched, but its latest Project state could not be refreshed: ${controlErrorMessage(error)}`,
+    );
+  },
   selectProject: (projectId) => presentationStore.getState().selectProject(projectId),
   selectSession: (projectId, sessionId) => presentationStore.getState().selectSession(projectId, sessionId),
   focusSession: focusTerminalSoon,
@@ -975,15 +990,17 @@ export function DesktopApp() {
   }, [selectedProject]);
   const launchTerminal = useCallback(async () => {
     if (!selectedProject) return;
+    const activation = captureSessionActivation();
     try {
       const session = await selectedSourceApi.terminalLaunch(selectedProject.id);
-      await activateSession(session);
+      await activateSession(activation, session);
     } catch (error) {
       projectionStore.setMessage(controlErrorMessage(error));
     }
   }, [selectedProject, selectedSourceApi]);
   const launchAgent = useCallback(async (agentId: string) => {
     if (!selectedProject) return;
+    const activation = captureSessionActivation();
     const projectId = selectedProject.id;
     const capability = agentCapabilities.find((candidate) => candidate.agent_id === agentId);
     if (!capability?.available) return;
@@ -999,7 +1016,7 @@ export function DesktopApp() {
     try {
       const inspected = await selectedSourceApi.agentPreview(projectId, agentId, preset.model, preset.permission, preset.reasoning);
       const session = await selectedSourceApi.agentLaunch(projectId, agentId, inspected.launch_ticket);
-      await activateSession(session);
+      await activateSession(activation, session);
       return undefined;
     } catch (error) {
       projectionStore.setMessage(controlErrorMessage(error));
@@ -1015,11 +1032,12 @@ export function DesktopApp() {
     [],
   );
   const resumeHistorySession = useCallback(async (projectId: string, historyHandle: string) => {
+    const activation = captureSessionActivation();
     try {
       const api = sourceApiForProject(projectId);
       const inspected = await api.sessionHistoryPreviewResumeAgent(projectId, historyHandle);
       const session = await api.sessionHistoryResumeAgent(projectId, historyHandle, inspected.launch_ticket);
-      await activateSession(session);
+      await activateSession(activation, session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1029,12 +1047,13 @@ export function DesktopApp() {
   }, []);
   const loadAgentAccounts = useCallback(async (projectId: string) => (await sourceApiForProject(projectId).agentAccountList()).accounts, [sourceApiForProject]);
   const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
+    const activation = captureSessionActivation();
     try {
       const session = requireQuickActionSession(
         await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId),
         projectId,
       );
-      await activateSession(session);
+      await activateSession(activation, session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1043,6 +1062,7 @@ export function DesktopApp() {
     }
   }, []);
   const launchTaskTerminal = useCallback(async (taskId: string) => {
+    const activation = captureSessionActivation();
     try {
       const outcome = await sourceApiForTask(taskId).taskTerminalLaunch(taskId);
       if (!outcome.ok) {
@@ -1051,7 +1071,7 @@ export function DesktopApp() {
         return message;
       }
       const session = outcome.result;
-      await activateSession(session, { kind: "task", taskId });
+      await activateSession(activation, session, { kind: "task", taskId });
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
@@ -1133,10 +1153,11 @@ export function DesktopApp() {
   const startAgentCreator = useCallback(async (requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> => {
     const projectId = presentationStore.getState().selectedProjectId;
     if (!projectId) return "Open a Project first: Agent Creator runs in its checkout.";
+    const activation = captureSessionActivation();
     try {
       const session = await openAgentCreator(sourceApiForProject(projectId), projectionStore.getSnapshot().sessions,
         projectId, requested ?? readLastQuickActionAgentSelection(), retireImproverSession, options);
-      await activateSession(session);
+      await activateSession(activation, session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
@@ -1149,6 +1170,7 @@ export function DesktopApp() {
     async start(target: SettingsImproverTarget, requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> {
       const projectId = presentationStore.getState().selectedProjectId ?? "";
       if (!projectId) return "Open a Project first: the improver runs in its checkout.";
+      const activation = captureSessionActivation();
       try {
         const api = sourceApiForProject(projectId);
         const session = await resumeImproverOrLaunchFresh(
@@ -1175,7 +1197,7 @@ export function DesktopApp() {
           },
           options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
         );
-        await activateSession(session);
+        await activateSession(activation, session);
         return undefined;
       } catch (error) {
         const message = controlErrorMessage(error);
@@ -1217,6 +1239,7 @@ export function DesktopApp() {
         : "builtin.improver.run-configuration-new" as const;
     return {
       async start(projectId: string, target: RunConfigurationImproverTarget, requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> {
+        const activation = captureSessionActivation();
         try {
           const api = sourceApiForProject(projectId);
           const session = await resumeImproverOrLaunchFresh(
@@ -1244,7 +1267,7 @@ export function DesktopApp() {
             },
             options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
           );
-          await activateSession(session);
+          await activateSession(activation, session);
           return undefined;
         } catch (error) {
           const message = controlErrorMessage(error);
@@ -1279,6 +1302,7 @@ export function DesktopApp() {
   /// Both run launches differ only in which checkout they name, so the whole
   /// post-launch composition — auto-open intent, projection, focus — is shared.
   const admitRunSession = useCallback(async (
+    activation: SessionActivationIntent,
     outcome: Awaited<ReturnType<SourceDesktopApi["taskStartRun"]>>,
     configurationId: string,
   ): Promise<string | undefined> => {
@@ -1293,7 +1317,7 @@ export function DesktopApp() {
     if (configuration?.autoOpenFirstUrl) {
       pendingRunAutoOpenSessionIds.current.add(session.id);
     }
-    await activateSession(session);
+    await activateSession(activation, session);
     return undefined;
   }, []);
   const launchProjectRun = useCallback(async (
@@ -1302,9 +1326,11 @@ export function DesktopApp() {
     restart: boolean,
     forceSetup = false,
   ): Promise<string | undefined> => {
+    const activation = captureSessionActivation();
     try {
       const params = { projectId, configurationId, forceSetup };
       return await admitRunSession(
+        activation,
         restart
           ? await sourceApiForProject(projectId).projectRestartRun(params)
           : await sourceApiForProject(projectId).projectStartRun(params),
@@ -1322,12 +1348,13 @@ export function DesktopApp() {
     restart: boolean,
     forceSetup = false,
   ): Promise<string | undefined> => {
+    const activation = captureSessionActivation();
     try {
       const params = { taskId, configurationId, forceSetup };
       const outcome = restart
         ? await sourceApiForTask(taskId).taskRestartRun(params)
         : await sourceApiForTask(taskId).taskStartRun(params);
-      return await admitRunSession(outcome, configurationId);
+      return await admitRunSession(activation, outcome, configurationId);
     } catch (error) {
       const message = controlErrorMessage(error);
       projectionStore.setMessage(message);
@@ -1347,6 +1374,7 @@ export function DesktopApp() {
     const preset = isQuickActionAgentId(agentId)
       ? readTaskAgentPreset(agentId)
       : defaultCapabilityLaunchPreset(capability);
+    const activation = captureSessionActivation();
     try {
       const api = sourceApiForTask(taskId);
       const inspected = await api.taskAgentPreview(
@@ -1369,7 +1397,7 @@ export function DesktopApp() {
         return message;
       }
       const session = outcome.result;
-      await activateSession(session, { kind: "task", taskId });
+      await activateSession(activation, session, { kind: "task", taskId });
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1378,6 +1406,7 @@ export function DesktopApp() {
     }
   }, [agentCapabilities]);
   const launchTaskWorkflow = useCallback(async (taskId: string, workflowId: string, goal: string) => {
+    const activation = captureSessionActivation();
     try {
       const api = sourceApiForTask(taskId);
       const inspected = await api.taskWorkflowPreview(taskId, workflowId, goal);
@@ -1394,7 +1423,7 @@ export function DesktopApp() {
       }
       const session = outcome.result;
       // Workflow activation refreshes its execution together with the Session.
-      await activateSession(session);
+      await activateSession(activation, session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -2140,6 +2169,7 @@ export function DesktopApp() {
     const api = selectedSourceApi;
     return {
       async start(target: AssistantPromptImproverTarget, requested?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined> {
+        const activation = captureSessionActivation();
         try {
           const session = await resumeImproverOrLaunchFresh(
             api,
@@ -2167,7 +2197,7 @@ export function DesktopApp() {
             options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
           );
           rememberPromptImproverSession(projectId, target, session.id);
-          await activateSession(session);
+          await activateSession(activation, session);
           return undefined;
         } catch (error) {
           const message = controlErrorMessage(error);
