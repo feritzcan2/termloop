@@ -258,7 +258,7 @@ describe("Task workflow editor", () => {
     expect(workflowStepResultFileName(steps[4]!, steps)).toBe("fixes.md");
   });
 
-  it("renders a saved workflow as one Task launcher with an editable workflow entry", () => {
+  it("renders only a compact Workflow button, not a template section or saved cards", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
       task,
       configurations: [workflow],
@@ -275,10 +275,11 @@ describe("Task workflow editor", () => {
       sessionPresentation: () => undefined,
     }));
 
-    expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
-    expect(markup).toContain('title="1 discussion in order → Implement → 1 reviewer"');
-    expect(markup).toContain('aria-label="Edit template Discuss, build, review"');
-    expect(markup).toContain('aria-label="New workflow template"');
+    expect(markup).toContain('aria-label="Workflow" aria-haspopup="menu" aria-expanded="false"');
+    expect(markup.match(/<button /gu)).toHaveLength(1);
+    expect(markup).not.toContain(workflow.name);
+    expect(markup).not.toContain("Workflow templates");
+    expect(markup).not.toContain("saved template");
   });
 
   it("routes edit and create intents to the workspace stage owner", async () => {
@@ -303,10 +304,14 @@ describe("Task workflow editor", () => {
       sessionPresentation: () => undefined,
     })));
 
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Workflow"]')!.click());
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit template Discuss, build, review"]')!.click());
     expect(edit).toHaveBeenLastCalledWith(workflow);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Workflow"]')!.click());
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="New workflow template"]')!.click());
     expect(edit).toHaveBeenLastCalledWith(undefined);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
 
     await act(async () => root.unmount());
     container.remove();
@@ -330,11 +335,11 @@ describe("Task workflow editor", () => {
       sessionPresentation: () => undefined,
     }));
 
-    expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
+    expect(markup).toContain('aria-label="Workflow"');
     expect(markup).not.toContain("disabled");
   });
 
-  it("shows the Core-owned current step and prevents a second workflow on the same Task", () => {
+  it("keeps the Core-owned current step visible alongside the compact Workflow button", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
       task,
       configurations: [workflow],
@@ -368,23 +373,21 @@ describe("Task workflow editor", () => {
     expect(markup).toContain(">same coordinator</em>");
     expect(markup).toContain(">same session</em>");
     expect(markup).toContain(">Details</button>");
-    expect(markup).toContain("Finish or stop Discuss, build, review first");
-    expect(markup).toContain("disabled");
-    expect(markup.indexOf('aria-label="Discuss, build, review workflow progress"')).toBeLessThan(markup.indexOf('aria-label="Workflow templates"'));
-    expect(markup).toContain('<details class="workflow-saved-templates">');
+    expect(markup).toContain('aria-label="Workflow"');
+    expect(markup).not.toContain("workflow-saved-templates");
+    expect(markup).not.toContain('aria-label="Run workflow');
   });
 
-  it("keeps a project-sized template library collapsed and explains the creation limit", () => {
+  it("keeps a project-sized template library behind the same single button", () => {
     const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
       task, configurations: Array.from({ length: 16 }, (_, index) => ({ ...workflow, id: `workflow-${index}` })),
       executions: [], agentProfiles: [], launchable: true, showLaunchers: true,
       overlayContainer: undefined, overlayVisibilityChanged: vi.fn(), edit: vi.fn(), launch: vi.fn(),
       cancel: vi.fn(), openSession: vi.fn(), sessionPresentation: () => undefined,
     }));
-    expect(markup).toContain('<details class="workflow-saved-templates">');
-    expect(markup).toContain("16 saved templates · run or edit");
-    expect(markup).toContain('aria-label="New workflow template" disabled=""');
-    expect(markup).toContain("limit of 16 templates");
+    expect(markup.match(/<button /gu)).toHaveLength(1);
+    expect(markup).not.toContain("disabled");
+    expect(markup).not.toContain("saved templates");
   });
 
   it("opens a sidebar result artifact in a focused reader", async () => {
@@ -441,6 +444,120 @@ describe("Task workflow editor", () => {
     expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).not.toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
     expect(markup).not.toContain('aria-label="New workflow template"');
+  });
+});
+
+async function launcherFixture(overrides: Partial<ComponentProps<typeof TaskWorkflowLaunchers>> = {}) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const props: ComponentProps<typeof TaskWorkflowLaunchers> = {
+    task, configurations: [workflow], executions: [], agentProfiles: [], launchable: true,
+    showLaunchers: true, overlayContainer: undefined, overlayVisibilityChanged: vi.fn(),
+    edit: vi.fn(), launch: vi.fn(async () => undefined), cancel: vi.fn(),
+    openSession: vi.fn(), sessionPresentation: () => undefined, ...overrides,
+  };
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const render = async () => { await act(async () => root.render(createElement(TaskWorkflowLaunchers, props))); };
+  await render();
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Workflow"]')!;
+  return { container, props, trigger, render,
+    async open() { await act(async () => trigger.click()); },
+    async dispose() {
+      await act(async () => root.unmount()); container.remove();
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    },
+  };
+}
+
+describe("Compact workflow menu", () => {
+  it("opens on demand and runs the selected workflow with the Task description", async () => {
+    const f = await launcherFixture({ task: { ...task, brief: "Implement and test the screen." } });
+    try {
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+      await f.open();
+      expect(f.trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(f.props.overlayVisibilityChanged).toHaveBeenLastCalledWith(true);
+      const run = f.container.querySelector<HTMLButtonElement>('[aria-label="Run workflow Discuss, build, review in Add simple workflows"]')!;
+      expect(run.disabled).toBe(false);
+      expect(document.activeElement).toBe(run);
+      await act(async () => run.click());
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+      expect(f.container.querySelector<HTMLTextAreaElement>("#workflow-run-goal")?.value).toBe("Implement and test the screen.");
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-run-dialog .primary-button")!.click());
+      expect(f.props.launch).toHaveBeenCalledExactlyOnceWith(task.id, workflow.id, "Implement and test the screen.");
+    } finally { await f.dispose(); }
+  });
+
+  it("opens the template editor directly when there are no saved templates", async () => {
+    const f = await launcherFixture({ configurations: [] });
+    try {
+      await f.open();
+      expect(f.props.edit).toHaveBeenCalledExactlyOnceWith(undefined);
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+    } finally { await f.dispose(); }
+  });
+
+  it.each([false, true])("blocks launching but preserves editing when worktree/execution is unavailable (%s)", async (active) => {
+    const f = await launcherFixture({ launchable: active, executions: active ? [execution] : [] });
+    try {
+      await f.open();
+      const run = f.container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')!;
+      expect(run.disabled).toBe(true);
+      expect(f.container.querySelector(".workflow-menu-notice")?.textContent).toContain(active ? "Finish or stop" : "worktree must be ready");
+      const edit = f.container.querySelector<HTMLButtonElement>('[aria-label="Edit template Discuss, build, review"]')!;
+      expect(edit.disabled).toBe(false);
+      expect(document.activeElement).toBe(edit);
+      await act(async () => run.click());
+      expect(f.props.launch).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("supports keyboard navigation, Escape, outside dismissal, and focus restoration", async () => {
+    const f = await launcherFixture();
+    try {
+      await f.open();
+      const key = async (value: string) => { await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }))); };
+      await key("ArrowDown");
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Edit template Discuss, build, review");
+      await key("End");
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("New workflow template");
+      await key("Escape");
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+      expect(document.activeElement).toBe(f.trigger);
+      expect(f.props.overlayVisibilityChanged).toHaveBeenLastCalledWith(false);
+      await f.open();
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Close workflow menu"]')!.click());
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+      expect(document.activeElement).toBe(f.trigger);
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps the template limit inside the menu, without disabling existing workflows", async () => {
+    const f = await launcherFixture({ configurations: Array.from({ length: 16 }, (_, i) => ({ ...workflow, id: `workflow-${i}` })) });
+    try {
+      await f.open();
+      expect(f.container.querySelectorAll('[aria-label^="Run workflow"]')).toHaveLength(16);
+      const create = f.container.querySelector<HTMLButtonElement>('[aria-label="New workflow template"]')!;
+      expect(create.disabled).toBe(true);
+      expect(create.title).toContain("limit of 16 templates");
+      expect(f.container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')!.disabled).toBe(false);
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps keyboard focus usable if a template disappears, and closes when launchers are hidden", async () => {
+    const f = await launcherFixture();
+    try {
+      await f.open();
+      f.props.configurations = [];
+      await f.render();
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("New workflow template");
+      expect(f.container.querySelector('[aria-label^="Run workflow"]')).toBeNull();
+      f.props.showLaunchers = false;
+      await f.render();
+      expect(f.container.querySelector('[role="menu"]')).toBeNull();
+      expect(f.props.overlayVisibilityChanged).toHaveBeenLastCalledWith(false);
+    } finally { await f.dispose(); }
   });
 });
 
