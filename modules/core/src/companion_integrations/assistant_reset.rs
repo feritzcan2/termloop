@@ -58,28 +58,8 @@ impl CoreRuntime {
         let session_id_set = session_ids.iter().cloned().collect::<HashSet<_>>();
         let retired_runtimes = session_ids
             .iter()
-            .filter_map(|session_id| self.codex_runtimes.remove(session_id))
+            .filter_map(|session_id| self.retire_closed_session_runtime(session_id))
             .collect::<Vec<_>>();
-        for session_id in &session_ids {
-            self.agent_observations.remove(session_id);
-            self.generated_input_deliveries.remove_session(session_id);
-            self.daemon_restart_handoffs.remove(session_id);
-            self.agent_terminal_holds.remove(session_id);
-            self.resume_reservations.remove(session_id);
-            self.provider_history_repair_reservations.remove(session_id);
-            self.resume_ready.remove(session_id);
-            self.resume_failure_reaps.remove(session_id);
-            self.pending_agent_forks.remove(session_id);
-            self.pending_agent_resume_refs.remove(session_id);
-            self.agent_conversation_activity.remove(session_id);
-            self.claude_turn_watches.remove(session_id);
-            self.mcp_authorizer.remove(session_id);
-            self.forget_ask_to_session(session_id);
-        }
-        self.fork_source_session_ids
-            .retain(|session_id, source_id| {
-                !session_id_set.contains(session_id) && !session_id_set.contains(source_id)
-            });
         self.quick_action_previews.retain(|(_, ticket)| {
             ticket.project_id() != project_id || !ticket.is_assistant_prompt_improver()
         });

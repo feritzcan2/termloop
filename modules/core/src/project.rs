@@ -325,26 +325,8 @@ impl CoreRuntime {
             })?;
         let retired_runtimes = session_ids
             .iter()
-            .filter_map(|session_id| self.codex_runtimes.remove(session_id))
+            .filter_map(|session_id| self.retire_closed_session_runtime(session_id))
             .collect::<Vec<_>>();
-        for session_id in &session_ids {
-            self.agent_observations.remove(session_id);
-            self.daemon_restart_handoffs.remove(session_id);
-            self.agent_terminal_holds.remove(session_id);
-            self.resume_reservations.remove(session_id);
-            self.provider_history_repair_reservations.remove(session_id);
-            self.resume_ready.remove(session_id);
-            self.resume_failure_reaps.remove(session_id);
-            self.pending_agent_forks.remove(session_id);
-            self.pending_agent_resume_refs.remove(session_id);
-            self.agent_conversation_activity.remove(session_id);
-            self.claude_turn_watches.remove(session_id);
-            self.forget_ask_to_session(session_id);
-        }
-        self.fork_source_session_ids
-            .retain(|session_id, source_id| {
-                !session_id_set.contains(session_id) && !session_id_set.contains(source_id)
-            });
         self.retain_run_runtimes_outside_project(&project_id);
         self.git_host_invalidated_tasks
             .retain(|task_id| !task_ids.contains(task_id));

@@ -196,7 +196,10 @@ fn built_in_agent_edits_keep_identity_and_persist_effective_launch_settings() {
     let saved = &result["profiles"][0];
     assert_eq!(saved["id"], id);
     assert_eq!(saved["source"], "builtIn");
-    assert_eq!(saved["version"], 2);
+    assert_eq!(
+        saved["version"],
+        initial["profiles"][0]["version"].as_u64().unwrap() + 1
+    );
     assert_eq!(saved["name"], edit["name"]);
     assert_eq!(saved["description"], edit["description"]);
     assert_eq!(saved["category"], edit["category"]);
@@ -254,7 +257,7 @@ fn built_in_agent_edits_keep_identity_and_persist_effective_launch_settings() {
     edit["instructions"] = json!("A second revision");
     assert_eq!(
         runtime.handle("agent.profileUpdate", edit).unwrap()["profiles"][0]["version"],
-        3
+        initial["profiles"][0]["version"].as_u64().unwrap() + 2
     );
     drop(runtime);
     std::fs::remove_dir_all(root).unwrap();

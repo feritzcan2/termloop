@@ -2236,6 +2236,32 @@ mod tests {
         assert!(runtime.accepts_new_submission("session", 8));
     }
 
+    #[test]
+    fn removing_a_session_cancels_only_its_submission_and_releases_its_slot() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        let terminal = TerminalService::default();
+        for session_id in ["retiring", "survivor"] {
+            assert!(runtime.begin(
+                &terminal,
+                session_id,
+                1,
+                0,
+                test_submission(),
+                GeneratedInputSettlement::ComposerRender,
+            ));
+        }
+        let retiring = Arc::clone(&runtime.deliveries["retiring"].cancel_submit);
+        let survivor = Arc::clone(&runtime.deliveries["survivor"].cancel_submit);
+        runtime.remove_session("retiring");
+        assert!(retiring.load(Ordering::Acquire));
+        assert!(!survivor.load(Ordering::Acquire));
+        assert!(runtime.state("retiring", 1).is_none());
+        assert!(runtime.state("survivor", 1).is_some());
+        assert_eq!(runtime.order, ["survivor"]);
+        runtime.remove_session("retiring");
+        assert!(!survivor.load(Ordering::Acquire));
+    }
+
     fn activity(sequence: u64, mutation_sequence: u64) -> UserInputActivitySnapshot {
         UserInputActivitySnapshot {
             sequence,
