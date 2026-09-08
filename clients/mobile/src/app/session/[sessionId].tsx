@@ -51,8 +51,8 @@ import { fontFamily, text } from "@/theme/typography";
 /// terminal am I typing into" is the question that must never be ambiguous.
 ///
 /// Transport state stays in the compact header pill. Routine attach/replay/reconnect
-/// facts do not become banners or terminal lines; the Agent's content remains the
-/// visual subject of this screen.
+/// facts do not become banners or terminal lines; only a proven unreachable Mac gets
+/// an actionable banner because waiting cannot distinguish that outage from progress.
 
 const streamPresentation: Record<TerminalStreamState, { label: string; tone: RowTone }> = {
   attaching: { label: "Attaching", tone: "busy" },
@@ -145,7 +145,9 @@ export default function SessionRoute() {
     focused ? connections.selectedId : undefined,
     focused ? session : undefined,
   );
-  const stream = streamPresentation[terminal.buffer.stream];
+  const stream = terminal.buffer.connectionIssue === "gatewayUnreachable"
+    ? { label: "Unreachable", tone: "interrupted" as const }
+    : streamPresentation[terminal.buffer.stream];
   useEffect(() => {
     if (resolvedRouteConnectionId !== undefined
       && connections.selectedId !== resolvedRouteConnectionId) {
@@ -397,7 +399,16 @@ export default function SessionRoute() {
           }
           right={
             <View style={styles.headerRight}>
-              <StatePill tone={stream.tone} label={stream.label} />
+              {terminal.buffer.stream === "reconnecting" ? (
+                <Pressable
+                  onPress={terminal.reconnect}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${stream.label}. Retry terminal connection now.`}
+                  hitSlop={8}
+                >
+                  <StatePill tone={stream.tone} label={stream.label} />
+                </Pressable>
+              ) : <StatePill tone={stream.tone} label={stream.label} />}
               {changesTaskId === undefined ? null : (
                 <Pressable
                   onPress={() => router.push({
@@ -445,6 +456,17 @@ export default function SessionRoute() {
       {terminal.error === undefined && terminal.imageError === undefined ? null : (
         <View style={styles.notice}>
           <Banner kind="danger" message={terminal.error ?? terminal.imageError!} />
+        </View>
+      )}
+
+      {terminal.buffer.connectionIssue !== "gatewayUnreachable" ? null : (
+        <View style={styles.notice}>
+          <Banner
+            kind="warning"
+            message="This Mac is not reachable. Check Tailscale and that TermLoop is running."
+            action="Retry now"
+            onAction={terminal.reconnect}
+          />
         </View>
       )}
 
@@ -574,7 +596,11 @@ export default function SessionRoute() {
                     ? selectedImage !== undefined
                       ? "Add a message (optional)…"
                       : session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
-                    : exited ? "Session ended" : "Reconnecting…"
+                    : exited
+                      ? "Session ended"
+                      : terminal.buffer.connectionIssue === "gatewayUnreachable"
+                        ? "Mac unreachable — check Tailscale"
+                        : "Reconnecting…"
                 }
                 placeholderTextColor={color.textMuted}
                 accessibilityLabel="Terminal input"

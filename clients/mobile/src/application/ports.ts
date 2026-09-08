@@ -297,7 +297,15 @@ export type TerminalEvent =
   | { type: "live"; bytes: Uint8Array }
   | { type: "gap"; droppedFrames: number }
   | { type: "eof" }
-  | { type: "state"; state: "connecting" | "connected" | "connectionLost" };
+  | { type: "state"; state: "connecting" | "connected" }
+  | {
+    type: "state";
+    state: "connectionLost";
+    /// Explicit HTTP reachability evidence, not a guess derived from a closed
+    /// WebSocket. Presentation can therefore distinguish a temporarily lost
+    /// stream from a Mac that cannot currently be reached over its saved route.
+    issue?: "gatewayUnreachable" | undefined;
+  };
 
 export interface TerminalAttachment {
   input(bytes: Uint8Array): Promise<void>;

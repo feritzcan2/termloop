@@ -2,7 +2,13 @@ import type { TerminalBuffer } from "./terminal-buffer";
 
 export function terminalLoading(buffer: TerminalBuffer): { label: string; percent?: number } | undefined {
   if (buffer.stream === "exited" || buffer.stream === "detached") return undefined;
-  if (buffer.stream === "reconnecting") return { label: "Reconnecting · last output retained" };
+  if (buffer.stream === "reconnecting") {
+    return {
+      label: buffer.connectionIssue === "gatewayUnreachable"
+        ? "Mac unreachable · check Tailscale · last output retained"
+        : "Reconnecting · last output retained",
+    };
+  }
   const progress = buffer.replayProgress;
   if (progress) {
     return {
