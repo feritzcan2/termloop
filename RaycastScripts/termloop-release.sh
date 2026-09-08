@@ -104,7 +104,7 @@ echo "==> Fetching origin/main and release tags"
 git -C "$REPO_DIR" fetch origin --prune --no-tags \
   '+refs/heads/main:refs/remotes/origin/main'
 git -C "$REPO_DIR" fetch origin --no-tags \
-  'refs/tags/*:refs/tags/*'
+  'refs/tags/v*:refs/tags/v*'
 
 candidate_sha="$(git -C "$REPO_DIR" rev-parse refs/remotes/origin/main)"
 version="$(git -C "$REPO_DIR" show "${candidate_sha}:package.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
