@@ -12,7 +12,7 @@
 # @raycast.refreshTime 0
 
 # Documentation:
-# @raycast.description Verify origin/develop on every native host, then fast-forward main to that exact commit.
+# @raycast.description Prepare the next patch version on develop, verify native CI, then promote that exact commit to main.
 # @raycast.author feritzcan
 
 set -euo pipefail
@@ -30,6 +30,8 @@ CI_WORKFLOW="ci.yml"
 LOCK_DIR="${TMPDIR:-/tmp}/termloop-promote-main-${UID}"
 main_checkout=""
 created_main_checkout=0
+source_checkout=""
+created_source_checkout=0
 
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -38,7 +40,7 @@ need_command() {
   fi
 }
 
-for command in git gh jq; do
+for command in git gh jq node cargo; do
   need_command "$command"
 done
 
@@ -77,6 +79,9 @@ acquire_lock
 cleanup() {
   if [[ "$created_main_checkout" == "1" && -n "$main_checkout" ]]; then
     git -C "$REPO_DIR" worktree remove "$main_checkout" >/dev/null 2>&1 || true
+  fi
+  if [[ "$created_source_checkout" == "1" && -n "$source_checkout" ]]; then
+    git -C "$REPO_DIR" worktree remove "$source_checkout" >/dev/null 2>&1 || true
   fi
   rm -f "$LOCK_DIR/pid"
   rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
@@ -143,6 +148,63 @@ if ! git -C "$REPO_DIR" merge-base --is-ancestor "$target_sha" "$candidate_sha";
   exit 1
 fi
 
+# Check the target before creating a version commit or paying for CI.
+main_checkout="$(worktree_for_branch "$TARGET_BRANCH")"
+if [[ -n "$main_checkout" && -n "$(git -C "$main_checkout" status --porcelain)" ]]; then
+  echo "$TARGET_BRANCH checkout has uncommitted work: $main_checkout"
+  exit 1
+fi
+
+if [[ -z "$source_checkout" ]]; then
+  source_checkout="$(mktemp -d "${TMPDIR:-/tmp}/termloop-develop-promotion.XXXXXX")"
+  rmdir "$source_checkout"
+  git -C "$REPO_DIR" worktree add "$source_checkout" "$SOURCE_BRANCH"
+  created_source_checkout=1
+  echo "Created temporary $SOURCE_BRANCH checkout: $source_checkout"
+fi
+
+if [[ "$(git -C "$source_checkout" rev-parse HEAD)" != "$candidate_sha" || -n "$(git -C "$source_checkout" status --porcelain)" ]]; then
+  echo "Local $SOURCE_BRANCH changed. Commit and push it before retrying promotion."
+  exit 1
+fi
+
+echo "==> Preparing the release version"
+git -C "$REPO_DIR" fetch origin --no-tags 'refs/tags/*:refs/tags/*'
+source_version="$(git -C "$REPO_DIR" show "${candidate_sha}:package.json" | jq -er '.version')"
+target_version="$(git -C "$REPO_DIR" show "${target_sha}:package.json" | jq -er '.version')"
+release_tags=()
+while IFS= read -r tag; do
+  [[ -z "$tag" ]] || release_tags+=("$tag")
+done < <(git -C "$REPO_DIR" tag --list 'v*')
+next_version="$(node "$source_checkout/tools/release/promotion-version.mjs" "$source_version" "$target_version" "${release_tags[@]:-}")"
+
+if [[ "$next_version" != "$source_version" ]]; then
+  echo "Version: $source_version -> $next_version"
+  node "$source_checkout/tools/release/set-version.mjs" "$next_version"
+  if [[ "$(git -C "$source_checkout" rev-parse HEAD)" != "$candidate_sha" ]]; then
+    echo "Local $SOURCE_BRANCH changed during version preparation. Review the version files before retrying."
+    exit 1
+  fi
+  while IFS= read -r changed_path; do
+    case "$changed_path" in
+      package.json|Cargo.toml|Cargo.lock|clients/desktop/package.json|clients/cli/package.json|contract/generated/typescript/package.json) ;;
+      *) echo "Unexpected change during version preparation: $changed_path. Review it before retrying."; exit 1 ;;
+    esac
+  done < <(git -C "$source_checkout" diff --name-only HEAD)
+  if [[ -n "$(git -C "$source_checkout" ls-files --others --exclude-standard)" ]]; then
+    echo "Untracked work appeared during version preparation. Review it before retrying."
+    exit 1
+  fi
+  git -C "$source_checkout" add -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/cli/package.json contract/generated/typescript/package.json
+  git -C "$source_checkout" commit --only -m "chore(release): prepare $next_version" -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/cli/package.json contract/generated/typescript/package.json
+  git -C "$source_checkout" push origin "refs/heads/$SOURCE_BRANCH"
+  candidate_sha="$(git -C "$source_checkout" rev-parse HEAD)"
+else
+  echo "Using prepared release version: $next_version"
+  node "$source_checkout/tools/release/check-version-sync.mjs"
+fi
+
+echo "Release candidate: origin/$SOURCE_BRANCH $candidate_sha ($next_version)"
 runs_json="$(ci_runs_for_candidate "$candidate_sha")"
 successful_run_id="$(jq -r '[.[] | select(.status == "completed" and .conclusion == "success")][0].databaseId // empty' <<<"$runs_json")"
 active_run_id="$(jq -r '[.[] | select(.status != "completed")][0].databaseId // empty' <<<"$runs_json")"
