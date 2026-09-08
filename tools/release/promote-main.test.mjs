@@ -59,12 +59,14 @@ const sha = execFileSync('git', ['-C', repo, 'rev-parse', 'origin/develop'], { e
 appendFileSync(process.env.PROMOTION_TEST_CALLS, JSON.stringify({ args, sha }) + '\\n');
 if (args[0] === 'auth') process.exit(0);
 if (args[0] === 'workflow' && args[1] === 'run') { writeFileSync(dispatched, sha); process.exit(0); }
-if (args[0] === 'run' && args[1] === 'watch') process.exit(0);
+if (args[0] === 'run' && args[1] === 'watch') process.exit(process.env.PROMOTION_TEST_CI === 'failed' ? 1 : 0);
 if (args[0] === 'run' && args[1] === 'list') {
   const format = args[args.indexOf('--json') + 1];
   if (format === 'databaseId') process.exit(0);
   if (format === 'databaseId,headSha') { console.log('123'); process.exit(0); }
   const mode = process.env.PROMOTION_TEST_CI;
+  if (format === 'databaseId,headSha,event,status,conclusion') { if (mode !== 'failed') console.log('123'); process.exit(0); }
+  if (format === 'databaseId,headSha,event,status') { console.log('123'); process.exit(0); }
   const runs = mode === 'dispatch' && !existsSync(dispatched) ? [] : [{ databaseId: 123, headSha: sha, status: 'completed', conclusion: mode === 'failed' ? 'failure' : 'success', url: 'https://example.test/ci/123' }];
   console.log(JSON.stringify(runs)); process.exit(0);
 }
@@ -76,7 +78,7 @@ throw Error('Unexpected GitHub call: ' + args.join(' '));
     cwd: repo, encoding: "utf8", timeout: 30_000,
     env: { ...env, BASH_ENV: bashEnv, TMPDIR: directory + path.sep, TERMLOOP_NO_OPEN: "1", PROMOTION_TEST_GH: fakeGh, PROMOTION_TEST_REPO: repo, PROMOTION_TEST_CALLS: calls, PROMOTION_TEST_CI: mode },
   });
-  return { directory, repo, git, run: (mode) => runScript("termloop-promote-main.sh", mode), release: () => runScript("termloop-release.sh"), calls: async () => (await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse) };
+  return { directory, repo, git, run: (mode) => runScript("termloop-promote-main.sh", mode), release: (mode) => runScript("termloop-release.sh", mode), calls: async () => (await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse) };
 }
 
 test("promote bumps and pushes all versions before CI, then fast-forwards main exactly once", { skip: process.platform === "win32" }, async (t) => {
@@ -208,6 +210,28 @@ for (const script of ["promote", "release"]) {
     assert.ok((await f.calls()).every(({ args }) => args[0] === "auth"));
   });
 }
+
+test("release publishes the verified main tag without permission to list repository secrets", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t, { tagged: false });
+  const main = f.git("rev-parse", "origin/main");
+  const result = f.release();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.git("rev-parse", "v2.0.3"), main);
+  assert.equal(f.git("ls-remote", "origin", "refs/tags/v2.0.3").split(/\s/)[0], main);
+  assert.ok((await f.calls()).every(({ args }) => args[0] !== "secret" && args[0] !== "variable"));
+  const ci = (await f.calls()).find(({ args }) => args.includes("ci.yml"));
+  assert.equal(ci.args[ci.args.indexOf("--commit") + 1], main);
+});
+
+test("release still refuses to create a tag when exact-candidate CI fails", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t, { tagged: false });
+  const result = f.release("failed");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /CI did not pass; release was not started/);
+  assert.equal(f.git("tag", "--list", "v2.0.3"), "");
+  assert.equal(f.git("ls-remote", "origin", "refs/tags/v2.0.3"), "");
+  assert.ok((await f.calls()).every(({ args }) => !args.includes("release.yml")));
+});
 
 test("promotion removes only the missing main worktree registration and creates a new checkout", { skip: process.platform === "win32" }, async (t) => {
   const f = await fixture(t);
