@@ -90,10 +90,35 @@ trap cleanup EXIT
 
 worktree_for_branch() {
   local branch="$1"
-  git -C "$REPO_DIR" worktree list --porcelain | awk -v wanted="refs/heads/$branch" '
+  local checkout
+  checkout="$(git -C "$REPO_DIR" worktree list --porcelain | awk -v wanted="refs/heads/$branch" '
     /^worktree / { path = substr($0, 10) }
     /^branch / && substr($0, 8) == wanted { print path; exit }
-  '
+  ')" || return 1
+  [[ -n "$checkout" ]] || return 0
+
+  if [[ ! -e "$checkout" && ! -L "$checkout" ]]; then
+    echo "Removing missing $branch worktree registration: $checkout" >&2
+    git -C "$REPO_DIR" worktree remove "$checkout" >&2 || return 1
+    return 0
+  fi
+  if [[ ! -f "$checkout/.git" && ! -d "$checkout/.git" ]]; then
+    echo "$branch checkout has a missing or broken .git entry: $checkout" >&2
+    echo "Preserve its files and repair the worktree before retrying promotion." >&2
+    return 1
+  fi
+  printf '%s\n' "$checkout"
+}
+
+require_clean_checkout() {
+  local checkout="$1"
+  local branch="$2"
+  local checkout_status
+  checkout_status="$(git -C "$checkout" status --porcelain)" || return 1
+  if [[ -n "$checkout_status" ]]; then
+    echo "$branch checkout has uncommitted work: $checkout" >&2
+    return 1
+  fi
 }
 
 ci_runs_for_candidate() {
@@ -120,10 +145,7 @@ echo "Target:    origin/$TARGET_BRANCH $target_sha"
 
 source_checkout="$(worktree_for_branch "$SOURCE_BRANCH")"
 if [[ -n "$source_checkout" ]]; then
-  if [[ -n "$(git -C "$source_checkout" status --porcelain)" ]]; then
-    echo "$SOURCE_BRANCH checkout has uncommitted work: $source_checkout"
-    exit 1
-  fi
+  require_clean_checkout "$source_checkout" "$SOURCE_BRANCH"
   local_source_sha="$(git -C "$source_checkout" rev-parse HEAD)"
   if [[ "$local_source_sha" != "$candidate_sha" ]]; then
     echo "Local $SOURCE_BRANCH is not pushed exactly to origin/$SOURCE_BRANCH."
@@ -150,9 +172,8 @@ fi
 
 # Check the target before creating a version commit or paying for CI.
 main_checkout="$(worktree_for_branch "$TARGET_BRANCH")"
-if [[ -n "$main_checkout" && -n "$(git -C "$main_checkout" status --porcelain)" ]]; then
-  echo "$TARGET_BRANCH checkout has uncommitted work: $main_checkout"
-  exit 1
+if [[ -n "$main_checkout" ]]; then
+  require_clean_checkout "$main_checkout" "$TARGET_BRANCH"
 fi
 
 if [[ -z "$source_checkout" ]]; then
@@ -163,13 +184,15 @@ if [[ -z "$source_checkout" ]]; then
   echo "Created temporary $SOURCE_BRANCH checkout: $source_checkout"
 fi
 
-if [[ "$(git -C "$source_checkout" rev-parse HEAD)" != "$candidate_sha" || -n "$(git -C "$source_checkout" status --porcelain)" ]]; then
+require_clean_checkout "$source_checkout" "$SOURCE_BRANCH"
+local_source_sha="$(git -C "$source_checkout" rev-parse HEAD)"
+if [[ "$local_source_sha" != "$candidate_sha" ]]; then
   echo "Local $SOURCE_BRANCH changed. Commit and push it before retrying promotion."
   exit 1
 fi
 
 echo "==> Preparing the release version"
-git -C "$REPO_DIR" fetch origin --no-tags 'refs/tags/*:refs/tags/*'
+git -C "$REPO_DIR" fetch origin --no-tags 'refs/tags/v*:refs/tags/v*'
 source_version="$(git -C "$REPO_DIR" show "${candidate_sha}:package.json" | jq -er '.version')"
 target_version="$(git -C "$REPO_DIR" show "${target_sha}:package.json" | jq -er '.version')"
 release_tags=()
@@ -280,10 +303,7 @@ if [[ -z "$main_checkout" ]]; then
   echo "Created temporary $TARGET_BRANCH checkout: $main_checkout"
 fi
 
-if [[ -n "$(git -C "$main_checkout" status --porcelain)" ]]; then
-  echo "$TARGET_BRANCH checkout has uncommitted work: $main_checkout"
-  exit 1
-fi
+require_clean_checkout "$main_checkout" "$TARGET_BRANCH"
 
 echo "==> Fast-forwarding local $TARGET_BRANCH to the verified candidate"
 git -C "$main_checkout" fetch origin --prune --no-tags \
@@ -323,10 +343,7 @@ if ! git -C "$main_checkout" merge-base --is-ancestor "$candidate_sha" "$final_r
   echo "The verified candidate is not present in final $TARGET_BRANCH." >&2
   exit 1
 fi
-if [[ -n "$(git -C "$main_checkout" status --porcelain)" ]]; then
-  echo "Local $TARGET_BRANCH is unexpectedly dirty after promotion." >&2
-  exit 1
-fi
+require_clean_checkout "$main_checkout" "$TARGET_BRANCH"
 
 echo
 echo "Promoted exact verified candidate to $TARGET_BRANCH: $candidate_sha"
