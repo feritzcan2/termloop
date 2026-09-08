@@ -132,6 +132,9 @@ jobs:
             node tools/skills-manager/fetch-cli.mjs --output target/release/skills-manager-cli
           fi
           pnpm --filter @termloop/cli build:bundle -- --outfile="$RUNNER_TEMP/server-stage/termloopctl.mjs"
+      - name: Verify signing keychain isolation
+        if: runner.os == 'macOS'
+        run: node --test tools/release/signing-keychain.test.mjs
       - name: Validate macOS signing secrets
         if: runner.os == 'macOS'
         env:
@@ -181,10 +184,6 @@ jobs:
             certificate_path="$RUNNER_TEMP/termloop-release-signing.p12"
             api_key_path=""
             keychain_password="$(uuidgen)"
-            original_default_keychain="$(
-              security default-keychain -d user |
-                sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//'
-            )"
             original_keychains=()
             while IFS= read -r existing_keychain; do
               existing_keychain="${existing_keychain#*\"}"
@@ -192,9 +191,6 @@ jobs:
               test -n "$existing_keychain" && original_keychains+=("$existing_keychain")
             done < <(security list-keychains -d user)
             cleanup() {
-              if [ -n "$original_default_keychain" ]; then
-                security default-keychain -d user -s "$original_default_keychain" >/dev/null 2>&1 || true
-              fi
               if [ "${#original_keychains[@]}" -gt 0 ]; then
                 security list-keychains -d user -s "${original_keychains[@]}" >/dev/null 2>&1 || true
               fi
@@ -216,8 +212,9 @@ jobs:
             security create-keychain -p "$keychain_password" "$keychain_path"
             security set-keychain-settings -lut 21600 "$keychain_path"
             security unlock-keychain -p "$keychain_password" "$keychain_path"
-            security list-keychains -d user -s "$keychain_path" "${original_keychains[@]}"
-            security default-keychain -d user -s "$keychain_path"
+            # Keep the user's default and search order; signing selects this
+            # temporary keychain explicitly via --keychain and CSC_KEYCHAIN.
+            security list-keychains -d user -s "${original_keychains[@]}" "$keychain_path"
             security import "$certificate_path" \
               -P "$MACOS_CERTIFICATE_PASSWORD" \
               -t cert -f pkcs12 -k "$keychain_path" \
