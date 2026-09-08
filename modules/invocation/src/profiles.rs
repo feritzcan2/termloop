@@ -2,7 +2,7 @@ use super::PromptTemplate;
 
 pub(super) const SCATTERED_ORCHESTRATION_FINDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent-profile.scattered-orchestration-finder",
-    version: 1,
+    version: 2,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent-profile.scattered-orchestration-finder.md"
     ),
@@ -10,7 +10,7 @@ pub(super) const SCATTERED_ORCHESTRATION_FINDER_TEMPLATE: PromptTemplate = Promp
 
 pub(super) const EDGE_CASE_HUNTER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent-profile.edge-case-hunter",
-    version: 1,
+    version: 2,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent-profile.edge-case-hunter.md"
     ),
@@ -18,7 +18,7 @@ pub(super) const EDGE_CASE_HUNTER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 pub(super) const TEST_GAP_FINDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent-profile.test-gap-finder",
-    version: 1,
+    version: 2,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent-profile.test-gap-finder.md"
     ),
@@ -26,7 +26,7 @@ pub(super) const TEST_GAP_FINDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 pub(super) const ARCHITECTURE_BOUNDARY_REVIEWER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent-profile.architecture-boundary-reviewer",
-    version: 1,
+    version: 2,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.agent-profile.architecture-boundary-reviewer.md"
     ),
