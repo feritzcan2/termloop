@@ -99,7 +99,7 @@ pub(super) enum AgentResumePreparationKind {
     Resume,
     Restart {
         retired_runtime_epoch: u64,
-        retired_codex_runtime: Option<CodexRuntime>,
+        retired_codex_runtime: Option<Box<CodexRuntime>>,
     },
 }
 
@@ -1085,7 +1085,7 @@ impl CoreRuntime {
                 preparation_kind: if restart_running {
                     AgentResumePreparationKind::Restart {
                         retired_runtime_epoch: session.runtime_epoch,
-                        retired_codex_runtime,
+                        retired_codex_runtime: retired_codex_runtime.map(Box::new),
                     }
                 } else {
                     AgentResumePreparationKind::Resume

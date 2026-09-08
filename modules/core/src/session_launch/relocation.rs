@@ -689,7 +689,7 @@ impl CoreRuntime {
             preparation_kind: if source_was_running {
                 AgentResumePreparationKind::Restart {
                     retired_runtime_epoch: session.runtime_epoch,
-                    retired_codex_runtime,
+                    retired_codex_runtime: retired_codex_runtime.map(Box::new),
                 }
             } else {
                 AgentResumePreparationKind::Resume
