@@ -441,14 +441,14 @@ function sessionRunner(session: Session): string {
 /// by its own folder, so printing either again spends the row's narrowest line on
 /// a word the reader took in one line above — and at the 190 px minimum width that
 /// duplicate is what pushes the token the reader actually needs into an ellipsis.
-export function sessionProvenance(session: Session, folder: string): {
+export function sessionProvenance(session: Session, folder: string, displayName?: string): {
   runner: string | undefined;
   folder: string | undefined;
 } {
-  const label = sessionLabel(session);
+  const label = displayName ?? sessionLabel(session);
   const runner = sessionRunner(session);
   return {
-    runner: runner === label ? undefined : runner,
+    runner: runner === label || displayName?.endsWith(` · ${runner}`) ? undefined : runner,
     folder: folder && folder !== label ? folder : undefined,
   };
 }
@@ -460,9 +460,10 @@ export function sessionRowAccessibleName(options: {
   session: Session;
   state: SessionState;
   relationship: string | undefined;
+  displayName?: string | undefined;
 }): string {
-  const { session, state, relationship } = options;
-  const label = sessionLabel(session);
+  const { session, state, relationship, displayName } = options;
+  const label = displayName ?? sessionLabel(session);
   const parts = [label];
   if (relationship) parts.push(relationship);
   parts.push(state.summary);
@@ -471,7 +472,7 @@ export function sessionRowAccessibleName(options: {
   /// shell that started it, which is never what the listener asked about.
   if (sessionIsImprover(session)) parts.push("improver");
   const runner = sessionRunner(session);
-  if (runner !== label && !session.run_configuration_id) parts.push(runner);
+  if (runner !== label && !displayName?.endsWith(` · ${runner}`) && !session.run_configuration_id) parts.push(runner);
   parts.push(session.process.cwd);
   return parts.join(", ");
 }

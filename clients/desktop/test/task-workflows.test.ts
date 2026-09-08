@@ -359,7 +359,8 @@ describe("Task workflow editor", () => {
     }));
 
     expect(markup).toContain('aria-label="Hide Discuss, build, review workflow steps"');
-    expect(markup).toContain("3/3");
+    expect(markup).toContain("Step 3 of 3 · Review");
+    expect(markup).toContain('class="workflow-execution-state">Running');
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
     expect(markup).toContain('aria-label="Open decisions.md"');
     expect(markup).toContain('aria-label="Open implementation.md"');
@@ -471,6 +472,72 @@ async function launcherFixture(overrides: Partial<ComponentProps<typeof TaskWork
 }
 
 describe("Compact workflow menu", () => {
+  it("places execution status in its own row after all Start controls", async () => {
+    const f = await launcherFixture({
+      executions: [execution],
+      renderLaunchers: (workflowButton) => createElement("div", { className: "task-launch" },
+        createElement("button", {}, "Terminal"), workflowButton, createElement("button", {}, "Run dev server")),
+    });
+    try {
+      const start = f.container.querySelector(".task-launch")!;
+      const row = f.container.querySelector(".workflow-execution-row")!;
+      expect(start.nextElementSibling).toBe(row);
+      expect(start.querySelector(".workflow-add")).not.toBeNull();
+      expect(start.querySelector(".workflow-execution-toggle")).toBeNull();
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Running");
+      expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe("Step 3 of 3 · Review");
+      expect(row.querySelector(".workflow-sidebar-progress")).not.toBeNull();
+      const toggle = row.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!;
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(row.querySelector(".workflow-sidebar-progress")).toBeNull();
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Running");
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    } finally { await f.dispose(); }
+  });
+
+  it.each([
+    ["approved", "All reviewers approved", false],
+    ["completed", "No final review approval recorded", false],
+    ["changesRequested", "Changes requested", true],
+    ["reviewLimitReached", "Review limit reached", true],
+  ] as const)("distinguishes a finished %s outcome without opening the steps", async (completionOutcome, summary, needsAttention) => {
+    const f = await launcherFixture({ executions: [{ ...execution, status: "completed", phase: "completed", completionOutcome }] });
+    try {
+      const row = f.container.querySelector(".workflow-execution-row")!;
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Completed");
+      expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe(summary);
+      expect(row.classList.contains("needs-attention")).toBe(needsAttention);
+      expect(row.querySelector(".workflow-execution-symbol")?.textContent).toBe(needsAttention ? "!" : "✓");
+      expect(row.querySelector(".workflow-sidebar-progress")).toBeNull();
+      expect(row.textContent).not.toContain("Step 3 of 3");
+    } finally { await f.dispose(); }
+  });
+
+  it("updates a collapsed running row to paused and then completed from the execution projection", async () => {
+    const f = await launcherFixture({ executions: [execution] });
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!.click());
+      f.props.executions = [{ ...execution, status: "paused" }];
+      await f.render();
+      expect(f.container.querySelector(".workflow-execution-state")?.textContent).toBe("Paused");
+      expect(f.container.querySelector(".workflow-sidebar-progress")).toBeNull();
+      f.props.executions = [{ ...execution, status: "completed", phase: "completed", completionOutcome: "approved" }];
+      await f.render();
+      expect(f.container.querySelector(".workflow-execution-state")?.textContent).toBe("Completed");
+      expect(f.container.querySelector(".workflow-execution-detail")?.textContent).toBe("All reviewers approved");
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps progress independent when launch controls are unavailable", async () => {
+    const f = await launcherFixture({ executions: [execution], showLaunchers: false, launchable: false });
+    try {
+      expect(f.container.querySelector(".task-launch")).toBeNull();
+      expect(f.container.querySelector(".workflow-execution-row")).not.toBeNull();
+    } finally { await f.dispose(); }
+  });
+
   it("opens on demand and runs the selected workflow with the Task description", async () => {
     const f = await launcherFixture({ task: { ...task, brief: "Implement and test the screen." } });
     try {

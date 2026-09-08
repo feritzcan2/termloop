@@ -7,7 +7,7 @@ import { URL as FileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session, Task, WorkflowExecution } from "../src/renderer/model.js";
 import { ActiveAgentRail, activeAgentQueryMatches, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
-import { activeAgentWorkflowAction, activeAgentWorkflows } from "../src/renderer/ui/active-agent-workflows.js";
+import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentLabels } from "../src/renderer/ui/active-agent-workflows.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
 
 function agent(id: string, overrides: Partial<Session> = {}): Session {
@@ -42,6 +42,29 @@ function execution(overrides: Partial<WorkflowExecution> = {}): WorkflowExecutio
 
 const sessions = [agent("lead"), agent("helper-a", { ask_to_source_session_id: "lead" }), agent("helper-b", { ask_to_source_session_id: "lead" })];
 const task = { id: "task-1", project_id: "project-1", title: "Payments" } as Task;
+
+describe("workflow agent role labels", () => {
+  it("names the implementer and exact reviewers, including completed workflows", () => {
+    const values = [agent("lead", { name: "Build and verify" }), agent("helper-a", { name: "Claude" }), agent("helper-b", { name: "Codex" }), agent("ordinary", { name: "Claude" })];
+    const labels = workflowAgentLabels([execution({ status: "completed", phase: "completed" })], values);
+    expect([...labels]).toEqual([["lead", "Implementer · Codex"], ["helper-a", "Reviewer · Claude"], ["helper-b", "Reviewer · Codex"]]);
+    expect(values[0]?.name).toBe("Build and verify");
+    expect(values[1]?.name).toBe("Claude");
+  });
+
+  it("changes a reused advisor to reviewer only once that step has an actual participant", () => {
+    const run = execution({ participants: [{ stepId: "discuss", sessionId: "helper-a" }] });
+    expect(workflowAgentLabels([run], sessions).get("helper-a")).toBe("Advisor · helper-a");
+    expect(workflowAgentLabels([execution()], sessions).get("helper-a")).toBe("Reviewer · helper-a");
+    expect(workflowAgentLabels([execution({ currentStepIndex: 4 })], sessions).get("lead")).toBe("Fixer · lead");
+  });
+
+  it("preserves custom names and ignores absent or cross-project sessions", () => {
+    const values = [agent("lead", { name: "Payments lead" }), agent("helper-a", { name: "Security expert" }), agent("helper-b", { project_id: "elsewhere" })];
+    expect([...workflowAgentLabels([execution()], values)]).toEqual([["lead", "Implementer · Payments lead"], ["helper-a", "Reviewer · Security expert"]]);
+    expect(workflowAgentLabels([execution()], []).size).toBe(0);
+  });
+});
 
 describe("unfinished workflow agent cues", () => {
   it.each([0, 1, 4])("marks the lead for coordinator-owned step %i, not old helpers", (currentStepIndex) => {
@@ -147,6 +170,7 @@ describe("workflow actions in the Agents rail", () => {
       sessions: values, projectFolder: "/repo", selectedSession: undefined, visibleSessionIds: new Set(), statusesById: new Map(),
       reviewReadySessionIds: new Set(), favoriteSessionIds: new Set(), taskAttachedSessionIds: new Set(), worktreeChangesBySessionId: new Map(),
       workflowsBySessionId: activeAgentWorkflows([run], values, [task]), menuSessionId: undefined,
+      workflowAgentLabelsBySessionId: workflowAgentLabels([run], values),
       selectSession: vi.fn(), navigateSession: vi.fn(), openSessionMenu: vi.fn(), dismissSession: vi.fn(), resumeSession: vi.fn(), archiveSession: vi.fn(),
       toggleFavoriteSession: vi.fn(), openTaskChanges: vi.fn(), searchOpen: false, setSearchOpen: vi.fn(), nowEpochMs: 100,
       ...overrides,
@@ -174,6 +198,29 @@ describe("workflow actions in the Agents rail", () => {
     await act(async () => action.click());
     expect(props.selectSession).toHaveBeenCalledExactlyOnceWith("lead");
     expect(props.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it("renders role names in agent rows and accessible labels without losing custom names", async () => {
+    await render([agent("lead", { name: "Build and verify" }), agent("helper-a", { name: "Claude", ask_to_source_session_id: "lead" })], execution({ status: "completed", phase: "completed" }));
+    const lead = container.querySelector('[data-session-id="lead"]')!;
+    const reviewer = container.querySelector('[data-session-id="helper-a"]')!;
+    expect(lead.querySelector(".row-title")?.textContent).toBe("Implementer · Codex");
+    expect(lead.querySelector(".row-agent")).toBeNull();
+    expect(reviewer.querySelector(".row-title")?.textContent).toBe("Reviewer · Claude");
+    expect(reviewer.getAttribute("aria-label")).toContain("Reviewer · Claude");
+    expect(container.querySelector(".active-agent-workflow")).toBeNull();
+    await render([agent("lead", { name: "My payments agent" })], execution());
+    expect(container.querySelector(".row-title")?.textContent).toBe("Implementer · My payments agent");
+  });
+
+  it("finds a finished workflow's agents by role and keeps their group together", async () => {
+    await render([...sessions, agent("ordinary")], execution({ status: "completed", phase: "completed" }), { searchOpen: true });
+    const input = container.querySelector<HTMLInputElement>("input[type=search]")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "reviewer");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...container.querySelectorAll("[data-session-id]")].map((row) => row.getAttribute("data-session-id"))).toEqual(["lead", "helper-a", "helper-b"]);
   });
 
   it("moves the cue with the durable step and removes it on completion", async () => {
