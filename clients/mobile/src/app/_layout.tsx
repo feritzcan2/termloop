@@ -44,6 +44,7 @@ function RootLayout() {
                 <Stack.Screen name="pair" options={{ presentation: "modal" }} />
                 <Stack.Screen name="project/[projectId]" />
                 <Stack.Screen name="task/[taskId]" />
+                <Stack.Screen name="workflows/[projectId]" />
                 <Stack.Screen name="launch/[taskId]" options={{ presentation: "modal" }} />
                 <Stack.Screen name="steward/[projectId]" />
                 <Stack.Screen name="session/[sessionId]" />

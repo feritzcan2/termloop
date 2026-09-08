@@ -175,6 +175,13 @@ export default function TaskRoute() {
             />
           )}
           <SecondaryButton
+            label="Workflow templates"
+            onPress={() => router.push({
+              pathname: "/workflows/[projectId]",
+              params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
+            })}
+          />
+          <SecondaryButton
             label="Ask Steward"
             onPress={() => router.push({
               pathname: "/steward/[projectId]",

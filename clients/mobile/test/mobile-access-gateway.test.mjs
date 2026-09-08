@@ -25,6 +25,7 @@ describe("persistent mobile access gateway", () => {
     const upstreamSockets = new WebSocketServer({ server: upstreamServer });
     const upstreamPaths = [];
     let subscriptionSocket;
+    let subscriptionTopics;
     let inputAckEnabled = false;
     upstreamSockets.on("connection", (socket, request) => {
       upstreamPaths.push(request.url);
@@ -47,6 +48,7 @@ describe("persistent mobile access gateway", () => {
         const requestMessage = JSON.parse(data.toString());
         if (requestMessage.method === "control.subscribe") {
           subscriptionSocket = socket;
+          subscriptionTopics = requestMessage.params.topics;
           socket.send(JSON.stringify({
             id: requestMessage.id,
             ok: true,
@@ -230,14 +232,15 @@ describe("persistent mobile access gateway", () => {
       expect(inputAckEnabled).toBe(daemonReceipts);
 
       await waitFor(() => subscriptionSocket !== undefined);
+      expect(subscriptionTopics).toContain("workflow");
       subscriptionSocket.send(JSON.stringify({
         protocolVersion: `sha256:${"a".repeat(64)}`,
         event: "projection.invalidated",
-        payload: { stateRevision: 4, observationSequence: 8, topics: ["session"] },
+        payload: { stateRevision: 4, observationSequence: 8, topics: ["session", "workflow"] },
       }));
       expect(JSON.parse((await message(mobile)).toString())).toMatchObject({
         event: "projection.invalidated",
-        payload: { stateRevision: 4, observationSequence: 8 },
+        payload: { stateRevision: 4, observationSequence: 8, topics: ["session", "workflow"] },
       });
       expect(upstreamPaths.filter((value) => value === "/terminal")).toHaveLength(1);
       const restarting = closed(mobile);

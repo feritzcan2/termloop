@@ -12,6 +12,7 @@ import type {
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
 } from "@termloop/contract/current";
+import type { WorkflowTemplatesPort } from "./workflow-templates-port";
 
 export type ConnectionAvailability =
   | "online"
@@ -371,6 +372,7 @@ export interface MobileRuntime {
   control: ControlReadPort;
   worktreeChanges: WorktreeChangesPort;
   playbook: PlaybookPort;
+  workflowTemplates: WorkflowTemplatesPort;
   agentLaunch: AgentLaunchPort;
   sessionActions: SessionActionsPort;
   steward: StewardPort;
