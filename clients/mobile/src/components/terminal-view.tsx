@@ -147,7 +147,11 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
       </View> : null}
       <ScrollView ref={scroll} style={styles.scroll}
         contentContainerStyle={[styles.content, initialPosition === "ready" ? null : styles.initiallyHidden]}
-        onLayout={(event) => setViewport((current) => ({ ...current, height: event.nativeEvent.layout.height }))}
+        onLayout={(event) => {
+          // Fabric releases this pooled event before a queued updater may run.
+          const height = event.nativeEvent.layout.height;
+          setViewport((current) => current.height === height ? current : { ...current, height });
+        }}
         onScroll={onScroll} scrollEventThrottle={16}
         onScrollEndDrag={() => { requested.current = { direction: 0, lines: 0 }; }}
         onMomentumScrollEnd={() => { requested.current = { direction: 0, lines: 0 }; }}
