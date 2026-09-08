@@ -114,6 +114,8 @@ pub struct AgentLaunchPlan {
     cwd: String,
     cwd_identity: termloop_platform::PathComparisonInput,
     agent_id: String,
+    account: Option<termloop_agents::AgentAccountContext>,
+    account_prepared: bool,
     observation_token: Option<String>,
     observation_transport: Option<AgentObservationTransport>,
     runtime_signal_sender: Option<Sender<AgentRuntimeSignal>>,
@@ -324,6 +326,13 @@ pub struct ObservedTaskWorktreeLaunch {
 }
 
 impl AgentLaunchPlan {
+    fn set_account(&mut self, account: Option<termloop_agents::AgentAccountContext>) {
+        self.account_prepared = account
+            .as_ref()
+            .is_none_or(|account| account.config_directory.is_none());
+        self.account = account;
+    }
+
     fn has_observed_managed_worktree(&self) -> bool {
         self.task_guard.is_some()
             && !self.task_guard_requires_observation
@@ -356,6 +365,15 @@ impl AgentLaunchPlan {
     }
 
     pub fn prepare_runtime(&mut self) {
+        self.account_prepared = self
+            .account
+            .as_ref()
+            .is_none_or(|account| account.prepare().is_ok());
+        if !self.account_prepared {
+            self.observation_warning =
+                Some("Could not prepare the selected account directory".into());
+            return;
+        }
         if let Some(source) = self.history_source.as_ref() {
             let fresh = termloop_platform::read_bounded_history_file_slices(&source.source, 1, 1);
             self.history_source_validated = fresh.is_ok_and(|fresh| {
@@ -399,6 +417,7 @@ impl AgentLaunchPlan {
             self.runtime_epoch,
             &self.cwd,
             self.has_observed_managed_worktree(),
+            self.account.as_ref(),
             &transport.provider_process_directory,
             self.mcp_token
                 .as_ref()
@@ -623,6 +642,9 @@ impl CoreRuntime {
             AgentMcpRole::Interactive,
         )?;
         plan.cwd_identity = cwd_identity;
+        if let Some(id) = params["accountId"].as_str() {
+            plan.set_account(self.resolve_agent_account(&plan.agent_id, Some(id))?);
+        }
         plan.interactive_options = interactive_options;
         Ok(plan)
     }
@@ -660,7 +682,13 @@ impl CoreRuntime {
                 .mcp_http_supported(&agent_id)
                 .then(termloop_platform::generate_capability_token)
         });
+        let account = self.resolve_agent_account(&agent_id, None)?;
+        let account_prepared = account
+            .as_ref()
+            .is_none_or(|account| account.config_directory.is_none());
         Ok(AgentLaunchPlan {
+            account,
+            account_prepared,
             session_id,
             runtime_epoch: self.runtime_epoch,
             project_id,
@@ -757,6 +785,7 @@ impl CoreRuntime {
             "cwd": cwd,
             "agentId": agent_id,
         }))?;
+        plan.set_account(self.session_agent_account(&source)?);
         plan.interactive_options = Some(source.launch_selection.clone());
         plan.resume_ref = None;
         plan.fork_name = Some(fork_session_name(&source, &agent_id));
@@ -870,6 +899,7 @@ impl CoreRuntime {
             },
         )?;
         plan.cwd_identity = cwd_identity;
+        plan.set_account(self.resolve_agent_account(&plan.agent_id, params["accountId"].as_str())?);
         plan.interactive_options = Some(selection.clone());
         plan.improver_configuration_id = bindings.configuration_id().map(str::to_owned);
         plan.improver_new_kind = bindings.new_kind().map(str::to_owned);
@@ -884,7 +914,8 @@ impl CoreRuntime {
             target,
             termloop_invocation::AgentConversationLaunch::Fresh {
                 resume_ref: plan.resume_ref.as_ref(),
-            },
+            }
+            .in_account(plan.account.as_ref()),
             observation,
             mcp,
         )
@@ -919,8 +950,18 @@ impl CoreRuntime {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
         let selection = preview.plan.interactive_options.clone().unwrap_or_default();
-        let matches = params.get("projectId").and_then(Value::as_str)
-            == Some(preview.plan.project_id.as_str())
+        let matches = params
+            .get("accountId")
+            .and_then(Value::as_str)
+            .is_none_or(|id| {
+                preview
+                    .plan
+                    .account
+                    .as_ref()
+                    .is_some_and(|account| account.account_id == id)
+            })
+            && params.get("projectId").and_then(Value::as_str)
+                == Some(preview.plan.project_id.as_str())
             && params.get("agentId").and_then(Value::as_str)
                 == Some(preview.plan.agent_id.as_str())
             && params.get("model").and_then(Value::as_str) == Some(selection.model.as_str())
@@ -1024,6 +1065,7 @@ impl CoreRuntime {
             mcp_role,
         )?;
         plan.cwd_identity = cwd_identity;
+        plan.set_account(self.resolve_agent_account(&plan.agent_id, params["accountId"].as_str())?);
         plan.interactive_options = Some(selection.clone());
         plan.improver_prompt_surface = Some(bindings.surface().wire().to_owned());
         plan.improver_prompt_owner_id = bindings.owner_id().map(str::to_owned);
@@ -1038,7 +1080,8 @@ impl CoreRuntime {
             target,
             termloop_invocation::AgentConversationLaunch::Fresh {
                 resume_ref: plan.resume_ref.as_ref(),
-            },
+            }
+            .in_account(plan.account.as_ref()),
             observation,
             mcp,
         )
@@ -1099,6 +1142,7 @@ impl CoreRuntime {
             mcp_role,
         )?;
         plan.cwd_identity = cwd_identity;
+        plan.set_account(self.resolve_agent_account(&plan.agent_id, params["accountId"].as_str())?);
         plan.interactive_options = Some(selection.clone());
         plan.settings_entry_kind = Some(entry.kind.wire().to_owned());
         plan.settings_entry_id = version_target.target_id;
@@ -1113,7 +1157,8 @@ impl CoreRuntime {
             target,
             termloop_invocation::AgentConversationLaunch::Fresh {
                 resume_ref: plan.resume_ref.as_ref(),
-            },
+            }
+            .in_account(plan.account.as_ref()),
             observation,
             mcp,
         )
@@ -1359,8 +1404,18 @@ impl CoreRuntime {
             .and_then(Value::as_str);
         let attachments = quick_action_attachments(&params)?;
         let requested_cwd = launch_directory(&params)?;
-        let matches = params.get("projectId").and_then(Value::as_str)
-            == Some(preview.plan.project_id.as_str())
+        let matches = params
+            .get("accountId")
+            .and_then(Value::as_str)
+            .is_none_or(|id| {
+                preview
+                    .plan
+                    .account
+                    .as_ref()
+                    .is_some_and(|account| account.account_id == id)
+            })
+            && params.get("projectId").and_then(Value::as_str)
+                == Some(preview.plan.project_id.as_str())
             && requested_cwd == preview.plan.cwd
             && params.get("agentId").and_then(Value::as_str)
                 == Some(preview.plan.agent_id.as_str())
@@ -1596,6 +1651,9 @@ impl CoreRuntime {
             params["model"] = json!(options.model);
             params["permission"] = json!(options.permission);
             params["reasoning"] = json!(options.reasoning);
+            if let Some(id) = &options.account_id {
+                params["accountId"] = json!(id);
+            }
         }
         let mut plan = self.plan_agent_launch(params)?;
         plan.task_guard = Some(TaskLaunchGuard {
@@ -1793,6 +1851,11 @@ impl CoreRuntime {
         &mut self,
         plan: &mut AgentLaunchPlan,
     ) -> Result<AgentLaunchCommit, CoreError> {
+        if !plan.account_prepared {
+            return Err(CoreError::InvalidParams(
+                "Selected account directory is unavailable".into(),
+            ));
+        }
         if !self.project_exists(&plan.project_id) {
             return Err(CoreError::NotFound);
         }
@@ -1938,6 +2001,7 @@ impl CoreRuntime {
         } else if let Some((request_id, message)) = plan.helper_prompt.as_ref() {
             let mcp = mcp.ok_or(CoreError::AgentUnsupported)?;
             let selection = plan.interactive_options.clone().unwrap_or_default();
+            let conversation = conversation.in_account(plan.account.as_ref());
             if managed_worktree {
                 termloop_invocation::ask_to_helper_agent_for_managed_worktree_conversation(
                     &plan.agent_id,
@@ -2260,6 +2324,7 @@ fn resolve_quick_action_launch(
     observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
 ) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
+    let conversation = conversation.in_account(plan.account.as_ref());
     if let Some(profile) = &quick_action.personal_agent {
         termloop_invocation::personal_agent_for_conversation(
             profile,
@@ -2459,15 +2524,23 @@ fn interactive_agent_options(
         params.get("permission").and_then(Value::as_str),
         params.get("reasoning").and_then(Value::as_str),
     ) {
-        (None, None, None) => Ok(None),
+        (None, None, None) => Ok(params["accountId"].as_str().map(|id| {
+            let mut selection = AgentLaunchSelection::new(
+                "default",
+                termloop_invocation::default_permission(agent_id),
+                "default",
+            );
+            selection.account_id = Some(id.into());
+            selection
+        })),
         (Some(model), Some(permission), Some(reasoning)) => {
             termloop_invocation::validate_agent_configuration(
                 agent_id, model, permission, reasoning,
             )
             .map_err(invocation_error)?;
-            Ok(Some(AgentLaunchSelection::new(
-                model, permission, reasoning,
-            )))
+            let mut selection = AgentLaunchSelection::new(model, permission, reasoning);
+            selection.account_id = params["accountId"].as_str().map(str::to_owned);
+            Ok(Some(selection))
         }
         _ => Err(CoreError::InvalidParams("agent launch options".into())),
     }
@@ -2505,7 +2578,7 @@ fn preview_transport_bindings(
 }
 
 fn effective_launch_selection(plan: &AgentLaunchPlan) -> AgentLaunchSelection {
-    if let Some(quick_action) = &plan.quick_action {
+    let mut selection = if let Some(quick_action) = &plan.quick_action {
         quick_action.selection.clone()
     } else if let Some(options) = &plan.interactive_options {
         options.clone()
@@ -2518,7 +2591,12 @@ fn effective_launch_selection(plan: &AgentLaunchPlan) -> AgentLaunchSelection {
             termloop_invocation::default_permission(&plan.agent_id),
             "default",
         )
-    }
+    };
+    selection.account_id = plan
+        .account
+        .as_ref()
+        .map(|account| account.account_id.clone());
+    selection
 }
 
 fn resolve_interactive_agent_launch(
@@ -2558,6 +2636,7 @@ fn resolve_interactive_agent_launch_with_transport(
     observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
 ) -> Result<termloop_invocation::LaunchPayload, termloop_invocation::InvocationError> {
+    let conversation = conversation.in_account(plan.account.as_ref());
     let managed_worktree = plan.has_observed_managed_worktree();
     if let Some(assignment) = &plan.steward_task_assignment {
         let selection = plan.interactive_options.clone().unwrap_or_default();
@@ -2702,6 +2781,7 @@ pub(crate) fn start_codex_runtime(
     runtime_epoch: u64,
     cwd: &str,
     managed_worktree: bool,
+    account: Option<&termloop_agents::AgentAccountContext>,
     provider_process_directory: &Path,
     mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
     developer_instructions: Option<&str>,
@@ -2717,6 +2797,7 @@ pub(crate) fn start_codex_runtime(
             session_id,
             mcp,
             developer_instructions,
+            account,
         )
     } else {
         termloop_invocation::codex_app_server(
@@ -2725,6 +2806,7 @@ pub(crate) fn start_codex_runtime(
             session_id,
             mcp,
             developer_instructions,
+            account,
         )
     }
     .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;

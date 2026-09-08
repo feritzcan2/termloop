@@ -90,6 +90,7 @@ fn profile_instructions_configure_the_remote_codex_app_server() {
         "profile-session",
         Some(interactive_mcp()),
         Some(instructions),
+        None,
     )
     .unwrap();
     let developer_instructions = app_server

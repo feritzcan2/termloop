@@ -80,6 +80,7 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: termloop_domain::AgentLaunchSelection {
+                    account_id: None,
                     model: if agent_id == "claude" {
                         "default".into()
                     } else {
@@ -785,6 +786,7 @@ fn ask_to_helper_can_relocate_to_project_without_gaining_interactive_mcp() {
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: termloop_domain::AgentLaunchSelection {
+                    account_id: None,
                     model: "gpt-5.6-sol".into(),
                     permission: "acceptEdits".into(),
                     reasoning: "high".into(),

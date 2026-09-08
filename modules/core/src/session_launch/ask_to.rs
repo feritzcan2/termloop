@@ -489,6 +489,14 @@ impl CoreRuntime {
             },
         )?;
         plan.interactive_options = params.launch_selection.or(Some(selection));
+        plan.set_account(
+            self.resolve_agent_account(
+                &target,
+                plan.interactive_options
+                    .as_ref()
+                    .and_then(|options| options.account_id.as_deref()),
+            )?,
+        );
         plan.task_guard = task_guard;
         plan.task_guard_requires_observation = plan.task_guard.is_some();
         plan.helper_prompt = Some((request_id.clone(), params.message));
@@ -1417,11 +1425,14 @@ mod tests {
             };
             assert_eq!(
                 super::super::effective_launch_selection(&plan),
-                termloop_domain::AgentLaunchSelection::new(
-                    model.unwrap_or("default"),
-                    "default",
-                    reasoning.unwrap_or("default"),
-                )
+                termloop_domain::AgentLaunchSelection {
+                    account_id: Some("default".into()),
+                    ..termloop_domain::AgentLaunchSelection::new(
+                        model.unwrap_or("default"),
+                        "default",
+                        reasoning.unwrap_or("default"),
+                    )
+                }
             );
             assert!(matches!(plan.mcp_role, AgentMcpRole::Helper { .. }));
             assert!(matches!(

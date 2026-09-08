@@ -12,24 +12,53 @@ pub(super) async fn handle(
     state: &AppState,
 ) -> Result<Value, CoreError> {
     let connections = state.agent_connections.clone();
+    let accounts = {
+        let core = state.core.lock().await;
+        if method == "agent.authStatusList"
+            && params.get("agentId").is_none()
+            && params.get("accountId").is_none()
+        {
+            ["codex", "claude"]
+                .into_iter()
+                .map(|provider| {
+                    core.resolve_agent_account(provider, None)
+                        .and_then(|account| account.ok_or(CoreError::NotFound))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            let provider = params["agentId"]
+                .as_str()
+                .ok_or_else(|| CoreError::InvalidParams("agentId".into()))?;
+            let account_id = params["accountId"]
+                .as_str()
+                .ok_or_else(|| CoreError::InvalidParams("accountId".into()))?;
+            vec![
+                core.resolve_agent_account(provider, Some(account_id))?
+                    .ok_or(CoreError::NotFound)?,
+            ]
+        }
+    };
     let owner = owner.to_owned();
     let method = method.to_owned();
     let refresh = method == "agent.authStatusList";
     let result = tokio::task::spawn_blocking(move || {
         if method == "agent.authStatusList" {
-            serde_json::to_value(connections.status_list(&owner))
+            serde_json::to_value(connections.status_list(&accounts, &owner))
                 .map_err(|_| "Could not read account status.")
         } else {
             let provider = Provider::parse(params["agentId"].as_str().unwrap_or_default())?;
+            let account = accounts.into_iter().next().ok_or("Account unavailable")?;
+            let account_id = account.account_id.clone();
             let id = params["operationId"].as_str().unwrap_or_default();
             let result = match method.as_str() {
-                "agent.install" => connections.start(provider, Action::Install, &owner),
-                "agent.authStart" => connections.start(provider, Action::SignIn, &owner),
-                "agent.authLogout" => connections.start(provider, Action::SignOut, &owner),
-                "agent.authGet" => connections.operation(provider, id, &owner),
-                "agent.authCancel" => connections.cancel(provider, id, &owner),
+                "agent.install" => connections.start(account, Action::Install, &owner),
+                "agent.authStart" => connections.start(account, Action::SignIn, &owner),
+                "agent.authLogout" => connections.start(account, Action::SignOut, &owner),
+                "agent.authGet" => connections.operation(provider, &account_id, id, &owner),
+                "agent.authCancel" => connections.cancel(provider, &account_id, id, &owner),
                 "agent.authSubmitCode" => connections.submit_code(
                     provider,
+                    &account_id,
                     id,
                     &owner,
                     params["code"].as_str().unwrap_or_default(),

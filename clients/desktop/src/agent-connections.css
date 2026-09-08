@@ -15,9 +15,9 @@
 .agent-account-steps li { flex: 1; padding: 7px 0; border-top: 2px solid var(--border); color: var(--text-secondary); font: 11px/1.4 var(--font-ui); }
 .agent-account-steps .done { border-color: light-dark(#269664, #68be92); color: var(--text); }
 .agent-account-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.agent-account-card button, .conn-manage { min-height: 32px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text); font: 600 11px/1.4 var(--font-ui); cursor: pointer; }
-.agent-account-card button:disabled { cursor: default; opacity: .5; }
-.agent-account-card button:hover:not(:disabled), .conn-manage:hover { background: var(--accent-wash); }
+.agent-provider-accounts button, .conn-manage { min-height: 32px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text); font: 600 11px/1.4 var(--font-ui); cursor: pointer; }
+.agent-provider-accounts button:disabled { cursor: default; opacity: .5; }
+.agent-provider-accounts button:hover:not(:disabled), .conn-manage:hover { background: var(--accent-wash); }
 .agent-account-card .conn-primary { border-color: var(--accent-strong); background: var(--accent-wash); color: var(--accent-strong); }
 .agent-account-card .conn-danger { color: light-dark(#b32635, #ed8e9b); }
 .agent-auth-progress { display: grid; justify-items: start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; font: 12px/1.5 var(--font-ui); }
@@ -28,3 +28,13 @@
 .agent-device-code span { color: var(--text-secondary); font-size: 10px; }
 .agent-device-code code { user-select: all; padding: 6px 10px; border-radius: 6px; background: var(--bg); font: 700 23px/1.4 var(--font-mono); letter-spacing: .08em; }
 @media (max-width: 640px) { .agent-account-card > header { flex-wrap: wrap; } .agent-account-badge { margin-left: 0; } .conn-card-actions { flex-wrap: wrap; justify-content: flex-end; } }
+
+.agent-provider-accounts { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.agent-provider-accounts .agent-account-card { margin-top: 12px; border: 0; padding: 16px; }
+.agent-account-selector, .agent-account-name-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.agent-account-selector .conn-field, .agent-account-name-form .conn-field { flex: 1 1 180px; margin: 0; }
+.agent-account-selector select { width: 100%; min-height: 34px; }
+.agent-account-name-form { margin: 12px 0; }
+.quick-action-account { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12px; }
+.quick-action-account select { flex: 1; min-width: 120px; max-width: 260px; padding: 6px; background: var(--bg-raised); color: var(--text); border: 1px solid var(--border-strong); border-radius: 6px; }
+.quick-action-account small { color: var(--text-muted); }

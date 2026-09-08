@@ -376,6 +376,7 @@ fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: termloop_domain::AgentLaunchSelection {
+                    account_id: None,
                     model: "gpt-5.6-sol".into(),
                     permission: "acceptEdits".into(),
                     reasoning: "high".into(),

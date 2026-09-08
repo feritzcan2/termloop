@@ -17,29 +17,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
+use termloop_agents::AgentAccountContext;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Provider {
-    Codex,
-    Claude,
-}
-
-impl Provider {
-    pub fn parse(value: &str) -> Result<Self, &'static str> {
-        match value {
-            "codex" => Ok(Self::Codex),
-            "claude" => Ok(Self::Claude),
-            _ => Err("Unsupported provider."),
-        }
-    }
-    fn command(self) -> &'static str {
-        match self {
-            Self::Codex => "codex",
-            Self::Claude => "claude",
-        }
-    }
-}
+pub use termloop_domain::AgentAccountProvider as Provider;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +46,7 @@ pub enum Phase {
 #[serde(rename_all = "camelCase")]
 pub struct Operation {
     pub agent_id: Provider,
+    pub account_id: String,
     pub operation_id: String,
     pub action: Action,
     pub phase: Phase,
@@ -114,6 +95,7 @@ impl Drop for Job {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     agent_id: Provider,
+    account_id: String,
     label: &'static str,
     installed: bool,
     version: Option<String>,
@@ -123,10 +105,10 @@ pub struct Status {
     operation: Option<Operation>,
 }
 
-/// At most one operation per provider and OS user. A requester is derived from
+/// At most one operation per account; installation reserves the provider. A requester is derived from
 /// its authenticated credential, never a caller-supplied device identifier.
 pub struct AgentConnections {
-    jobs: Mutex<HashMap<Provider, Job>>,
+    jobs: Mutex<HashMap<(Provider, String), Job>>,
     registry: PathBuf,
 }
 
@@ -138,23 +120,28 @@ impl AgentConnections {
         }
     }
 
-    pub fn status_list(&self, credential: &str) -> Vec<Status> {
-        [Provider::Codex, Provider::Claude]
-            .into_iter()
-            .map(|provider| {
+    pub fn status_list(&self, accounts: &[AgentAccountContext], credential: &str) -> Vec<Status> {
+        accounts
+            .iter()
+            .map(|account| {
+                let provider =
+                    Provider::parse(&account.agent_id).expect("validated account provider");
                 let (busy, operation) = {
                     let jobs = self.jobs.lock().unwrap();
-                    let job = jobs.get(&provider);
+                    let job = jobs.get(&(provider, account.account_id.clone()));
+                    let busy = jobs.iter().any(|((p, id), job)| {
+                        *p == provider
+                            && (id == &account.account_id
+                                || job.operation.lock().unwrap().action == Action::Install)
+                            && job_busy(job)
+                    });
                     (
-                        job.is_some_and(|job| {
-                            job.operation.lock().unwrap().active()
-                                || job.control.unreaped.lock().unwrap().is_some()
-                        }),
+                        busy,
                         job.filter(|job| job.owner == owner(credential))
                             .map(|job| job.operation.lock().unwrap().clone()),
                     )
                 };
-                let mut status = provider::status(provider, !busy);
+                let mut status = provider::status(account, !busy);
                 status.busy = busy;
                 status.operation = operation;
                 status
@@ -164,12 +151,23 @@ impl AgentConnections {
 
     pub fn start(
         &self,
-        provider: Provider,
+        account: AgentAccountContext,
         action: Action,
         credential: &str,
     ) -> Result<Operation, &'static str> {
+        let provider = Provider::parse(&account.agent_id)?;
+        let key = (provider, account.account_id.clone());
         let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get(&provider) {
+        if jobs.iter().any(|((p, id), job)| {
+            *p == provider
+                && id != &account.account_id
+                && job_busy(job)
+                && (action == Action::Install
+                    || job.operation.lock().unwrap().action == Action::Install)
+        }) {
+            return Err("Finish account setup before installing or updating this provider.");
+        }
+        if let Some(job) = jobs.get(&key) {
             if job.control.unreaped.lock().unwrap().is_some() {
                 return Err(
                     "Restart this server to recover an unfinished provider process before starting setup again.",
@@ -186,6 +184,7 @@ impl AgentConnections {
         }
         let operation = Operation {
             agent_id: provider,
+            account_id: account.account_id.clone(),
             operation_id: uuid::Uuid::new_v4().to_string(),
             action,
             phase: Phase::Starting,
@@ -209,33 +208,35 @@ impl AgentConnections {
             .name("agent-account-setup".into())
             .spawn(move || {
                 provider::run(
-                    provider, action, snapshot, control, input, receiver, registry,
+                    account, action, snapshot, control, input, receiver, registry,
                 );
             })
             .map_err(|_| "Could not start account setup.")?;
-        jobs.insert(provider, job);
+        jobs.insert(key, job);
         Ok(operation)
     }
 
     pub fn operation(
         &self,
         provider: Provider,
+        account_id: &str,
         id: &str,
         credential: &str,
     ) -> Result<Operation, &'static str> {
         let jobs = self.jobs.lock().unwrap();
-        let job = owned_job(&jobs, provider, id, credential)?;
+        let job = owned_job(&jobs, provider, account_id, id, credential)?;
         Ok(job.operation.lock().unwrap().clone())
     }
 
     pub fn cancel(
         &self,
         provider: Provider,
+        account_id: &str,
         id: &str,
         credential: &str,
     ) -> Result<Operation, &'static str> {
         let jobs = self.jobs.lock().unwrap();
-        let job = owned_job(&jobs, provider, id, credential)?;
+        let job = owned_job(&jobs, provider, account_id, id, credential)?;
         job.control.cancel.store(true, Ordering::Release);
         // Keep the reservation until the worker has reaped its child tree.
         let mut operation = job.operation.lock().unwrap();
@@ -251,6 +252,7 @@ impl AgentConnections {
     pub fn submit_code(
         &self,
         provider: Provider,
+        account_id: &str,
         id: &str,
         credential: &str,
         code: &str,
@@ -262,7 +264,7 @@ impl AgentConnections {
             return Err("Paste only the code from the provider’s sign-in page.");
         }
         let jobs = self.jobs.lock().unwrap();
-        let job = owned_job(&jobs, provider, id, credential)?;
+        let job = owned_job(&jobs, provider, account_id, id, credential)?;
         let mut operation = job.operation.lock().unwrap();
         if !operation.active()
             || !operation.accepts_code
@@ -283,14 +285,19 @@ fn owner(credential: &str) -> [u8; 32] {
     Sha256::digest(credential.as_bytes()).into()
 }
 fn owned_job<'a>(
-    jobs: &'a HashMap<Provider, Job>,
+    jobs: &'a HashMap<(Provider, String), Job>,
     provider: Provider,
+    account_id: &str,
     id: &str,
     credential: &str,
 ) -> Result<&'a Job, &'static str> {
-    jobs.get(&provider)
+    jobs.get(&(provider, account_id.into()))
         .filter(|job| {
             job.owner == owner(credential) && job.operation.lock().unwrap().operation_id == id
         })
         .ok_or("This setup attempt is unavailable or belongs to another connection.")
+}
+
+fn job_busy(job: &Job) -> bool {
+    job.operation.lock().unwrap().active() || job.control.unreaped.lock().unwrap().is_some()
 }

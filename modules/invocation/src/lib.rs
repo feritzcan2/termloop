@@ -1371,6 +1371,16 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
     attachments: &[QuickActionImageAttachment],
     codex_project_trust: CodexProjectTrust,
 ) -> Result<ResolvedLaunchManifest, InvocationError> {
+    let (account, conversation) = match conversation {
+        AgentConversationLaunch::WithAccount {
+            account,
+            conversation,
+        } if account.agent_id == agent_id => (Some(account), *conversation),
+        AgentConversationLaunch::WithAccount { .. } => {
+            return Err(InvocationError::InvalidResumeReference);
+        }
+        conversation => (None, conversation),
+    };
     if template.id.trim().is_empty() {
         return Err(InvocationError::UnprovenancedPrompt);
     }
@@ -1385,6 +1395,9 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
     let conversation_kind = match conversation {
         AgentConversationLaunch::Fresh { .. } | AgentConversationLaunch::Fork { .. } => "fresh",
         AgentConversationLaunch::Resume { .. } => "resume",
+        AgentConversationLaunch::WithAccount { .. } => {
+            return Err(InvocationError::InvalidResumeReference);
+        }
     };
     let interactive_provider_instructions = mcp
         .as_ref()
@@ -1393,6 +1406,14 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
     let delivered_provider_instructions =
         provider_instructions.or(interactive_provider_instructions);
     let mut arguments = conversation_manifest_args(agent_id, conversation)?;
+    if let Some(account) = account {
+        arguments.extend(
+            account
+                .credential_args()
+                .into_iter()
+                .map(|arg| ResolvedArgument::exact(arg, "isolated account credentials")),
+        );
+    }
     if agent_id == "codex" {
         // Codex resume/fork can restore the conversation's recorded working
         // root instead of using only the child process cwd. Keep the provider's
@@ -1506,6 +1527,9 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
         .as_ref()
         .map(|observation| observation.session_id);
     let mut environment = agent_launch_environment(cwd, cargo_shard_key);
+    if let Some(account) = account {
+        environment = account.apply_environment(environment);
+    }
     if observation.as_ref().is_some_and(|observation| {
         observation_environment_conflicts(agent_id, observation.transport, &environment)
     }) {
@@ -1612,6 +1636,8 @@ fn resolve_launch_manifest_with_attachments_and_codex_project_trust(
     let mut inspectable = InspectableLaunchManifest {
         digest: String::new(),
         target: InspectableLaunchTarget {
+            account_id: account.map(|account| account.account_id.clone()),
+            account_name: account.map(|account| account.name.clone()),
             agent_id: agent_id.to_owned(),
             executable,
             model: model.to_owned(),
@@ -1778,6 +1804,14 @@ fn inspect_environment(
         .map(|(key, _value)| {
             let key = key.to_string_lossy().into_owned();
             match key.as_str() {
+                "CODEX_HOME" | "CLAUDE_CONFIG_DIR" => InspectableEnvironmentEntry {
+                    key,
+                    display_value: "<redacted account directory>".into(),
+                    visibility: "redacted",
+                    classification: "sensitivePath",
+                    source: "invocation",
+                    purpose: "selected provider account",
+                },
                 "CARGO_TARGET_DIR" => InspectableEnvironmentEntry {
                     key,
                     display_value: "<redacted agent build path>".into(),
@@ -2134,6 +2168,7 @@ pub fn codex_app_server(
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
     developer_instructions: Option<&str>,
+    account: Option<&termloop_agents::AgentAccountContext>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
@@ -2141,6 +2176,7 @@ pub fn codex_app_server(
         session_id,
         mcp,
         developer_instructions,
+        account,
         CodexProjectTrust::Inherit,
     )
 }
@@ -2151,6 +2187,7 @@ pub fn codex_app_server_for_managed_worktree(
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
     developer_instructions: Option<&str>,
+    account: Option<&termloop_agents::AgentAccountContext>,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     codex_app_server_with_project_trust(
         listen_endpoint,
@@ -2158,6 +2195,7 @@ pub fn codex_app_server_for_managed_worktree(
         session_id,
         mcp,
         developer_instructions,
+        account,
         CodexProjectTrust::TermLoopManagedWorktree,
     )
 }
@@ -2168,6 +2206,7 @@ fn codex_app_server_with_project_trust(
     session_id: &str,
     mcp: Option<AgentMcpLaunch<'_>>,
     developer_instructions: Option<&str>,
+    account: Option<&termloop_agents::AgentAccountContext>,
     codex_project_trust: CodexProjectTrust,
 ) -> Result<CodexAppServerLaunch, InvocationError> {
     let mut args = vec![
@@ -2184,6 +2223,13 @@ fn codex_app_server_with_project_trust(
     // The App Server owns the Codex process that executes shell commands, so it
     // must inherit the same Agent-only Cargo target as the terminal client.
     let mut environment = agent_launch_environment(cwd, Some(session_id));
+    if let Some(account) = account {
+        if account.agent_id != "codex" {
+            return Err(InvocationError::InvalidResumeReference);
+        }
+        environment = account.apply_environment(environment);
+        args.extend(account.credential_args());
+    }
     if let Some(mcp) = mcp {
         args.extend(mcp_args("codex", &mcp, developer_instructions.is_none())?);
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
@@ -2277,6 +2323,10 @@ fn launch_target_utf8(
 
 #[derive(Clone, Copy)]
 pub enum AgentConversationLaunch<'a> {
+    WithAccount {
+        account: &'a termloop_agents::AgentAccountContext,
+        conversation: &'a AgentConversationLaunch<'a>,
+    },
     Fresh {
         resume_ref: Option<&'a termloop_domain::ResumeRef>,
     },
@@ -2286,6 +2336,15 @@ pub enum AgentConversationLaunch<'a> {
     Fork {
         source_ref: &'a termloop_domain::ResumeRef,
     },
+}
+
+impl<'a> AgentConversationLaunch<'a> {
+    pub fn in_account(&'a self, account: Option<&'a termloop_agents::AgentAccountContext>) -> Self {
+        account.map_or(*self, |account| Self::WithAccount {
+            account,
+            conversation: self,
+        })
+    }
 }
 
 impl LaunchPayload {
@@ -3897,6 +3956,9 @@ fn conversation_args(
         AgentConversationLaunch::Fresh { resume_ref } => (resume_ref, "fresh"),
         AgentConversationLaunch::Resume { resume_ref } => (Some(resume_ref), "resume"),
         AgentConversationLaunch::Fork { source_ref } => (Some(source_ref), "fork"),
+        AgentConversationLaunch::WithAccount { .. } => {
+            return Err(InvocationError::InvalidResumeReference);
+        }
     };
     let Some(resume_ref) = resume_ref else {
         return Ok(vec![]);
@@ -4831,6 +4893,7 @@ mod tests {
                 profile: AgentMcpProfile::Interactive,
             }),
             Some(instructions),
+            None,
         )
         .unwrap();
         let developer_instructions = app_server_args(&app_server)
@@ -5459,6 +5522,7 @@ mod tests {
             "session-1",
             None,
             None,
+            None,
         )
         .unwrap();
         assert!(
@@ -5896,6 +5960,7 @@ mod tests {
             "managed-session",
             None,
             None,
+            None,
         )
         .unwrap();
         assert!(
@@ -5903,8 +5968,15 @@ mod tests {
                 .windows(2)
                 .any(|arguments| { arguments[0] == "-c" && arguments[1] == expected })
         );
-        let project_app_server =
-            codex_app_server("ws://127.0.0.1:4567", cwd, "project-session", None, None).unwrap();
+        let project_app_server = codex_app_server(
+            "ws://127.0.0.1:4567",
+            cwd,
+            "project-session",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert!(
             app_server_args(&project_app_server)
                 .iter()
@@ -6265,6 +6337,7 @@ mod tests {
                 claude_config_path: "/unused.json",
                 profile: AgentMcpProfile::Interactive,
             }),
+            None,
             None,
         )
         .unwrap();
