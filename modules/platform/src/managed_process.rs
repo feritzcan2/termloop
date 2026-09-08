@@ -624,6 +624,9 @@ pub fn process_tree_is_running(process_id: u32) -> Result<bool, PlatformError> {
     }
     #[cfg(windows)]
     {
+        if let Some(running) = crate::process_tree::windows_process_tree_is_running(process_id)? {
+            return Ok(running);
+        }
         process_identity(process_id).map(|identity| identity.is_some())
     }
     #[cfg(not(any(unix, windows)))]

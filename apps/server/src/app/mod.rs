@@ -866,24 +866,28 @@ async fn reconcile_terminal_exits(state: AppState) {
         if *shutdown.borrow() {
             break;
         }
+        let terminal = state.terminal.clone();
+        let reaped = match tokio::task::spawn_blocking(move || terminal.reap_exited()).await {
+            Ok(Ok(exited)) => exited,
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "failed to reap exited terminal process trees");
+                Vec::new()
+            }
+            Err(error) => {
+                tracing::warn!(%error, "terminal process-tree reaper failed");
+                Vec::new()
+            }
+        };
         let reconciled = {
             let mut core = state.core.lock().await;
             if *shutdown.borrow() {
                 break;
             }
-            match core.reconcile_exited_sessions() {
-                Ok(result) => result,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to reconcile exited terminal sessions");
-                    termloop_core::session_launch::ReconciledSessionExits {
-                        state_revision: None,
-                        exited_session_ids: Vec::new(),
-                        retired_runtimes: Vec::new(),
-                        changed_cwds: Vec::new(),
-                    }
-                }
-            }
+            core.reconcile_exited_sessions(reaped)
         };
+        for error in &reconciled.errors {
+            tracing::warn!(%error, "failed to reconcile an exited terminal session; retry pending");
+        }
         if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
             for session_id in &reconciled.exited_session_ids {
                 capabilities.revoke_session(session_id);

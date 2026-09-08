@@ -125,6 +125,7 @@ pub struct UserInputActivitySnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReapedTerminal {
     pub session_id: String,
+    pub runtime_epoch: u64,
     pub exit_code: u32,
 }
 
@@ -1356,6 +1357,8 @@ impl TerminalService {
         terminate_child(runtime.child.as_mut())
     }
 
+    /// Reaps the entire tree before reporting a natural exit. This can block
+    /// during process termination and must run outside the serialized Core lock.
     pub fn reap_exited(&self) -> Result<Vec<ReapedTerminal>, TerminalError> {
         let runtimes: Vec<_> = self
             .inner
@@ -1365,8 +1368,7 @@ impl TerminalService {
             .iter()
             .map(|(session_id, runtime)| (session_id.clone(), runtime.clone()))
             .collect();
-        let mut exited = Vec::new();
-        let mut removable = Vec::new();
+        let mut ready = Vec::new();
         for (session_id, runtime) in &runtimes {
             let mut runtime = match runtime.try_lock() {
                 Ok(runtime) => runtime,
@@ -1375,40 +1377,51 @@ impl TerminalService {
             };
             match runtime.child.try_wait() {
                 Ok(Some(status)) if !runtime.exit_reported => {
-                    runtime.exit_reported = true;
-                    exited.push(ReapedTerminal {
+                    // A leader's exit does not prove its descendants stopped.
+                    // Keep ownership reachable if tree termination fails, and
+                    // do not consume any exits until the whole sweep succeeds.
+                    terminate_child(runtime.child.as_mut())?;
+                    ready.push(ReapedTerminal {
                         session_id: session_id.to_owned(),
+                        runtime_epoch: runtime.epoch,
                         exit_code: status.exit_code(),
                     });
-                    if !runtime.retain_after_exit {
-                        removable.push(session_id.to_owned());
-                    }
                 }
                 Ok(Some(_)) => {}
                 Ok(None) => {}
                 Err(error) => return Err(TerminalError::Pty(error.to_string())),
             }
         }
-        if !removable.is_empty() {
+        let mut exited = Vec::new();
+        for event in ready {
+            let (_, observed_runtime) = runtimes
+                .iter()
+                .find(|(id, _)| id == &event.session_id)
+                .expect("reaped runtime came from this sweep");
+            let mut runtime = match observed_runtime.try_lock() {
+                Ok(runtime) => runtime,
+                Err(TryLockError::WouldBlock) => continue,
+                Err(TryLockError::Poisoned(_)) => return Err(TerminalError::RegistryPoisoned),
+            };
+            if runtime.exit_reported {
+                continue;
+            }
+            runtime.exit_reported = true;
+            let retain = runtime.retain_after_exit;
+            drop(runtime);
             let mut registry = self
                 .inner
                 .runtimes
                 .lock()
                 .map_err(|_| TerminalError::RegistryPoisoned)?;
-            for session_id in &removable {
-                let Some((_, observed_runtime)) = runtimes
-                    .iter()
-                    .find(|(observed_id, _)| observed_id == session_id)
-                else {
-                    continue;
-                };
-                if registry
-                    .get(session_id)
+            if !retain
+                && registry
+                    .get(&event.session_id)
                     .is_some_and(|registered| Arc::ptr_eq(registered, observed_runtime))
-                {
-                    registry.remove(session_id);
-                }
+            {
+                registry.remove(&event.session_id);
             }
+            exited.push(event);
         }
         Ok(exited)
     }
@@ -2261,6 +2274,7 @@ mod tests {
             reaped,
             vec![ReapedTerminal {
                 session_id: "roundtrip".into(),
+                runtime_epoch: 77,
                 exit_code: 0,
             }]
         );

@@ -1,4 +1,5 @@
 mod agent_accounts;
+mod exit_reconciliation;
 use super::resume::AgentResumePreparationKind;
 use super::*;
 use termloop_domain::{IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ResumeFailureReason};
@@ -717,7 +718,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
         }
     }
 
-    let reconciled = runtime.reconcile_exited_sessions().unwrap();
+    let reconciled = runtime.reconcile_exited_sessions(runtime.terminal.reap_exited().unwrap());
 
     assert_eq!(reconciled.exited_session_ids, ["timed-out-resume"]);
     let session = runtime
@@ -864,7 +865,7 @@ fn intentional_resume_failure_reap_keeps_the_exact_typed_reason() {
         .terminate_and_retain_output("intentional-resume-reap")
         .unwrap();
 
-    let reconciled = runtime.reconcile_exited_sessions().unwrap();
+    let reconciled = runtime.reconcile_exited_sessions(runtime.terminal.reap_exited().unwrap());
     assert!(reconciled.exited_session_ids.is_empty());
     assert!(
         runtime
