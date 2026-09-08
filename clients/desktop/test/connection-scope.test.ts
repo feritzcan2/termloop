@@ -30,6 +30,23 @@ describe("connection-scoped desktop identities", () => {
       .toThrow("crossConnectionEntityDenied");
   });
 
+  it("binds provider accounts and login operations to their owning server", () => {
+    const result = decorateConnectionEntities({
+      accounts: [{ agentId: "codex", accountId: "default", name: "Work", isDefault: true }],
+      createdAccountId: "default",
+      operation: { agentId: "codex", accountId: "default", operationId: "login-a" },
+    }, { connectionProfileId: REMOTE_PROFILE });
+
+    expect(result.accounts[0]?.accountId).toBe(connectionEntityKey(REMOTE_PROFILE, "default"));
+    expect(result.createdAccountId).toBe(result.accounts[0]?.accountId);
+    expect(result.operation.accountId).toBe(result.createdAccountId);
+    expect(unwrapConnectionEntities(result.operation, REMOTE_PROFILE)).toEqual({
+      agentId: "codex", accountId: "default", operationId: "login-a",
+    });
+    expect(() => unwrapConnectionEntities(result.operation, "local"))
+      .toThrow("crossConnectionEntityDenied");
+  });
+
   it("unwraps the Project and Routine owner used by proposal inspection", () => {
     const projectId = connectionEntityKey("local", "project-a");
     const ownerId = connectionEntityKey("local", "routine-a");

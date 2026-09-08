@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
 
+mod agent_accounts;
+pub use agent_accounts::{
+    AGENT_ACCOUNTS_PER_PROVIDER_MAX, AgentAccount, AgentAccountProvider, SYSTEM_AGENT_ACCOUNT_ID,
+    default_agent_accounts, valid_agent_account_id, valid_agent_accounts,
+};
+
 mod agent_library;
 pub use agent_library::{
     AGENT_INSTRUCTIONS_MAX, AgentLibrary, PERSONAL_AGENTS_MAX, PersonalAgent, SessionAgentProfile,
@@ -1012,6 +1018,8 @@ pub struct AgentLaunchSelection {
     pub model: String,
     pub permission: String,
     pub reasoning: String,
+    #[serde(default, rename = "accountId", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 /// Exact current provenance for one Improve-with-agent Session. This is a
@@ -1071,6 +1079,7 @@ impl Default for AgentLaunchSelection {
             model: "default".into(),
             permission: "default".into(),
             reasoning: "default".into(),
+            account_id: None,
         }
     }
 }
@@ -1081,19 +1090,26 @@ impl AgentLaunchSelection {
             model: model.to_owned(),
             permission: permission.to_owned(),
             reasoning: reasoning.to_owned(),
+            account_id: None,
         }
     }
 
     pub fn is_well_formed(&self) -> bool {
-        [&self.model, &self.permission, &self.reasoning]
-            .into_iter()
-            .all(|value| {
-                !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
-            })
+        self.account_id
+            .as_deref()
+            .is_none_or(valid_agent_account_id)
+            && [&self.model, &self.permission, &self.reasoning]
+                .into_iter()
+                .all(|value| {
+                    !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
+                })
     }
 
     pub fn is_default(&self) -> bool {
-        self.model == "default" && self.permission == "default" && self.reasoning == "default"
+        self.model == "default"
+            && self.permission == "default"
+            && self.reasoning == "default"
+            && self.account_id.is_none()
     }
 }
 

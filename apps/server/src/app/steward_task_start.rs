@@ -120,14 +120,18 @@ pub(super) async fn start(
     let (session_id, reused_session) = match existing_session {
         Some(session_id) => (session_id, true),
         None => {
+            let mut launch_params = json!({
+                "taskId": params.task_id,
+                "agentId": plan.agent_id(),
+                "model": plan.launch_selection().model,
+                "permission": plan.launch_selection().permission,
+                "reasoning": plan.launch_selection().reasoning,
+            });
+            if let Some(account_id) = &plan.launch_selection().account_id {
+                launch_params["accountId"] = json!(account_id);
+            }
             let preview = super::control::preview_steward_task_agent_session(
-                json!({
-                    "taskId": params.task_id,
-                    "agentId": plan.agent_id(),
-                    "model": plan.launch_selection().model,
-                    "permission": plan.launch_selection().permission,
-                    "reasoning": plan.launch_selection().reasoning,
-                }),
+                launch_params.clone(),
                 steward_session_id,
                 &params.task_id,
                 &params.assignment,
@@ -140,15 +144,9 @@ pub(super) async fn start(
                 .get("launch_ticket")
                 .and_then(Value::as_str)
                 .ok_or_else(|| start_error(TaskAgentStartStage::AgentLaunch, true, false))?;
+            launch_params["launchTicket"] = json!(launch_ticket);
             let launched = super::control::launch_task_session(
-                json!({
-                    "taskId": params.task_id,
-                    "agentId": plan.agent_id(),
-                    "model": plan.launch_selection().model,
-                    "permission": plan.launch_selection().permission,
-                    "reasoning": plan.launch_selection().reasoning,
-                    "launchTicket": launch_ticket,
-                }),
+                launch_params,
                 true,
                 Instant::now() + Duration::from_secs(15),
                 state,

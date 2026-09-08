@@ -3,17 +3,20 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, atomic::Ordering, mpsc};
 use std::time::Duration;
+use termloop_agents::AgentAccountContext;
 use termloop_platform::{
     CommandRequest, CommandTermination, LaunchEnvironment, PrivateCommandExit,
     PrivateCommandRequest, resolve_launch_target, run_command, run_private_command,
     user_home_directory,
 };
 
-pub(super) fn status(provider: Provider, check_auth: bool) -> Status {
-    let environment = LaunchEnvironment::os_baseline();
+pub(super) fn status(account: &AgentAccountContext, check_auth: bool) -> Status {
+    let provider = Provider::parse(&account.agent_id).expect("validated account provider");
+    let environment = account.apply_environment(LaunchEnvironment::os_baseline());
     let target = resolve_launch_target(provider.command(), &environment).ok();
     let mut status = Status {
         agent_id: provider,
+        account_id: account.account_id.clone(),
         label: match provider {
             Provider::Codex => "Codex",
             Provider::Claude => "Claude",
@@ -33,6 +36,7 @@ pub(super) fn status(provider: Provider, check_auth: bool) -> Status {
     if let Ok(result) = run_command(
         CommandRequest::new(program)
             .args(args)
+            .launch_environment(environment.clone())
             .timeout(Duration::from_secs(5))
             .output_limit(1024),
     ) && result.success()
@@ -43,17 +47,23 @@ pub(super) fn status(provider: Provider, check_auth: bool) -> Status {
                 .map(|line| line.chars().filter(|c| !c.is_control()).take(128).collect())
         });
     }
-    if !check_auth {
+    if !check_auth || account.prepare().is_err() {
         return status;
     }
     let args = match provider {
         Provider::Codex => vec!["login", "status"],
         Provider::Claude => vec!["auth", "status", "--json"],
     };
+    let args = account
+        .credential_args()
+        .into_iter()
+        .chain(args.into_iter().map(String::from))
+        .collect::<Vec<_>>();
     let (program, args) = target.command_line(args);
     if let Ok(result) = run_command(
         CommandRequest::new(program)
             .args(args)
+            .launch_environment(environment.clone())
             .timeout(Duration::from_secs(8))
             .output_limit(8192),
     ) {
@@ -80,7 +90,7 @@ pub(super) fn status(provider: Provider, check_auth: bool) -> Status {
 }
 
 pub(super) fn run(
-    provider: Provider,
+    account: AgentAccountContext,
     action: Action,
     snapshot: Arc<Mutex<Operation>>,
     control: SetupControl,
@@ -89,7 +99,7 @@ pub(super) fn run(
     registry: PathBuf,
 ) {
     let result = run_inner(
-        provider, action, &snapshot, &control, input, receiver, registry,
+        &account, action, &snapshot, &control, input, receiver, registry,
     );
     let mut operation = snapshot.lock().unwrap();
     // A structured success ends the app server intentionally; cleanup happens
@@ -112,7 +122,7 @@ pub(super) fn run(
 }
 
 fn run_inner(
-    provider: Provider,
+    account: &AgentAccountContext,
     action: Action,
     snapshot: &Arc<Mutex<Operation>>,
     control: &SetupControl,
@@ -120,9 +130,14 @@ fn run_inner(
     receiver: mpsc::Receiver<Vec<u8>>,
     registry: PathBuf,
 ) -> Result<bool, &'static str> {
+    let provider = Provider::parse(&account.agent_id)?;
+    account
+        .prepare()
+        .map_err(|_| "Could not prepare the private account directory.")?;
     let cancel = control.cancel.clone();
     let home = user_home_directory().ok_or("The server user’s home directory is unavailable.")?;
-    let environment = LaunchEnvironment::os_baseline()
+    let environment = account
+        .apply_environment(LaunchEnvironment::os_baseline())
         .with_explicit("BROWSER", "echo")
         .with_explicit("NO_COLOR", "1");
     let (command, args) = match action {
@@ -166,6 +181,16 @@ fn run_inner(
                 vec!["auth".into(), "logout".into()]
             },
         ),
+    };
+    let args: Vec<std::ffi::OsString> = if action == Action::Install {
+        args
+    } else {
+        account
+            .credential_args()
+            .into_iter()
+            .map(Into::into)
+            .chain(args)
+            .collect()
     };
     let target = resolve_launch_target(command, &environment).map_err(|_| "CLI unavailable. Install Node.js and npm on this server to enable installation, or install the provider CLI manually.")?;
     let (program, args) = target.command_line(args);
@@ -222,12 +247,12 @@ fn run_inner(
     }
     match outcome {
         PrivateCommandExit::Exited(true) => {
-            if action == Action::Install && !status(provider, false).installed {
+            if action == Action::Install && !status(account, false).installed {
                 return Err(
                     "Installation finished but the CLI is not discoverable. Check this server’s PATH.",
                 );
             }
-            if action == Action::SignIn && status(provider, true).auth_state != "signedIn" {
+            if action == Action::SignIn && status(account, true).auth_state != "signedIn" {
                 return Err(
                     "The provider did not confirm sign-in. Refresh or start a new attempt.",
                 );
@@ -384,6 +409,7 @@ mod tests {
     fn codex_device_auth_requires_matching_structured_completion() {
         let operation = Arc::new(Mutex::new(Operation {
             agent_id: Provider::Codex,
+            account_id: "default".into(),
             operation_id: "our-operation".into(),
             action: Action::SignIn,
             phase: Phase::Starting,

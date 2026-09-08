@@ -236,6 +236,8 @@ impl CoreRuntime {
                 resume_ref: Some(&resume_ref),
             },
         };
+        let account = self.session_agent_account(&current_session)?;
+        let conversation = conversation.in_account(account.as_ref());
         let launch = termloop_invocation::configured_interactive_agent_for_worktree_relocation(
             agent_id,
             &current_session.process.cwd,
@@ -383,6 +385,11 @@ impl CoreRuntime {
                 claude_config_path: &transport.claude_mcp_config_path,
                 profile: mcp_role.invocation_profile(),
             });
+        let account = self.session_agent_account(&session)?;
+        let base_conversation = termloop_invocation::AgentConversationLaunch::Resume {
+            resume_ref: &resume_ref,
+        };
+        let conversation = base_conversation.in_account(account.as_ref());
         let launch = if let AgentMcpRole::Helper { request_id } = &mcp_role {
             termloop_invocation::configured_ask_to_helper_for_conversation_resume(
                 agent_id,
@@ -391,9 +398,7 @@ impl CoreRuntime {
                 &session.launch_selection.permission,
                 &session.launch_selection.reasoning,
                 request_id.as_deref(),
-                termloop_invocation::AgentConversationLaunch::Resume {
-                    resume_ref: &resume_ref,
-                },
+                conversation,
                 observation,
                 mcp,
             )
@@ -407,9 +412,7 @@ impl CoreRuntime {
                 &session.launch_selection.model,
                 &session.launch_selection.permission,
                 &session.launch_selection.reasoning,
-                termloop_invocation::AgentConversationLaunch::Resume {
-                    resume_ref: &resume_ref,
-                },
+                conversation,
                 observation,
                 mcp,
             )
@@ -654,7 +657,9 @@ impl CoreRuntime {
         let retired_codex_runtime = source_was_running
             .then(|| self.codex_runtimes.remove(&session_id))
             .flatten();
+        let account = self.session_agent_account(&session)?;
         Ok(AgentResumePlanOutcome::Prepare(Box::new(AgentResumePlan {
+            account,
             session_id,
             project_id: session.project_id,
             cwd: target_cwd.clone(),
