@@ -1,13 +1,13 @@
-import type { WorkflowConfigurationDto } from "@termloop/contract/current";
+import type { WorkflowConfigurationDto, WorkflowExecutionDto } from "@termloop/contract/current";
 import type { WorkflowTemplatesPort } from "../../application/workflow-templates-port";
 import { fixtureAgentCapabilities } from "../../fixtures/mobile-overview";
 
 // In-memory demo data only. Each mock runtime owns its own isolated catalog.
-export function createMockWorkflowTemplates(): WorkflowTemplatesPort {
+export function createMockWorkflowTemplates(preview?: { configuration: WorkflowConfigurationDto; execution: WorkflowExecutionDto }): WorkflowTemplatesPort {
   const connections = new Map<string, { revision: number; sequence: number; configurations: WorkflowConfigurationDto[] }>();
   const state = (id: string) => {
     let value = connections.get(id);
-    if (!value) { value = { revision: 1, sequence: 0, configurations: [] }; connections.set(id, value); }
+    if (!value) { value = { revision: 1, sequence: 0, configurations: id === "connection-local-mac" && preview ? [copy(preview.configuration)] : [] }; connections.set(id, value); }
     return value;
   };
   const copy = (configuration: WorkflowConfigurationDto) => ({ ...configuration, steps: configuration.steps.map((step) => ({ ...step })) });
@@ -15,7 +15,7 @@ export function createMockWorkflowTemplates(): WorkflowTemplatesPort {
   return {
     async list(connectionId, projectId) {
       const current = state(connectionId);
-      return { configurations: current.configurations.filter((item) => item.projectId === projectId).map(copy), executions: [], stateRevision: current.revision };
+      return { configurations: current.configurations.filter((item) => item.projectId === projectId).map(copy), executions: preview && connectionId === "connection-local-mac" && preview.execution.projectId === projectId ? [JSON.parse(JSON.stringify(preview.execution)) as WorkflowExecutionDto] : [], stateRevision: current.revision };
     },
     async catalog() { return { capabilities: fixtureAgentCapabilities, profiles: [] }; },
     async create(connectionId, params) {

@@ -1,6 +1,7 @@
 import { CONTRACT_IDENTITY, type SessionRelocationPreviewDto } from "@termloop/contract/current";
 import { createMockWorkflowTemplates } from "./workflow-templates";
 import { createMockWorkflowLaunch } from "./workflow-launch";
+import { fixtureWorkflowProgress } from "../../fixtures/workflow-progress";
 
 import type {
   ConnectionProfile,
@@ -74,7 +75,9 @@ export interface MockTerminalInspection {
   readonly sessionActions: { action: string; sessionId: string; target?: string }[];
 }
 
-export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalInspection } {
+export function createMockRuntime(options: { workflowPreview?: boolean } = {}): MobileRuntime & { inspection: MockTerminalInspection } {
+  const workflowPreview = options.workflowPreview ? fixtureWorkflowProgress() : undefined;
+  const sessionFixtures = workflowPreview?.sessions ?? fixtureSessions;
   const inputs: Uint8Array[] = [];
   const detachedSessions: string[] = [];
   const positionsSet: { taskId: string; passedMilestoneCount: number }[] = [];
@@ -115,7 +118,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
 
   return {
     kind: "mock",
-    workflowTemplates: createMockWorkflowTemplates(),
+    workflowTemplates: createMockWorkflowTemplates(workflowPreview),
     workflowLaunch: createMockWorkflowLaunch(),
     voiceReceipts: {
       async read(connectionId, projectId) {
@@ -147,8 +150,8 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
           stewardExecutorSessionIds: {},
           agentGroupsByProject: {},
           tasks: fixtureTasks.map((task) => ({ ...task })),
-          sessions: fixtureSessions.map((session) => ({ ...session })),
-          agentStatuses: fixtureAgentStatuses.map((status) => ({ ...status })),
+          sessions: sessionFixtures.map((session) => ({ ...session })),
+          agentStatuses: (workflowPreview?.statuses ?? fixtureAgentStatuses).map((status) => ({ ...status })),
         };
       },
       subscribeInvalidations() {
@@ -380,7 +383,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
     terminal: {
       async attach(connectionId, session, onEvent) {
         if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
-        const expected = fixtureSessions.find((candidate) => candidate.id === session.id);
+        const expected = sessionFixtures.find((candidate) => candidate.id === session.id);
         if (!expected || expected.runtime_epoch !== session.runtime_epoch) {
           throw new Error("mock terminal epoch is stale");
         }
@@ -410,7 +413,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
     },
     images: {
       async upload(connectionId, sessionId) {
-        if (connectionId !== profiles[0]?.id || !fixtureSessions.some((session) => session.id === sessionId)) {
+        if (connectionId !== profiles[0]?.id || !sessionFixtures.some((session) => session.id === sessionId)) {
           throw new Error("mock image target was not found");
         }
         return `.termloop-runtime/mobile-attachments/${sessionId}/image.png`;

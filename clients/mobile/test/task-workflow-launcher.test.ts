@@ -2,13 +2,15 @@ import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockRuntime } from "../src/adapters/mock/mock-runtime";
 import { WorkflowLaunchUnconfirmedError } from "../src/application/workflow-launch-port";
 import { fixtureTasks, fixtureSessions } from "../src/fixtures/mobile-overview";
 import { startingWorkflowSteps, workflowDraft } from "../src/presentation/workflow-template";
 
 const require = createRequire(import.meta.url);
+const cleanups: (() => void)[] = [];
+afterEach(() => { cleanups.splice(0).forEach((cleanup) => cleanup()); });
 type Component = typeof import("../src/features/workflows/task-workflow-launcher").TaskWorkflowLauncher;
 type Props = Parameters<Component>[0];
 type NodeProps = Record<string, any>;
@@ -16,7 +18,7 @@ async function propsForTask(): Promise<Props> {
   const runtime = createMockRuntime();
   const task = { ...fixtureTasks[0]!, brief: "Implement the Task description" };
   await runtime.workflowTemplates.create("connection-local-mac", { ...workflowDraft(), name: "Build & review", steps: startingWorkflowSteps("reviewed"), projectId: task.project_id, expectedRevision: 1 });
-  return { task, connectionId: "connection-local-mac", online: true, templates: runtime.workflowTemplates, launch: { start: vi.fn(async () => fixtureSessions[0]!) }, control: runtime.control, openTemplates: vi.fn(), openSession: vi.fn() };
+  return { task, connectionId: "connection-local-mac", online: true, templates: runtime.workflowTemplates, launch: { start: vi.fn(async () => fixtureSessions[0]!) }, control: runtime.control, sessions: fixtureSessions, statuses: [], agentDataStale: false, openTemplates: vi.fn(), openSession: vi.fn() };
 }
 
 describe("Task workflow quick launch", () => {
@@ -29,9 +31,12 @@ describe("Task workflow quick launch", () => {
     start(); start();
     expect(props.launch.start).toHaveBeenCalledOnce();
     expect(props.launch.start).toHaveBeenCalledWith(props.connectionId, { taskId: props.task.id, workflowId: "mock-workflow-1", goal: props.task.brief }, expect.objectContaining({ name: "Build & review" }));
-    await vi.waitFor(() => expect(props.openSession).toHaveBeenCalledWith(fixtureSessions[0]!.id));
+    await vi.waitFor(() => expect(find(h.render(props), "Open workflow agent")).toBeDefined());
+    expect(props.openSession).not.toHaveBeenCalled();
     expect(find(h.render(props), "Start workflow")).toBeUndefined();
     expect(find(h.render(props), "Open workflow agent")).toBeDefined();
+    find(h.render(props), "Open workflow agent")!.onPress();
+    expect(props.openSession).toHaveBeenCalledWith(fixtureSessions[0]!.id);
   });
 
   it("uses the title until a description arrives and never overwrites an edited goal on refresh", async () => {
@@ -95,7 +100,7 @@ describe("Task workflow quick launch", () => {
       props.templates.list = vi.fn(async () => ({ ...snapshot, executions: [{ id: "execution-a", projectId: props.task.project_id, taskId: props.task.id, workflowId: "mock-workflow-1", workflowGeneration: 1, goal: "Task goal", status, coordinatorSessionId: "existing-lead", workflowName: "Existing workflow", phase: "awaitingStepCompletion" as const, currentStepIndex: 0, reviewCycle: 0, maxReviewCycles: 2, completionOutcome: null, steps: snapshot.configurations[0]!.steps, participants: [], activeReviewStepIds: [], pendingReviewStepIds: [], stepResults: [], startedAtEpochMs: 1, updatedAtEpochMs: 1 }] }));
       await h.ready(props);
       expect(find(h.render(props), "Start workflow")).toBeUndefined();
-      find(h.render(props), "Open workflow agent")!.onPress();
+      find(h.render(props), (item) => item.execution?.id === "execution-a")!.openSession("existing-lead");
       expect(props.openSession).toHaveBeenCalledWith("existing-lead");
       expect(props.launch.start).not.toHaveBeenCalled();
     }
@@ -117,7 +122,7 @@ async function harness() {
     useEffect(effect: () => void | (() => void), deps: unknown[]) { const index = cursor++; if (!same(slots[index]?.deps, deps)) { slots[index]?.cleanup?.(); slots[index] = { deps }; queued.push(() => { slots[index].cleanup = effect(); }); } },
   };
   const native = { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (value: unknown) => value } };
-  const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/features/workflows/task-workflow-launcher.tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "expo-router", "../../components/primitives", "../../application/workflow-launch-port", "../../platform/app-lifecycle"] });
+  const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/features/workflows/task-workflow-launcher.tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "expo-router", "../../components/primitives", "../../application/workflow-launch-port", "../../platform/app-lifecycle", "./workflow-execution-card"] });
   const module = { exports: {} as { TaskWorkflowLauncher: Component } };
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)((name: string) => {
     if (name === "react") return react;
@@ -125,16 +130,18 @@ async function harness() {
     if (name === "expo-router") return { useFocusEffect: (effect: () => void | (() => void)) => { if (focusEffect !== effect) { focusCleanup?.(); focusEffect = effect; queued.push(() => { focusCleanup = effect(); }); } } };
     if (name.endsWith("/app-lifecycle")) return { useAppLifecycle: () => ({ active: true, foregroundRevision: 0 }) };
     if (name.endsWith("/workflow-launch-port")) return { WorkflowLaunchUnconfirmedError };
+    if (name.endsWith("/workflow-execution-card")) return { WorkflowExecutionCard: "WorkflowExecutionCard" };
     if (name.endsWith("/primitives")) return { Banner: "Banner", PrimaryButton: "PrimaryButton" };
     return require(name);
   }, module, module.exports);
   const render = (props: Props) => { cursor = 0; const tree = module.exports.TaskWorkflowLauncher(props); const effects = queued; queued = []; effects.forEach((effect) => effect()); return tree; };
+  cleanups.push(() => { focusCleanup?.(); slots.forEach((slot) => slot?.cleanup?.()); });
   return { render, ready: async (props: Props) => { render(props); await new Promise((resolve) => setTimeout(resolve, 0)); render(props); }, refocus: () => { focusCleanup?.(); focusEffect = undefined; } };
 }
 
-function find(node: ReactNode, label: string): NodeProps | undefined {
+function find(node: ReactNode, label: string | ((props: NodeProps) => boolean)): NodeProps | undefined {
   if (Array.isArray(node)) { for (const child of node) { const found = find(child, label); if (found) return found; } }
   if (!isValidElement<NodeProps>(node)) return undefined;
-  if (node.props.label === label) return node.props;
+  if (typeof label === "function" ? label(node.props) : node.props.label === label) return node.props;
   return find(node.props.children, label);
 }
