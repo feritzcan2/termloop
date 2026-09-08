@@ -10,6 +10,7 @@ import {
   type AppUpdateResult,
 } from "@/platform/app-update";
 import { expoAppUpdateClient } from "@/platform/expo-app-update-client";
+import { logMobileAppUpdate } from "@/platform/mobile-sentry";
 import { color, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -35,14 +36,23 @@ export default function ForceUpdateRoute() {
   const update = useCallback(async () => {
     setError(undefined);
     setState("checking");
+    logMobileAppUpdate("check_started", group === undefined ? {} : { requestedGroup: group });
     try {
       const result = await forceLatestAppUpdate({ client: expoAppUpdateClient, onPhase: setState });
+      logMobileAppUpdate("check_finished", {
+        ...(group === undefined ? {} : { requestedGroup: group }),
+        result,
+      });
       setState(result);
     } catch (cause) {
+      logMobileAppUpdate("check_failed", {
+        ...(group === undefined ? {} : { requestedGroup: group }),
+        cause,
+      });
       setError(cause instanceof Error ? cause.message : "The update could not be downloaded.");
       setState("error");
     }
-  }, []);
+  }, [group]);
 
   useEffect(() => { void update(); }, [update]);
 

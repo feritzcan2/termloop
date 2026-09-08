@@ -17,6 +17,7 @@ describe("presentation store", () => {
       layoutsByProject: {},
       layoutLoaded: false,
       layoutRevision: 0,
+      navigationRevision: 0,
       projectDialogOpen: false,
     });
   });
@@ -77,6 +78,19 @@ describe("presentation store", () => {
     expect(state).not.toHaveProperty("runtimeEpoch");
     expect(state).not.toHaveProperty("cwd");
     expect(state).not.toHaveProperty("tasks");
+  });
+
+  it("advances navigation identity only for explicit Project and Session choices", () => {
+    const sessions = new Map<string, readonly string[]>([["project-a", ["session-a1", "session-a2"]]]);
+    presentationStore.getState().ensureSelection(["project-a"], sessions);
+    expect(presentationStore.getState().navigationRevision).toBe(0);
+
+    presentationStore.getState().selectProject("project-a");
+    presentationStore.getState().selectSession("project-a", "session-a2");
+    expect(presentationStore.getState().navigationRevision).toBe(2);
+
+    presentationStore.getState().ensureSelection(["project-a"], sessions);
+    expect(presentationStore.getState().navigationRevision).toBe(2);
   });
 
   it("keeps explicit detach through projection refresh without terminating or reselecting", () => {

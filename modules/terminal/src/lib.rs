@@ -1278,6 +1278,24 @@ impl TerminalService {
     }
 
     pub fn terminate(&self, session_id: &str) -> Result<(), TerminalError> {
+        self.terminate_selected(session_id, None)
+    }
+
+    /// Stops only the selected runtime generation. A missing or replaced
+    /// generation returns SessionNotFound without touching its successor.
+    pub fn terminate_epoch(
+        &self,
+        session_id: &str,
+        runtime_epoch: u64,
+    ) -> Result<(), TerminalError> {
+        self.terminate_selected(session_id, Some(runtime_epoch))
+    }
+
+    fn terminate_selected(
+        &self,
+        session_id: &str,
+        runtime_epoch: Option<u64>,
+    ) -> Result<(), TerminalError> {
         let registry = self
             .inner
             .runtimes
@@ -1292,6 +1310,7 @@ impl TerminalService {
                 .map_err(|_| TerminalError::RegistryPoisoned)?;
             let launch = launching
                 .get(session_id)
+                .filter(|launch| runtime_epoch.is_none_or(|epoch| launch.runtime_epoch == epoch))
                 .cloned()
                 .ok_or(TerminalError::SessionNotFound)?;
             launch.cancelled.store(true, Ordering::Release);
@@ -1304,6 +1323,9 @@ impl TerminalService {
             let mut runtime_guard = runtime
                 .lock()
                 .map_err(|_| TerminalError::RegistryPoisoned)?;
+            if runtime_epoch.is_some_and(|epoch| runtime_guard.epoch != epoch) {
+                return Err(TerminalError::SessionNotFound);
+            }
             terminate_child(runtime_guard.child.as_mut())?;
         }
 
@@ -1566,7 +1588,12 @@ mod tests {
             terminal.reserve_launch("launching", 7),
             Err(TerminalError::SessionExists)
         ));
-        terminal.terminate("launching").unwrap();
+        assert!(matches!(
+            terminal.terminate_epoch("launching", 6),
+            Err(TerminalError::SessionNotFound)
+        ));
+        assert!(!reservation.cancelled());
+        terminal.terminate_epoch("launching", 7).unwrap();
         assert!(!terminal.session_is_running("launching", 7).unwrap());
         assert!(reservation.cancelled());
 
@@ -2245,6 +2272,11 @@ mod tests {
         let service = TerminalService::default();
         service.spawn(spec("terminate")).unwrap();
         assert!(matches!(
+            service.terminate_epoch("terminate", 78),
+            Err(TerminalError::SessionNotFound)
+        ));
+        assert!(service.session_is_running("terminate", 77).unwrap());
+        assert!(matches!(
             service.subscribe("terminate", 78),
             Err(TerminalError::SessionNotFound)
         ));
@@ -2263,7 +2295,7 @@ mod tests {
             ),
             Err(TerminalError::Pty(_))
         ));
-        service.terminate("terminate").unwrap();
+        service.terminate_epoch("terminate", 77).unwrap();
         assert!(matches!(
             service.subscribe("terminate", 77),
             Err(TerminalError::SessionNotFound)
