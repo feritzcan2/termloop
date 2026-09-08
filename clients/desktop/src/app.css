@@ -2607,9 +2607,16 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .agent-empty-hint { margin: 0; color: var(--sidebar-dimmer); font: 9.5px/1.5 var(--font-ui); }
 .active-agent-section .rail-subhead { justify-content: space-between; padding-top: 7px; }
 .active-agent-section .rail-subhead::after { display: none; }
-.active-agent-list { display: grid; gap: 1px; padding: 0 7px; }
+.active-agent-list { display: grid; grid-template-columns: minmax(0,1fr); gap: 1px; padding: 0 7px; }
 .active-agent-row { grid-template-columns: minmax(0,1fr) 20px; gap: 1px; padding-right: 4px; }
 .active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
+.active-agent-entry { min-width: 0; }
+.active-agent-workflow { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); min-width: 0; min-height: 24px; margin: 2px 4px 0; padding: 3px 7px; border: 0; border-radius: 5px; background: var(--accent-wash); color: var(--accent-strong); text-align: left; }
+.active-agent-workflow-action { flex: 0 0 auto; font: 600 10px/1.4 var(--font-ui); }
+.active-agent-workflow-step { min-width: 0; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.active-agent-workflow.needs-resume { box-shadow: inset 2px 0 var(--accent-strong); }
+.active-agent-workflow:hover { background: light-dark(rgba(31,112,181,.13), rgba(102,179,255,.18)); }
+.active-agent-workflow:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
 /* Extend the helper's real box through the detach control. Keeping the button
    outside that box made the parent lose :hover before the pointer could reach
    it, so the control disappeared while crossing the connector. The matching
@@ -2617,7 +2624,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .active-agent-helper { gap: 0; margin: -1px 4px 2px -5px; padding-left: 14px; }
 .active-agent-helper::before { display: block; top: -7px; bottom: 15px; left: 6px; }
 .active-agent-helper .ask-to-helper-detach { top: 8px; left: 0; }
-.active-agent-helper-row { display: block; }
+.active-agent-helper-row { display: block; min-width: 0; }
 .active-agent-helper-row .active-agent-row { min-width: 0; padding-right: 0; }
 .active-agent-row .session-item { min-height: 36px; grid-template-columns: 20px minmax(0,1fr) 10px; gap: 6px; padding: 3px 7px; border-radius: 6px; }
 .active-agent-row .row-copy { gap: 1px; }
