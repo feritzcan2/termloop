@@ -32,87 +32,88 @@ export function TaskBrowser(props: TaskBrowserProps) {
   const reset = () => { setFilter("all"); setQuery(""); resetScroll(); };
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.toolbar}>
-        <View style={styles.heading}>
-          <View style={styles.headingCopy}>
-            <Text style={styles.title} accessibilityRole="header">Your tasks</Text>
-            <Text style={styles.subtitle}>{items.length} open · Needs attention first</Text>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Workflow templates" onPress={props.openTemplates} style={styles.templates}>
-            <Text style={styles.templatesLabel}>Templates</Text>
-            <Text style={styles.templatesArrow} accessibilityElementsHidden>↗</Text>
-          </Pressable>
-        </View>
-        {items.length === 0 ? null : (
-          <>
-            <View style={styles.search}>
-              <TextInput
-                accessibilityLabel="Search tasks"
-                placeholder="Search tasks, branches or issues"
-                placeholderTextColor={color.textMuted}
-                value={query}
-                onChangeText={(value) => { setQuery(value); resetScroll(); }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                style={styles.searchInput}
-              />
-              {query.length === 0 ? null : (
-                <Pressable accessibilityRole="button" accessibilityLabel="Clear task search" onPress={() => { setQuery(""); resetScroll(); }} style={styles.clear}>
-                  <Text style={styles.clearGlyph}>×</Text>
-                </Pressable>
-              )}
+    <FlatList
+      style={styles.screen}
+      ListHeaderComponent={(
+        <View style={styles.toolbar}>
+          <View style={styles.heading}>
+            <View style={styles.headingCopy}>
+              <Text style={styles.title} accessibilityRole="header">Your tasks</Text>
+              <Text style={styles.subtitle}>{items.length} open · Needs attention first</Text>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={styles.filters} contentContainerStyle={styles.filterContent}>
-              {taskFilters.map((option) => {
-                const count = option.id === "all" ? items.length : items.filter((item) => item.filter === option.id).length;
-                const selected = filter === option.id;
-                const signal = count > 0 && option.id === "attention" ? color.attention
-                  : count > 0 && option.id === "active" ? color.success : undefined;
-                return (
-                  <Pressable
-                    key={option.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${option.label}, ${count} tasks`}
-                    accessibilityState={{ selected }}
-                    onPress={() => { setFilter(option.id); resetScroll(); }}
-                    style={[styles.filter, signal && !selected ? { backgroundColor: `${signal}1F`, borderColor: signal } : null, selected ? styles.filterSelected : null]}
-                  >
-                    {signal ? <View style={[styles.filterDot, { backgroundColor: selected ? color.onAccent : signal }]} /> : null}
-                    <Text style={[styles.filterLabel, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{option.label}</Text>
-                    <Text style={[styles.filterCount, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{count}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Workflow templates" onPress={props.openTemplates} style={styles.templates}>
+              <Text style={styles.templatesLabel}>Templates</Text>
+              <Text style={styles.templatesArrow} accessibilityElementsHidden>↗</Text>
+            </Pressable>
+          </View>
+          {items.length === 0 ? null : (
+            <>
+              <View style={styles.search}>
+                <TextInput
+                  accessibilityLabel="Search tasks"
+                  placeholder="Search tasks, branches or issues"
+                  placeholderTextColor={color.textMuted}
+                  value={query}
+                  onChangeText={(value) => { setQuery(value); resetScroll(); }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  style={styles.searchInput}
+                />
+                {query.length === 0 ? null : (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Clear task search" onPress={() => { setQuery(""); resetScroll(); }} style={styles.clear}>
+                    <Text style={styles.clearGlyph}>×</Text>
                   </Pressable>
-                );
-              })}
-            </ScrollView>
-            {query.trim().length > 0 || filter !== "all" ? (
-              <Text style={styles.resultCount} accessibilityLiveRegion="polite">{visible.length} of {items.length} tasks</Text>
-            ) : null}
-          </>
-        )}
-      </View>
-      <FlatList
-        ref={list}
-        data={visible}
-        keyExtractor={(item) => item.row.taskId}
-        renderItem={({ item }) => <TaskCard item={item} openTask={props.openTask} openAgent={props.openAgent} openChanges={props.openChanges} />}
-        contentContainerStyle={styles.listContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        refreshing={props.refreshing}
-        onRefresh={props.refresh}
-        ListEmptyComponent={items.length === 0 ? (
-          <EmptyState title="A place for your next task" body="Tasks you create on your Mac appear here. Ask the Steward to help plan what comes next.">
-            <SecondaryButton label="Talk to Steward" onPress={props.openSteward} />
-          </EmptyState>
-        ) : (
-          <EmptyState title={query.trim() ? "No matching tasks" : "No tasks in this view"} body="Try a different search or show all open tasks.">
-            <SecondaryButton label="Show all tasks" onPress={reset} />
-          </EmptyState>
-        )}
-      />
-    </View>
+                )}
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={styles.filters} contentContainerStyle={styles.filterContent}>
+                {taskFilters.map((option) => {
+                  const count = option.id === "all" ? items.length : items.filter((item) => item.filter === option.id).length;
+                  const selected = filter === option.id;
+                  const signal = count > 0 && option.id === "attention" ? color.attention
+                    : count > 0 && option.id === "active" ? color.success : undefined;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${option.label}, ${count} tasks`}
+                      accessibilityState={{ selected }}
+                      onPress={() => { setFilter(option.id); resetScroll(); }}
+                      style={[styles.filter, signal && !selected ? { backgroundColor: `${signal}1F`, borderColor: signal } : null, selected ? styles.filterSelected : null]}
+                    >
+                      {signal ? <View style={[styles.filterDot, { backgroundColor: selected ? color.onAccent : signal }]} /> : null}
+                      <Text style={[styles.filterLabel, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{option.label}</Text>
+                      <Text style={[styles.filterCount, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{count}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {query.trim().length > 0 || filter !== "all" ? (
+                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{visible.length} of {items.length} tasks</Text>
+              ) : null}
+            </>
+          )}
+        </View>
+      )}
+      ref={list}
+      data={visible}
+      keyExtractor={(item) => item.row.taskId}
+      renderItem={({ item }) => <TaskCard item={item} openTask={props.openTask} openAgent={props.openAgent} openChanges={props.openChanges} />}
+      contentContainerStyle={styles.listContent}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      refreshing={props.refreshing}
+      onRefresh={props.refresh}
+      ListEmptyComponent={items.length === 0 ? (
+        <EmptyState title="A place for your next task" body="Tasks you create on your Mac appear here. Ask the Steward to help plan what comes next.">
+          <SecondaryButton label="Talk to Steward" onPress={props.openSteward} />
+        </EmptyState>
+      ) : (
+        <EmptyState title={query.trim() ? "No matching tasks" : "No tasks in this view"} body="Try a different search or show all open tasks.">
+          <SecondaryButton label="Show all tasks" onPress={reset} />
+        </EmptyState>
+      )}
+    />
   );
 }
 
@@ -184,7 +185,7 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  toolbar: { paddingTop: space.md, paddingHorizontal: space.screen, gap: space.md, paddingBottom: space.sm },
+  toolbar: { gap: space.md, paddingBottom: space.xs },
   heading: { flexDirection: "row", alignItems: "center", gap: space.sm },
   headingCopy: { flex: 1 },
   title: { color: color.text, fontSize: 23, fontWeight: "700", letterSpacing: -0.6 },
@@ -205,7 +206,7 @@ const styles = StyleSheet.create({
   filterCount: { fontSize: 12, fontVariant: ["tabular-nums"], color: color.textMuted },
   filterLabelSelected: { color: color.onAccent },
   resultCount: { color: color.textSecondary, fontSize: 12 },
-  listContent: { padding: space.screen, paddingTop: space.sm, paddingBottom: space.xl + 64, gap: space.md, flexGrow: 1 },
+  listContent: { padding: space.screen, paddingTop: space.md, paddingBottom: space.xl + 64, gap: space.md, flexGrow: 1 },
   card: { backgroundColor: color.bgRaised, borderRadius: 16, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: color.border },
   cardBody: { padding: space.lg, paddingTop: space.md, gap: 9 },
   cardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md },
