@@ -72,6 +72,66 @@ fn remote_skill_creation_is_strict_bounded_and_full_control_only() {
 }
 
 #[test]
+fn task_automation_workflows_require_a_worktree_and_exclude_single_agent_settings() {
+    let common = serde_json::json!({
+        "workflowId":"workflow-1", "worktreePrefix":"feature",
+        "baseRef":"refs/remotes/origin/develop", "agentId":null,
+        "model":null, "permission":null, "reasoning":null, "kickoffMessage":null
+    });
+    for (method, extra, mode_key, disabled_mode) in [
+        (
+            "project.taskAutomationSet",
+            serde_json::json!({"projectId":"project-1", "createWorktree":true, "expectedRevision":1}),
+            "createWorktree",
+            serde_json::json!(false),
+        ),
+        (
+            "task.create",
+            serde_json::json!({"projectId":"project-1", "title":"Build", "worktreeIntent":"provision"}),
+            "worktreeIntent",
+            serde_json::json!("inherit"),
+        ),
+        (
+            "taskSource.candidateImport",
+            serde_json::json!({"sourceId":"source-1", "externalId":"issue-1", "expectedGeneration":1, "expectedObservationSequence":1, "expectedRevision":1, "worktreeIntent":"provision"}),
+            "worktreeIntent",
+            serde_json::json!("none"),
+        ),
+    ] {
+        let mut params = common.clone();
+        params
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        assert!(
+            validate_method_params(method, &params),
+            "valid workflow for {method}"
+        );
+        for (field, value) in [
+            (mode_key, disabled_mode),
+            ("agentId", serde_json::json!("codex")),
+            ("model", serde_json::json!("default")),
+            ("permission", serde_json::json!("plan")),
+            ("reasoning", serde_json::json!("high")),
+            ("kickoffMessage", serde_json::json!("Start")),
+            ("workflowId", serde_json::json!("x".repeat(65))),
+        ] {
+            let mut invalid = params.clone();
+            invalid[field] = value;
+            assert!(
+                !validate_method_params(method, &invalid),
+                "{method} must reject {field}"
+            );
+        }
+        params.as_object_mut().unwrap().remove("workflowId");
+        assert!(
+            validate_method_params(method, &params),
+            "older worktree-only clients remain compatible"
+        );
+    }
+}
+
+#[test]
 fn project_task_automation_is_strict_and_revision_checked() {
     assert!(METHODS.contains(&"project.taskAutomationGet"));
     assert!(METHODS.contains(&"project.taskAutomationSet"));

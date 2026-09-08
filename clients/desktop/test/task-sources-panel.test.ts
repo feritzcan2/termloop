@@ -10,6 +10,7 @@ import type {
 } from "@termloop/contract/current";
 import { TaskSourcesPanel, type TaskSourceActions } from "../src/renderer/ui/TaskSourcesPanel.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
+import { workflowConfiguration } from "./workflow-fixture.js";
 import { candidate, source } from "./task-sources.test.js";
 
 /// Statuses belong to the boards that were asked for: adding Operations retires
@@ -29,6 +30,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
   const automation = () => state.automation ?? {
     projectId: "project-1",
     createWorktree: false,
+    workflowId: null,
     worktreePrefix: "termloop",
     baseRef: null,
     agentId: null,
@@ -59,6 +61,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
       state.automation = {
         projectId: params.projectId,
         createWorktree: params.createWorktree,
+        workflowId: params.workflowId ?? null,
         worktreePrefix: params.worktreePrefix,
         baseRef: params.baseRef,
         agentId: params.agentId,
@@ -320,6 +323,63 @@ describe("Task Sources panel", () => {
     expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Save defaults");
   });
 
+  it("saves a workflow default, replacing the single-agent settings", async () => {
+    const api = actions({ sources: [], candidates: [] });
+    api.setProjectAutomation = vi.fn(api.setProjectAutomation);
+    await render(api, { agentCapabilities: [fullAgentCapability("codex")], workflowConfigurations: [workflowConfiguration()] });
+    await flush();
+    const bar = host.querySelector('section[aria-label="New Task defaults"]')!;
+    await act(async () => { bar.querySelector<HTMLButtonElement>("button")!.click(); });
+    await act(async () => { bar.querySelector<HTMLInputElement>("#project-task-automation-start-agent")!.click(); });
+    await act(async () => { bar.querySelector<HTMLInputElement>("#project-task-automation-start-workflow")!.click(); });
+    expect(bar.querySelector<HTMLInputElement>("#project-task-automation-start-agent")!.checked).toBe(false);
+    expect(bar.querySelector<HTMLInputElement>("#project-task-automation-worktree")!.disabled).toBe(true);
+    expect(bar.querySelector<HTMLSelectElement>("#project-task-automation-workflow")!.value).toBe("workflow-1");
+    expect(bar.textContent).toContain("Task description becomes the goal");
+    await act(async () => { [...bar.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Save defaults")!.click(); });
+    await flush();
+    expect(api.setProjectAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      workflowId: "workflow-1", createWorktree: true, agentId: null, model: null,
+      permission: null, reasoning: null, kickoffMessage: null, expectedRevision: 4,
+    }));
+    expect(bar.querySelector('[data-testid="project-task-automation-summary"]')?.textContent).toContain("workflow · Build and verify");
+  });
+
+  it("prefills import with the workflow and sends a one-shot override without changing defaults", async () => {
+    const api = actions({ sources: [source()], candidates: [candidate()], automation: {
+      projectId: "project-1", createWorktree: true, worktreePrefix: "feature",
+      baseRef: "refs/remotes/origin/development", workflowId: "workflow-1",
+      agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null,
+    } });
+    api.importCandidate = vi.fn(api.importCandidate);
+    await render(api, { workflowConfigurations: [workflowConfiguration(), workflowConfiguration({ id: "workflow-2", name: "Review only" })] });
+    await flush();
+    await act(async () => { [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Import as Task")!.click(); });
+    expect(host.querySelector<HTMLSelectElement>("#task-candidate-import-workflow")!.value).toBe("workflow-1");
+    await setInput("task-candidate-import-workflow", "workflow-2");
+    const options = host.querySelector('[aria-label="Import ACME-1 as Task"]')!;
+    await act(async () => { [...options.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Create Task")!.click(); });
+    await flush();
+    expect(api.importCandidate).toHaveBeenCalledWith(expect.objectContaining({ worktreeIntent: "provision", workflowId: "workflow-2", agentId: null }));
+    expect(api.calls.some((call) => call.startsWith("automationSet:"))).toBe(false);
+  });
+
+  it("keeps a deleted workflow visible and blocks import until the user changes the choice", async () => {
+    const api = actions({ sources: [source()], candidates: [candidate()], automation: {
+      projectId: "project-1", createWorktree: true, worktreePrefix: "feature",
+      baseRef: "refs/remotes/origin/development", workflowId: "deleted-template",
+      agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null,
+    } });
+    await render(api);
+    await flush();
+    expect(host.querySelector('[data-testid="project-task-automation-summary"]')?.textContent).toContain("Unavailable template");
+    await act(async () => { [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Import as Task")!.click(); });
+    const options = host.querySelector('[aria-label="Import ACME-1 as Task"]')!;
+    expect(options.textContent).toContain("No agent will be substituted");
+    expect([...options.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Create Task")!.disabled).toBe(true);
+    expect(api.calls.some((call) => call.startsWith("import:"))).toBe(false);
+  });
+
   it("keeps the launch-profile editor and its choices visible after a rejected save", async () => {
     const api = actions({ sources: [source()], candidates: [] });
     api.setProjectAutomation = async () => { throw new Error("state revision changed; try again"); };
@@ -373,6 +433,7 @@ describe("Task Sources panel", () => {
       automation: {
         projectId: "project-1",
         createWorktree: true,
+        workflowId: null,
         worktreePrefix: "termloop",
         baseRef: "refs/remotes/origin/development",
         agentId: "codex",
@@ -437,6 +498,7 @@ describe("Task Sources panel", () => {
       automation: {
         projectId: "project-1",
         createWorktree: true,
+        workflowId: null,
         worktreePrefix: "termloop",
         baseRef: "refs/remotes/origin/development",
         agentId: "codex",
