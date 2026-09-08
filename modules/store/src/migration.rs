@@ -22,6 +22,9 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         merge_legacy_playbook_conditions(&mut value)?;
         remove_retired_mcp_tool_description_overrides(&mut value)?;
     }
+    if schema_version < 61 {
+        remove_orphan_conversation_readiness(&mut value);
+    }
     match schema_version {
         1 => {
             add_legacy_generation_fields(&mut value)?;
@@ -557,7 +560,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        57..=59 => {
+        57..=60 => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             state.schema_version = CURRENT_SCHEMA_VERSION;
@@ -573,6 +576,30 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             Ok((state, sanitized))
         }
         unsupported => Err(StoreError::UnsupportedSchema(unsupported)),
+    }
+}
+
+fn remove_orphan_conversation_readiness(value: &mut serde_json::Value) {
+    let session_ids = value
+        .get("sessions")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|session| session.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(records) = value
+        .get_mut("agent_conversation_readiness")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        // Repair only references to deleted Sessions. Malformed, missing, or
+        // duplicate readiness for existing Sessions still fails validation.
+        records.retain(|record| {
+            record
+                .get("sessionId")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|id| session_ids.contains(id))
+        });
     }
 }
 

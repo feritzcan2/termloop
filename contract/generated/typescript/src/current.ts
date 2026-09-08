@@ -4375,12 +4375,19 @@ type PendingControlCall = {
   readonly reject: (error: Error) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
 };
+type ConnectingControlSocket = {
+  readonly socket: SocketLike;
+  readonly promise: Promise<SocketLike>;
+  readonly reject: (error: Error) => void;
+  readonly timeout: ReturnType<typeof setTimeout>;
+};
 const MAX_CONTROL_IN_FLIGHT = 64;
+const CONTROL_CONNECTION_TIMEOUT_MS = 12_000;
 export class TermLoopControlClient {
   #counter = 0;
   #generation = 0;
   #socket: SocketLike | undefined;
-  #connecting: Promise<SocketLike> | undefined;
+  #connecting: ConnectingControlSocket | undefined;
   #pending = new Map<string, PendingControlCall>();
   constructor(readonly url: string, readonly token: string, readonly socketFactory: SocketFactory) {}
   async call<M extends Method>(method: M, ...args: CallArgs<M>): Promise<ResultFor<M>> {
@@ -4392,8 +4399,9 @@ export class TermLoopControlClient {
     return await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
-        this.#cancelTimedOutRequest(id, method);
         reject(new Error("request timeout"));
+        if (this.#connecting) this.#disconnect(this.#generation, new Error("connection timeout"));
+        else this.#cancelTimedOutRequest(id, method);
       }, controlRequestTimeoutMs(method));
       this.#pending.set(id, {
         method,
@@ -4401,12 +4409,11 @@ export class TermLoopControlClient {
         reject,
         timeout,
       });
-      void Promise.resolve().then(() => this.#connected()).then((socket) => {
-        if (!this.#pending.has(id)) return;
+      void Promise.resolve().then(() => this.#pending.has(id) ? this.#connected() : undefined).then((socket) => {
+        if (!socket || !this.#pending.has(id)) return;
         try {
           socket.send(JSON.stringify({ id, protocolVersion: CONTRACT_IDENTITY, token: this.token, method, params } satisfies ControlRequest));
         } catch {
-          socket.close();
           this.#disconnect(this.#generation, new Error("connection failed"));
         }
       }).catch(() => {
@@ -4419,44 +4426,41 @@ export class TermLoopControlClient {
     });
   }
   close(): void {
-    const socket = this.#socket;
-    this.#generation += 1;
-    this.#socket = undefined;
-    this.#connecting = undefined;
-    this.#rejectPending(new Error("connection closed"));
-    socket?.close();
+    this.#disconnect(this.#generation, new Error("connection closed"));
   }
   #connected(): Promise<SocketLike> {
     if (this.#socket) return Promise.resolve(this.#socket);
-    if (this.#connecting) return this.#connecting;
+    if (this.#connecting) return this.#connecting.promise;
     const generation = ++this.#generation;
     const socket = this.socketFactory(this.url);
-    const connecting = new Promise<SocketLike>((resolve, reject) => {
-      let opened = false;
-      socket.addEventListener("open", () => {
-        if (generation !== this.#generation) {
-          socket.close();
-          reject(new Error("connection superseded"));
-          return;
-        }
-        opened = true;
-        this.#socket = socket;
-        this.#connecting = undefined;
-        resolve(socket);
-      }, { once: true });
-      socket.addEventListener("message", (event) => this.#receive(generation, event));
-      socket.addEventListener("error", () => {
-        if (!opened) reject(new Error("connection failed"));
-        this.#disconnect(generation, new Error("connection failed"));
-        socket.close();
-      }, { once: true });
-      socket.addEventListener("close", () => {
-        if (!opened) reject(new Error("connection closed"));
-        this.#disconnect(generation, new Error("connection closed"));
-      }, { once: true });
+    let resolveConnection!: (socket: SocketLike) => void;
+    let rejectConnection!: (error: Error) => void;
+    const promise = new Promise<SocketLike>((resolve, reject) => {
+      resolveConnection = resolve;
+      rejectConnection = reject;
     });
-    this.#connecting = connecting;
-    return connecting;
+    const timeout = setTimeout(() => {
+      this.#disconnect(generation, new Error("connection timeout"));
+    }, CONTROL_CONNECTION_TIMEOUT_MS);
+    this.#connecting = { socket, promise, reject: rejectConnection, timeout };
+    socket.addEventListener("open", () => {
+      if (generation !== this.#generation) {
+        socket.close();
+        return;
+      }
+      clearTimeout(timeout);
+      this.#socket = socket;
+      this.#connecting = undefined;
+      resolveConnection(socket);
+    }, { once: true });
+    socket.addEventListener("message", (event) => this.#receive(generation, event));
+    socket.addEventListener("error", () => {
+      this.#disconnect(generation, new Error("connection failed"));
+    }, { once: true });
+    socket.addEventListener("close", () => {
+      this.#disconnect(generation, new Error("connection closed"));
+    }, { once: true });
+    return promise;
   }
   #receive(generation: number, event: any): void {
     if (generation !== this.#generation) return;
@@ -4464,15 +4468,11 @@ export class TermLoopControlClient {
     try {
       decoded = JSON.parse(typeof event.data === "string" ? event.data : event.data.toString());
     } catch {
-      const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
-      socket?.close();
       return;
     }
     if (!isJsonObject(decoded)) {
-      const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
-      socket?.close();
       return;
     }
     // Subscription events share the connection but have no request id. They
@@ -4498,17 +4498,22 @@ export class TermLoopControlClient {
         params: { requestId },
       } satisfies ControlRequest));
     } catch {
-      const socket = this.#socket;
       this.#disconnect(this.#generation, new Error("connection failed"));
-      socket?.close();
     }
   }
   #disconnect(generation: number, error: Error): void {
     if (generation !== this.#generation) return;
+    const connecting = this.#connecting;
+    const socket = this.#socket ?? connecting?.socket;
     this.#generation += 1;
     this.#socket = undefined;
     this.#connecting = undefined;
+    if (connecting) {
+      clearTimeout(connecting.timeout);
+      connecting.reject(error);
+    }
     this.#rejectPending(error);
+    socket?.close();
   }
   #rejectPending(error: Error): void {
     const pending = [...this.#pending.values()];
