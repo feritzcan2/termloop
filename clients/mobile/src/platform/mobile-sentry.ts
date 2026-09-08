@@ -4,6 +4,7 @@ import * as Updates from "expo-updates";
 
 import { subscribeMobileDiagnostics } from "./mobile-diagnostics";
 import { mobileSentryDiagnostic } from "./sentry-diagnostics";
+import { correctMobileLogTimestamps } from "./sentry-log-clock";
 
 const SENTRY_DSN = "https://f947d94551545970dcb7e607aa06e13a@o4511248981164032.ingest.de.sentry.io/4512013745979472";
 const enabled = !__DEV__;
@@ -33,6 +34,7 @@ Sentry.init({
 });
 
 if (enabled) {
+  Sentry.getClient()?.on("beforeEnvelope", correctMobileLogTimestamps);
   Sentry.setTags({
     "app.version": Application.nativeApplicationVersion ?? "unknown",
     "app.build": Application.nativeBuildVersion ?? "unknown",
