@@ -164,6 +164,7 @@ mod relocation;
 mod repair;
 mod run_configuration;
 mod session;
+mod session_admission;
 mod task_branch;
 mod task_source;
 mod workflow;
