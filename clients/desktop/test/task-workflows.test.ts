@@ -135,6 +135,7 @@ describe("Task workflow editor", () => {
   it("shows a step flow with a parallel review join and explicit fix loop", () => {
     const markup = renderToStaticMarkup(createElement(WorkflowEditorPanel, {
       projectId: "project-1",
+      configuration: { ...workflow, steps: initialWorkflowSteps() },
       stateRevision: 1,
       agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
       agentProfiles: [edgeCaseHunter],
@@ -145,7 +146,7 @@ describe("Task workflow editor", () => {
 
     expect(markup).toContain('aria-label="Add workflow steps"');
     expect(markup).toContain('aria-label="Workflow flow"');
-    expect(markup).toContain("2 parallel reviewers");
+    expect(markup).toContain("2 parallel reviewers · run together");
     expect(markup).toContain("Collect all reviews");
     expect(markup).toContain("Fixes go back to all reviewers");
     expect(markup).toContain('class="stage-editor workflow-editor-stage"');
@@ -167,6 +168,7 @@ describe("Task workflow editor", () => {
       remove: vi.fn(),
     })));
 
+    await startNewTemplate(container);
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Model"]')?.value).toBe("default");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Permission"]')?.value).toBe("bypassPermissions");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Thinking"]')?.value).toBe("default");
@@ -195,10 +197,11 @@ describe("Task workflow editor", () => {
       remove: vi.fn(),
     })));
 
+    await startNewTemplate(container);
     const review = [...container.querySelectorAll<HTMLButtonElement>(".workflow-step-select")]
       .find((button) => button.textContent?.includes("Independent second review"));
     await act(async () => review!.click());
-    const template = container.querySelector<HTMLSelectElement>('[aria-label="Agent template"]')!;
+    const template = container.querySelector<HTMLSelectElement>('[aria-label="Agent profile"]')!;
     await act(async () => {
       template.value = edgeCaseHunter.id;
       template.dispatchEvent(new Event("change", { bubbles: true }));
@@ -274,8 +277,8 @@ describe("Task workflow editor", () => {
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
     expect(markup).toContain('title="1 discussion in order → Implement → 1 reviewer"');
-    expect(markup).toContain('aria-label="Edit workflow Discuss, build, review"');
-    expect(markup).toContain('aria-label="Add workflow"');
+    expect(markup).toContain('aria-label="Edit template Discuss, build, review"');
+    expect(markup).toContain('aria-label="New workflow template"');
   });
 
   it("routes edit and create intents to the workspace stage owner", async () => {
@@ -300,9 +303,9 @@ describe("Task workflow editor", () => {
       sessionPresentation: () => undefined,
     })));
 
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit workflow Discuss, build, review"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit template Discuss, build, review"]')!.click());
     expect(edit).toHaveBeenLastCalledWith(workflow);
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add workflow"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="New workflow template"]')!.click());
     expect(edit).toHaveBeenLastCalledWith(undefined);
 
     await act(async () => root.unmount());
@@ -367,6 +370,21 @@ describe("Task workflow editor", () => {
     expect(markup).toContain(">Details</button>");
     expect(markup).toContain("Finish or stop Discuss, build, review first");
     expect(markup).toContain("disabled");
+    expect(markup.indexOf('aria-label="Discuss, build, review workflow progress"')).toBeLessThan(markup.indexOf('aria-label="Workflow templates"'));
+    expect(markup).toContain('<details class="workflow-saved-templates">');
+  });
+
+  it("keeps a project-sized template library collapsed and explains the creation limit", () => {
+    const markup = renderToStaticMarkup(createElement(TaskWorkflowLaunchers, {
+      task, configurations: Array.from({ length: 16 }, (_, index) => ({ ...workflow, id: `workflow-${index}` })),
+      executions: [], agentProfiles: [], launchable: true, showLaunchers: true,
+      overlayContainer: undefined, overlayVisibilityChanged: vi.fn(), edit: vi.fn(), launch: vi.fn(),
+      cancel: vi.fn(), openSession: vi.fn(), sessionPresentation: () => undefined,
+    }));
+    expect(markup).toContain('<details class="workflow-saved-templates">');
+    expect(markup).toContain("16 saved templates · run or edit");
+    expect(markup).toContain('aria-label="New workflow template" disabled=""');
+    expect(markup).toContain("limit of 16 templates");
   });
 
   it("opens a sidebar result artifact in a focused reader", async () => {
@@ -422,11 +440,11 @@ describe("Task workflow editor", () => {
     expect(markup).toContain('aria-label="Open implementation.md"');
     expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).not.toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
-    expect(markup).not.toContain('aria-label="Add workflow"');
+    expect(markup).not.toContain('aria-label="New workflow template"');
   });
 });
 
-async function editorFixture(overrides: Partial<ComponentProps<typeof WorkflowEditorPanel>> = {}) {
+async function editorFixture(overrides: Partial<ComponentProps<typeof WorkflowEditorPanel>> = {}, customize = true) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -438,6 +456,7 @@ async function editorFixture(overrides: Partial<ComponentProps<typeof WorkflowEd
   };
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   await act(async () => root.render(createElement(WorkflowEditorPanel, props)));
+  if (customize && container.querySelector('[aria-label="Workflow starting points"]')) await startNewTemplate(container);
   return { container, root, props, async dispose() {
     await act(async () => root.unmount());
     container.remove();
@@ -494,7 +513,7 @@ describe("Workflow review regressions", () => {
     const save = vi.fn(() => new Promise<WorkflowConfiguration>((done) => { resolve = done; }));
     const f = await editorFixture({ save });
     try {
-      await act(async () => rootButton(f.container, "Save template").click());
+      await act(async () => rootButton(f.container, "Create template").click());
       expect(f.container.querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(true);
       await act(async () => f.container.querySelector(".workflow-editor-stage")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
       expect(f.props.close).not.toHaveBeenCalled();
@@ -503,7 +522,7 @@ describe("Workflow review regressions", () => {
     } finally { await f.dispose(); }
     const rejected = await editorFixture({ save: vi.fn(async () => { throw new Error("Save unavailable"); }) });
     try {
-      await act(async () => rootButton(rejected.container, "Save template").click());
+      await act(async () => rootButton(rejected.container, "Create template").click());
       expect(rejected.container.textContent).toContain("Save unavailable");
       expect(rejected.container.querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(false);
       expect(rejected.props.close).not.toHaveBeenCalled();
@@ -523,3 +542,121 @@ describe("Workflow review regressions", () => {
 function rootButton(container: Element, text: string): HTMLButtonElement {
   return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === text)!;
 }
+
+async function setText(container: Element, selector: string, value: string) {
+  const field = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
+  const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function startNewTemplate(container: Element) {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Discuss, build & review"]')!.click());
+  await setText(container, "#workflow-name", "My workflow");
+}
+
+describe("Workflow template creation UX", () => {
+  it("starts with a choice, never a prefilled existing-looking editor or an implicit save", async () => {
+    const f = await editorFixture({}, false);
+    try {
+      expect(f.container.textContent).toContain("Create a workflow template");
+      expect(f.container.textContent).toContain("These are examples, not your saved templates");
+      expect(f.container.querySelectorAll(".workflow-starter-card")).toHaveLength(3);
+      expect(f.container.querySelector("#workflow-name")).toBeNull();
+      await act(async () => f.container.querySelector("section")!.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true })));
+      expect(f.props.save).not.toHaveBeenCalled();
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Close workflow editor"]')!.click());
+      expect(f.props.close).toHaveBeenCalledOnce();
+      expect(f.container.textContent).not.toContain("Discard your unsaved changes?");
+    } finally { await f.dispose(); }
+  });
+
+  it.each([
+    ["Start simple", ["implement"]],
+    ["Build & review", ["implement", "review", "fix"]],
+    ["Discuss, build & review", ["discuss", "implement", "review", "review", "fix"]],
+  ])("creates a separately named project template from %s", async (label, kinds) => {
+    const save = vi.fn(async (_params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams) => workflow);
+    const f = await editorFixture({ save }, false);
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click());
+      expect(f.container.querySelector<HTMLInputElement>("#workflow-name")?.value).toBe("");
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(kinds.length);
+      expect(f.container.textContent).toContain("Make this workflow yours");
+      expect(f.container.textContent).not.toContain("Save changes");
+      await act(async () => rootButton(f.container, "Create template").click());
+      expect(save).not.toHaveBeenCalled();
+      expect(document.activeElement?.id).toBe("workflow-name");
+      expect(f.container.querySelector('[role="alert"]')?.textContent).toContain("Give this template a name");
+      await setText(f.container, "#workflow-name", "  My new template  ");
+      await act(async () => rootButton(f.container, "Create template").click());
+      expect(save).toHaveBeenCalledOnce();
+      const params = save.mock.calls[0]![0];
+      expect(params).toEqual(expect.objectContaining({ projectId: "project-1", name: "My new template" }));
+      expect(params).not.toHaveProperty("workflowId");
+      expect(params.steps.map((step) => step.kind)).toEqual(kinds);
+      expect(new Set(params.steps.map((step) => step.id)).size).toBe(params.steps.length);
+      expect(f.props.close).toHaveBeenCalledOnce();
+    } finally { await f.dispose(); }
+  });
+
+  it("edits the saved identity only and labels its action Save changes", async () => {
+    const save = vi.fn(async (_params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams) => workflow);
+    const f = await editorFixture({ configuration: workflow, save });
+    try {
+      expect(f.container.textContent).toContain(`Edit “${workflow.name}”`);
+      expect(f.container.querySelector(".workflow-starter")).toBeNull();
+      expect(rootButton(f.container, "Save changes").disabled).toBe(true);
+      await setText(f.container, "#workflow-name", "Updated template");
+      await act(async () => rootButton(f.container, "Save changes").click());
+      expect(save.mock.calls[0]![0]).toEqual(expect.objectContaining({ workflowId: workflow.id, name: "Updated template" }));
+      expect(save.mock.calls[0]![0]).not.toHaveProperty("projectId");
+    } finally { await f.dispose(); }
+  });
+
+  it("requires confirmation to replace customized steps and keeps the chosen name", async () => {
+    const f = await editorFixture();
+    try {
+      await act(async () => rootButton(f.container, "Change starting point").click());
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(5);
+      await act(async () => rootButton(f.container, "Keep editing").click());
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(5);
+      await act(async () => rootButton(f.container, "Change starting point").click());
+      await act(async () => rootButton(f.container, "Choose another start").click());
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Start simple"]')!.click());
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(1);
+      expect(f.container.querySelector<HTMLInputElement>("#workflow-name")?.value).toBe("My workflow");
+      expect(f.props.save).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("selects the incomplete step on validation instead of leaving an offscreen error", async () => {
+    const f = await editorFixture();
+    try {
+      await setText(f.container, "textarea", "  ");
+      const implement = [...f.container.querySelectorAll<HTMLButtonElement>(".workflow-step-select")].find((button) => button.textContent?.includes("Implement"))!;
+      await act(async () => implement.click());
+      await act(async () => rootButton(f.container, "Create template").click());
+      expect(f.props.save).not.toHaveBeenCalled();
+      expect(f.container.querySelector(".workflow-inspector-head")?.textContent).toContain("Step 1 · Discuss");
+      expect(f.container.querySelector('[role="alert"]')?.textContent).toBe("Step 1 needs instructions.");
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps replacement and discard controls disabled while creation is pending", async () => {
+    let resolve!: (result: WorkflowConfiguration) => void;
+    const f = await editorFixture({ save: vi.fn(() => new Promise<WorkflowConfiguration>((done) => { resolve = done; })) });
+    try {
+      await act(async () => rootButton(f.container, "Change starting point").click());
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Close workflow editor"]')!.click());
+      await act(async () => rootButton(f.container, "Create template").click());
+      expect(rootButton(f.container, "Choose another start").disabled).toBe(true);
+      expect(rootButton(f.container, "Discard changes").disabled).toBe(true);
+      expect(rootButton(f.container, "Change starting point").disabled).toBe(true);
+      await act(async () => resolve(workflow));
+      expect(f.props.close).toHaveBeenCalledOnce();
+    } finally { await f.dispose(); }
+  });
+});

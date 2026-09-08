@@ -48,7 +48,6 @@ export function TaskWorkflowLaunchers(props: {
   }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
 
   return <>
-    {props.showLaunchers && props.launchable ? <span className="task-launch-divider" aria-hidden="true" /> : null}
     {execution ? <button
       type="button"
       className={`workflow-execution-chip status-${execution.status}`}
@@ -63,7 +62,27 @@ export function TaskWorkflowLaunchers(props: {
       <b>{execution.status === "completed" ? workflowStatusLabel(execution) : `${Math.min(execution.currentStepIndex + 1, execution.steps.length)}/${execution.steps.length}`}</b>
       <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
     </button> : null}
-    {props.showLaunchers ? props.configurations.map((configuration) => (
+    {execution && progressExpanded ? <WorkflowSidebarProgress
+      execution={execution}
+      agentProfiles={props.agentProfiles}
+      openSession={props.openSession}
+      sessionPresentation={props.sessionPresentation}
+      showDetails={() => setInspectingExecution(true)}
+      showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
+    /> : null}
+    {props.showLaunchers ? <section className="workflow-template-launchers" aria-label="Workflow templates">
+      <header><span>Workflow templates</span><button
+        type="button"
+        className="workflow-add"
+        title={props.configurations.length >= 16 ? "This project has reached its limit of 16 templates" : "Create a new reusable workflow template"}
+        aria-label="New workflow template"
+        disabled={props.configurations.length >= 16}
+        onClick={() => props.edit(undefined)}
+      ><Icon name="add" />New template</button></header>
+      {props.configurations.length === 0 ? <p>Create a template, then run it with a goal in any Task.</p> : null}
+      {props.configurations.length ? <details className="workflow-saved-templates" open={props.configurations.length === 1 && !executionActive}>
+        <summary>{props.configurations.length} saved {props.configurations.length === 1 ? "template" : "templates"} · run or edit</summary>
+      {props.configurations.map((configuration) => (
       <span className="run-chip workflow-chip" key={configuration.id}>
         <button
           type="button"
@@ -76,31 +95,18 @@ export function TaskWorkflowLaunchers(props: {
               : workflowSummary(configuration)}
           aria-label={`Run workflow ${configuration.name} in ${props.task.title}`}
           onClick={() => setRunning(configuration)}
-        ><Icon name="branch" />{configuration.name}</button>
+        ><Icon name="play" /><span><small>Run workflow</small>{configuration.name}</span></button>
         <button
           type="button"
           className="run-chip-edit"
-          title={`Edit ${configuration.name}`}
-          aria-label={`Edit workflow ${configuration.name}`}
+          title={`Edit template ${configuration.name}`}
+          aria-label={`Edit template ${configuration.name}`}
           onClick={() => props.edit(configuration)}
         ><Icon name="edit" /></button>
       </span>
-    )) : null}
-    {props.showLaunchers ? <button
-      type="button"
-      className="workflow-add"
-      title="Add workflow"
-      aria-label="Add workflow"
-      onClick={() => props.edit(undefined)}
-    ><Icon name="add" />Workflow</button> : null}
-    {execution && progressExpanded ? <WorkflowSidebarProgress
-      execution={execution}
-      agentProfiles={props.agentProfiles}
-      openSession={props.openSession}
-      sessionPresentation={props.sessionPresentation}
-      showDetails={() => setInspectingExecution(true)}
-      showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
-    /> : null}
+      ))}
+      </details> : null}
+    </section> : null}
     <OverlayPortal container={props.overlayContainer}>
       {running ? <WorkflowRunDialog
         task={props.task}

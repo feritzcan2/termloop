@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry, AssistantPermission, StewardAgentId, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams, WorkflowStepDto } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
 import { WorkflowAgentTemplateSelect } from "./WorkflowAgentTemplateSelect.js";
+import { WorkflowTemplateStarter, type WorkflowStartingPoint } from "./WorkflowTemplateStarter.js";
 import { isHelperStep, nextStepId, stepKindLabel, agentLabel, stepOwnerSummary, workflowLaunchSummary, workflowModelLabel, workflowPermissionLabel, workflowReasoningLabel, selectionOptions, type WorkflowLaunchSelection, type WorkflowReasoning } from "./workflow-presentation.js";
 
 type WorkflowDraft = {
@@ -60,6 +61,8 @@ export function WorkflowEditorPanel(props: {
   const [error, setError] = useState<string>();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  const [confirmingRestart, setConfirmingRestart] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const flowHeadingRef = useRef<HTMLSpanElement>(null);
   const selectStep = (id: string) => {
@@ -81,7 +84,8 @@ export function WorkflowEditorPanel(props: {
   const reviews = draft.steps.filter((step) => step.kind === "review");
   const fix = draft.steps.find((step) => step.kind === "fix");
   const coordinatorAgent = workflowAgent(draft.coordinatorAgentId, agents);
-  const dirty = !props.configuration || JSON.stringify(draft) !== JSON.stringify(baseline);
+  const choosingStart = !props.configuration && draft.steps.length === 0;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
   const { draftChanged } = props;
   useEffect(() => {
     draftChanged?.(dirty ? { value: draft, baseline, generation } : undefined);
@@ -94,6 +98,12 @@ export function WorkflowEditorPanel(props: {
   const discard = () => {
     props.draftChanged?.(undefined);
     props.close();
+  };
+  const chooseStart = (start: WorkflowStartingPoint) => {
+    const steps = initialWorkflowSteps(start);
+    setDraft((current) => ({ ...current, steps }));
+    setSelectedStepId(steps[0]?.id);
+    setError(undefined);
   };
 
   const updateStep = (id: string, update: Partial<WorkflowStepDto>) => {
@@ -171,7 +181,7 @@ export function WorkflowEditorPanel(props: {
   };
 
   const submit = async () => {
-    if (busy) return;
+    if (busy || choosingStart) return;
     if (props.configuration?.generation !== generation) {
       setError("This template changed elsewhere. Your draft is preserved. Load the saved version to review its changes before editing again.");
       return;
@@ -184,8 +194,16 @@ export function WorkflowEditorPanel(props: {
       reuseStepId: step.reuseStepId ?? null,
       profileRef: step.profileRef ?? null,
     }));
-    if (!name || steps.some((step) => !step.title || !step.instructions)) {
-      setError("Enter a name, title, and instruction for every step.");
+    if (!name) {
+      setError("Give this template a name before saving.");
+      nameRef.current?.focus();
+      return;
+    }
+    const incompleteStep = steps.find((step) => !step.title || !step.instructions);
+    if (incompleteStep) {
+      setError(`Step ${steps.indexOf(incompleteStep) + 1} needs ${!incompleteStep.title ? "a title" : "instructions"}.`);
+      selectStep(incompleteStep.id);
+      requestAnimationFrame(() => inspectorRef.current?.querySelector<HTMLElement>(!incompleteStep.title ? "input" : "textarea")?.focus());
       return;
     }
     setBusy(true); setError(undefined);
@@ -226,18 +244,18 @@ export function WorkflowEditorPanel(props: {
     if ((event.metaKey || event.ctrlKey) && event.key === "s") { event.preventDefault(); void submit(); }
   }}>
       <header className="stage-editor-head">
-        <div className="stage-editor-title"><span>{props.configuration ? "Workflow template" : "New workflow template"}</span><h2 id="workflow-editor-title">{draft.name || "Untitled workflow"}</h2><code>Reusable in every Task in this Project</code></div>
+        <div className="stage-editor-title"><span>{props.configuration ? "Project template · editing" : choosingStart ? "New template · 1 of 2" : "New template · 2 of 2"}</span><h2 id="workflow-editor-title">{props.configuration ? `Edit “${props.configuration.name}”` : choosingStart ? "Create a workflow template" : "Make this workflow yours"}</h2><code>{props.configuration ? "Changes apply to future runs in this project." : "A reusable set of steps. Give each Task its own goal when you run it."}</code></div>
         <div className="stage-editor-actions">
-          {dirty ? <span className="workflow-unsaved">{props.configuration ? "Unsaved changes" : "New template"}</span> : null}
-          {props.configuration ? <button type="button" className="danger-button workflow-delete" disabled={busy} onClick={() => void deleteWorkflow()}>{confirmingDelete ? "Delete workflow" : "Delete"}</button> : null}
-          <button type="button" className="primary-button" disabled={busy || !dirty} onClick={() => void submit()}>{busy ? "Saving…" : "Save template"}</button>
+          {dirty ? <span className="workflow-unsaved">{props.configuration ? "Unsaved changes" : "Not saved yet"}</span> : null}
+          {!choosingStart ? <button type="button" className="primary-button" disabled={busy || !dirty} onClick={() => void submit()}>{busy ? "Saving…" : props.configuration ? "Save changes" : "Create template"}</button> : null}
           <button className="icon-button quiet" aria-label="Close workflow editor" disabled={busy} onClick={close}><Icon name="close" /></button>
         </div>
       </header>
+      {error ? <p className="workflow-editor-error form-error" role="alert">{error}</p> : null}
       {confirmingClose ? <div className="workflow-draft-notice" role="alert">
         <span>Discard your unsaved changes?</span>
-        <button type="button" className="secondary-button" onClick={() => setConfirmingClose(false)}>Keep editing</button>
-        <button type="button" className="danger-button" onClick={discard}>Discard changes</button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => setConfirmingClose(false)}>Keep editing</button>
+        <button type="button" className="danger-button" disabled={busy} onClick={discard}>Discard changes</button>
       </div> : null}
       {props.configuration?.generation !== generation ? <div className="workflow-draft-notice" role="alert">
         <span>This template changed elsewhere. Loading it replaces your unsaved draft.</span>
@@ -247,9 +265,17 @@ export function WorkflowEditorPanel(props: {
           setConfirmingClose(false); setError(undefined);
         }}>Load saved version</button>
       </div> : null}
-      <fieldset className="workflow-builder-body workflow-builder-stage-body" disabled={busy}>
+      {confirmingRestart ? <div className="workflow-draft-notice" role="alert">
+        <span>Replace your steps? Your template name and lead agent settings will be kept.</span>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => setConfirmingRestart(false)}>Keep editing</button>
+        <button type="button" className="danger-button" disabled={busy} onClick={() => {
+          setDraft((current) => ({ ...current, steps: [] }));
+          setConfirmingRestart(false); setError(undefined);
+        }}>Choose another start</button>
+      </div> : null}
+      {choosingStart ? <WorkflowTemplateStarter choose={chooseStart} /> : <fieldset className="workflow-builder-body workflow-builder-stage-body" disabled={busy}>
         <div className="workflow-builder-top">
-          <div><label htmlFor="workflow-name">Template name</label><input id="workflow-name" autoFocus value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
+          <div><label htmlFor="workflow-name">Template name</label><input ref={nameRef} id="workflow-name" autoFocus required placeholder="e.g. Review a feature before merging" value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
           <div><label htmlFor="workflow-coordinator">Lead agent</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => {
             const coordinatorAgentId = event.target.value as StewardAgentId;
             const defaults = workflowLaunchDefaults(workflowAgent(coordinatorAgentId, agents));
@@ -257,28 +283,26 @@ export function WorkflowEditorPanel(props: {
           }}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
         </div>
         <details className="workflow-advanced">
-          <summary>Lead agent settings & review limit <span>{workflowPermissionLabel(draft.permission)} · up to {draft.maxReviewCycles} review rounds</span></summary>
+          <summary>Advanced lead agent settings <span>{workflowPermissionLabel(draft.permission)}</span></summary>
           <div className="workflow-advanced-fields">
           <div><label htmlFor="workflow-coordinator-model">Model</label><select id="workflow-coordinator-model" aria-label="Coordinator Model" value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}>{selectionOptions(coordinatorAgent.models, draft.model).map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select></div>
           <div><label htmlFor="workflow-coordinator-permission">Permission</label><select id="workflow-coordinator-permission" aria-label="Coordinator Permission" value={draft.permission} onChange={(event) => setDraft((current) => ({ ...current, permission: event.target.value as AssistantPermission }))}>{selectionOptions(coordinatorAgent.permissions, draft.permission).map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select></div>
           <div><label htmlFor="workflow-coordinator-reasoning">Thinking</label><select id="workflow-coordinator-reasoning" aria-label="Coordinator Thinking" value={draft.reasoning} onChange={(event) => setDraft((current) => ({ ...current, reasoning: event.target.value as WorkflowReasoning }))}>{selectionOptions(coordinatorAgent.reasoning, draft.reasoning).map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select></div>
-          <div><label htmlFor="workflow-review-cycles">Maximum review rounds</label><select id="workflow-review-cycles" value={draft.maxReviewCycles} onChange={(event) => setDraft((current) => ({ ...current, maxReviewCycles: Number(event.target.value) }))}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></div>
           </div>
         </details>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
-            <aside className="workflow-node-palette" aria-label="Add workflow steps">
-              <div className="plan-head"><span className="plan-heading">Add step</span><small className="plan-sub">{draft.steps.length}/8</small></div>
-              <WorkflowPaletteItem kind="discuss" label="Discussion" disabled={draft.steps.length >= 8} add={() => addStep("discuss")} />
-              <WorkflowPaletteItem kind="review" label="Reviewer" disabled={draft.steps.length >= 8} add={() => addStep("review")} />
-              <WorkflowPaletteItem kind="fix" label="Fix loop" disabled={draft.steps.length >= 8 || Boolean(fix) || reviews.length === 0} add={addFixStep} />
-              <p>Click to add, or drag into the flow. Reviewers run together.</p>
-            </aside>
           <div className="workflow-builder-grid">
             <WorkflowPipeline>
-              <div className="plan-head"><span ref={flowHeadingRef} className="plan-heading" id="workflow-pipeline-title">Workflow steps</span><small className="plan-sub">Top to bottom · drag a handle to reorder within a phase</small></div>
+              <div className="plan-head"><span ref={flowHeadingRef} className="plan-heading" id="workflow-pipeline-title">Workflow steps <small>{draft.steps.length}/8</small></span><small className="plan-sub">Select a step to edit</small></div>
+              <aside className="workflow-node-palette" aria-label="Add workflow steps">
+                <WorkflowPaletteItem kind="discuss" label="Discussion" disabled={draft.steps.length >= 8} add={() => addStep("discuss")} />
+                <WorkflowPaletteItem kind="review" label="Reviewer" disabled={draft.steps.length >= 8} add={() => addStep("review")} />
+                <WorkflowPaletteItem kind="fix" label={fix ? "Fix added" : "Fix findings"} disabled={draft.steps.length >= 8 || Boolean(fix) || reviews.length === 0} detail={fix ? "Only if needed" : reviews.length === 0 ? "Add reviewer first" : "After all reviews"} add={addFixStep} />
+                {draft.steps.length >= 8 ? <p role="status">All 8 steps are used. Remove a step to add another.</p> : null}
+              </aside>
               <SortableContext items={draft.steps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
                 <div className="workflow-canvas" role="list" aria-label="Workflow flow">
-                  <WorkflowCoreNode label="Start" detail="Run goal enters here" />
+                  <WorkflowCoreNode label="Task goal" detail="You provide this when you run the workflow" />
                   {discussions.length ? <WorkflowCanvasStage label="Discuss in order" className="discussion-stage">
                     {discussions.map((step) => <SortableWorkflowStepCard
                       key={step.id}
@@ -301,7 +325,7 @@ export function WorkflowEditorPanel(props: {
                     select={() => selectStep(implementation.id)}
                   /> : null}
                   {reviews.length ? <>
-                    <WorkflowCanvasStage label={`${reviews.length} parallel reviewer${reviews.length === 1 ? "" : "s"}`} className="review-stage">
+                    <WorkflowCanvasStage label={reviews.length === 1 ? "Independent review" : `${reviews.length} parallel reviewers · run together`} className="review-stage">
                       {reviews.map((step) => <SortableWorkflowStepCard
                         key={step.id}
                         step={step}
@@ -324,7 +348,7 @@ export function WorkflowEditorPanel(props: {
                     agentProfiles={props.agentProfiles}
                     select={() => selectStep(fix.id)}
                   /> : null}
-                  {fix ? <div className="workflow-loop-note" role="listitem"><b>↳ Fixes go back to all reviewers</b><span>Up to {draft.maxReviewCycles} review round{draft.maxReviewCycles === 1 ? "" : "s"}. At the limit, the last fixes finish without another approval.</span></div> : null}
+                  {fix ? <div className="workflow-loop-note" role="listitem"><b>↳ Fixes go back to all reviewers</b><label htmlFor="workflow-review-cycles">Maximum review rounds<select id="workflow-review-cycles" value={draft.maxReviewCycles} onChange={(event) => setDraft((current) => ({ ...current, maxReviewCycles: Number(event.target.value) }))}><option value={1}>1 round</option><option value={2}>2 rounds</option><option value={3}>3 rounds</option></select></label><span>Stops early if all reviewers approve. At the limit, the last fixes finish without another approval.</span></div> : null}
                   <WorkflowCoreNode label="Finish" detail={fix ? "Approved, or stopped at the review limit without approval" : "All steps completed"} />
                 </div>
               </SortableContext>
@@ -344,8 +368,14 @@ export function WorkflowEditorPanel(props: {
             </section>
           </div>
         </DndContext>
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
-      </fieldset>
+      </fieldset>}
+      {!choosingStart ? <footer className="workflow-editor-footer">
+        <span>{props.configuration ? "Saved changes will be used by Tasks across this project." : "Creates a new project template. No agents will start."}</span>
+        {props.configuration
+          ? <button type="button" className="danger-button workflow-delete" disabled={busy} onClick={() => void deleteWorkflow()}>{confirmingDelete ? "Confirm delete template" : "Delete template"}</button>
+          : <button type="button" className="secondary-button" disabled={busy} onClick={() => setConfirmingRestart(true)}>Change starting point</button>}
+        {confirmingDelete ? <button type="button" className="secondary-button" disabled={busy} onClick={() => setConfirmingDelete(false)}>Cancel</button> : null}
+      </footer> : null}
   </section>;
 }
 
@@ -365,6 +395,7 @@ export function removeWorkflowStep(steps: readonly WorkflowStepDto[], id: string
 function WorkflowPaletteItem(props: {
   kind: "discuss" | "review" | "fix";
   label: string;
+  detail?: string;
   disabled: boolean;
   add(): void;
 }) {
@@ -382,7 +413,7 @@ function WorkflowPaletteItem(props: {
   >
     <span aria-hidden="true">+</span>
     <b>{props.label}</b>
-    <small>{props.kind === "review" ? "Independent reviewer" : props.kind === "fix" ? "Lead agent" : "Agent conversation"}</small>
+    <small>{props.detail ?? (props.kind === "review" ? "After implementation" : "Before implementation")}</small>
   </button>;
 }
 
@@ -421,7 +452,7 @@ function SortableWorkflowStepCard(props: {
   >
     <button type="button" className="workflow-step-select" aria-pressed={props.selected} onClick={props.select}>
       <span className="workflow-step-number">{props.index + 1}</span>
-      <span className="workflow-step-copy"><b>{props.step.title}</b><small>{stepOwnerSummary(props.step, props.steps, props.coordinatorAgentId, props.agentProfiles)}</small></span>
+      <span className="workflow-step-copy"><b>{props.step.title || "Untitled step"}</b><small>{stepOwnerSummary(props.step, props.steps, props.coordinatorAgentId, props.agentProfiles)}</small></span>
       <span className={`workflow-kind kind-${props.step.kind}`}>{stepKindLabel(props.step.kind)}</span>
     </button>
     {movable ? <button
@@ -501,7 +532,7 @@ function WorkflowStepInspector(props: {
   };
   return <>
     <header className="workflow-inspector-head">
-      <div><span className={`workflow-kind kind-${props.step.kind}`}>{stepKindLabel(props.step.kind)}</span><h3>{props.step.title}</h3></div>
+      <div><span className={`workflow-kind kind-${props.step.kind}`}>Step {props.steps.findIndex((step) => step.id === props.step.id) + 1} · {stepKindLabel(props.step.kind)}</span><h3>Edit step</h3></div>
       {props.remove ? <button type="button" className="icon-button quiet" aria-label={`Remove ${props.step.title}`} onClick={props.remove}><Icon name="trash" /></button> : null}
     </header>
     <div className="workflow-inspector-fields">
@@ -509,6 +540,7 @@ function WorkflowStepInspector(props: {
       <input id={`workflow-${props.step.id}-title`} value={props.step.title} maxLength={120} onChange={(event) => props.update({ title: event.target.value })} />
       <label htmlFor={`workflow-${props.step.id}-instructions`}>Instructions</label>
       <textarea id={`workflow-${props.step.id}-instructions`} rows={5} value={props.step.instructions} maxLength={4096} onChange={(event) => props.update({ instructions: event.target.value })} />
+      <p className="field-help">Describe what this step should do. The Task goal is included automatically at run time.</p>
       {isHelperStep(props.step) ? <>
         <label htmlFor={`workflow-${props.step.id}-participant`}>Agent conversation</label>
         <select id={`workflow-${props.step.id}-participant`} value={participantValue} onChange={(event) => setParticipant(event.target.value)}>
@@ -615,24 +647,28 @@ function workflowDraft(configuration?: WorkflowConfigurationDto): WorkflowDraft 
     })),
   };
   return {
-    name: "Discuss, implement, review",
+    name: "",
     coordinatorAgentId: "codex",
     model: "default",
     permission: "bypassPermissions",
     reasoning: "default",
     maxReviewCycles: 2,
-    steps: initialWorkflowSteps(),
+    steps: [],
   };
 }
 
-export function initialWorkflowSteps(): WorkflowStepDto[] {
-  return [
+export function initialWorkflowSteps(start: WorkflowStartingPoint = "discussed"): WorkflowStepDto[] {
+  const steps: WorkflowStepDto[] = [
     { id: "discuss-claude", kind: "discuss", title: "Challenge the approach", instructions: "Debate the goal, assumptions, and tradeoffs with the coordinator before implementation.", agentId: "claude", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
     { id: "implement", kind: "implement", title: "Implement", instructions: "Implement the agreed solution and run proportionate verification.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
     { id: "review-claude", kind: "review", title: "Review with prior context", instructions: "Review the current diff against the discussion and report concrete, prioritized findings.", agentId: "claude", reuseStepId: "discuss-claude", profileRef: null, model: null, permission: null, reasoning: null },
     { id: "review-codex", kind: "review", title: "Independent second review", instructions: "Independently inspect the current diff and report concrete, prioritized findings.", agentId: "codex", reuseStepId: null, profileRef: null, model: "default", permission: "bypassPermissions", reasoning: "default" },
     { id: "fix", kind: "fix", title: "Fix review findings", instructions: "Apply the accepted combined findings, rerun verification, and resolve reviewer follow-ups.", agentId: null, reuseStepId: null, profileRef: null, model: null, permission: null, reasoning: null },
   ];
+  if (start === "simple") return steps.filter((step) => step.kind === "implement");
+  if (start === "reviewed") return steps.filter((step) => step.kind === "implement" || step.id === "review-codex" || step.kind === "fix")
+    .map((step) => step.kind === "review" ? { ...step, title: "Independent review" } : step);
+  return steps;
 }
 
 function defaultStep(kind: "discuss" | "review", steps: readonly WorkflowStepDto[], agentId: StewardAgentId): WorkflowStepDto {
