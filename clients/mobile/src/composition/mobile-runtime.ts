@@ -17,5 +17,5 @@ const productionRuntime = createProductionRuntime({
 });
 
 export const mobileRuntime = __DEV__ && process.env.EXPO_PUBLIC_TERMLOOP_RUNTIME !== "production"
-  ? createMockRuntime()
+  ? createMockRuntime({ workflowPreview: process.env.EXPO_PUBLIC_TERMLOOP_WORKFLOW_PREVIEW === "1" })
   : productionRuntime;
