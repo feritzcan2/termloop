@@ -4336,7 +4336,7 @@ mod tests {
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                10,
+                11,
             ),
         ];
 
