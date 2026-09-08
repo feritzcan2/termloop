@@ -1655,12 +1655,16 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       if (!overlay.isVisible()) throw new Error("native overlay portal did not become visible");
-      const emptyMasks = await overlay.webContents.executeJavaScript(`document.querySelectorAll("#native-overlay-terminal-masks > div").length`);
+      const emptyMasks = await overlay.webContents.executeJavaScript(`Array.from(document.querySelectorAll("#native-overlay-terminal-masks > div")).filter((mask) => {
+        const rect = mask.getBoundingClientRect();
+        return rect.left === 120 && rect.top === 140 && rect.width === 320 && rect.height === 180;
+      }).length`);
       if (emptyMasks !== 0) throw new Error("native overlay rendered an empty terminal mask before a snapshot was ready");
       await window.webContents.executeJavaScript(`(() => {
         const host = document.querySelector("#native-overlay-smoke-terminal");
         if (!(host instanceof HTMLElement)) return;
         const snapshot = document.createElement("pre");
+        snapshot.id = "native-overlay-smoke-snapshot";
         snapshot.className = "terminal-native-snapshot";
         snapshot.textContent = "CURRENT-GHOSTTY-SNAPSHOT";
         host.append(snapshot);
@@ -1675,12 +1679,12 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         throw new Error(`assistant terminal snapshot escaped its host: ${JSON.stringify(mainSnapshotFrame)}`);
       }
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        const copied = await overlay.webContents.executeJavaScript(`document.querySelector("#native-overlay-terminal-masks > div")?.textContent === "CURRENT-GHOSTTY-SNAPSHOT"`);
+        const copied = await overlay.webContents.executeJavaScript(`document.querySelector("#native-overlay-terminal-masks #native-overlay-smoke-snapshot")?.textContent === "CURRENT-GHOSTTY-SNAPSHOT"`);
         if (copied) break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       const terminalMask = await overlay.webContents.executeJavaScript(`(() => {
-        const mask = document.querySelector("#native-overlay-terminal-masks > div");
+        const mask = document.querySelector("#native-overlay-terminal-masks #native-overlay-smoke-snapshot")?.parentElement;
         if (!(mask instanceof HTMLElement)) return undefined;
         const rect = mask.getBoundingClientRect();
         return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, background: getComputedStyle(mask).backgroundColor, text: mask.textContent };
@@ -1693,6 +1697,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         if (!(host instanceof HTMLElement)) return;
         host.replaceChildren();
         const snapshot = document.createElement("img");
+        snapshot.id = "native-overlay-smoke-snapshot";
         snapshot.className = "terminal-native-snapshot terminal-native-snapshot-image";
         snapshot.src = ${JSON.stringify(capturedSnapshotDataUrl)};
         host.append(snapshot);
@@ -1700,7 +1705,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
       let imageLoaded = false;
       for (let attempt = 0; attempt < 40 && !imageLoaded; attempt += 1) {
         imageLoaded = await overlay.webContents.executeJavaScript(`(() => {
-          const image = document.querySelector("#native-overlay-terminal-masks img");
+          const image = document.querySelector("#native-overlay-terminal-masks #native-overlay-smoke-snapshot");
           return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
         })()`);
         if (!imageLoaded) await new Promise((resolve) => setTimeout(resolve, 25));
@@ -1728,7 +1733,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
       let quickActionReady = false;
       for (let attempt = 0; attempt < 40 && !quickActionReady; attempt += 1) {
         quickActionReady = await overlay.webContents.executeJavaScript(`(() => {
-          const image = document.querySelector("#native-overlay-terminal-masks img");
+          const image = document.querySelector("#native-overlay-terminal-masks #native-overlay-smoke-snapshot");
           return document.querySelector(".quick-action") !== null
             && image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
         })()`);
@@ -1736,7 +1741,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
       }
       if (!quickActionReady) {
         const overlayState = await overlay.webContents.executeJavaScript(`(() => {
-          const image = document.querySelector("#native-overlay-terminal-masks img");
+          const image = document.querySelector("#native-overlay-terminal-masks #native-overlay-smoke-snapshot");
           return {
             quickAction: document.querySelector(".quick-action") !== null,
             commandPalette: document.querySelector('[aria-label="Close command palette"]') !== null,
