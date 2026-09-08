@@ -90,6 +90,8 @@ describe("mobile control scope", () => {
       });
       expect(rename.ok).toBe(true);
       for (const [method, params] of [
+        ["quickAction.preview", { projectId: "project-1", cwd: "/repo", agentId: "codex" }],
+        ["quickAction.launch", { projectId: "project-1", cwd: "/repo", agentId: "codex", launchTicket: "a".repeat(64) }],
         ["session.forkAgent", { sessionId: "session-1" }],
         ["session.repairProviderHistory", { sessionId: "session-1", acknowledgeHistoryRewrite: true }],
         ["session.requestAskTo", { sessionId: "session-1", targetAgentId: "codex" }],
@@ -119,6 +121,8 @@ describe("mobile control scope", () => {
       expect(seen.find((entry) => entry.method === "session.launchAgent").token).toBe("f".repeat(64));
       expect(seen.find((entry) => entry.method === "session.rename").token).toBe("f".repeat(64));
       for (const method of [
+        "quickAction.preview",
+        "quickAction.launch",
         "session.forkAgent",
         "session.repairProviderHistory",
         "session.requestAskTo",

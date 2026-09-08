@@ -5,6 +5,8 @@ import type {
   WorkflowConfigurationMutationResult,
   WorkflowConfigurationDeleteResult,
   AgentLaunchPreviewResult,
+  QuickActionPreviewResult,
+  QuickActionLaunchResult,
   AgentStatusDto,
   CompanionProposalRespondResult,
   CompanionSuggestionAcceptResult,
@@ -78,6 +80,8 @@ type MobileControlMethod =
   | "task.launchWorkflow"
   | "session.previewAgent"
   | "session.launchAgent"
+  | "quickAction.preview"
+  | "quickAction.launch"
   | "session.forkAgent"
   | "session.repairProviderHistory"
   | "session.requestAskTo"
@@ -124,6 +128,8 @@ interface MobileControlResults {
   "task.launchWorkflow": SessionDto;
   "session.previewAgent": AgentLaunchPreviewResult;
   "session.launchAgent": SessionLaunchAgentResult;
+  "quickAction.preview": QuickActionPreviewResult;
+  "quickAction.launch": QuickActionLaunchResult;
   "session.forkAgent": SessionForkAgentResult;
   "session.repairProviderHistory": SessionRepairProviderHistoryResult;
   "session.requestAskTo": SessionRequestAskToResult;
@@ -162,6 +168,8 @@ const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "task.launchWorkflow": 120_000,
   "session.previewAgent": 30_000,
   "session.launchAgent": 120_000,
+  "quickAction.preview": 30_000,
+  "quickAction.launch": 120_000,
   "session.forkAgent": 120_000,
   "session.repairProviderHistory": 20_000,
   "session.requestAskTo": 20_000,
@@ -732,6 +740,7 @@ function decodeResult<M extends MobileControlMethod>(
       // well-formed is accepted rather than pinned to a shape it never uses.
       return value as MobileControlResults[M];
     case "task.previewAgent":
+    case "quickAction.preview":
     case "session.previewAgent":
     case "session.previewResumeAgent": {
       if (!isRecord(value) || typeof value.launch_ticket !== "string"
@@ -744,6 +753,7 @@ function decodeResult<M extends MobileControlMethod>(
       return value as MobileControlResults[M];
     }
     case "task.launchAgent":
+    case "quickAction.launch":
     case "session.launchAgent":
     case "session.forkAgent":
     case "session.resumeAgent":

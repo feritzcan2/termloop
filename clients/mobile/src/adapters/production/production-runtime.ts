@@ -1,4 +1,5 @@
 import {
+  type QuickActionParams,
   type SocketFactory,
   type TaskDto,
 } from "@termloop/contract/current";
@@ -52,8 +53,6 @@ const INITIAL_PROMPT_LIMIT = 4_096;
 const PROFILE_DISCOVERY_SETTLE_MS = 250;
 const ONLINE_PROFILE_FRESH_MS = 30_000;
 const UNAVAILABLE_PROFILE_FRESH_MS = 2_000;
-const BRACKETED_PASTE_START = "\u001b[200~";
-const BRACKETED_PASTE_END = "\u001b[201~";
 
 /// The daemon returns the newest messages first; a chat reads oldest first.
 function orderedTranscript(messages: readonly StewardMessage[]): StewardMessage[] {
@@ -87,9 +86,24 @@ function launchInspection(preview: {
 function launchPrompt(content: string): string | undefined {
   const sanitized = content
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    .replace(/[\r\n]+/g, " ")
+    .replace(/\r\n?/g, "\n")
     .trim();
   return sanitized.length === 0 ? undefined : sanitized.slice(0, INITIAL_PROMPT_LIMIT);
+}
+
+function promptedProjectLaunch(
+  project: { id: string; folder_path: string },
+  selection: AgentLaunchSelection,
+  prompt: string,
+): QuickActionParams {
+  return {
+    projectId: project.id,
+    cwd: project.folder_path,
+    ...selection,
+    templateRef: "builtin.quick-action.free-prompt",
+    bindings: { prompt },
+    attachments: [],
+  };
 }
 
 /// Matches Core's Quick Action naming rule: the first remaining prompt line,
@@ -462,14 +476,16 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         const control = controlClient(await resolve(connectionId));
         return await control.call("agent.capabilityList");
       },
-      async preview(connectionId, taskId, selection) {
+      async preview(connectionId, taskId, selection, prompt) {
         const control = controlClient(await resolve(connectionId));
+        const kickoffMessage = launchPrompt(prompt ?? "");
         const preview = await control.call("task.previewAgent", {
           taskId,
           agentId: selection.agentId,
           ...(selection.model === "default" ? {} : { model: selection.model }),
           ...(selection.permission === "default" ? {} : { permission: selection.permission }),
           ...(selection.reasoning === "default" ? {} : { reasoning: selection.reasoning }),
+          ...(kickoffMessage === undefined ? {} : { kickoffMessage }),
         });
         return launchInspection(preview);
       },
@@ -482,14 +498,16 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(
-          namedSession,
-          prompt,
-          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
-        );
+        return launchResult(namedSession, prompt);
       },
-      async previewProject(connectionId, project, selection) {
+      async previewProject(connectionId, project, selection, prompt) {
         const control = controlClient(await resolve(connectionId));
+        const content = launchPrompt(prompt ?? "");
+        if (content !== undefined) {
+          return launchInspection(await control.call(
+            "quickAction.preview", { ...promptedProjectLaunch(project, selection, content) },
+          ));
+        }
         const preview = await control.call("session.previewAgent", {
           projectId: project.id,
           cwd: project.folder_path,
@@ -503,18 +521,21 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       async launchProject(connectionId, project, selection, launchTicket, prompt) {
         const connection = await resolve(connectionId);
         const control = controlClient(connection);
+        const content = launchPrompt(prompt ?? "");
+        if (content !== undefined) {
+          const session = await control.call("quickAction.launch", {
+            ...promptedProjectLaunch(project, selection, content),
+            launchTicket,
+          });
+          return launchResult(session, content);
+        }
         const session = await control.call("session.launchAgent", {
           projectId: project.id,
           cwd: project.folder_path,
           agentId: selection.agentId,
           launchTicket,
         });
-        const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(
-          namedSession,
-          prompt,
-          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
-        );
+        return launchResult(session);
       },
     },
 
@@ -1044,31 +1065,15 @@ async function settleWithin(promises: readonly Promise<void>[], timeoutMs: numbe
 }
 
 
-async function launchResult(
+function launchResult(
   session: { id: string; runtime_epoch: number },
-  prompt: string | undefined,
-  attach: (
-    session: { id: string; runtime_epoch: number },
-    onEvent: (event: TerminalEvent) => void,
-  ) => Promise<TerminalAttachment>,
-): Promise<{ sessionId: string; runtimeEpoch: number; promptSubmitted: boolean | null }> {
-  const content = prompt === undefined ? undefined : launchPrompt(prompt);
-  if (content === undefined) {
-    return { sessionId: session.id, runtimeEpoch: session.runtime_epoch, promptSubmitted: null };
-  }
-
-  let attachment: TerminalAttachment | undefined;
-  try {
-    attachment = await attach(session, () => {});
-    const encoder = new TextEncoder();
-    await attachment.input(encoder.encode(`${BRACKETED_PASTE_START}${content}${BRACKETED_PASTE_END}`));
-    await attachment.input(new Uint8Array([13]));
-    return { sessionId: session.id, runtimeEpoch: session.runtime_epoch, promptSubmitted: true };
-  } catch {
-    return { sessionId: session.id, runtimeEpoch: session.runtime_epoch, promptSubmitted: false };
-  } finally {
-    await attachment?.detach();
-  }
+  prompt?: string,
+): { sessionId: string; runtimeEpoch: number; promptDelivery: "submitting" | null } {
+  return {
+    sessionId: session.id,
+    runtimeEpoch: session.runtime_epoch,
+    promptDelivery: launchPrompt(prompt ?? "") === undefined ? null : "submitting",
+  };
 }
 
 function imageUploadFailure(status: number): string {

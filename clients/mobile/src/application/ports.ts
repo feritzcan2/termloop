@@ -159,9 +159,8 @@ export interface AgentLaunchInspection {
 export interface AgentLaunchResult {
   sessionId: string;
   runtimeEpoch: number;
-  /// `null` means no initial prompt was supplied. `false` means the Session was
-  /// started, but the one-shot terminal submission did not complete.
-  promptSubmitted: boolean | null;
+  /// Acceptance into the Mac's delivery coordinator is not provider execution.
+  promptDelivery: "submitting" | null;
 }
 
 export interface AgentLaunchPort {
@@ -172,9 +171,9 @@ export interface AgentLaunchPort {
     connectionId: string,
     taskId: string,
     selection: AgentLaunchSelection,
+    prompt?: string,
   ): Promise<AgentLaunchInspection>;
-  /// Starts the exact previewed launch, then submits an optional user-authored
-  /// first message through that Session's terminal data plane.
+  /// Starts the exact previewed launch, including its Mac-owned first message.
   launch(
     connectionId: string,
     taskId: string,
@@ -188,11 +187,12 @@ export interface AgentLaunchPort {
     connectionId: string,
     project: Pick<ProjectDto, "id" | "folder_path">,
     selection: AgentLaunchSelection,
+    prompt?: string,
   ): Promise<AgentLaunchInspection>;
   launchProject(
     connectionId: string,
     project: Pick<ProjectDto, "id" | "folder_path">,
-    selection: Pick<AgentLaunchSelection, "agentId">,
+    selection: AgentLaunchSelection,
     launchTicket: string,
     prompt?: string,
   ): Promise<AgentLaunchResult>;

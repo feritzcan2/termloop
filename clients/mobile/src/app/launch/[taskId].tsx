@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -22,12 +22,11 @@ import type {
   AgentLaunchReasoning,
   AgentLaunchSelection,
 } from "@/application/ports";
-import { Banner, Card, CardDivider, PrimaryButton, SectionHeader, UnavailableNote } from "@/components/primitives";
+import { Banner, Card, CardDivider, PrimaryButton, SectionHeader } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
-import { retainPendingSessionInput } from "@/features/terminal/pending-session-input";
 import {
   coerceModel,
   defaultLaunchSelection,
@@ -44,13 +43,8 @@ import { fontFamily, text } from "@/theme/typography";
 
 const PROJECT_TARGET_PREFIX = "project:";
 
-/// Starting a Task Agent or an unassigned Project Agent from the phone, with
-/// the provider, model, permission, and reasoning stated rather than assumed.
-///
-/// The launch is the Mac's, not the phone's: this screen asks for a preview,
-/// renders the manifest the Mac says it would run, and only then spends the
-/// ticket. It never assembles argv, never fills in a default the Mac did not
-/// state, and shows redacted arguments exactly as redacted.
+/// Start with the last successful choices. The Mac still previews and binds
+/// the exact prompt and settings before launch; inspection is available in Edit.
 export default function LaunchRoute() {
   const { taskId, connectionId: routeConnectionId } = useLocalSearchParams<{
     taskId: string;
@@ -77,6 +71,8 @@ export default function LaunchRoute() {
   const [selection, setSelection] = useState<AgentLaunchSelection | undefined>(undefined);
   const [inspection, setInspection] = useState<AgentLaunchInspection | undefined>(undefined);
   const [prompt, setPrompt] = useState("");
+  const [editing, setEditing] = useState(false);
+  const starting = useRef(false);
   const [stage, setStage] = useState<"reading" | "choosing" | "previewing" | "launching">("reading");
   const [launchElapsedSeconds, setLaunchElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -109,11 +105,6 @@ export default function LaunchRoute() {
     })();
     return () => { cancelled = true; };
   }, [connectionId, runtime]);
-
-  useEffect(() => {
-    if (selection === undefined) return;
-    void agentLaunchPreferences.write(selection).catch(() => undefined);
-  }, [selection]);
 
   useEffect(() => {
     if (stage !== "launching") {
@@ -149,36 +140,51 @@ export default function LaunchRoute() {
     });
   }, [capabilities, stage]);
 
+  const inspect = useCallback(async () => {
+    if (connectionId === undefined || selection === undefined) return undefined;
+    if (project !== undefined) {
+      return await runtime.agentLaunch.previewProject(connectionId, project, selection, prompt);
+    }
+    if (task !== undefined) {
+      return await runtime.agentLaunch.preview(connectionId, task.id, selection, prompt);
+    }
+    return undefined;
+  }, [connectionId, project, prompt, runtime, selection, task]);
+
   const preview = useCallback(async () => {
-    if (connectionId === undefined || selection === undefined) return;
+    if (stage !== "choosing" || starting.current) return;
     Keyboard.dismiss();
     setStage("previewing");
     setError(undefined);
     try {
-      if (project !== undefined) {
-        setInspection(await runtime.agentLaunch.previewProject(connectionId, project, selection));
-      } else if (task !== undefined) {
-        setInspection(await runtime.agentLaunch.preview(connectionId, task.id, selection));
-      }
+      setInspection(await inspect());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setStage("choosing");
     }
-  }, [connectionId, project, runtime, selection, task]);
+  }, [inspect, stage]);
 
   const launch = useCallback(async () => {
-    if (connectionId === undefined || selection === undefined || inspection === undefined) return;
+    if (connectionId === undefined || selection === undefined || stage !== "choosing"
+      || blocked !== undefined || !chosenAvailable || starting.current) return;
+    starting.current = true;
     Keyboard.dismiss();
     setStage("launching");
     setError(undefined);
     try {
+      const reserved = inspection ?? await inspect();
+      if (reserved === undefined) {
+        starting.current = false;
+        setStage("choosing");
+        return;
+      }
       const result = project !== undefined
         ? await runtime.agentLaunch.launchProject(
           connectionId,
           project,
-          { agentId: selection.agentId },
-          inspection.launchTicket,
+          selection,
+          reserved.launchTicket,
           prompt,
         )
         : task !== undefined
@@ -186,14 +192,16 @@ export default function LaunchRoute() {
             connectionId,
             task.id,
             { agentId: selection.agentId },
-            inspection.launchTicket,
+            reserved.launchTicket,
             prompt,
           )
           : undefined;
-      if (result === undefined) return;
-      if (result.promptSubmitted === false) {
-        retainPendingSessionInput(connectionId, result.sessionId, result.runtimeEpoch, prompt);
+      if (result === undefined) {
+        starting.current = false;
+        setStage("choosing");
+        return;
       }
+      void agentLaunchPreferences.write(selection).catch(() => undefined);
       store.refresh();
       router.replace({
         pathname: "/session/[sessionId]",
@@ -205,8 +213,9 @@ export default function LaunchRoute() {
       // attempt has to reserve a fresh one rather than replay this manifest.
       setInspection(undefined);
       setStage("choosing");
+      starting.current = false;
     }
-  }, [connectionId, inspection, project, router, runtime, selection, store, task]);
+  }, [blocked, chosenAvailable, connectionId, inspect, inspection, project, prompt, router, runtime, selection, stage, store, task]);
 
   const backLabel = project === undefined ? "Task" : "Project";
   const targetMissing = task === undefined && project === undefined;
@@ -250,17 +259,37 @@ export default function LaunchRoute() {
             multiline
             maxLength={4096}
             value={prompt}
-            onChangeText={setPrompt}
+            onChangeText={(value) => { setPrompt(value); setInspection(undefined); setError(undefined); }}
             placeholder="What should this agent do?"
             placeholderTextColor={color.textMuted}
             style={styles.promptInput}
             textAlignVertical="top"
           />
           <Text style={styles.promptHint}>
-            Sent after the agent starts. If delivery fails, it stays ready in the Session message box.
+            Your Mac sends this when the agent is ready.
           </Text>
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Edit launch settings"
+          accessibilityState={{ expanded: editing, disabled: stage !== "choosing" }}
+          disabled={stage !== "choosing"}
+          onPress={() => setEditing((value) => !value)}
+          style={styles.settingsSummary}
+        >
+          <View style={styles.settingsSummaryCopy}>
+            <Text style={styles.settingsTitle}>{chosenOption?.label ?? selection.agentId}</Text>
+            <Text style={styles.settingsDetail}>
+              {selection.model === "default" ? "Default model" : selection.model}
+              {" · "}{permissionLabel(selection.agentId, selection.permission)}
+              {" · "}{selection.reasoning === "default" ? "Default reasoning" : `${selection.reasoning} reasoning`}
+            </Text>
+          </View>
+          <Text style={styles.settingsEdit}>{editing ? "Done" : "Edit"}</Text>
+        </Pressable>
+
+        {editing ? <>
         <Choice
           label="Agent"
           disabled={stage !== "choosing"}
@@ -307,12 +336,15 @@ export default function LaunchRoute() {
         />
 
         <View style={styles.section}>
-          <SectionHeader label="What your Mac will run" />
-          {inspection === undefined ? (
-            <UnavailableNote>
-              Nothing is reserved yet. Ask your Mac to describe this launch before it runs.
-            </UnavailableNote>
-          ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Preview launch details"
+            disabled={blocked !== undefined || !chosenAvailable || stage !== "choosing"}
+            onPress={() => void preview()}
+          >
+            <Text style={styles.settingsEdit}>{stage === "previewing" ? "Loading details…" : "Preview launch details"}</Text>
+          </Pressable>
+          {inspection === undefined ? null : (
             <Card>
               <ManifestLine label="program" value={inspection.program} />
               <CardDivider />
@@ -332,6 +364,7 @@ export default function LaunchRoute() {
             </Card>
           )}
         </View>
+        </> : null}
 
         {error === undefined ? null : <Banner kind="warning" message={error} />}
 
@@ -341,28 +374,19 @@ export default function LaunchRoute() {
             <View style={styles.launchStatusCopy}>
               <Text style={styles.launchStatusTitle}>Starting agent · {launchElapsedSeconds}s</Text>
               <Text style={styles.launchStatusBody}>
-                Launch settings are saved. Your Mac is opening the agent and delivering the first message.
+                Your Mac is opening the agent{prompt.trim() ? " and preparing your first message" : ""}.
               </Text>
             </View>
           </View>
         )}
 
         <View style={styles.actions}>
-          {inspection === undefined ? (
-            <PrimaryButton
-              label={stage === "previewing" ? "Describing…" : "Describe this launch"}
-              disabled={blocked !== undefined || !chosenAvailable || stage !== "choosing"}
-              busy={stage === "previewing"}
-              onPress={() => void preview()}
-            />
-          ) : (
-            <PrimaryButton
-              label={stage === "launching" ? "Starting…" : prompt.trim() ? "Start and send" : "Start this agent"}
-              disabled={stage === "launching"}
-              busy={stage === "launching"}
-              onPress={() => void launch()}
-            />
-          )}
+          <PrimaryButton
+            label={stage === "launching" ? "Starting…" : prompt.trim() ? "Start and send" : "Start agent"}
+            disabled={blocked !== undefined || !chosenAvailable || stage !== "choosing"}
+            busy={stage === "launching"}
+            onPress={() => void launch()}
+          />
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -428,6 +452,11 @@ const styles = StyleSheet.create({
   title: { color: color.text, fontSize: 18, fontWeight: "700", lineHeight: 24 },
   subtitle: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
   section: { gap: 6 },
+  settingsSummary: { flexDirection: "row", alignItems: "center", gap: space.md, padding: space.md, borderRadius: radius.card, backgroundColor: color.bgRaised },
+  settingsSummaryCopy: { flex: 1, gap: 4 },
+  settingsTitle: { ...text.body, color: color.text, fontWeight: "700" },
+  settingsDetail: { ...text.muted, color: color.textSecondary },
+  settingsEdit: { ...text.body, color: color.accentStrong, fontWeight: "600", paddingVertical: space.sm },
   choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   choice: {
     minHeight: 36,
