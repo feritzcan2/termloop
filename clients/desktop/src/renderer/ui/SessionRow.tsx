@@ -137,11 +137,12 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// The row shared by the Project Session sections and the Sessions nested under
 /// a Task. Presentation only — the caller owns selection, ordering, and the
 /// context menu it opens.
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
   subtitle: string;
+  displayName?: string | undefined;
   relationshipLabel?: string;
   active: boolean;
   visible: boolean;
@@ -162,7 +163,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   const currentPlanKey = currentPlan ? `${session.id}:${currentPlan.updatedAtEpochMs}` : undefined;
   const [dismissedPlanKey, setDismissedPlanKey] = useState<string>();
   const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
-  const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel });
+  const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel, displayName });
   const planProgress = plan ? agentPlanProgress(plan) : undefined;
   return (
     <button
@@ -199,7 +200,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} visible={visible} active={active} runCommand={runCommand} />
     </button>
   );
 }
@@ -332,18 +333,19 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, visible, active, runCommand }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, visible, active, runCommand }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
   state: SessionState;
   reviewReady: boolean;
   subtitle: string;
+  displayName?: string | undefined;
   visible: boolean;
   active: boolean;
   runCommand?: string | undefined;
 }) {
-  const provenance = sessionProvenance(session, subtitle);
+  const provenance = sessionProvenance(session, subtitle, displayName);
   /// A run is a service the Project starts, not a conversation or a shell the
   /// user is typing in. It is named by its configuration and described by the
   /// command it runs, so the runner ("zsh") and the folder — the two facts a
@@ -373,7 +375,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
         )}
       </span>
       <span className="row-copy">
-        <strong className="row-title">{sessionLabel(session)}</strong>
+        <strong className="row-title">{displayName ?? sessionLabel(session)}</strong>
         <span className="session-state-line">
           {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}

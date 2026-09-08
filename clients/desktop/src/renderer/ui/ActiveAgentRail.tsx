@@ -221,17 +221,18 @@ function activeAgentGroupSections(
 /// It never re-buckets, re-orders, or splits an Ask-To
 /// group; a group stays whole when any member matches so helpers keep their
 /// exact projected source.
-export function activeAgentQueryMatches(session: Session, normalizedQuery: string, workflows: readonly ActiveAgentWorkflow[] = []): boolean {
+export function activeAgentQueryMatches(session: Session, normalizedQuery: string, workflows: readonly ActiveAgentWorkflow[] = [], displayName?: string): boolean {
   return sessionLabel(session).toLowerCase().includes(normalizedQuery)
+    || (displayName?.toLowerCase().includes(normalizedQuery) ?? false)
     || basename(session.process.cwd).toLowerCase().includes(normalizedQuery)
     || workflows.some((workflow) => workflow.context.toLowerCase().includes(normalizedQuery));
 }
 
-function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>): ActiveAgentGroupSections {
+function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>): ActiveAgentGroupSections {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return sections;
   const matching = (groups: readonly AgentSessionCluster[]) => groups.filter(
-    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id))),
+    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id))),
   );
   return {
     actionNeeded: matching(sections.actionNeeded),
@@ -260,6 +261,7 @@ export type ActiveAgentRailProps = {
   taskAttachedSessionIds: ReadonlySet<string>;
   worktreeChangesBySessionId: ReadonlyMap<string, ActiveAgentWorktreeChanges>;
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
+  workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
   agentGroups?: readonly AgentGroupLayout[] | undefined;
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
   detachRelationship?: ((sessionId: string) => void) | undefined;
@@ -309,7 +311,10 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   /// would make the rail contradict the status it renders.
   const sections = naturalSections;
   const allOrdered = useMemo(() => flattenGroupSections(sections), [sections]);
-  const visibleSections = useMemo(() => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId), [sections, query, props.workflowsBySessionId]);
+  const visibleSections = useMemo(
+    () => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId),
+    [sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId],
+  );
   const filtering = visibleSections !== sections;
   const ordered = useMemo(
     () => (filtering ? flattenGroupSections(visibleSections) : allOrdered),
@@ -497,6 +502,7 @@ function ActiveAgentRow({ session, source, props, sessionsById }: {
       <div className={`session-row active-agent-row${worktreeChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
+        displayName={props.workflowAgentLabelsBySessionId?.get(session.id)}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
         subtitle={session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}

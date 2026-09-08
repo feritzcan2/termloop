@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { AgentLibraryEntry, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepResultDto } from "@termloop/contract/current";
 import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import type { RowTone } from "../row-tone.js";
@@ -22,6 +22,7 @@ export function TaskWorkflowLaunchers(props: {
   agentProfiles: readonly AgentLibraryEntry[];
   launchable: boolean;
   showLaunchers: boolean;
+  renderLaunchers?(workflowButton: ReactNode): ReactNode;
   overlayContainer: Element | undefined;
   overlayVisibilityChanged(visible: boolean): void;
   edit(configuration: WorkflowConfigurationDto | undefined): void;
@@ -32,6 +33,10 @@ export function TaskWorkflowLaunchers(props: {
 }) {
   const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
   const executionActive = execution !== undefined && execution.status !== "completed";
+  const executionNeedsAttention = execution?.status === "completed"
+    && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached");
+  const currentStep = execution?.steps[execution.currentStepIndex];
+  const executionSummaryId = useId();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
   const [templateTrigger, setTemplateTrigger] = useState<HTMLButtonElement>();
   const templatesOpen = props.showLaunchers && templateTrigger !== undefined;
@@ -51,39 +56,55 @@ export function TaskWorkflowLaunchers(props: {
   }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running, templatesOpen]);
   useEffect(() => { if (!props.showLaunchers) setTemplateTrigger(undefined); }, [props.showLaunchers]);
   const closeTemplates = () => { setTemplateTrigger(undefined); templateTrigger?.focus(); };
+  const workflowButton = <button
+    type="button"
+    className="workflow-add"
+    aria-label="Workflow"
+    aria-haspopup={props.configurations.length ? "menu" : undefined}
+    aria-expanded={templatesOpen}
+    title={props.configurations.length ? "Run or edit a workflow" : "Create a workflow template"}
+    onClick={(event) => props.configurations.length ? setTemplateTrigger(event.currentTarget) : props.edit(undefined)}
+  ><Icon name="add" />Workflow</button>;
 
   return <>
-    {execution ? <button
-      type="button"
-      className={`workflow-execution-chip status-${execution.status}`}
-      title={workflowExecutionSummary(execution)}
-      aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
-      aria-expanded={progressExpanded}
-      onClick={() => setProgressPreference({ executionId: execution.id, expanded: !progressExpanded })}
+    {props.showLaunchers ? props.renderLaunchers
+      ? props.renderLaunchers(workflowButton)
+      : <div className="task-launch">{workflowButton}</div> : null}
+    {execution ? <section
+      className={`workflow-execution-row status-${execution.status}${executionNeedsAttention ? " needs-attention" : ""}`}
+      aria-label={`${execution.workflowName} workflow`}
     >
-      <span className="workflow-execution-dot" aria-hidden="true" />
-      <Icon name="branch" />
-      <span>{execution.workflowName}</span>
-      <b>{execution.status === "completed" ? workflowStatusLabel(execution) : `${Math.min(execution.currentStepIndex + 1, execution.steps.length)}/${execution.steps.length}`}</b>
-      <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
-    </button> : null}
-    {execution && progressExpanded ? <WorkflowSidebarProgress
-      execution={execution}
-      agentProfiles={props.agentProfiles}
-      openSession={props.openSession}
-      sessionPresentation={props.sessionPresentation}
-      showDetails={() => setInspectingExecution(true)}
-      showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
-    /> : null}
-    {props.showLaunchers ? <button
-      type="button"
-      className="workflow-add"
-      aria-label="Workflow"
-      aria-haspopup={props.configurations.length ? "menu" : undefined}
-      aria-expanded={templatesOpen}
-      title={props.configurations.length ? "Run or edit a workflow" : "Create a workflow template"}
-      onClick={(event) => props.configurations.length ? setTemplateTrigger(event.currentTarget) : props.edit(undefined)}
-    ><Icon name="add" />Workflow</button> : null}
+      <button
+        type="button"
+        className="workflow-execution-toggle"
+        title={`${workflowExecutionSummary(execution)}\n${workflowPhaseLabel(execution, currentStep)}`}
+        aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
+        aria-describedby={`${executionSummaryId}-state ${executionSummaryId}-detail`}
+        aria-expanded={progressExpanded}
+        onClick={() => setProgressPreference({ executionId: execution.id, expanded: !progressExpanded })}
+      >
+        <span className="workflow-execution-symbol" aria-hidden="true">
+          {executionActive ? <Icon name="branch" /> : executionNeedsAttention ? "!" : "✓"}
+        </span>
+        <span className="workflow-execution-name">{execution.workflowName}</span>
+        <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{executionActive ? workflowStatusLabel(execution) : "Completed"}</span>
+        <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
+        <span id={`${executionSummaryId}-detail`} className="workflow-execution-detail">
+          {executionActive
+            ? currentStep ? `Step ${execution.currentStepIndex + 1} of ${execution.steps.length} · ${currentStep.title}` : "Waiting for the next step"
+            : executionNeedsAttention ? workflowStatusLabel(execution)
+              : execution.completionOutcome === "approved" ? "All reviewers approved" : "No final review approval recorded"}
+        </span>
+      </button>
+      {progressExpanded ? <WorkflowSidebarProgress
+        execution={execution}
+        agentProfiles={props.agentProfiles}
+        openSession={props.openSession}
+        sessionPresentation={props.sessionPresentation}
+        showDetails={() => setInspectingExecution(true)}
+        showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
+      /> : null}
+    </section> : null}
     <OverlayPortal container={props.overlayContainer}>
       {templatesOpen ? <WorkflowTemplateMenu
         anchor={templateTrigger}
