@@ -15,10 +15,15 @@ describe("terminal native layout", () => {
       ...require("react"),
       useCallback: (callback: unknown) => callback,
       useEffect: () => {},
+      useLayoutEffect: () => {},
+      useMemo: (factory: () => unknown) => factory(),
       useRef: (current: unknown) => ({ current }),
-      useState: (initial: unknown) => [initial, (update: unknown) => {
-        updates.push(() => typeof update === "function" ? update(initial) : update);
-      }],
+      useState: (initial: unknown) => {
+        const value = typeof initial === "function" ? initial() : initial;
+        return [value, (update: unknown) => {
+          updates.push(() => typeof update === "function" ? update(value) : update);
+        }];
+      },
     };
     const native = {
       ActivityIndicator: "ActivityIndicator", Pressable: "Pressable",
