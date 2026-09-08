@@ -13,17 +13,19 @@ import type {
   TaskBranchCommitChangeListResult,
   TaskBranchCommitDiffResult,
   TaskBranchCommitListResult,
-  TaskWorktreeChangeListResult,
-  TaskWorktreeDiffResult,
-  TaskWorktreePreImageResult,
-  ProjectWorktreeChangeListResult,
-  ProjectWorktreeDiffResult,
-  ProjectWorktreePreImageResult,
   GitHostPullRequestChangeListResult,
   GitHostPullRequestDiffResult,
   GitHostPullRequestIdentityDto,
 } from "@termloop/contract/current";
 import { sessionLabel, type GitHostProjection, type Session } from "../model.js";
+import {
+  localChangeKey,
+  recoverLocalChange,
+  type LocalChangeListResult,
+  type LocalDiffResult,
+  type LocalPreImageResult,
+  type RecoveredLocalChange,
+} from "../changes-local-recovery.js";
 import {
   buildChangeTree,
   changeTreeFolderId,
@@ -69,9 +71,6 @@ import {
   type FullFileView,
 } from "../changes-full-file.js";
 
-type LocalChangeListResult = TaskWorktreeChangeListResult | ProjectWorktreeChangeListResult;
-type LocalDiffResult = TaskWorktreeDiffResult | ProjectWorktreeDiffResult;
-type LocalPreImageResult = TaskWorktreePreImageResult | ProjectWorktreePreImageResult;
 type DiffResult = LocalDiffResult | TaskBranchCommitDiffResult | GitHostPullRequestDiffResult;
 type ChangeReviewDraft = Omit<ChangeReviewNote, "body">;
 
@@ -162,6 +161,18 @@ export function ChangesOverlay({
     setReviewedEntryKeys((current) => new Set([...current].filter((key) => !key.startsWith("pullRequest:"))));
     setReviewNotes((current) => withoutKeyPrefix(current, "pullRequest:"));
     setReviewDraft((current) => current?.key.startsWith("pullRequest:") ? undefined : current);
+  }, []);
+  const applyRecoveredLocalChange = useCallback((recovered: RecoveredLocalChange) => {
+    const key = localChangeKey(recovered.changes.observation_id, recovered.entry.entry_id);
+    setLocalChanges(recovered.changes);
+    setSelectedId(recovered.entry.entry_id);
+    setDiffs((current) => cacheDiff(withoutKeyPrefix(current, "local:"), key, recovered.diff));
+    setPreImages((current) => recovered.preImage
+      ? cachePreImage(withoutKeyPrefix(current, "local:"), key, recovered.preImage)
+      : withoutKeyPrefix(current, "local:"));
+    setReviewedEntryKeys((current) => new Set([...current].filter((key) => !key.startsWith("local\u0000"))));
+    setError(undefined);
+    setPreImageError(undefined);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -344,9 +355,11 @@ export function ChangesOverlay({
   useEffect(() => { setCollapsedFolders(new Set([changeTreeFolderId("reviewed", "")])); }, [selectedSourceKey]);
 
   const selected = currentEntries.find((entry) => entry.entry_id === selectedId);
-  const diffKey = selectedId ? `${selectedSourceKey}:${selectedId}` : undefined;
+  const diffKey = selectedId ? selectedSource.kind === "local"
+    ? localChangeKey(localChanges?.observation_id, selectedId)
+    : `${selectedSourceKey}:${selectedId}` : undefined;
   useEffect(() => {
-    if (!selected || !diffKey || selected.render_state === "notShown" || diffs.has(diffKey)) {
+    if (loadingSources || !selected || !diffKey || selected.render_state === "notShown" || diffs.has(diffKey)) {
       setLoadingDiff(false);
       return;
     }
@@ -366,8 +379,14 @@ export function ChangesOverlay({
         ? commitDiff(subject.id, observationId, selectedSource.commitId, selected.entry_id)
         : pullRequestDiff(subject.id, observationId, selected.entry_id);
     void request
+      .catch(async (failure) => {
+        if (selectedSource.kind !== "local" || !localChanges || !("side" in selected)) throw failure;
+        const recovered = await recoverLocalChange(failure, readsRef.current, subject.id, localChanges, selected, false, () => active);
+        if (recovered) applyRecoveredLocalChange(recovered);
+        return undefined;
+      })
       .then((result) => {
-        if (!active) return;
+        if (!active || !result) return;
         setDiffs((current) => cacheDiff(current, diffKey, result));
       })
       .catch((failure) => {
@@ -375,7 +394,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingDiff(false); });
     return () => { active = false; };
-  }, [commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, localChanges?.observation_id, selected, selectedSource, subject.id]);
+  }, [applyRecoveredLocalChange, commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, loadingSources, localChanges, selected, selectedSource, subject.id]);
 
   const selectedDiff = diffKey
     && (selectedSource.kind !== "pullRequest" || selectedPullRequestIsCurrent)
@@ -396,7 +415,7 @@ export function ChangesOverlay({
   const selectedPreImage = fullFileSupported && diffKey ? preImages.get(diffKey) : undefined;
 
   useEffect(() => {
-    if (!fullFile || !fullFileSupported || !diffKey || !parsed) return;
+    if (loadingSources || !fullFile || !fullFileSupported || !diffKey || !parsed) return;
     if (preImages.has(diffKey)) return;
     const { preImage } = readsRef.current;
     const observationId = localChanges?.observation_id;
@@ -406,8 +425,14 @@ export function ChangesOverlay({
     setLoadingPreImage(true);
     setPreImageError(undefined);
     void preImage(subject.id, observationId, entryId)
+      .catch(async (failure) => {
+        if (!localChanges || !selected || !("side" in selected)) throw failure;
+        const recovered = await recoverLocalChange(failure, readsRef.current, subject.id, localChanges, selected, true, () => active);
+        if (recovered) applyRecoveredLocalChange(recovered);
+        return undefined;
+      })
       .then((result) => {
-        if (!active) return;
+        if (!active || !result) return;
         setPreImages((current) => cachePreImage(current, diffKey, result));
       })
       .catch((failure) => {
@@ -415,7 +440,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingPreImage(false); });
     return () => { active = false; };
-  }, [diffKey, fullFile, fullFileSupported, localChanges?.observation_id, parsed, preImages, selected?.entry_id, subject.id]);
+  }, [applyRecoveredLocalChange, diffKey, fullFile, fullFileSupported, loadingSources, localChanges, parsed, preImages, selected, subject.id]);
 
   const fullFileState: FullFileView | undefined = useMemo(() => {
     if (!fullFile || !parsed) return undefined;
@@ -454,7 +479,7 @@ export function ChangesOverlay({
     : selectedSource.kind === "commit"
       ? currentCommitChanges?.truncated
       : currentPullRequestChanges?.truncated;
-  const selectedReviewPrefix = selected ? `${selectedSourceKey}:${selected.entry_id}:` : undefined;
+  const selectedReviewPrefix = selected && diffKey ? `${diffKey}:` : undefined;
   const activeReviewNotes = useMemo(
     () => [...reviewNotes.values()].filter(
       (note) => note.body.trim().length > 0

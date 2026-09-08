@@ -155,6 +155,101 @@ describe("Changes reviewed files", () => {
     expect(container.querySelector(".changes-placeholder")?.textContent).not.toBe("Loading changes…");
   });
 
+  it("recovers an expired local observation and keeps the selected file when entry IDs change", async () => {
+    const nextList = { ...changeList("local-2"), entries: [
+      entry("entry-1", "new.txt", "untracked"),
+      entry("entry-2", "src/alpha.ts", "unstaged"),
+      entry("entry-3", "src/bravo.ts", "staged"),
+      entry("entry-4", "notes.txt", "untracked"),
+    ] };
+    const list = vi.fn<ChangesOverlayProps["list"]>()
+      .mockResolvedValueOnce(changeList("local-1"))
+      .mockResolvedValueOnce(nextList);
+    const editorProps = props(list);
+    const readDiff = editorProps.diff;
+    editorProps.diff = vi.fn<ChangesOverlayProps["diff"]>(async (...args) => {
+      if (args[1] === "local-1" && args[2] === "entry-3") {
+        throw new Error("Error invoking remote method 'termloop:task-worktree-diff': TermLoopControlError: worktree changed during inspection; inspect again");
+      }
+      return readDiff(...args);
+    });
+    ({ container, root } = await renderEditor(editorProps));
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    await act(async () => container!.querySelector<HTMLButtonElement>('[data-change-entry-id="entry-3"]')!.click());
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(editorProps.diff).toHaveBeenLastCalledWith("task-1", "local-2", "entry-4");
+    expect(container.querySelector('[data-change-entry-id="entry-4"]')?.getAttribute("aria-current")).toBe("true");
+    expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/4 reviewed");
+    expect(container.textContent).not.toContain("The diff became stale");
+  });
+
+  it("stops after one stale observation recovery attempt", async () => {
+    const list = vi.fn<ChangesOverlayProps["list"]>()
+      .mockResolvedValueOnce(changeList("local-1"))
+      .mockResolvedValue(changeList("local-2"));
+    const editorProps = props(list);
+    editorProps.diff = vi.fn<ChangesOverlayProps["diff"]>(async () => {
+      throw new Error("worktree changed during inspection; inspect again");
+    });
+    ({ container, root } = await renderEditor(editorProps));
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(editorProps.diff).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("The diff became stale");
+  });
+
+  it("renews the patch together with an expired full-file pre-image", async () => {
+    const list = vi.fn<ChangesOverlayProps["list"]>()
+      .mockResolvedValueOnce({ ...changeList("local-1"), entries: [entries[0]!] })
+      .mockResolvedValueOnce({ ...changeList("local-2"), entries: [entries[0]!] });
+    const editorProps = props(list);
+    editorProps.diff = vi.fn<ChangesOverlayProps["diff"]>(async (taskId, observationId, entryId) => ({
+      task_id: taskId, observation_id: observationId, entry_id: entryId, state: "patch",
+      patch: `diff --git a/src/alpha.ts b/src/alpha.ts\n--- a/src/alpha.ts\n+++ b/src/alpha.ts\n@@ -1 +1 @@\n-before\n+${observationId === "local-1" ? "old preview" : "current preview"}\n`,
+    }));
+    editorProps.preImage = vi.fn<ChangesOverlayProps["preImage"]>(async (taskId, observationId, entryId) => {
+      if (observationId === "local-1") throw new Error("worktree changed during inspection; inspect again");
+      return { task_id: taskId, observation_id: observationId, entry_id: entryId, state: "content", revision: "index", content: "before\n" };
+    });
+    ({ container, root } = await renderEditor(editorProps));
+    expect(container.textContent).toContain("old preview");
+    await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-header-actions button")]
+      .find((button) => button.textContent === "Full file")!.click());
+
+    expect(editorProps.diff).toHaveBeenLastCalledWith("task-1", "local-2", "entry-1");
+    expect(editorProps.preImage).toHaveBeenLastCalledWith("task-1", "local-2", "entry-1");
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("current preview");
+    expect(container.textContent).not.toContain("old preview");
+    expect(container.textContent).not.toContain("could not be read");
+  });
+
+  it("discards an automatic recovery overtaken by a manual Refresh", async () => {
+    let finishRecovery!: (value: TaskWorktreeChangeListResult) => void;
+    const pendingRecovery = new Promise<TaskWorktreeChangeListResult>((resolve) => { finishRecovery = resolve; });
+    const list = vi.fn<ChangesOverlayProps["list"]>()
+      .mockResolvedValueOnce(changeList("local-1"))
+      .mockImplementationOnce(() => pendingRecovery)
+      .mockResolvedValueOnce(changeList("local-3"));
+    const editorProps = props(list);
+    const readDiff = editorProps.diff;
+    editorProps.diff = vi.fn<ChangesOverlayProps["diff"]>(async (...args) => {
+      if (args[1] === "local-1") throw new Error("worktree changed during inspection; inspect again");
+      return readDiff(...args);
+    });
+    ({ container, root } = await renderEditor(editorProps));
+    expect(list).toHaveBeenCalledTimes(2);
+    await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-header-actions button")]
+      .find((button) => button.textContent?.includes("Refresh"))!.click());
+    await act(async () => finishRecovery(changeList("local-2")));
+
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(editorProps.diff).toHaveBeenCalledTimes(2);
+    expect(editorProps.diff).toHaveBeenLastCalledWith("task-1", "local-3", "entry-2");
+    expect(container.textContent).not.toContain("The diff became stale");
+  });
+
   it("opens the aggregate branch diff when branch changes are requested", async () => {
     const listCommitChanges = vi.fn<ChangesOverlayProps["listCommitChanges"]>(async (taskId, observationId, commitId) => ({
       task_id: taskId,
