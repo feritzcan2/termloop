@@ -1,0 +1,12 @@
+{
+  "id": "skill-library",
+  "duration": 18.0,
+  "sourceSeconds": 4.195,
+  "size": 304066,
+  "sha256": "a744a9adf92adc4e87bb5ec1482a5de21dd2c53f126ff3828938db379d9b0a32",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "run-configurations",
+  "duration": 18.0,
+  "sourceSeconds": 4.235,
+  "size": 235630,
+  "sha256": "29bc33c75e74b5e847aff2dedb4f03ad35fa20491732cb7acc3f6b3aa069c3ec",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": false
+}

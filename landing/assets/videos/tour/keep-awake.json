@@ -1,0 +1,12 @@
+{
+  "id": "keep-awake",
+  "duration": 18.0,
+  "sourceSeconds": 4.157,
+  "size": 220962,
+  "sha256": "5e69aee0fb1dd6aa6a51350a86b4097b60a740f11054d151ef55d261b37b8530",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": false
+}
