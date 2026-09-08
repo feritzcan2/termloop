@@ -1075,6 +1075,7 @@ async fn steward_task_command(
                 permission: None,
                 reasoning: None,
                 kickoff_message: None,
+                workflow_id: None,
             },
             state,
         )

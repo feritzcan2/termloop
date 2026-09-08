@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:52de7fd0c06e420bb0517fcde6b071910828550085083526e639cd13f7b6034a";
+    "sha256:16da8fbc970fbadef6bfe3769fe8ec27e7a645e0847577d30b6539084791d546";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1064,6 +1064,11 @@ pub struct ProjectDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectTaskAutomationConfigurationDto {
+    #[serde(
+        rename = "workflowId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub workflow_id: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "createWorktree")]
@@ -1098,6 +1103,8 @@ pub struct ProjectTaskAutomationResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectTaskAutomationSetParams {
+    #[serde(rename = "workflowId", skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "createWorktree")]
@@ -2885,6 +2892,8 @@ pub struct ProjectCreateParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TaskCreateParams {
+    #[serde(rename = "workflowId", skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     pub title: String,
@@ -6563,6 +6572,8 @@ pub struct TaskSourceCandidateListResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TaskSourceCandidateImportParams {
+    #[serde(rename = "workflowId", skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
     #[serde(rename = "sourceId")]
     pub source_id: String,
     #[serde(rename = "externalId")]
@@ -9792,7 +9803,12 @@ fn validate_project_dto(value: &Value) -> bool {
 )]
 fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
     (value.as_object().is_some_and(|object| {
-        object
+        object.get("workflowId").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object
             .get("projectId")
             .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object
@@ -9842,6 +9858,7 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "workflowId",
                     "projectId",
                     "createWorktree",
                     "worktreePrefix",
@@ -9854,7 +9871,18 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                 ]
                 .contains(&key.as_str())
             })
-    }) && ((!(value.as_object().is_some_and(|object| {
+    }) && (!(value.as_object().is_some_and(|object| {
+        object
+            .get("workflowId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+    })) || (value.as_object().is_some_and(|object| {
+        object
+            .get("createWorktree")
+            .is_none_or(|field| field == &serde_json::json!(true))
+            && object
+                .get("agentId")
+                .is_none_or(|field| field == &serde_json::json!(null))
+    }))) && ((!(value.as_object().is_some_and(|object| {
         object
             .get("agentId")
             .is_some_and(|field| field.as_str().is_some_and(|text| true))
@@ -9928,7 +9956,12 @@ fn validate_project_task_automation_result(value: &Value) -> bool {
 )]
 fn validate_project_task_automation_set_params(value: &Value) -> bool {
     (value.as_object().is_some_and(|object| {
-        object
+        object.get("workflowId").is_none_or(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object
             .get("projectId")
             .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object
@@ -9984,6 +10017,7 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "workflowId",
                     "projectId",
                     "createWorktree",
                     "worktreePrefix",
@@ -9998,6 +10032,17 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 .contains(&key.as_str())
             })
     }) && (!(value.as_object().is_some_and(|object| {
+        object
+            .get("workflowId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+    })) || (value.as_object().is_some_and(|object| {
+        object
+            .get("createWorktree")
+            .is_none_or(|field| field == &serde_json::json!(true))
+            && object
+                .get("agentId")
+                .is_none_or(|field| field == &serde_json::json!(null))
+    }))) && (!(value.as_object().is_some_and(|object| {
         object
             .get("createWorktree")
             .is_some_and(|field| field == &serde_json::json!(true))
@@ -14289,7 +14334,12 @@ fn validate_project_create_params(value: &Value) -> bool {
 )]
 fn validate_task_create_params(value: &Value) -> bool {
     (value.as_object().is_some_and(|object| {
-        object
+        object.get("workflowId").is_none_or(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object
             .get("projectId")
             .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object.get("title").is_some_and(|field| {
@@ -14350,6 +14400,7 @@ fn validate_task_create_params(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "workflowId",
                     "projectId",
                     "title",
                     "brief",
@@ -14364,7 +14415,18 @@ fn validate_task_create_params(value: &Value) -> bool {
                 ]
                 .contains(&key.as_str())
             })
-    }) && ((!(value.as_object().is_some_and(|object| {
+    }) && (!(value.as_object().is_some_and(|object| {
+        object
+            .get("workflowId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+    })) || (value.as_object().is_some_and(|object| {
+        object
+            .get("worktreeIntent")
+            .is_none_or(|field| field == &serde_json::json!("provision"))
+            && object
+                .get("agentId")
+                .is_none_or(|field| field == &serde_json::json!(null))
+    }))) && ((!(value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")
             .is_some_and(|field| field == &serde_json::json!("provision"))
@@ -24606,7 +24668,12 @@ fn validate_task_source_candidate_list_result(value: &Value) -> bool {
 )]
 fn validate_task_source_candidate_import_params(value: &Value) -> bool {
     (value.as_object().is_some_and(|object| {
-        object.get("sourceId").is_some_and(|field| {
+        object.get("workflowId").is_none_or(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object.get("sourceId").is_some_and(|field| {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
@@ -24680,6 +24747,7 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "workflowId",
                     "sourceId",
                     "externalId",
                     "expectedGeneration",
@@ -24696,7 +24764,18 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                 ]
                 .contains(&key.as_str())
             })
-    }) && ((!(value.as_object().is_some_and(|object| {
+    }) && (!(value.as_object().is_some_and(|object| {
+        object
+            .get("workflowId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+    })) || (value.as_object().is_some_and(|object| {
+        object
+            .get("worktreeIntent")
+            .is_none_or(|field| field == &serde_json::json!("provision"))
+            && object
+                .get("agentId")
+                .is_none_or(|field| field == &serde_json::json!(null))
+    }))) && ((!(value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")
             .is_some_and(|field| field == &serde_json::json!("provision"))

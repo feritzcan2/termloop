@@ -9,6 +9,7 @@ import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocatio
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import { fullAgentCapability, launchOnlyGeminiCapability } from "./agent-capability-fixture.js";
+import { workflowConfiguration } from "./workflow-fixture.js";
 
 beforeEach(() => window.localStorage.clear());
 
@@ -1613,6 +1614,7 @@ describe("Task rail create flow", () => {
       configuration: {
         projectId: "project-1",
         createWorktree: false,
+        workflowId: null,
         worktreePrefix: "termloop",
         baseRef: null,
         agentId: null,
@@ -1644,6 +1646,59 @@ describe("Task rail create flow", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
+  it.each(["  Implement the screen and test it.  ", ""])("inherits the workflow and launches once after worktree readiness with brief %j", async (brief) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const createTask = vi.fn(async () => ({ taskId: "task-new" }));
+    const launchTaskWorkflow = vi.fn(async () => undefined);
+    const launchTaskAgent = vi.fn(async () => undefined);
+    const readyTask: Task = { ...launchableTask(), id: "task-new", title: "Build screen", brief };
+    const { worktree_health: _health, ...awaitingHealthTask } = readyTask;
+    const propsWith = (tasks: readonly Task[]): TaskRailProps => ({
+      ...railProps(), tasks, createTask, launchTaskWorkflow, launchTaskAgent,
+      workflowConfigurations: [workflowConfiguration()],
+      provisionTaskWorktree: vi.fn(async () => undefined),
+      loadProjectTaskAutomation: async () => ({ configuration: {
+        projectId: "project-1", createWorktree: true, worktreePrefix: "feature",
+        baseRef: "refs/remotes/origin/main", workflowId: "workflow-1", agentId: null,
+        model: null, permission: null, reasoning: null, kickoffMessage: null,
+      }, stateRevision: 4 }),
+      listProjectLocalBranches: async () => ({
+        repository_root: "/repository", branches: [{ name: "main", exact_ref: "refs/heads/main" }],
+        base_branches: [{ name: "origin/main", exact_ref: "refs/remotes/origin/main" }],
+        base_branches_truncated: false, truncated: false,
+      }),
+    });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    try {
+      await act(async () => root.render(createElement(TaskRail, propsWith([]))));
+      await act(async () => container.querySelector<HTMLButtonElement>(".task-empty-create")!.click());
+      expect(container.querySelector<HTMLSelectElement>("#create-workflow")!.value).toBe("workflow-1");
+      expect([...container.querySelectorAll(".start-chip")].every((chip) => chip.getAttribute("aria-pressed") === "false")).toBe(true);
+      await act(async () => {
+        typeInto(container.querySelector<HTMLInputElement>("#task-title")!, "Build screen");
+        typeInto(container.querySelector<HTMLTextAreaElement>("#task-brief")!, brief);
+      });
+      const submit = container.querySelector<HTMLButtonElement>(".dialog-actions .primary-button")!;
+      expect(submit.textContent).toBe("Create & Start");
+      await act(async () => submit.click());
+      expect(createTask).toHaveBeenCalledWith("Build screen", brief.trim() || null);
+      expect(launchTaskWorkflow).not.toHaveBeenCalled();
+      await act(async () => root.render(createElement(TaskRail, propsWith([awaitingHealthTask]))));
+      expect(launchTaskWorkflow).not.toHaveBeenCalled();
+      await act(async () => root.render(createElement(TaskRail, propsWith([readyTask]))));
+      expect(launchTaskWorkflow).toHaveBeenCalledExactlyOnceWith("task-new", "workflow-1", brief.trim() || "Build screen");
+      await act(async () => root.render(createElement(TaskRail, propsWith([{ ...readyTask }]))));
+      expect(launchTaskWorkflow).toHaveBeenCalledTimes(1);
+      expect(launchTaskAgent).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
+
   it("creates, provisions, and launches the selected starts once the worktree is ready", async () => {
     const container = document.createElement("div");
     document.body.append(container);
@@ -1655,6 +1710,7 @@ describe("Task rail create flow", () => {
         projectId: "project-1",
         createWorktree: true,
         worktreePrefix: "feature",
+        workflowId: null,
         baseRef: "refs/remotes/origin/main",
         agentId: "claude",
         model: "opus[1m]",

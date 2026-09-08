@@ -4,6 +4,7 @@ import type {
   ProjectTaskAutomationSetParams,
   ProjectTaskAutomationSetResult,
   RemoteBranchDto,
+  WorkflowConfigurationDto,
 } from "@termloop/contract/current";
 import {
   agentLaunchDefaults,
@@ -12,6 +13,7 @@ import {
   permissionLabel,
   type ProjectTaskAutomationDraft,
 } from "../project-task-automation.js";
+import { workflowSummary, workflowLaunchSummary } from "./workflow-presentation.js";
 
 export type ProjectTaskAutomationActions = {
   getProjectAutomation(projectId: string): Promise<ProjectTaskAutomationGetResult>;
@@ -21,11 +23,12 @@ export type ProjectTaskAutomationActions = {
 /// Create worktree / start agent, the two facts a new Task carries. The same
 /// control renders the Project default and an explicit one-shot import choice,
 /// keeping both surfaces aligned without making a provider own the default.
-export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, baseBranches, branchesLoading, branchesError, worktreeHint, agentHint, change }: {
+export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, workflows = [], baseBranches, branchesLoading, branchesError, worktreeHint, agentHint, change }: {
   idPrefix: string;
   value: ProjectTaskAutomationDraft;
   busy: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
+  workflows?: readonly WorkflowConfigurationDto[];
   baseBranches: readonly RemoteBranchDto[];
   branchesLoading: boolean;
   branchesError: string | undefined;
@@ -35,6 +38,8 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
 }) {
   const options = agentChoiceOptions(agentCapabilities, value.agentId);
   const startAgent = value.agentId !== null;
+  const startWorkflow = value.workflowId != null;
+  const selectedWorkflow = workflows.find((workflow) => workflow.id === value.workflowId);
   const noAgentAvailable = options.every((option) => !option.available);
   const selectedCapability = value.agentId === null
     ? undefined
@@ -48,10 +53,10 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         id={`${idPrefix}-worktree`}
         type="checkbox"
         checked={value.createWorktree}
-        disabled={busy || startAgent}
+        disabled={busy || startAgent || startWorkflow}
         onChange={(event) => change(event.target.checked
           ? { ...value, createWorktree: true }
-          : { createWorktree: false, worktreePrefix: value.worktreePrefix, baseRef: value.baseRef, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null })}
+          : { createWorktree: false, worktreePrefix: value.worktreePrefix, baseRef: value.baseRef, workflowId: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null })}
       />
       <span><strong>Create worktree</strong><small>{worktreeHint}</small></span>
     </label>
@@ -64,12 +69,27 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         onChange={(event) => {
           const agentId = options.find((option) => option.available)?.agentId ?? null;
           change(event.target.checked && agentId
-            ? { ...value, createWorktree: true, agentId, ...agentLaunchDefaults(agentCapabilities, agentId), kickoffMessage: null }
+            ? { ...value, createWorktree: true, workflowId: null, agentId, ...agentLaunchDefaults(agentCapabilities, agentId), kickoffMessage: null }
             : { ...value, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
         }}
       />
       <span><strong>Start agent</strong><small>{!startAgent && noAgentAvailable ? "No configured agent is currently available." : agentHint}</small></span>
     </label>
+    <label className="checkbox-row">
+      <input id={`${idPrefix}-start-workflow`} type="checkbox" checked={startWorkflow} disabled={busy || (!startWorkflow && workflows.length === 0)} onChange={(event) => change(event.target.checked
+        ? { ...value, createWorktree: true, workflowId: workflows[0]!.id, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
+        : { ...value, workflowId: null })} />
+      <span><strong>Start workflow</strong><small>{workflows.length ? "Run a saved multi-agent workflow after the worktree is ready. Replaces the single-agent choice." : "No workflow templates yet. Create one from a Task’s Workflow menu."}</small></span>
+    </label>
+    {startWorkflow ? <>
+      <label htmlFor={`${idPrefix}-workflow`}>Workflow template</label>
+      <select id={`${idPrefix}-workflow`} value={value.workflowId ?? ""} disabled={busy} onChange={(event) => change({ ...value, workflowId: event.target.value })}>
+        {!selectedWorkflow ? <option value={value.workflowId ?? ""}>Selected template (unavailable)</option> : null}
+        {workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+      </select>
+      {selectedWorkflow ? <><p className="field-help">{workflowSummary(selectedWorkflow)}</p><p className="field-help">{selectedWorkflow.coordinatorAgentId} lead · {workflowLaunchSummary(selectedWorkflow)}</p></> : <p className="form-error" role="alert">Choose an available template. No agent will be substituted.</p>}
+      <p className="field-help">The Task description becomes the goal; its title is used when the description is empty. Agent, model, permissions, and review steps come from the template when the workflow starts.</p>
+    </> : null}
     {value.createWorktree ? <>
       <label htmlFor={`${idPrefix}-base-ref`}>Base branch</label>
       <select

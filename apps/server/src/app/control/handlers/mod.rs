@@ -49,6 +49,7 @@ pub(super) use skills::{
 };
 pub(super) use steward::{delete_steward_configuration, set_steward_configuration};
 pub(in crate::app) use steward::{launch_current_steward, schedule_current_steward};
+pub(in crate::app) use workflow::launch_automated_task_workflow;
 pub(super) use workflow::preview_task_workflow_session;
 pub(super) use worktree::{
     bind_task_branch, cleanup_task_worktree, dismiss_task_worktree_provisioning,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import type {
   AgentCapabilityDto,
+  WorkflowConfigurationDto,
   ProjectLocalBranchListResult,
   ProjectTaskAutomationGetResult,
   RemoteBranchDto,
@@ -114,6 +115,7 @@ export type TaskSourcesPanelProps = {
   refreshToken: number;
   actions: TaskSourceActions;
   agentCapabilities: readonly AgentCapabilityDto[];
+  workflowConfigurations?: readonly WorkflowConfigurationDto[];
   /// Routes an imported candidate to the ordinary Task detail path.
   openTask(taskId: string): void;
   openExternal(url: string): Promise<void>;
@@ -217,6 +219,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
         worktreePrefix: draft.worktreePrefix,
         baseRef: draft.baseRef,
         agentId: draft.agentId,
+        workflowId: draft.workflowId,
         model: draft.model,
         permission: draft.permission,
         reasoning: draft.reasoning,
@@ -425,6 +428,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       {listError ? <p className="settings-rail-error" role="alert">Task Sources could not be loaded: {listError} <button type="button" className="secondary-button" onClick={() => void loadSources()}>Retry</button></p> : null}
 
       <TaskDefaultsBar
+        workflows={props.workflowConfigurations ?? []}
         automation={automation}
         error={automationError}
         busy={automationBusy}
@@ -699,6 +703,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                                   permission: null,
                                   reasoning: null,
                                   kickoffMessage: null,
+                                  workflowId: null,
                                 },
                             });
                           }}
@@ -708,6 +713,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                         {candidate.state === "noLongerMatches" ? <span className="task-candidate-readonly">Left the scope</span> : null}
                       </div>
                       {confirming ? <CandidateImportOptions
+                        workflows={props.workflowConfigurations ?? []}
                         candidateKey={candidate.key}
                         choice={confirming}
                         busy={disabled}
@@ -737,8 +743,9 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
 
 /// What every new Task starts with, stated once above the sources that create
 /// them. The complete launch profile opens in place when it is being changed.
-function TaskDefaultsBar({ automation, error, busy, agentCapabilities, baseBranches, branchesLoading, branchesError, save, reload }: {
+function TaskDefaultsBar({ automation, error, busy, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, save, reload }: {
   automation: ProjectTaskAutomationGetResult | undefined;
+  workflows: readonly WorkflowConfigurationDto[];
   error: string | undefined;
   busy: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
@@ -760,7 +767,7 @@ function TaskDefaultsBar({ automation, error, busy, agentCapabilities, baseBranc
     if (!open && savedDraft) setEditingDraft(savedDraft);
   }, [open, savedDraft]);
   const draft = open ? editingDraft ?? savedDraft : savedDraft;
-  const validationError = editingDraft ? projectTaskAutomationError(editingDraft, baseBranches) : undefined;
+  const validationError = editingDraft ? projectTaskAutomationError(editingDraft, baseBranches, workflows) : undefined;
   const changed = Boolean(
     editingDraft
       && automation
@@ -770,7 +777,7 @@ function TaskDefaultsBar({ automation, error, busy, agentCapabilities, baseBranc
     <div className="task-defaults-line">
       <span>Every new Task starts with</span>
       <strong data-testid="project-task-automation-summary">{draft
-        ? taskAutomationSummary(draft, agentLabel(agentCapabilities, draft.agentId))
+        ? taskAutomationSummary(draft, agentLabel(agentCapabilities, draft.agentId), workflows.find((workflow) => workflow.id === draft.workflowId)?.name)
         : error ? "Defaults unavailable" : "Loading…"}</strong>
       {draft
         ? <button type="button" className="secondary-button" aria-expanded={open} onClick={() => {
@@ -787,6 +794,7 @@ function TaskDefaultsBar({ automation, error, busy, agentCapabilities, baseBranc
     {open && draft ? <div className="task-defaults-edit">
       <WorktreeAgentChoice
         idPrefix="project-task-automation"
+        workflows={workflows}
         value={draft}
         busy={busy}
         agentCapabilities={agentCapabilities}
@@ -1168,8 +1176,9 @@ function IntakeFields({ idPrefix, value, activeTaskLimit, busy, change, changeAc
 /// Importing is an explicit act, so the worktree and agent it will produce are
 /// confirmed before the command runs. The options start at the Project default
 /// and are sent as a resolved one-shot selection.
-function CandidateImportOptions({ candidateKey, choice, busy, importing, defaultsLoaded, agentCapabilities, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
+function CandidateImportOptions({ candidateKey, choice, busy, importing, defaultsLoaded, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
   candidateKey: string;
+  workflows: readonly WorkflowConfigurationDto[];
   choice: TaskImportChoice;
   busy: boolean;
   importing: boolean;
@@ -1182,7 +1191,7 @@ function CandidateImportOptions({ candidateKey, choice, busy, importing, default
   confirm(): void;
   cancel(): void;
 }) {
-  const selectionError = projectTaskAutomationError(choice, baseBranches);
+  const selectionError = projectTaskAutomationError(choice, baseBranches, workflows);
   // The wrapper owns the line break inside the candidate row: a max-width on the
   // flex item itself would clamp its basis and keep it on the row's first line.
   return <div className="task-candidate-import-line">
@@ -1194,6 +1203,7 @@ function CandidateImportOptions({ candidateKey, choice, busy, importing, default
     </p>
     <WorktreeAgentChoice
       idPrefix="task-candidate-import"
+      workflows={workflows}
       value={choice}
       busy={busy}
       agentCapabilities={agentCapabilities}
@@ -1206,7 +1216,7 @@ function CandidateImportOptions({ candidateKey, choice, busy, importing, default
     />
     {selectionError ? <p className="form-error" role="alert">{selectionError}</p> : null}
     <div className="task-candidate-import-actions">
-      <span data-testid="task-candidate-import-summary">{taskAutomationSummary(choice, agentLabel(agentCapabilities, choice.agentId))}</span>
+      <span data-testid="task-candidate-import-summary">{taskAutomationSummary(choice, agentLabel(agentCapabilities, choice.agentId), workflows.find((workflow) => workflow.id === choice.workflowId)?.name)}</span>
       <button type="button" className="secondary-button" disabled={busy} onClick={cancel}>Cancel</button>
       <button type="button" className="primary-button" disabled={busy || Boolean(selectionError)} onClick={confirm}>{importing ? "Importing…" : "Create Task"}</button>
       </div>

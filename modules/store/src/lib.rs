@@ -66,7 +66,8 @@ use termloop_domain::{
 // Version 57 is the first integrated state containing all three feature families.
 // Version 58 centralizes Session mutation completion and activation. Version 59
 // adds optional Agent Library profile references to workflow helper steps.
-const CURRENT_SCHEMA_VERSION: u32 = 59;
+// Version 60 adds an optional workflow selection to Project Task automation.
+const CURRENT_SCHEMA_VERSION: u32 = 60;
 
 pub struct CoreWriteAuthority {
     _private: (),

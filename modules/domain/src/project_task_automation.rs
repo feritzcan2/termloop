@@ -14,6 +14,8 @@ pub struct ProjectTaskAutomationConfiguration {
     pub base_ref: Option<String>,
     pub agent_id: Option<String>,
     #[serde(default)]
+    pub workflow_id: Option<String>,
+    #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
     pub permission: Option<String>,
@@ -33,6 +35,17 @@ impl ProjectTaskAutomationConfiguration {
                 .is_some_and(|value| !valid_remote_base_ref(value))
         {
             return false;
+        }
+        if let Some(workflow_id) = &self.workflow_id {
+            return self.create_worktree
+                && !workflow_id.trim().is_empty()
+                && workflow_id.len() <= 64
+                && !workflow_id.chars().any(char::is_control)
+                && self.agent_id.is_none()
+                && self.model.is_none()
+                && self.permission.is_none()
+                && self.reasoning.is_none()
+                && self.kickoff_message.is_none();
         }
         match (
             self.agent_id.as_deref(),
@@ -134,6 +147,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn workflow_uses_its_own_launch_settings_and_requires_a_worktree() {
+        let configuration = ProjectTaskAutomationConfiguration {
+            project_id: "project-1".into(),
+            create_worktree: true,
+            worktree_prefix: "termloop".into(),
+            base_ref: None,
+            workflow_id: Some("workflow-1".into()),
+            agent_id: None,
+            model: None,
+            permission: None,
+            reasoning: None,
+            kickoff_message: None,
+        };
+        assert!(configuration.is_valid());
+        let mut invalid = configuration.clone();
+        invalid.create_worktree = false;
+        assert!(!invalid.is_valid());
+        for id in [" ".to_owned(), "x".repeat(65), "bad\nname".into()] {
+            invalid = configuration.clone();
+            invalid.workflow_id = Some(id);
+            assert!(!invalid.is_valid());
+        }
+        for invalid in [
+            ProjectTaskAutomationConfiguration {
+                agent_id: Some("codex".into()),
+                ..configuration.clone()
+            },
+            ProjectTaskAutomationConfiguration {
+                model: Some("default".into()),
+                ..configuration.clone()
+            },
+            ProjectTaskAutomationConfiguration {
+                permission: Some("default".into()),
+                ..configuration.clone()
+            },
+            ProjectTaskAutomationConfiguration {
+                reasoning: Some("default".into()),
+                ..configuration.clone()
+            },
+            ProjectTaskAutomationConfiguration {
+                kickoff_message: Some("Start".into()),
+                ..configuration.clone()
+            },
+        ] {
+            assert!(
+                !invalid.is_valid(),
+                "workflow must not carry single-agent settings"
+            );
+        }
+    }
+
+    #[test]
     fn agent_requires_a_worktree_and_a_bounded_identifier() {
         let mut configuration = ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
@@ -141,6 +206,7 @@ mod tests {
             worktree_prefix: "termloop".into(),
             base_ref: Some("refs/remotes/origin/development".into()),
             agent_id: Some("codex".into()),
+            workflow_id: None,
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
             reasoning: Some("high".into()),
@@ -170,6 +236,7 @@ mod tests {
             worktree_prefix: "termloop".into(),
             base_ref: None,
             agent_id: None,
+            workflow_id: None,
             model: None,
             permission: None,
             reasoning: None,
