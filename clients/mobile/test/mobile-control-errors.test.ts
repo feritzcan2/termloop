@@ -9,7 +9,7 @@ import { createMobileDiagnosticReporter } from "../src/platform/mobile-diagnosti
 import { startingWorkflowSteps, workflowDraft } from "../src/presentation/workflow-template";
 
 describe("mobile control failures", () => {
-  it.each(["agent.libraryGet", "workflow.configurationList", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"] as const)("rejects malformed %s results using the generated contract", async (method) => {
+  it.each(["task.previewWorkflow", "task.launchWorkflow", "agent.libraryGet", "workflow.configurationList", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"] as const)("rejects malformed %s results using the generated contract", async (method) => {
     const socket = new RespondingSocket((request) => ({ id: request.id, ok: true, result: {} }));
     const client = new MobileControlClient("ws://127.0.0.1:48100/mobile", "test-token", () => {
       queueMicrotask(() => socket.emit("open", {})); return socket;
@@ -33,7 +33,7 @@ describe("mobile control failures", () => {
     }
   });
 
-  it.each(["workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"] as const)("never replays %s after transport loss", async (method) => {
+  it.each(["task.previewWorkflow", "task.launchWorkflow", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"] as const)("never replays %s after transport loss", async (method) => {
     let sent = 0;
     let opened = 0;
     const socket = new RespondingSocket(() => { sent++; socket.emit("close", {}); return {}; });
