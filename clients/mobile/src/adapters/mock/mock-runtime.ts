@@ -1,5 +1,6 @@
 import { CONTRACT_IDENTITY, type SessionRelocationPreviewDto } from "@termloop/contract/current";
 import { createMockWorkflowTemplates } from "./workflow-templates";
+import { createMockWorkflowLaunch } from "./workflow-launch";
 
 import type {
   ConnectionProfile,
@@ -115,6 +116,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
   return {
     kind: "mock",
     workflowTemplates: createMockWorkflowTemplates(),
+    workflowLaunch: createMockWorkflowLaunch(),
     voiceReceipts: {
       async read(connectionId, projectId) {
         return voiceReceipts.get(`${connectionId}:${projectId}`)

@@ -52,7 +52,7 @@ describe("mobile control scope", () => {
 
       const capabilities = await call(harness.port, "agent.capabilityList");
       expect(capabilities.ok).toBe(true);
-      for (const method of ["agent.libraryGet", "workflow.configurationList", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
+      for (const method of ["task.previewWorkflow", "task.launchWorkflow", "agent.libraryGet", "workflow.configurationList", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
         expect((await call(harness.port, method, { projectId: "project-1" })).ok).toBe(true);
       }
       const stewardConfiguration = await call(harness.port, "steward.configurationGet", {
@@ -137,7 +137,7 @@ describe("mobile control scope", () => {
       }
       expect(seen.find((entry) => entry.method === "agent.capabilityList").token).toBe("r".repeat(64));
       expect(seen.find((entry) => entry.method === "workflow.configurationList").token).toBe("r".repeat(64));
-      for (const method of ["agent.libraryGet", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
+      for (const method of ["task.previewWorkflow", "task.launchWorkflow", "agent.libraryGet", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
         expect(seen.find((entry) => entry.method === method).token).toBe("f".repeat(64));
       }
       expect(seen.find((entry) => entry.method === "steward.configurationGet").token).toBe("r".repeat(64));
@@ -153,7 +153,7 @@ describe("mobile control scope", () => {
       return {};
     });
     try {
-      for (const method of ["playbook.update", "task.delete", "session.deleteArchived", "companion.transcriptClear", "agent.profileCreate", "agent.profileUpdate", "task.launchWorkflow"]) {
+      for (const method of ["playbook.update", "task.delete", "session.deleteArchived", "companion.transcriptClear", "agent.profileCreate", "agent.profileUpdate", "workflow.executionCancel"]) {
         const response = await call(harness.port, method, { projectId: "project-1" });
         expect(response.ok).toBe(false);
         expect(response.error.code).toBe("methodNotFound");
@@ -178,7 +178,7 @@ describe("mobile control scope", () => {
       });
       expect(preImage.ok).toBe(false);
       expect(preImage.error.code).toBe("unauthenticated");
-      for (const method of ["agent.libraryGet", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
+      for (const method of ["task.previewWorkflow", "task.launchWorkflow", "agent.libraryGet", "workflow.configurationCreate", "workflow.configurationUpdate", "workflow.configurationDelete"]) {
         expect((await call(harness.port, method, {})).error.code).toBe("unauthenticated");
       }
       expect((await call(harness.port, "workflow.configurationList", { projectId: "project-1" })).ok).toBe(true);

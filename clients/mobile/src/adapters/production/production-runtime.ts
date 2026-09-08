@@ -38,6 +38,7 @@ import {
 import { MobileConnectionCoordinator } from "./mobile-connection-coordinator";
 import { attachTerminal } from "./legacy-terminal-attachment";
 import { createWorkflowTemplatesPort } from "./workflow-templates";
+import { createWorkflowLaunchPort } from "./workflow-launch";
 
 const STEWARD_TRANSCRIPT_LIMIT = 60;
 const STEWARD_MESSAGE_LIMIT = 8_192;
@@ -364,6 +365,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   return {
     kind: "production",
     workflowTemplates: createWorkflowTemplatesPort(async (connectionId) => controlClient(await resolve(connectionId))),
+    workflowLaunch: createWorkflowLaunchPort(async (connectionId) => controlClient(await resolve(connectionId))),
     voiceReceipts,
     connections: {
       subscribeChanges(listener) {

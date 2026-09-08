@@ -24,6 +24,8 @@ import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { useOverview } from "@/features/overview/overview-store";
+import { useMobileRuntime } from "@/composition/runtime-context";
+import { TaskWorkflowLauncher } from "@/features/workflows/task-workflow-launcher";
 import { buildProjectOverview, buildProjectSummaries } from "@/presentation/attention-overview";
 import { basename, taskJiraIssueKey } from "@/presentation/dto-readers";
 import { relativeAge } from "@/presentation/relative-time";
@@ -48,6 +50,7 @@ export default function TaskRoute() {
   const router = useRouter();
   const store = useOverview();
   const connections = useConnections();
+  const runtime = useMobileRuntime();
   const selectingConnection = connectionId !== undefined && connections.selectedId !== connectionId;
   const selected = selectingConnection ? undefined : connections.selected;
   const [briefExpanded, setBriefExpanded] = useState(false);
@@ -112,7 +115,7 @@ export default function TaskRoute() {
         center={<ProjectSelector current={current} />}
         right={<MockBadge />}
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         <View style={styles.titleBlock}>
           <Text style={styles.title}>{task.title}</Text>
           <View style={styles.pills}>
@@ -145,6 +148,21 @@ export default function TaskRoute() {
         ) : (
           <>
 
+        {selected ? <TaskWorkflowLauncher
+          key={`${selected.id}:${task.id}`}
+          task={task}
+          connectionId={selected.id}
+          online={selected.availability === "online"}
+          templates={runtime.workflowTemplates}
+          launch={runtime.workflowLaunch}
+          control={runtime.control}
+          openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(selected.id, { projectId: task.project_id }) })}
+          openSession={(sessionId) => {
+            void store.refresh();
+            router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected.id, { sessionId }) });
+          }}
+        /> : null}
+
         <Card>
           <View style={styles.glance}>
             <View style={styles.glanceHead}>
@@ -174,13 +192,6 @@ export default function TaskRoute() {
               })}
             />
           )}
-          <SecondaryButton
-            label="Workflow templates"
-            onPress={() => router.push({
-              pathname: "/workflows/[projectId]",
-              params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
-            })}
-          />
           <SecondaryButton
             label="Ask Steward"
             onPress={() => router.push({

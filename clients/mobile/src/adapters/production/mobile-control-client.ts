@@ -74,6 +74,8 @@ type MobileControlMethod =
   | "routine.runNow"
   | "task.previewAgent"
   | "task.launchAgent"
+  | "task.previewWorkflow"
+  | "task.launchWorkflow"
   | "session.previewAgent"
   | "session.launchAgent"
   | "session.forkAgent"
@@ -118,6 +120,8 @@ interface MobileControlResults {
   "routine.runNow": RoutineRunNowResult;
   "task.previewAgent": AgentLaunchPreviewResult;
   "task.launchAgent": TaskLaunchAgentResult;
+  "task.previewWorkflow": AgentLaunchPreviewResult;
+  "task.launchWorkflow": SessionDto;
   "session.previewAgent": AgentLaunchPreviewResult;
   "session.launchAgent": SessionLaunchAgentResult;
   "session.forkAgent": SessionForkAgentResult;
@@ -154,6 +158,8 @@ const REACHABILITY_EVIDENCE_MS = 30_000;
 const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "task.previewAgent": 30_000,
   "task.launchAgent": 120_000,
+  "task.previewWorkflow": 30_000,
+  "task.launchWorkflow": 120_000,
   "session.previewAgent": 30_000,
   "session.launchAgent": 120_000,
   "session.forkAgent": 120_000,
@@ -751,6 +757,8 @@ function decodeResult<M extends MobileControlMethod>(
       return value as MobileControlResults[M];
     }
     case "session.repairProviderHistory":
+    case "task.previewWorkflow":
+    case "task.launchWorkflow":
     case "session.requestAskTo":
     case "session.requestHandoverTo":
     case "session.previewRelocateAgentToTask":

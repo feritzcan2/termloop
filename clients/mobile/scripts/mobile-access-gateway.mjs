@@ -143,6 +143,8 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "routine.runNow",
   "task.previewAgent",
   "task.launchAgent",
+  "task.previewWorkflow",
+  "task.launchWorkflow",
   "session.previewAgent",
   "session.launchAgent",
   "session.forkAgent",
