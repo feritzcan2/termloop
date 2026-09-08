@@ -121,7 +121,7 @@ describe("mock mobile runtime", () => {
 
     const inspection = await runtime.agentLaunch.preview("connection-local-mac", "task-mobile", {
       agentId: "codex", model: "gpt-5.5-pro", permission: "plan", reasoning: "high",
-    });
+    }, "Fix the bug");
     expect(inspection).toMatchObject({
       program: "/usr/local/bin/codex",
       args: ["--model", "gpt-5.5-pro"],
@@ -133,7 +133,7 @@ describe("mock mobile runtime", () => {
     const result = await runtime.agentLaunch.launch(
       "connection-local-mac", "task-mobile", { agentId: "codex" }, inspection.launchTicket, "Fix the bug",
     );
-    expect(result).toEqual({ sessionId: "session-claude", runtimeEpoch: 17, promptSubmitted: true });
+    expect(result).toEqual({ sessionId: "session-claude", runtimeEpoch: 17, promptDelivery: "submitting" });
     expect(runtime.inspection.launches).toEqual([
       { taskId: "task-mobile", agentId: "codex", launchTicket: "mock-ticket-codex" },
     ]);
@@ -154,8 +154,8 @@ describe("mock mobile runtime", () => {
     });
 
     await expect(runtime.agentLaunch.launchProject(
-      "connection-local-mac", project, { agentId: "claude" }, inspection.launchTicket,
-    )).resolves.toEqual({ sessionId: "session-claude", runtimeEpoch: 17, promptSubmitted: null });
+      "connection-local-mac", project, { agentId: "claude", model: "sonnet", permission: "acceptEdits", reasoning: "high" }, inspection.launchTicket,
+    )).resolves.toEqual({ sessionId: "session-claude", runtimeEpoch: 17, promptDelivery: null });
     expect(runtime.inspection.projectLaunches).toEqual([
       { projectId: project.id, agentId: "claude", launchTicket: "mock-project-ticket-claude" },
     ]);
