@@ -10,6 +10,7 @@ import { SessionRowButton, SessionRowClose, sessionRelationshipLabel } from "./S
 import { taskChangeLabel } from "../task-presentation.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
+import { activeAgentWorkflowAction, type ActiveAgentWorkflow } from "./active-agent-workflows.js";
 
 export type ActiveAgentSections = {
   actionNeeded: readonly Session[];
@@ -216,20 +217,21 @@ function activeAgentGroupSections(
   return { actionNeeded, interrupted, inProgress, resting, older, stopped };
 }
 
-/// Search matches what a row already displays: the visible label and the
-/// worktree folder name. It never re-buckets, re-orders, or splits an Ask-To
+/// Search matches the label, worktree folder and unfinished workflow context.
+/// It never re-buckets, re-orders, or splits an Ask-To
 /// group; a group stays whole when any member matches so helpers keep their
 /// exact projected source.
-export function activeAgentQueryMatches(session: Session, normalizedQuery: string): boolean {
+export function activeAgentQueryMatches(session: Session, normalizedQuery: string, workflows: readonly ActiveAgentWorkflow[] = []): boolean {
   return sessionLabel(session).toLowerCase().includes(normalizedQuery)
-    || basename(session.process.cwd).toLowerCase().includes(normalizedQuery);
+    || basename(session.process.cwd).toLowerCase().includes(normalizedQuery)
+    || workflows.some((workflow) => workflow.context.toLowerCase().includes(normalizedQuery));
 }
 
-function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string): ActiveAgentGroupSections {
+function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>): ActiveAgentGroupSections {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return sections;
   const matching = (groups: readonly AgentSessionCluster[]) => groups.filter(
-    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized)),
+    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id))),
   );
   return {
     actionNeeded: matching(sections.actionNeeded),
@@ -257,6 +259,7 @@ export type ActiveAgentRailProps = {
   favoriteSessionIds: ReadonlySet<string>;
   taskAttachedSessionIds: ReadonlySet<string>;
   worktreeChangesBySessionId: ReadonlyMap<string, ActiveAgentWorktreeChanges>;
+  workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   agentGroups?: readonly AgentGroupLayout[] | undefined;
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
   detachRelationship?: ((sessionId: string) => void) | undefined;
@@ -306,7 +309,7 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   /// would make the rail contradict the status it renders.
   const sections = naturalSections;
   const allOrdered = useMemo(() => flattenGroupSections(sections), [sections]);
-  const visibleSections = useMemo(() => filterActiveAgentGroupSections(sections, query), [sections, query]);
+  const visibleSections = useMemo(() => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId), [sections, query, props.workflowsBySessionId]);
   const filtering = visibleSections !== sections;
   const ordered = useMemo(
     () => (filtering ? flattenGroupSections(visibleSections) : allOrdered),
@@ -473,10 +476,24 @@ function ActiveAgentRow({ session, source, props, sessionsById }: {
   const favorite = props.favoriteSessionIds.has(session.id);
   const agentStatus = props.statusesById.get(session.id);
   const reviewReady = props.reviewReadySessionIds.has(session.id);
+  const workflows = props.workflowsBySessionId?.get(session.id) ?? [];
+  const workflowAction = activeAgentWorkflowAction(session);
   const worktreeChanges = props.worktreeChangesBySessionId.get(session.id)
     ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined);
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
+      {workflows.map((workflow) => <button
+        key={workflow.executionId}
+        type="button"
+        className={`active-agent-workflow${workflowAction.resume ? " needs-resume" : ""}`}
+        aria-label={`${workflowAction.label}: ${workflow.context}, ${sessionLabel(session)}`}
+        title={`${workflow.context}\n${workflowAction.resume ? "Resume this agent’s existing conversation; no new workflow is started." : "Open this agent’s conversation to follow or continue the current step."}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (workflowAction.resume) props.resumeSession(session.id);
+          else props.selectSession(session.id);
+        }}
+      ><span className="active-agent-workflow-action">{workflowAction.label}</span><span className="active-agent-workflow-step">{workflow.stepLabel}</span></button>)}
       <div className={`session-row active-agent-row${worktreeChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}

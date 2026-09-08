@@ -56,6 +56,7 @@ import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
 import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 import { ActiveAgentRail } from "./ActiveAgentRail.js";
+import { activeAgentWorkflows } from "./active-agent-workflows.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
 import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
@@ -659,6 +660,10 @@ export function Shell(props: ShellProps) {
   const taskNestedHelperIds = useMemo(
     () => askToHelpersForSources(attachedSessionIds, sessionsById),
     [attachedSessionIds, sessionsById],
+  );
+  const workflowsBySessionId = useMemo(
+    () => activeAgentWorkflows(props.workflowExecutions, props.projectSessions, props.projectTasks),
+    [props.workflowExecutions, props.projectSessions, props.projectTasks],
   );
   const looseSessions = useMemo(
     () => props.projectSessions.filter((session) => !attachedSessionIds.has(session.id) && !taskNestedHelperIds.has(session.id) && !isAssistantSession(session)),
@@ -1552,6 +1557,7 @@ export function Shell(props: ShellProps) {
             favoriteSessionIds={favoriteAgentSessionIds}
             taskAttachedSessionIds={attachedSessionIds}
             worktreeChangesBySessionId={worktreeChangesBySessionId}
+            workflowsBySessionId={workflowsBySessionId}
             menuSessionId={sessionMenu?.sessionId}
             selectSession={selectSession}
             navigateSession={navigateSession}
