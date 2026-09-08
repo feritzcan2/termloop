@@ -19,12 +19,32 @@ pub(in crate::app) struct CommittedSessionMutation {
 
 impl CommittedSessionMutation {
     pub(in crate::app) fn launched(session: &Value, state_revision: u64, workflow: bool) -> Self {
-        Self {
-            impact: if workflow {
+        Self::with_launch_impact(
+            session,
+            state_revision,
+            if workflow {
                 CommitImpact::SessionWorkflow
             } else {
                 CommitImpact::Session
             },
+        )
+    }
+
+    pub(in crate::app) fn fork_confirmed(session: &Value, state_revision: u64) -> Self {
+        Self::with_launch_impact(session, state_revision, CommitImpact::Session)
+    }
+
+    pub(in crate::app) fn task_terminal_launched(session: &Value, state_revision: u64) -> Self {
+        Self::with_launch_impact(session, state_revision, CommitImpact::TaskTerminalLaunch)
+    }
+
+    pub(in crate::app) fn run_launched(session: &Value, state_revision: u64) -> Self {
+        Self::with_launch_impact(session, state_revision, CommitImpact::SessionRun)
+    }
+
+    fn with_launch_impact(session: &Value, state_revision: u64, impact: CommitImpact) -> Self {
+        Self {
+            impact,
             state_revision,
             cwd: session
                 .get("process")
@@ -198,6 +218,66 @@ mod tests {
                     vec![ProjectionTopic::Session]
                 }
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_launch_completion_waits_for_capacity_before_presence_and_response() {
+        let session = json!({"id": "new-session", "process": {"cwd": "/captured-worktree"}});
+        for (commit, topics) in [
+            (
+                CommittedSessionMutation::fork_confirmed(&session, 41),
+                vec![ProjectionTopic::Session],
+            ),
+            (
+                CommittedSessionMutation::task_terminal_launched(&session, 41),
+                vec![
+                    ProjectionTopic::Session,
+                    ProjectionTopic::Steward,
+                    ProjectionTopic::Routine,
+                    ProjectionTopic::Workflow,
+                ],
+            ),
+            (
+                CommittedSessionMutation::run_launched(&session, 41),
+                vec![ProjectionTopic::Session, ProjectionTopic::Run],
+            ),
+        ] {
+            let (sender, mut receiver) = mpsc::channel(1);
+            // A later independent commit may reach the queue first. Publishing
+            // this launch must still carry the facts captured by its own commit.
+            sender
+                .send(commit_invalidation(CommitImpact::Task, 42, 18))
+                .await
+                .unwrap();
+            let (refreshed, mut presence) = mpsc::channel(1);
+            let completion =
+                finish_with_presence(&sender, 17, commit, Ok(session.clone()), |cwd| async move {
+                    refreshed.send(cwd).await.unwrap()
+                });
+            tokio::pin!(completion);
+            tokio::select! {
+                biased;
+                result = &mut completion => panic!("full queue lost the committed launch: {result:?}"),
+                _ = tokio::task::yield_now() => {}
+            }
+            assert!(presence.try_recv().is_err());
+            assert_eq!(receiver.recv().await.unwrap().state_revision, 42);
+            let result = tokio::time::timeout(std::time::Duration::from_secs(1), &mut completion)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result, session);
+            assert_eq!(
+                receiver.recv().await.unwrap(),
+                InvalidationRequest {
+                    topics,
+                    state_revision: 41,
+                    observation_sequence: 17,
+                }
+            );
+            assert_eq!(presence.recv().await.as_deref(), Some("/captured-worktree"));
+            assert!(receiver.try_recv().is_err());
         }
     }
 
