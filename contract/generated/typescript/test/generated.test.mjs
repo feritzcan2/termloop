@@ -430,6 +430,12 @@ test("Jira provider requests outlive their bounded HTTP timeout", () => {
   assert.equal(controlRequestTimeoutMs("taskSource.refresh"), 300_000);
 });
 
+test("account status requests outlive both bounded provider probes", () => {
+  assert.equal(controlRequestTimeoutMs("agent.authStatusList"), 45_000);
+  assert.equal(controlRequestTimeoutMs("agent.authGet"), 12_000);
+  assert.equal(controlRequestTimeoutMs("agent.accountList"), 12_000);
+});
+
 test("atomic Playbook replacement outlives routine reconciliation and durable commit", () => {
   assert.equal(controlRequestTimeoutMs("playbook.update"), 300_000);
   assert.equal(controlRequestTimeoutMs("playbook.get"), 12_000);
