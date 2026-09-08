@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ConnectionProfile } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
-import { preferredConnectionId, shouldResetConnectionTransports } from "./connection-resilience";
+import { needsConnectionRecovery, preferredConnectionId, shouldResetConnectionTransports } from "./connection-resilience";
 
 export { preferredConnectionId } from "./connection-resilience";
 
@@ -87,7 +87,6 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
         if (activeProbe.current === probe) activeProbe.current = undefined;
         if (!active) return;
         const now = Date.now();
-        let reconnecting = false;
         const knownIds = new Set(profiles.map((profile) => profile.id));
         for (const connectionId of unreachableSince.current.keys()) {
           if (!knownIds.has(connectionId)) unreachableSince.current.delete(connectionId);
@@ -102,7 +101,6 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
           if (profile.availability === "offline" && now - startedAt >= CONNECTION_RECONNECT_GRACE_MS) {
             return profile;
           }
-          reconnecting = true;
           const previous = connectionsRef.current.find((candidate) => candidate.id === profile.id);
           return {
             ...profile,
@@ -121,7 +119,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
             ? current
             : preferredConnectionId(profiles)
         ));
-        if (reconnecting) scheduleRetry();
+        if (needsConnectionRecovery(nextConnections, selectedId ?? preferredConnectionId(profiles))) scheduleRetry();
         if (pendingTransportChange.current) {
           pendingTransportChange.current = false;
           queueMicrotask(() => {
@@ -141,7 +139,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
       active = false;
       if (retryTimer !== undefined) clearTimeout(retryTimer);
     };
-  }, [runtime, reloads, lifecycle.active, lifecycle.foregroundRevision]);
+  }, [runtime, reloads, selectedId, lifecycle.active, lifecycle.foregroundRevision]);
 
   useEffect(() => {
     if (!lifecycle.active) return;
