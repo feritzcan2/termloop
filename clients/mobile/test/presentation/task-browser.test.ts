@@ -10,9 +10,9 @@ import { taskAtAGlance, taskStage } from "../../src/presentation/task-presentati
 const base = fixtureTasks[0]!;
 const unattached = { ...base };
 delete unattached.worktree_presence;
-function itemsFor(tasks: TaskDto[], sessions = fixtureSessions, agentStatuses = fixtureAgentStatuses) {
+function itemsFor(tasks: TaskDto[], sessions = fixtureSessions, agentStatuses = fixtureAgentStatuses, reviewReady: ReadonlySet<string> = new Set()) {
   const overview: MobileOverview = { projects: fixtureProjects, tasks, sessions, agentStatuses, stewardEnabledProjectIds: [], stewardExecutorSessionIds: {}, agentGroupsByProject: {} };
-  const model = buildProjectOverview(overview, base.project_id);
+  const model = buildProjectOverview(overview, base.project_id, reviewReady);
   return { items: buildTaskBrowserItems(model.tasks, tasks, model.agents), model };
 }
 
@@ -66,5 +66,14 @@ describe("task browsing", () => {
     expect(taskAtAGlance(taskStage(base), agents)).toMatchObject({ title: "1 agent available", tone: "quiet" });
     expect(taskAtAGlance(taskStage(base), [{ ...agents[0]!, attachable: false }])).toMatchObject({ title: "Ready to start", tone: "quiet" });
     expect(taskAtAGlance(taskStage(base), [{ ...agents[0]!, tone: "working" }])).toMatchObject({ title: "1 agent working", tone: "working" });
+  });
+
+  it("puts actionable reviews above background setup and makes reply, review and working states explicit", () => {
+    const creating: TaskDto = { ...unattached, id: "creating", worktree_provisioning: { status: "running", operation_id: "operation", failure: null } };
+    const { items } = itemsFor([creating, base], fixtureSessions, [{ ...fixtureAgentStatuses[0]!, status: "idle" }], new Set([fixtureSessions[0]!.id]));
+    expect(items.map((item) => item.task.id)).toEqual([base.id, "creating"]);
+    expect(items[0]).toMatchObject({ status: "Ready for review", filter: "attention", agentActionLabel: "Review now", statusDetail: "Claude's work is ready to review." });
+    expect(itemsFor([base]).items[0]).toMatchObject({ status: "Waiting for you", filter: "attention", agentActionLabel: "Reply now", statusDetail: "Claude needs your reply to continue." });
+    expect(itemsFor([base], fixtureSessions, [{ ...fixtureAgentStatuses[0]!, status: "working" }]).items[0]).toMatchObject({ status: "Agent working", filter: "active", agentActionLabel: "View progress" });
   });
 });

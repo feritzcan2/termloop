@@ -6,7 +6,7 @@ import { EmptyState, SecondaryButton } from "@/components/primitives";
 import type { AgentRow, TaskRow } from "@/presentation/attention-overview";
 import { buildTaskBrowserItems, filterTaskItems, taskFilters, type TaskBrowserItem, type TaskFilter } from "@/presentation/task-browser";
 import { taskChangeLabel } from "@/presentation/task-presentation";
-import { color, geometry, radius, space, toneColor } from "@/theme/tokens";
+import { color, geometry, radius, space, toneColor, toneWash } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export interface TaskBrowserProps {
@@ -68,6 +68,8 @@ export function TaskBrowser(props: TaskBrowserProps) {
               {taskFilters.map((option) => {
                 const count = option.id === "all" ? items.length : items.filter((item) => item.filter === option.id).length;
                 const selected = filter === option.id;
+                const signal = count > 0 && option.id === "attention" ? color.attention
+                  : count > 0 && option.id === "active" ? color.success : undefined;
                 return (
                   <Pressable
                     key={option.id}
@@ -75,10 +77,11 @@ export function TaskBrowser(props: TaskBrowserProps) {
                     accessibilityLabel={`${option.label}, ${count} tasks`}
                     accessibilityState={{ selected }}
                     onPress={() => { setFilter(option.id); resetScroll(); }}
-                    style={[styles.filter, selected ? styles.filterSelected : null]}
+                    style={[styles.filter, signal && !selected ? { backgroundColor: `${signal}1F`, borderColor: signal } : null, selected ? styles.filterSelected : null]}
                   >
-                    <Text style={[styles.filterLabel, selected ? styles.filterLabelSelected : null]}>{option.label}</Text>
-                    <Text style={[styles.filterCount, selected ? styles.filterLabelSelected : null]}>{count}</Text>
+                    {signal ? <View style={[styles.filterDot, { backgroundColor: selected ? color.onAccent : signal }]} /> : null}
+                    <Text style={[styles.filterLabel, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{option.label}</Text>
+                    <Text style={[styles.filterCount, signal ? { color: signal } : null, selected ? styles.filterLabelSelected : null]}>{count}</Text>
                   </Pressable>
                 );
               })}
@@ -121,22 +124,34 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
 }) {
   const { row, task, agent } = item;
   const tint = row.tone === "quiet" || row.tone === "done" ? color.textSecondary : toneColor[row.tone];
+  const prominent = item.filter === "attention" || item.filter === "active";
+  const wash = row.tone === "quiet" || row.tone === "done" ? color.bgRaised : toneWash[row.tone];
+  const waiting = row.attention?.tone === "attention" || row.attention?.tone === "review";
+  const actionTint = row.attention ? toneColor[row.attention.tone] : tint;
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, prominent ? { borderColor: tint, borderLeftWidth: 4 } : null]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${task.title}. ${item.status}. ${row.stage.summary}`}
+        accessibilityLabel={`${item.status}. ${task.title}. ${item.statusDetail ?? row.stage.summary}`}
         accessibilityHint="Open task details"
         onPress={() => openTask(task.id)}
-        style={({ pressed }) => [styles.cardBody, pressed ? styles.pressed : null]}
+        style={({ pressed }) => [pressed ? styles.pressed : null]}
       >
-        <View style={styles.cardMeta}>
+        <View style={[styles.cardMeta, prominent ? { backgroundColor: wash } : null]}>
           <View style={styles.status}>
-            <View style={[styles.statusDot, { backgroundColor: tint }]} />
-            <Text style={[styles.statusLabel, { color: tint }]}>{item.status}</Text>
+            {prominent ? (
+              <View style={[styles.statusIcon, { backgroundColor: tint }]}>
+                <Text style={styles.statusGlyph} accessibilityElementsHidden>{item.filter === "active" ? "↗" : row.tone === "review" ? "✓" : "!"}</Text>
+              </View>
+            ) : <View style={[styles.statusDot, { backgroundColor: tint }]} />}
+            <View style={styles.statusCopy}>
+              <Text style={[styles.statusLabel, prominent ? styles.statusLabelProminent : null, { color: tint }]}>{item.status}</Text>
+              {item.statusDetail ? <Text style={[styles.statusDetail, { color: tint }]}>{item.statusDetail}</Text> : null}
+            </View>
           </View>
           {item.issueKey ? <Text style={styles.issue} numberOfLines={1}>{item.issueKey}</Text> : null}
         </View>
+        <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
           <Text style={styles.cardTitle} numberOfLines={3}>{task.title}</Text>
           <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
@@ -145,13 +160,14 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
           {row.stage.id !== "ready" ? row.stage.summary : task.brief?.trim() || "Open this task to see its agents and progress."}
         </Text>
         {task.branch === null ? null : <Text style={styles.branch} numberOfLines={1}>{task.branch.name}</Text>}
+        </View>
       </Pressable>
       {agent === undefined && item.changeCount === undefined ? null : (
         <View style={styles.cardActions}>
           {agent === undefined ? null : (
-            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${agent.title} for ${task.title}`} onPress={() => openAgent(agent.sessionId)} style={({ pressed }) => [styles.cardAction, pressed ? styles.pressed : null]}>
-              <Text style={styles.agentAction} numberOfLines={1}>{row.attention?.tone === "attention" ? "Reply to agent" : row.attention?.tone === "review" ? "Review agent" : "Open agent"}</Text>
-              <Text style={styles.actionArrow} accessibilityElementsHidden>↗</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`${item.agentActionLabel}: ${agent.title} for ${task.title}`} onPress={() => openAgent(agent.sessionId)} style={({ pressed }) => [styles.cardAction, waiting ? { backgroundColor: actionTint } : null, pressed ? styles.actionPressed : null]}>
+              <Text style={[styles.agentAction, waiting ? styles.waitingActionLabel : null]} numberOfLines={1}>{item.agentActionLabel}</Text>
+              <Text style={[styles.actionArrow, waiting ? styles.waitingActionLabel : null]} accessibilityElementsHidden>↗</Text>
             </Pressable>
           )}
           {item.changeCount === undefined ? null : (
@@ -182,7 +198,8 @@ const styles = StyleSheet.create({
   clearGlyph: { fontSize: 22, color: color.textSecondary },
   filters: { flexGrow: 0 },
   filterContent: { gap: 6 },
-  filter: { minHeight: geometry.touchTarget, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 13, borderRadius: radius.pill, backgroundColor: color.bgRaised },
+  filter: { minHeight: geometry.touchTarget, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 13, borderRadius: radius.pill, backgroundColor: color.bgRaised, borderWidth: 1, borderColor: "transparent" },
+  filterDot: { width: 6, height: 6, borderRadius: 3 },
   filterSelected: { backgroundColor: color.accentStrong },
   filterLabel: { fontSize: 13, fontWeight: "600", color: color.textSecondary },
   filterCount: { fontSize: 12, fontVariant: ["tabular-nums"], color: color.textMuted },
@@ -190,11 +207,16 @@ const styles = StyleSheet.create({
   resultCount: { color: color.textSecondary, fontSize: 12 },
   listContent: { padding: space.screen, paddingTop: space.sm, paddingBottom: space.xl + 64, gap: space.md, flexGrow: 1 },
   card: { backgroundColor: color.bgRaised, borderRadius: 16, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: color.border },
-  cardBody: { padding: space.lg, gap: 9 },
-  cardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
-  status: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
+  cardBody: { padding: space.lg, paddingTop: space.md, gap: 9 },
+  cardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md },
+  status: { flexDirection: "row", alignItems: "center", gap: space.sm, flex: 1 },
+  statusCopy: { flex: 1 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  statusGlyph: { color: color.onAccent, fontSize: 17, fontWeight: "800" },
   statusLabel: { fontSize: 12, fontWeight: "600", flexShrink: 1 },
+  statusLabelProminent: { fontSize: 14, fontWeight: "800" },
+  statusDetail: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   issue: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, maxWidth: "40%" },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   cardTitle: { flex: 1, color: color.text, fontSize: 17, fontWeight: "600", lineHeight: 23, letterSpacing: -0.2 },
@@ -206,5 +228,7 @@ const styles = StyleSheet.create({
   agentAction: { color: color.accentStrong, fontSize: 13, fontWeight: "600", flexShrink: 1 },
   changesAction: { color: color.textSecondary, fontSize: 13, fontWeight: "500" },
   actionArrow: { color: color.accentStrong, fontSize: 16 },
+  waitingActionLabel: { color: color.onAccent, fontWeight: "700" },
+  actionPressed: { opacity: 0.75 },
   pressed: { backgroundColor: color.accentWash },
 });
