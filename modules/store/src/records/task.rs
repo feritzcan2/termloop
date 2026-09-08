@@ -428,10 +428,7 @@ impl Store {
             return Err(StoreError::ConstraintViolation);
         }
         let previous = self.state.clone();
-        self.state
-            .sessions
-            .retain(|session| !unique_ids.contains(session.id.as_str()));
-        super::agent_plan::remove_agent_plans_for_sessions(&mut self.state, &unique_ids);
+        super::session::remove_exact_session_descriptors(&mut self.state, session_ids);
         self.state
             .task_archive_suspensions
             .retain(|suspension| !unique_ids.contains(suspension.session_id.as_str()));

@@ -51,6 +51,7 @@ import { TerminalGatewayRegistry, gatewayEntry } from "./main/terminal-gateway.j
 import { ConnectionRegistry, LOCAL_CONNECTION_PROFILE_ID } from "./main/connection-registry.js";
 import { ConnectionProfileLifecycle } from "./main/connection-profile-lifecycle.js";
 import { currentConnectionProfileId, sourceAwareIpcHandle } from "./main/ipc-source-context.js";
+import { readProjectTasks } from "./main/task-list.js";
 import { connectionEntityKey } from "./connection-scope.js";
 import { interactiveTaskCreateParams } from "./task-automation-transport.js";
 import { remoteConnectionFailureMessage } from "./main/access-websocket.js";
@@ -488,12 +489,11 @@ handleIpc("termloop:task-list", async (
   archiveScope: "active" | "archived" | "all" = "active",
 ) => {
   connections.setSelectedProjectDemand(currentConnectionProfileId(), projectId);
-  const page = await controlCall("task.list", {
+  return readProjectTasks((params) => controlCall("task.list", params), {
     projectId,
     archiveScope,
     ...(taskIds ? { taskIds } : {}),
   });
-  return page.items;
 });
 handleIpc("termloop:task-worktree-change-list", (_event, taskId: string) =>
   controlCall("task.worktreeChangeList", { taskId }),
