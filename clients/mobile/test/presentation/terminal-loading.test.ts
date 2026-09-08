@@ -17,6 +17,14 @@ describe("terminal loading", () => {
     expect(terminalLoading(buffer)).toBeUndefined();
     expect(buffer.lines).toEqual([]);
   });
+  it("keeps cached output visible while a new attachment loads its suffix", () => {
+    let buffer = reduceTerminalEvent(emptyTerminalBuffer(), { type: "replay", bytes: new TextEncoder().encode("Cached output\n") }, options);
+    buffer = reduceTerminalEvent(buffer, { type: "state", state: "connecting" }, options);
+    expect(terminalLoading(buffer)?.label).toBe("Updating terminal · saved output visible");
+    buffer = reduceTerminalEvent(buffer, { type: "replayProgress", receivedBytes: 128, totalBytes: 512 }, options);
+    expect(terminalLoading(buffer)).toEqual({ label: "Updating terminal · saved output visible", percent: 25 });
+    expect(buffer.lines[0]?.text).toBe("Cached output");
+  });
   it("shows reconnection even if a cached screen was ready", () => {
     expect(terminalLoading({ ...emptyTerminalBuffer(), ready: true, stream: "reconnecting" })?.label).toContain("Reconnecting");
   });

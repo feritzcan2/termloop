@@ -26,3 +26,13 @@ export function preferredConnectionId(profiles: readonly ConnectionProfile[]): s
     .filter((profile) => connectionPresentation(profile.availability).block === undefined);
   return usable[0]?.id ?? recentFirst[0]?.id;
 }
+
+/// The offline label must not retire recovery for the Mac the user is viewing.
+/// Other offline Macs keep the slower catalog polling cadence.
+export function needsConnectionRecovery(
+  profiles: readonly ConnectionProfile[],
+  selectedId: string | undefined,
+): boolean {
+  return profiles.some((profile) => profile.availability === "reconnecting"
+    || (profile.id === selectedId && profile.availability === "offline"));
+}
