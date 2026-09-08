@@ -992,25 +992,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   const action = props.deleting ? undefined : taskPrimaryAction(stage, collapsed ? attention : undefined);
   const workflowManageable = props.workflowConfigurations.length > 0;
   const taskLaunch = launchable || workflowExecutionVisible || workflowManageable ? (
-    <div className="task-launch" role="group" aria-label={launchable
-      ? `Start a new Session in ${task.title}`
-      : workflowExecutionVisible
-        ? `${task.title} workflow progress`
-        : `Manage workflows for ${task.title}`}>
-      {launchable ? <>
-        <span className="task-launch-label" aria-hidden="true">Start</span>
-        <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
-        {agents.map((capability) => (
-        <button
-          key={capability.agent_id}
-          type="button"
-          className={`task-launch-icon agent-${capability.agent_id}`}
-          title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
-          aria-label={`Start ${capability.label} in ${task.title}`}
-          onClick={() => void props.launchAgent(task.id, capability.agent_id)}
-        ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
-        ))}
-      </> : null}
       <TaskWorkflowLaunchers
         task={task}
         configurations={props.workflowConfigurations}
@@ -1018,6 +999,41 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         agentProfiles={props.agentProfiles}
         launchable={launchable}
         showLaunchers={launchable || workflowManageable}
+        renderLaunchers={(workflowButton) => <div className="task-launch" role="group" aria-label={launchable
+          ? `Start a new Session in ${task.title}`
+          : `Manage workflows for ${task.title}`}>
+          {launchable ? <>
+            <span className="task-launch-label" aria-hidden="true">Start</span>
+            <button type="button" className="task-launch-icon" title="New Terminal" aria-label={`Open a terminal in ${task.title}`} onClick={() => void props.launchTerminal(task.id)}><Icon name="terminal" /></button>
+            {agents.map((capability) => (
+              <button
+                key={capability.agent_id}
+                type="button"
+                className={`task-launch-icon agent-${capability.agent_id}`}
+                title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
+                aria-label={`Start ${capability.label} in ${task.title}`}
+                onClick={() => void props.launchAgent(task.id, capability.agent_id)}
+              ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
+            ))}
+          </> : null}
+          {workflowButton}
+          {launchable ? <TaskRunLaunchers
+            projectId={task.project_id}
+            task={task}
+            configurations={props.runConfigurations}
+            runtimes={props.runRuntimes}
+            sessionsById={props.sessionsById}
+            stateRevision={props.runStateRevision}
+            launchable={launchable}
+            overlayContainer={props.overlayContainer}
+            overlayVisibilityChanged={props.overlayVisibilityChanged}
+            improvement={props.runImprovement}
+            setupImprovement={props.setupRunImprovement}
+            save={props.saveRunConfiguration}
+            remove={props.deleteRunConfiguration}
+            launch={props.launchTaskRun}
+          /> : null}
+        </div>}
         overlayContainer={props.overlayContainer}
         overlayVisibilityChanged={props.overlayVisibilityChanged}
         edit={(configuration) => props.openWorkflowEditor(configuration?.id)}
@@ -1035,23 +1051,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           };
         }}
       />
-      {launchable ? <TaskRunLaunchers
-        projectId={task.project_id}
-        task={task}
-        configurations={props.runConfigurations}
-        runtimes={props.runRuntimes}
-        sessionsById={props.sessionsById}
-        stateRevision={props.runStateRevision}
-        launchable={launchable}
-        overlayContainer={props.overlayContainer}
-        overlayVisibilityChanged={props.overlayVisibilityChanged}
-        improvement={props.runImprovement}
-        setupImprovement={props.setupRunImprovement}
-        save={props.saveRunConfiguration}
-        remove={props.deleteRunConfiguration}
-        launch={props.launchTaskRun}
-      /> : null}
-    </div>
   ) : null;
   return (
     <div

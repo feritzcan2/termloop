@@ -1,5 +1,5 @@
 import type { Session, Task, WorkflowExecution } from "../model.js";
-import { isLiveSession } from "../model.js";
+import { agentName, isLiveSession, sessionLabel } from "../model.js";
 import { workflowStepSessionId } from "./workflow-presentation.js";
 
 export type ActiveAgentWorkflow = {
@@ -77,4 +77,33 @@ export function activeAgentWorkflowAction(session: Session): { label: string; re
     };
   }
   return { label: "Open workflow", resume: false };
+}
+
+/// Role names are presentation only: preserve the stored Session name and use
+/// exact workflow membership, including finished runs. A reused helper shows
+/// its most recently assigned role, not every role it has ever held.
+export function workflowAgentLabels(
+  executions: readonly WorkflowExecution[],
+  sessions: readonly Session[],
+): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>();
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
+    const label = (sessionId: string, role: string, coordinator = false) => {
+      const session = sessionsById.get(sessionId);
+      if (!session || session.kind !== "Agent" || session.project_id !== execution.projectId
+        || session.archived_at_epoch_ms !== null) return;
+      const name = coordinator && session.name === execution.workflowName ? agentName(session) : sessionLabel(session);
+      labels.set(sessionId, `${role} · ${name}`);
+    };
+    const currentStep = execution.steps[execution.currentStepIndex];
+    label(execution.coordinatorSessionId,
+      execution.status !== "completed" && currentStep?.kind === "fix" ? "Fixer" : "Implementer", true);
+    for (const step of execution.steps) {
+      if (step.kind !== "discuss" && step.kind !== "review") continue;
+      const participant = execution.participants.find((candidate) => candidate.stepId === step.id);
+      if (participant) label(participant.sessionId, step.kind === "review" ? "Reviewer" : "Advisor");
+    }
+  }
+  return labels;
 }
