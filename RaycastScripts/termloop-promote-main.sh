@@ -129,7 +129,8 @@ ci_runs_for_candidate() {
     --commit "$candidate_sha" \
     --limit 50 \
     --json databaseId,headSha,event,status,conclusion,createdAt,url \
-    --jq "[.[] | select(.headSha == \"$candidate_sha\" and (.event == \"push\" or .event == \"workflow_dispatch\"))]"
+    --event push \
+    --jq "[.[] | select(.headSha == \"$candidate_sha\" and .event == \"push\")]"
 }
 
 echo "==> Fetching protected branches"
@@ -251,23 +252,24 @@ elif [[ -n "$failed_run_url" ]]; then
   echo "Fix the failure with a new commit, or explicitly rerun a proven transient failure." >&2
   exit 1
 else
-  previous_ids="$(gh run list --repo "$REPO_SLUG" --workflow "$CI_WORKFLOW" --event workflow_dispatch --limit 100 --json databaseId --jq '.[].databaseId')"
+  # Push-triggered checks populate protected-branch status rollups. Manual
+  # workflow_dispatch runs can pass without satisfying main's required checks.
+  ci_branch="release/promote-$candidate_sha"
   echo "==> Starting native CI for the exact candidate"
-  gh workflow run "$CI_WORKFLOW" --repo "$REPO_SLUG" --ref "$SOURCE_BRANCH"
+  git -C "$REPO_DIR" push origin "$candidate_sha:refs/heads/$ci_branch"
 
   active_run_id=""
   for _attempt in {1..30}; do
     while IFS= read -r run_id; do
       [[ -n "$run_id" ]] || continue
-      if ! grep -Fqx "$run_id" <<<"$previous_ids"; then
-        active_run_id="$run_id"
-        break
-      fi
+      active_run_id="$run_id"
+      break
     done < <(
       gh run list \
         --repo "$REPO_SLUG" \
         --workflow "$CI_WORKFLOW" \
-        --event workflow_dispatch \
+        --event push \
+        --branch "$ci_branch" \
         --commit "$candidate_sha" \
         --limit 30 \
         --json databaseId,headSha \
@@ -311,7 +313,7 @@ git -C "$main_checkout" fetch origin --prune --no-tags \
 
 local_main_sha="$(git -C "$main_checkout" rev-parse HEAD)"
 remote_main_sha="$(git -C "$main_checkout" rev-parse "refs/remotes/origin/$TARGET_BRANCH")"
-if [[ "$local_main_sha" != "$remote_main_sha" ]]; then
+if [[ "$local_main_sha" != "$remote_main_sha" && "$local_main_sha" != "$candidate_sha" ]]; then
   if git -C "$main_checkout" merge-base --is-ancestor "$local_main_sha" "$remote_main_sha"; then
     git -C "$main_checkout" merge --ff-only "refs/remotes/origin/$TARGET_BRANCH"
   else
