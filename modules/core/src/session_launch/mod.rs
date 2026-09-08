@@ -11,6 +11,7 @@ mod history_repair;
 mod lifecycle;
 mod relocation;
 mod resume;
+mod resume_failure;
 mod resume_role;
 pub(crate) mod session_history;
 mod workflow_execution;
@@ -31,6 +32,10 @@ pub use relocation::{
 pub use resume::{
     AgentResumeCandidate, AgentResumePlan, AgentResumePlanOutcome, AgentResumePreparationError,
     AgentResumeReapError, AgentResumeTargetValidation,
+};
+pub use resume_failure::{
+    AgentResumeCompletion, AgentResumeFailureOutcome, AgentResumeFailurePlan,
+    ObservedAgentResumeFailure,
 };
 pub use session_history::{
     ObservedSessionHistoryResume, ObservedSessionHistoryScan, SessionHistoryListPlanOutcome,
@@ -63,49 +68,7 @@ pub struct AgentLaunchCommit {
     pub state_revision: u64,
 }
 
-pub struct CodexRuntime {
-    process: termloop_platform::ManagedProcess,
-    bridge: termloop_agents::CodexAppServerBridge,
-    upstream_endpoint: String,
-}
-
-impl CodexRuntime {
-    pub(crate) fn endpoint(&self) -> &str {
-        self.bridge.endpoint()
-    }
-
-    fn warm_thread_history(
-        &self,
-        native_thread_id: &str,
-    ) -> Result<(), termloop_agents::CodexThreadHistoryProbeError> {
-        termloop_agents::probe_codex_thread_history(&self.upstream_endpoint, native_thread_id)
-    }
-
-    fn inspect_thread_history(
-        &self,
-        native_thread_id: &str,
-    ) -> Result<
-        termloop_agents::CodexThreadHistoryInspection,
-        termloop_agents::CodexThreadHistoryProbeError,
-    > {
-        termloop_agents::inspect_codex_thread_history(&self.upstream_endpoint, native_thread_id)
-    }
-
-    pub fn reap(self) -> Result<(), AgentResumeReapError> {
-        let Self {
-            mut process,
-            bridge,
-            upstream_endpoint: _,
-        } = self;
-        let bridge_reaped = bridge.shutdown().is_ok();
-        let process_reaped = process.terminate().is_ok();
-        if bridge_reaped && process_reaped {
-            Ok(())
-        } else {
-            Err(AgentResumeReapError)
-        }
-    }
-}
+pub use crate::runtime::provider_runtime::CodexRuntime;
 
 pub struct AgentLaunchPlan {
     session_id: String,
@@ -119,7 +82,7 @@ pub struct AgentLaunchPlan {
     observation_token: Option<String>,
     observation_transport: Option<AgentObservationTransport>,
     runtime_signal_sender: Option<Sender<AgentRuntimeSignal>>,
-    codex_runtime: Option<CodexRuntime>,
+    provider_runtime: crate::runtime::provider_runtime::PreparedProviderRuntime,
     observation_warning: Option<String>,
     task_guard: Option<TaskLaunchGuard>,
     task_guard_requires_observation: bool,
@@ -366,15 +329,9 @@ impl AgentLaunchPlan {
     }
 
     pub fn prepare_runtime(&mut self) {
-        self.account_prepared = self
-            .account
-            .as_ref()
-            .is_none_or(|account| account.prepare().is_ok());
-        if !self.account_prepared {
-            self.observation_warning =
-                Some("Could not prepare the selected account directory".into());
-            return;
-        }
+        use crate::runtime::provider_runtime::{
+            ProviderRuntimeMode, ProviderRuntimePreparation, ProviderRuntimePreparationError,
+        };
         if let Some(source) = self.history_source.as_ref() {
             let fresh = termloop_platform::read_bounded_history_file_slices(&source.source, 1, 1);
             self.history_source_validated = fresh.is_ok_and(|fresh| {
@@ -389,80 +346,44 @@ impl AgentLaunchPlan {
                 return;
             }
         }
-        if self.agent_id != "codex"
-            || !self
-                .observation_transport
+        let managed_worktree = self.has_observed_managed_worktree();
+        let result = self.provider_runtime.prepare(ProviderRuntimePreparation {
+            agent_id: &self.agent_id,
+            session_id: &self.session_id,
+            runtime_epoch: self.runtime_epoch,
+            cwd: &self.cwd,
+            managed_worktree,
+            account: self.account.as_ref(),
+            transport: self.observation_transport.as_ref(),
+            mode: ProviderRuntimeMode::OptionalObservation,
+            authorizer: &self.mcp_authorizer,
+            mcp: self
+                .mcp_token
+                .as_deref()
+                .map(|token| (token, &self.mcp_role)),
+            signals: &mut self.runtime_signal_sender,
+            launch: self.prepared_launch.as_mut(),
+            history: self
+                .history_source_ref
                 .as_ref()
-                .is_some_and(|transport| transport.daemon_owned_bridge_supported("codex"))
-        {
-            return;
-        }
-        let Some(transport) = self.observation_transport.clone() else {
-            return;
-        };
-        let Some(runtime_signal_sender) = self.runtime_signal_sender.take() else {
-            return;
-        };
-        let developer_instructions = self
-            .prepared_launch
-            .as_ref()
-            .and_then(|launch| launch.codex_app_server_developer_instructions())
-            .map(str::to_owned);
-        // Codex eagerly initializes configured MCP servers while its App
-        // Server is still starting. Admit only transport-level traffic before
-        // process creation; complete_agent_launch promotes this exact token to
-        // command authority only after every launch revalidation passes.
-        self.register_provisional_mcp();
-        match start_codex_runtime(
-            &self.session_id,
-            self.runtime_epoch,
-            &self.cwd,
-            self.has_observed_managed_worktree(),
-            self.account.as_ref(),
-            &transport.provider_process_directory,
-            self.mcp_token
-                .as_ref()
-                .map(|token| termloop_invocation::AgentMcpLaunch {
-                    endpoint: &transport.mcp_endpoint,
-                    token,
-                    claude_config_path: &transport.claude_mcp_config_path,
-                    profile: self.mcp_role.invocation_profile(),
-                }),
-            developer_instructions.as_deref(),
-            // The sender is installed by `CoreRuntime::plan_agent_launch`.
-            runtime_signal_sender,
-        ) {
-            Ok(runtime) => {
-                if let Some(source_ref) = self.history_source_ref.as_ref()
-                    && runtime
-                        .warm_thread_history(&source_ref.native_session_id)
-                        .is_err()
-                {
-                    self.revoke_provisional_mcp();
-                    let _ = runtime.reap();
-                    self.prepared_launch = None;
-                    self.observation_warning =
-                        Some("the Codex conversation history could not be verified".into());
-                    return;
-                }
-                let endpoint = runtime.bridge.endpoint();
-                if let Some(launch) = self.prepared_launch.as_mut()
-                    && launch.bind_codex_app_server_endpoint(endpoint).is_err()
-                {
-                    // Re-resolve from the typed plan below, or fail closed when
-                    // it cannot preserve the reviewed content, rather than ever
-                    // spawning the preview placeholder as real argv.
-                    self.prepared_launch = None;
-                }
-                self.codex_runtime = Some(runtime);
+                .map(|reference| reference.native_session_id.as_str()),
+        });
+        self.account_prepared = !matches!(
+            result,
+            Err(ProviderRuntimePreparationError::AccountUnavailable)
+        );
+        match result {
+            Ok(()) => {}
+            Err(ProviderRuntimePreparationError::AccountUnavailable) => {
+                self.observation_warning =
+                    Some("Could not prepare the selected account directory".into());
             }
-            Err(error) => {
-                self.revoke_provisional_mcp();
-                // A preview can carry only invocation's private runtime
-                // placeholder. If observation preparation fails, discard that
-                // payload; completion may re-resolve only from a lossless typed
-                // plan and otherwise fails closed. Never pass the placeholder
-                // to Codex as an endpoint.
+            Err(ProviderRuntimePreparationError::EndpointBindingFailed) => {
+                // Keep the prepared runtime, but resolve only from the lossless
+                // typed plan instead of ever spawning a preview placeholder.
+                self.prepared_launch = None;
+            }
+            Err(ProviderRuntimePreparationError::Runtime(error)) => {
                 self.prepared_launch = None;
                 self.observation_warning = Some(error.to_string());
             }
@@ -473,27 +394,11 @@ impl AgentLaunchPlan {
         self.observation_warning.as_deref()
     }
 
-    fn register_provisional_mcp(&self) {
-        if let Some(token) = self.mcp_token.as_ref() {
-            self.mcp_authorizer.register_provisional(
-                self.session_id.clone(),
-                self.runtime_epoch,
-                self.mcp_role.clone(),
-                token.clone(),
-            );
-        }
-    }
-
-    fn revoke_provisional_mcp(&self) {
-        self.mcp_authorizer
-            .remove_provisional(&self.session_id, self.runtime_epoch);
-    }
-
     pub fn fork_runtime_ready(&self) -> bool {
         fork_runtime_is_ready(
             &self.agent_id,
             self.fork_source_ref.is_some(),
-            self.codex_runtime.is_some(),
+            self.provider_runtime.codex().is_some(),
         )
     }
 
@@ -509,8 +414,8 @@ impl AgentLaunchPlan {
                 reason: crate::AgentForkUnavailableReason::ResumeRefMissing,
             })?;
         let result = self
-            .codex_runtime
-            .as_ref()
+            .provider_runtime
+            .codex()
             .ok_or(CoreError::AgentForkUnavailable {
                 reason: crate::AgentForkUnavailableReason::RuntimeConflict,
             })?
@@ -524,12 +429,7 @@ impl AgentLaunchPlan {
                 crate::AgentForkUnavailableReason::ProviderRejected
             }
         };
-        self.revoke_provisional_mcp();
-        if self
-            .codex_runtime
-            .take()
-            .is_some_and(|runtime| runtime.reap().is_err())
-        {
+        if self.provider_runtime.abort().is_err() {
             return Err(CoreError::AgentForkUnavailable {
                 reason: crate::AgentForkUnavailableReason::RuntimeConflict,
             });
@@ -699,7 +599,7 @@ impl CoreRuntime {
             observation_token,
             observation_transport: self.observation_transport.clone(),
             runtime_signal_sender: Some(self.agent_runtime_sender.clone()),
-            codex_runtime: None,
+            provider_runtime: Default::default(),
             observation_warning: None,
             task_guard: None,
             task_guard_requires_observation: false,
@@ -1866,7 +1766,7 @@ impl CoreRuntime {
         self.validate_history_launch_plan(plan)?;
         if plan.history_source_ref.is_some()
             && (!plan.history_source_validated
-                || (plan.agent_id == "codex" && plan.codex_runtime.is_none()))
+                || (plan.agent_id == "codex" && plan.provider_runtime.codex().is_none()))
         {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
@@ -1962,9 +1862,9 @@ impl CoreRuntime {
             }
         }
         let codex_endpoint = plan
-            .codex_runtime
-            .as_ref()
-            .map(|runtime| runtime.bridge.endpoint());
+            .provider_runtime
+            .codex()
+            .map(|runtime| runtime.endpoint());
         let observation = plan.observation_transport.as_ref().and_then(|transport| {
             transport.invocation_observation(
                 &plan.agent_id,
@@ -2051,7 +1951,7 @@ impl CoreRuntime {
         let environment = launch.environment().clone();
         let initial_input_submission = launch.initial_input_submission();
         let generated_input_observable =
-            plan.observation_token.is_some() || plan.codex_runtime.is_some();
+            plan.observation_token.is_some() || plan.provider_runtime.codex().is_some();
         if initial_input_submission.is_some() && !generated_input_observable {
             return Err(CoreError::AgentCapabilityUnproven);
         }
@@ -2105,14 +2005,6 @@ impl CoreRuntime {
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
                 },
-            );
-        }
-        if let Some(token) = plan.mcp_token.as_ref() {
-            self.mcp_authorizer.register(
-                session.id.clone(),
-                self.runtime_epoch,
-                plan.mcp_role.clone(),
-                token.clone(),
             );
         }
         if let Err(error) = self.terminal.spawn(PtySpawnSpec {
@@ -2192,12 +2084,20 @@ impl CoreRuntime {
                 return Err(store_error(error));
             }
         };
+        if let Some(token) = plan.mcp_token.as_ref() {
+            self.mcp_authorizer.register(
+                session.id.clone(),
+                self.runtime_epoch,
+                plan.mcp_role.clone(),
+                token.clone(),
+            );
+        }
         if let Some(source_session_id) = plan.fork_source_session_id.as_ref() {
             self.fork_source_session_ids
                 .insert(session.id.clone(), source_session_id.clone());
             self.pending_agent_forks.insert(session.id.clone());
         }
-        if let Some(runtime) = plan.codex_runtime.take() {
+        if let Some(runtime) = plan.provider_runtime.take_committed() {
             self.codex_runtimes.insert(session.id.clone(), runtime);
         }
         self.consume_history_handle(plan);
@@ -2267,15 +2167,6 @@ impl CoreRuntime {
         } else {
             Ok(())
         }
-    }
-}
-
-impl Drop for AgentLaunchPlan {
-    fn drop(&mut self) {
-        // A committed launch has already promoted its entry, which
-        // remove_provisional deliberately preserves. Any abandoned fresh
-        // Codex plan loses its transport-only admission here.
-        self.revoke_provisional_mcp();
     }
 }
 
@@ -2793,79 +2684,6 @@ fn resolve_interactive_agent_launch_with_transport(
             mcp,
         )
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn start_codex_runtime(
-    session_id: &str,
-    runtime_epoch: u64,
-    cwd: &str,
-    managed_worktree: bool,
-    account: Option<&termloop_agents::AgentAccountContext>,
-    provider_process_directory: &Path,
-    mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
-    developer_instructions: Option<&str>,
-    signals: Sender<crate::AgentRuntimeSignal>,
-) -> Result<CodexRuntime, crate::AgentResumePreparationError> {
-    let port = termloop_platform::reserve_loopback_port()
-        .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
-    let upstream_endpoint = format!("ws://127.0.0.1:{port}");
-    let launch = if managed_worktree {
-        termloop_invocation::codex_app_server_for_managed_worktree(
-            &upstream_endpoint,
-            cwd,
-            session_id,
-            mcp,
-            developer_instructions,
-            account,
-        )
-    } else {
-        termloop_invocation::codex_app_server(
-            &upstream_endpoint,
-            cwd,
-            session_id,
-            mcp,
-            developer_instructions,
-            account,
-        )
-    }
-    .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
-    let mut process = termloop_platform::spawn_tracked_managed_process_with_environment(
-        launch.program(),
-        launch.args(),
-        Path::new(cwd),
-        provider_process_directory,
-        session_id,
-        launch.environment(),
-    )
-    .map_err(|error| match error {
-        termloop_platform::PlatformError::ProcessOwnershipUncertain => {
-            crate::AgentResumePreparationError::RuntimeOwnershipUncertain
-        }
-        termloop_platform::PlatformError::Io(error)
-            if error.kind() == std::io::ErrorKind::AlreadyExists =>
-        {
-            crate::AgentResumePreparationError::RuntimeConflict
-        }
-        _ => crate::AgentResumePreparationError::ProviderRejected,
-    })?;
-    let bridge = match termloop_agents::CodexAppServerBridge::start(
-        upstream_endpoint.clone(),
-        session_id.to_owned(),
-        runtime_epoch,
-        signals,
-    ) {
-        Ok(bridge) => bridge,
-        Err(_) if process.terminate().is_err() => {
-            return Err(crate::AgentResumePreparationError::RuntimeOwnershipUncertain);
-        }
-        Err(_) => return Err(crate::AgentResumePreparationError::ProviderRejected),
-    };
-    Ok(CodexRuntime {
-        process,
-        bridge,
-        upstream_endpoint,
-    })
 }
 
 impl TaskWorktreeLaunchPlan {

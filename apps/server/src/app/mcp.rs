@@ -987,32 +987,21 @@ async fn update_steward_system_prompt(
     params: McpStewardSystemPromptUpdateParams,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let (changed, state_revision) = {
+    let change = {
         let mut core = state.core.lock().await;
-        let changed = core.update_steward_system_prompt(
+        core.update_steward_system_prompt(
             session_id,
             project_id,
             &params.user_message_id,
             &params.expected_system_prompt,
             &params.system_prompt,
             super::current_epoch_ms(),
-        )?;
-        (changed, core.state_revision())
+        )?
     };
-    if !changed {
+    let Some(change) = change else {
         return Ok(json!({ "status": "unchanged" }));
-    }
-
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Steward],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    // The configuration commit already revoked this Session's Steward
-    // authority. Process retirement is best-effort and cannot roll back the
-    // durable prompt replacement.
-    let _ = super::control::terminate_session(json!({ "sessionId": session_id }), state).await;
-    super::companion_supervisor::replace_steward_configuration_wake(state, project_id).await;
+    };
+    super::steward_change::finish_steward_change(state, change).await;
     Ok(json!({ "status": "restarting" }))
 }
 

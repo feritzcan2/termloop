@@ -425,7 +425,7 @@ fn fresh_codex_launch_stages_transport_only_mcp_and_revokes_when_abandoned() {
         root.join("provider"),
     ));
 
-    let plan = runtime
+    let mut plan = runtime
         .plan_agent_launch(json!({
             "projectId": project["id"],
             "cwd": root,
@@ -434,7 +434,13 @@ fn fresh_codex_launch_stages_transport_only_mcp_and_revokes_when_abandoned() {
         .unwrap();
     let token = plan.mcp_token.clone().unwrap();
     let session_id = plan.session_id.clone();
-    plan.register_provisional_mcp();
+    plan.provider_runtime.stage_mcp(
+        &plan.mcp_authorizer,
+        &plan.session_id,
+        plan.runtime_epoch,
+        &token,
+        &plan.mcp_role,
+    );
 
     let principal = runtime
         .mcp_authorizer
@@ -5217,7 +5223,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
         prepared_launch: None,
         pending_generated_input: None,
         runtime_signal_sender: None,
-        codex_runtime: None,
+        provider_runtime: Default::default(),
         terminal: terminal.clone(),
         runtime_epoch: 2,
         pty_spawned: false,
