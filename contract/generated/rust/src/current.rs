@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:4162d893e2bf07a4eb33b15196173e0a62f22daa02231b540e639c1d6281879d";
+    "sha256:52de7fd0c06e420bb0517fcde6b071910828550085083526e639cd13f7b6034a";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5467,6 +5467,18 @@ pub enum WorkflowExecutionStatus {
     Completed,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WorkflowCompletionOutcome {
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "approved")]
+    Approved,
+    #[serde(rename = "changesRequested")]
+    ChangesRequested,
+    #[serde(rename = "reviewLimitReached")]
+    ReviewLimitReached,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowExecutionParticipantDto {
@@ -5526,10 +5538,17 @@ pub struct WorkflowExecutionDto {
     pub max_review_cycles: u64,
     pub phase: WorkflowExecutionPhase,
     pub status: WorkflowExecutionStatus,
+    #[serde(
+        rename = "completionOutcome",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub completion_outcome: Option<WorkflowCompletionOutcome>,
     pub steps: Vec<WorkflowStepDto>,
     pub participants: Vec<WorkflowExecutionParticipantDto>,
     #[serde(rename = "activeReviewStepIds")]
     pub active_review_step_ids: Vec<String>,
+    #[serde(rename = "pendingReviewStepIds")]
+    pub pending_review_step_ids: Vec<String>,
     #[serde(rename = "stepResults")]
     pub step_results: Vec<WorkflowStepResultDto>,
     #[serde(rename = "startedAtEpochMs")]
@@ -21323,6 +21342,27 @@ fn validate_workflow_execution_status(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_workflow_completion_outcome(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "completed",
+            "approved",
+            "changesRequested",
+            "reviewLimitReached",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_workflow_execution_participant_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("stepId").is_some_and(|field| {
@@ -21475,6 +21515,9 @@ fn validate_workflow_execution_dto(value: &Value) -> bool {
             && object
                 .get("status")
                 .is_some_and(|field| validate_workflow_execution_status(field))
+            && object.get("completionOutcome").is_some_and(|field| {
+                (validate_workflow_completion_outcome(field) || field.is_null())
+            })
             && object.get("steps").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() >= 1
@@ -21491,6 +21534,17 @@ fn validate_workflow_execution_dto(value: &Value) -> bool {
                 })
             })
             && object.get("activeReviewStepIds").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 8
+                        && json_array_unique(items)
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1 && text.chars().count() <= 64
+                            })
+                        })
+                })
+            })
+            && object.get("pendingReviewStepIds").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 8
                         && json_array_unique(items)
@@ -21536,9 +21590,11 @@ fn validate_workflow_execution_dto(value: &Value) -> bool {
                     "maxReviewCycles",
                     "phase",
                     "status",
+                    "completionOutcome",
                     "steps",
                     "participants",
                     "activeReviewStepIds",
+                    "pendingReviewStepIds",
                     "stepResults",
                     "startedAtEpochMs",
                     "updatedAtEpochMs",

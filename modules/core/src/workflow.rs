@@ -315,6 +315,7 @@ pub(crate) fn workflow_execution_json(
         "maxReviewCycles": execution.configuration.max_review_cycles,
         "phase": execution.phase,
         "status": status,
+        "completionOutcome": execution.completion_outcome(),
         "steps": execution.configuration.steps.iter().map(workflow_step_json).collect::<Vec<_>>(),
         "participants": execution.participants.iter().map(|participant| json!({
             "stepId": participant.step_id,
@@ -323,6 +324,8 @@ pub(crate) fn workflow_execution_json(
         "activeReviewStepIds": execution.review_requests.iter().map(|request| {
             request.step_id.clone()
         }).collect::<Vec<_>>(),
+        "pendingReviewStepIds": execution.review_requests.iter().filter(|request| !request.reply_delivered)
+            .map(|request| request.step_id.clone()).collect::<Vec<_>>(),
         "stepResults": execution.step_results,
         "startedAtEpochMs": execution.started_at_epoch_ms,
         "updatedAtEpochMs": execution.updated_at_epoch_ms,
