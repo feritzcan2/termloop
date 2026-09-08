@@ -100,16 +100,7 @@ impl PreparedProviderRuntime {
             && request
                 .transport
                 .is_some_and(|transport| transport.daemon_owned_bridge_supported("codex"));
-        if request.agent_id == "codex" && !codex_supported {
-            return if resume {
-                Err(Runtime(AgentResumePreparationError::ProviderRejected))
-            } else {
-                Ok(())
-            };
-        }
-        if (resume || codex_supported)
-            && let Some((token, role)) = request.mcp
-        {
+        if let Some((token, role)) = request.mcp {
             self.stage_mcp(
                 request.authorizer,
                 request.session_id,
@@ -121,9 +112,19 @@ impl PreparedProviderRuntime {
         if request.agent_id != "codex" {
             return Ok(());
         }
+        if !codex_supported {
+            return if resume {
+                self.revoke_provisional();
+                Err(Runtime(AgentResumePreparationError::ProviderRejected))
+            } else {
+                Ok(())
+            };
+        }
         let transport = request.transport.expect("supported bridge transport");
         let signals = request.signals.take().ok_or_else(|| {
-            self.revoke_provisional();
+            if resume {
+                self.revoke_provisional();
+            }
             Runtime(AgentResumePreparationError::ProviderRejected)
         })?;
         let runtime = start_codex_runtime(
@@ -148,7 +149,11 @@ impl PreparedProviderRuntime {
             signals,
         )
         .map_err(|error| {
-            self.provisional.take();
+            // An optional bridge failure may still launch a direct TUI. Keep
+            // its transport admission until that launch commits or is dropped.
+            if resume {
+                self.revoke_provisional();
+            }
             Runtime(error)
         })?;
         self.runtime = Some(runtime);
