@@ -256,7 +256,12 @@ impl CoreRuntime {
                 continue;
             };
             let milestone = &playbook.milestones[index];
-            let due_at_epoch_ms = standing.due_at_epoch_ms(&milestone.id);
+            // A failed or expired check can delay its Routine without a Task
+            // verdict. Include that delay in focus selection so it cannot hide
+            // ready work at a different stage behind an unschedulable focus.
+            let due_at_epoch_ms = standing
+                .due_at_epoch_ms(&milestone.id)
+                .max(self.step_retry_not_before_epoch_ms(&milestone.routine_id));
             let priority = (
                 due_at_epoch_ms,
                 standing.task.rank,
@@ -1150,6 +1155,151 @@ mod tests {
         ));
 
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn each_step_claim_carries_its_current_waiting_policy() {
+        for mode in [
+            RoutineActionHandling::Off,
+            RoutineActionHandling::Ask,
+            RoutineActionHandling::Auto,
+        ] {
+            let (mut runtime, root, project_id) = pipeline_runtime();
+            let mut routine = runtime
+                .store
+                .tracker_configurations()
+                .iter()
+                .find(|routine| routine.id == "routine-pr")
+                .unwrap()
+                .clone();
+            routine.action_handling = mode;
+            routine.steward_instructions = if mode == RoutineActionHandling::Off {
+                String::new()
+            } else {
+                "Restore this Task's linked issue through its authorized forward transitions."
+                    .into()
+            };
+            let expected = json!({"mode": mode, "instructions": routine.steward_instructions});
+            runtime
+                .store
+                .set_tracker_configuration(
+                    &runtime.write_authority,
+                    routine,
+                    runtime.state_revision(),
+                )
+                .unwrap();
+            let first = runtime
+                .claim_next_steward_routine(&project_id, "steward-session", "policy-1".into(), NOW)
+                .unwrap();
+            assert_eq!(first.result["step"]["whileWaiting"], expected);
+            assert_eq!(
+                first.result["step"]["taskRead"]["arguments"]["taskId"],
+                "task-1"
+            );
+            let reused = runtime
+                .claim_next_steward_routine(
+                    &project_id,
+                    "steward-session",
+                    "policy-2".into(),
+                    NOW + 1,
+                )
+                .unwrap();
+            assert_eq!(
+                reused.capability, first.capability,
+                "get-next cannot issue a second live claim"
+            );
+            assert_eq!(reused.result["step"]["whileWaiting"], expected);
+            drop(runtime);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn failed_step_cooldown_does_not_hide_another_ready_stage() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        runtime
+            .set_task_playbook_position(&project_id, "task-2", 1, 1, runtime.state_revision(), NOW)
+            .unwrap();
+        let first = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "failed-step".into(), NOW)
+            .unwrap();
+        assert_eq!(first.result["step"]["tasks"][0]["taskId"], "task-1");
+        runtime
+            .report_steward_routine_problem(
+                &first.capability.unwrap(),
+                "PR provider is unavailable".into(),
+                vec![],
+                "problem".into(),
+                NOW + 1,
+            )
+            .unwrap();
+        let next = runtime
+            .claim_next_steward_routine(
+                &project_id,
+                "steward-session",
+                "ready-stage".into(),
+                NOW + 2,
+            )
+            .unwrap();
+        assert_eq!(next.result["status"], "assigned");
+        assert_eq!(next.result["routine"]["id"], "routine-deploy");
+        assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-2");
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blocked_task_yields_to_ready_work_then_waits_without_replaying() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        for (index, (task_id, routine_id, verdict)) in [
+            ("task-1", "routine-pr", PlaybookStepVerdict::Blocked),
+            ("task-2", "routine-pr", PlaybookStepVerdict::Passed),
+            ("task-2", "routine-deploy", PlaybookStepVerdict::Passed),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let now = NOW + index as u64 * 1_000;
+            let claim = runtime
+                .claim_next_steward_routine(
+                    &project_id,
+                    "steward-session",
+                    format!("drain-{index}"),
+                    now,
+                )
+                .unwrap();
+            assert_eq!(claim.result["step"]["tasks"][0]["taskId"], task_id);
+            assert_eq!(claim.result["routine"]["id"], routine_id);
+            runtime
+                .report_steward_step_verdicts(
+                    &claim.capability.unwrap(),
+                    vec![StewardStepVerdict {
+                        task_id: task_id.into(),
+                        verdict,
+                        evidence: format!("Verified outcome for {task_id} at {routine_id}"),
+                    }],
+                    format!("report-{index}"),
+                    now + 1,
+                )
+                .unwrap();
+        }
+        let idle = runtime
+            .claim_next_steward_routine(
+                &project_id,
+                "steward-session",
+                "drain-idle".into(),
+                NOW + 3_000,
+            )
+            .unwrap();
+        assert_eq!(idle.result["status"], "idle");
+        assert!(idle.capability.is_none());
+        let projection = runtime
+            .playbook_runtime(json!({"projectId": project_id}))
+            .unwrap();
+        assert_eq!(projection["doneTaskIds"], json!(["task-2"]));
+        assert_eq!(projection["steps"][0]["waitingTaskIds"], json!(["task-1"]));
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

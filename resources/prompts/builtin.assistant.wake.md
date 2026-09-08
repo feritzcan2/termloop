@@ -1,7 +1,7 @@
 # Persistent assistant wake
 
 - id: `builtin.assistant.wake`
-- version: `9`
+- version: `10`
 
 TermLoop has delivered a new {{ROLE}} wake.
 

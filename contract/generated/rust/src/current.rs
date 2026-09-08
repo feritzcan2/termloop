@@ -7764,6 +7764,14 @@ pub enum RoutineAssignmentStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct RoutineAssignmentCompleteResult {
+    pub status: String,
+    #[serde(rename = "stewardReviewRequired")]
+    pub steward_review_required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RoutineAssignmentCompleteParams {
     #[serde(rename = "checkId")]
     pub check_id: String,
@@ -28305,6 +28313,30 @@ fn validate_routine_assignment_status(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_routine_assignment_complete_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("status").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| ["completed", "completedContextPreserved"].contains(&text))
+        }) && object
+            .get("stewardReviewRequired")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["status", "stewardReviewRequired"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_routine_assignment_complete_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("checkId").is_some_and(|field| {
@@ -31357,8 +31389,8 @@ pub fn validate_mcp_tool_result(tool: &str, result: &Value) -> bool {
                 && validate_assistant_text_result(result)
         }
         "steward_complete_assignment" => {
-            serde_json::from_value::<AssistantAckResult>(result.clone()).is_ok()
-                && validate_assistant_ack_result(result)
+            serde_json::from_value::<RoutineAssignmentCompleteResult>(result.clone()).is_ok()
+                && validate_routine_assignment_complete_result(result)
         }
         "playbook_read" => {
             serde_json::from_value::<AssistantTextResult>(result.clone()).is_ok()
