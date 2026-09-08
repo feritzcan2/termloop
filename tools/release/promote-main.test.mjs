@@ -50,7 +50,7 @@ async function fixture(t, { tagged = true } = {}) {
   const calls = path.join(directory, "gh-calls.jsonl");
   const fakeGh = path.join(directory, "gh.mjs");
   await writeFile(fakeGh, `
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const repo = process.env.PROMOTION_TEST_REPO;
@@ -67,7 +67,8 @@ if (args[0] === 'run' && args[1] === 'list') {
   const mode = process.env.PROMOTION_TEST_CI;
   if (format === 'databaseId,headSha,event,status,conclusion') { if (mode !== 'failed') console.log('123'); process.exit(0); }
   if (format === 'databaseId,headSha,event,status') { console.log('123'); process.exit(0); }
-  const runs = mode === 'dispatch' && !existsSync(dispatched) ? [] : [{ databaseId: 123, headSha: sha, status: 'completed', conclusion: mode === 'failed' ? 'failure' : 'success', url: 'https://example.test/ci/123' }];
+  const pushOnly = args[args.indexOf('--event') + 1] === 'push';
+  const runs = mode === 'dispatch' || mode === 'manual-only' && pushOnly ? [] : [{ databaseId: 123, headSha: sha, event: mode === 'manual-only' ? 'workflow_dispatch' : 'push', status: 'completed', conclusion: mode === 'failed' ? 'failure' : 'success', url: 'https://example.test/ci/123' }];
   console.log(JSON.stringify(runs)); process.exit(0);
 }
 throw Error('Unexpected GitHub call: ' + args.join(' '));
@@ -95,7 +96,9 @@ test("promote bumps and pushes all versions before CI, then fast-forwards main e
   assert.equal(f.git("rev-parse", "origin/develop"), candidate);
   assert.equal(f.git("status", "--porcelain"), "");
   const calls = await f.calls();
-  assert.equal(calls.find(({ args }) => args[0] === "workflow")?.sha, candidate);
+  assert.equal(f.git("ls-remote", "origin", `refs/heads/release/promote-${candidate}`).split(/\s/)[0], candidate);
+  assert.ok(calls.every(({ args }) => args[0] !== "workflow"));
+  assert.ok(calls.filter(({ args }) => args[0] === "run" && args[1] === "list").every(({ args }) => args[args.indexOf("--event") + 1] === "push"));
   assert.ok(calls.every(({ args }) => !args.includes("release.yml")));
   const again = f.run();
   assert.equal(again.status, 0, again.stdout + again.stderr);
@@ -116,6 +119,47 @@ test("failed CI leaves main unchanged and retry reuses the prepared version", { 
   assert.equal(retried.status, 0, retried.stdout + retried.stderr);
   assert.equal(f.git("rev-parse", "HEAD"), candidate);
   assert.equal(f.git("rev-parse", "main"), candidate);
+});
+
+test("manual CI success still starts push-triggered checks for protected main", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t);
+  const result = f.run("manual-only");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const candidate = f.git("rev-parse", "HEAD");
+  assert.equal(f.git("ls-remote", "origin", `refs/heads/release/promote-${candidate}`).split(/\s/)[0], candidate);
+  assert.equal(f.git("rev-parse", "origin/main"), candidate);
+  assert.ok((await f.calls()).some(({ args }) => args[0] === "run" && args[1] === "watch"));
+  assert.ok((await f.calls()).every(({ args }) => args[0] !== "workflow"));
+});
+
+test("a rejected main push can resume the same verified local main without another version bump", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t);
+  const originalMain = f.git("rev-parse", "origin/main");
+  const hook = path.join(f.directory, "origin.git/hooks/pre-receive");
+  await writeFile(hook, '#!/bin/sh\nwhile read old new ref; do\n  if [ "$ref" = "refs/heads/main" ]; then exit 1; fi\ndone\n', { mode: 0o755 });
+  const failed = f.run();
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /pre-receive hook declined/);
+  const candidate = f.git("rev-parse", "HEAD");
+  assert.equal(f.git("rev-parse", "main"), candidate);
+  assert.equal(f.git("rev-parse", "origin/main"), originalMain);
+  await rm(hook);
+  const retried = f.run();
+  assert.equal(retried.status, 0, retried.stdout + retried.stderr);
+  assert.equal(f.git("rev-parse", "HEAD"), candidate);
+  assert.equal(f.git("rev-parse", "origin/main"), candidate);
+});
+
+test("a rejected CI branch push leaves main unchanged and does not watch unrelated checks", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t);
+  const originalMain = f.git("rev-parse", "origin/main");
+  await writeFile(path.join(f.directory, "origin.git/hooks/pre-receive"), '#!/bin/sh\nwhile read old new ref; do\n  case "$ref" in refs/heads/release/*) exit 1;; esac\ndone\n', { mode: 0o755 });
+  const result = f.run("dispatch");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /pre-receive hook declined/);
+  assert.equal(f.git("rev-parse", "main"), originalMain);
+  assert.equal(f.git("rev-parse", "origin/main"), originalMain);
+  assert.ok((await f.calls()).every(({ args }) => args[0] !== "workflow" && args[1] !== "watch"));
 });
 
 test("uncommitted work stops promotion before version writes or CI", { skip: process.platform === "win32" }, async (t) => {
