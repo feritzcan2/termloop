@@ -144,4 +144,43 @@ describe("Quick Action draft", () => {
     expect(permission?.value).toBe("plan");
     expect(permission?.disabled).toBe(false);
   });
+  it("uses the server default and sends an explicit alternative account to preview and launch", async () => {
+    const props = composerProps();
+    const accounts = [
+      { agentId: "codex" as const, accountId: "default", name: "Server user", isDefault: false },
+      { agentId: "codex" as const, accountId: "c3dcf1a0-2548-420c-b662-2a2143a567da", name: "Work", isDefault: true },
+    ];
+    const loadAccounts = vi.fn(async () => accounts);
+    props.preview.mockResolvedValue({ launch_ticket: "approved-ticket", manifest: { digest: "sha256:fixture" } });
+    props.launch.mockResolvedValue(undefined);
+    await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
+    const account = container.querySelector<HTMLSelectElement>("#quick-action-account")!;
+    expect(account.value).toBe(accounts[1]!.accountId);
+    await act(async () => { account.value = "default"; account.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => {
+      const prompt = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Check this account");
+      prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(props.preview.mock.calls.at(-1)?.at(-1)).toBe("default");
+    expect(props.launch.mock.calls.at(-1)?.slice(-2)).toEqual(["approved-ticket", "default"]);
+    expect(props.close).toHaveBeenCalledOnce();
+  });
+
+  it("discards account choices from a previous project while another server is selected", async () => {
+    const props = composerProps();
+    props.projects.push({ id: "project-2", name: "Remote", folder_path: "/remote" });
+    let deliver!: (value: { agentId: "codex"; accountId: string; name: string; isDefault: boolean }[]) => void;
+    const loadAccounts = vi.fn((projectId: string) => projectId === "project-1" ? new Promise<typeof accounts>((resolve) => { deliver = resolve; }) : Promise.resolve(accounts));
+    const accounts = [{ agentId: "codex" as const, accountId: "default", name: "Remote account", isDefault: true }];
+    await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
+    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.disabled).toBe(true);
+    await act(async () => { const project = container.querySelector<HTMLSelectElement>('select[aria-label="Run in Project"]')!; project.value = "project-2"; project.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => deliver([{ agentId: "codex", accountId: "c3dcf1a0-2548-420c-b662-2a2143a567da", name: "Old server", isDefault: true }]));
+    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.value).toBe("default");
+    expect(container.textContent).toContain("Remote account");
+    expect(container.textContent).not.toContain("Old server");
+  });
+
 });

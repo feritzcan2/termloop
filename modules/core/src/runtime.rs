@@ -1,5 +1,6 @@
 //! Private serialized command/transaction runtime.
 
+mod agent_accounts;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod provider_observation_ingress;
 
@@ -21,6 +22,10 @@ impl CoreRuntime {
 
     pub fn handle(&mut self, method: &str, params: Value) -> Result<Value, CoreError> {
         match method {
+            "agent.accountList" => Ok(self.agent_account_list()),
+            "agent.accountCreate" => self.create_agent_account(params),
+            "agent.accountRename" => self.rename_agent_account(params),
+            "agent.accountSetDefault" => self.set_default_agent_account(params),
             "agent.libraryGet" => self.agent_library_get(),
             "agent.profileCreate" => self.create_agent_profile(params),
             "agent.profileUpdate" => self.update_agent_profile(params),

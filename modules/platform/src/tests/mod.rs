@@ -67,3 +67,27 @@ fn fixture_request(mode: &str) -> CommandRequest {
         .environment(COMMAND_FIXTURE_MODE, mode)
         .timeout(Duration::from_secs(5))
 }
+
+#[test]
+fn private_directory_is_non_recursive_rejects_files_and_keeps_private_permissions() {
+    let root =
+        std::env::temp_dir().join(format!("termloop-private-directory-{}", generate_uuid_v4()));
+    assert!(ensure_private_directory(&root.join("missing-parent")).is_err());
+    ensure_private_directory(&root).unwrap();
+    ensure_private_directory(&root).unwrap();
+    let file = root.join("file");
+    std_fs::write(&file, b"keep").unwrap();
+    assert!(ensure_private_directory(&file).is_err());
+    assert_eq!(std_fs::read(&file).unwrap(), b"keep");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        assert_eq!(
+            std_fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        symlink(&root, root.join("link")).unwrap();
+        assert!(ensure_private_directory(&root.join("link")).is_err());
+    }
+    std_fs::remove_dir_all(root).unwrap();
+}

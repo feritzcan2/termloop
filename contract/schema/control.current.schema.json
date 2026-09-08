@@ -1486,7 +1486,7 @@
     },
     "agent.authStatusList": {
       "params": {
-        "$ref": "#/$defs/emptyParams"
+        "$ref": "#/$defs/agentAuthStatusListParams"
       },
       "result": {
         "type": "array",
@@ -1542,6 +1542,38 @@
       },
       "result": {
         "$ref": "#/$defs/agentAuthOperationDto"
+      }
+    },
+    "agent.accountCreate": {
+      "params": {
+        "$ref": "#/$defs/agentAccountCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountListResult"
+      }
+    },
+    "agent.accountList": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountListResult"
+      }
+    },
+    "agent.accountRename": {
+      "params": {
+        "$ref": "#/$defs/agentAccountRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountListResult"
+      }
+    },
+    "agent.accountSetDefault": {
+      "params": {
+        "$ref": "#/$defs/agentAccountSetDefaultParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountListResult"
       }
     }
   },
@@ -1739,7 +1771,11 @@
         "agent.authLogout",
         "agent.authGet",
         "agent.authCancel",
-        "agent.authSubmitCode"
+        "agent.authSubmitCode",
+        "agent.accountCreate",
+        "agent.accountList",
+        "agent.accountRename",
+        "agent.accountSetDefault"
       ]
     },
     "eventName": {
@@ -6617,7 +6653,8 @@
             "xhigh",
             "max"
           ]
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "sessionForkAgentParams": {
@@ -7179,7 +7216,8 @@
           "items": {
             "$ref": "#/$defs/quickActionImageAttachment"
           }
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "quickActionLaunchParams": {
@@ -7269,7 +7307,8 @@
         "launchTicket": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "quickActionImageAttachment": {
@@ -7469,6 +7508,8 @@
         "conversation"
       ],
       "properties": {
+        "account_id": {"type":"string","maxLength":36},
+        "account_name": {"type":"string","maxLength":80},
         "agent_id": {
           "type": "string",
           "minLength": 1,
@@ -9397,7 +9438,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 8192
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "taskPreviewWorkflowParams": {
@@ -12987,7 +13029,8 @@
         },
         "bindings": {
           "$ref": "#/$defs/settingsImproverTarget"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "settingsImproveLaunchParams": {
@@ -13056,7 +13099,8 @@
         "launchTicket": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "assistantPromptImproverTarget": {
@@ -13147,7 +13191,8 @@
         },
         "bindings": {
           "$ref": "#/$defs/assistantPromptImproverTarget"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "assistantPromptImproveLaunchParams": {
@@ -13217,7 +13262,8 @@
         "launchTicket": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "runConfigurationImproveParams": {
@@ -13281,7 +13327,8 @@
         },
         "bindings": {
           "$ref": "#/$defs/runConfigurationImproverTarget"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "runConfigurationImproveLaunchParams": {
@@ -13349,7 +13396,8 @@
         "launchTicket": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "runConfigurationImproverTarget": {
@@ -15928,7 +15976,8 @@
           "enum": [
             "builtin.builder.agent"
           ]
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "agentCreatorLaunchParams": {
@@ -15991,7 +16040,8 @@
         "launchTicket": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
     "agentConnectionProvider": {
@@ -16006,12 +16056,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "agentId"
+        "agentId",
+        "accountId"
       ],
       "properties": {
         "agentId": {
           "$ref": "#/$defs/agentConnectionProvider"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
     },
@@ -16020,7 +16072,8 @@
       "additionalProperties": false,
       "required": [
         "agentId",
-        "operationId"
+        "operationId",
+        "accountId"
       ],
       "properties": {
         "agentId": {
@@ -16030,7 +16083,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
     },
@@ -16040,7 +16094,8 @@
       "required": [
         "agentId",
         "operationId",
-        "code"
+        "code",
+        "accountId"
       ],
       "properties": {
         "agentId": {
@@ -16056,7 +16111,8 @@
           "minLength": 1,
           "maxLength": 2048,
           "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
     },
@@ -16072,7 +16128,8 @@
         "userCode",
         "acceptsCode",
         "message",
-        "expiresAtEpochMs"
+        "expiresAtEpochMs",
+        "accountId"
       ],
       "properties": {
         "agentId": {
@@ -16135,7 +16192,8 @@
         "expiresAtEpochMs": {
           "type": "integer",
           "minimum": 0
-        }
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
     },
@@ -16150,7 +16208,8 @@
         "authState",
         "installSupported",
         "busy",
-        "operation"
+        "operation",
+        "accountId"
       ],
       "properties": {
         "agentId": {
@@ -16197,7 +16256,139 @@
               "type": "null"
             }
           ]
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+      },
+      "x-codegen": true
+    },
+    "agentAccountCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "name",
+        "expectedRevision"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
         }
+      },
+      "x-codegen": true
+    },
+    "agentAccountDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "accountId",
+        "name",
+        "isDefault"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "isDefault": {
+          "type": "boolean"
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accounts",
+        "revision"
+      ],
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/agentAccountDto"
+          }
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAccountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+      },
+      "x-codegen": true
+    },
+    "agentAccountRenameParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "accountId",
+        "expectedRevision",
+        "name"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountSetDefaultParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "accountId",
+        "expectedRevision"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAuthStatusListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
     }

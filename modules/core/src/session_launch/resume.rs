@@ -22,6 +22,7 @@ pub struct AgentResumePlan {
     pub(super) cwd: String,
     pub(super) cwd_identity: termloop_platform::PathComparisonInput,
     pub(super) agent_id: String,
+    pub(super) account: Option<termloop_agents::AgentAccountContext>,
     pub(super) launch_selection: AgentLaunchSelection,
     pub(super) resume_ref: termloop_domain::ResumeRef,
     pub(super) launch_guard: Option<termloop_domain::ResumeLaunchGuard>,
@@ -234,6 +235,10 @@ impl AgentResumePlan {
         &self,
         observation: Option<termloop_invocation::AgentObservationLaunch<'_>>,
     ) -> Result<termloop_invocation::LaunchPayload, AgentResumePreparationError> {
+        let base_conversation = termloop_invocation::AgentConversationLaunch::Resume {
+            resume_ref: &self.resume_ref,
+        };
+        let conversation = base_conversation.in_account(self.account.as_ref());
         if let Some(role) = self.mcp_role.as_ref().and_then(|role| match role {
             super::AgentMcpRole::Steward { .. } => Some((
                 termloop_invocation::ExecutorRole::Steward,
@@ -255,9 +260,7 @@ impl AgentResumePlan {
                     role: role.0,
                     system_prompt: role.2,
                     cwd: &self.cwd,
-                    conversation: termloop_invocation::AgentConversationLaunch::Resume {
-                        resume_ref: &self.resume_ref,
-                    },
+                    conversation,
                     observation,
                     mcp: termloop_invocation::AgentMcpLaunch {
                         endpoint: &self.observation_transport.mcp_endpoint,
@@ -269,9 +272,7 @@ impl AgentResumePlan {
             )
             .map_err(|_| AgentResumePreparationError::ProviderRejected);
         }
-        let conversation = termloop_invocation::AgentConversationLaunch::Resume {
-            resume_ref: &self.resume_ref,
-        };
+
         let mcp = self
             .mcp_token
             .as_ref()
@@ -407,6 +408,11 @@ impl AgentResumePlan {
             }
         }
         self.target_validation().validate()?;
+        if let Some(account) = &self.account {
+            account
+                .prepare()
+                .map_err(|_| AgentResumePreparationError::ProviderRejected)?;
+        }
         // Codex eagerly initializes configured MCP servers while its App Server
         // and remote TUI are still becoming ready. Admit only transport-level
         // MCP traffic during that window; core commands remain unauthorized
@@ -423,6 +429,7 @@ impl AgentResumePlan {
                 self.runtime_epoch,
                 &self.cwd,
                 self.managed_worktree_trust,
+                self.account.as_ref(),
                 &self.observation_transport.provider_process_directory,
                 self.mcp_token
                     .as_ref()
@@ -673,6 +680,9 @@ impl CoreRuntime {
             .as_deref()
             .and_then(termloop_invocation::agent_profile)
             .map(|profile| profile.id);
+        let account = self.session_agent_account(session)?;
+        let base_conversation = termloop_invocation::AgentConversationLaunch::Resume { resume_ref };
+        let conversation = base_conversation.in_account(account.as_ref());
         let launch = if let Some(super::AgentMcpRole::Helper { request_id }) = &mcp_role {
             if managed_worktree_trust {
                 termloop_invocation::configured_ask_to_helper_for_managed_worktree_conversation_resume(
@@ -682,7 +692,7 @@ impl CoreRuntime {
                     &session.launch_selection.permission,
                     &session.launch_selection.reasoning,
                     request_id.as_deref(),
-                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    conversation,
                     observation,
                     mcp,
                 )
@@ -694,7 +704,7 @@ impl CoreRuntime {
                     &session.launch_selection.permission,
                     &session.launch_selection.reasoning,
                     request_id.as_deref(),
-                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    conversation,
                     observation,
                     mcp,
                 )
@@ -707,7 +717,7 @@ impl CoreRuntime {
                 &session.launch_selection,
                 None,
                 &[],
-                termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                conversation,
                 observation,
                 mcp,
                 managed_worktree_trust,
@@ -721,7 +731,7 @@ impl CoreRuntime {
                     &session.launch_selection.model,
                     &session.launch_selection.permission,
                     &session.launch_selection.reasoning,
-                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    conversation,
                     observation,
                     mcp,
                 )
@@ -733,7 +743,7 @@ impl CoreRuntime {
                     &session.launch_selection.model,
                     &session.launch_selection.permission,
                     &session.launch_selection.reasoning,
-                    termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                    conversation,
                     observation,
                     mcp,
                 )
@@ -745,7 +755,7 @@ impl CoreRuntime {
                 &session.launch_selection.model,
                 &session.launch_selection.permission,
                 &session.launch_selection.reasoning,
-                termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                conversation,
                 observation,
                 mcp,
             )
@@ -756,7 +766,7 @@ impl CoreRuntime {
                 &session.launch_selection.model,
                 &session.launch_selection.permission,
                 &session.launch_selection.reasoning,
-                termloop_invocation::AgentConversationLaunch::Resume { resume_ref },
+                conversation,
                 observation,
                 mcp,
             )
@@ -1110,6 +1120,7 @@ impl CoreRuntime {
         // where the durable descriptor still carries this daemon's original
         // epoch. Every successfully prepared replacement PTY must have a
         // distinct generation, regardless of which path requested it.
+        let account = self.session_agent_account(&session)?;
         Ok(crate::AgentResumePlanOutcome::Prepare(Box::new(
             crate::AgentResumePlan {
                 session_id,
@@ -1117,6 +1128,7 @@ impl CoreRuntime {
                 cwd: session.process.cwd,
                 cwd_identity,
                 agent_id,
+                account,
                 launch_selection: session.launch_selection,
                 resume_ref,
                 launch_guard: session.resume_launch_guard,

@@ -1255,8 +1255,10 @@ const quickActionParams = async (
   templateRef: QuickActionParams["templateRef"],
   prompt: string,
   attachmentIds: string[],
+  accountId?: string,
 ): Promise<QuickActionParams> => ({
   projectId,
+  ...(accountId ? { accountId } : {}),
   cwd: await projectCwd(projectId),
   agentId: requireAgentId(agentId),
   model,
@@ -1268,14 +1270,14 @@ const quickActionParams = async (
 });
 handleIpc(
   "termloop:quick-action-preview",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]) =>
-    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)),
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string) =>
+    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)),
 );
 handleIpc(
   "termloop:quick-action-launch",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string) => {
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
     const params: QuickActionLaunchParams = {
-      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds),
+      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId),
       launchTicket,
     };
     const result = await controlCall("quickAction.launch", params);

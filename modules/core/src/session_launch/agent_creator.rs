@@ -44,6 +44,7 @@ impl CoreRuntime {
                 target_id: None,
             },
         };
+        plan.set_account(self.resolve_agent_account(&agent_id, params["accountId"].as_str())?);
         plan.interactive_options = Some(selection.clone());
         plan.improver_session_name = Some("Agent Creator".into());
         let (observation, mcp) = preview_transport_bindings(&plan);
@@ -58,7 +59,8 @@ impl CoreRuntime {
             },
             termloop_invocation::AgentConversationLaunch::Fresh {
                 resume_ref: plan.resume_ref.as_ref(),
-            },
+            }
+            .in_account(plan.account.as_ref()),
             observation,
             mcp,
         )

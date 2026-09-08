@@ -671,15 +671,19 @@ export function DesktopApp() {
   }), [selectedConnectionProfileId, agentLibrary.reload]);
   const localSourceApi = desktopApi.source("local");
   const agentConnections = useMemo<AgentConnectionActions>(() => ({
-    list: async (profileId) => {
+    accounts: (profileId) => desktopApi.source(profileId).agentAccountList(),
+    create: (profileId, params) => desktopApi.source(profileId).agentAccountCreate(params),
+    rename: (profileId, params) => desktopApi.source(profileId).agentAccountRename(params),
+    setDefault: (profileId, params) => desktopApi.source(profileId).agentAccountSetDefault(params),
+    list: async (profileId, params) => {
       const api = desktopApi.source(profileId);
-      const statuses = await api.agentAuthStatusList();
+      const statuses = await api.agentAuthStatusList(params);
       setAgentCapabilityRevision((revision) => revision + 1);
       return statuses;
     },
-    start: (profileId, agentId, action) => {
+    start: (profileId, agentId, accountId, action) => {
       const api = desktopApi.source(profileId);
-      return action === "install" ? api.agentInstall({ agentId }) : action === "signOut" ? api.agentAuthLogout({ agentId }) : api.agentAuthStart({ agentId });
+      return action === "install" ? api.agentInstall({ agentId, accountId }) : action === "signOut" ? api.agentAuthLogout({ agentId, accountId }) : api.agentAuthStart({ agentId, accountId });
     },
     get: (profileId, params) => desktopApi.source(profileId).agentAuthGet(params),
     cancel: (profileId, params) => desktopApi.source(profileId).agentAuthCancel(params),
@@ -993,10 +997,11 @@ export function DesktopApp() {
       return message;
     }
   }, []);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string) => {
+  const loadAgentAccounts = useCallback(async (projectId: string) => (await sourceApiForProject(projectId).agentAccountList()).accounts, [sourceApiForProject]);
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
     try {
       const session = requireQuickActionSession(
-        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket),
+        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId),
         projectId,
       );
       await refreshProjection();
@@ -2438,7 +2443,8 @@ export function DesktopApp() {
       loadSessionHistory={loadSessionHistory}
       loadSessionHistoryPreview={loadSessionHistoryPreview}
       resumeHistorySession={resumeHistorySession}
-      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)}
+      loadAgentAccounts={loadAgentAccounts}
+      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={(attachmentId) => {
         const identity = connectionAttachmentIdentity(attachmentId);

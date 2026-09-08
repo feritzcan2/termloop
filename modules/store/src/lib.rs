@@ -64,7 +64,7 @@ use termloop_domain::{
 // sidebar results, parallel review routing, and fresh-helper launch selections.
 // Version 54 adds the current Agent Creator Session target.
 // Version 57 is the first integrated state containing all three feature families.
-const CURRENT_SCHEMA_VERSION: u32 = 57;
+const CURRENT_SCHEMA_VERSION: u32 = 58;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -151,6 +151,8 @@ struct CurrentState {
     run_setup_marks: Vec<RunSetupMark>,
     #[serde(default)]
     last_agent_launch_selection: Option<SavedAgentLaunchSelection>,
+    #[serde(default = "termloop_domain::default_agent_accounts")]
+    agent_accounts: Vec<termloop_domain::AgentAccount>,
     #[serde(default)]
     keep_awake_preference: KeepAwakePreference,
     #[serde(default)]
@@ -203,6 +205,7 @@ impl Default for CurrentState {
             configuration_version_selections: vec![],
             run_setup_marks: vec![],
             last_agent_launch_selection: None,
+            agent_accounts: termloop_domain::default_agent_accounts(),
             keep_awake_preference: KeepAwakePreference::default(),
             agent_plans: vec![],
             agent_conversation_readiness: vec![],
@@ -337,7 +340,11 @@ impl Store {
     }
 
     pub fn open_provider_cache(&self) -> Result<ProviderCacheHandle, StoreError> {
-        let directory = self.path.parent().unwrap_or_else(|| Path::new("."));
+        let directory = self
+            .path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
         ProviderCacheHandle::open(directory.join("provider-cache.v1.json"))
     }
 
@@ -402,6 +409,17 @@ impl Store {
             .find(|record| record.session_id == session_id)
             .map(|record| record.readiness)
     }
+    pub fn agent_accounts(&self) -> &[termloop_domain::AgentAccount] {
+        &self.state.agent_accounts
+    }
+
+    pub fn state_directory(&self) -> &Path {
+        self.path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+    }
+
     pub fn last_agent_launch_selection(&self) -> Option<&SavedAgentLaunchSelection> {
         self.state.last_agent_launch_selection.as_ref()
     }

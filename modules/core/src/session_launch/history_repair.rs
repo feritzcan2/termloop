@@ -25,6 +25,7 @@ pub struct ObservedProviderHistoryRepair {
 
 pub struct ProviderHistoryRepairPlan {
     session_id: String,
+    account: Option<termloop_agents::AgentAccountContext>,
     runtime_epoch: u64,
     cwd: String,
     cwd_identity: termloop_platform::PathComparisonInput,
@@ -126,6 +127,7 @@ impl ProviderHistoryRepairPlan {
             self.runtime_epoch,
             &self.cwd,
             self.managed_worktree_trust,
+            self.account.as_ref(),
             &self.provider_process_directory,
             None,
             None,
@@ -260,6 +262,16 @@ impl CoreRuntime {
             }
             Ok(ProviderHistoryRepairPlan {
                 session_id: session_id.clone(),
+                account: self.resolve_agent_account(
+                    "codex",
+                    Some(
+                        session
+                            .launch_selection
+                            .account_id
+                            .as_deref()
+                            .unwrap_or("default"),
+                    ),
+                )?,
                 runtime_epoch: self.runtime_epoch,
                 cwd: session.process.cwd.clone(),
                 cwd_identity,

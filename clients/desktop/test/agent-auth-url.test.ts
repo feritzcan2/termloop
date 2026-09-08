@@ -3,7 +3,7 @@ import type { AgentAuthOperationDto } from "@termloop/contract/current";
 vi.mock("electron", () => ({ shell: { openExternal: vi.fn() } }));
 vi.mock("../src/main/control.js", () => ({ controlCall: vi.fn() }));
 import { signInUrl } from "../src/main/agent-connections.js";
-const operation: AgentAuthOperationDto = { agentId: "codex", operationId: "attempt", action: "signIn", phase: "awaitingBrowser", verificationUrl: "https://auth.openai.com/codex/device", userCode: "CODE", acceptsCode: false, message: "", expiresAtEpochMs: Date.now() + 900_000 };
+const operation: AgentAuthOperationDto = { agentId: "codex", accountId: "default", operationId: "attempt", action: "signIn", phase: "awaitingBrowser", verificationUrl: "https://auth.openai.com/codex/device", userCode: "CODE", acceptsCode: false, message: "", expiresAtEpochMs: Date.now() + 900_000 };
 describe("provider sign-in browser boundary", () => {
   it("allows only supported provider challenge URLs", () => {
     expect(signInUrl(operation)).toBe(operation.verificationUrl);

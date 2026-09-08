@@ -27,6 +27,7 @@ pub struct SessionHistoryScanPlan {
     project_id: String,
     scope_paths: Vec<String>,
     fill_cache: bool,
+    accounts: Vec<termloop_agents::AgentAccountContext>,
 }
 
 pub struct ObservedSessionHistoryScan {
@@ -37,7 +38,8 @@ pub struct ObservedSessionHistoryScan {
 impl SessionHistoryScanPlan {
     pub fn observe(self, cancellation: &AtomicBool) -> ObservedSessionHistoryScan {
         ObservedSessionHistoryScan {
-            scan: termloop_agents::scan_local_agent_history_cancellable_with_limit(
+            scan: termloop_agents::scan_account_agent_history_cancellable_with_limit(
+                &self.accounts,
                 cancellation,
                 if self.fill_cache {
                     FULL_CANDIDATES_PER_PROVIDER
@@ -86,6 +88,12 @@ pub(crate) struct SessionHistoryRuntime {
     projects: HashMap<String, CachedProjectHistory>,
 }
 
+impl SessionHistoryRuntime {
+    pub(crate) fn clear_accounts(&mut self) {
+        self.projects.clear();
+    }
+}
+
 #[derive(Clone)]
 pub struct SessionHistoryResumePlan {
     project_id: String,
@@ -118,6 +126,19 @@ impl SessionHistoryResumePlan {
     }
 }
 
+fn same_account_conversation(
+    session: &termloop_domain::SessionRecord,
+    conversation: &DiscoveredAgentConversation,
+) -> bool {
+    session.resume_ref.as_ref() == Some(&conversation.resume_ref)
+        && session
+            .launch_selection
+            .account_id
+            .as_deref()
+            .unwrap_or("default")
+            == conversation.account_id
+}
+
 impl CoreRuntime {
     pub fn plan_session_history_list(
         &mut self,
@@ -140,6 +161,18 @@ impl CoreRuntime {
             SessionHistoryScanPlan {
                 project_id,
                 scope_paths,
+                accounts: self
+                    .store
+                    .agent_accounts()
+                    .iter()
+                    .map(|account| {
+                        self.resolve_agent_account(
+                            account.agent_id.command(),
+                            Some(&account.account_id),
+                        )
+                        .and_then(|context| context.ok_or(CoreError::NotFound))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
                 fill_cache,
             },
         ))
@@ -150,7 +183,9 @@ impl CoreRuntime {
         observed: ObservedSessionHistoryScan,
     ) -> Result<Value, CoreError> {
         let current_scope_paths = self.session_history_scope_paths(&observed.plan.project_id)?;
-        if current_scope_paths != observed.plan.scope_paths {
+        if current_scope_paths != observed.plan.scope_paths
+            || observed.plan.accounts.len() != self.store.agent_accounts().len()
+        {
             return Err(CoreError::InvalidParams("projectId".into()));
         }
         let scope_identities = current_scope_paths
@@ -176,7 +211,15 @@ impl CoreRuntime {
                     .filter(|value| value.validate())
                     .map(|resume_ref| {
                         (
-                            resume_ref.clone(),
+                            (
+                                resume_ref.clone(),
+                                session
+                                    .launch_selection
+                                    .account_id
+                                    .as_deref()
+                                    .unwrap_or("default")
+                                    .to_owned(),
+                            ),
                             session.id.clone(),
                             session.project_id.clone(),
                         )
@@ -186,9 +229,13 @@ impl CoreRuntime {
         let mut matching = Vec::new();
         let mut managed_entries = Vec::new();
         for conversation in observed.scan.conversations {
-            if let Some((_, session_id, session_project_id)) = known_resume_refs
-                .iter()
-                .find(|(resume_ref, _, _)| resume_ref == &conversation.resume_ref)
+            if let Some((_, session_id, session_project_id)) =
+                known_resume_refs
+                    .iter()
+                    .find(|((resume_ref, account_id), _, _)| {
+                        resume_ref == &conversation.resume_ref
+                            && account_id == &conversation.account_id
+                    })
             {
                 if session_project_id == &observed.plan.project_id {
                     managed_entries.push(CachedManagedHistoryEntry {
@@ -241,7 +288,15 @@ impl CoreRuntime {
                 cached
                     .entries
                     .iter()
-                    .map(|entry| (entry.conversation.resume_ref.clone(), entry.handle.clone()))
+                    .map(|entry| {
+                        (
+                            (
+                                entry.conversation.resume_ref.clone(),
+                                entry.conversation.account_id.clone(),
+                            ),
+                            entry.handle.clone(),
+                        )
+                    })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -250,7 +305,10 @@ impl CoreRuntime {
             .map(|(project_match, conversation)| CachedHistoryEntry {
                 handle: existing_handles
                     .iter()
-                    .find(|(resume_ref, _)| resume_ref == &conversation.resume_ref)
+                    .find(|((resume_ref, account_id), _)| {
+                        resume_ref == &conversation.resume_ref
+                            && account_id == &conversation.account_id
+                    })
                     .map(|(_, handle)| handle.clone())
                     .unwrap_or_else(termloop_platform::generate_opaque_runtime_token),
                 project_match,
@@ -502,7 +560,7 @@ impl CoreRuntime {
             .store
             .sessions()
             .iter()
-            .any(|session| session.resume_ref.as_ref() == Some(&conversation.resume_ref))
+            .any(|session| same_account_conversation(session, &conversation))
         {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
@@ -536,11 +594,14 @@ impl CoreRuntime {
                     .find(|entry| entry.handle == observed.plan.history_handle)
             })
             .ok_or_else(|| CoreError::InvalidParams("historyHandle".into()))?;
-        if cached.conversation.resume_ref != observed.plan.conversation.resume_ref
+        if cached.conversation.account_id != observed.plan.conversation.account_id
+            || cached.conversation.resume_ref != observed.plan.conversation.resume_ref
             || project_match(&current_scope_paths, &observed.cwd).is_none()
-            || self.store.sessions().iter().any(|session| {
-                session.resume_ref.as_ref() == Some(&observed.plan.conversation.resume_ref)
-            })
+            || self
+                .store
+                .sessions()
+                .iter()
+                .any(|session| same_account_conversation(session, &observed.plan.conversation))
         {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
@@ -548,6 +609,7 @@ impl CoreRuntime {
             "projectId": observed.plan.project_id,
             "cwd": observed.cwd,
             "agentId": observed.plan.conversation.agent_id,
+            "accountId": observed.plan.conversation.account_id,
         });
         for key in ["model", "permission", "reasoning"] {
             if let Some(value) = params.get(key) {
@@ -600,15 +662,25 @@ impl CoreRuntime {
             .get(&plan.project_id)
             .is_some_and(|cached| {
                 cached.entries.iter().any(|entry| {
-                    entry.handle == handle && &entry.conversation.resume_ref == source_ref
+                    entry.handle == handle
+                        && &entry.conversation.resume_ref == source_ref
+                        && plan.account.as_ref().is_some_and(|account| {
+                            account.account_id == entry.conversation.account_id
+                        })
                 })
             });
         if !valid
-            || self
-                .store
-                .sessions()
-                .iter()
-                .any(|session| session.resume_ref.as_ref() == Some(source_ref))
+            || self.store.sessions().iter().any(|session| {
+                session.resume_ref.as_ref() == Some(source_ref)
+                    && plan.account.as_ref().is_some_and(|account| {
+                        session
+                            .launch_selection
+                            .account_id
+                            .as_deref()
+                            .unwrap_or("default")
+                            == account.account_id
+                    })
+            })
         {
             return Err(CoreError::InvalidParams("historyHandle".into()));
         }
@@ -767,6 +839,7 @@ mod tests {
         let project_id = project["id"].as_str().unwrap().to_owned();
         let native_id = Uuid::new_v4().to_string();
         let conversation = DiscoveredAgentConversation {
+            account_id: "default".into(),
             resume_ref: ResumeRef::for_provider(ResumeProvider::Claude, native_id.clone()).unwrap(),
             agent_id: "claude".into(),
             title: "A deliberately long external conversation title that must be bounded before it becomes a TermLoop Session name".into(),

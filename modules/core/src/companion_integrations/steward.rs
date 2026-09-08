@@ -504,7 +504,7 @@ impl CoreRuntime {
         requested_model: Option<&str>,
     ) -> Result<StewardTaskAgentStartPlan, CoreError> {
         self.authorize_steward_task_execution(steward_session_id, project_id, task_id)?;
-        let (agent_id, launch_selection) = match requested_agent_id {
+        let (agent_id, mut launch_selection) = match requested_agent_id {
             Some(agent_id) => {
                 let model = requested_model.unwrap_or("default");
                 let selection = AgentLaunchSelection::new(
@@ -539,6 +539,13 @@ impl CoreRuntime {
                 )
             }
         };
+        let requested_account = launch_selection.account_id.as_deref().or_else(|| {
+            (requested_agent_id.is_none() && matches!(agent_id.as_str(), "claude" | "codex"))
+                .then_some("default")
+        });
+        launch_selection.account_id = self
+            .resolve_agent_account(&agent_id, requested_account)?
+            .map(|account| account.account_id);
         let task = self
             .store
             .tasks()
@@ -982,7 +989,15 @@ fn select_steward_assignment_session<'a>(
         }
         if reusable.is_none()
             && session.process.agent_id.as_deref() == Some(agent_id)
-            && session.launch_selection == *launch_selection
+            && session.launch_selection.model == launch_selection.model
+            && session.launch_selection.permission == launch_selection.permission
+            && session.launch_selection.reasoning == launch_selection.reasoning
+            && session
+                .launch_selection
+                .account_id
+                .as_deref()
+                .unwrap_or("default")
+                == launch_selection.account_id.as_deref().unwrap_or("default")
         {
             reusable = Some(session);
         }
@@ -1343,7 +1358,10 @@ mod tests {
         // whoever started the Task Agent.
         assert_eq!(
             explicit.launch_selection(),
-            &AgentLaunchSelection::new("fable", "acceptEdits", "default")
+            &AgentLaunchSelection {
+                account_id: Some("default".into()),
+                ..AgentLaunchSelection::new("fable", "acceptEdits", "default")
+            }
         );
         let explicit_default = runtime
             .plan_steward_task_agent_start(
@@ -1355,7 +1373,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(explicit_default.agent_id(), "codex");
-        assert!(explicit_default.launch_selection().is_default());
+        assert_eq!(
+            explicit_default.launch_selection(),
+            &AgentLaunchSelection {
+                account_id: Some("default".into()),
+                ..AgentLaunchSelection::default()
+            }
+        );
         assert!(matches!(
             runtime.plan_steward_task_agent_start(
                 "steward-session",

@@ -144,6 +144,7 @@ fn same_millisecond_task_mutations_still_advance_updated_at() {
     let _ = std::fs::remove_file(&path);
 }
 
+mod agent_accounts;
 mod agent_plan;
 mod archive;
 mod branch_binding;
