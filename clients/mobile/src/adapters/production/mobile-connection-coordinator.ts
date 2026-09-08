@@ -172,6 +172,7 @@ export class MobileConnectionCoordinator {
       this.controlSocketFactory,
       diagnostics,
       connection.id,
+      () => this.invalidateTransport("controlRequestTimeout"),
     );
   }
 
@@ -276,6 +277,7 @@ export class MobileConnectionCoordinator {
         }
         const socket = this.openSocket();
         if (socket === undefined) throw new Error("Terminal is not connected.");
+        const generation = this.generation;
         const inputReceiptSource = this.inputReceiptSource;
         const requireReceipts = inputReceiptSource !== undefined;
         const inputFrames = Math.ceil(bytes.byteLength / MAX_INPUT_FRAME_BYTES);
@@ -310,13 +312,19 @@ export class MobileConnectionCoordinator {
           });
         } catch (cause: unknown) {
           subscription.onEvent({ type: "inputDelivery", state: "uncertain" });
-          this.rejectInputReceipts(subscription, new Error("Terminal input delivery failed."));
+          if (generation === this.generation) {
+            this.rejectInputReceipts(subscription, new Error("Terminal input delivery failed."));
+          }
           await Promise.allSettled(receipts);
           this.reportTerminal(subscription, "input_send_failed", {
             inputBytes: bytes.byteLength,
             causeType: cause instanceof Error ? cause.name : typeof cause,
           });
-          if (this.openSocket() !== undefined) this.invalidateTransport("inputSendFailed");
+          // Route cancellation rejects receipts too. Only a failure still
+          // owned by this attachment and transport can retire the connection.
+          if (!subscription.detached && generation === this.generation && this.openSocket() === socket) {
+            this.invalidateTransport("inputSendFailed");
+          }
           throw cause;
         }
       },
