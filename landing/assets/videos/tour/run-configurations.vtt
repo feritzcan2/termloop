@@ -1,0 +1,13 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:06.000
+Open the saved Launchpad preview configuration.
+
+2
+00:00:06.000 --> 00:00:12.000
+Review pnpm dev, the setup command, and fallback URL.
+
+3
+00:00:12.000 --> 00:00:18.000
+Reuse the configuration when starting work in a checkout.

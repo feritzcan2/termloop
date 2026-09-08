@@ -1,0 +1,12 @@
+{
+  "id": "task-lifecycle",
+  "duration": 18.0,
+  "sourceSeconds": 2.75,
+  "size": 180403,
+  "sha256": "0b67264c4c5c934397d3f8a06b7e794d090cc62ada6dd5e7acc55120bee78aa4",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": true
+}
