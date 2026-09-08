@@ -38,6 +38,7 @@ import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionL
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { retryAgentSession } from "./session-resume.js";
+import { createSessionActivation, type SessionActivationContext } from "./session-activation.js";
 import {
   relocateAgentToProjectWithStartupRetry,
   relocateAgentToTaskWithStartupRetry,
@@ -212,14 +213,22 @@ async function legacyAssistantImproverIdentity(
   }
 }
 
-async function activateImproverSession(projectId: string, session: Session): Promise<void> {
-  projectionStore.upsertSession(session);
-  terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-  await refreshProjection();
-  presentationStore.getState().selectProject(projectId);
-  presentationStore.getState().selectSession(projectId, session.id);
-  focusTerminalSoon(session.id);
-}
+const activateSession = createSessionActivation({
+  upsertSession: (session) => projectionStore.upsertSession(session),
+  reconcileTerminals: () => terminalPool.reconcile(projectionStore.getSnapshot().sessions),
+  refreshProject: async ({ projectId, connectionProfileId }) => {
+    const { availableProfiles, profiles } = await enabledConnectionProfiles();
+    const profile = profiles.find((candidate) => candidate.id === connectionProfileId);
+    if (!profile) throw new Error("The Session's connection is no longer enabled.");
+    await queueSourceSnapshotRefresh(profile);
+    await projectSnapshotRefreshQueue.request(projectId);
+    reconcileSourceProjection(availableProfiles);
+  },
+  refreshTasks: refreshProjectTaskProjection,
+  selectProject: (projectId) => presentationStore.getState().selectProject(projectId),
+  selectSession: (projectId, sessionId) => presentationStore.getState().selectSession(projectId, sessionId),
+  focusSession: focusTerminalSoon,
+});
 
 const persistLayout = createLayoutPersistence(
   (document) => desktopApi.layoutSave(document),
@@ -306,15 +315,30 @@ async function enabledConnectionProfiles(): Promise<{
     if (!retainedProfileIds.has(profileId)) sourceRefreshProfiles.delete(profileId);
   }
   for (const profile of profiles) sourceRefreshProfiles.set(profile.id, profile);
+  projectSnapshotRefreshQueue.retain(new Set(projectionStore.getSnapshot().projects.map((project) => project.id)));
   return { availableProfiles, profiles };
 }
 
+const projectSnapshotRefreshQueue = new KeyedProjectionRefreshQueue<string>(refreshProjectOnce);
+
 async function refreshSelectedProjectOnce(): Promise<void> {
   const projects = projectionStore.getSnapshot().projects;
-  const requestedProjectId = presentationStore.getState().selectedProjectId;
-  const taskProject = projects.find((project) => project.id === requestedProjectId) ?? projects[0];
+  const selected = presentationStore.getState().selectedProjectId;
+  const projectId = (projects.find((project) => project.id === selected) ?? projects[0])?.id;
+  if (projectId) await projectSnapshotRefreshQueue.request(projectId);
+  else await refreshProjectOnce();
+}
+
+async function refreshProjectOnce(requestedProjectId?: string): Promise<void> {
+  const projects = projectionStore.getSnapshot().projects;
+  const taskProject = requestedProjectId
+    ? projects.find((project) => project.id === requestedProjectId)
+    : projects[0];
+  if (requestedProjectId && !taskProject) throw new Error("The Project is no longer available.");
   const taskProjectId = taskProject?.id;
-  gitHostRefreshCoordinator.activateProject(taskProjectId);
+  if (taskProjectId === presentationStore.getState().selectedProjectId) {
+    gitHostRefreshCoordinator.activateProject(taskProjectId);
+  }
   const sourceApi = desktopApi.source(connectionProfileIdOf(taskProject));
   let tasks: Task[] = [];
   let projectWorktreeSummary;
@@ -518,9 +542,17 @@ function sourceApiForAttachmentId(attachmentId: string): SourceDesktopApi {
 async function refreshTaskProjection(taskIds: readonly string[]): Promise<void> {
   const projectId = presentationStore.getState().selectedProjectId;
   if (!projectId || taskIds.length === 0) return;
-  const tasks = await sourceApiForProject(projectId).taskList(projectId, [...new Set(taskIds)]);
+  const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
+  const connectionProfileId = project
+    ? connectionProfileIdOf(project)
+    : connectionEntityIdentity(projectId)?.profileId ?? "local";
+  await refreshProjectTaskProjection({ projectId, connectionProfileId }, taskIds);
+}
+
+async function refreshProjectTaskProjection(context: SessionActivationContext, taskIds: readonly string[]): Promise<void> {
+  const tasks = await desktopApi.source(context.connectionProfileId).taskList(context.projectId, [...new Set(taskIds)]);
   taskPatchCount += 1;
-  projectionStore.applyTaskPatch(taskIds, tasks);
+  projectionStore.applyTaskPatch(taskIds, tasks, context.projectId);
 }
 
 async function refreshGitHostProjection(
@@ -940,9 +972,7 @@ export function DesktopApp() {
     if (!selectedProject) return;
     try {
       const session = await selectedSourceApi.terminalLaunch(selectedProject.id);
-      await refreshProjection();
-      presentationStore.getState().selectSession(selectedProject.id, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session);
     } catch (error) {
       projectionStore.setMessage(controlErrorMessage(error));
     }
@@ -964,9 +994,7 @@ export function DesktopApp() {
     try {
       const inspected = await selectedSourceApi.agentPreview(projectId, agentId, preset.model, preset.permission, preset.reasoning);
       const session = await selectedSourceApi.agentLaunch(projectId, agentId, inspected.launch_ticket);
-      await refreshProjection();
-      presentationStore.getState().selectSession(projectId, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session);
       return undefined;
     } catch (error) {
       projectionStore.setMessage(controlErrorMessage(error));
@@ -986,10 +1014,7 @@ export function DesktopApp() {
       const api = sourceApiForProject(projectId);
       const inspected = await api.sessionHistoryPreviewResumeAgent(projectId, historyHandle);
       const session = await api.sessionHistoryResumeAgent(projectId, historyHandle, inspected.launch_ticket);
-      await refreshProjection();
-      presentationStore.getState().selectProject(projectId);
-      presentationStore.getState().selectSession(projectId, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1004,10 +1029,7 @@ export function DesktopApp() {
         await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId),
         projectId,
       );
-      await refreshProjection();
-      presentationStore.getState().selectProject(projectId);
-      presentationStore.getState().selectSession(projectId, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1024,12 +1046,7 @@ export function DesktopApp() {
         return message;
       }
       const session = outcome.result;
-      projectionStore.upsertSession(session);
-      terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-      await refreshTaskProjection([taskId]);
-      presentationStore.getState().selectProject(session.project_id);
-      presentationStore.getState().selectSession(session.project_id, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session, { kind: "task", taskId });
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
@@ -1114,7 +1131,7 @@ export function DesktopApp() {
     try {
       const session = await openAgentCreator(sourceApiForProject(projectId), projectionStore.getSnapshot().sessions,
         projectId, requested ?? readLastQuickActionAgentSelection(), retireImproverSession, options);
-      await activateImproverSession(projectId, session);
+      await activateSession(session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
@@ -1153,7 +1170,7 @@ export function DesktopApp() {
           },
           options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
         );
-        await activateImproverSession(projectId, session);
+        await activateSession(session);
         return undefined;
       } catch (error) {
         const message = controlErrorMessage(error);
@@ -1222,7 +1239,7 @@ export function DesktopApp() {
             },
             options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
           );
-          await activateImproverSession(projectId, session);
+          await activateSession(session);
           return undefined;
         } catch (error) {
           const message = controlErrorMessage(error);
@@ -1271,12 +1288,7 @@ export function DesktopApp() {
     if (configuration?.autoOpenFirstUrl) {
       pendingRunAutoOpenSessionIds.current.add(session.id);
     }
-    projectionStore.upsertSession(session);
-    terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-    await refreshProjection();
-    presentationStore.getState().selectProject(session.project_id);
-    presentationStore.getState().selectSession(session.project_id, session.id);
-    focusTerminalSoon(session.id);
+    await activateSession(session);
     return undefined;
   }, []);
   const launchProjectRun = useCallback(async (
@@ -1352,12 +1364,7 @@ export function DesktopApp() {
         return message;
       }
       const session = outcome.result;
-      projectionStore.upsertSession(session);
-      terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-      await refreshTaskProjection([taskId]);
-      presentationStore.getState().selectProject(session.project_id);
-      presentationStore.getState().selectSession(session.project_id, session.id);
-      focusTerminalSoon(session.id);
+      await activateSession(session, { kind: "task", taskId });
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -1381,14 +1388,8 @@ export function DesktopApp() {
         return message;
       }
       const session = outcome.result;
-      projectionStore.upsertSession(session);
-      terminalPool.reconcile(projectionStore.getSnapshot().sessions);
-      // The launch creates both a Session and Core execution state. Refresh
-      // both projections before revealing the coordinator terminal.
-      await refreshProjection();
-      presentationStore.getState().selectProject(session.project_id);
-      presentationStore.getState().selectSession(session.project_id, session.id);
-      focusTerminalSoon(session.id);
+      // Workflow activation refreshes its execution together with the Session.
+      await activateSession(session);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -2161,7 +2162,7 @@ export function DesktopApp() {
             options?.fresh ? { requested: true, retire: (previous) => retireImproverSession(previous.id) } : undefined,
           );
           rememberPromptImproverSession(projectId, target, session.id);
-          await activateImproverSession(projectId, session);
+          await activateSession(session);
           return undefined;
         } catch (error) {
           const message = controlErrorMessage(error);

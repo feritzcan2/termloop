@@ -11,6 +11,9 @@ use tokio::time::Duration;
 
 use super::{AppState, current_epoch_ms};
 
+mod session_mutation;
+pub(super) use session_mutation::{CommittedSessionMutation, finish_session_mutation};
+
 const INVALIDATION_COALESCE_WINDOW: Duration = Duration::from_millis(100);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,6 +33,8 @@ pub(super) enum CommitImpact {
     TaskSessionAgent,
     Session,
     SessionAgent,
+    SessionWorkflow,
+    SessionTermination,
     AgentLibrary,
     Companion,
     Steward,
@@ -55,6 +60,12 @@ impl CommitImpact {
             Self::SessionAgent => {
                 vec![ProjectionTopic::Session, ProjectionTopic::AgentStatus]
             }
+            Self::SessionWorkflow => vec![ProjectionTopic::Session, ProjectionTopic::Workflow],
+            Self::SessionTermination => vec![
+                ProjectionTopic::Session,
+                ProjectionTopic::Steward,
+                ProjectionTopic::Routine,
+            ],
             Self::AgentLibrary => vec![ProjectionTopic::AgentLibrary],
             Self::Companion => vec![ProjectionTopic::Companion],
             Self::Steward => vec![ProjectionTopic::Steward],
