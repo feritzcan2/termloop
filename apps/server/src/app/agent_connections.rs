@@ -40,10 +40,15 @@ pub(super) async fn handle(
     };
     let owner = owner.to_owned();
     let method = method.to_owned();
-    let refresh = method == "agent.authStatusList";
-    let result = tokio::task::spawn_blocking(move || {
+    let capabilities = state.agent_capabilities.lock().unwrap().clone();
+    let (result, refresh) = tokio::task::spawn_blocking(move || {
         if method == "agent.authStatusList" {
-            serde_json::to_value(connections.status_list(&accounts, &owner))
+            let statuses = connections.status_list(&accounts, &owner);
+            let changed = statuses
+                .iter()
+                .any(|status| status.installation_changed(&capabilities));
+            serde_json::to_value(statuses)
+                .map(|result| (result, changed))
                 .map_err(|_| "Could not read account status.")
         } else {
             let provider = Provider::parse(params["agentId"].as_str().unwrap_or_default())?;
@@ -65,21 +70,29 @@ pub(super) async fn handle(
                 ),
                 _ => Err("Unsupported account operation."),
             }?;
-            serde_json::to_value(result).map_err(|_| "Could not read setup progress.")
+            serde_json::to_value(result)
+                .map(|result| (result, false))
+                .map_err(|_| "Could not read setup progress.")
         }
     })
     .await
     .map_err(|_| CoreError::Terminal("Account setup worker unavailable.".into()))?
     .map_err(|error| CoreError::Terminal(error.into()))?;
-    if refresh {
-        refresh_capabilities(state).await?;
+    if refresh && let Ok(guard) = state.agent_capability_refresh.clone().try_lock_owned() {
+        // Discovery probes several CLI commands. Account reads must not wait for
+        // it, and concurrent account reads must not queue duplicate discoveries.
+        let state = state.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            if let Err(error) = refresh_capabilities(&state).await {
+                tracing::warn!(%error, "Could not refresh installed agent capabilities");
+            }
+        });
     }
     Ok(result)
 }
 
 async fn refresh_capabilities(state: &AppState) -> Result<(), CoreError> {
-    // One discovery at a time. No serialized core lock is held over CLI work.
-    let _refresh = state.agent_capability_refresh.lock().await;
     let (capabilities, updates) = tokio::task::spawn_blocking(|| {
         let capabilities =
             termloop_core::agent_connections::discover_agent_connection_capabilities();
