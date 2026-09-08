@@ -12,7 +12,6 @@ use termloop_gitio::{
 use crate::{CoreError, CoreRuntime, required_string};
 
 const CHANGE_OBSERVATION_CAP: usize = 64;
-const CHANGE_OBSERVATION_TTL_MS: u64 = 60_000;
 
 #[derive(Clone)]
 pub struct TaskWorktreeChangeListPlan {
@@ -64,11 +63,13 @@ struct CachedChangeObservation {
     observation_id: String,
     task_id: String,
     proof: ManagedWorktreeProof,
-    expires_at_epoch_ms: u64,
     entries: Vec<WorktreeChangeEntry>,
 }
 
 #[derive(Default)]
+// These are bounded entry selections, not content freshness proofs. Reads still
+// revalidate the managed checkout and observe Git. Keep selections until LRU
+// eviction or Task deletion so time spent reviewing does not invalidate them.
 pub(crate) struct WorktreeChangeObservationCache {
     entries: VecDeque<CachedChangeObservation>,
     next_sequence: u64,
@@ -82,19 +83,12 @@ impl WorktreeChangeObservationCache {
             .retain(|observation| !task_ids.contains(&observation.task_id));
     }
 
-    fn retain_fresh(&mut self, now: u64) {
-        self.entries
-            .retain(|observation| observation.expires_at_epoch_ms > now);
-    }
-
     fn insert(
         &mut self,
         task_id: String,
         proof: ManagedWorktreeProof,
         entries: Vec<WorktreeChangeEntry>,
-        now: u64,
     ) -> Result<String, CoreError> {
-        self.retain_fresh(now);
         self.next_sequence = self
             .next_sequence
             .checked_add(1)
@@ -104,7 +98,6 @@ impl WorktreeChangeObservationCache {
             observation_id: observation_id.clone(),
             task_id,
             proof,
-            expires_at_epoch_ms: now.saturating_add(CHANGE_OBSERVATION_TTL_MS),
             entries,
         });
         while self.entries.len() > CHANGE_OBSERVATION_CAP {
@@ -118,18 +111,17 @@ impl WorktreeChangeObservationCache {
         task_id: &str,
         observation_id: &str,
         entry_id: &str,
-        now: u64,
     ) -> Option<(ManagedWorktreeProof, WorktreeChangeEntry)> {
-        self.retain_fresh(now);
-        let observation = self.entries.iter().find(|observation| {
+        let position = self.entries.iter().position(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
         })?;
+        let observation = &self.entries[position];
         let index = entry_id.strip_prefix("entry-")?.parse::<usize>().ok()?;
-        observation
-            .entries
-            .get(index)
-            .cloned()
-            .map(|entry| (observation.proof.clone(), entry))
+        let entry = observation.entries.get(index)?.clone();
+        let proof = observation.proof.clone();
+        let observation = self.entries.remove(position)?;
+        self.entries.push_back(observation);
+        Some((proof, entry))
     }
 }
 
@@ -202,13 +194,11 @@ impl CoreRuntime {
     ) -> Result<Value, CoreError> {
         self.revalidate_change_proof(&observed.plan.task_id, &observed.plan.proof)?;
         let observation = observed.observation?;
-        let now = termloop_platform::current_epoch_ms();
         let entries = observation.entries;
         let observation_id = self.worktree_change_observations.insert(
             observed.plan.task_id.clone(),
             observed.plan.proof.clone(),
             entries.clone(),
-            now,
         )?;
         let projected = entries
             .iter()
@@ -238,12 +228,10 @@ impl CoreRuntime {
             .find(|task| task.id == task_id)
             .map(|task| task.project_id.clone())
             .ok_or(CoreError::NotFound)?;
-        let Some((proof, entry)) = self.worktree_change_observations.lookup(
-            &task_id,
-            &observation_id,
-            &entry_id,
-            termloop_platform::current_epoch_ms(),
-        ) else {
+        let Some((proof, entry)) =
+            self.worktree_change_observations
+                .lookup(&task_id, &observation_id, &entry_id)
+        else {
             return Err(proof_changed(&self.store, &task_id));
         };
         let current = self
@@ -537,8 +525,17 @@ mod tests {
     }
 
     #[test]
-    fn cache_is_bounded_and_expired_observations_are_removed() {
+    fn cache_keeps_active_entry_ids_and_evicts_unused_observations() {
         let mut cache = WorktreeChangeObservationCache::default();
+        let directory =
+            std::env::temp_dir().join(format!("termloop-change-cache-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let runner = GitRunner::discover().unwrap();
+        termloop_gitio::test_support::initialize_repository(&runner, &directory).unwrap();
+        std::fs::write(directory.join("first.txt"), "first\n").unwrap();
+        std::fs::write(directory.join("second.txt"), "second\n").unwrap();
+        let entries = runner.list_worktree_changes(&directory).unwrap().entries;
+        std::fs::remove_dir_all(directory).unwrap();
         let proof = ManagedWorktreeProof {
             task_id: "task".into(),
             operation_id: "operation".into(),
@@ -558,13 +555,31 @@ mod tests {
                 base_oid: None,
             },
         };
-        for index in 0..(CHANGE_OBSERVATION_CAP + 2) {
+        let active = cache
+            .insert("task".into(), proof.clone(), entries.clone())
+            .unwrap();
+        let unused = cache
+            .insert("task".into(), proof.clone(), entries.clone())
+            .unwrap();
+        let mut reversed = entries.clone();
+        reversed.reverse();
+        for index in 0..(CHANGE_OBSERVATION_CAP * 2) {
+            let (observed_proof, entry) = cache.lookup("task", &active, "entry-1").unwrap();
+            assert_eq!(observed_proof, proof);
+            assert_eq!(entry, entries[1]);
+            assert!(cache.lookup("other-task", &unused, "entry-0").is_none());
+            assert!(cache.lookup("task", &unused, "entry-999").is_none());
             cache
-                .insert(format!("task-{index}"), proof.clone(), vec![], 10)
+                .insert(format!("task-{index}"), proof.clone(), reversed.clone())
                 .unwrap();
         }
         assert_eq!(cache.entries.len(), CHANGE_OBSERVATION_CAP);
-        cache.retain_fresh(10 + CHANGE_OBSERVATION_TTL_MS);
-        assert!(cache.entries.is_empty());
+        assert!(cache.lookup("task", &unused, "entry-0").is_none());
+        assert_eq!(
+            cache.lookup("task", &active, "entry-0").unwrap().1,
+            entries[0]
+        );
+        cache.retain_outside_tasks(&std::collections::HashSet::from(["task".into()]));
+        assert!(cache.lookup("task", &active, "entry-0").is_none());
     }
 }
