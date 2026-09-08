@@ -105,6 +105,21 @@ pub struct Status {
     operation: Option<Operation>,
 }
 
+impl Status {
+    pub fn installation_changed(
+        &self,
+        capabilities: &[crate::DiscoveredAgentCapabilities],
+    ) -> bool {
+        capabilities
+            .iter()
+            .find(|item| item.agent_id == self.agent_id.command())
+            .is_none_or(|item| {
+                self.installed != item.available
+                    || (self.installed && self.version.is_some() && self.version != item.version)
+            })
+    }
+}
+
 /// At most one operation per account; installation reserves the provider. A requester is derived from
 /// its authenticated credential, never a caller-supplied device identifier.
 pub struct AgentConnections {

@@ -35,6 +35,52 @@ fn fixture() -> (AgentConnections, mpsc::Receiver<Vec<u8>>) {
 }
 
 #[test]
+fn account_auth_changes_do_not_repeat_discovery_but_cli_installation_changes_do() {
+    let capability = crate::DiscoveredAgentCapabilities {
+        agent_id: "claude".into(),
+        label: "Claude".into(),
+        available: true,
+        version: Some("1.0".into()),
+        integration_level: "".into(),
+        degraded_reason: None,
+        models: vec![],
+        permissions: vec![],
+        reasoning: vec![],
+        observation_supported: false,
+        quick_action_supported: false,
+        tracked_helpers_supported: false,
+        observation: crate::ObservationCapability::None,
+        fresh_session_id_supported: false,
+        resume_supported: false,
+        native_fork_supported: false,
+        mcp_http_supported: false,
+    };
+    let mut status = Status {
+        agent_id: Provider::Claude,
+        account_id: "work".into(),
+        label: "Claude",
+        installed: true,
+        version: Some("1.0".into()),
+        auth_state: "signedOut",
+        install_supported: true,
+        busy: false,
+        operation: None,
+    };
+    let capabilities = [capability];
+    assert!(!status.installation_changed(&capabilities));
+    status.auth_state = "signedIn";
+    status.account_id = "personal".into();
+    assert!(!status.installation_changed(&capabilities));
+    status.version = None; // A timed-out version probe does not imply an update.
+    assert!(!status.installation_changed(&capabilities));
+    status.version = Some("2.0".into());
+    assert!(status.installation_changed(&capabilities));
+    status.installed = false;
+    assert!(status.installation_changed(&capabilities));
+    assert!(status.installation_changed(&[]));
+}
+
+#[test]
 fn another_device_cannot_read_cancel_submit_or_replace_login() {
     let (manager, _) = fixture();
     assert!(
