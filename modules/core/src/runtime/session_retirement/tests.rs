@@ -188,6 +188,236 @@ impl Drop for Fixture {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Retirement {
+    AssistantRollback,
+    FailedFork,
+    AssistantFreshStart,
+    ArchivedDelete,
+}
+
+const RETIREMENTS: [Retirement; 4] = [
+    Retirement::AssistantRollback,
+    Retirement::FailedFork,
+    Retirement::AssistantFreshStart,
+    Retirement::ArchivedDelete,
+];
+
+impl Fixture {
+    fn prepare_retirement(&mut self, retirement: Retirement) {
+        if matches!(retirement, Retirement::FailedFork) {
+            return;
+        }
+        let mut session = self
+            .core
+            .store
+            .delete_session_descriptor(&self.core.write_authority, "retiring")
+            .unwrap();
+        if matches!(retirement, Retirement::ArchivedDelete) {
+            session.archived_at_epoch_ms = Some(2);
+            self.core
+                .store
+                .insert_session(&self.core.write_authority, session)
+                .unwrap();
+            return;
+        }
+        self.core
+            .set_steward_configuration(StewardConfigurationUpdate {
+                project_id: &self.project_id,
+                agent_id: "codex",
+                model: "default".into(),
+                permission: "bypassPermissions".into(),
+                reasoning: "default".into(),
+                enabled: true,
+                system_prompt: "Coordinate this Project.".into(),
+                expected_revision: self.core.state_revision(),
+                capability: AssistantAvailability::Proven,
+                updated_at_epoch_ms: 2,
+            })
+            .unwrap();
+        let generation = self.core.store.steward_configurations()[0].generation;
+        session.lifecycle_state = "running".into();
+        session.process.template_ref = Some("builtin.assistant.activation".into());
+        self.core
+            .store
+            .attach_steward_executor_session(
+                &self.core.write_authority,
+                session,
+                &self.project_id,
+                generation,
+                3,
+            )
+            .unwrap();
+        if matches!(retirement, Retirement::AssistantFreshStart) {
+            self.core
+                .store
+                .mark_session_resume_failed(
+                    &self.core.write_authority,
+                    "retiring",
+                    termloop_domain::ResumeFailureReason::ProviderHistoryDamaged,
+                )
+                .unwrap();
+        }
+    }
+
+    fn retire(&mut self, retirement: Retirement) -> Result<(), crate::CoreError> {
+        match retirement {
+            Retirement::AssistantRollback => {
+                let (_, runtime) = self.core.rollback_assistant_launch("retiring")?;
+                assert!(runtime.is_none());
+            }
+            Retirement::FailedFork => {
+                self.core
+                    .delete_failed_agent_fork_descriptor("retiring", 1)?;
+            }
+            Retirement::AssistantFreshStart => {
+                assert!(
+                    self.core
+                        .retire_failed_persistent_assistant_for_fresh_start("retiring")?
+                        .is_some()
+                );
+            }
+            Retirement::ArchivedDelete => {
+                self.core
+                    .handle("session.deleteArchived", json!({"sessionId": "retiring"}))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn block_storage(&self) {
+        let path = self.directory.join("state.json");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+    }
+}
+
+#[test]
+fn permanent_retirement_paths_clear_pending_delivery_and_relationships_only_for_the_removed_session()
+ {
+    for retirement in RETIREMENTS {
+        let mut fixture = Fixture::new();
+        fixture.prepare_retirement(retirement);
+        fixture.retire(retirement).unwrap();
+        fixture.assert_retired();
+        let persisted = Store::open(fixture.directory.join("state.json")).unwrap();
+        assert!(
+            persisted
+                .sessions()
+                .iter()
+                .all(|session| session.id != "retiring")
+        );
+        assert!(
+            persisted
+                .steward_configurations()
+                .iter()
+                .all(|configuration| {
+                    configuration.executor_session_id.as_deref() != Some("retiring")
+                })
+        );
+        let revision = fixture.core.state_revision();
+        assert!(fixture.retire(retirement).is_err(), "{retirement:?}");
+        assert_eq!(fixture.core.state_revision(), revision);
+        fixture.assert_retired();
+    }
+}
+
+#[test]
+fn failed_permanent_retirement_preserves_pending_state_until_a_successful_retry() {
+    for retirement in RETIREMENTS {
+        let mut fixture = Fixture::new();
+        fixture.prepare_retirement(retirement);
+        let revision = fixture.core.state_revision();
+        fixture.block_storage();
+        assert!(fixture.retire(retirement).is_err(), "{retirement:?}");
+        assert_eq!(fixture.core.state_revision(), revision);
+        assert!(
+            fixture
+                .core
+                .store
+                .sessions()
+                .iter()
+                .any(|session| session.id == "retiring")
+        );
+        assert!(
+            fixture
+                .core
+                .generated_input_deliveries
+                .state("retiring", 1)
+                .is_some()
+        );
+        assert!(
+            fixture
+                .core
+                .pending_generated_input_queues
+                .contains_key("retiring")
+        );
+        assert!(
+            fixture
+                .core
+                .fork_source_session_ids
+                .contains_key("retiring")
+        );
+        assert!(fixture.core.fork_source_session_ids.contains_key("child"));
+        assert!(
+            fixture
+                .core
+                .agent_conversation_activity
+                .contains("retiring")
+        );
+        assert_eq!(
+            fixture
+                .core
+                .mcp_authorizer
+                .authenticate("token-retiring")
+                .is_ok(),
+            !matches!(retirement, Retirement::AssistantRollback),
+            "only failed-spawn rollback must revoke authority before persistence: {retirement:?}",
+        );
+        fixture.assert_runtime_present("survivor");
+        std::fs::remove_dir(fixture.directory.join("state.json")).unwrap();
+        fixture.retire(retirement).unwrap();
+        fixture.assert_retired();
+    }
+}
+
+#[test]
+fn rejected_fork_archive_and_assistant_retirements_preserve_the_endpoint() {
+    let mut fork = Fixture::new();
+    assert!(
+        fork.core
+            .delete_failed_agent_fork_descriptor("retiring", 2)
+            .is_err()
+    );
+    fork.assert_runtime_present("retiring");
+
+    let mut archived = Fixture::new();
+    archived.prepare_retirement(Retirement::ArchivedDelete);
+    archived.core.resume_reservations.insert("retiring".into());
+    assert!(archived.retire(Retirement::ArchivedDelete).is_err());
+    archived.assert_runtime_present("retiring");
+
+    let mut assistant = Fixture::new();
+    assistant.prepare_retirement(Retirement::AssistantFreshStart);
+    assistant
+        .core
+        .store
+        .mark_session_resume_failed(
+            &assistant.core.write_authority,
+            "retiring",
+            termloop_domain::ResumeFailureReason::RuntimeOwnershipUncertain,
+        )
+        .unwrap();
+    assert!(
+        assistant
+            .core
+            .retire_failed_persistent_assistant_for_fresh_start("retiring")
+            .unwrap()
+            .is_none()
+    );
+    assistant.assert_runtime_present("retiring");
+}
+
 #[test]
 fn project_deletion_retires_only_its_committed_session_endpoints() {
     let mut fixture = Fixture::new();

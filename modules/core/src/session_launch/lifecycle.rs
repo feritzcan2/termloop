@@ -298,8 +298,8 @@ impl CoreRuntime {
         self.store
             .delete_session_descriptor(&self.write_authority, session_id)
             .map_err(store_error)?;
-        self.forget_ask_to_session(session_id);
-        self.retire_fork_relationship(session_id);
+        let retired_runtime = self.retire_closed_session_runtime(session_id);
+        debug_assert!(retired_runtime.is_none());
         Ok(())
     }
 
