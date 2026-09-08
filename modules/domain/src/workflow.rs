@@ -182,6 +182,15 @@ pub enum WorkflowExecutionPhase {
     Completed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkflowCompletionOutcome {
+    Completed,
+    Approved,
+    ChangesRequested,
+    ReviewLimitReached,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowParticipant {
@@ -279,6 +288,46 @@ pub struct WorkflowExecution {
 }
 
 impl WorkflowExecution {
+    pub fn completion_outcome(&self) -> Option<WorkflowCompletionOutcome> {
+        if self.phase != WorkflowExecutionPhase::Completed {
+            return None;
+        }
+        if self.review_changes_requested {
+            return Some(
+                if self
+                    .configuration
+                    .steps
+                    .iter()
+                    .any(|step| step.kind == WorkflowStepKind::Fix)
+                    && self.review_cycle >= self.configuration.max_review_cycles
+                {
+                    WorkflowCompletionOutcome::ReviewLimitReached
+                } else {
+                    WorkflowCompletionOutcome::ChangesRequested
+                },
+            );
+        }
+        let mut reviews = self
+            .configuration
+            .steps
+            .iter()
+            .filter(|step| step.kind == WorkflowStepKind::Review)
+            .peekable();
+        let approved = reviews.peek().is_some()
+            && reviews.all(|step| {
+                self.step_results.iter().any(|result| {
+                    result.step_id == step.id
+                        && result.review_cycle == self.review_cycle
+                        && result.outcome == WorkflowStepResultOutcome::Approved
+                })
+            });
+        Some(if approved {
+            WorkflowCompletionOutcome::Approved
+        } else {
+            WorkflowCompletionOutcome::Completed
+        })
+    }
+
     pub fn current_step(&self) -> Option<&WorkflowStep> {
         self.configuration
             .steps
@@ -704,6 +753,68 @@ mod tests {
             .step_results
             .push(execution.step_results[0].clone());
         assert!(!execution.is_valid());
+    }
+
+    #[test]
+    fn workflow_completion_requires_current_review_approval_and_distinguishes_the_limit() {
+        let mut execution = WorkflowExecution {
+            id: "execution-1".into(),
+            project_id: "project-1".into(),
+            task_id: "task-1".into(),
+            configuration: configuration(),
+            goal: "Build".into(),
+            coordinator_session_id: "coordinator-1".into(),
+            current_step_index: 3,
+            review_cycle: 1,
+            phase: WorkflowExecutionPhase::Completed,
+            coordinator_prompt_pending: false,
+            current_request_id: None,
+            participants: vec![],
+            review_requests: vec![],
+            step_results: vec![],
+            review_changes_requested: false,
+            started_at_epoch_ms: 1,
+            updated_at_epoch_ms: 1,
+        };
+        execution
+            .configuration
+            .steps
+            .retain(|step| step.kind != WorkflowStepKind::Fix);
+        assert_eq!(
+            execution.completion_outcome(),
+            Some(WorkflowCompletionOutcome::Completed)
+        );
+        execution.step_results.push(WorkflowStepResult {
+            step_id: "review".into(),
+            review_cycle: 1,
+            outcome: WorkflowStepResultOutcome::Approved,
+            summary: "Approved".into(),
+            completed_at_epoch_ms: 1,
+        });
+        assert_eq!(
+            execution.completion_outcome(),
+            Some(WorkflowCompletionOutcome::Approved)
+        );
+        execution.review_cycle = 2;
+        assert_eq!(
+            execution.completion_outcome(),
+            Some(WorkflowCompletionOutcome::Completed)
+        );
+        execution.review_changes_requested = true;
+        assert_eq!(
+            execution.completion_outcome(),
+            Some(WorkflowCompletionOutcome::ChangesRequested)
+        );
+        let mut fix = execution.configuration.steps[1].clone();
+        fix.id = "fix".into();
+        fix.kind = WorkflowStepKind::Fix;
+        execution.configuration.steps.push(fix);
+        assert_eq!(
+            execution.completion_outcome(),
+            Some(WorkflowCompletionOutcome::ReviewLimitReached)
+        );
+        execution.phase = WorkflowExecutionPhase::AwaitingCoordinator;
+        assert_eq!(execution.completion_outcome(), None);
     }
 
     #[test]

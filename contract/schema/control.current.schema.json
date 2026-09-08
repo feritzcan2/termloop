@@ -12299,6 +12299,12 @@
       "type": "string",
       "enum": ["running", "paused", "completed"]
     },
+    "workflowCompletionOutcome": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowCompletionOutcome",
+      "type": "string",
+      "enum": ["completed", "approved", "changesRequested", "reviewLimitReached"]
+    },
     "workflowExecutionParticipantDto": {
       "x-codegen": true,
       "x-codegen-name": "WorkflowExecutionParticipantDto",
@@ -12338,7 +12344,7 @@
       "required": [
         "id", "projectId", "taskId", "workflowId", "workflowGeneration", "workflowName",
         "goal", "coordinatorSessionId", "currentStepIndex", "reviewCycle", "maxReviewCycles",
-        "phase", "status", "steps", "participants", "activeReviewStepIds", "stepResults",
+        "phase", "status", "completionOutcome", "steps", "participants", "activeReviewStepIds", "pendingReviewStepIds", "stepResults",
         "startedAtEpochMs", "updatedAtEpochMs"
       ],
       "properties": {
@@ -12355,6 +12361,7 @@
         "maxReviewCycles": { "type": "integer", "minimum": 1, "maximum": 3 },
         "phase": { "$ref": "#/$defs/workflowExecutionPhase" },
         "status": { "$ref": "#/$defs/workflowExecutionStatus" },
+        "completionOutcome": { "anyOf": [{ "$ref": "#/$defs/workflowCompletionOutcome" }, { "type": "null" }] },
         "steps": {
           "type": "array",
           "items": { "$ref": "#/$defs/workflowStepDto" },
@@ -12367,6 +12374,12 @@
           "maxItems": 8
         },
         "activeReviewStepIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "pendingReviewStepIds": {
           "type": "array",
           "items": { "type": "string", "minLength": 1, "maxLength": 64 },
           "maxItems": 8,
