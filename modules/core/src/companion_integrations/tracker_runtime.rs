@@ -232,6 +232,13 @@ impl CoreRuntime {
             .and_then(|active| active.step_milestone_id.clone())
     }
 
+    pub(crate) fn step_retry_not_before_epoch_ms(&self, routine_id: &str) -> u64 {
+        match self.tracker_runtime.step_gate.get(routine_id) {
+            Some(StepGate::NotBefore(at)) => *at,
+            _ => 0,
+        }
+    }
+
     /// The exact Task the Routine's current step claim was issued for.
     pub(crate) fn claimed_step_task_id(&self, routine_id: &str) -> Option<String> {
         self.tracker_runtime
@@ -1543,6 +1550,10 @@ fn assigned_routine_result(
             "title": step.milestone.title,
             "gate": step.milestone.gate,
             "completeWhen": routine.prompt,
+            "whileWaiting": {
+                "mode": routine.action_handling,
+                "instructions": routine.steward_instructions,
+            },
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
             "finishWith": "steward_complete_assignment",

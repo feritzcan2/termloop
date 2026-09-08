@@ -727,7 +727,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
         }
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => {
-            "Authenticated Project Steward profile. Follow the visible versioned Steward and assignment prompts. Claim at most one due assignment, inspect its exact Task identity with task_read, verify provider truth live with the tools available in this Session, then complete the exact claim. You may ask or delegate to only the canonical existing Task Agent selected by task_read; never launch a duplicate."
+            "Authenticated Project Steward profile. Follow the visible versioned Steward and assignment prompts. Hold one assignment at a time, inspect its exact Task identity with task_read, apply its authorized waiting policy, verify provider truth live with the tools available in this Session, then complete the exact claim. Handle required findings and continue through steward_next_assignment until idle; never poll an idle result. You may ask or delegate to only the canonical existing Task Agent selected by task_read; never launch a duplicate."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -1380,7 +1380,7 @@ async fn steward_complete_assignment(
             vec![ProjectionTopic::Routine, ProjectionTopic::Playbook],
         )
         .await;
-        return Ok(json!({ "status": "completed" }));
+        return Ok(routine_completion_result(&result));
     }
 
     if params.status == RoutineAssignmentStatus::Blocked {
@@ -1410,7 +1410,7 @@ async fn steward_complete_assignment(
             capabilities.revoke_check(session_id, &capability.check_id);
         }
         finish_routine_report(project_id, state, routine_finding_wake(&result)).await;
-        return Ok(json!({ "status": "completed" }));
+        return Ok(routine_completion_result(&result));
     }
 
     let expected_context_revision = params
@@ -1457,7 +1457,14 @@ async fn steward_complete_assignment(
     }
     let wake_reason = routine_finding_wake(&result);
     finish_routine_report(project_id, state, wake_reason).await;
-    Ok(json!({ "status": routine_completion_status(&result) }))
+    Ok(routine_completion_result(&result))
+}
+
+fn routine_completion_result(result: &Value) -> Value {
+    json!({
+        "status": routine_completion_status(result),
+        "stewardReviewRequired": routine_finding_wake(result).is_some(),
+    })
 }
 
 fn routine_completion_status(result: &Value) -> &'static str {
@@ -2047,6 +2054,40 @@ mod tests {
             Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(routine_finding_wake(&json!({})), None);
+    }
+
+    #[test]
+    fn assignment_receipt_preserves_follow_up_and_context_disposition() {
+        for (result, expected_status, expected_review) in [
+            (
+                json!({"passedCount": 1, "stewardReviewRequired": false}),
+                "completed",
+                false,
+            ),
+            (
+                json!({"blockedCount": 1, "stewardReviewRequired": true}),
+                "completed",
+                true,
+            ),
+            (json!({"newPendingFindingCount": 1}), "completed", true),
+            (
+                json!({"newPendingFindingCount": 1, "stewardReviewRequired": false}),
+                "completed",
+                false,
+            ),
+            (
+                json!({"contextMarkdownApplied": false, "stewardReviewRequired": true}),
+                "completedContextPreserved",
+                true,
+            ),
+        ] {
+            let receipt = routine_completion_result(&result);
+            assert_eq!(receipt["status"], expected_status);
+            assert_eq!(receipt["stewardReviewRequired"], expected_review);
+            let typed: protocol::RoutineAssignmentCompleteResult =
+                serde_json::from_value(receipt).unwrap();
+            assert_eq!(typed.steward_review_required, expected_review);
+        }
     }
 
     #[test]
