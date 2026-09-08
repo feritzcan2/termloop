@@ -90,11 +90,16 @@ impl Fixture {
     }
 
     fn spawn(&self, plan: &mut AgentResumePlan) {
+        self.spawn_epoch(plan.runtime_epoch());
+        plan.pty_spawned = true;
+    }
+
+    fn spawn_epoch(&self, runtime_epoch: u64) {
         self.core
             .terminal
             .spawn(PtySpawnSpec {
                 session_id: "resume".into(),
-                runtime_epoch: plan.runtime_epoch(),
+                runtime_epoch,
                 program: std::env::current_exe()
                     .unwrap()
                     .to_string_lossy()
@@ -109,7 +114,6 @@ impl Fixture {
                 recent_output_replay: true,
             })
             .unwrap();
-        plan.pty_spawned = true;
     }
 }
 
@@ -197,7 +201,8 @@ fn failed_persistence_preserves_reservation_and_observation_for_recovery() {
 #[test]
 fn a_late_failure_cannot_clear_a_new_runtime_epoch() {
     let mut fixture = Fixture::new();
-    let plan = fixture.plan();
+    let mut plan = fixture.plan();
+    fixture.spawn(&mut plan);
     let failure = fixture
         .core
         .begin_resume_failure(
@@ -205,19 +210,67 @@ fn a_late_failure_cannot_clear_a_new_runtime_epoch() {
             AgentResumeFailureOutcome::Failed(ResumeFailureReason::StartupTimedOut),
         )
         .unwrap();
-    let observed = failure.reap(plan);
     fixture
         .core
-        .agent_observations
-        .get_mut("resume")
+        .terminate_session(json!({"sessionId": "resume"}))
+        .unwrap();
+    let preview = fixture
+        .core
+        .preview_agent_resume(json!({"sessionId": "resume"}))
+        .unwrap();
+    let crate::AgentResumePlanOutcome::Prepare(mut successor) = fixture
+        .core
+        .plan_ticketed_agent_resume(json!({
+            "sessionId": "resume", "launchTicket": preview["launch_ticket"],
+        }))
         .unwrap()
-        .runtime_epoch = 99;
+    else {
+        panic!("expected explicit resume")
+    };
+    assert_ne!(successor.runtime_epoch(), plan.runtime_epoch());
+    fixture.spawn(&mut successor);
+    let successor_epoch = successor.runtime_epoch();
+    assert!(matches!(
+        fixture.core.complete_agent_resume(&mut plan),
+        Err(CoreError::RevisionConflict)
+    ));
+    let observed = failure.reap(plan);
+    assert!(
+        fixture
+            .core
+            .terminal
+            .session_is_running("resume", successor_epoch)
+            .unwrap()
+    );
     assert!(matches!(
         fixture.core.complete_resume_failure(observed),
         Err(CoreError::RevisionConflict)
     ));
     assert!(fixture.core.resume_reservations.contains("resume"));
-    assert_eq!(fixture.core.agent_observations["resume"].runtime_epoch, 99);
+    assert_eq!(
+        fixture.core.agent_observations["resume"].runtime_epoch,
+        successor_epoch
+    );
+}
+
+#[test]
+fn an_abandoned_restart_reaps_only_its_retired_pty_epoch() {
+    let mut fixture = Fixture::new();
+    let mut plan = fixture.plan();
+    plan.preparation_kind = crate::session_launch::resume::AgentResumePreparationKind::Restart {
+        retired_runtime_epoch: 1,
+        retired_codex_runtime: None,
+    };
+    fixture.spawn_epoch(99);
+    plan.reap_uncommitted_runtime().unwrap();
+    drop(plan);
+    assert!(
+        fixture
+            .core
+            .terminal
+            .session_is_running("resume", 99)
+            .unwrap()
+    );
 }
 
 #[test]

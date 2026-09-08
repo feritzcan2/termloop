@@ -293,17 +293,15 @@ pub(super) async fn replace_committed_steward_wake(
     change: &termloop_core::CommittedStewardChange,
 ) -> bool {
     let project_id = change.project_id();
-    let (wake, project_limit, reason) = {
-        let core = state.core.lock().await;
-        if !core.is_current_steward_change(change) {
-            return false;
-        }
-        (
-            core.current_enabled_steward_wake(project_id),
-            core.project_count(),
-            configuration_wake_reason(core.has_current_routine_findings(project_id)),
-        )
-    };
+    let core = state.core.lock().await;
+    if !core.is_current_steward_change(change) {
+        return false;
+    }
+    let wake = core.current_enabled_steward_wake(project_id);
+    let project_limit = core.project_count();
+    let reason = configuration_wake_reason(core.has_current_routine_findings(project_id));
+    // Keep generation validation and this synchronous queue replacement in
+    // the same critical section, including across other runtime worker threads.
     state.companion_wakes.discard(project_id);
     wake.is_some_and(|wake| {
         state
