@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:1eaf83391df0bf6d49e1a04e43e62368f7f1a9a6182d07f7733a40a6b97e590a";
+    "sha256:4162d893e2bf07a4eb33b15196173e0a62f22daa02231b540e639c1d6281879d";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5333,6 +5333,11 @@ pub struct WorkflowStepDto {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub reuse_step_id: Option<String>,
+    #[serde(
+        rename = "profileRef",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub profile_ref: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -20856,6 +20861,16 @@ fn validate_workflow_step_dto(value: &Value) -> bool {
                         && contract_pattern_matches("^[A-Za-z0-9_-]+$", text)
                 }) || field.is_null())
             })
+            && object.get("profileRef").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 128
+                        && contract_pattern_matches(
+                            "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$",
+                            text,
+                        )
+                }) || field.is_null())
+            })
             && object.get("model").is_some_and(|field| {
                 (field
                     .as_str()
@@ -20878,6 +20893,7 @@ fn validate_workflow_step_dto(value: &Value) -> bool {
                     "instructions",
                     "agentId",
                     "reuseStepId",
+                    "profileRef",
                     "model",
                     "permission",
                     "reasoning",

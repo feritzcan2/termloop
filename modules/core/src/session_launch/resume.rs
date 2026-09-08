@@ -298,6 +298,7 @@ impl AgentResumePlan {
                     conversation,
                     observation,
                     mcp,
+                    self.personal_agent.as_ref(),
                 )
             } else {
                 termloop_invocation::configured_ask_to_helper_for_conversation_resume(
@@ -310,6 +311,7 @@ impl AgentResumePlan {
                     conversation,
                     observation,
                     mcp,
+                    self.personal_agent.as_ref(),
                 )
             };
             return launch.map_err(|_| AgentResumePreparationError::ProviderRejected);
@@ -695,6 +697,7 @@ impl CoreRuntime {
                     conversation,
                     observation,
                     mcp,
+                    self.store.session_agent_profile(&session_id),
                 )
             } else {
                 termloop_invocation::configured_ask_to_helper_for_conversation_resume(
@@ -707,6 +710,7 @@ impl CoreRuntime {
                     conversation,
                     observation,
                     mcp,
+                    self.store.session_agent_profile(&session_id),
                 )
             }
         } else if let Some(profile) = self.store.session_agent_profile(&session_id) {

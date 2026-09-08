@@ -107,7 +107,7 @@ impl Store {
     ) -> Result<u64, StoreError> {
         if !agent.is_valid()
             || self.session_agent_profile(&session.id).is_some()
-            || session.process.template_ref.as_deref() != Some("builtin.agent.personal")
+            || !session_accepts_agent_profile(&session, &agent)
         {
             return Err(StoreError::ConstraintViolation);
         }
@@ -164,8 +164,7 @@ pub(crate) fn session_profiles_are_invalid(state: &CurrentState) -> bool {
                     .chain(state.deleted_sessions.iter().map(|entry| &entry.session))
                     .any(|session| {
                         session.id == entry.session_id
-                            && session.process.template_ref.as_deref()
-                                == Some("builtin.agent.personal")
+                            && session_accepts_agent_profile(session, &entry.agent)
                     })
         })
         || state
@@ -179,4 +178,16 @@ pub(crate) fn session_profiles_are_invalid(state: &CurrentState) -> bool {
                         .iter()
                         .any(|entry| entry.session_id == session.id)
             })
+}
+
+fn session_accepts_agent_profile(session: &SessionRecord, agent: &PersonalAgent) -> bool {
+    session.process.agent_id.as_deref() == Some(agent.agent_id.as_str())
+        && session.launch_selection == agent.selection
+        && match session.process.template_ref.as_deref() {
+            Some("builtin.agent.personal") => true,
+            Some("builtin.agent.ask-to-helper") => {
+                session.ask_to_source_session_id.is_some() && session.ask_to_continuation.is_some()
+            }
+            _ => false,
+        }
 }
