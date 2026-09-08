@@ -4,11 +4,12 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
-import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader, StatePill } from "@/components/primitives";
+import { Banner, Card, CardDivider, EmptyState } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { WorkspaceTabs, type WorkspaceTabId } from "@/components/workspace-tabs";
+import { TaskBrowser } from "@/features/tasks/task-browser";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { SwipeableSessionRow } from "@/features/session-actions/swipeable-session-row";
 import { useConnections } from "@/features/connection/connection-store";
@@ -31,15 +32,15 @@ import { fontFamily } from "@/theme/typography";
 /// never duplicated in a banner or a separate list just to make urgency visible.
 ///
 /// One screen, one primary action: an agent row opens its terminal, the floating
-/// button starts a new Agent, and everything secondary (the row's Task, its
-/// changes) lives behind a long-press so the list stays a list.
+/// button starts a new Agent. Tasks have their own searchable list and explicit
+/// links to agents and changes.
 
 export default function ProjectRoute() {
-  const { projectId, connectionId } = useLocalSearchParams<{ projectId: string; connectionId?: string }>();
+  const { projectId, connectionId, tab } = useLocalSearchParams<{ projectId: string; connectionId?: string; tab?: string }>();
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
-  const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>("agents");
+  const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>(tab === "tasks" ? "tasks" : "agents");
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string>();
 
@@ -149,122 +150,106 @@ export default function ProjectRoute() {
             />
           </View>
 
-          <ScrollView
-            style={styles.list}
-            contentContainerStyle={styles.content}
-            refreshControl={
-              <RefreshControl refreshing={store.refreshing} onRefresh={store.refresh} tintColor={color.textSecondary} />
-            }
-          >
-            {model.project === undefined ? (
-              <Banner
-                kind="warning"
-                message="This project is no longer in the connected Mac's projection."
-                action="Back"
-                onAction={() => router.replace("/")}
-              />
-            ) : null}
+          {model.project === undefined ? (
+            <Banner
+              kind="warning"
+              message="This project is no longer in the connected Mac's projection."
+              action="Back"
+              onAction={() => router.replace("/")}
+            />
+          ) : null}
 
-            {selectedTab === "agents" ? (
-              <>
-                <View style={styles.section}>
-                  {agentRows.length === 0 ? (
-                    <EmptyState
-                      title="No agents"
-                      body="Start an Agent for this Project and its Session will appear here."
-                    />
-                  ) : (
-                    <Card>
-                      {agentClusters.map((cluster, index) => (
-                        <View key={cluster.key}>
-                          {index === 0 ? null : <CardDivider />}
-                          <AgentClusterView cluster={cluster} nowMs={nowMs} openActions={setActionSessionId} />
-                        </View>
-                      ))}
-                    </Card>
-                  )}
-                </View>
-
-                {model.terminals.length > 0 ? (
-                  <View style={styles.section}>
-                    {/*
-                      Terminals fold. They are ambient context next to the agents the
-                      screen exists for, and an always-open second list makes the first
-                      one end sooner than it has to.
-                    */}
-                    <Pressable
-                      onPress={() => setTerminalsOpen((open) => !open)}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: terminalsOpen }}
-                      accessibilityLabel={`Terminals, ${model.counts.terminals}`}
-                      style={({ pressed }) => [styles.terminalsToggle, pressed ? styles.terminalsTogglePressed : null]}
-                    >
-                      <Text style={styles.terminalsChevron}>{terminalsOpen ? "▾" : "▸"}</Text>
-                      <Text style={styles.terminalsLabel}>Terminals</Text>
-                      <Text style={styles.count}>{model.counts.terminals}</Text>
-                    </Pressable>
-                    {terminalsOpen ? (
-                      <Card>
-                        {model.terminals.map((row, index) => (
-                          <View key={row.sessionId}>
-                            {index === 0 ? null : <CardDivider />}
-                            <Row
-                              tone="quiet"
-                              title={row.title}
-                              detail={row.detail}
-                              accessibleName={row.accessibleName}
-                              disabled={!row.attachable}
-                              onPress={() => router.push({
-                                pathname: "/session/[sessionId]",
-                                params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
-                              })}
-                              onLongPress={() => setActionSessionId(row.sessionId)}
-                            />
-                          </View>
-                        ))}
-                      </Card>
-                    ) : null}
-                  </View>
-                ) : null}
-              </>
-            ) : (
+          {store.error === undefined ? null : (
+            <Banner kind="warning" message="Showing the last known project state." action="Retry" onAction={store.refresh} />
+          )}
+          {selectedTab === "tasks" ? (
+            <TaskBrowser
+              key={`${connections.selectedId}:${projectId}`}
+              rows={model.tasks}
+              tasks={store.overview?.tasks ?? []}
+              agents={model.agents}
+              refreshing={store.refreshing}
+              refresh={store.refresh}
+              openTask={(taskId) => router.push({ pathname: "/task/[taskId]", params: connectionRouteParams(connections.selectedId, { taskId }) })}
+              openChanges={(taskId) => router.push({ pathname: "/task/[taskId]/changes", params: connectionRouteParams(connections.selectedId, { taskId }) })}
+              openAgent={(sessionId) => {
+                store.dismissReview(sessionId);
+                router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(connections.selectedId, { sessionId }) });
+              }}
+              openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(connections.selectedId, { projectId }) })}
+              openSteward={() => router.push({ pathname: "/steward/[projectId]", params: connectionRouteParams(connections.selectedId, { projectId }) })}
+            />
+          ) : (
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={styles.content}
+              refreshControl={
+                <RefreshControl refreshing={store.refreshing} onRefresh={store.refresh} tintColor={color.textSecondary} />
+              }
+            >
               <View style={styles.section}>
-                <SecondaryButton label="Workflow templates" onPress={() => router.push({
-                  pathname: "/workflows/[projectId]",
-                  params: connectionRouteParams(connections.selectedId, { projectId }),
-                })} />
-                <SectionHeader label="Open tasks" trailing={<Text style={styles.count}>{model.counts.tasks}</Text>} />
-                {model.tasks.length === 0 ? (
+                {agentRows.length === 0 ? (
                   <EmptyState
-                    title="No open tasks"
-                    body="Create a Task on your Mac and it will appear in this Project workspace."
+                    title="No agents"
+                    body="Start an Agent for this Project and its Session will appear here."
                   />
                 ) : (
                   <Card>
-                    {model.tasks.map((row, index) => (
-                      <View key={row.taskId}>
+                    {agentClusters.map((cluster, index) => (
+                      <View key={cluster.key}>
                         {index === 0 ? null : <CardDivider />}
-                        <Row
-                          tone={row.tone}
-                          title={row.title}
-                          detail={row.stateLine}
-                          trailing={<StatePill tone={row.tone} label={row.attention?.label ?? row.stage.flag ?? "Ready"} />}
-                          accessibleName={row.accessibleName}
-                          minHeight={geometry.taskRowMinHeight}
-                          onPress={() => router.push({
-                            pathname: "/task/[taskId]",
-                            params: connectionRouteParams(connections.selectedId, { taskId: row.taskId }),
-                          })}
-                        />
+                        <AgentClusterView cluster={cluster} nowMs={nowMs} openActions={setActionSessionId} />
                       </View>
                     ))}
                   </Card>
                 )}
               </View>
-            )}
-          </ScrollView>
 
-          {model.project === undefined ? null : (
+              {model.terminals.length > 0 ? (
+                <View style={styles.section}>
+                  {/*
+                    Terminals fold. They are ambient context next to the agents the
+                    screen exists for, and an always-open second list makes the first
+                    one end sooner than it has to.
+                  */}
+                  <Pressable
+                    onPress={() => setTerminalsOpen((open) => !open)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: terminalsOpen }}
+                    accessibilityLabel={`Terminals, ${model.counts.terminals}`}
+                    style={({ pressed }) => [styles.terminalsToggle, pressed ? styles.terminalsTogglePressed : null]}
+                  >
+                    <Text style={styles.terminalsChevron}>{terminalsOpen ? "▾" : "▸"}</Text>
+                    <Text style={styles.terminalsLabel}>Terminals</Text>
+                    <Text style={styles.count}>{model.counts.terminals}</Text>
+                  </Pressable>
+                  {terminalsOpen ? (
+                    <Card>
+                      {model.terminals.map((row, index) => (
+                        <View key={row.sessionId}>
+                          {index === 0 ? null : <CardDivider />}
+                          <Row
+                            tone="quiet"
+                            title={row.title}
+                            detail={row.detail}
+                            accessibleName={row.accessibleName}
+                            disabled={!row.attachable}
+                            onPress={() => router.push({
+                              pathname: "/session/[sessionId]",
+                              params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
+                            })}
+                            onLongPress={() => setActionSessionId(row.sessionId)}
+                          />
+                        </View>
+                      ))}
+                    </Card>
+                  ) : null}
+                </View>
+              ) : null}
+            </ScrollView>
+          )}
+
+          {model.project === undefined || selectedTab !== "agents" ? null : (
             <Pressable
               onPress={() => router.push({
                 pathname: "/launch/[taskId]",
