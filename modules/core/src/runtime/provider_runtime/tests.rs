@@ -87,3 +87,33 @@ fn failed_required_bridge_preparation_never_leaves_a_credential_after_disposal()
     drop(prepared);
     assert!(authorizer.authenticate_transport("token").is_err());
 }
+
+#[test]
+fn direct_tui_preparation_allows_transport_but_never_commands_before_commit() {
+    for agent_id in ["claude", "codex"] {
+        let authorizer = McpAuthorizer::default();
+        let mut prepared = PreparedProviderRuntime::default();
+        let mut signals = None;
+        prepared
+            .prepare(ProviderRuntimePreparation {
+                agent_id,
+                session_id: "session",
+                runtime_epoch: 7,
+                cwd: "unused",
+                managed_worktree: false,
+                account: None,
+                transport: None,
+                mode: ProviderRuntimeMode::OptionalObservation,
+                authorizer: &authorizer,
+                mcp: Some(("token", &AgentMcpRole::Interactive)),
+                signals: &mut signals,
+                launch: None,
+                history: None,
+            })
+            .unwrap();
+        assert!(authorizer.authenticate_transport("token").is_ok());
+        assert!(authorizer.authenticate("token").is_err());
+        drop(prepared);
+        assert!(authorizer.authenticate_transport("token").is_err());
+    }
+}
