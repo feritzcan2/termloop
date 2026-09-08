@@ -58,7 +58,8 @@ const cargoLockSync = spawnSync("cargo", ["update", "--workspace", "--offline"],
   stdio: "inherit",
 });
 if (cargoLockSync.status !== 0) {
-  console.warn("set-version: cargo lockfile sync failed; run `cargo update --workspace` manually");
+  console.error("set-version: cargo lockfile sync failed; run `cargo update --workspace` manually");
+  process.exit(cargoLockSync.status ?? 1);
 }
 
 const verify = spawnSync(process.execPath, ["tools/release/check-version-sync.mjs"], {
