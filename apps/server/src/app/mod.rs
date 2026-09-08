@@ -35,6 +35,7 @@ mod invalidation;
 mod keep_awake;
 mod mcp;
 mod runtime_health;
+mod steward_change;
 mod steward_presence;
 mod steward_task_start;
 mod task_automation;

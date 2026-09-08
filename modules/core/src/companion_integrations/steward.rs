@@ -314,7 +314,7 @@ impl CoreRuntime {
         expected_system_prompt: &str,
         system_prompt: &str,
         updated_at_epoch_ms: u64,
-    ) -> Result<bool, CoreError> {
+    ) -> Result<Option<crate::CommittedStewardChange>, CoreError> {
         if !self.is_current_steward_session(project_id, steward_session_id) {
             return Err(CoreError::CapabilityDenied);
         }
@@ -350,12 +350,13 @@ impl CoreRuntime {
             return Err(CoreError::InvalidParams("systemPrompt".into()));
         }
         if current_editable_system_prompt == system_prompt {
-            return Ok(false);
+            return Ok(None);
         }
         let generation = current
             .generation
             .checked_add(1)
             .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
+        let before = self.capture_steward_change(project_id);
         self.store
             .set_steward_configuration(
                 &self.write_authority,
@@ -374,7 +375,7 @@ impl CoreRuntime {
                 self.store.revision(),
             )
             .map_err(store_error)?;
-        Ok(true)
+        Ok(Some(self.committed_steward_change(before)))
     }
 
     pub fn send_steward_agent_message(
@@ -839,7 +840,7 @@ impl CoreRuntime {
     pub fn set_steward_configuration(
         &mut self,
         update: StewardConfigurationUpdate<'_>,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<crate::StewardConfigurationCommit, CoreError> {
         let StewardConfigurationUpdate {
             project_id,
             agent_id,
@@ -852,6 +853,7 @@ impl CoreRuntime {
             capability,
             updated_at_epoch_ms,
         } = update;
+        let before = self.capture_steward_change(project_id);
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
         }
@@ -893,10 +895,10 @@ impl CoreRuntime {
             if expected_revision != self.store.revision() {
                 return Err(CoreError::RevisionConflict);
             }
-            return Ok(json!({
-                "configuration": current,
-                "stateRevision": self.store.revision(),
-            }));
+            return Ok(crate::StewardConfigurationCommit {
+                result: json!({"configuration": current, "stateRevision": self.store.revision()}),
+                change: self.committed_steward_change(before),
+            });
         }
         let generation = current
             .map(|configuration| configuration.generation)
@@ -919,10 +921,10 @@ impl CoreRuntime {
             .store
             .set_steward_configuration(&self.write_authority, configuration, expected_revision)
             .map_err(store_error)?;
-        Ok(json!({
-            "configuration": configuration,
-            "stateRevision": self.store.revision(),
-        }))
+        Ok(crate::StewardConfigurationCommit {
+            result: json!({"configuration": configuration, "stateRevision": self.store.revision()}),
+            change: self.committed_steward_change(before),
+        })
     }
 
     /// Rolls back a durable assistant admission after the out-of-lock PTY spawn
@@ -1211,8 +1213,8 @@ mod tests {
                 updated_at_epoch_ms: 2,
             })
             .unwrap();
-        assert_eq!(changed["configuration"]["generation"], 2);
-        assert_eq!(changed["configuration"]["systemPrompt"], "");
+        assert_eq!(changed.result["configuration"]["generation"], 2);
+        assert_eq!(changed.result["configuration"]["systemPrompt"], "");
         assert_eq!(runtime.enabled_steward_wakes().len(), 1);
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);
@@ -1666,7 +1668,7 @@ mod tests {
             .unwrap()
             .to_owned();
         assert!(
-            !runtime
+            runtime
                 .update_steward_system_prompt(
                     "steward-session",
                     &first,
@@ -1676,6 +1678,7 @@ mod tests {
                     6,
                 )
                 .unwrap()
+                .is_none()
         );
         assert_eq!(
             runtime
@@ -1821,6 +1824,7 @@ mod tests {
                     10,
                 )
                 .unwrap()
+                .is_some()
         );
         let changed = runtime
             .store
