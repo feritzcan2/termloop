@@ -162,7 +162,7 @@ export default function TaskRoute() {
           openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(selected.id, { projectId: task.project_id }) })}
           openSession={(sessionId) => {
             void store.refresh();
-            router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected.id, { sessionId }) });
+            router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected.id, { sessionId, projectId: task.project_id, workflowTaskId: task.id }) });
           }}
         /> : null}
 
