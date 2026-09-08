@@ -362,9 +362,8 @@ impl CoreRuntime {
         self.store
             .delete_archived_session_descriptor(&self.write_authority, &session_id)
             .map_err(store_error)?;
-        self.agent_observations.remove(&session_id);
-        self.agent_conversation_activity.remove(&session_id);
-        self.resume_ready.remove(&session_id);
+        let retired_runtime = self.retire_closed_session_runtime(&session_id);
+        debug_assert!(retired_runtime.is_none());
         Ok(json!({ "sessionId": session_id, "closed": true }))
     }
 
