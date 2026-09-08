@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -18,6 +18,10 @@ import {
   type InitialTerminalPosition,
 } from "@/presentation/terminal-scroll";
 import { terminalRowWindow } from "@/presentation/terminal-window";
+import {
+  earlierTerminalHistory, recentTerminalHistory, reconcileTerminalHistory,
+  terminalReadingAnchor, terminalReadingOffset, type TerminalHistoryPage,
+} from "@/presentation/terminal-history";
 import type { TerminalSpan, TerminalStyle } from "@/presentation/terminal-screen";
 import { color, space, terminalGeometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
@@ -59,46 +63,84 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   const loading = terminalLoading(buffer);
   const requested = useRef({ direction: 0, lines: 0 });
   const canScrollBack = onScrollBack !== undefined && buffer.screen !== undefined && !held;
-  const outputLines = shown.lines.filter((line) => line.kind === "output");
-  const count = shown.screen?.length ?? outputLines.length;
+  const outputLines = useMemo(() => shown.lines.filter((line) => line.kind === "output"), [shown.lines]);
+  const historyLines = shown.screen ?? outputLines;
+  const historyKind = shown.screen === undefined ? "stream" : "screen";
+  const [history, setHistory] = useState(() => recentTerminalHistory(historyLines, historyKind));
+  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom && !held);
+  if (page !== history) setHistory(page);
+  const count = page.rows.length - page.start;
   const rows = terminalRowWindow(count, viewport.offset, viewport.height, lineHeight);
   const lastRevision = useRef(buffer.outputRevision);
-  const dropped = useRef(shown.droppedLines + shown.screenDroppedLines);
+  const reading = useRef<{ page: TerminalHistoryPage; offset: number; lineHeight: number } | undefined>(undefined);
+  const pendingPosition = useRef<number | undefined>(undefined);
+  const loadingPage = useRef(false);
+  const scrolling = useRef(false);
+  const pagedDuringGesture = useRef(false);
 
   useEffect(() => {
     if (lastRevision.current !== buffer.outputRevision && (!atBottomRef.current || held)) setUnread(true);
     lastRevision.current = buffer.outputRevision;
   }, [buffer.outputRevision, held]);
 
-  useEffect(() => {
-    const nextDropped = shown.droppedLines + shown.screenDroppedLines;
-    const removed = Math.max(0, nextDropped - dropped.current);
-    dropped.current = nextDropped;
-    if (removed && !atBottomRef.current && !held) {
-      setViewport((current) => {
-        const offset = Math.max(0, current.offset - removed * lineHeight);
+  useLayoutEffect(() => {
+    const previous = reading.current;
+    let offset = viewport.offset;
+    if (previous && previous.page.kind === page.kind && !atBottomRef.current
+      && (previous.page !== page || previous.lineHeight !== lineHeight)) {
+      const anchor = terminalReadingAnchor(previous.page, previous.offset, previous.lineHeight);
+      if (anchor !== undefined) offset = terminalReadingOffset(page, anchor, lineHeight);
+      if (offset !== viewport.offset) {
+        pendingPosition.current = offset;
+        setViewport((current) => ({ ...current, offset }));
+        // Repeat after native content measurement: the old content height can
+        // clamp a scroll command issued in the same commit as a prepend.
         scroll.current?.scrollTo({ y: offset, animated: false });
-        return { ...current, offset };
-      });
+      }
     }
-  }, [shown.droppedLines, shown.screenDroppedLines, held, lineHeight]);
+    reading.current = { page, offset, lineHeight };
+  }, [page, viewport.offset, lineHeight]);
+
+  const loadEarlier = useCallback(() => {
+    if (initialPosition !== "ready" || loadingPage.current || page.start === 0) return;
+    loadingPage.current = true;
+    pagedDuringGesture.current = true;
+    atBottomRef.current = false;
+    setAtBottom(false);
+    setHistory(earlierTerminalHistory(page));
+  }, [initialPosition, page]);
 
   const jumpToLive = useCallback(() => {
     setHeld(undefined);
     setUnread(false);
     setAtBottom(true);
     atBottomRef.current = true;
+    loadingPage.current = false;
+    pendingPosition.current = undefined;
+    setHistory(recentTerminalHistory(historyLines, historyKind));
     scroll.current?.scrollToEnd({ animated: false });
-  }, []);
+  }, [historyLines, historyKind]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (loadingPage.current) return;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const movingUp = contentOffset.y < viewport.offset;
+    reading.current = { page, offset: Math.max(0, contentOffset.y), lineHeight };
     const bottom = contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     if (bottom && !held) setUnread(false);
     setViewport({ offset: Math.max(0, contentOffset.y), height: layoutMeasurement.height });
-    if (!canScrollBack) return;
+    if (initialPosition === "ready" && scrolling.current && movingUp
+      && contentOffset.y <= lineHeight * 4 && page.start > 0) {
+      loadEarlier();
+      return;
+    }
+    // Native bounce events from revealing cached rows must never become input
+    // to the program, including the gesture that revealed the final page.
+    if (pagedDuringGesture.current) return;
+    if (!canScrollBack || !scrolling.current) return;
+    if (contentOffset.y < 0 && page.start > 0) return;
     const total = overscrollRequest(contentOffset.y, contentSize.height, layoutMeasurement.height, lineHeight);
     const direction = Math.sign(total);
     if (direction === 0) { requested.current = { direction: 0, lines: 0 }; return; }
@@ -107,9 +149,14 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, held, lineHeight, onScrollBack]);
+  }, [canScrollBack, held, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
 
   const onContentChange = useCallback(() => {
+    if (pendingPosition.current !== undefined) {
+      scroll.current?.scrollTo({ y: pendingPosition.current, animated: false });
+      pendingPosition.current = undefined;
+    }
+    loadingPage.current = false;
     if (initialPosition !== "ready") {
       if (!hasContent && loading) return;
       scroll.current?.scrollToEnd({ animated: false });
@@ -145,6 +192,13 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
       {capNotice || buffer.continuityNotice || notices.length ? <View style={styles.readingBar} accessibilityLiveRegion="polite">
         <Text style={styles.capNotice}>{[buffer.continuityNotice, capNotice, notices.at(-1)?.text].filter(Boolean).join(" · ")}</Text>
       </View> : null}
+      {count === 0 ? null : <View style={styles.historyBar}>
+        {page.start > 0
+          ? <Pressable accessibilityRole="button" accessibilityLabel="Load earlier output" onPress={loadEarlier}>
+              <Text style={styles.notice}>↑ Scroll up for earlier output</Text>
+            </Pressable>
+          : <Text style={styles.notice}>Start of saved output</Text>}
+      </View>}
       <ScrollView ref={scroll} style={styles.scroll}
         contentContainerStyle={[styles.content, initialPosition === "ready" ? null : styles.initiallyHidden]}
         onLayout={(event) => {
@@ -153,15 +207,21 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
           setViewport((current) => current.height === height ? current : { ...current, height });
         }}
         onScroll={onScroll} scrollEventThrottle={16}
-        onScrollEndDrag={() => { requested.current = { direction: 0, lines: 0 }; }}
-        onMomentumScrollEnd={() => { requested.current = { direction: 0, lines: 0 }; }}
+        onScrollBeginDrag={() => {
+          scrolling.current = true;
+          pagedDuringGesture.current = false;
+          pendingPosition.current = undefined;
+        }}
+        onScrollEndDrag={() => { scrolling.current = false; requested.current = { direction: 0, lines: 0 }; }}
+        onMomentumScrollBegin={() => { scrolling.current = true; }}
+        onMomentumScrollEnd={() => { scrolling.current = false; requested.current = { direction: 0, lines: 0 }; }}
         alwaysBounceVertical={canScrollBack} onContentSizeChange={onContentChange}>
         <ScrollView horizontal contentContainerStyle={styles.horizontal} showsHorizontalScrollIndicator={false}>
           <View>
             <View style={{ height: rows.before }} />
             {shown.screen === undefined
-              ? outputLines.slice(rows.start, rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
-              : shown.screen.slice(rows.start, rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
+              ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
+              : shown.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
             <View style={{ height: rows.after }} />
             {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{shown.pending}</Text> : null}
           </View>
@@ -236,6 +296,7 @@ function TerminalLineText({ line, fontSize, lineHeight }: {
 }
 
 const styles = StyleSheet.create({
+  historyBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, alignItems: "center" },
   readingBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, flexDirection: "row", justifyContent: "space-between", gap: space.sm },
   surface: { flex: 1, backgroundColor: color.bgTerminal },
   scroll: { flex: 1 },
