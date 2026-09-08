@@ -22,7 +22,7 @@ async function fixture(t, { tagged = true } = {}) {
   git("config", "user.name", "Promotion test");
   git("config", "user.email", "promotion@example.test");
   git("config", "commit.gpgsign", "false");
-  for (const relative of ["RaycastScripts/termloop-promote-main.sh", "tools/release/promotion-version.mjs", "tools/release/set-version.mjs", "tools/release/check-version-sync.mjs", "tools/server/server-release.mjs"]) {
+  for (const relative of ["RaycastScripts/termloop-promote-main.sh", "RaycastScripts/termloop-release.sh", "tools/release/promotion-version.mjs", "tools/release/set-version.mjs", "tools/release/check-version-sync.mjs", "tools/server/server-release.mjs"]) {
     await mkdir(path.dirname(path.join(repo, relative)), { recursive: true });
     await copyFile(path.join(root, relative), path.join(repo, relative));
   }
@@ -72,11 +72,11 @@ throw Error('Unexpected GitHub call: ' + args.join(' '));
 `);
   const bashEnv = path.join(directory, "bash-env");
   await writeFile(bashEnv, 'gh() { node "$PROMOTION_TEST_GH" "$@"; }\n');
-  const run = (mode = "success") => spawnSync("/bin/bash", [path.join(repo, "RaycastScripts/termloop-promote-main.sh")], {
+  const runScript = (script, mode = "success") => spawnSync("/bin/bash", [path.join(repo, "RaycastScripts", script)], {
     cwd: repo, encoding: "utf8", timeout: 30_000,
-    env: { ...env, BASH_ENV: bashEnv, TMPDIR: directory + path.sep, PROMOTION_TEST_GH: fakeGh, PROMOTION_TEST_REPO: repo, PROMOTION_TEST_CALLS: calls, PROMOTION_TEST_CI: mode },
+    env: { ...env, BASH_ENV: bashEnv, TMPDIR: directory + path.sep, TERMLOOP_NO_OPEN: "1", PROMOTION_TEST_GH: fakeGh, PROMOTION_TEST_REPO: repo, PROMOTION_TEST_CALLS: calls, PROMOTION_TEST_CI: mode },
   });
-  return { directory, repo, git, run, calls: async () => (await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse) };
+  return { directory, repo, git, run: (mode) => runScript("termloop-promote-main.sh", mode), release: () => runScript("termloop-release.sh"), calls: async () => (await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse) };
 }
 
 test("promote bumps and pushes all versions before CI, then fast-forwards main exactly once", { skip: process.platform === "win32" }, async (t) => {
@@ -122,7 +122,7 @@ test("uncommitted work stops promotion before version writes or CI", { skip: pro
   await writeFile(path.join(f.repo, "feature.txt"), "in progress\n");
   const result = f.run();
   assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /uncommitted work/);
+  assert.match(result.stderr, /uncommitted work/);
   assert.equal(f.git("rev-parse", "HEAD"), original);
   assert.equal(JSON.parse(await readFile(path.join(f.repo, "package.json"), "utf8")).version, "2.0.3");
   assert.ok((await f.calls()).every(({ args }) => args[0] === "auth"));
@@ -171,3 +171,86 @@ test("a rejected version push leaves main unchanged and starts no CI", { skip: p
   assert.equal(f.git("rev-parse", "origin/main"), main);
   assert.ok((await f.calls()).every(({ args }) => args[0] === "auth"));
 });
+
+for (const script of ["promote", "release"]) {
+  test(`${script} ignores a moving nightly tag and fetches version tags without overwriting them`, { skip: process.platform === "win32" }, async (t) => {
+    const f = await fixture(t);
+    const localNightly = f.git("rev-parse", "HEAD");
+    const published = f.git("rev-parse", "v2.0.3");
+    f.git("tag", "nightly", localNightly);
+    f.git("push", "origin", "refs/heads/main:refs/tags/nightly", "refs/heads/main:refs/tags/v2.0.7");
+    const result = script === "promote" ? f.run() : f.release();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(f.git("rev-parse", "nightly"), localNightly);
+    assert.equal(f.git("ls-remote", "origin", "refs/tags/nightly").split(/\s/)[0], published);
+    assert.equal(f.git("rev-parse", "v2.0.3"), published);
+    assert.equal(f.git("rev-parse", "v2.0.7"), published);
+    if (script === "promote") {
+      assert.equal(JSON.parse(f.git("show", "main:package.json")).version, "2.0.8");
+    } else {
+      assert.match(result.stdout, /Release already completed for exact candidate/);
+      assert.ok((await f.calls()).every(({ args }) => args[0] === "auth" || args[0] === "run" && args[1] === "list"));
+    }
+  });
+
+  test(`${script} still rejects a conflicting stable version tag before publishing anything`, { skip: process.platform === "win32" }, async (t) => {
+    const f = await fixture(t);
+    const original = f.git("rev-parse", "HEAD");
+    const published = f.git("rev-parse", "main");
+    f.git("tag", "--force", "v2.0.3", original);
+    const result = script === "promote" ? f.run() : f.release();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /would clobber existing tag/);
+    assert.equal(f.git("rev-parse", "v2.0.3"), original);
+    assert.equal(f.git("ls-remote", "origin", "refs/tags/v2.0.3").split(/\s/)[0], published);
+    assert.equal(f.git("rev-parse", "HEAD"), original);
+    assert.equal(f.git("rev-parse", "origin/main"), published);
+    assert.ok((await f.calls()).every(({ args }) => args[0] === "auth"));
+  });
+}
+
+test("promotion removes only the missing main worktree registration and creates a new checkout", { skip: process.platform === "win32" }, async (t) => {
+  const f = await fixture(t);
+  const missing = path.join(f.directory, "missing main");
+  const unrelated = path.join(f.directory, "missing unrelated");
+  f.git("worktree", "add", missing, "main");
+  f.git("worktree", "add", "--detach", unrelated);
+  await rm(missing, { recursive: true });
+  await rm(unrelated, { recursive: true });
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Removing missing main worktree registration/);
+  assert.equal(f.git("rev-parse", "main"), f.git("rev-parse", "origin/develop"));
+  const worktrees = f.git("worktree", "list", "--porcelain");
+  assert.ok(!worktrees.includes("missing main"));
+  assert.ok(worktrees.includes("missing unrelated"));
+});
+
+for (const state of ["missing .git", "corrupt index", "dirty", "locked and missing"]) {
+  test(`a ${state} main checkout stops before version preparation or CI and preserves local work`, { skip: process.platform === "win32" }, async (t) => {
+    const f = await fixture(t);
+    const checkout = path.join(f.directory, "existing main");
+    f.git("worktree", "add", checkout, "main");
+    const original = f.git("rev-parse", "HEAD");
+    const main = f.git("rev-parse", "main");
+    if (state === "locked and missing") {
+      f.git("worktree", "lock", checkout);
+      await rm(checkout, { recursive: true });
+    } else {
+      await writeFile(path.join(checkout, "local-work.txt"), "preserve me\n");
+      if (state === "missing .git") await rm(path.join(checkout, ".git"));
+      if (state === "corrupt index") await writeFile(f.git("-C", checkout, "rev-parse", "--git-path", "index"), "broken index\n");
+    }
+    const result = f.run();
+    assert.notEqual(result.status, 0);
+    const diagnostic = { "missing .git": /missing or broken \.git/, "corrupt index": /index file/, dirty: /uncommitted work/, "locked and missing": /locked working tree/ }[state];
+    assert.match(result.stderr, diagnostic);
+    assert.ok(!result.stdout.includes("Preparing the release version"));
+    assert.equal(f.git("rev-parse", "HEAD"), original);
+    assert.equal(f.git("rev-parse", "origin/develop"), original);
+    assert.equal(f.git("rev-parse", "origin/main"), main);
+    assert.ok(f.git("worktree", "list", "--porcelain").includes("existing main"));
+    if (state !== "locked and missing") assert.equal(await readFile(path.join(checkout, "local-work.txt"), "utf8"), "preserve me\n");
+    assert.ok((await f.calls()).every(({ args }) => args[0] === "auth"));
+  });
+}
