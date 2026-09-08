@@ -45,6 +45,31 @@ it("reveals one cached page per layout, anchors the reader, and sends no program
   expect(onScrollBack).not.toHaveBeenCalled();
 });
 
+it("does not reapply an old eviction correction after the reader has moved again", async () => {
+  const rows = (count: number, start: number) => Array.from({ length: count }, (_, i) => ({ id: start + i, spans: [] }));
+  const buffer = { ...emptyTerminalBuffer(), screen: rows(200, 1), ready: true, stream: "live" as const };
+  const height = terminalGeometry.lineHeights[1]!;
+  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined });
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(1000, 200 * height));
+  view = harness.render();
+  buffer.screen = rows(200, 21);
+  view = harness.render();
+  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 1000 - 20 * height, animated: false });
+  // Same-height eviction has no onContentSizeChange callback. Momentum continues.
+  view.onScroll(scrollEvent(500, 200 * height));
+  harness.render();
+  harness.scrollTo.mockClear();
+  buffer.screen = rows(201, 21);
+  view = harness.render();
+  view.onContentSizeChange();
+  expect(harness.scrollTo).not.toHaveBeenCalled();
+});
+
 function scrollEvent(y: number, contentHeight: number) {
   return { nativeEvent: { contentOffset: { y }, contentSize: { height: contentHeight }, layoutMeasurement: { height: 600 } } };
 }

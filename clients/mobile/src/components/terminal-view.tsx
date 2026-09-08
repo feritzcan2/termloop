@@ -123,6 +123,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (loadingPage.current) return;
+    pendingPosition.current = undefined;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const movingUp = contentOffset.y < viewport.offset;
     reading.current = { page, offset: Math.max(0, contentOffset.y), lineHeight };
