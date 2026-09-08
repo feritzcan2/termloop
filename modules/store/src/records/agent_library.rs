@@ -107,7 +107,20 @@ impl Store {
     ) -> Result<u64, StoreError> {
         if !agent.is_valid()
             || self.session_agent_profile(&session.id).is_some()
-            || !session_accepts_agent_profile(&session, &agent)
+            || !session_matches_agent_profile(&session, &agent)
+            || session.launch_selection.model != agent.selection.model
+            || session.launch_selection.permission != agent.selection.permission
+            || session.launch_selection.reasoning != agent.selection.reasoning
+            || agent
+                .selection
+                .account_id
+                .as_ref()
+                .is_some_and(|account_id| {
+                    session.launch_selection.account_id.as_ref() != Some(account_id)
+                })
+            || (session.process.template_ref.as_deref() == Some("builtin.agent.ask-to-helper")
+                && (session.ask_to_source_session_id.is_none()
+                    || session.ask_to_continuation.is_none()))
         {
             return Err(StoreError::ConstraintViolation);
         }
@@ -164,7 +177,7 @@ pub(crate) fn session_profiles_are_invalid(state: &CurrentState) -> bool {
                     .chain(state.deleted_sessions.iter().map(|entry| &entry.session))
                     .any(|session| {
                         session.id == entry.session_id
-                            && session_accepts_agent_profile(session, &entry.agent)
+                            && session_matches_agent_profile(session, &entry.agent)
                     })
         })
         || state
@@ -180,14 +193,14 @@ pub(crate) fn session_profiles_are_invalid(state: &CurrentState) -> bool {
             })
 }
 
-fn session_accepts_agent_profile(session: &SessionRecord, agent: &PersonalAgent) -> bool {
-    session.process.agent_id.as_deref() == Some(agent.agent_id.as_str())
-        && session.launch_selection == agent.selection
-        && match session.process.template_ref.as_deref() {
-            Some("builtin.agent.personal") => true,
-            Some("builtin.agent.ask-to-helper") => {
-                session.ask_to_source_session_id.is_some() && session.ask_to_continuation.is_some()
-            }
-            _ => false,
-        }
+fn session_matches_agent_profile(session: &SessionRecord, agent: &PersonalAgent) -> bool {
+    // The profile pins launch-time instructions and defaults, not live routing
+    // or provider settings. Endpoint retirement clears continuations, and a
+    // provider observation may change the Session's effective selection.
+    session.kind == termloop_domain::SessionKind::Agent
+        && session.process.agent_id.as_deref() == Some(agent.agent_id.as_str())
+        && matches!(
+            session.process.template_ref.as_deref(),
+            Some("builtin.agent.personal" | "builtin.agent.ask-to-helper")
+        )
 }
