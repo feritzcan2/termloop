@@ -56,6 +56,9 @@ export interface TerminalBuffer {
   readonly inputDelivery?: "sending" | "confirmed" | "sent" | "uncertain";
   readonly outputRevision?: number;
   readonly continuityNotice?: string;
+  /// Set only after the gateway HTTP preflight proves the saved route cannot
+  /// answer. A plain socket close remains a generic reconnecting state.
+  readonly connectionIssue?: "gatewayUnreachable" | undefined;
   readonly lines: readonly TerminalLine[];
   /// Current VT screen reconstructed by the DOM-free terminal projector, as styled
   /// spans. Undefined means no stream has proved it owns a grid, and the small
@@ -271,15 +274,29 @@ export function reduceTerminalEvent(
       return {
         ...appendNotice(flushPending(buffer), "This session's process exited."),
         stream: "exited",
+        connectionIssue: undefined,
       };
     case "state":
       switch (event.state) {
         case "connecting":
-          return { ...buffer, stream: "attaching", ready: false, replayProgress: undefined };
+          return {
+            ...buffer,
+            stream: "attaching",
+            ready: false,
+            replayProgress: undefined,
+            connectionIssue: undefined,
+          };
         case "connected":
-          return { ...buffer, stream: "live" };
+          return { ...buffer, stream: "live", connectionIssue: undefined };
         case "connectionLost":
-          return { ...buffer, stream: "reconnecting", ready: false, replayProgress: undefined };
+          return {
+            ...buffer,
+            stream: "reconnecting",
+            ready: false,
+            replayProgress: undefined,
+            connectionIssue: event.issue
+              ?? (buffer.stream === "reconnecting" ? buffer.connectionIssue : undefined),
+          };
       }
   }
 }

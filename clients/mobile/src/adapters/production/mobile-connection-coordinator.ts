@@ -40,7 +40,10 @@ const INPUT_RECEIPT_TIMEOUT_MS = 7_000;
 const INBOUND_LIVENESS_TIMEOUT_MS = 75_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 500;
-const MAX_RECONNECT_MS = 30_000;
+/// A visible terminal is interactive demand. Its retry delay stays short enough
+/// that a restored Tailnet path becomes usable without closing and reopening the
+/// app. Connections used only for overview invalidations do not enter this loop.
+const MAX_TERMINAL_RECONNECT_MS = 5_000;
 const RECONNECT_STALLED_MS = 15_000;
 const PREFLIGHT_STALLED_FAILURES = 3;
 const PREFLIGHT_LATE_SETTLEMENT_OBSERVATION_MS = 5_000;
@@ -322,7 +325,7 @@ export class MobileConnectionCoordinator {
       this.reconnectTimer = undefined;
     }
     this.reconnectDelay = MIN_RECONNECT_MS;
-    const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
+    const shouldReconnect = reconnect && this.hasTerminalReconnectDemand();
     this.diagnostics.report("connection", "transport_reset_requested", {
       connectionId: this.connection.id,
       reconnect,
@@ -489,6 +492,17 @@ export class MobileConnectionCoordinator {
             : failedAtEpochMs - this.preflightFailureStartedAtEpochMs,
           ...this.connectionDiagnosticState(failedAtEpochMs),
         });
+        if (!attemptSuperseded && cause instanceof GatewayReachabilityError) {
+          for (const subscription of this.subscriptions.values()) {
+            if (!subscription.detached) {
+              subscription.onEvent({
+                type: "state",
+                state: "connectionLost",
+                issue: "gatewayUnreachable",
+              });
+            }
+          }
+        }
         if (!this.preflightStallReported
           && this.preflightFailuresSinceReady >= PREFLIGHT_STALLED_FAILURES
           && this.subscriptions.size > 0) {
@@ -879,7 +893,12 @@ export class MobileConnectionCoordinator {
       };
       subscription.reconnectWaiters.add(waiter);
     });
-    this.invalidateTransport("forcedReconnect");
+    /// A user retry is an explicit request to bypass an accumulated outage
+    /// backoff. Retire the current generation without scheduling from the old
+    /// delay, then start a fresh reconnect cycle immediately.
+    this.invalidateTransport("forcedReconnect", false);
+    this.reconnectDelay = MIN_RECONNECT_MS;
+    this.beginReconnectCycle("forcedReconnect");
     void this.ensureConnected().catch(() => this.scheduleReconnect("forcedReconnectFailed"));
     return waiting;
   }
@@ -924,10 +943,10 @@ export class MobileConnectionCoordinator {
     this.stopReconnectIfIdle();
   }
 
-  private invalidateTransport(reason: string): void {
+  private invalidateTransport(reason: string, reconnect = true): void {
     const generation = this.generation;
     const socket = this.physical;
-    this.handleDisconnected(generation, reason);
+    this.handleDisconnected(generation, reason, reconnect);
     socket?.close();
   }
 
@@ -935,7 +954,7 @@ export class MobileConnectionCoordinator {
     if (generation !== this.generation) return;
     const disconnectedAtEpochMs = Date.now();
     const diagnosticState = this.connectionDiagnosticState(disconnectedAtEpochMs);
-    const shouldReconnect = reconnect && this.hasActiveReconnectDemand();
+    const shouldReconnect = reconnect && this.hasTerminalReconnectDemand();
     if (shouldReconnect) this.beginReconnectCycle(reason);
     else this.clearReconnectCycle();
     this.cancelConnecting?.(new Error("Mobile transport disconnected."));
@@ -983,13 +1002,13 @@ export class MobileConnectionCoordinator {
 
   private scheduleReconnect(reason: string): void {
     if (this.stopped || this.reconnectTimer !== undefined) return;
-    if (!this.hasActiveReconnectDemand()) {
+    if (!this.hasTerminalReconnectDemand()) {
       this.stopReconnectIfIdle();
       return;
     }
     this.beginReconnectCycle(reason);
     const delayMs = this.reconnectDelay;
-    this.reconnectDelay = Math.min(MAX_RECONNECT_MS, this.reconnectDelay * 2);
+    this.reconnectDelay = Math.min(MAX_TERMINAL_RECONNECT_MS, this.reconnectDelay * 2);
     this.diagnostics.report("connection", "reconnect_scheduled", {
       connectionId: this.connection.id,
       reason,
@@ -1015,7 +1034,7 @@ export class MobileConnectionCoordinator {
   }
 
   private beginReconnectCycle(reason: string): void {
-    if (!this.hasActiveReconnectDemand() || this.reconnectStartedAtEpochMs !== undefined) return;
+    if (!this.hasTerminalReconnectDemand() || this.reconnectStartedAtEpochMs !== undefined) return;
     this.reconnectStartedAtEpochMs = Date.now();
     this.reconnectAttempt = 0;
     this.diagnostics.report("connection", "reconnect_cycle_started", {
@@ -1029,7 +1048,7 @@ export class MobileConnectionCoordinator {
     this.reconnectStallTimer = setTimeout(() => {
       this.reconnectStallTimer = undefined;
       if (this.stopped || this.ready || this.reconnectStartedAtEpochMs === undefined
-        || !this.hasActiveReconnectDemand()) {
+        || !this.hasTerminalReconnectDemand()) {
         this.clearReconnectCycle();
         return;
       }
@@ -1068,12 +1087,12 @@ export class MobileConnectionCoordinator {
     this.reconnectAttempt = 0;
   }
 
-  private hasActiveReconnectDemand(): boolean {
-    return this.subscriptions.size + this.invalidationListeners.size > 0;
+  private hasTerminalReconnectDemand(): boolean {
+    return this.subscriptions.size > 0;
   }
 
   private stopReconnectIfIdle(): void {
-    if (this.hasActiveReconnectDemand()) return;
+    if (this.hasTerminalReconnectDemand()) return;
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.reconnectDelay = MIN_RECONNECT_MS;

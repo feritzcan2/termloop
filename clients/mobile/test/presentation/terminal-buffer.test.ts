@@ -147,9 +147,18 @@ describe("stream state", () => {
     buffer = reduceTerminalEvent(buffer, { type: "state", state: "connected" }, options);
     expect(buffer.stream).toBe("live");
     const linesBeforeReconnect = buffer.lines;
-    buffer = reduceTerminalEvent(buffer, { type: "state", state: "connectionLost" }, options);
+    buffer = reduceTerminalEvent(buffer, {
+      type: "state",
+      state: "connectionLost",
+      issue: "gatewayUnreachable",
+    }, options);
     expect(buffer.stream).toBe("reconnecting");
+    expect(buffer.connectionIssue).toBe("gatewayUnreachable");
     expect(buffer.lines).toBe(linesBeforeReconnect);
+    buffer = reduceTerminalEvent(buffer, { type: "state", state: "connectionLost" }, options);
+    expect(buffer.connectionIssue).toBe("gatewayUnreachable");
+    buffer = reduceTerminalEvent(buffer, { type: "state", state: "connected" }, options);
+    expect(buffer.connectionIssue).toBeUndefined();
   });
 
   it("treats detach as leaving, not as the process stopping", () => {
