@@ -1,3 +1,6 @@
+mod resume_failure;
+use resume_failure::{fail_agent_resume_attempt, shutdown_agent_resume_attempt};
+
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,7 +20,7 @@ use super::super::super::gates::{
     MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
 };
 use super::super::super::invalidation::{
-    CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
+    CommittedSessionMutation, InvalidationRequest, finish_session_mutation_with_cleanup,
     publish_agent_resume_invalidation, publish_session_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::agent_launch::execute_agent_launch;
@@ -849,23 +852,23 @@ pub(in crate::app) async fn terminate_session(
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_session(&session_id);
     }
-    let cleanup = if let Some(runtime) = runtime {
-        // Wait for the ownership handoff outside Core before acknowledging
-        // termination, but preserve the committed effects even when reaping fails.
-        tokio::task::spawn_blocking(move || runtime.reap())
-            .await
-            .map_err(|error| CoreError::Terminal(error.to_string()))
-            .and_then(|result| {
-                result.map_err(|_| {
+    finish_session_mutation_with_cleanup(state, effects, async move {
+        if let Some(runtime) = runtime {
+            // Wait for the ownership handoff outside Core before acknowledging
+            // termination. Invalidation and presence refresh run concurrently,
+            // so slow cleanup cannot hide the descriptor's committed exit.
+            tokio::task::spawn_blocking(move || runtime.reap())
+                .await
+                .map_err(|error| CoreError::Terminal(error.to_string()))?
+                .map_err(|_| {
                     CoreError::Terminal(
                         "terminated Session runtime ownership could not be released".into(),
                     )
-                })
-            })
-    } else {
-        Ok(())
-    };
-    finish_session_mutation(state, effects, cleanup.map(|()| result)).await
+                })?;
+        }
+        Ok(result)
+    })
+    .await
 }
 
 pub(in crate::app::control) async fn resume_agent_session(
@@ -1175,13 +1178,7 @@ async fn run_agent_resume_session(
                 None,
             );
             attempt_cancellation.store(true, Ordering::Release);
-            let value = state
-                .core
-                .lock()
-                .await
-                .cancel_agent_resume_for_shutdown(&session_id)?;
-            reap_agent_resume_plan(plan).await;
-            return Ok(value);
+            return shutdown_agent_resume_attempt(state, plan).await;
         }
     };
     record_resume_cycle(
@@ -1222,12 +1219,7 @@ async fn run_agent_resume_session(
                     Some("shutdown"),
                     None,
                 );
-                reap_agent_resume_plan(cancelled_plan).await;
-                state
-                    .core
-                    .lock()
-                    .await
-                    .cancel_agent_resume_for_shutdown(&session_id)
+                shutdown_agent_resume_attempt(state, cancelled_plan).await
             }
             Ok(Err(_)) => state
                 .core
@@ -1487,13 +1479,7 @@ async fn run_agent_resume_session(
         result = &mut readiness => result.unwrap_or(AgentResumeReadiness::TimedOut),
         _ = shutdown.changed() => {
             attempt_cancellation.store(true, Ordering::Release);
-            let value = state
-                .core
-                .lock()
-                .await
-                .cancel_agent_resume_for_shutdown(&session_id)?;
-            reap_agent_resume_plan(plan).await;
-            return Ok(value);
+            return shutdown_agent_resume_attempt(state, plan).await;
         }
     };
     if readiness != AgentResumeReadiness::Ready {
@@ -1542,13 +1528,7 @@ async fn run_agent_resume_session(
         _ = tokio::time::sleep(AGENT_RESUME_STABILITY_WINDOW) => {}
         _ = shutdown.changed() => {
             attempt_cancellation.store(true, Ordering::Release);
-            let value = state
-                .core
-                .lock()
-                .await
-                .cancel_agent_resume_for_shutdown(&session_id)?;
-            reap_agent_resume_plan(plan).await;
-            return Ok(value);
+            return shutdown_agent_resume_attempt(state, plan).await;
         }
     }
     let finalization_deadline = Instant::now() + AGENT_RESUME_FINALIZATION_TIMEOUT;
@@ -1638,19 +1618,24 @@ async fn run_agent_resume_session(
         };
         core.complete_agent_resume(&mut plan)
     };
-    reap_agent_resume_plan(plan).await;
     let value = match result {
-        Ok(value) => {
+        Ok(termloop_core::AgentResumeCompletion::Committed(value)) => {
+            reap_agent_resume_plan(plan).await;
             record_resume_cycle_from_projection(state, &session_id, trigger, "committed", &value);
             value
         }
+        Ok(termloop_core::AgentResumeCompletion::Rejected(reason)) => {
+            fail_agent_resume_attempt(state, &session_id, reason, plan).await?
+        }
         Err(_) => {
             record_resume_cycle(state, &session_id, trigger, "commitFailed", None, None);
-            let mut core = state.core.lock().await;
-            core.fail_agent_resume(
+            fail_agent_resume_attempt(
+                state,
                 &session_id,
                 termloop_core::ResumeFailureReason::DaemonInterrupted,
-            )?
+                plan,
+            )
+            .await?
         }
     };
     publish_agent_resume_invalidation(state, &session_id_param).await;
@@ -1904,33 +1889,6 @@ async fn retain_failed_agent_fork(state: &AppState, session_id: &str, runtime_ep
     };
     tokio::task::spawn_blocking(move || drop(retired_codex_runtime));
     true
-}
-
-async fn fail_agent_resume_attempt(
-    state: &AppState,
-    session_id: &str,
-    reason: termloop_core::ResumeFailureReason,
-    plan: termloop_core::AgentResumePlan,
-) -> Result<serde_json::Value, CoreError> {
-    // Keep the in-memory reservation until the prepared/retired runtime has
-    // been reaped. Otherwise a concurrent Retry can observe the durable
-    // failure and race the previous attempt's PTY registry cleanup.
-    state
-        .core
-        .lock()
-        .await
-        .begin_agent_resume_failure_reap(session_id)?;
-    let ownership_absent = reap_agent_resume_plan(plan).await;
-    let reason = if ownership_absent {
-        reason
-    } else {
-        termloop_core::ResumeFailureReason::RuntimeOwnershipUncertain
-    };
-    state
-        .core
-        .lock()
-        .await
-        .fail_agent_resume(session_id, reason)
 }
 
 fn record_resume_cycle(

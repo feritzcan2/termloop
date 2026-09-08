@@ -33,6 +33,7 @@ export type PresentationState = {
   layoutsByProject: Readonly<Record<string, ProjectLayout>>;
   layoutLoaded: boolean;
   layoutRevision: number;
+  navigationRevision: number;
   projectDialogOpen: boolean;
   hydrateLayouts(document: LayoutDocument): void;
   layoutDocument(): LayoutDocument;
@@ -75,6 +76,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
   layoutsByProject: {},
   layoutLoaded: false,
   layoutRevision: 0,
+  navigationRevision: 0,
   projectDialogOpen: false,
   hydrateLayouts: (document) => {
     const flattened = flattenLayoutDocument(document);
@@ -93,7 +95,10 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
     get().agentGroupsByProject,
     get().detachedAgentRelationshipsByProject,
   ),
-  selectProject: (selectedProjectId) => set({ selectedProjectId }),
+  selectProject: (selectedProjectId) => set((current) => ({
+    selectedProjectId,
+    navigationRevision: current.navigationRevision + 1,
+  })),
   selectSession: (projectId, sessionId) => {
     const current = get();
     const nextLayout = layoutForSession(current.layoutsByProject, projectId, sessionId);
@@ -114,6 +119,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       acknowledgedInterruptedSessionObservations,
       layoutsByProject: layoutChanged ? { ...current.layoutsByProject, [projectId]: nextLayout } : current.layoutsByProject,
       layoutRevision: layoutChanged ? current.layoutRevision + 1 : current.layoutRevision,
+      navigationRevision: current.navigationRevision + 1,
     });
   },
   updateReviewReadySessions: (idleSessionIds, newlyReadySessionIds) => {
@@ -146,6 +152,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: activePane(nextLayout).sessionId },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
   },
   openSessionInSplit: (projectId, sessionId, direction, placement = "after") => {
@@ -163,6 +170,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
         layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
         selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: sessionId },
         layoutRevision: nextLayout === layout ? current.layoutRevision : current.layoutRevision + 1,
+        navigationRevision: current.navigationRevision + 1,
       });
       return true;
     }
@@ -173,6 +181,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: sessionId },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
     return true;
   },
@@ -186,6 +195,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: null },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
     return true;
   },
@@ -199,6 +209,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: activePane(nextLayout).sessionId },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
   },
   focusRelativePane: (projectId, offset) => {
@@ -211,6 +222,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: activePane(nextLayout).sessionId },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
   },
   resizeSplit: (projectId, splitId, ratio) => {
@@ -231,6 +243,7 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
       layoutsByProject: { ...current.layoutsByProject, [projectId]: nextLayout },
       selectedSessionByProject: { ...current.selectedSessionByProject, [projectId]: activePane(nextLayout).sessionId },
       layoutRevision: current.layoutRevision + 1,
+      navigationRevision: current.navigationRevision + 1,
     });
   },
   reorderSession: (projectId, sessionId, targetSessionId, placement) => {

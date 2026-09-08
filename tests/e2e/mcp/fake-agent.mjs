@@ -28,6 +28,8 @@ if (args.includes("--help")) {
 const token = process.env.TERMLOOP_MCP_TOKEN;
 if (!token) throw new Error("TermLoop MCP bearer was not delivered");
 const isResume = args.includes("--resume");
+process.stdin.setRawMode(true);
+process.stdout.write("\x1b[?2004h\x1b[?25h\x1b[20;3H");
 const subprocessBearerVisible = spawnSync(
   process.execPath,
   ["-e", "process.exit(process.env.TERMLOOP_MCP_TOKEN ? 0 : 1)"],
@@ -138,23 +140,26 @@ if (provider === "claude" && isResume) {
 async function readSubmittedPrompt(label) {
   return await new Promise((resolve, reject) => {
     const chunks = [];
-    let idleTimer;
     const timer = setTimeout(() => reject(new Error(`timed out waiting for ${label} PTY input`)), 10_000);
     const finish = () => {
       clearTimeout(timer);
-      clearTimeout(idleTimer);
       process.stdin.off("data", onData);
+      process.stdin.pause();
       resolve(Buffer.concat(chunks).toString("utf8"));
     };
     const onData = (chunk) => {
       chunks.push(chunk);
       const joined = Buffer.concat(chunks);
-      if (joined.includes(Buffer.from("\x1b[201~\n")) || joined.includes(Buffer.from("\x1b[201~\r"))) {
+      if (joined.includes(Buffer.from("\x1b[201~\n")) || joined.includes(Buffer.from("\x1b[201~\r"))
+          || (process.platform === "win32" && chunks.length > 1 && /^[\r\n]$/.test(chunk.toString()))) {
         finish();
         return;
       }
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(finish, 100);
+      if (joined.includes(Buffer.from("\x1b[201~")) || process.platform === "win32") {
+        // Emulate the causal composer redraw after paste. Core owns the
+        // subsequent Enter; receiving paste alone never completes a prompt.
+        process.stdout.write("\x1b[?2026h\x1b[20;1H\x1b[K> pasted input\x1b[?25h\x1b[20;15H\x1b[?2026l");
+      }
     };
     process.stdin.on("data", onData);
     process.stdin.resume();
@@ -207,13 +212,16 @@ if (!isHelper && !isResume) {
     discoveryFallback,
     tokenInArguments: args.some((argument) => argument.includes(token)),
     subprocessBearerVisible,
-    denialChecks: deniedToken.status === 401 && deniedOrigin.status === 403 && oversized.status === 413 && wrongRevision.error?.code === -32600 && missingRevision.result?.tools?.length === 2,
+    denialChecks: deniedToken.status === 401 && deniedOrigin.status === 403 && oversized.status === 413 && wrongRevision.error?.code === -32600 && missingRevision.result?.tools?.length === tools.length,
     idempotentRequest: first.requestId === retry.requestId,
     conversationId: first.conversationId,
     status: first.status,
   }));
   await waitForever();
 } else if (isHelper && !isResume) {
+  // A helper must confirm its initial provider turn before daemon restart can
+  // resume that conversation. A process start alone is not that evidence.
+  await reportClaudeObservation("UserPromptSubmit");
   const requestId = initialPrompt.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0];
   if (!requestId) throw new Error("helper prompt did not expose the bounded request ID");
   await writeFile(`${evidenceDir}/helper-pre-restart.json`, JSON.stringify({
@@ -232,6 +240,7 @@ if (!isHelper && !isResume) {
   if (!requestId || !recoveryText.includes("daemon restarted")) {
     throw new Error("helper resume did not receive the exact recovery request");
   }
+  await reportClaudeObservation("UserPromptSubmit");
   const mismatched = await rpc("tools/call", {
     name: "reply_to_request",
     arguments: { requestId: "00000000-0000-4000-8000-000000000000", message: "wrong request" },
@@ -240,16 +249,19 @@ if (!isHelper && !isResume) {
     name: "reply_to_request",
     arguments: { requestId, message: "MCP-ROUNDTRIP-OK" },
   }));
-  const duplicateReply = await rpc("tools/call", {
-    name: "reply_to_request",
-    arguments: { requestId, message: "MCP-ROUNDTRIP-OK" },
-  });
   await reportClaudeObservation("Stop");
   const followUpText = await readSubmittedPrompt("follow-up question");
   const followUpRequestId = followUpText.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0];
   if (!followUpRequestId || followUpRequestId === requestId) {
     throw new Error("follow-up prompt did not expose a fresh request ID");
   }
+  await reportClaudeObservation("UserPromptSubmit");
+  // Receiving the next request proves the source confirmed the first reply.
+  // The initial submitting response alone does not establish delivery.
+  const duplicateReply = await rpc("tools/call", {
+    name: "reply_to_request",
+    arguments: { requestId, message: "MCP-ROUNDTRIP-OK" },
+  });
   const followUpReply = structured(await rpc("tools/call", {
     name: "reply_to_request",
     arguments: { requestId: followUpRequestId, message: "MCP-FOLLOWUP-OK" },

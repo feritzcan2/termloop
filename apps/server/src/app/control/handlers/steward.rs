@@ -1,12 +1,11 @@
 use std::sync::atomic::Ordering;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use termloop_contract::current::{self as protocol, ProjectionTopic};
 use termloop_core::companion_integrations::assistant_session::StewardWakeAdmission;
 
 use super::super::super::invalidation::InvalidationRequest;
 use super::super::super::{AppState, current_epoch_ms};
-use super::terminate_session;
 
 pub(in crate::app::control) async fn delete_steward_configuration(
     params: Value,
@@ -121,11 +120,9 @@ pub(in crate::app::control) async fn set_steward_configuration(
             }
         })
         .unwrap_or(termloop_core::AssistantAvailability::Unavailable);
-    let (result, previous_executor_session_id, state_revision, configuration_changed) = {
+    let commit = {
         let mut core = state.core.lock().await;
-        let previous_revision = core.state_revision();
-        let previous_executor_session_id = core.steward_executor_session_id(&params.project_id);
-        let result = core.set_steward_configuration(termloop_core::StewardConfigurationUpdate {
+        core.set_steward_configuration(termloop_core::StewardConfigurationUpdate {
             project_id: &params.project_id,
             agent_id,
             model: params.model,
@@ -136,52 +133,10 @@ pub(in crate::app::control) async fn set_steward_configuration(
             expected_revision: params.expected_revision,
             capability,
             updated_at_epoch_ms: current_epoch_ms(),
-        });
-        let state_revision = core.state_revision();
-        (
-            result,
-            previous_executor_session_id,
-            state_revision,
-            state_revision != previous_revision,
-        )
+        })?
     };
-    if result.is_ok() && configuration_changed {
-        let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Steward],
-            state_revision,
-            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-        });
-    }
-
-    let retained_executor_session_id = result
-        .as_ref()
-        .ok()
-        .and_then(|value| value["configuration"]["executorSessionId"].as_str());
-    if let Some(previous_session_id) = previous_executor_session_id
-        .filter(|session_id| Some(session_id.as_str()) != retained_executor_session_id)
-    {
-        // Configuration authority is already revoked. Process reap is
-        // best-effort and cannot roll that durable decision back.
-        let _ = terminate_session(json!({ "sessionId": previous_session_id }), state).await;
-    }
-
-    let should_wake = params.enabled
-        && result
-            .as_ref()
-            .is_ok_and(|value| value["configuration"]["executorSessionId"].is_null());
-    if !should_wake {
-        if configuration_changed && !params.enabled {
-            state.companion_wakes.discard(&params.project_id);
-        }
-        return result;
-    }
-
-    super::super::super::companion_supervisor::replace_steward_configuration_wake(
-        state,
-        &params.project_id,
-    )
-    .await;
-    result
+    super::super::super::steward_change::finish_steward_change(state, commit.change).await;
+    Ok(commit.result)
 }
 
 /// Delivers one visible wake to the current persistent Steward or launches its
@@ -299,7 +254,7 @@ pub(in crate::app) async fn launch_current_steward(
     match prepared {
         Err(error) => Err(error),
         Ok(prepared) => {
-            let prepared = tokio::task::spawn_blocking(move || {
+            let mut prepared = tokio::task::spawn_blocking(move || {
                 let mut prepared = prepared;
                 prepared.prepare_runtime()?;
                 Ok::<_, termloop_core::CoreError>(prepared)
@@ -309,8 +264,10 @@ pub(in crate::app) async fn launch_current_steward(
             let session_id = prepared.session_id().to_owned();
             let admitted = {
                 let mut core = state.core.lock().await;
-                core.admit_persistent_assistant_launch(prepared, current_epoch_ms())
+                core.admit_persistent_assistant_launch(&mut prepared, current_epoch_ms())
             };
+            // The plan may still own a rejected provider process. Dispose it outside Core.
+            let _ = tokio::task::spawn_blocking(move || drop(prepared)).await;
             let admitted = match admitted {
                 Ok(admitted) => admitted,
                 Err(error) => return Err(error),

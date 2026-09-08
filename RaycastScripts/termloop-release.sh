@@ -104,7 +104,7 @@ echo "==> Fetching origin/main and release tags"
 git -C "$REPO_DIR" fetch origin --prune --no-tags \
   '+refs/heads/main:refs/remotes/origin/main'
 git -C "$REPO_DIR" fetch origin --no-tags \
-  'refs/tags/*:refs/tags/*'
+  'refs/tags/v*:refs/tags/v*'
 
 candidate_sha="$(git -C "$REPO_DIR" rev-parse refs/remotes/origin/main)"
 version="$(git -C "$REPO_DIR" show "${candidate_sha}:package.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
@@ -171,66 +171,9 @@ else
   release_event="push"
 fi
 
-secret_names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"
-variable_names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"
-
-has_name() {
-  local names="$1"
-  local wanted="$2"
-  grep -Fqx "$wanted" <<<"$names"
-}
-
-require_secret() {
-  local name="$1"
-  if ! has_name "$secret_names" "$name"; then
-    echo "Missing required release secret: $name" >&2
-    exit 1
-  fi
-}
-
-require_variable() {
-  local name="$1"
-  if ! has_name "$variable_names" "$name"; then
-    echo "Missing required release variable: $name" >&2
-    exit 1
-  fi
-}
-
-require_secret_pair() {
-  local primary="$1"
-  local fallback="$2"
-  if ! has_name "$secret_names" "$primary" && ! has_name "$secret_names" "$fallback"; then
-    echo "Missing required release secret: $primary (or $fallback)" >&2
-    exit 1
-  fi
-}
-
-echo "==> Validating release signing and publication configuration"
-require_secret_pair MACOS_CERTIFICATE_BASE64 APPLE_CERTIFICATE_BASE64
-require_secret_pair MACOS_CERTIFICATE_PASSWORD APPLE_CERTIFICATE_PASSWORD
-require_secret_pair MACOS_SIGNING_IDENTITY APPLE_SIGNING_IDENTITY
-
-if has_name "$secret_names" MACOS_API_KEY_BASE64 && \
-   has_name "$secret_names" MACOS_API_KEY_ID && \
-   has_name "$secret_names" MACOS_API_ISSUER; then
-  :
-elif has_name "$secret_names" APPLE_ID && \
-     has_name "$secret_names" APPLE_APP_SPECIFIC_PASSWORD && \
-     has_name "$secret_names" APPLE_TEAM_ID; then
-  :
-else
-  echo "Missing complete macOS notarization credentials." >&2
-  exit 1
-fi
-
-require_secret WINDOWS_CERTIFICATE_BASE64
-require_secret WINDOWS_CERTIFICATE_PASSWORD
-require_secret_pair R2_ACCESS_KEY_ID CF_R2_ACCESS_KEY_ID
-require_secret_pair R2_SECRET_ACCESS_KEY CF_R2_SECRET_ACCESS_KEY
-require_variable CLOUDFLARE_ACCOUNT_ID
-require_variable R2_BUCKET_NAME
-require_variable UPDATE_BASE_URL
-echo "Release configuration names are present."
+# The immutable release workflow validates signing and publication settings
+# before publishing. Dispatching it does not require permission to list secrets.
+echo "Signing and publication settings will be validated by $RELEASE_WORKFLOW."
 
 verified_ci_run_id="$(
   gh run list \

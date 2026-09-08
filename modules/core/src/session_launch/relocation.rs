@@ -638,7 +638,7 @@ impl CoreRuntime {
         if preview.mode == SessionRelocationMode::Fresh {
             self.agent_conversation_activity.remove(&session_id);
         }
-        let mut runtime_epoch = self.runtime_epoch;
+        let mut runtime_epoch = termloop_platform::generate_runtime_epoch();
         while runtime_epoch == session.runtime_epoch {
             runtime_epoch = termloop_platform::generate_runtime_epoch();
         }
@@ -686,10 +686,11 @@ impl CoreRuntime {
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,
             runtime_signal_sender: Some(self.agent_runtime_sender.clone()),
-            codex_runtime: None,
+            provider_runtime: Default::default(),
             preparation_kind: if source_was_running {
                 AgentResumePreparationKind::Restart {
-                    retired_codex_runtime,
+                    retired_runtime_epoch: session.runtime_epoch,
+                    retired_codex_runtime: retired_codex_runtime.map(Box::new),
                 }
             } else {
                 AgentResumePreparationKind::Resume

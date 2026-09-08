@@ -60,6 +60,27 @@ pub(in crate::app) async fn finish_session_mutation<T>(
     .await
 }
 
+/// Publish the durable commit and refresh its presence while process cleanup
+/// runs independently. Cleanup still controls the command result, but cannot
+/// delay clients learning that the Session descriptor already changed.
+pub(in crate::app) async fn finish_session_mutation_with_cleanup<T, F>(
+    state: &AppState,
+    commit: CommittedSessionMutation,
+    cleanup: F,
+) -> Result<T, CoreError>
+where
+    F: Future<Output = Result<T, CoreError>>,
+{
+    finish_with_presence_and_cleanup(
+        &state.invalidation_requests,
+        state.observation_sequence.load(Ordering::Relaxed),
+        commit,
+        cleanup,
+        |cwd| async move { refresh_task_presence_for_cwd(state, &cwd).await },
+    )
+    .await
+}
+
 async fn finish_with_presence<T, F, P>(
     sender: &mpsc::Sender<InvalidationRequest>,
     observation_sequence: u64,
@@ -80,6 +101,30 @@ where
         refresh_presence(cwd).await;
     }
     outcome
+}
+
+async fn finish_with_presence_and_cleanup<T, F, C, P>(
+    sender: &mpsc::Sender<InvalidationRequest>,
+    observation_sequence: u64,
+    commit: CommittedSessionMutation,
+    cleanup: F,
+    refresh_presence: C,
+) -> Result<T, CoreError>
+where
+    F: Future<Output = Result<T, CoreError>>,
+    C: FnOnce(String) -> P,
+    P: Future<Output = ()>,
+{
+    let committed_effects = finish_with_presence(
+        sender,
+        observation_sequence,
+        commit,
+        Ok(()),
+        refresh_presence,
+    );
+    let (committed_effects, cleanup) = tokio::join!(committed_effects, cleanup);
+    committed_effects?;
+    cleanup
 }
 
 #[cfg(test)]
@@ -169,5 +214,37 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(receiver.recv().await.unwrap().state_revision, 2);
+    }
+
+    #[tokio::test]
+    async fn slow_cleanup_does_not_delay_committed_effects() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        let (refreshed, mut presence) = mpsc::channel(1);
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let finish = tokio::spawn(async move {
+            finish_with_presence_and_cleanup(
+                &sender,
+                17,
+                CommittedSessionMutation::terminated(41, Some("/task-worktree".into())),
+                async move {
+                    let _ = wait.await;
+                    Err::<(), _>(CoreError::Terminal("reap failed".into()))
+                },
+                |cwd| async move { refreshed.send(cwd).await.unwrap() },
+            )
+            .await
+        });
+
+        let invalidation = tokio::time::timeout(std::time::Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(invalidation.state_revision, 41);
+        assert_eq!(presence.recv().await.as_deref(), Some("/task-worktree"));
+        assert!(!finish.is_finished());
+
+        release.send(()).unwrap();
+        let error = finish.await.unwrap().unwrap_err();
+        assert!(matches!(error, CoreError::Terminal(message) if message == "reap failed"));
     }
 }

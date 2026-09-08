@@ -2,12 +2,34 @@ import * as Sentry from "@sentry/react-native";
 import * as Application from "expo-application";
 import * as Updates from "expo-updates";
 
+import {
+  mobileAppUpdateDiagnostic,
+  type AppUpdateDiagnosticDetails,
+  type AppUpdateDiagnosticEvent,
+} from "./app-update-diagnostics";
 import { subscribeMobileDiagnostics } from "./mobile-diagnostics";
 import { mobileSentryDiagnostic } from "./sentry-diagnostics";
 import { correctMobileLogTimestamps } from "./sentry-log-clock";
 
 const SENTRY_DSN = "https://f947d94551545970dcb7e607aa06e13a@o4511248981164032.ingest.de.sentry.io/4512013745979472";
 const enabled = !__DEV__;
+
+export function logMobileAppUpdate(
+  event: AppUpdateDiagnosticEvent,
+  details: AppUpdateDiagnosticDetails = {},
+): void {
+  if (!enabled) return;
+
+  const diagnostic = mobileAppUpdateDiagnostic(event, {
+    updateId: Updates.updateId,
+    channel: Updates.channel,
+    runtimeVersion: Updates.runtimeVersion,
+    embedded: Updates.isEmbeddedLaunch,
+    appVersion: Application.nativeApplicationVersion,
+    appBuild: Application.nativeBuildVersion,
+  }, details);
+  Sentry.logger[diagnostic.level](diagnostic.message, diagnostic.attributes);
+}
 
 Sentry.init({
   dsn: SENTRY_DSN,
@@ -48,6 +70,7 @@ if (enabled) {
     updateId: Updates.updateId,
     embedded: Updates.isEmbeddedLaunch,
   });
+  logMobileAppUpdate("runtime_initialized");
 
   subscribeMobileDiagnostics((event) => {
     const diagnostic = mobileSentryDiagnostic(event);

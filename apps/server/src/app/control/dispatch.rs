@@ -133,52 +133,41 @@ pub(in crate::app) async fn apply_configuration_plan(
                         }
                     })
                     .unwrap_or(termloop_core::AssistantAvailability::Proven);
-            let project_id = plan.project_id.clone();
-            let (result, effects) = core.apply_owned_configuration_application(
+            let commit = core.apply_owned_configuration_application(
                 plan,
                 availability,
                 applied_at_epoch_ms,
             )?;
             let state_revision = core.state_revision();
-            (None, Some((result, effects, project_id, state_revision)))
+            (None, Some((commit.result, commit.effects, state_revision)))
         }
     };
 
-    let (result, effects, project_id, state_revision) =
-        if let Some((plan, skill_catalog)) = external {
-            apply_external_configuration(&plan, skill_catalog, state).await?;
-            let project_id = plan.project_id.clone();
-            let activated_target = plan.target.clone();
-            let activated_content = plan.content.clone();
-            let mut core = state.core.lock().await;
-            let result = core.finish_configuration_application(
-                plan,
-                activated_target,
-                activated_content,
-                applied_at_epoch_ms,
-            )?;
-            (
-                result,
-                termloop_core::ConfigurationApplicationEffects::default(),
-                project_id,
-                core.state_revision(),
-            )
-        } else {
-            owned.expect("owned configuration application result")
-        };
+    let (result, effects, state_revision) = if let Some((plan, skill_catalog)) = external {
+        apply_external_configuration(&plan, skill_catalog, state).await?;
+        let activated_target = plan.target.clone();
+        let activated_content = plan.content.clone();
+        let mut core = state.core.lock().await;
+        let result = core.finish_configuration_application(
+            plan,
+            activated_target,
+            activated_content,
+            applied_at_epoch_ms,
+        )?;
+        (
+            Ok(result),
+            termloop_core::ConfigurationApplicationEffects::default(),
+            core.state_revision(),
+        )
+    } else {
+        owned.expect("owned configuration application result")
+    };
 
-    for session_id in effects.retired_session_ids {
-        if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
-            capabilities.revoke_session(&session_id);
-        }
-        let _ = terminate_session(json!({ "sessionId": session_id }), state).await;
+    if let Some(change) = effects.steward_change {
+        super::super::steward_change::finish_steward_change(state, change).await;
     }
     if effects.tracker_runtime_changed {
         state.tracker_runtime_wake.notify_one();
-    }
-    if effects.steward_configuration_changed {
-        super::super::companion_supervisor::replace_steward_configuration_wake(state, &project_id)
-            .await;
     }
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
         topics: vec![
@@ -192,7 +181,7 @@ pub(in crate::app) async fn apply_configuration_plan(
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
-    Ok(result)
+    result
 }
 
 fn configuration_agent_id(content: &str) -> Option<String> {
