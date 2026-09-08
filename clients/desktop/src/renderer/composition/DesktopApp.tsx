@@ -18,6 +18,7 @@ import {
   projectionStore,
 } from "../state/projection-store.js";
 import { createProjectionRefreshQueue, KeyedProjectionRefreshQueue } from "../state/projection-refresh.js";
+import { ProfileProjectionRefresh } from "./profile-projection-refresh.js";
 import { newlyAwaitingSessions } from "../state/agent-attention-policy.js";
 import { newlyReviewReadySessions } from "../state/agent-review-policy.js";
 import { presentationStore } from "../state/presentation-store.js";
@@ -473,24 +474,28 @@ async function refreshProjectionOnce(): Promise<void> {
   reconcileSourceProjection(availableProfiles);
 }
 
-async function refreshProfileProjectionOnce(profileId: string): Promise<void> {
+async function refreshProfileSourceOnce(profileId: string): Promise<void> {
   projectionRefreshCount += 1;
   const { availableProfiles, profiles } = await enabledConnectionProfiles();
   const profile = profiles.find((candidate) => candidate.id === profileId);
-  if (profile) {
-    await queueSourceSnapshotRefresh(profile);
-    if (
-      selectedProjectProfileId() === profileId
-      && connectionSnapshotRefresh(profile).kind === "refresh"
-      && projectionStore.sourceState(profile.id) === "connected"
-    ) {
-      await selectedProjectRefresh();
-    }
-  }
+  if (profile) await queueSourceSnapshotRefresh(profile);
   reconcileSourceProjection(availableProfiles);
 }
 
-const profileProjectionRefresh = new KeyedProjectionRefreshQueue(refreshProfileProjectionOnce);
+const profileProjectionRefresh = new ProfileProjectionRefresh(
+  refreshProfileSourceOnce,
+  async (profileId) => {
+    const profile = sourceRefreshProfiles.get(profileId);
+    if (
+      profile
+      && selectedProjectProfileId() === profileId
+      && connectionSnapshotRefresh(profile).kind === "refresh"
+      && projectionStore.sourceState(profileId) === "connected"
+    ) {
+      await selectedProjectRefresh();
+    }
+  },
+);
 
 function sourceApiForProject(projectId: string): SourceDesktopApi {
   const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
