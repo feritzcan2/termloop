@@ -1,10 +1,17 @@
+use std::sync::atomic::Ordering;
+
 use serde_json::{Value, json};
 use termloop_contract::current as protocol;
-use termloop_core::{CoreError, ProjectTaskAutomationConfiguration, TaskSourceImportPolicy};
+use termloop_core::{
+    CoreError, CoreRuntime, ProjectTaskAutomationConfiguration, TaskSourceImportPolicy,
+};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 
 use super::AppState;
-use super::invalidation::{CommitImpact, queue_commit_invalidation};
+use super::invalidation::{
+    CommitImpact, InvalidationRequest, commit_invalidation, queue_invalidation,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TaskAutomationAction {
@@ -35,69 +42,250 @@ pub(super) struct TaskAutomationSelection {
     pub(super) workflow_id: Option<String>,
 }
 
+impl TaskAutomationSelection {
+    pub(super) fn inherit() -> Self {
+        Self {
+            worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+            worktree_prefix: None,
+            base_ref: None,
+            agent_id: None,
+            model: None,
+            permission: None,
+            reasoning: None,
+            kickoff_message: None,
+            workflow_id: None,
+        }
+    }
+}
+
+/// Resolve and validate selection before the named Core write, under the same
+/// Core lock. Binding the resulting Task must never read newer Project defaults.
+#[derive(Clone)]
+pub(super) struct PreparedTaskAutomation {
+    project_id: String,
+    settings: EffectiveTaskAutomation,
+}
+
+impl PreparedTaskAutomation {
+    pub(super) fn prepare(
+        core: &CoreRuntime,
+        project_id: &str,
+        selection: TaskAutomationSelection,
+    ) -> Result<Self, CoreError> {
+        let configuration = core.project_task_automation_configuration(project_id)?;
+        Self::from_configuration(&configuration, selection)
+    }
+
+    fn from_configuration(
+        configuration: &ProjectTaskAutomationConfiguration,
+        selection: TaskAutomationSelection,
+    ) -> Result<Self, CoreError> {
+        Ok(Self {
+            project_id: configuration.project_id.clone(),
+            settings: effective_settings(configuration, selection)?,
+        })
+    }
+}
+
+/// Owns every already-committed effect, including a successful prefix of a
+/// failed batch. The result is unavailable until publication and dispatch finish.
+#[must_use = "Finish committed Task creation effects before returning the command result"]
+pub(super) struct TaskCreationOutcome<T> {
+    committed: CommittedTaskCreations,
+    result: Result<T, CoreError>,
+}
+
+pub(super) struct CommittedTaskCreations {
+    impact: CommitImpact,
+    state_revision: Option<u64>,
+    actions: Vec<TaskAutomationAction>,
+}
+
+impl CommittedTaskCreations {
+    fn record_import(
+        &mut self,
+        imported: &termloop_core::TaskSourceImport,
+        previous_revision: u64,
+        automation: PreparedTaskAutomation,
+    ) {
+        self.record(
+            &imported.task,
+            imported.state_revision,
+            (imported.state_revision != previous_revision).then_some(automation),
+        );
+    }
+
+    pub(super) fn record(
+        &mut self,
+        task: &Value,
+        state_revision: u64,
+        automation: Option<PreparedTaskAutomation>,
+    ) {
+        self.state_revision = Some(state_revision);
+        if let Some(automation) = automation {
+            match action_from_task(&automation, task) {
+                Ok(action) => self.actions.push(action),
+                Err(error) => {
+                    // The descriptor is already durable. A projection failure
+                    // cannot hide its commit or invite a duplicate create retry.
+                    tracing::error!(%error, "Committed Task automation could not be bound");
+                }
+            }
+        }
+    }
+}
+
+impl<T> TaskCreationOutcome<T> {
+    pub(super) fn collect(
+        impact: CommitImpact,
+        command: impl FnOnce(&mut CommittedTaskCreations) -> Result<T, CoreError>,
+    ) -> Self {
+        let mut committed = CommittedTaskCreations {
+            impact,
+            state_revision: None,
+            actions: Vec::new(),
+        };
+        let result = command(&mut committed);
+        Self { committed, result }
+    }
+
+    /// Both the Core lock and any source refresh lock must be released first.
+    pub(super) async fn finish(
+        self,
+        state: &AppState,
+        observation_sequence: u64,
+    ) -> Result<T, CoreError> {
+        self.finish_with_dispatch(
+            &state.invalidation_requests,
+            observation_sequence,
+            |actions| {
+                let state = state.clone();
+                tokio::spawn(async move { run(actions, &state).await });
+            },
+        )
+        .await
+    }
+
+    async fn finish_with_dispatch(
+        self,
+        sender: &mpsc::Sender<InvalidationRequest>,
+        observation_sequence: u64,
+        dispatch: impl FnOnce(Vec<TaskAutomationAction>),
+    ) -> Result<T, CoreError> {
+        if let Some(revision) = self.committed.state_revision {
+            queue_invalidation(
+                sender,
+                commit_invalidation(self.committed.impact, revision, observation_sequence),
+            )
+            .await;
+        }
+        if !self.committed.actions.is_empty() {
+            dispatch(self.committed.actions);
+        }
+        self.result
+    }
+}
+
 pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value, CoreError> {
     let params = serde_json::from_value::<protocol::TaskCreateParams>(params)
         .expect("validated Task create params");
-    let selection = TaskAutomationSelection {
-        worktree_intent: params.worktree_intent.clone(),
-        worktree_prefix: params.worktree_prefix.clone(),
-        base_ref: params.base_ref.clone(),
-        agent_id: params.agent_id.clone(),
-        model: params.model.clone(),
-        permission: params.permission.clone(),
-        reasoning: params.reasoning.clone(),
-        kickoff_message: params.kickoff_message.clone(),
-        workflow_id: params.workflow_id.clone(),
-    };
-    let project_id = params.project_id.clone();
-    let (task, action, state_revision) = {
+    let outcome = {
         let mut core = state.core.lock().await;
+        commit_created_task(&mut core, params)
+    };
+    outcome
+        .finish(state, state.observation_sequence.load(Ordering::Relaxed))
+        .await
+}
+
+fn commit_created_task(
+    core: &mut CoreRuntime,
+    params: protocol::TaskCreateParams,
+) -> TaskCreationOutcome<Value> {
+    TaskCreationOutcome::collect(CommitImpact::Task, |committed| {
+        let selection = TaskAutomationSelection {
+            worktree_intent: params.worktree_intent.clone(),
+            worktree_prefix: params.worktree_prefix.clone(),
+            base_ref: params.base_ref.clone(),
+            agent_id: params.agent_id.clone(),
+            model: params.model.clone(),
+            permission: params.permission.clone(),
+            reasoning: params.reasoning.clone(),
+            kickoff_message: params.kickoff_message.clone(),
+            workflow_id: params.workflow_id.clone(),
+        };
+        let automation = PreparedTaskAutomation::prepare(core, &params.project_id, selection)?;
         let task = core.handle(
             "task.create",
             serde_json::to_value(params).map_err(|error| CoreError::Store(error.to_string()))?,
         )?;
-        let configuration = core.project_task_automation_configuration(&project_id)?;
-        let action = action_from_task(&configuration, &task, selection)?;
-        (task, action, core.state_revision())
-    };
-    queue_commit_invalidation(
-        state,
-        CommitImpact::Task,
-        state_revision,
-        state
-            .observation_sequence
-            .load(std::sync::atomic::Ordering::Relaxed),
-    )
-    .await;
-    spawn(vec![action], state);
-    Ok(task)
+        committed.record(&task, core.state_revision(), Some(automation));
+        Ok(task)
+    })
 }
 
-/// Imports only as many still-new candidates as the source's active-Task WIP
-/// limit permits. The source refresh lock is held by the caller, so a manual
-/// import cannot race this snapshot. Each candidate still passes Core's
-/// stable-ID and revision gates; a retry therefore returns the already-linked
-/// Task instead of making a duplicate.
-pub(super) async fn auto_import_after_refresh(
+pub(super) fn import_candidate(
+    core: &mut CoreRuntime,
+    params: protocol::TaskSourceCandidateImportParams,
+) -> TaskCreationOutcome<Value> {
+    TaskCreationOutcome::collect(CommitImpact::TaskSourceImport, |committed| {
+        let source = core
+            .task_source_view_by_id(&params.source_id)?
+            .configuration;
+        let automation = PreparedTaskAutomation::prepare(
+            core,
+            &source.project_id,
+            TaskAutomationSelection {
+                worktree_intent: params.worktree_intent,
+                worktree_prefix: params.worktree_prefix,
+                base_ref: params.base_ref,
+                agent_id: params.agent_id,
+                model: params.model,
+                permission: params.permission,
+                reasoning: params.reasoning,
+                kickoff_message: params.kickoff_message,
+                workflow_id: params.workflow_id,
+            },
+        )?;
+        let before_revision = core.state_revision();
+        let imported = core.import_task_source_candidate(
+            &params.source_id,
+            &params.external_id,
+            params.expected_generation,
+            params.expected_observation_sequence,
+            params.expected_revision,
+            termloop_platform::generate_uuid_v4(),
+            super::current_epoch_ms(),
+        )?;
+        committed.record_import(&imported, before_revision, automation);
+        Ok(json!({"task": imported.task, "stateRevision": imported.state_revision}))
+    })
+}
+
+/// The caller holds the source refresh lock and Core lock. Complete the returned
+/// outcome only after releasing both, even when a later candidate failed.
+pub(super) fn auto_import_after_refresh(
+    core: &mut CoreRuntime,
     source_id: &str,
     observation_sequence: u64,
-    state: &AppState,
-) -> Result<Vec<TaskAutomationAction>, CoreError> {
-    let (actions, state_revision) = {
-        let mut core = state.core.lock().await;
+) -> TaskCreationOutcome<()> {
+    TaskCreationOutcome::collect(CommitImpact::TaskSourceImport, |committed| {
         let source = core.task_source_view_by_id(source_id)?.configuration;
         if source.import_policy != TaskSourceImportPolicy::AutoAdd || !source.enabled {
-            return Ok(Vec::new());
+            return Ok(());
         }
         let active_task_count = core.active_task_source_task_count(source_id)?;
         let available_slots =
             available_auto_import_slots(source.auto_import_active_task_limit, active_task_count);
         if available_slots == 0 {
-            return Ok(Vec::new());
+            return Ok(());
         }
-        let configuration = core.project_task_automation_configuration(&source.project_id)?;
+        let automation = PreparedTaskAutomation::prepare(
+            core,
+            &source.project_id,
+            TaskAutomationSelection::inherit(),
+        )?;
         let candidates = core.task_source_candidates(source_id)?;
-        let mut actions = Vec::new();
         for candidate in candidates
             .into_iter()
             .filter(|candidate| {
@@ -115,67 +303,16 @@ pub(super) async fn auto_import_after_refresh(
                 termloop_platform::generate_uuid_v4(),
                 super::current_epoch_ms(),
             )?;
-            if imported.state_revision != before_revision {
-                actions.push(action_from_task(
-                    &configuration,
-                    &imported.task,
-                    TaskAutomationSelection {
-                        worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
-                        worktree_prefix: None,
-                        base_ref: None,
-                        agent_id: None,
-                        model: None,
-                        permission: None,
-                        reasoning: None,
-                        kickoff_message: None,
-                        workflow_id: None,
-                    },
-                )?);
-            }
+            committed.record_import(&imported, before_revision, automation.clone());
         }
-        (actions, core.state_revision())
-    };
-    if !actions.is_empty() {
-        queue_commit_invalidation(
-            state,
-            CommitImpact::TaskSourceImport,
-            state_revision,
-            observation_sequence,
-        )
-        .await;
-    }
-    Ok(actions)
+        Ok(())
+    })
 }
 
 fn available_auto_import_slots(limit: u64, active_task_count: u64) -> usize {
     // Domain validation caps the limit at 50, so this conversion is portable
     // even on platforms whose usize is narrower than u64.
     usize::try_from(limit.saturating_sub(active_task_count)).unwrap_or(0)
-}
-
-pub(super) async fn action_for_task(
-    task: &Value,
-    selection: TaskAutomationSelection,
-    state: &AppState,
-) -> Result<TaskAutomationAction, CoreError> {
-    let project_id = task
-        .get("project_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| CoreError::Store("created Task projection has no project_id".into()))?;
-    let configuration = state
-        .core
-        .lock()
-        .await
-        .project_task_automation_configuration(project_id)?;
-    action_from_task(&configuration, task, selection)
-}
-
-pub(super) fn spawn(actions: Vec<TaskAutomationAction>, state: &AppState) {
-    if actions.is_empty() {
-        return;
-    }
-    let state = state.clone();
-    tokio::spawn(async move { run(actions, &state).await });
 }
 
 async fn run(actions: Vec<TaskAutomationAction>, state: &AppState) {
@@ -191,9 +328,8 @@ async fn run(actions: Vec<TaskAutomationAction>, state: &AppState) {
 }
 
 fn action_from_task(
-    configuration: &ProjectTaskAutomationConfiguration,
+    automation: &PreparedTaskAutomation,
     task: &Value,
-    selection: TaskAutomationSelection,
 ) -> Result<TaskAutomationAction, CoreError> {
     let task_id = task
         .get("id")
@@ -213,10 +349,10 @@ fn action_from_task(
         reasoning,
         kickoff_message,
         workflow_id,
-    ) = effective_settings(configuration, selection)?;
+    ) = automation.settings.clone();
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
-        project_id: configuration.project_id.clone(),
+        project_id: automation.project_id.clone(),
         title: title.to_owned(),
         create_worktree,
         worktree_prefix,
@@ -552,6 +688,9 @@ fn observed_base_refs(projection: &Value) -> impl Iterator<Item = &str> {
 }
 
 #[cfg(test)]
+mod creation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -716,7 +855,11 @@ mod tests {
             json!("  "),
         ] {
             let task = json!({"id": "task-1", "title": "New screen", "brief": brief});
-            let action = action_from_task(&defaults, &task, selection()).unwrap();
+            let action = action_from_task(
+                &PreparedTaskAutomation::from_configuration(&defaults, selection()).unwrap(),
+                &task,
+            )
+            .unwrap();
             assert_eq!(action.workflow_id.as_deref(), Some("workflow-1"));
             assert!(action.agent_id.is_none());
             assert!(action.create_worktree);
@@ -734,14 +877,22 @@ mod tests {
             explicit.worktree_prefix = Some("custom".into());
             explicit.base_ref = Some("refs/remotes/upstream/main".into());
             explicit.workflow_id = Some("workflow-2".into());
-            let action = action_from_task(&defaults, &task, explicit).unwrap();
+            let action = action_from_task(
+                &PreparedTaskAutomation::from_configuration(&defaults, explicit).unwrap(),
+                &task,
+            )
+            .unwrap();
             assert_eq!(action.workflow_id.as_deref(), Some("workflow-2"));
             assert_eq!(action.worktree_prefix, "custom");
             assert!(action.agent_id.is_none());
 
             let mut declined = selection();
             declined.worktree_intent = protocol::TaskCreateWorktreeIntent::None;
-            let action = action_from_task(&defaults, &task, declined).unwrap();
+            let action = action_from_task(
+                &PreparedTaskAutomation::from_configuration(&defaults, declined).unwrap(),
+                &task,
+            )
+            .unwrap();
             assert!(!action.create_worktree);
             assert!(action.workflow_id.is_none());
         }

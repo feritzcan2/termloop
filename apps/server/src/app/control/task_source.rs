@@ -10,9 +10,7 @@ use termloop_platform::{SecureCredentialError, SecureCredentialKey, SecureSecret
 use tokio::sync::Mutex;
 
 use super::super::AppState;
-use super::super::invalidation::{
-    CommitImpact, queue_commit_invalidation, queue_durable_commit_invalidation,
-};
+use super::super::invalidation::{CommitImpact, queue_commit_invalidation};
 
 const JIRA_CREDENTIAL_SERVICE: &str = "dev.termloop.task-source.jira";
 const TASK_SOURCE_SCHEDULER_TICK: tokio::time::Duration = tokio::time::Duration::from_secs(30);
@@ -547,18 +545,20 @@ pub(super) async fn refresh(params: Value, state: &AppState) -> Result<Value, Co
         .fetch_max(applied.observation_sequence, Ordering::Relaxed);
     let state_revision = state.core.lock().await.state_revision();
     publish(state, state_revision, applied.observation_sequence).await;
-    let automations = if failure.is_none() {
-        super::super::task_automation::auto_import_after_refresh(
+    let imported = if failure.is_none() {
+        let mut core = state.core.lock().await;
+        Some(super::super::task_automation::auto_import_after_refresh(
+            &mut core,
             &applied.source_id,
             applied.observation_sequence,
-            state,
-        )
-        .await?
+        ))
     } else {
-        Vec::new()
+        None
     };
     drop(_guard);
-    super::super::task_automation::spawn(automations, state);
+    if let Some(imported) = imported {
+        imported.finish(state, applied.observation_sequence).await?;
+    }
     Ok(json!({
         "sourceId": applied.source_id,
         "refreshed": failure.is_none(),
@@ -604,54 +604,14 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
         .expect("validated Task Source candidate import params");
     let lock = refresh_lock(state, &params.source_id);
     let _guard = lock.lock().await;
-    let (imported, changed) = {
+    let imported = {
         let mut core = state.core.lock().await;
-        let before_revision = core.state_revision();
-        let imported = core.import_task_source_candidate(
-            &params.source_id,
-            &params.external_id,
-            params.expected_generation,
-            params.expected_observation_sequence,
-            params.expected_revision,
-            termloop_platform::generate_uuid_v4(),
-            super::super::current_epoch_ms(),
-        )?;
-        let changed = imported.state_revision != before_revision;
-        (imported, changed)
-    };
-    queue_durable_commit_invalidation(
-        state,
-        CommitImpact::TaskSourceImport,
-        imported.state_revision,
-    )
-    .await;
-    let automation = if changed {
-        Some(
-            super::super::task_automation::action_for_task(
-                &imported.task,
-                super::super::task_automation::TaskAutomationSelection {
-                    worktree_intent: params.worktree_intent,
-                    worktree_prefix: params.worktree_prefix,
-                    base_ref: params.base_ref,
-                    agent_id: params.agent_id,
-                    model: params.model,
-                    permission: params.permission,
-                    reasoning: params.reasoning,
-                    kickoff_message: params.kickoff_message,
-                    workflow_id: params.workflow_id,
-                },
-                state,
-            )
-            .await?,
-        )
-    } else {
-        None
+        super::super::task_automation::import_candidate(&mut core, params)
     };
     drop(_guard);
-    if let Some(automation) = automation {
-        super::super::task_automation::spawn(vec![automation], state);
-    }
-    Ok(json!({"task": imported.task, "stateRevision": imported.state_revision}))
+    imported
+        .finish(state, state.observation_sequence.load(Ordering::Relaxed))
+        .await
 }
 
 pub(super) async fn candidate_ignore(

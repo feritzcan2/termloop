@@ -32,6 +32,7 @@ pub(super) struct InvalidationRequest {
 pub(super) enum CommitImpact {
     Project,
     Task,
+    StewardTask,
     TaskSessionAgent,
     Session,
     SessionAgent,
@@ -55,6 +56,11 @@ impl CommitImpact {
         match self {
             Self::Project => vec![ProjectionTopic::Project],
             Self::Task => vec![ProjectionTopic::Task],
+            Self::StewardTask => vec![
+                ProjectionTopic::Task,
+                ProjectionTopic::Companion,
+                ProjectionTopic::Steward,
+            ],
             Self::TaskSessionAgent => vec![
                 ProjectionTopic::Task,
                 ProjectionTopic::Session,
@@ -92,7 +98,7 @@ impl CommitImpact {
     }
 }
 
-fn commit_invalidation(
+pub(super) fn commit_invalidation(
     impact: CommitImpact,
     state_revision: u64,
     observation_sequence: u64,
