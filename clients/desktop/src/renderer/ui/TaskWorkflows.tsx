@@ -4,6 +4,7 @@ import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js
 import type { RowTone } from "../row-tone.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
+import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu.js";
 import { stepKindLabel, agentLabel, workflowSummary, workflowExecutionSummary, workflowStatusLabel, workflowPhaseLabel, workflowStepParticipant, workflowStepResult, workflowStepState, workflowStepSessionId, workflowStepResultLabel, workflowStepResultFileName } from "./workflow-presentation.js";
 export { WorkflowEditorPanel, initialWorkflowSteps, moveWorkflowStep } from "./WorkflowEditorPanel.js";
 export { nextStepId, workflowStepResultFileName } from "./workflow-presentation.js";
@@ -32,6 +33,8 @@ export function TaskWorkflowLaunchers(props: {
   const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
   const executionActive = execution !== undefined && execution.status !== "completed";
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
+  const [templateTrigger, setTemplateTrigger] = useState<HTMLButtonElement>();
+  const templatesOpen = props.showLaunchers && templateTrigger !== undefined;
   const [inspectingExecution, setInspectingExecution] = useState(false);
   const [inspectingResult, setInspectingResult] = useState<{ stepId: string; reviewCycle: number }>();
   const [progressPreference, setProgressPreference] = useState<{ executionId: string; expanded: boolean }>();
@@ -43,9 +46,11 @@ export function TaskWorkflowLaunchers(props: {
     : executionActive);
   const { overlayVisibilityChanged } = props;
   useEffect(() => {
-    overlayVisibilityChanged(Boolean(running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
+    overlayVisibilityChanged(Boolean(templatesOpen || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
     return () => overlayVisibilityChanged(false);
-  }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running]);
+  }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running, templatesOpen]);
+  useEffect(() => { if (!props.showLaunchers) setTemplateTrigger(undefined); }, [props.showLaunchers]);
+  const closeTemplates = () => { setTemplateTrigger(undefined); templateTrigger?.focus(); };
 
   return <>
     {execution ? <button
@@ -70,44 +75,27 @@ export function TaskWorkflowLaunchers(props: {
       showDetails={() => setInspectingExecution(true)}
       showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
     /> : null}
-    {props.showLaunchers ? <section className="workflow-template-launchers" aria-label="Workflow templates">
-      <header><span>Workflow templates</span><button
-        type="button"
-        className="workflow-add"
-        title={props.configurations.length >= 16 ? "This project has reached its limit of 16 templates" : "Create a new reusable workflow template"}
-        aria-label="New workflow template"
-        disabled={props.configurations.length >= 16}
-        onClick={() => props.edit(undefined)}
-      ><Icon name="add" />New template</button></header>
-      {props.configurations.length === 0 ? <p>Create a template, then run it with a goal in any Task.</p> : null}
-      {props.configurations.length ? <details className="workflow-saved-templates" open={props.configurations.length === 1 && !executionActive}>
-        <summary>{props.configurations.length} saved {props.configurations.length === 1 ? "template" : "templates"} · run or edit</summary>
-      {props.configurations.map((configuration) => (
-      <span className="run-chip workflow-chip" key={configuration.id}>
-        <button
-          type="button"
-          className="run-chip-start"
-          disabled={!props.launchable || executionActive}
-          title={!props.launchable
-            ? "The Task worktree must be ready before this workflow can run"
-            : executionActive
-              ? `Finish or stop ${execution?.workflowName ?? "the current workflow"} first`
-              : workflowSummary(configuration)}
-          aria-label={`Run workflow ${configuration.name} in ${props.task.title}`}
-          onClick={() => setRunning(configuration)}
-        ><Icon name="play" /><span><small>Run workflow</small>{configuration.name}</span></button>
-        <button
-          type="button"
-          className="run-chip-edit"
-          title={`Edit template ${configuration.name}`}
-          aria-label={`Edit template ${configuration.name}`}
-          onClick={() => props.edit(configuration)}
-        ><Icon name="edit" /></button>
-      </span>
-      ))}
-      </details> : null}
-    </section> : null}
+    {props.showLaunchers ? <button
+      type="button"
+      className="workflow-add"
+      aria-label="Workflow"
+      aria-haspopup={props.configurations.length ? "menu" : undefined}
+      aria-expanded={templatesOpen}
+      title={props.configurations.length ? "Run or edit a workflow" : "Create a workflow template"}
+      onClick={(event) => props.configurations.length ? setTemplateTrigger(event.currentTarget) : props.edit(undefined)}
+    ><Icon name="add" />Workflow</button> : null}
     <OverlayPortal container={props.overlayContainer}>
+      {templatesOpen ? <WorkflowTemplateMenu
+        anchor={templateTrigger}
+        taskTitle={props.task.title}
+        configurations={props.configurations}
+        unavailableReason={!props.launchable
+          ? "The Task worktree must be ready before a workflow can run."
+          : executionActive ? `Finish or stop ${execution.workflowName} first.` : undefined}
+        close={closeTemplates}
+        run={(configuration) => { closeTemplates(); setRunning(configuration); }}
+        edit={(configuration) => { closeTemplates(); props.edit(configuration); }}
+      /> : null}
       {running ? <WorkflowRunDialog
         task={props.task}
         configuration={running}
