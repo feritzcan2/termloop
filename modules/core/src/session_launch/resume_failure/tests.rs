@@ -158,7 +158,13 @@ fn rejected_commit_keeps_retry_reserved_until_the_exact_process_is_reaped() {
     ));
     let observed = failure.reap(plan);
     assert!(!fixture.core.terminal.contains_session("resume").unwrap());
-    fixture.core.reconcile_exited_sessions().unwrap();
+    assert!(
+        fixture
+            .core
+            .reconcile_exited_sessions(fixture.core.terminal.reap_exited().unwrap())
+            .errors
+            .is_empty()
+    );
     assert!(fixture.core.resume_reservations.contains("resume"));
     assert_eq!(
         fixture.core.current_agent_resume("resume").unwrap()["lifecycle_state"],

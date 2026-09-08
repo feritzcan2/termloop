@@ -21,7 +21,9 @@ pub struct InputChunkReceipt {
 pub struct InputWriteReceipt {
     pub runtime_epoch: u64,
     pub chunks: Vec<InputChunkReceipt>,
-    pub output_after_write: OutputActivitySnapshot,
+    /// Output baseline captured when this request started writing, before any
+    /// concurrent response. The receipt itself still requires a full flush.
+    pub output_before_write: OutputActivitySnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -52,7 +54,7 @@ pub enum InputWriteFailure {
 
 pub(crate) struct InputWriteCompletion {
     chunks: Vec<InputChunkReceipt>,
-    output_after_write: OutputActivitySnapshot,
+    output_before_write: OutputActivitySnapshot,
 }
 
 pub struct PendingInputWrite {
@@ -75,7 +77,7 @@ impl PendingInputWrite {
             Ok(Ok(completion)) => Ok(InputWriteReceipt {
                 runtime_epoch: self.runtime_epoch,
                 chunks: completion.chunks,
-                output_after_write: completion.output_after_write,
+                output_before_write: completion.output_before_write,
             }),
             Ok(Err(error)) => Err(error),
             Err(mpsc::RecvTimeoutError::Timeout) => Err(InputWriteFailure::ReceiptTimedOut {
@@ -166,13 +168,13 @@ pub(crate) fn spawn(
         while let Ok(request) = writer_rx.recv() {
             let (chunks, receipt) = request.into_parts();
             let outcome = output_activity
-                .capture_after_input_write(session_id.clone(), runtime_epoch, || {
+                .capture_input_write(session_id.clone(), runtime_epoch, || {
                     write_chunks(writer.as_mut(), chunks)
                 })
-                .map(|(outcome, output_after_write)| {
+                .map(|(outcome, output_before_write)| {
                     outcome.map(|chunks| InputWriteCompletion {
                         chunks,
-                        output_after_write,
+                        output_before_write,
                     })
                 })
                 .unwrap_or_else(|_| {

@@ -192,9 +192,19 @@ describe("watch facade over the gateway", () => {
     const upstreamSockets = new WebSocketServer({ server: upstreamServer });
     upstreamSockets.on("connection", (socket, request) => {
       if (request.url === "/terminal") {
+        let authenticated = false;
         socket.on("message", (data) => {
-          terminalMessages.push(Buffer.from(data));
-          if ((terminalMessages.length - 1) % 4 === 0) socket.send("TLOK");
+          const bytes = Buffer.from(data);
+          terminalMessages.push(bytes);
+          if (!authenticated) {
+            authenticated = true;
+            socket.send("TLOK");
+          } else if (bytes[36] === 10 || bytes[36] === 1) {
+            const acknowledgement = Buffer.from(bytes.subarray(0, 41));
+            acknowledgement[36] = bytes[36] === 10 ? 11 : 16;
+            acknowledgement.writeUInt32BE(0, 37);
+            socket.send(acknowledgement);
+          }
         });
         return;
       }
@@ -226,6 +236,7 @@ describe("watch facade over the gateway", () => {
       token: "f".repeat(64),
       readOnlyToken: "r".repeat(64),
       terminalToken: "t".repeat(64),
+      terminalInputAckVersion: 1,
     }));
     const gatewayPort = await freePort();
     writeFileSync(gatewayConfig, JSON.stringify({
@@ -505,13 +516,14 @@ describe("watch facade over the gateway", () => {
         }),
       })).json();
       expect(replied.delivered).toBe(true);
-      // Auth preamble, attach, bracketed paste, then a distinct submit frame.
+      // Auth preamble, receipt negotiation, attach, paste, then a separately acknowledged submit.
       expect(terminalMessages[0].toString("utf8")).toBe(`TL01${"t".repeat(64)}`);
-      expect(terminalMessages).toHaveLength(4);
-      expect(terminalMessages[1][36]).toBe(10);
-      expect(terminalMessages[2][36]).toBe(1);
-      expect(terminalMessages[2].subarray(41).toString("utf8")).toBe("\u001b[200~yes do it\u001b[201~");
-      expect(terminalMessages[3].subarray(41)).toEqual(Buffer.from("\r"));
+      expect(terminalMessages).toHaveLength(5);
+      expect(terminalMessages[1][36]).toBe(17);
+      expect(terminalMessages[2][36]).toBe(10);
+      expect(terminalMessages[3][36]).toBe(1);
+      expect(terminalMessages[3].subarray(41).toString("utf8")).toBe("\u001b[200~yes do it\u001b[201~");
+      expect(terminalMessages[4].subarray(41)).toEqual(Buffer.from("\r"));
 
       const voiceReplied = await (await fetch(
         `${base}/watch/reply-voice?session=11111111-2222-3333-4444-555555555555&epoch=3`,
@@ -523,10 +535,10 @@ describe("watch facade over the gateway", () => {
       )).json();
       expect(voiceReplied.delivered).toBe(true);
       expect(voiceReplied.transcript).toBe("OpenAI saatten sesli mesaj");
-      expect(terminalMessages).toHaveLength(8);
-      expect(terminalMessages[6].subarray(41).toString("utf8"))
+      expect(terminalMessages).toHaveLength(10);
+      expect(terminalMessages[8].subarray(41).toString("utf8"))
         .toBe("\u001b[200~OpenAI saatten sesli mesaj\u001b[201~");
-      expect(terminalMessages[7].subarray(41)).toEqual(Buffer.from("\r"));
+      expect(terminalMessages[9].subarray(41)).toEqual(Buffer.from("\r"));
 
       const invalidVoiceTarget = await fetch(`${base}/watch/reply-voice?session=../etc&epoch=3`, {
         method: "POST",
@@ -550,7 +562,7 @@ describe("watch facade over the gateway", () => {
         promptDelivered: true,
         transcript: "OpenAI saatten sesli mesaj",
       });
-      expect(terminalMessages).toHaveLength(8);
+      expect(terminalMessages).toHaveLength(10);
       const voiceQuickActionPreview = tokensSeen.filter((entry) => entry.method === "quickAction.preview").at(-1);
       expect(voiceQuickActionPreview?.params).toMatchObject({
         projectId: "p1",
@@ -570,7 +582,7 @@ describe("watch facade over the gateway", () => {
         body: Buffer.from("fake m4a bytes"),
       })).json();
       expect(transcribed).toEqual({ transcript: "OpenAI saatten sesli mesaj" });
-      expect(terminalMessages).toHaveLength(8);
+      expect(terminalMessages).toHaveLength(10);
 
       // Every app-owned Watch microphone shares the same already-running Apple
       // fallback, while OpenAI remains authoritative whenever it succeeds.
@@ -593,7 +605,7 @@ describe("watch facade over the gateway", () => {
         runtimeEpoch: 1,
         promptDelivered: true,
       });
-      expect(terminalMessages).toHaveLength(8);
+      expect(terminalMessages).toHaveLength(10);
       const textQuickActionLaunch = tokensSeen.filter((entry) => entry.method === "quickAction.launch").at(-1);
       expect(textQuickActionLaunch?.params).toMatchObject({
         bindings: { prompt: "onaylanan prompt" },

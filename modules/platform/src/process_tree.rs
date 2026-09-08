@@ -67,6 +67,13 @@ pub(crate) fn contain_spawned_child(
 }
 
 #[cfg(windows)]
+pub(crate) fn windows_process_tree_is_running(
+    process_id: u32,
+) -> Result<Option<bool>, PlatformError> {
+    windows_job::is_running(process_id)
+}
+
+#[cfg(windows)]
 pub(crate) fn signal_windows_process_tree(
     process_id: u32,
     signal: crate::ProcessTreeSignal,
@@ -87,6 +94,7 @@ pub(crate) fn signal_windows_process_tree(
 
 #[cfg(windows)]
 mod windows_job {
+    use crate::PlatformError;
     use std::collections::HashMap;
     use std::io;
     use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -97,8 +105,10 @@ mod windows_job {
     use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+        TerminateJobObject,
     };
     use windows_sys::Win32::System::Threading::{
         IO_COUNTERS, OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE, TerminateProcess,
@@ -184,6 +194,30 @@ mod windows_job {
             .unwrap_or_else(PoisonError::into_inner)
             .get(&process_id)
             .cloned()
+    }
+
+    pub(super) fn is_running(process_id: u32) -> Result<Option<bool>, PlatformError> {
+        let Some(job) = registered_job(process_id) else {
+            return Ok(None);
+        };
+        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        // SAFETY: the Arc keeps this job handle alive, accounting is writable
+        // storage of the exact requested structure size, and the optional
+        // returned-length pointer is null. The API result is checked below.
+        #[allow(unsafe_code)]
+        let result = unsafe {
+            QueryInformationJobObject(
+                job.0,
+                JobObjectBasicAccountingInformation,
+                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                std::mem::size_of_val(&accounting) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if result == 0 {
+            return Err(io::Error::last_os_error().into());
+        }
+        Ok(Some(accounting.ActiveProcesses != 0))
     }
 
     fn create_kill_on_close_job() -> io::Result<JobHandle> {

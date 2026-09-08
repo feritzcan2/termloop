@@ -1144,14 +1144,14 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         }
     };
     diagnostics.paste_receipted = true;
-    let output_after_flush = paste_receipt.output_after_write;
+    let output_at_write_start = paste_receipt.output_before_write;
     if cancel_submit.load(Ordering::Acquire) {
         return transport_result(
             GeneratedInputTransportOutcome::Blocked(
                 GeneratedInputDeliveryFailure::ComposerUnavailable,
             ),
             diagnostics,
-            Some(&output_after_flush),
+            Some(&output_at_write_start),
         );
     }
     // A PTY flush proves byte delivery, and an unchanged synchronized-output
@@ -1164,8 +1164,8 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     // quiescence. Every branch preserves one Enter and still refuses to splice
     // it into a half-written terminal-protocol reply. Client edits already
     // serialized after the paste no longer withhold that one submit.
-    let output_observed_before_flush_receipt =
-        output_after_flush.sequence() > output_before_paste.sequence();
+    let output_observed_before_write =
+        output_at_write_start.sequence() > output_before_paste.sequence();
     let settlement = match settlement {
         GeneratedInputSettlement::ComposerRender
         | GeneratedInputSettlement::CodexComposerRender
@@ -1175,27 +1175,27 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
             // normalized screen diff. Require that diff to become quiet or a
             // normalized composer surface to stabilize; the boundary alone
             // must not race Enter ahead of client input.
-            output_after_flush.wait_for_normalized_composer_render_settlement(
+            output_at_write_start.wait_for_normalized_composer_render_settlement(
                 COMPOSER_RENDER_SETTLEMENT_QUIET,
                 COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
             )
         }
         GeneratedInputSettlement::ComposerRender
-        | GeneratedInputSettlement::CodexComposerRender => output_after_flush
+        | GeneratedInputSettlement::CodexComposerRender => output_at_write_start
             .wait_for_composer_render_settlement(
                 COMPOSER_RENDER_SETTLEMENT_QUIET,
                 COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
             ),
         GeneratedInputSettlement::OutputActivity | GeneratedInputSettlement::ProviderQueue
-            if output_observed_before_flush_receipt =>
+            if output_observed_before_write =>
         {
-            output_after_flush.wait_for_settlement_after_observed_activity(
+            output_at_write_start.wait_for_settlement_after_observed_activity(
                 OUTPUT_ACTIVITY_SETTLEMENT_QUIET,
                 OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT,
             )
         }
         GeneratedInputSettlement::OutputActivity | GeneratedInputSettlement::ProviderQueue => {
-            output_after_flush.wait_for_settlement(
+            output_at_write_start.wait_for_settlement(
                 OUTPUT_ACTIVITY_SETTLEMENT_QUIET,
                 OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT,
             )
@@ -1209,7 +1209,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
                     GeneratedInputDeliveryFailure::OutputDidNotSettle,
                 ),
                 diagnostics,
-                Some(&output_after_flush),
+                Some(&output_at_write_start),
             );
         }
         Err(OutputSettlementFailure::TerminalClosed) => {
@@ -1218,7 +1218,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
                     GeneratedInputDeliveryFailure::TerminalClosed,
                 ),
                 diagnostics,
-                Some(&output_after_flush),
+                Some(&output_at_write_start),
             );
         }
         Err(
@@ -1229,7 +1229,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
                     GeneratedInputDeliveryFailure::TerminalUnavailable,
                 ),
                 diagnostics,
-                Some(&output_after_flush),
+                Some(&output_at_write_start),
             );
         }
     }
@@ -1239,7 +1239,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
                 GeneratedInputDeliveryFailure::ComposerUnavailable,
             ),
             diagnostics,
-            Some(&output_after_flush),
+            Some(&output_at_write_start),
         );
     }
     let retry_readiness_baseline = terminal
@@ -1265,7 +1265,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
             (GeneratedInputTransportOutcome::Failed(failure), None)
         }
     };
-    let mut result = transport_result(outcome, diagnostics, Some(&output_after_flush));
+    let mut result = transport_result(outcome, diagnostics, Some(&output_at_write_start));
     result.retry_readiness_baseline = retry_readiness_baseline;
     result.retry_output_baseline = retry_output_baseline;
     result
@@ -1417,7 +1417,7 @@ fn write_submit_attempt(
         Ok(receipt) => {
             submit_receipted_signal.store(true, Ordering::Release);
             diagnostics.submit_receipted = true;
-            Ok(receipt.output_after_write)
+            Ok(receipt.output_before_write)
         }
         Err(
             InputWriteFailure::Write { .. }
@@ -1434,10 +1434,10 @@ fn write_submit_attempt(
 fn transport_result(
     outcome: GeneratedInputTransportOutcome,
     mut diagnostics: GeneratedInputTransportDiagnostics,
-    output_after_flush: Option<&termloop_terminal::OutputActivitySnapshot>,
+    output_at_write_start: Option<&termloop_terminal::OutputActivitySnapshot>,
 ) -> GeneratedInputTransportResult {
-    if let Some(output_after_flush) = output_after_flush
-        && let Ok(activity) = output_after_flush.diagnostics_since()
+    if let Some(output_at_write_start) = output_at_write_start
+        && let Ok(activity) = output_at_write_start.diagnostics_since()
     {
         diagnostics.output_activity = activity;
     }

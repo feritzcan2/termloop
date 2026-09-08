@@ -973,7 +973,9 @@ async function watchReply(request, response) {
     const body = JSON.parse(await readBody(request, 64 * 1024));
     if (!validWatchReply(body)) return json(response, 400, { error: "invalid reply" });
     const runtime = await currentRuntime();
-    const delivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, body);
+    const delivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, body, {
+      inputAckSupported: runtime.terminalInputAckVersion === 1,
+    });
     return json(response, delivered ? 200 : 503, { delivered });
   } catch {
     return json(response, 503, { delivered: false });
@@ -997,7 +999,7 @@ async function watchVoiceReply(request, response) {
       sessionId,
       runtimeEpoch,
       text: transcription.text,
-    });
+    }, { inputAckSupported: runtime.terminalInputAckVersion === 1 });
     // The transcript rides along so the watch can show what was (or was not)
     // delivered without a second transcription pass.
     return json(response, delivered ? 200 : 503, { delivered, transcript: transcription.text });

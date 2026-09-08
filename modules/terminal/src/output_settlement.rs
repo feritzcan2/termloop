@@ -437,38 +437,19 @@ impl OutputActivityTracker {
         })
     }
 
-    /// Holds the output generation lock across one PTY input write and captures
-    /// its exact post-flush baseline before the reader can record output caused
-    /// by that write. The snapshot is byte-free; callers still own all
-    /// readiness and delivery policy.
-    pub(crate) fn capture_after_input_write<T>(
+    /// Captures the output baseline immediately before the writer starts.
+    /// Reading must remain possible throughout a blocking PTY write: an
+    /// echoing child can fill its output buffer before consuming all input.
+    /// Returning the baseline only after the write finishes keeps renders that
+    /// raced the flush observable without mistaking the snapshot for delivery.
+    pub(crate) fn capture_input_write<T>(
         &self,
         session_id: String,
         runtime_epoch: u64,
         write: impl FnOnce() -> T,
     ) -> Result<(T, OutputActivitySnapshot), OutputSettlementFailure> {
-        let state = self
-            .inner
-            .0
-            .lock()
-            .map_err(|_| OutputSettlementFailure::TrackerUnavailable)?;
+        let snapshot = self.snapshot(session_id, runtime_epoch)?;
         let result = write();
-        let snapshot = OutputActivitySnapshot {
-            session_id,
-            runtime_epoch,
-            sequence: state.sequence,
-            synchronized_frame_sequence: state.synchronized_frame_sequence,
-            synchronized_frame_count: state.synchronized_frame_count,
-            composer_render_sequence: state.composer_render_sequence,
-            composer_render_count: state.composer_render_count,
-            completed_composer_frame_sequence: state.completed_composer_frame_sequence,
-            completed_composer_frame_count: state.completed_composer_frame_count,
-            completed_composer_frame_cursor_position: state
-                .completed_composer_frame_cursor_position,
-            composer_surface_render_sequence: state.composer_surface_render_sequence,
-            composer_surface_render_count: state.composer_surface_render_count,
-            tracker: self.clone(),
-        };
         Ok((result, snapshot))
     }
 }
@@ -1249,26 +1230,23 @@ mod tests {
     }
 
     #[test]
-    fn input_write_barrier_places_concurrent_render_after_the_receipt_snapshot() {
+    fn input_write_keeps_concurrent_output_readable_and_newer_than_its_baseline() {
         let tracker = OutputActivityTracker::default();
         tracker.record(b"startup\x1b[?25h");
         let concurrent = tracker.clone();
         let (recorded, observed) = std::sync::mpsc::sync_channel(1);
 
         let (_, snapshot) = tracker
-            .capture_after_input_write("session".into(), 7, || {
+            .capture_input_write("session".into(), 7, || {
                 std::thread::spawn(move || {
                     concurrent.record(b"paste-render\x1b[?25h");
                     let _ = recorded.send(());
                 });
-                assert!(matches!(
-                    observed.recv_timeout(Duration::from_millis(20)),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-                ));
+                observed.recv_timeout(Duration::from_secs(1)).unwrap();
             })
             .unwrap();
 
-        observed.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(snapshot.diagnostics_since().unwrap().output_chunks, 1);
         assert_eq!(
             snapshot
                 .wait_for_composer_render_settlement(
