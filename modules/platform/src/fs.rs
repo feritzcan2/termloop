@@ -103,6 +103,51 @@ fn compiled_development_profile() -> Option<&'static str> {
     None
 }
 
+/// Ensures a single private directory beneath an already prepared parent.
+/// Existing symlinks and non-directories are rejected rather than followed.
+pub fn ensure_private_directory(path: &Path) -> Result<(), PlatformError> {
+    #[cfg(unix)]
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(windows)]
+    let builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    match builder.create(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "private directory must not be a link",
+        )
+        .into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "private directory must not be a reparse point",
+            )
+            .into());
+        }
+        harden_private_directory(path)?;
+    }
+    Ok(())
+}
+
 pub fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
     let parent = path
         .parent()

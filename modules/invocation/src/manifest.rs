@@ -16,6 +16,10 @@ pub struct InspectableLaunchManifest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InspectableLaunchTarget {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_name: Option<String>,
     pub agent_id: String,
     pub executable: String,
     pub model: String,

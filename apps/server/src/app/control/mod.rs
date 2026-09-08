@@ -918,6 +918,10 @@ mod tests {
         assert!(!scope_allows_method(ClientScope::Hook, "skill.catalogGet"));
         assert!(!cancellation_safe_method("skill.catalogGet"));
         for method in [
+            "agent.accountList",
+            "agent.accountCreate",
+            "agent.accountRename",
+            "agent.accountSetDefault",
             "agent.authStatusList",
             "agent.install",
             "agent.authStart",

@@ -1,3 +1,4 @@
+import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
 import type { AgentStatus, Project, Session, Task } from "../model.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import type { PromptAsset } from "../prompt-settings.js";
@@ -332,7 +333,11 @@ export type DesktopApi = {
   sessionDeleteArchived(sessionId: string): Promise<{ sessionId: string; closed: boolean }>;
   sessionRestoreDeleted(sessionId: string): Promise<Session>;
   agentStatusList(): Promise<AgentStatus[]>;
-  agentAuthStatusList(): Promise<AgentAuthStatusDto[]>;
+  agentAccountList(): Promise<AgentAccountListResult>;
+  agentAccountCreate(params: AgentAccountCreateParams): Promise<AgentAccountListResult>;
+  agentAccountRename(params: AgentAccountRenameParams): Promise<AgentAccountListResult>;
+  agentAccountSetDefault(params: AgentAccountSetDefaultParams): Promise<AgentAccountListResult>;
+  agentAuthStatusList(params?: AgentAuthStatusListParams): Promise<AgentAuthStatusDto[]>;
   agentInstall(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
   agentAuthStart(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
   agentAuthLogout(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
@@ -408,8 +413,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;

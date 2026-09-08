@@ -15,10 +15,10 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         .and_then(serde_json::Value::as_u64)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| StoreError::Io("state schema version is missing or invalid".into()))?;
-    if schema_version < CURRENT_SCHEMA_VERSION {
+    if schema_version < 57 {
         retire_persistent_worker_state(&mut value)?;
     }
-    if schema_version < CURRENT_SCHEMA_VERSION {
+    if schema_version < 57 {
         merge_legacy_playbook_conditions(&mut value)?;
         remove_retired_mcp_tool_description_overrides(&mut value)?;
     }
@@ -553,6 +553,14 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v50_to_v51_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
+        57 => {
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            state.schema_version = CURRENT_SCHEMA_VERSION;
             sanitize_resume_metadata(&mut state);
             validate_current_state(&state)?;
             Ok((state, true))

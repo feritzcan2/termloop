@@ -1,3 +1,4 @@
+import type { AgentAccountDto } from "@termloop/contract/current";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
@@ -51,7 +52,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, pasteImage, restoreImage, discardImage, preview, launch, close }: {
+export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   capabilities: readonly AgentCapabilityDto[];
@@ -60,11 +61,12 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   initialTemplateRef?: string | undefined;
   manageAgents?: (() => void) | undefined;
   initialAgent?: AgentId;
+  loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardImage(attachmentId: string): Promise<void>;
-  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
+  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
+  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<string | undefined>;
   close(): void;
 }) {
   const [templateRef, setTemplateRef] = useState<QuickActionParams["templateRef"]>(initialTemplateRef ?? FREE_PROMPT_TEMPLATE_REF);
@@ -93,6 +95,19 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     ?? (projects.some((project) => project.id === memory.projectId) ? memory.projectId : undefined)
     ?? projects[0]?.id ?? "");
   const [agentId, setAgentId] = useState<AgentId>(initialAgentId);
+  const [accountChoices, setAccountChoices] = useState<{ projectId: string; accounts: AgentAccountDto[] }>();
+  const [selectedAccount, setSelectedAccount] = useState<{ projectId: string; agentId: string; accountId: string }>();
+  const [accountError, setAccountError] = useState<string>();
+  const accounts = accountChoices?.projectId === projectId ? accountChoices.accounts.filter((account) => account.agentId === agentId) : [];
+  const accountId = (selectedAccount?.projectId === projectId && selectedAccount.agentId === agentId ? accounts.find((account) => account.accountId === selectedAccount.accountId)?.accountId : undefined) ?? accounts.find((account) => account.isDefault)?.accountId;
+  const accountsReady = !loadAccounts || (accountChoices?.projectId === projectId && (!['codex', 'claude'].includes(agentId) || Boolean(accountId)));
+  useEffect(() => {
+    if (!loadAccounts || !projectId) return;
+    let live = true;
+    setAccountError(undefined);
+    void loadAccounts(projectId).then((accounts) => { if (live) setAccountChoices({ projectId, accounts }); }).catch((cause) => { if (live) setAccountError(cause instanceof Error ? cause.message : "Could not load server accounts"); });
+    return () => { live = false; };
+  }, [loadAccounts, projectId]);
   const [model, setModel] = useState(() => initialPreset?.model && initialCapability?.models.includes(initialPreset.model)
     ? initialPreset.model : "default");
   const [permission, setPermission] = useState<Permission>(initialPreset?.permission
@@ -160,10 +175,10 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     setPreviewResult(undefined);
   }, [agentId, capabilityByAgent, memory.presets, selectedProfile]);
   useEffect(() => {
-    if (!projectId || !prompt || !attachmentReady || profileUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
+    if (!projectId || !prompt || !attachmentReady || !accountsReady || profileUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
     let live = true;
     const timer = window.setTimeout(() => {
-      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds)
+      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)
         .then((value) => {
           const result = requireQuickActionPreview(value);
           if (live) { setPreviewResult(result); setError(undefined); }
@@ -171,16 +186,16 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
         .catch((cause) => { if (live) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, templateRef]);
+  }, [accountId, accountsReady, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, templateRef]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable) return;
+    if (!projectId || !prompt || !attachmentReady || !accountsReady || running || profileUnavailable) return;
     setRunning(true);
     try {
-      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds));
+      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId));
       setPreviewResult(inspected);
-      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket);
+      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId);
       if (message) setError(message); else {
         rememberQuickActionRun(projectId, agentId, { model, permission, reasoning });
         close();
@@ -287,6 +302,13 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
           <label><span>REASON</span><em aria-hidden="true">{reasoning}</em><select aria-label="Reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value as Reasoning)}>{reasoningOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           {memory.presets[agentId] && !selectedProfile ? <small>restored from last run</small> : null}
         </div>
+        {loadAccounts && ['codex', 'claude'].includes(agentId) ? <div className="quick-action-account">
+          <label htmlFor="quick-action-account">Account</label>
+          <select id="quick-action-account" value={accountId ?? ""} disabled={!accountsReady || running} onChange={(event) => setSelectedAccount({ projectId, agentId, accountId: event.target.value })}>
+            {!accountsReady ? <option value="">Loading server accounts…</option> : accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}{account.isDefault ? " · Server default" : ""}</option>)}
+          </select><small>Manage accounts in Settings → Servers</small>
+          {accountError ? <p role="alert">{accountError}</p> : null}
+        </div> : null}
         <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachment ? 1 : 0}</strong><small>· project</small><i /> <em>{attachment ? "1 image attachment ·" : "No project rules ·"}</em><b>Advanced</b></button>
         {advancedOpen || error || profileUnavailable ? <section className="quick-action-preview">
           {profileUnavailable ? <p role="alert">This agent is unavailable on the current connection. Choose another agent or Free prompt.</p> : error ? <p role="alert">{error}</p> : <>
@@ -314,7 +336,7 @@ function LaunchPreview({ result }: { result: QuickActionPreviewResult }) {
   const manifest = result.manifest;
   return <div className="launch-inspector-grid">
     <InspectorBlock title="Launch settings"><dl>
-      <dt>Agent</dt><dd>{manifest.target.agent_id}</dd><dt>Model</dt><dd>{manifest.target.model}</dd>
+      <dt>Agent</dt><dd>{manifest.target.agent_id}</dd>{manifest.target.account_name ? <><dt>Account</dt><dd>{manifest.target.account_name}</dd></> : null}<dt>Model</dt><dd>{manifest.target.model}</dd>
       <dt>Permission</dt><dd>{manifest.target.permission}</dd><dt>Reasoning</dt><dd>{manifest.target.reasoning}</dd>
       <dt>Directory</dt><dd>{manifest.target.cwd}</dd><dt>Conversation</dt><dd>{manifest.target.conversation}</dd>
     </dl></InspectorBlock>

@@ -280,7 +280,9 @@ impl Store {
         {
             return Err(StoreError::ConstraintViolation);
         }
-        if !launch_selection.is_well_formed() {
+        if !launch_selection.is_well_formed()
+            || launch_selection.account_id != session.launch_selection.account_id
+        {
             return Err(StoreError::ConstraintViolation);
         }
         if session.launch_selection == *launch_selection {

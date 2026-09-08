@@ -37,6 +37,7 @@ pub struct PersistentAssistantTarget {
 
 pub struct PersistentAssistantLaunchPlan {
     target: PersistentAssistantTarget,
+    account: Option<termloop_agents::AgentAccountContext>,
     session_id: String,
     resume_ref: Option<ResumeRef>,
     observation_token: Option<String>,
@@ -67,6 +68,11 @@ impl PersistentAssistantLaunchPlan {
     }
 
     pub fn prepare_runtime(&mut self) -> Result<(), CoreError> {
+        if let Some(account) = &self.account {
+            account.prepare().map_err(|_| {
+                CoreError::InvalidParams("Selected account directory is unavailable".into())
+            })?;
+        }
         if self.target.agent_id != "codex"
             || !self
                 .observation_transport
@@ -89,6 +95,7 @@ impl PersistentAssistantLaunchPlan {
             self.runtime_epoch,
             &self.target.cwd,
             false,
+            self.account.as_ref(),
             &self.observation_transport.provider_process_directory,
             Some(termloop_invocation::AgentMcpLaunch {
                 endpoint: &self.observation_transport.mcp_endpoint,
@@ -394,6 +401,8 @@ impl CoreRuntime {
             observation_token.as_deref(),
             codex_observation,
         );
+        let account = self.resolve_agent_account(&target.agent_id, None)?;
+        let conversation = conversation.in_account(account.as_ref());
         let launch = termloop_invocation::persistent_assistant_agent(
             termloop_invocation::PersistentAssistantLaunch {
                 agent_id: &target.agent_id,
@@ -415,6 +424,7 @@ impl CoreRuntime {
         )
         .map_err(|error| CoreError::Terminal(error.to_string()))?;
         Ok(PersistentAssistantLaunchPlan {
+            account,
             target,
             session_id,
             resume_ref,
@@ -530,6 +540,7 @@ impl CoreRuntime {
         updated_at_epoch_ms: u64,
     ) -> Result<AdmittedPersistentAssistantLaunch, CoreError> {
         let PersistentAssistantLaunchPlan {
+            account,
             target,
             session_id,
             resume_ref,
@@ -552,12 +563,14 @@ impl CoreRuntime {
         let pending_generated_input = initial_input_submission;
         let template = launch.provenance().clone();
         let session_name = "Project Steward".to_owned();
+        let mut selection = termloop_domain::AgentLaunchSelection::new(
+            &target.model,
+            &target.permission,
+            &target.reasoning,
+        );
+        selection.account_id = account.as_ref().map(|account| account.account_id.clone());
         let session = SessionRecord {
-            launch_selection: termloop_domain::AgentLaunchSelection::new(
-                &target.model,
-                &target.permission,
-                &target.reasoning,
-            ),
+            launch_selection: selection,
             id: session_id.clone(),
             project_id: project_id(&target.identity).to_owned(),
             name: Some(session_name),

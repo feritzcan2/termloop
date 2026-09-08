@@ -40,6 +40,7 @@ pub struct AgentHistoryPreviewMessage {
 pub struct DiscoveredAgentConversation {
     pub resume_ref: ResumeRef,
     pub agent_id: String,
+    pub account_id: String,
     pub title: String,
     pub cwd: String,
     pub branch: Option<String>,
@@ -105,51 +106,95 @@ pub fn scan_local_agent_history_cancellable_with_limit(
     cancellation: &AtomicBool,
     max_candidates_per_provider: usize,
 ) -> AgentHistoryScan {
-    let Some(home) = user_home_directory() else {
-        return AgentHistoryScan {
-            conversations: Vec::new(),
-            issues: vec![AgentHistoryScanIssue::HomeUnavailable],
-            candidate_limit_reached: false,
-        };
-    };
-    let max_candidates_per_provider =
-        max_candidates_per_provider.clamp(1, MAX_CANDIDATES_PER_PROVIDER);
+    let accounts = ["claude", "codex"].map(|agent_id| crate::AgentAccountContext {
+        agent_id: agent_id.into(),
+        account_id: "default".into(),
+        name: "Default account".into(),
+        config_directory: None,
+    });
+    scan_account_agent_history_cancellable_with_limit(
+        &accounts,
+        cancellation,
+        max_candidates_per_provider,
+    )
+}
+
+/// Scans bounded provider-owned stores and retains the exact account identity.
+pub fn scan_account_agent_history_cancellable_with_limit(
+    accounts: &[crate::AgentAccountContext],
+    cancellation: &AtomicBool,
+    max_candidates_per_provider: usize,
+) -> AgentHistoryScan {
     let mut scan = AgentHistoryScan::default();
-    scan_provider(
-        &home.join(".claude").join("projects"),
-        ResumeProvider::Claude,
-        3,
-        max_candidates_per_provider,
-        cancellation,
-        &mut scan,
-    );
-    scan_provider(
-        &home.join(".codex").join("sessions"),
-        ResumeProvider::Codex,
-        5,
-        max_candidates_per_provider,
-        cancellation,
-        &mut scan,
-    );
-    let mut deduplicated = HashMap::<(String, String), DiscoveredAgentConversation>::new();
+    for (position, account) in accounts.iter().enumerate() {
+        if cancellation.load(Ordering::Acquire) {
+            break;
+        }
+        let provider = match account.agent_id.as_str() {
+            "claude" => ResumeProvider::Claude,
+            "codex" => ResumeProvider::Codex,
+            _ => continue,
+        };
+        let root = account.config_directory.clone().or_else(|| {
+            user_home_directory().map(|home| home.join(format!(".{}", account.agent_id)))
+        });
+        let Some(root) = root else {
+            scan.issues.push(AgentHistoryScanIssue::HomeUnavailable);
+            continue;
+        };
+        let count = accounts
+            .iter()
+            .filter(|other| other.agent_id == account.agent_id)
+            .count();
+        let limit = max_candidates_per_provider.clamp(1, MAX_CANDIDATES_PER_PROVIDER);
+        let index = accounts[..position]
+            .iter()
+            .filter(|other| other.agent_id == account.agent_id)
+            .count();
+        let budget = limit / count + usize::from(index < limit % count);
+        if budget == 0 {
+            scan.candidate_limit_reached = true;
+            continue;
+        }
+        let start = scan.conversations.len();
+        let (subdir, depth) = if provider == ResumeProvider::Claude {
+            ("projects", 3)
+        } else {
+            ("sessions", 5)
+        };
+        scan_provider(
+            &root.join(subdir),
+            provider,
+            depth,
+            budget,
+            cancellation,
+            &mut scan,
+        );
+        for conversation in &mut scan.conversations[start..] {
+            conversation.account_id = account.account_id.clone();
+        }
+    }
+    let mut unique = HashMap::<(String, String, String), DiscoveredAgentConversation>::new();
     for conversation in scan.conversations.drain(..) {
         let key = (
             conversation.agent_id.clone(),
+            conversation.account_id.clone(),
             conversation.resume_ref.native_session_id.clone(),
         );
-        let replace = deduplicated
+        if unique
             .get(&key)
-            .is_none_or(|current| conversation.updated_at_epoch_ms > current.updated_at_epoch_ms);
-        if replace {
-            deduplicated.insert(key, conversation);
+            .is_none_or(|current| conversation.updated_at_epoch_ms > current.updated_at_epoch_ms)
+        {
+            unique.insert(key, conversation);
         }
     }
-    scan.conversations = deduplicated.into_values().collect();
+    scan.conversations = unique.into_values().collect();
     scan.conversations.sort_by(|left, right| {
         right
             .updated_at_epoch_ms
             .cmp(&left.updated_at_epoch_ms)
             .then_with(|| left.agent_id.cmp(&right.agent_id))
+            .then_with(|| left.account_id.cmp(&right.account_id))
     });
     scan
 }
@@ -389,6 +434,7 @@ fn finish(
     Some(DiscoveredAgentConversation {
         resume_ref,
         agent_id: agent_id.to_owned(),
+        account_id: "default".into(),
         title,
         cwd,
         branch: accumulator.branch,
@@ -552,6 +598,55 @@ fn title_case(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn separate_accounts_keep_identical_native_history_ids_separate_and_bounded() {
+        let root =
+            std::env::temp_dir().join(format!("termloop-account-history-{}", uuid::Uuid::new_v4()));
+        let accounts = ["work", "personal"].map(|name| crate::AgentAccountContext {
+            agent_id: "claude".into(),
+            account_id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            config_directory: Some(root.join(name)),
+        });
+        let body = serde_json::json!({"type":"user","sessionId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","cwd":std::env::temp_dir(),"message":{"content":"Keep the correct account"}}).to_string();
+        for account in &accounts {
+            let directory = account.config_directory.as_ref().unwrap().join("projects");
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("conversation.jsonl"), &body).unwrap();
+        }
+        let scan = scan_account_agent_history_cancellable_with_limit(
+            &accounts,
+            &AtomicBool::new(false),
+            20,
+        );
+        assert_eq!(scan.conversations.len(), 2);
+        assert_eq!(
+            scan.conversations[0].resume_ref,
+            scan.conversations[1].resume_ref
+        );
+        assert_ne!(
+            scan.conversations[0].account_id,
+            scan.conversations[1].account_id
+        );
+        let bounded = scan_account_agent_history_cancellable_with_limit(
+            &accounts,
+            &AtomicBool::new(false),
+            1,
+        );
+        assert_eq!(bounded.conversations.len(), 1);
+        assert!(bounded.candidate_limit_reached);
+        assert!(
+            scan_account_agent_history_cancellable_with_limit(
+                &accounts,
+                &AtomicBool::new(true),
+                20
+            )
+            .conversations
+            .is_empty()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn source(
         provider: &str,

@@ -1,3 +1,4 @@
+import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { TerminalStatus } from "./TerminalStatus.js";
 import type { TerminalPresentationPort } from "../terminal-presentation.js";
@@ -283,8 +284,9 @@ export type ShellProps = {
   pasteQuickActionImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
-  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
-  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
+  loadAgentAccounts?(projectId: string): Promise<AgentAccountDto[]>;
+  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
+  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
@@ -1978,6 +1980,7 @@ export function Shell(props: ShellProps) {
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}
         discardImage={props.discardQuickActionImage}
+        loadAccounts={props.loadAgentAccounts}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
         close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}

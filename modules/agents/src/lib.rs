@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod account_context;
+pub use account_context::AgentAccountContext;
+
 mod catalog;
 mod claude_transcript;
 mod codex_history;
@@ -36,7 +39,8 @@ pub use provider_observation::{
 };
 pub use session_history::{
     AgentHistoryPreviewMessage, AgentHistoryPreviewRole, AgentHistoryScan, AgentHistoryScanIssue,
-    DiscoveredAgentConversation, scan_local_agent_history, scan_local_agent_history_cancellable,
+    DiscoveredAgentConversation, scan_account_agent_history_cancellable_with_limit,
+    scan_local_agent_history, scan_local_agent_history_cancellable,
     scan_local_agent_history_cancellable_with_limit,
 };
 use std::collections::VecDeque;

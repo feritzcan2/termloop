@@ -1,3 +1,4 @@
+mod agent_accounts;
 use super::resume::AgentResumePreparationKind;
 use super::*;
 use termloop_domain::{IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ResumeFailureReason};
@@ -3187,7 +3188,10 @@ fn quick_action_preview_is_project_scoped_and_matches_versioned_delivery() {
     );
     assert_eq!(
         effective_launch_selection(&plan),
-        termloop_domain::AgentLaunchSelection::new("gpt-5.6-sol", "plan", "high")
+        termloop_domain::AgentLaunchSelection {
+            account_id: Some("default".into()),
+            ..termloop_domain::AgentLaunchSelection::new("gpt-5.6-sol", "plan", "high")
+        }
     );
     assert!(runtime.take_quick_action_launch(launch_params).is_err());
     let mut bounded_tickets = Vec::new();
@@ -3399,7 +3403,10 @@ fn agent_profile_preview_is_catalog_backed_read_only_and_ticket_bound() {
     let write_plan = runtime.plan_quick_action_launch(write_permission).unwrap();
     assert_eq!(
         effective_launch_selection(&write_plan),
-        termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "high")
+        termloop_domain::AgentLaunchSelection {
+            account_id: Some("default".into()),
+            ..termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "high")
+        }
     );
     let mut unknown_profile = json!({
         "projectId": project["id"], "cwd": root, "agentId": "codex", "model": "default",
@@ -3670,7 +3677,10 @@ fn an_unconfigured_claude_agent_records_the_auto_permission_it_launches_with() {
     // Session back to Claude's ask-every-time mode.
     assert_eq!(
         effective_launch_selection(&plan),
-        termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "default")
+        termloop_domain::AgentLaunchSelection {
+            account_id: Some("default".into()),
+            ..termloop_domain::AgentLaunchSelection::new("default", "acceptEdits", "default")
+        }
     );
     let args = plan.prepared_launch.as_ref().unwrap().args().join(" ");
     assert!(args.contains("--permission-mode auto"));
@@ -3759,7 +3769,10 @@ fn project_agent_preview_resolves_saved_quick_action_options_without_a_message()
     let plan = runtime.take_agent_launch(launch_params).unwrap();
     assert_eq!(
         effective_launch_selection(&plan),
-        termloop_domain::AgentLaunchSelection::new("gpt-5.6-sol", "plan", "high")
+        termloop_domain::AgentLaunchSelection {
+            account_id: Some("default".into()),
+            ..termloop_domain::AgentLaunchSelection::new("gpt-5.6-sol", "plan", "high")
+        }
     );
     let _ = std::fs::remove_dir_all(root);
 }
@@ -3929,7 +3942,10 @@ fn agent_fork_plan_derives_private_source_context_without_persisting_a_parent() 
     assert_eq!(plan.cwd, cwd);
     assert_eq!(
         effective_launch_selection(&plan),
-        runtime.store.sessions()[0].launch_selection
+        termloop_domain::AgentLaunchSelection {
+            account_id: Some("default".into()),
+            ..runtime.store.sessions()[0].launch_selection.clone()
+        }
     );
     assert_eq!(plan.agent_id, "claude");
     assert_eq!(plan.fork_source_session_id.as_deref(), Some("source-agent"));
@@ -5159,6 +5175,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
     let cwd_identity =
         termloop_platform::existing_directory_comparison_input(std::path::Path::new(&cwd)).unwrap();
     let plan = crate::AgentResumePlan {
+        account: None,
         session_id: "agent-revalidate".into(),
         project_id: "project-a".into(),
         cwd: cwd.clone(),
