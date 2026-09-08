@@ -206,6 +206,9 @@ pub struct CoreRuntime {
     /// shells that keep the exact logical Session open until Retry or an
     /// explicit close retires them.
     pub(crate) agent_terminal_holds: HashSet<String>,
+    /// At most one uncommitted terminal exit per current Session. Failed
+    /// persistence is retried without consuming its runtime retirement intent.
+    pub(crate) pending_session_exits: HashMap<String, termloop_terminal::ReapedTerminal>,
     pub(crate) pending_agent_resume_refs: HashMap<String, termloop_domain::ResumeRef>,
     pub(crate) quick_action_previews: VecDeque<(String, session_launch::QuickActionPreviewTicket)>,
     pub(crate) agent_launch_previews: VecDeque<(String, session_launch::AgentLaunchPreviewTicket)>,
@@ -689,6 +692,7 @@ impl CoreRuntime {
             pending_agent_forks: HashSet::new(),
             fork_source_session_ids: HashMap::new(),
             agent_terminal_holds: HashSet::new(),
+            pending_session_exits: HashMap::new(),
             pending_agent_resume_refs: HashMap::new(),
             quick_action_previews: VecDeque::new(),
             agent_launch_previews: VecDeque::new(),

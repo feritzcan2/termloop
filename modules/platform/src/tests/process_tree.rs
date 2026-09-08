@@ -59,6 +59,7 @@ fn unix_signals_report_delivered_including_for_an_already_dead_group() {
 #[cfg(windows)]
 mod windows {
     use super::*;
+    use crate::managed_process::process_tree_is_running;
     use std::process::Stdio;
 
     fn wait_until_exit(child: &mut std::process::Child, timeout: Duration) -> bool {
@@ -139,5 +140,57 @@ mod windows {
             wait_until_exit(&mut child, Duration::from_secs(5)),
             "KILL_ON_JOB_CLOSE did not terminate the contained child"
         );
+    }
+
+    #[test]
+    fn job_leader_fixture() {
+        let Some(directory) = std::env::var_os("TERMLOOP_TEST_JOB_LEADER_DIRECTORY") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !directory.join("go").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "parent did not contain the job leader"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // The parent attached the job before allowing this descendant spawn.
+        let child = long_lived_child();
+        std::fs::write(directory.join("child.pid"), child.id().to_string()).unwrap();
+    }
+
+    #[test]
+    fn exited_job_leader_does_not_hide_its_live_descendant() {
+        let directory =
+            std::env::temp_dir().join(format!("termloop-job-exit-{}", generate_opaque_id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut leader = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::process_tree::windows::job_leader_fixture",
+                "--nocapture",
+            ])
+            .env("TERMLOOP_TEST_JOB_LEADER_DIRECTORY", &directory)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let guard = attach_process_tree_guard(leader.id()).unwrap();
+        std::fs::write(directory.join("go"), "go").unwrap();
+        assert!(wait_until_exit(&mut leader, Duration::from_secs(5)));
+        assert!(directory.join("child.pid").exists());
+        let descendant_running = process_tree_is_running(leader.id()).unwrap();
+        signal_process_tree(leader.id(), ProcessTreeSignal::Kill).unwrap();
+        let tree_exited = wait_for_process_tree_exit(leader.id(), Duration::from_secs(5)).unwrap();
+        drop(guard);
+        std::fs::remove_dir_all(directory).unwrap();
+        assert!(
+            descendant_running,
+            "job membership must outlive the leader's process identity"
+        );
+        assert!(tree_exited);
     }
 }

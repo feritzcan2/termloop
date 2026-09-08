@@ -8,6 +8,7 @@ pub struct ReconciledSessionExits {
     pub exited_session_ids: Vec<String>,
     pub retired_runtimes: Vec<CodexRuntime>,
     pub changed_cwds: Vec<String>,
+    pub errors: Vec<CoreError>,
 }
 
 impl CoreRuntime {
@@ -344,74 +345,136 @@ impl CoreRuntime {
         ))
     }
 
-    pub fn reconcile_exited_sessions(&mut self) -> Result<ReconciledSessionExits, CoreError> {
+    /// Applies exits whose process trees were reaped outside the Core lock.
+    /// A storage failure retains the exact Session/epoch for a later pass and
+    /// cannot discard successful peers' invalidations or runtime retirements.
+    pub fn reconcile_exited_sessions(
+        &mut self,
+        reaped: Vec<termloop_terminal::ReapedTerminal>,
+    ) -> ReconciledSessionExits {
         let previous_revision = self.store.revision();
-        let mut runtimes = Vec::new();
-        let mut exited_session_ids = Vec::new();
-        let mut changed_cwds = Vec::new();
-        for exited_terminal in self.terminal.reap_exited().map_err(terminal_error)? {
-            let session_id = exited_terminal.session_id;
-            if self.resume_failure_reaps.contains(&session_id) {
-                // The server is deliberately reaping this uncommitted resume
-                // outside the Core lock. Its exact failure finalizer still owns
-                // the reservation and durable lifecycle transition.
-                continue;
+        for event in reaped {
+            if self.terminal_exit_is_current(&event) {
+                self.pending_session_exits
+                    .insert(event.session_id.clone(), event);
             }
-            self.record_run_exit(&session_id, exited_terminal.exit_code);
-            if self.agent_terminal_holds.remove(&session_id) {
-                // A continuation shell should be as durable as the opened
-                // terminal surface. If the shell itself exits, replace it;
-                // only an explicit terminate/close removes the hold first.
-                self.spawn_agent_terminal_hold(&session_id)?;
-                continue;
+        }
+        let mut result = ReconciledSessionExits {
+            state_revision: None,
+            exited_session_ids: Vec::new(),
+            retired_runtimes: Vec::new(),
+            changed_cwds: Vec::new(),
+            errors: Vec::new(),
+        };
+        let mut pending = self
+            .pending_session_exits
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        pending.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        for event in pending {
+            match self.apply_terminal_exit(&event, &mut result) {
+                Ok(()) => {
+                    self.pending_session_exits.remove(&event.session_id);
+                }
+                Err(error) => result.errors.push(error),
             }
-            exited_session_ids.push(session_id.clone());
-            if let Some(cwd) = self.session_cwd(&session_id) {
-                changed_cwds.push(cwd);
-            }
-            let was_resuming = self.resume_reservations.remove(&session_id);
-            let already_resume_failed = self.store.sessions().iter().any(|session| {
-                session.id == session_id && session.lifecycle_state == "resumeFailed"
-            });
-            if was_resuming {
-                self.resume_ready.remove(&session_id);
-                self.store
-                    .mark_session_resume_failed(
-                        &self.write_authority,
-                        &session_id,
-                        ResumeFailureReason::ResumeRejected,
-                    )
-                    .map_err(store_error)?;
-            } else if !already_resume_failed {
-                // A failed resume can reap its PTY before a queued lifecycle
-                // notification is reconciled. Keep the actionable failure and
-                // its reason instead of letting that late exit flatten the
-                // Session to a generic `exited` state.
-                self.store
-                    .mark_session_exited(&self.write_authority, &session_id)
-                    .map_err(store_error)?;
-            }
-            self.agent_observations.remove(&session_id);
-            self.pending_agent_resume_refs.remove(&session_id);
-            // A provider process can exit and later resume as the same logical
-            // Session. Revoke its live bearer without destroying Ask-To state;
-            // explicit descriptor close remains the permanent retirement gate.
-            self.suspend_ask_to_session_for_resume(&session_id);
-            if !was_resuming {
-                self.agent_conversation_activity.remove(&session_id);
-            }
-            if let Some(runtime) = self.codex_runtimes.remove(&session_id) {
-                runtimes.push(runtime);
-            }
-            self.spawn_agent_terminal_hold(&session_id)?;
         }
         let revision = self.store.revision();
-        Ok(ReconciledSessionExits {
-            state_revision: (revision != previous_revision).then_some(revision),
-            exited_session_ids,
-            retired_runtimes: runtimes,
-            changed_cwds,
+        result.state_revision = (revision != previous_revision).then_some(revision);
+        result
+    }
+
+    fn terminal_exit_is_current(&self, event: &termloop_terminal::ReapedTerminal) -> bool {
+        self.store.sessions().iter().any(|session| {
+            if session.id != event.session_id {
+                return false;
+            }
+            // A reserved resume has a provisional PTY epoch until readiness
+            // commits it. Its predecessor must not fail the new attempt, and
+            // the new attempt's own exit must not be discarded as stale.
+            let epoch = if self.resume_reservations.contains(&session.id) {
+                self.agent_observations
+                    .get(&session.id)
+                    .map_or(session.runtime_epoch, |capability| capability.runtime_epoch)
+            } else {
+                session.runtime_epoch
+            };
+            epoch == event.runtime_epoch
         })
+    }
+
+    fn apply_terminal_exit(
+        &mut self,
+        event: &termloop_terminal::ReapedTerminal,
+        result: &mut ReconciledSessionExits,
+    ) -> Result<(), CoreError> {
+        let session_id = &event.session_id;
+        if !self.terminal_exit_is_current(event) {
+            // Deleted or replaced while the exit waited for persistence.
+            return Ok(());
+        }
+        let already_resume_failed =
+            self.store.sessions().iter().any(|session| {
+                session.id == *session_id && session.lifecycle_state == "resumeFailed"
+            });
+        if self.resume_failure_reaps.contains(session_id) {
+            // The server is deliberately reaping this uncommitted resume
+            // outside the Core lock. Its exact failure finalizer still owns
+            // the reservation and durable lifecycle transition.
+            return Ok(());
+        }
+        if self.agent_terminal_holds.remove(session_id) {
+            // A continuation shell should be as durable as the opened
+            // terminal surface. If the shell itself exits, replace it;
+            // only an explicit terminate/close removes the hold first.
+            if let Err(error) = self.spawn_agent_terminal_hold(session_id) {
+                self.agent_terminal_holds.insert(session_id.clone());
+                return Err(error);
+            }
+            return Ok(());
+        }
+        let was_resuming = self.resume_reservations.contains(session_id);
+        if was_resuming {
+            self.store
+                .mark_session_resume_failed(
+                    &self.write_authority,
+                    session_id,
+                    ResumeFailureReason::ResumeRejected,
+                )
+                .map_err(store_error)?;
+        } else if !already_resume_failed {
+            // A failed resume can reap its PTY before a queued lifecycle
+            // notification is reconciled. Keep the actionable failure and
+            // its reason instead of letting that late exit flatten the
+            // Session to a generic `exited` state.
+            self.store
+                .mark_session_exited(&self.write_authority, session_id)
+                .map_err(store_error)?;
+        }
+        // Only consume runtime state after the durable transition commits.
+        self.record_run_exit(session_id, event.exit_code);
+        result.exited_session_ids.push(session_id.clone());
+        if let Some(cwd) = self.session_cwd(session_id) {
+            result.changed_cwds.push(cwd);
+        }
+        self.resume_reservations.remove(session_id);
+        if was_resuming {
+            self.resume_ready.remove(session_id);
+        }
+        self.agent_observations.remove(session_id);
+        self.pending_agent_resume_refs.remove(session_id);
+        // A provider process can exit and later resume as the same logical
+        // Session. Revoke its live bearer without destroying Ask-To state;
+        // explicit descriptor close remains the permanent retirement gate.
+        self.suspend_ask_to_session_for_resume(session_id);
+        if !was_resuming {
+            self.agent_conversation_activity.remove(session_id);
+        }
+        if let Some(runtime) = self.codex_runtimes.remove(session_id) {
+            result.retired_runtimes.push(runtime);
+        }
+        self.spawn_agent_terminal_hold(session_id)
     }
 
     pub(crate) fn spawn_agent_terminal_hold(&mut self, session_id: &str) -> Result<(), CoreError> {

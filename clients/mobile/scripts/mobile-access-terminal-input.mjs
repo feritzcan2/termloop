@@ -1,3 +1,5 @@
+import { enableTerminalInputAckFrame, terminalFrameMetadata } from "./mobile-access-input-receipt.mjs";
+
 /// One-shot terminal input for the watch facade. The watch cannot hold a
 /// WebSocket (TN3135), so the gateway bridges a single HTTPS request into the
 /// binary terminal data plane: authenticate, attach, deliver the input bytes,
@@ -7,6 +9,10 @@ const FRAME_MAGIC = "TL01";
 const HEADER_BYTES = 41;
 export const KIND_INPUT = 1;
 export const KIND_ATTACH = 10;
+const KIND_EOF = 5;
+const KIND_ACK = 11;
+const KIND_ERROR = 12;
+const KIND_INPUT_ACK = 16;
 export const WATCH_REPLY_MAX_CHARS = 4096;
 
 export function encodeTerminalFrame(sessionId, epoch, sequence, kind, payload = new Uint8Array()) {
@@ -53,50 +59,71 @@ export function replyInputBytes(text) {
 export function validWatchReply(value) {
   return typeof value === "object" && value !== null
     && typeof value.sessionId === "string"
-    && /^[0-9a-fA-F-]{36}$/.test(value.sessionId)
-    && Number.isInteger(value.runtimeEpoch) && value.runtimeEpoch >= 0
+    && /^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/.test(value.sessionId)
+    && Number.isSafeInteger(value.runtimeEpoch) && value.runtimeEpoch >= 0
     && typeof value.text === "string"
     && value.text.trim().length > 0
     && value.text.length <= WATCH_REPLY_MAX_CHARS;
 }
 
-/// Connects, authenticates, attaches, sends the input, and resolves once the
-/// bytes are flushed. Resolves false on refusal or timeout — never throws.
-export function sendTerminalInput(WebSocketCtor, terminalUrl, terminalToken, reply, timeoutMs = 8_000) {
+/// Requires daemon-authored PTY receipts for both writes. Socket flush alone
+/// never confirms input, and unknown outcomes never replay content or Enter.
+/// Older daemons without receipts refuse before any terminal input is sent.
+export function sendTerminalInput(
+  WebSocketCtor, terminalUrl, terminalToken, reply,
+  { timeoutMs = 8_000, inputAckSupported = false } = {},
+) {
+  if (!inputAckSupported || !validWatchReply(reply)) return Promise.resolve(false);
+  const [paste, submit] = replyInputSequence(reply.text);
   return new Promise((resolve) => {
     let settled = false;
-    let authenticated = false;
-    const socket = new WebSocketCtor(terminalUrl, { maxPayload: 4 * 1024 * 1024 });
+    let phase = "auth";
+    let socket;
     const finish = (delivered) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { socket.close(); } catch { /* Already closing. */ }
+      try { socket?.close(); } catch { /* Already closing. */ }
       resolve(delivered);
     };
     const timer = setTimeout(() => {
-      try { socket.terminate?.(); } catch { /* Already gone. */ }
       finish(false);
+      try { socket?.terminate?.(); } catch { /* Already gone. */ }
     }, timeoutMs);
-    socket.once("open", () => socket.send(terminalAuthBytes(terminalToken)));
+    const send = (bytes) => {
+      if (settled) return;
+      try {
+        socket.send(bytes, (error) => { if (error) finish(false); });
+      } catch { finish(false); }
+    };
+    try {
+      socket = new WebSocketCtor(terminalUrl, { maxPayload: 4 * 1024 * 1024 });
+    } catch { finish(false); return; }
+    socket.once("open", () => send(terminalAuthBytes(terminalToken)));
     socket.on("message", (data) => {
-      if (authenticated) return;
-      const text = Buffer.from(data).toString("utf8");
-      if (text !== "TLOK") return finish(false);
-      authenticated = true;
-      let sequence = 1n;
-      socket.send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, sequence++, KIND_ATTACH));
-      const [paste, submit] = replyInputSequence(reply.text);
-      socket.send(
-        encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, sequence++, KIND_INPUT, paste),
-        (pasteError) => {
-          if (pasteError) return finish(false);
-          socket.send(
-            encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, sequence++, KIND_INPUT, submit),
-            (submitError) => finish(!submitError),
-          );
-        },
-      );
+      if (settled) return;
+      const bytes = Buffer.from(data);
+      if (phase === "auth") {
+        if (bytes.toString("utf8") !== "TLOK") return finish(false);
+        phase = "attach";
+        send(enableTerminalInputAckFrame());
+        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 1n, KIND_ATTACH));
+        return;
+      }
+      const frame = terminalFrameMetadata(bytes);
+      if (frame === undefined) return finish(false);
+      if (frame.sessionId !== reply.sessionId.toLowerCase() || frame.runtimeEpoch !== reply.runtimeEpoch) return;
+      if (frame.frameKind === KIND_ERROR || frame.frameKind === KIND_EOF) return finish(false);
+      if (frame.payloadBytes !== 0) return;
+      if (phase === "attach" && frame.frameKind === KIND_ACK && frame.frameSequence === "1") {
+        phase = "paste";
+        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 2n, KIND_INPUT, paste));
+      } else if (phase === "paste" && frame.frameKind === KIND_INPUT_ACK && frame.frameSequence === "2") {
+        phase = "submit";
+        send(encodeTerminalFrame(reply.sessionId, reply.runtimeEpoch, 3n, KIND_INPUT, submit));
+      } else if (phase === "submit" && frame.frameKind === KIND_INPUT_ACK && frame.frameSequence === "3") {
+        finish(true);
+      }
     });
     socket.once("error", () => finish(false));
     socket.once("close", () => finish(false));
