@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, createElement } from "react";
+import { act, createElement, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -15,6 +15,8 @@ import {
   workflowStepResultFileName,
 } from "../src/renderer/ui/TaskWorkflows.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
+import { removeWorkflowStep, type WorkflowEditorDraft } from "../src/renderer/ui/WorkflowEditorPanel.js";
+import { workflowPhaseLabel, workflowStatusLabel, workflowSummary } from "../src/renderer/ui/workflow-presentation.js";
 
 const edgeCaseHunter = {
   id: "builtin.agent-profile.edge-case-hunter",
@@ -101,12 +103,14 @@ const execution: WorkflowExecution = {
   maxReviewCycles: workflow.maxReviewCycles,
   phase: "awaitingHelper",
   status: "running",
+  completionOutcome: null,
   steps: workflow.steps,
   participants: [
     { stepId: "discuss", sessionId: "claude-session-1" },
     { stepId: "review", sessionId: "claude-session-1" },
   ],
   activeReviewStepIds: ["review"],
+  pendingReviewStepIds: ["review"],
   stepResults: [
     {
       stepId: "discuss",
@@ -128,7 +132,7 @@ const execution: WorkflowExecution = {
 };
 
 describe("Task workflow editor", () => {
-  it("shows a compact node canvas with a parallel review join", () => {
+  it("shows a step flow with a parallel review join and explicit fix loop", () => {
     const markup = renderToStaticMarkup(createElement(WorkflowEditorPanel, {
       projectId: "project-1",
       stateRevision: 1,
@@ -139,11 +143,11 @@ describe("Task workflow editor", () => {
       remove: vi.fn(),
     }));
 
-    expect(markup).toContain('aria-label="Workflow nodes"');
-    expect(markup).toContain('aria-label="Workflow canvas"');
+    expect(markup).toContain('aria-label="Add workflow steps"');
+    expect(markup).toContain('aria-label="Workflow flow"');
     expect(markup).toContain("2 parallel reviewers");
-    expect(markup).toContain("Wait for all");
-    expect(markup).toContain("Core combines review outcomes");
+    expect(markup).toContain("Collect all reviews");
+    expect(markup).toContain("Fixes go back to all reviewers");
     expect(markup).toContain('class="stage-editor workflow-editor-stage"');
     expect(markup).not.toContain('role="dialog"');
   });
@@ -269,7 +273,7 @@ describe("Task workflow editor", () => {
     }));
 
     expect(markup).toContain('aria-label="Run workflow Discuss, build, review in Add simple workflows"');
-    expect(markup).toContain('title="Discuss → Implement → Review"');
+    expect(markup).toContain('title="1 discussion in order → Implement → 1 reviewer"');
     expect(markup).toContain('aria-label="Edit workflow Discuss, build, review"');
     expect(markup).toContain('aria-label="Add workflow"');
   });
@@ -421,3 +425,101 @@ describe("Task workflow editor", () => {
     expect(markup).not.toContain('aria-label="Add workflow"');
   });
 });
+
+async function editorFixture(overrides: Partial<ComponentProps<typeof WorkflowEditorPanel>> = {}) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const props = {
+    projectId: "project-1", stateRevision: 1,
+    agentCapabilities: [fullAgentCapability("codex"), fullAgentCapability("claude")],
+    agentProfiles: [edgeCaseHunter], close: vi.fn(), save: vi.fn(async () => workflow), remove: vi.fn(),
+    ...overrides,
+  };
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  await act(async () => root.render(createElement(WorkflowEditorPanel, props)));
+  return { container, root, props, async dispose() {
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  } };
+}
+
+describe("Workflow review regressions", () => {
+  it("removes an optional fix and removes its orphan when the last reviewer is removed", () => {
+    const steps = initialWorkflowSteps();
+    expect(removeWorkflowStep(steps, "fix").map((step) => step.id)).not.toContain("fix");
+    const oneReview = removeWorkflowStep(steps, "review-codex");
+    expect(oneReview.map((step) => step.id)).toContain("fix");
+    const noReviews = removeWorkflowStep(oneReview, "review-claude");
+    expect(noReviews.map((step) => step.kind)).toEqual(["discuss", "implement"]);
+    expect(removeWorkflowStep(steps, "implement")).toEqual(steps);
+  });
+
+  it("exposes removal for the fix step but not the required implementation", async () => {
+    const f = await editorFixture();
+    try {
+      const select = (title: string) => [...f.container.querySelectorAll<HTMLButtonElement>(".workflow-step-select")].find((button) => button.textContent?.includes(title))!;
+      await act(async () => select("Fix review findings").click());
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Remove Fix review findings"]')!.click());
+      expect(f.container.querySelector(".workflow-step-card.kind-fix")).toBeNull();
+      await act(async () => select("Implement").click());
+      expect(f.container.querySelector('[aria-label="Remove Implement"]')).toBeNull();
+    } finally { await f.dispose(); }
+  });
+
+  it("confirms Escape/close, preserves the draft through navigation, and clears it only on discard", async () => {
+    let draft: WorkflowEditorDraft | undefined;
+    const f = await editorFixture({ draftChanged: (value) => { draft = value; } });
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-palette-node.kind-discuss")!.click());
+      expect(draft?.value.steps).toHaveLength(6);
+      await act(async () => f.container.querySelector(".workflow-editor-stage")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(f.props.close).not.toHaveBeenCalled();
+      expect(f.container.textContent).toContain("Discard your unsaved changes?");
+      await act(async () => rootButton(f.container, "Keep editing").click());
+      await act(async () => f.root.render(null));
+      await act(async () => f.root.render(createElement(WorkflowEditorPanel, { ...f.props, initialDraft: draft })));
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(6);
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Close workflow editor"]')!.click());
+      expect(f.props.close).not.toHaveBeenCalled();
+      await act(async () => rootButton(f.container, "Discard changes").click());
+      expect(f.props.close).toHaveBeenCalledOnce();
+      expect(draft).toBeUndefined();
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps a rejected save editable and blocks close while a save is pending", async () => {
+    let resolve!: (result: WorkflowConfiguration) => void;
+    const save = vi.fn(() => new Promise<WorkflowConfiguration>((done) => { resolve = done; }));
+    const f = await editorFixture({ save });
+    try {
+      await act(async () => rootButton(f.container, "Save template").click());
+      expect(f.container.querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(true);
+      await act(async () => f.container.querySelector(".workflow-editor-stage")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(f.props.close).not.toHaveBeenCalled();
+      await act(async () => resolve(workflow));
+      expect(f.props.close).toHaveBeenCalledOnce();
+    } finally { await f.dispose(); }
+    const rejected = await editorFixture({ save: vi.fn(async () => { throw new Error("Save unavailable"); }) });
+    try {
+      await act(async () => rootButton(rejected.container, "Save template").click());
+      expect(rejected.container.textContent).toContain("Save unavailable");
+      expect(rejected.container.querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(false);
+      expect(rejected.props.close).not.toHaveBeenCalled();
+    } finally { await rejected.dispose(); }
+  });
+
+  it("distinguishes final approval, remaining findings, and an unreviewed last fix", () => {
+    for (const [completionOutcome, label] of [["approved", "Approved"], ["changesRequested", "Changes requested"], ["reviewLimitReached", "Review limit reached"], ["completed", "Completed"]] as const) {
+      expect(workflowStatusLabel({ ...execution, status: "completed", completionOutcome })).toBe(label);
+    }
+    expect(workflowPhaseLabel({ ...execution, status: "completed", completionOutcome: "reviewLimitReached" }, undefined)).toContain("last fixes have not been reviewed again");
+    expect(workflowPhaseLabel({ ...execution, steps: initialWorkflowSteps(), pendingReviewStepIds: ["review-codex"] }, workflow.steps[2])).toBe("Waiting for 1 of 2 reviewers");
+    expect(workflowSummary({ ...workflow, steps: initialWorkflowSteps() })).toContain("2 reviewers in parallel");
+  });
+});
+
+function rootButton(container: Element, text: string): HTMLButtonElement {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === text)!;
+}

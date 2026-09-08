@@ -35,7 +35,7 @@ export function WorkflowAgentTemplateSelect(props: WorkflowAgentTemplateSelectPr
       <span aria-hidden="true">◎</span>
       <span><b>{selected.name}</b><small>{selected.description}</small></span>
       <em>{selected.category}</em>
-    </div> : <p className="field-help">Uses only this node's instructions, without a saved Agent profile.</p>}
+    </div> : <p className="field-help">Uses this step's instructions without a saved agent template.</p>}
   </div>;
 }
 

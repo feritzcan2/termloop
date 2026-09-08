@@ -204,6 +204,8 @@ function workflowExecution(coordinatorSessionId: string, participantSessionId: s
       { stepId: "review", sessionId: participantSessionId },
     ],
     activeReviewStepIds: [],
+    pendingReviewStepIds: [],
+    completionOutcome: null,
     stepResults: [{
       stepId: "discuss",
       reviewCycle: 1,

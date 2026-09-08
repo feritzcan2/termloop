@@ -30,6 +30,13 @@ fn profiled_helper_session_pins_the_agent_library_snapshot() {
     let selection = AgentLaunchSelection::new("default", "plan", "high");
     let mut helper = session("helper", "builtin.agent.ask-to-helper");
     helper.launch_selection = selection.clone();
+    helper.launch_selection.account_id = Some(uuid::Uuid::new_v4().to_string());
+    let resume_ref = termloop_domain::ResumeRef::for_provider(
+        termloop_domain::ResumeProvider::Codex,
+        "profiled-helper-thread".into(),
+    )
+    .unwrap();
+    helper.resume_ref = Some(resume_ref.clone());
     helper.ask_to_source_session_id = Some("source".into());
     helper.ask_to_continuation = Some(AskToContinuation {
         conversation_id: "conversation-1".into(),
@@ -45,12 +52,78 @@ fn profiled_helper_session_pins_the_agent_library_snapshot() {
         agent_id: "codex".into(),
         selection,
     };
+    let mut invalid = helper.clone();
+    invalid.ask_to_continuation = None;
+    assert!(matches!(
+        store.insert_personal_agent_session(&authority, invalid, profile.clone(), false),
+        Err(StoreError::ConstraintViolation)
+    ));
+    let mut invalid = helper.clone();
+    invalid.launch_selection.permission = "default".into();
+    assert!(matches!(
+        store.insert_personal_agent_session(&authority, invalid, profile.clone(), false),
+        Err(StoreError::ConstraintViolation)
+    ));
     store
         .insert_personal_agent_session(&authority, helper, profile.clone(), false)
         .unwrap();
     drop(store);
 
-    let reopened = Store::open(&path).unwrap();
+    let mut reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.session_agent_profile("helper"), Some(&profile));
+    let mut live_selection = reopened
+        .sessions()
+        .iter()
+        .find(|session| session.id == "helper")
+        .unwrap()
+        .launch_selection
+        .clone();
+    live_selection.permission = "default".into();
+    reopened
+        .update_running_agent_session_launch_selection(
+            &authority,
+            "helper",
+            1,
+            &resume_ref,
+            &live_selection,
+        )
+        .unwrap();
+    drop(reopened);
+
+    let mut reopened =
+        Store::open(&path).expect("live settings must not invalidate the pinned profile");
+    assert_eq!(reopened.session_agent_profile("helper"), Some(&profile));
+    assert_eq!(
+        reopened
+            .sessions()
+            .iter()
+            .find(|session| session.id == "helper")
+            .unwrap()
+            .launch_selection,
+        live_selection
+    );
+    reopened.mark_session_exited(&authority, "source").unwrap();
+    reopened
+        .delete_session_descriptor(&authority, "source")
+        .unwrap();
+    drop(reopened);
+
+    let mut reopened =
+        Store::open(&path).expect("source retirement must not invalidate the helper profile");
+    assert_eq!(reopened.session_agent_profile("helper"), Some(&profile));
+    assert!(
+        reopened
+            .sessions()
+            .iter()
+            .find(|session| session.id == "helper")
+            .unwrap()
+            .ask_to_continuation
+            .is_none()
+    );
+    reopened.mark_session_exited(&authority, "helper").unwrap();
+    drop(reopened);
+    let reopened =
+        Store::open(&path).expect("helper retirement must preserve the profile snapshot");
     assert_eq!(reopened.session_agent_profile("helper"), Some(&profile));
     let _ = std::fs::remove_file(path);
 }

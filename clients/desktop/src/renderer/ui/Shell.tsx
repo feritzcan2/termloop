@@ -66,7 +66,7 @@ import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeAc
 import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
-import { WorkflowEditorPanel } from "./TaskWorkflows.js";
+import { WorkflowEditorPanel, type WorkflowEditorDraft } from "./WorkflowEditorPanel.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import type { ErrorLogEntry } from "../state/projection-store.js";
 import type { SessionHistoryListResult } from "@termloop/contract/current";
@@ -459,6 +459,8 @@ export function Shell(props: ShellProps) {
   /// One page at a time replaces the terminal stage, so the settings editors
   /// share the single slot the Skill editor introduced.
   const [stagePage, setStagePage] = useState<StagePage>();
+  const workflowDrafts = useRef(new Map<string, WorkflowEditorDraft>());
+  const workflowDraftKey = `${props.selectedProject?.connectionProfileId}:${props.selectedProject?.id}:${stagePage?.kind === "workflow" ? stagePage.id ?? "new" : ""}`;
   useEffect(() => {
     setStagePage(stagePageAfterProjectChange);
   }, [props.selectedProject?.id]);
@@ -1754,7 +1756,7 @@ export function Shell(props: ShellProps) {
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
             /> : stagePage?.kind === "workflow" && props.selectedProject ? <WorkflowEditorPanel
-              key={stagePage.id ?? "new"}
+              key={workflowDraftKey}
               projectId={props.selectedProject.id}
               configuration={stagePage.id
                 ? props.workflowConfigurations.find((configuration) => configuration.id === stagePage.id)
@@ -1762,6 +1764,11 @@ export function Shell(props: ShellProps) {
               stateRevision={props.workflowStateRevision}
               agentCapabilities={props.agentCapabilities}
               agentProfiles={props.agentLibrary?.value?.profiles ?? []}
+              initialDraft={workflowDrafts.current.get(workflowDraftKey)}
+              draftChanged={(draft) => {
+                if (draft) workflowDrafts.current.set(workflowDraftKey, draft);
+                else workflowDrafts.current.delete(workflowDraftKey);
+              }}
               close={() => setStagePage(undefined)}
               save={props.saveWorkflowConfiguration}
               remove={props.deleteWorkflowConfiguration}

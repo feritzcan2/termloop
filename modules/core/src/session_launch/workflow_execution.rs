@@ -30,6 +30,52 @@ pub struct WorkflowDelegateCommit {
     coordinator_session_id: String,
 }
 
+enum WorkflowHelperConversation {
+    Fresh {
+        selection: termloop_domain::AgentLaunchSelection,
+        profile: Option<Box<termloop_domain::PersonalAgent>>,
+    },
+    Continue(String),
+}
+
+impl WorkflowHelperConversation {
+    fn resolve(
+        step: &termloop_domain::WorkflowStep,
+        conversation_id: Option<String>,
+        profile: impl FnOnce() -> Result<Option<termloop_domain::PersonalAgent>, CoreError>,
+    ) -> Result<Self, CoreError> {
+        Ok(match conversation_id {
+            Some(id) => Self::Continue(id),
+            None => Self::Fresh {
+                selection: step
+                    .launch_selection
+                    .clone()
+                    .ok_or(CoreError::WorkflowExecutionState)?,
+                profile: profile()?.map(Box::new),
+            },
+        })
+    }
+
+    fn into_input(self, target: String, message: String, idempotency_key: String) -> AskToInput {
+        let (conversation_id, launch_selection, agent_profile) = match self {
+            Self::Fresh { selection, profile } => {
+                (None, Some(selection), profile.map(|value| *value))
+            }
+            Self::Continue(id) => (Some(id), None, None),
+        };
+        AskToInput {
+            target,
+            message,
+            model: None,
+            reasoning: None,
+            idempotency_key: Some(idempotency_key),
+            conversation_id,
+            launch_selection,
+            agent_profile,
+        }
+    }
+}
+
 impl CoreRuntime {
     pub fn plan_workflow_delegate(
         &mut self,
@@ -127,16 +173,10 @@ impl CoreRuntime {
             "workflow:{}:{}:{}",
             execution.id, execution.review_cycle, step.id
         );
-        let input = AskToInput {
-            target,
-            message,
-            model: None,
-            reasoning: None,
-            idempotency_key: Some(idempotency_key),
-            conversation_id,
-            launch_selection: step.launch_selection.clone(),
-            agent_profile: self.workflow_agent_profile(&step)?,
-        };
+        let conversation = WorkflowHelperConversation::resolve(&step, conversation_id, || {
+            self.workflow_agent_profile(&step)
+        })?;
+        let input = conversation.into_input(target, message, idempotency_key);
         let outcome = if step.kind == WorkflowStepKind::Review {
             self.plan_parallel_ask_to(token, input)?
         } else {
@@ -779,6 +819,36 @@ mod tests {
             started_at_epoch_ms: 1,
             updated_at_epoch_ms: 1,
         }
+    }
+
+    #[test]
+    fn repeated_workflow_review_inherits_the_existing_conversation_without_resolving_its_profile() {
+        let mut execution = execution();
+        execution.review_changes_requested = true;
+        finish_review_group(&mut execution);
+        advance_execution(&mut execution, WorkflowStepKind::Fix);
+        assert_eq!(execution.review_cycle, 2);
+        let mut step = execution.configuration.steps[3].clone();
+        step.profile_ref = Some("builtin.agent-profile.edge-case-hunter".into());
+        let input =
+            WorkflowHelperConversation::resolve(&step, Some("existing-review".into()), || {
+                panic!(
+                    "a pinned conversation must not resolve a changed or deleted library profile"
+                )
+            })
+            .unwrap()
+            .into_input("codex".into(), "Review the fixes".into(), "cycle-2".into());
+        assert_eq!(input.conversation_id.as_deref(), Some("existing-review"));
+        assert!(input.launch_selection.is_none());
+        assert!(input.agent_profile.is_none());
+        assert!(input.model.is_none());
+        assert!(input.reasoning.is_none());
+
+        let fresh = WorkflowHelperConversation::resolve(&step, None, || Ok(None))
+            .unwrap()
+            .into_input("codex".into(), "Review".into(), "cycle-1".into());
+        assert!(fresh.conversation_id.is_none());
+        assert_eq!(fresh.launch_selection, step.launch_selection);
     }
 
     #[test]
