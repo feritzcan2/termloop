@@ -258,6 +258,7 @@ export class MobileControlClient {
     private readonly socketFactory: SocketFactory,
     private readonly diagnostics: MobileDiagnosticReporter = mobileDiagnostics,
     private readonly connectionId: string = "unspecified",
+    private readonly onTransportTimeout?: () => void,
   ) {}
 
   version(fresh = false) {
@@ -343,6 +344,9 @@ export class MobileControlClient {
         const socket = this.socket ?? this.connecting?.socket;
         this.disconnect(this.generation, error);
         socket?.close();
+        // A multiplexed socket closes only its logical control channel. Tell
+        // its owner to retire the physical transport before a safe read retries.
+        this.onTransportTimeout?.();
       }, timeoutMs);
       this.pending.set(id, {
         method,
