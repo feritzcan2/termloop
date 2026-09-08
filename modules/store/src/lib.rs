@@ -67,7 +67,8 @@ use termloop_domain::{
 // Version 58 centralizes Session mutation completion and activation. Version 59
 // adds optional Agent Library profile references to workflow helper steps.
 // Version 60 adds an optional workflow selection to Project Task automation.
-const CURRENT_SCHEMA_VERSION: u32 = 60;
+// Version 61 removes orphan conversation readiness left by archived Task deletion.
+const CURRENT_SCHEMA_VERSION: u32 = 61;
 
 pub struct CoreWriteAuthority {
     _private: (),
