@@ -98,6 +98,7 @@ impl AgentResumePlan {
 pub(super) enum AgentResumePreparationKind {
     Resume,
     Restart {
+        retired_runtime_epoch: u64,
         retired_codex_runtime: Option<CodexRuntime>,
     },
 }
@@ -186,28 +187,28 @@ impl AgentResumePlan {
     /// only a last-resort safety net for unwinding.
     pub fn reap_uncommitted_runtime(&mut self) -> Result<(), AgentResumeReapError> {
         self.provider_runtime.revoke_provisional();
-        if matches!(
-            self.preparation_kind,
-            AgentResumePreparationKind::Restart { .. }
-        ) {
-            self.terminate_registered_pty()?;
+        if let AgentResumePreparationKind::Restart {
+            retired_runtime_epoch,
+            ..
+        } = &self.preparation_kind
+        {
+            self.terminate_registered_pty(*retired_runtime_epoch)?;
             self.preparation_kind = AgentResumePreparationKind::Resume;
         }
         if self.pty_spawned && !self.committed {
-            self.terminate_registered_pty()?;
+            self.terminate_registered_pty(self.runtime_epoch)?;
             self.pty_spawned = false;
         }
         self.provider_runtime.abort()?;
         Ok(())
     }
 
-    fn terminate_registered_pty(&self) -> Result<(), AgentResumeReapError> {
-        match self.terminal.contains_session(&self.session_id) {
-            Ok(true) => self
-                .terminal
-                .terminate(&self.session_id)
-                .map_err(|_| AgentResumeReapError),
-            Ok(false) => Ok(()),
+    fn terminate_registered_pty(&self, runtime_epoch: u64) -> Result<(), AgentResumeReapError> {
+        match self
+            .terminal
+            .terminate_epoch(&self.session_id, runtime_epoch)
+        {
+            Ok(()) | Err(termloop_terminal::TerminalError::SessionNotFound) => Ok(()),
             Err(_) => Err(AgentResumeReapError),
         }
     }
@@ -371,13 +372,13 @@ impl AgentResumePlan {
             return Err(AgentResumePreparationError::DaemonInterrupted);
         }
         if let AgentResumePreparationKind::Restart {
+            retired_runtime_epoch,
             retired_codex_runtime,
         } = std::mem::replace(
             &mut self.preparation_kind,
             AgentResumePreparationKind::Resume,
         ) {
-            self.terminal
-                .terminate(&self.session_id)
+            self.terminate_registered_pty(retired_runtime_epoch)
                 .map_err(|_| AgentResumePreparationError::RuntimeConflict)?;
             // Provider and PTY ownership use separate records. Drop the old
             // Codex App Server only after the old PTY is absent and before a
@@ -1029,7 +1030,7 @@ impl CoreRuntime {
         // A successful replacement PTY always uses a fresh generation. Keep
         // that generation on the observation capability so delayed signals
         // from an older Codex bridge cannot satisfy this resume reservation.
-        let mut runtime_epoch = self.runtime_epoch;
+        let mut runtime_epoch = termloop_platform::generate_runtime_epoch();
         while runtime_epoch == session.runtime_epoch {
             runtime_epoch = termloop_platform::generate_runtime_epoch();
         }
@@ -1056,11 +1057,8 @@ impl CoreRuntime {
             .as_deref()
             .and_then(termloop_invocation::agent_profile)
             .map(|profile| profile.id.to_owned());
-        // Most daemon-restart resumes use the new daemon epoch. A Retry may,
-        // however, follow a failed client-launch restart in the same daemon,
-        // where the durable descriptor still carries this daemon's original
-        // epoch. Every successfully prepared replacement PTY must have a
-        // distinct generation, regardless of which path requested it.
+        // Every attempt gets its own epoch, including retries whose previous
+        // attempt never committed a new epoch to the durable descriptor.
         let account = self.session_agent_account(&session)?;
         Ok(crate::AgentResumePlanOutcome::Prepare(Box::new(
             crate::AgentResumePlan {
@@ -1086,6 +1084,7 @@ impl CoreRuntime {
                 provider_runtime: Default::default(),
                 preparation_kind: if restart_running {
                     AgentResumePreparationKind::Restart {
+                        retired_runtime_epoch: session.runtime_epoch,
                         retired_codex_runtime,
                     }
                 } else {
@@ -1218,6 +1217,13 @@ impl CoreRuntime {
     ) -> Result<super::AgentResumeCompletion, CoreError> {
         if !self.resume_reservations.contains(&plan.session_id) {
             return Err(CoreError::InvalidParams("sessionId".into()));
+        }
+        if self
+            .agent_observations
+            .get(&plan.session_id)
+            .is_none_or(|entry| entry.runtime_epoch != plan.runtime_epoch)
+        {
+            return Err(CoreError::RevisionConflict);
         }
         if !self.project_exists(&plan.project_id) {
             return Ok(super::AgentResumeCompletion::Rejected(
