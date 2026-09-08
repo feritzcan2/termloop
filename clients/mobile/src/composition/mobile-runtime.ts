@@ -10,7 +10,7 @@ import { createWatchTargetSettings } from "@/platform/watch-target-settings";
 const productionRuntime = createProductionRuntime({
   repository: createSecureConnectionRepository(nativeSecretStore),
   multiplexSocketFactory: (url) => new WebSocket(url) as never,
-  connectionPreflight: (connection) => waitForGatewayReachability(connection, fetch),
+  connectionPreflight: (connection, signal) => waitForGatewayReachability(connection, fetch, signal),
   voiceReceipts: createStewardVoiceReceiptStore(nativeSecretStore),
   watchTargetSettings: createWatchTargetSettings(nativeSecretStore),
   watchBridge: watchSyncBridge,

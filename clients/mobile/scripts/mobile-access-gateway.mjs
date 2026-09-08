@@ -1734,7 +1734,7 @@ async function acceptMobile(client, connectionId) {
                 return;
               }
               if (client.readyState !== WebSocket.OPEN) return;
-              if (gatewayInputReceipt) {
+              if (gatewayInputReceipt && receipt !== undefined) {
                 client.send(JSON.stringify({
                   event: "mobile.inputAccepted",
                   mobileInputReceiptVersion: 1,

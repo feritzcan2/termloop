@@ -1344,7 +1344,7 @@ describe("production control adapter", () => {
 
     await runtime.connections.list();
     expect(methods.filter((method) => method === "system.version")).toHaveLength(1);
-    runtime.connections.resetTransports();
+    runtime.connections.resetTransports(true);
     await runtime.connections.list();
     expect(methods.filter((method) => method === "system.version")).toHaveLength(2);
     expect(socketCount).toBe(2);
