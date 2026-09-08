@@ -20,4 +20,11 @@ describe("terminal loading", () => {
   it("shows reconnection even if a cached screen was ready", () => {
     expect(terminalLoading({ ...emptyTerminalBuffer(), ready: true, stream: "reconnecting" })?.label).toContain("Reconnecting");
   });
+  it("names a proven gateway reachability failure", () => {
+    expect(terminalLoading({
+      ...emptyTerminalBuffer(),
+      stream: "reconnecting",
+      connectionIssue: "gatewayUnreachable",
+    })?.label).toBe("Mac unreachable · check Tailscale · last output retained");
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { TerminalEvent } from "../src/application/ports";
 import { MobileConnectionCoordinator } from "../src/adapters/production/mobile-connection-coordinator";
 import type { DataSocket } from "../src/adapters/production/data-socket";
 import { GatewayReachabilityError } from "../src/adapters/production/gateway-compatibility";
@@ -70,7 +71,7 @@ describe("mobile connection coordinator", () => {
     }
   });
 
-  it("stops reconnecting when an offline connection has only a status observer", async () => {
+  it("does not maintain a reconnect loop for overview invalidations alone", async () => {
     vi.useFakeTimers();
     try {
       const diagnosticLines: string[] = [];
@@ -93,16 +94,75 @@ describe("mobile connection coordinator", () => {
       await waitFor(() => sockets.length === 1
         && events(diagnosticLines).includes("connection_ready"));
       sockets[0]!.onclose?.({ code: 1006, wasClean: false });
-      await vi.advanceTimersByTimeAsync(12_000);
-      const attemptsBeforeIdle = sockets.length;
-      expect(attemptsBeforeIdle).toBeGreaterThan(1);
-      unsubscribeInvalidations();
-
-      await vi.advanceTimersByTimeAsync(3_000);
-      expect(sockets).toHaveLength(attemptsBeforeIdle);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(sockets).toHaveLength(1);
+      expect(events(diagnosticLines)).not.toContain("reconnect_scheduled");
       expect(events(diagnosticLines)).not.toContain("reconnect_stalled");
 
+      unsubscribeInvalidations();
       unsubscribeStatus();
+      coordinator.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("caps reconnect backoff while a terminal is actively waiting", async () => {
+    vi.useFakeTimers();
+    try {
+      const diagnosticLines: string[] = [];
+      const sockets: DataSocket[] = [];
+      let reachable = true;
+      let preflightAttempts = 0;
+      const coordinator = new MobileConnectionCoordinator(
+        connection,
+        () => {
+          const socket = authenticatingSocket((current, data) => {
+            if (typeof data === "string") return;
+            const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+            if (frame.kind === KIND_ATTACH) {
+              queueMicrotask(() => current.onmessage?.({
+                data: encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_ACK),
+              }));
+            }
+          });
+          sockets.push(socket);
+          return socket;
+        },
+        createMobileDiagnosticReporter((line) => diagnosticLines.push(line)),
+        async () => {
+          preflightAttempts += 1;
+          if (!reachable) throw new GatewayReachabilityError("requestRejected", "TypeError");
+        },
+      );
+      const attachment = await coordinator.attachTerminal(
+        { id: sessionId, runtime_epoch: 7 },
+        () => {},
+      );
+
+      reachable = false;
+      sockets[0]!.onclose?.({ code: 1006, wasClean: false });
+      for (const delay of [500, 1_000, 2_000, 4_000, 5_000, 5_000]) {
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+
+      const delays = diagnosticLines.map(record)
+        .filter(({ event }) => event === "reconnect_scheduled")
+        .map(({ delayMs }) => delayMs);
+      expect(delays.slice(0, 6)).toEqual([500, 1_000, 2_000, 4_000, 5_000, 5_000]);
+
+      const attemptsBeforeRetry = preflightAttempts;
+      const schedulesBeforeRetry = diagnosticLines.map(record)
+        .filter(({ event }) => event === "reconnect_scheduled").length;
+      void attachment.reconnect().catch(() => {});
+      await waitFor(() => preflightAttempts > attemptsBeforeRetry);
+      await waitFor(() => diagnosticLines.map(record)
+        .filter(({ event }) => event === "reconnect_scheduled").length > schedulesBeforeRetry);
+      const schedulesAfterRetry = diagnosticLines.map(record)
+        .filter(({ event }) => event === "reconnect_scheduled");
+      expect(schedulesAfterRetry.at(-1)?.delayMs).toBe(500);
+
+      await attachment.detach();
       coordinator.close();
     } finally {
       vi.useRealTimers();
@@ -111,6 +171,7 @@ describe("mobile connection coordinator", () => {
 
   it("reports a terminal-blocking preflight failure streak with safe transport state", async () => {
     const diagnosticLines: string[] = [];
+    const terminalEvents: TerminalEvent[] = [];
     let preflightAttempts = 0;
     const coordinator = new MobileConnectionCoordinator(
       connection,
@@ -134,7 +195,7 @@ describe("mobile connection coordinator", () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await expect(coordinator.attachTerminal(
         { id: sessionId, runtime_epoch: 7 },
-        () => {},
+        (event) => terminalEvents.push(event),
       )).rejects.toThrow("not reachable");
     }
 
@@ -153,6 +214,11 @@ describe("mobile connection coordinator", () => {
       }),
     ]);
     expect(records.filter(({ event }) => event === "attachment_failed")).toHaveLength(3);
+    expect(terminalEvents).toContainEqual({
+      type: "state",
+      state: "connectionLost",
+      issue: "gatewayUnreachable",
+    });
 
     const attachment = await coordinator.attachTerminal(
       { id: sessionId, runtime_epoch: 7 },
