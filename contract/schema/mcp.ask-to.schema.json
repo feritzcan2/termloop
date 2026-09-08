@@ -481,7 +481,7 @@
         "$ref": "#/$defs/routineAssignmentCompleteParams"
       },
       "result": {
-        "$ref": "#/$defs/assistantAckResult"
+        "$ref": "#/$defs/routineAssignmentCompleteResult"
       },
       "annotations": {
         "title": "Complete one Steward assignment",
@@ -1416,6 +1416,23 @@
       "x-codegen-name": "RoutineAssignmentStatus",
       "type": "string",
       "enum": ["satisfied", "pending", "blocked"]
+    },
+    "routineAssignmentCompleteResult": {
+      "x-codegen": true,
+      "x-codegen-name": "RoutineAssignmentCompleteResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "stewardReviewRequired"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["completed", "completedContextPreserved"]
+        },
+        "stewardReviewRequired": {
+          "description": "Read current Routine findings and apply their current waiting policy before claiming another assignment when true. This is not proof that the Task passed.",
+          "type": "boolean"
+        }
+      }
     },
     "routineAssignmentCompleteParams": {
       "x-codegen": true,

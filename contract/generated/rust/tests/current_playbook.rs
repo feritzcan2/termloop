@@ -520,8 +520,23 @@ fn a_step_check_uses_the_single_steward_assignment_outcome() {
         ));
     }
 
-    assert!(validate_mcp_tool_result(
-        "steward_complete_assignment",
-        &json!({"status": "completed"})
-    ));
+    for status in ["completed", "completedContextPreserved"] {
+        for review_required in [false, true] {
+            assert!(validate_mcp_tool_result(
+                "steward_complete_assignment",
+                &json!({"status": status, "stewardReviewRequired": review_required})
+            ));
+        }
+    }
+    for invalid in [
+        json!({"status": "completed"}),
+        json!({"status": "satisfied", "stewardReviewRequired": false}),
+        json!({"status": "completed", "stewardReviewRequired": "true"}),
+        json!({"status": "completed", "stewardReviewRequired": true, "taskId": "other-task"}),
+    ] {
+        assert!(!validate_mcp_tool_result(
+            "steward_complete_assignment",
+            &invalid
+        ));
+    }
 }

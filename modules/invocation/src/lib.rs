@@ -122,13 +122,13 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 20,
+    version: 21,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 38,
+    version: 39,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -140,7 +140,7 @@ const ROUTINE_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 10,
+    version: 11,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -152,7 +152,7 @@ const TASK_EVIDENCE_POLICY_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const ASSISTANT_WAKE_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.assistant.wake",
-    version: 9,
+    version: 10,
     authored_body: include_str!("../../../resources/prompts/builtin.assistant.wake.md"),
 };
 const ASSISTANT_ACTIVATION_TEMPLATE: PromptTemplate = PromptTemplate {
@@ -4592,7 +4592,7 @@ mod tests {
                 ImproverTarget::Playbook {
                     project_name: "Nucleus",
                 },
-                20,
+                21,
             ),
         ];
 
@@ -4633,8 +4633,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 20);
-        assert_eq!(launch.provenance().template_version, 20);
+        assert_eq!(template.version, 21);
+        assert_eq!(launch.provenance().template_version, 21);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -4661,6 +4661,8 @@ mod tests {
             "Steward to attempt",
             "ordinary unmet evidence and is `pending`",
             "Routines have no provider kind",
+            "Reject a circular dependency",
+            "unknown scope never counts as permission to skip",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -6662,7 +6664,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 38);
+        assert_eq!(prompt.provenance().template_version, 39);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6953,7 +6955,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
         let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(steward.provenance().template_version, 38);
+        assert_eq!(steward.provenance().template_version, 39);
         let steward = steward.authored_preview();
         assert!(steward.contains("stage title is only a label"));
         assert!(steward.contains("steward_complete_assignment"));
@@ -6968,7 +6970,7 @@ mod tests {
         assert!(steward.contains("canonical Session ID returned by the scoped `task_read`"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 10);
+        assert_eq!(step.provenance().template_version, 11);
         assert!(step.delivered_preview().contains("purpose-built connector"));
         assert!(step.delivered_preview().contains("observed branch family"));
         assert!(step.delivered_preview().contains("title is only a label"));
@@ -6983,6 +6985,37 @@ mod tests {
                 .contains("cached UI projection is display-only")
         );
         assert!(!step.delivered_preview().contains("one yes/no question"));
+    }
+
+    #[test]
+    fn steward_delivery_unifies_action_verification_and_continuation() {
+        let steward = executor_prompt(ExecutorRole::Steward).unwrap();
+        let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
+        let wake = assistant_wake_message(ExecutorRole::Steward, AssistantWakeReason::ScheduledCheck,
+            Some("0123456789abcdef0123456789abcdef"), Some(r#"{"step":{"whileWaiting":{"mode":"auto","instructions":"Advance the linked issue"}}}"#)).unwrap();
+        let delivered = format!(
+            "{}\n{}\n{}",
+            steward.delivered_preview(),
+            step.delivered_preview(),
+            wake.delivered_preview()
+        );
+        assert!(!delivered.contains("not claim another assignment in the same turn"));
+        for required in [
+            "stewardReviewRequired: true",
+            "continue one claim at a time",
+            "same assignment satisfied after a fresh verification",
+            "retired field being absent",
+            "Missing scope evidence is not non-applicability",
+            "canonical Agent",
+            "named approver",
+            "do not poll or resend unchanged work",
+        ] {
+            assert!(
+                delivered.contains(required),
+                "missing progression rule: {required}"
+            );
+        }
+        assert_eq!(wake.delivered_bytes(), wake.delivered_preview().as_bytes());
     }
 
     #[test]
@@ -7045,7 +7078,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(user.provenance().template_version, 9);
+        assert_eq!(user.provenance().template_version, 10);
         assert!(user.delivered_preview().contains("**User message** row"));
         assert!(
             user.delivered_preview()
@@ -7100,7 +7133,11 @@ mod tests {
                 .delivered_preview()
                 .contains("**Movement plus finding** row")
         );
-        assert!(combined.delivered_preview().contains("separate"));
+        assert!(
+            combined
+                .delivered_preview()
+                .contains("Combine related movement")
+        );
     }
 
     #[test]
