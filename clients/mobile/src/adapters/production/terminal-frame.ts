@@ -37,12 +37,12 @@ export interface TerminalReplayAck {
 /// Requests a bounded newest suffix. Older daemons echo this payload in their Attach
 /// ACK; the distinct TLRA response magic ensures that echo selects the quiet-window
 /// fallback rather than being mistaken for negotiated metadata.
-export function replayRequestPayload(): Uint8Array {
+export function replayRequestPayload(maxBytes = MOBILE_REPLAY_BUDGET_BYTES): Uint8Array {
   const payload = new Uint8Array(REPLAY_REQUEST_BYTES);
   payload.set(encoder.encode(REPLAY_REQUEST_MAGIC));
   const view = new DataView(payload.buffer);
-  view.setUint32(4, MOBILE_REPLAY_BUDGET_BYTES);
-  view.setUint32(8, MOBILE_REPLAY_CHUNK_BYTES);
+  view.setUint32(4, maxBytes);
+  view.setUint32(8, Math.min(maxBytes, MOBILE_REPLAY_CHUNK_BYTES));
   return payload;
 }
 

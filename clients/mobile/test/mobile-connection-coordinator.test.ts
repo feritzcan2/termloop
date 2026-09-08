@@ -8,6 +8,8 @@ import {
   KIND_ACK,
   KIND_ATTACH,
   KIND_ERROR,
+  KIND_REPLAY_OUTPUT,
+  KIND_OUTPUT,
   decodeFrame,
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
@@ -28,6 +30,135 @@ const connection: SavedConnection = {
 };
 
 describe("mobile connection coordinator", () => {
+  it("cancels a departed route during preflight without sending its attach later", async () => {
+    let finishPreflight: (() => void) | undefined;
+    let attaches = 0;
+    const lines: string[] = [];
+    const coordinator = new MobileConnectionCoordinator(connection, () => authenticatingSocket((_socket, data) => {
+      if (typeof data !== "string" && decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data)).kind === KIND_ATTACH) attaches += 1;
+    }), createMobileDiagnosticReporter((line) => lines.push(line)), () => new Promise<void>((resolve) => { finishPreflight = resolve; }));
+    const route = new AbortController();
+    const attaching = coordinator.attachTerminal({ id: sessionId, runtime_epoch: 7 }, () => {}, { signal: route.signal });
+    const cancelled = expect(attaching).rejects.toThrow("cancelled");
+    route.abort();
+    await cancelled;
+    finishPreflight!();
+    await waitFor(() => events(lines).includes("connection_ready"));
+    expect(attaches).toBe(0);
+    coordinator.close();
+  });
+
+  it("cancels in-flight reads on background without retrying or allocating a socket", async () => {
+    vi.useFakeTimers();
+    try {
+      const lines: string[] = [];
+      let requests = 0;
+      let sockets = 0;
+      const coordinator = new MobileConnectionCoordinator(connection, () => {
+        sockets += 1;
+        return authenticatingSocket((_socket, data) => {
+          if (typeof data === "string" && JSON.parse(data).method) requests += 1;
+        });
+      }, createMobileDiagnosticReporter((line) => lines.push(line)));
+      const reading = coordinator.control.call("system.version").catch((error: unknown) => error);
+      await waitFor(() => requests === 1);
+      coordinator.resetTransport(false);
+      expect(await reading).toBeInstanceOf(Error);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(sockets).toBe(1);
+      expect(requests).toBe(1);
+      expect(events(lines)).not.toContain("request_retry");
+      await expect(coordinator.control.call("system.version")).rejects.toThrow();
+      expect(sockets).toBe(1);
+      coordinator.resetTransport(true);
+      const resumed = coordinator.control.call("system.version").catch((error: unknown) => error);
+      await waitFor(() => requests === 2);
+      expect(sockets).toBe(2);
+      coordinator.close();
+      await resumed;
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(["overlap", "miss", "empty"])("resumes with a small suffix and expands only when continuity fails (%s)", async (mode) => {
+    const prior = new TextEncoder().encode("previous line\n".repeat(6000));
+    const resumed = new TextEncoder().encode("previous line\n".repeat(4000) + "new output\n");
+    const unrelated = new TextEncoder().encode("different output\n".repeat(3000));
+    const limits: number[] = [];
+    const terminalEvents: TerminalEvent[] = [];
+    const coordinator = new MobileConnectionCoordinator(connection, () => authenticatingSocket((socket, data) => {
+      if (typeof data === "string") return;
+      const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+      if (frame.kind !== KIND_ATTACH) return;
+      limits.push(new DataView(frame.payload.buffer, frame.payload.byteOffset).getUint32(4));
+      const output = limits.length === 1 && mode !== "overlap"
+        ? mode === "empty" ? new Uint8Array() : unrelated : resumed;
+      const metadata = new Uint8Array(12);
+      metadata.set(new TextEncoder().encode("TLRA"));
+      const view = new DataView(metadata.buffer);
+      view.setUint32(4, output.byteLength === 0 ? 0 : 1);
+      view.setUint32(8, output.byteLength);
+      queueMicrotask(() => {
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, frame.sequence, KIND_ACK, metadata) });
+        if (output.byteLength > 0) socket.onmessage?.({ data: encodeFrame(sessionId, 7, 1n, KIND_REPLAY_OUTPUT, output) });
+        socket.onmessage?.({ data: encodeFrame(sessionId, 7, 2n, KIND_OUTPUT, new Uint8Array([42])) });
+      });
+    }), createMobileDiagnosticReporter(() => {}));
+    const attachment = await coordinator.attachTerminal({ id: sessionId, runtime_epoch: 7 }, (event) => terminalEvents.push(event), { previousOutputTail: prior });
+    await waitFor(() => terminalEvents.some((event) => event.type === "live"));
+    expect(limits).toEqual(mode === "overlap" ? [65536] : [65536, 1048576]);
+    expect(terminalEvents.filter((event) => event.type === "replay")).toEqual([{ type: "replay", bytes: resumed }]);
+    expect(terminalEvents.filter((event) => event.type === "live")).toEqual([{ type: "live", bytes: new Uint8Array([42]) }]);
+    await attachment.detach();
+    coordinator.close();
+  });
+
+  it("ignores a retired socket's Blob read when it completes after foreground recovery", async () => {
+    const sockets: DataSocket[] = [];
+    const delivered: TerminalEvent[] = [];
+    const coordinator = new MobileConnectionCoordinator(connection, () => {
+      const socket = authenticatingSocket((current, data) => {
+        if (typeof data === "string") return;
+        const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+        if (frame.kind === KIND_ATTACH) queueMicrotask(() => current.onmessage?.({ data: encodeFrame(sessionId, 7, frame.sequence, KIND_ACK) }));
+      });
+      sockets.push(socket);
+      return socket;
+    }, createMobileDiagnosticReporter(() => {}));
+    const attachment = await coordinator.attachTerminal({ id: sessionId, runtime_epoch: 7 }, (event) => delivered.push(event));
+    let finish: ((bytes: ArrayBuffer) => void) | undefined;
+    const delayed = new Blob();
+    Object.defineProperty(delayed, "arrayBuffer", { value: () => new Promise<ArrayBuffer>((resolve) => { finish = resolve; }) });
+    sockets[0]!.onmessage?.({ data: delayed });
+    await waitFor(() => finish !== undefined);
+    coordinator.resetTransport(false);
+    coordinator.resetTransport(true);
+    await waitFor(() => delivered.filter((event) => event.type === "state" && event.state === "connected").length === 2);
+    finish!(encodeFrame(sessionId, 7, 100n, KIND_OUTPUT, new Uint8Array([99])));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(delivered.some((event) => event.type === "live")).toBe(false);
+    sockets[1]!.onmessage?.({ data: encodeFrame(sessionId, 7, 1n, KIND_OUTPUT, new Uint8Array([42])) });
+    await waitFor(() => delivered.some((event) => event.type === "live"));
+    expect(delivered.filter((event) => event.type === "live")).toEqual([{ type: "live", bytes: new Uint8Array([42]) }]);
+    await attachment.detach();
+    coordinator.close();
+  });
+
+  it("samples retired-route frames instead of logging every queued output packet", async () => {
+    const lines: string[] = [];
+    let socket: DataSocket | undefined;
+    const coordinator = new MobileConnectionCoordinator(connection, () => {
+      socket = authenticatingSocket();
+      return socket;
+    }, createMobileDiagnosticReporter((line) => lines.push(line)));
+    const unsubscribe = coordinator.subscribeInvalidations(() => {});
+    await waitFor(() => events(lines).includes("connection_ready"));
+    for (let i = 0; i < 100; i++) socket!.onmessage?.({ data: encodeFrame(sessionId, 7, BigInt(i + 1), KIND_OUTPUT) });
+    for (let i = 0; i < 500; i++) await Promise.resolve();
+    expect(events(lines).filter((event) => event === "orphan_frame_ignored")).toHaveLength(1);
+    unsubscribe();
+    coordinator.close();
+  });
+
   it("retries a temporarily refused terminal attachment on the same transport", async () => {
     vi.useFakeTimers();
     try {

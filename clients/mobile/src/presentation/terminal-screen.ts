@@ -350,10 +350,10 @@ export class TerminalScreenProjection {
 
   /// Returns a snapshot once this projector owns the display, and `undefined` while
   /// the line-oriented fallback is still the honest renderer for the stream.
-  write(bytes: Uint8Array): TerminalScreenSnapshot | undefined {
+  write(bytes: Uint8Array, publish = true): TerminalScreenSnapshot | undefined {
     const decoded = this.#decoder.decode(bytes, { stream: true });
     this.#parse(`${this.#escapeCarry}${decoded}`);
-    return this.#screenOwned ? this.snapshot() : undefined;
+    return publish && this.#screenOwned ? this.snapshot() : undefined;
   }
 
   snapshot(): TerminalScreenSnapshot {

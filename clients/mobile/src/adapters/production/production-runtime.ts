@@ -15,6 +15,7 @@ import type {
   StewardVoiceClip,
   StewardVoiceReceiptStore,
   TerminalAttachment,
+  TerminalAttachOptions,
   TerminalEvent,
 } from "@/application/ports";
 import type { WatchTargetSettings } from "@/platform/watch-target-settings";
@@ -127,7 +128,7 @@ export interface ProductionRuntimeOptions {
   /// Secret-free HTTP reachability proof used before allocating a native multiplex
   /// WebSocket. Production enables it; adapter tests may omit it when exercising
   /// transport state directly.
-  readonly connectionPreflight?: (connection: SavedConnection) => Promise<void>;
+  readonly connectionPreflight?: (connection: SavedConnection, signal: AbortSignal) => Promise<void>;
   readonly fetch?: typeof fetch;
   readonly watchBridge?: {
     syncCredentials(
@@ -160,6 +161,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   }>();
   const authenticatedActivityAtEpochMs = new Map<string, number>();
   let profileGeneration = 0;
+  let transportsSuspended = false;
   const coordinators = new Map<string, {
     readonly coordinator: MobileConnectionCoordinator;
     readonly unsubscribeStatus: () => void;
@@ -171,6 +173,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   }>();
 
   const controlClient = (connection: SavedConnection): MobileControlClient => {
+    if (transportsSuspended) throw new Error("Mobile connections are suspended.");
     const multiplex = connectionCoordinator(connection);
     if (multiplex !== undefined) return multiplex.control;
     const current = controlClients.get(connection.id);
@@ -206,7 +209,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       diagnostics,
       connectionPreflight === undefined
         ? undefined
-        : () => connectionPreflight(connection),
+        : (signal) => connectionPreflight(connection, signal),
     );
     const unsubscribeStatus = coordinator.subscribeStatus((status) => {
       const cached = profileCache.get(connection.id);
@@ -239,11 +242,13 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         for (const listener of connectionChangeListeners) listener();
       }
     });
+    if (transportsSuspended) coordinator.resetTransport(false);
     coordinators.set(connection.id, { coordinator, unsubscribeStatus });
     return coordinator;
   };
 
   const probeProfile = (connection: SavedConnection): Promise<void> | undefined => {
+    if (transportsSuspended) return undefined;
     const cached = profileCache.get(connection.id);
     const freshnessMs = cached?.value.availability === "online"
       ? ONLINE_PROFILE_FRESH_MS
@@ -261,6 +266,9 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         value: profile(connection, "online", version.version, version.protocolVersion),
       }),
       async (cause: unknown) => {
+        if (transportsSuspended || generation !== profileGeneration) {
+          return { transientFailure: true, value: profile(connection, "reconnecting") };
+        }
         if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
           return { transientFailure: false, value: profile(connection, "updateRequired") };
         }
@@ -303,6 +311,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
 
   const resolve = async (connectionId: string): Promise<SavedConnection> => {
     const connection = await options.repository.get(connectionId);
+    if (transportsSuspended) throw new Error("Mobile connections are suspended.");
     if (connection === undefined) throw new Error("Saved Mac was not found.");
     return connection;
   };
@@ -311,11 +320,12 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     connection: SavedConnection,
     session: { id: string; runtime_epoch: number },
     onEvent: (event: TerminalEvent) => void,
+    attachOptions?: TerminalAttachOptions,
   ): Promise<TerminalAttachment> => {
     const coordinator = connectionCoordinator(connection);
     return coordinator === undefined
       ? attachTerminal(connection, session, onEvent, terminalSocketFactory, diagnostics)
-      : coordinator.attachTerminal(session, onEvent);
+      : coordinator.attachTerminal(session, onEvent, attachOptions);
   };
 
   const syncWatchCatalog = async (): Promise<boolean> => {
@@ -392,6 +402,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         });
       },
       resetTransports(reconnect = false) {
+        transportsSuspended = !reconnect;
         profileGeneration += 1;
         profileCache.clear();
         profileProbes.clear();
@@ -748,9 +759,10 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     },
 
     terminal: {
-      async attach(connectionId, session, onEvent) {
+      async attach(connectionId, session, onEvent, attachOptions) {
         const connection = await resolve(connectionId);
-        return attachConnectionTerminal(connection, session, onEvent);
+        if (attachOptions?.signal?.aborted) throw new Error("Terminal attachment was cancelled.");
+        return attachConnectionTerminal(connection, session, onEvent, attachOptions);
       },
     },
     images: {
@@ -1063,4 +1075,3 @@ function imageUploadFailure(status: number): string {
   if (status === 415) return "Choose a PNG, JPEG, or WebP image.";
   return "The image could not be delivered to your Mac.";
 }
-

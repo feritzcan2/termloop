@@ -1,6 +1,6 @@
 import type { SocketFactory, SocketLike } from "@termloop/contract/current";
 
-import type { TerminalAttachment, TerminalEvent } from "../../application/ports";
+import type { TerminalAttachment, TerminalAttachOptions, TerminalEvent } from "../../application/ports";
 import type { SavedConnection } from "../../platform/secure-connections";
 import {
   dataSocketMessageBytes,
@@ -15,6 +15,7 @@ import {
 } from "../../platform/mobile-diagnostics";
 import { GatewayReachabilityError } from "./gateway-compatibility";
 import { MobileControlClient } from "./mobile-control-client";
+import { TerminalReplayPolicy } from "./terminal-replay-policy";
 import {
   KIND_ACK,
   KIND_ATTACH,
@@ -71,6 +72,8 @@ interface ControlChannel {
 }
 
 interface TerminalSubscription {
+  readonly replayPolicy: TerminalReplayPolicy;
+  removeAbortListener?: () => void;
   readonly key: string;
   readonly sessionId: string;
   readonly runtimeEpoch: number;
@@ -128,6 +131,8 @@ export class MobileConnectionCoordinator {
   private cancelConnecting: ((cause: Error) => void) | undefined;
   private generation = 0;
   private stopped = false;
+  private suspended = false;
+  private preparing: AbortController | undefined;
   private ready = false;
   private inputReceiptSource: "daemon" | "gateway" | undefined;
   private reconnectDelay = MIN_RECONNECT_MS;
@@ -140,6 +145,7 @@ export class MobileConnectionCoordinator {
   private controlChannel: ControlChannel | undefined;
   private inbound = Promise.resolve();
   private readonly subscriptions = new Map<string, TerminalSubscription>();
+  private readonly reportedOrphans = new Set<string>();
   private readonly inputReceipts = new Map<string, PendingInputReceipt>();
   private readonly invalidationListeners = new Set<(event: ProjectionInvalidation) => void>();
   private readonly statusListeners = new Set<(status: "online" | "offline") => void>();
@@ -158,7 +164,7 @@ export class MobileConnectionCoordinator {
     private readonly connection: SavedConnection,
     private readonly socketFactory: DataSocketFactory,
     private readonly diagnostics: MobileDiagnosticReporter = mobileDiagnostics,
-    private readonly prepareConnection?: () => Promise<void>,
+    private readonly prepareConnection?: (signal: AbortSignal) => Promise<void>,
   ) {
     this.control = new MobileControlClient(
       mobileEndpoint(connection.controlUrl),
@@ -192,8 +198,11 @@ export class MobileConnectionCoordinator {
   async attachTerminal(
     session: { id: string; runtime_epoch: number },
     onEvent: (event: TerminalEvent) => void,
+    options: TerminalAttachOptions = {},
   ): Promise<TerminalAttachment> {
+    if (options.signal?.aborted) throw new Error("Terminal attachment was cancelled.");
     const key = terminalKey(session.id, session.runtime_epoch);
+    this.reportedOrphans.delete(key);
     const previous = this.subscriptions.get(key);
     if (previous !== undefined) {
       this.detachSubscription(
@@ -215,6 +224,7 @@ export class MobileConnectionCoordinator {
     // normally once the caller reaches the ACK wait.
     void first.catch(() => {});
     const subscription: TerminalSubscription = {
+      replayPolicy: new TerminalReplayPolicy(options.previousOutputTail),
       key,
       sessionId: session.id,
       runtimeEpoch: session.runtime_epoch,
@@ -241,13 +251,16 @@ export class MobileConnectionCoordinator {
       reconnectWaiters: new Set(),
     };
     this.subscriptions.set(key, subscription);
+    const cancel = () => this.detachSubscription(subscription, "attachment_detached", new Error("Terminal attachment was cancelled."));
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    subscription.removeAbortListener = () => options.signal?.removeEventListener("abort", cancel);
     this.reportTerminal(subscription, "attachment_started", {
       endpoint: websocketEndpointLabel(mobileEndpoint(this.connection.controlUrl)),
       activeSubscriptions: this.subscriptions.size,
     });
     onEvent({ type: "state", state: "connecting" });
     try {
-      await this.ensureConnected();
+      await Promise.race([this.ensureConnected(), first]);
       this.sendAttach(subscription);
       await withTimeout(first, ATTACH_TIMEOUT_MS, "Terminal attachment timed out.");
     } catch (cause: unknown) {
@@ -320,6 +333,11 @@ export class MobileConnectionCoordinator {
   /// already-resolved TerminalAttachment on a permanently stopped owner.
   resetTransport(reconnect = false): void {
     if (this.stopped) return;
+    this.suspended = !reconnect;
+    this.preparing?.abort();
+    // Fence pending reads before closing their channel. An intentional lifecycle
+    // reset must not trigger the control client's network-error retry.
+    this.control.close();
     if (this.reconnectTimer !== undefined) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -353,6 +371,7 @@ export class MobileConnectionCoordinator {
   close(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.preparing?.abort();
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
@@ -369,6 +388,7 @@ export class MobileConnectionCoordinator {
     socket?.close();
     for (const subscription of this.subscriptions.values()) {
       subscription.detached = true;
+      subscription.removeAbortListener?.();
       this.clearAttachmentRetry(subscription);
       this.clearReplay(subscription);
       subscription.onEvent({ type: "state", state: "connectionLost" });
@@ -415,6 +435,7 @@ export class MobileConnectionCoordinator {
 
   private ensureConnected(): Promise<DataSocket> {
     if (this.stopped) return Promise.reject(new Error("Mobile connection is closed."));
+    if (this.suspended) return Promise.reject(new Error("Mobile connection is suspended."));
     if (this.reconnectTimer !== undefined) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -465,7 +486,10 @@ export class MobileConnectionCoordinator {
         ...this.connectionDiagnosticState(preflightStartedAtEpochMs),
       });
       try {
-        await this.prepareConnection();
+        const preparing = new AbortController();
+        this.preparing = preparing;
+        try { await this.prepareConnection(preparing.signal); }
+        finally { if (this.preparing === preparing) this.preparing = undefined; }
       } catch (cause: unknown) {
         const failedAtEpochMs = Date.now();
         const attemptSuperseded = generation !== this.generation || this.stopped;
@@ -655,7 +679,7 @@ export class MobileConnectionCoordinator {
             }
             return;
           }
-          await this.receive(event.data);
+          await this.receive(event.data, generation);
         }).catch((cause: unknown) => {
           this.diagnostics.report("connection", "message_failed", {
             connectionId: this.connection.id,
@@ -699,7 +723,7 @@ export class MobileConnectionCoordinator {
     });
   }
 
-  private async receive(data: unknown): Promise<void> {
+  private async receive(data: unknown, generation: number): Promise<void> {
     this.publishStatus("online");
     if (typeof data === "string") {
       let message: unknown;
@@ -729,9 +753,14 @@ export class MobileConnectionCoordinator {
       if (channel !== undefined && !channel.closed) this.emitControl(channel, "message", { data });
       return;
     }
-    const frame = decodeFrame(await dataSocketMessageBytes(data));
+    const bytes = await dataSocketMessageBytes(data);
+    if (generation !== this.generation || this.stopped || this.suspended) return;
+    const frame = decodeFrame(bytes);
     const subscription = this.subscriptions.get(terminalKey(frame.sessionId, frame.epoch));
     if (subscription === undefined || subscription.detached) {
+      const key = terminalKey(frame.sessionId, frame.epoch);
+      if (this.reportedOrphans.has(key) || this.reportedOrphans.size >= 64) return;
+      this.reportedOrphans.add(key);
       this.diagnostics.report("terminal", "orphan_frame_ignored", {
         connectionId: this.connection.id,
         sessionId: frame.sessionId,
@@ -759,8 +788,7 @@ export class MobileConnectionCoordinator {
           replayFrames: replay.frameCount,
           replayBytes: replay.outputBytes,
         });
-        if (replay.frameCount === 0) this.flushReplay(subscription);
-        else subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), 5_000);
+        if (replay.frameCount > 0) subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), 5_000);
       } else {
         subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), REPLAY_BATCH_SETTLE_MS);
       }
@@ -775,6 +803,7 @@ export class MobileConnectionCoordinator {
       subscription.firstResolve = undefined;
       subscription.firstReject = undefined;
       this.settleWaiters(subscription);
+      if (replay?.frameCount === 0) this.flushReplay(subscription);
       return;
     }
     if (frame.kind === KIND_ERROR) {
@@ -812,6 +841,8 @@ export class MobileConnectionCoordinator {
       this.settleWaiters(subscription, error);
       return;
     }
+    // Frames already queued by the retired attachment can precede the new ACK.
+    if (subscription.awaitingAck) return;
     if (frame.sequence <= subscription.lastInboundSequence) {
       this.reportTerminal(subscription, "duplicate_frame_ignored", {
         frameSequence: frame.sequence.toString(),
@@ -822,7 +853,7 @@ export class MobileConnectionCoordinator {
     const expected = subscription.lastInboundSequence + 1n;
     if (subscription.lastInboundSequence > 0n && frame.sequence > expected) {
       const missing = Number(frame.sequence - expected);
-      this.flushReplay(subscription);
+      if (!this.flushReplay(subscription)) return;
       subscription.onEvent({ type: "gap", droppedFrames: missing });
       this.reportTerminal(subscription, "sequence_gap", {
         expectedSequence: expected.toString(),
@@ -836,7 +867,7 @@ export class MobileConnectionCoordinator {
       this.queueReplay(subscription, frame.payload);
       return;
     }
-    this.flushReplay(subscription);
+    if (!this.flushReplay(subscription)) return;
     if (frame.kind === KIND_OUTPUT) subscription.onEvent({ type: "live", bytes: frame.payload });
     else if (frame.kind === KIND_GAP) {
       const droppedFrames = decodeGapCount(frame.payload);
@@ -858,7 +889,7 @@ export class MobileConnectionCoordinator {
       subscription.runtimeEpoch,
       subscription.sequence++,
       KIND_ATTACH,
-      replayRequestPayload(),
+      replayRequestPayload(subscription.replayPolicy.byteLimit),
     ));
     this.reportTerminal(subscription, "attach_sent", { transportGeneration: this.generation });
   }
@@ -910,6 +941,7 @@ export class MobileConnectionCoordinator {
   ): void {
     if (subscription.detached) return;
     subscription.detached = true;
+    subscription.removeAbortListener?.();
     this.rejectInputReceipts(subscription, waiterError);
     this.subscriptions.delete(subscription.key);
     this.clearAttachmentRetry(subscription);
@@ -972,6 +1004,7 @@ export class MobileConnectionCoordinator {
     // New-generation authentication must not queue behind work owned by a socket
     // we have already fenced out.
     this.inbound = Promise.resolve();
+    this.reportedOrphans.clear();
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
     if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
     this.livenessTimer = undefined;
@@ -1001,7 +1034,7 @@ export class MobileConnectionCoordinator {
   }
 
   private scheduleReconnect(reason: string): void {
-    if (this.stopped || this.reconnectTimer !== undefined) return;
+    if (this.stopped || this.suspended || this.reconnectTimer !== undefined) return;
     if (!this.hasTerminalReconnectDemand()) {
       this.stopReconnectIfIdle();
       return;
@@ -1197,7 +1230,7 @@ export class MobileConnectionCoordinator {
   private queueReplay(subscription: TerminalSubscription, bytes: Uint8Array): void {
     if (subscription.replayBytes > 0
       && subscription.replayBytes + bytes.byteLength > MAX_REPLAY_BATCH_BYTES) {
-      this.flushReplay(subscription);
+      if (!this.flushReplay(subscription)) return;
     }
     subscription.replayChunks.push(bytes);
     subscription.replayBytes += bytes.byteLength;
@@ -1217,8 +1250,7 @@ export class MobileConnectionCoordinator {
     if (expected === undefined || subscription.replayReceivedFrames >= expected) return false;
     if (kind === KIND_REPLAY_OUTPUT) {
       if (subscription.replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
-        this.flushReplay(subscription);
-        return false;
+        return !this.flushReplay(subscription);
       }
       subscription.replayChunks.push(payload);
       subscription.replayBytes += payload.byteLength;
@@ -1227,8 +1259,7 @@ export class MobileConnectionCoordinator {
     } else if (kind === KIND_EOF) {
       subscription.replayEof = true;
     } else {
-      this.flushReplay(subscription);
-      return false;
+      return !this.flushReplay(subscription);
     }
     subscription.replayReceivedFrames += 1;
     subscription.onEvent({ type: "replayProgress", receivedBytes: subscription.replayBytes, totalBytes: subscription.replayExpectedBytes ?? 0 });
@@ -1236,10 +1267,13 @@ export class MobileConnectionCoordinator {
     return true;
   }
 
-  private flushReplay(subscription: TerminalSubscription): void {
+  private flushReplay(subscription: TerminalSubscription): boolean {
     if (subscription.replayTimer !== undefined) clearTimeout(subscription.replayTimer);
     subscription.replayTimer = undefined;
-    if (subscription.detached) return;
+    if (subscription.detached) return false;
+    if (subscription.replayReady && subscription.replayBytes === 0
+      && subscription.replayExpectedFrames === undefined
+      && subscription.replayDroppedFrames === 0 && !subscription.replayEof) return true;
     const expectedFrames = subscription.replayExpectedFrames;
     const expectedBytes = subscription.replayExpectedBytes;
     const receivedFrames = subscription.replayReceivedFrames;
@@ -1253,6 +1287,16 @@ export class MobileConnectionCoordinator {
       offset += chunk.byteLength;
     }
     const chunks = subscription.replayChunks.length;
+    const complete = expectedFrames === undefined
+      || (receivedFrames === expectedFrames && replayBytes === expectedBytes);
+    if (!subscription.replayPolicy.accept(bytes, complete)) {
+      this.clearReplay(subscription);
+      this.reportTerminal(subscription, "replay_expanded", { receivedBytes: replayBytes });
+      // Fence queued live frames from the rejected replay as well as its bytes.
+      // The daemon can prioritize a new ACK ahead of old queued output.
+      void this.forceReconnect(subscription).catch(() => {});
+      return false;
+    }
     if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || replayBytes !== expectedBytes)) subscription.onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     this.clearReplay(subscription);
     if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
@@ -1273,6 +1317,7 @@ export class MobileConnectionCoordinator {
         complete: expectedFrames === undefined || receivedFrames === expectedFrames,
       });
     }
+    return true;
   }
 
   private clearReplay(subscription: TerminalSubscription): void {

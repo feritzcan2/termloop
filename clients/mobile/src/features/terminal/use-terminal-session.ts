@@ -16,7 +16,9 @@ import { TerminalScreenProjection } from "@/presentation/terminal-screen";
 import { attachedImageMessage } from "@/presentation/terminal-image-message";
 import { submitTerminalTurn } from "./submit-terminal-turn";
 import { TerminalOutputBatcher } from "./output-batcher";
+import { projectTerminalOutput, TerminalEventQueue } from "./terminal-event-queue";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
+import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import {
   appendTerminalOutputTail,
   continueTerminalReplay,
@@ -111,10 +113,13 @@ export function useTerminalSession(
     const continuityKey = terminalContinuityKey(connectionId, sessionId, runtimeEpoch);
     const cached = terminalContinuityCache.get(continuityKey);
     let active = true;
+    let projecting = false;
+    let processingFailed = false;
     let reconcilingReplay = cached !== undefined;
     let attachRetry: ReturnType<typeof setTimeout> | undefined;
     let attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
     let ownedAttachment: TerminalAttachment | undefined;
+    const attachLifecycle = new AbortController();
     /// A fresh decoder per attachment. Carrying one across attachments would let a
     /// half-decoded character from the previous stream corrupt the first line of the
     /// next one.
@@ -131,8 +136,8 @@ export function useTerminalSession(
     /// reducer runs, so committing the reduced buffer and the screen separately would
     /// only publish a half-updated frame and double the renders a redraw-heavy TUI
     /// costs.
-    const onEvent = (event: TerminalEvent) => {
-      if (!active) return;
+    const onEvent = async (event: TerminalEvent) => {
+      if (!active || processingFailed) return;
       if (event.type === "state" && event.state === "connected") {
         /// A write can fail in the narrow window before the socket's close event.
         /// The adapter reconnects from that failure; once the new socket is proven
@@ -166,15 +171,20 @@ export function useTerminalSession(
       const outputBytes = effectiveEvent.type === "replay" || effectiveEvent.type === "live"
         ? effectiveEvent.bytes
         : undefined;
-      if (outputBytes !== undefined) {
-        outputTail.current = appendTerminalOutputTail(outputTail.current, outputBytes);
-      }
-      const screen = outputBytes === undefined ? undefined : projection.current?.write(outputBytes);
-      setBuffer((current) => {
-        /// A failed continuity proof reset the ref before React entered this updater.
-        /// Use that baseline instead of the stale state captured by the renderer.
-        const baseline = bufferRef.current === current ? current : bufferRef.current;
-        const next = reduceTerminalEvent(baseline, effectiveEvent, { decode, screenActive: screen !== undefined });
+      projecting = outputBytes !== undefined;
+      const projectionStartedAt = performance.now();
+      const screen = outputBytes === undefined ? undefined : await projectTerminalOutput(
+        projection.current!, outputBytes, () => active && !processingFailed,
+      );
+      if (!active || processingFailed) return;
+      projecting = false;
+      if (effectiveEvent.type === "replay") mobileDiagnostics.report("terminal", "replay_projected", {
+        connectionId, sessionId, bytes: effectiveEvent.bytes.byteLength,
+        durationMs: performance.now() - projectionStartedAt,
+      });
+      if (outputBytes !== undefined) outputTail.current = appendTerminalOutputTail(outputTail.current, outputBytes);
+      {
+        const next = reduceTerminalEvent(bufferRef.current, effectiveEvent, { decode, screenActive: screen !== undefined });
         /// Only an output chunk carries a verdict. A gap or a state change says nothing
         /// about who owns the display and must not clear a live screen.
         const presented = outputBytes === undefined ? next : withTerminalScreen(next, screen);
@@ -184,20 +194,26 @@ export function useTerminalSession(
           projection: projection.current!,
           outputTail: outputTail.current,
         });
-        return presented;
-      });
+        setBuffer(presented);
+      }
     };
 
     /// The runtime epoch is passed through unchanged. It is a fencing identity, not a
     /// counter, so the client neither compares nor increments it — it hands back the
     /// exact value the projection gave and lets the daemon refuse a stale one.
-    const batcher = new TerminalOutputBatcher(onEvent);
+    const queue = new TerminalEventQueue(onEvent, () => {
+      processingFailed = true;
+      mobileDiagnostics.report("terminal", "processing_failed");
+      setReconnectRevision((current) => current + 1);
+    });
+    const batcher = new TerminalOutputBatcher((event) => queue.push(event));
     const attach = () => {
       if (!active) return;
       runtime.terminal.attach(
         connectionId,
         { id: sessionId, runtime_epoch: runtimeEpoch },
         (event) => batcher.push(event),
+        { previousOutputTail: outputTail.current, signal: attachLifecycle.signal },
       ).then(
         (value) => {
           if (active) {
@@ -208,14 +224,14 @@ export function useTerminalSession(
             /// The port promise resolves only after authentication. Reaffirm that
             /// fact at the hook boundary: a retained route can batch its old
             /// `reconnecting` cleanup after the adapter's first connected event.
-            onEvent({ type: "state", state: "connected" });
+            queue.push({ type: "state", state: "connected" });
           } else void value.detach();
         },
         () => {
           if (!active) return;
-          setBuffer((current) => reduceTerminalEvent(current, {
+          queue.push({
             type: "state", state: "connectionLost",
-          }, { decode }));
+          });
           setError(undefined);
           attachRetry = setTimeout(attach, attachRetryDelay);
           attachRetryDelay = Math.min(MAX_ATTACH_RETRY_MS, attachRetryDelay * 2);
@@ -227,11 +243,16 @@ export function useTerminalSession(
     return () => {
       batcher.flush();
       active = false;
+      attachLifecycle.abort();
+      queue.dispose();
       if (attachRetry !== undefined) clearTimeout(attachRetry);
       const retainedProjection = projection.current;
       const detached = detachTerminalBuffer(bufferRef.current);
       bufferRef.current = detached;
-      if (retainedProjection !== undefined) {
+      if (projecting || processingFailed) {
+        // Never cache a partially parsed replay as a complete terminal checkpoint.
+        terminalContinuityCache.delete(continuityKey);
+      } else if (retainedProjection !== undefined) {
         terminalContinuityCache.put(continuityKey, {
           buffer: detached,
           projection: retainedProjection,
@@ -254,7 +275,7 @@ export function useTerminalSession(
     lifecycle.foregroundRevision,
   ]);
 
-  const canSend = buffer.stream === "live" && error === undefined;
+  const canSend = buffer.stream === "live" && buffer.ready === true && error === undefined;
 
   const deliver = useCallback(async (open: TerminalAttachment, bytes: Uint8Array): Promise<boolean> => {
     try {
