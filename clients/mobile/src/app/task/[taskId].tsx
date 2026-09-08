@@ -156,6 +156,9 @@ export default function TaskRoute() {
           templates={runtime.workflowTemplates}
           launch={runtime.workflowLaunch}
           control={runtime.control}
+          sessions={store.overview?.sessions ?? []}
+          statuses={store.overview?.agentStatuses ?? []}
+          agentDataStale={store.error !== undefined || store.load !== "ready"}
           openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(selected.id, { projectId: task.project_id }) })}
           openSession={(sessionId) => {
             void store.refresh();

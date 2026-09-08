@@ -1,16 +1,17 @@
-import type { TaskDto, WorkflowConfigurationListResult } from "@termloop/contract/current";
-import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { AgentStatusDto, SessionDto, TaskDto } from "@termloop/contract/current";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { ControlReadPort } from "../../application/ports";
 import { WorkflowLaunchUnconfirmedError, type WorkflowLaunchPort } from "../../application/workflow-launch-port";
 import type { WorkflowTemplatesPort } from "../../application/workflow-templates-port";
 import { Banner, PrimaryButton } from "../../components/primitives";
-import { useAppLifecycle } from "../../platform/app-lifecycle";
 import { launchBlockedReason } from "../../presentation/agent-launch-presentation";
 import { workflowAgentName, workflowPermissionName, workflowSummary } from "../../presentation/workflow-template";
 import { color, radius, space } from "../../theme/tokens";
 import { WorkflowButton, WorkflowField, WorkflowSelect } from "./workflow-controls";
+import { taskWorkflowExecution } from "../../presentation/workflow-execution";
+import { useWorkflowSnapshot } from "./use-workflow-snapshot";
+import { WorkflowExecutionCard } from "./workflow-execution-card";
 
 export function TaskWorkflowLauncher(props: {
   task: TaskDto;
@@ -19,68 +20,46 @@ export function TaskWorkflowLauncher(props: {
   templates: WorkflowTemplatesPort;
   launch: WorkflowLaunchPort;
   control: ControlReadPort;
+  sessions: readonly SessionDto[];
+  statuses: readonly AgentStatusDto[];
+  agentDataStale: boolean;
   openTemplates(): void;
   openSession(sessionId: string): void;
 }) {
   const { task, connectionId, online, templates, control } = props;
-  const lifecycle = useAppLifecycle();
-  const [snapshot, setSnapshot] = useState<WorkflowConfigurationListResult>();
+  const { snapshot, loading, error: readError, checkedAt, refresh } = useWorkflowSnapshot(templates, control, connectionId, task.project_id, online);
   const [selection, setSelection] = useState("");
   // Undefined means untouched: a late description can still prefill the field.
   // Once edited, even an intentionally empty goal survives projection refreshes.
   const [editedGoal, setEditedGoal] = useState<string>();
   const goal = editedGoal ?? (task.brief?.trim() || task.title);
-  const [loading, setLoading] = useState(true);
-  const [readError, setReadError] = useState<string>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [startedSession, setStartedSession] = useState<string>();
-  const [reload, setReload] = useState(0);
+  const [showNewWorkflow, setShowNewWorkflow] = useState(false);
   const busyRef = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
-  useFocusEffect(useCallback(() => {
-    if (!online || !lifecycle.active) { setLoading(false); return; }
-    let active = true;
-    setLoading(true);
-    templates.list(connectionId, task.project_id).then((next) => {
-      if (!active) return;
-      setSnapshot((current) => !current || next.stateRevision >= current.stateRevision ? next : current);
-      setSelection((current) => current || next.configurations[0]?.id || "");
-      setReadError(undefined);
-    }, (cause: unknown) => {
-      if (active) setReadError(`Could not load workflows. Check that your Mac and mobile gateway are up to date. ${cause instanceof Error ? cause.message : String(cause)}`);
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [templates, connectionId, task.project_id, online, lifecycle.active, lifecycle.foregroundRevision, reload]));
-
   useEffect(() => {
-    if (!online || !lifecycle.active) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const stop = control.subscribeInvalidations(connectionId, (event) => {
-      if (!event.topics.includes("workflow") || timer !== undefined) return;
-      timer = setTimeout(() => { timer = undefined; setReload((value) => value + 1); }, 200);
-    });
-    return () => { stop(); if (timer !== undefined) clearTimeout(timer); };
-  }, [control, connectionId, online, lifecycle.active]);
+    setSelection((current) => current || snapshot?.configurations[0]?.id || "");
+    if (startedSession && snapshot?.executions.some((item) => item.coordinatorSessionId === startedSession)) setStartedSession(undefined);
+  }, [snapshot, startedSession]);
 
   const configurations = snapshot?.configurations ?? [];
   const configuration = configurations.find((item) => item.id === selection);
-  const active = snapshot?.executions.find((item) => item.taskId === task.id && item.status !== "completed");
-  const acknowledgedCompleted = snapshot?.executions.some((item) => item.coordinatorSessionId === startedSession && item.status === "completed");
-  const leadSession = active?.coordinatorSessionId ?? (acknowledgedCompleted ? undefined : startedSession);
+  const execution = taskWorkflowExecution(snapshot?.executions ?? [], task.id);
+  const active = execution?.status !== "completed" ? execution : undefined;
+  const leadSession = active?.coordinatorSessionId ?? startedSession;
   const blocked = !online ? "Reconnect to your Mac to start. Your goal is kept here." : launchBlockedReason(task);
-  const disabled = busy || unconfirmed || !!leadSession || !!blocked || !!readError || loading || !configuration || !goal.trim() || goal.trim().length > 32_768;
+  const disabled = busy || unconfirmed || !!leadSession || !!blocked || !!readError || !snapshot || !configuration || !goal.trim() || goal.trim().length > 32_768;
   const start = async () => {
     if (busyRef.current || disabled || !configuration) return;
     busyRef.current = true; setBusy(true); setError(undefined);
-    let sessionId: string | undefined;
     try {
       const session = await props.launch.start(connectionId, { taskId: task.id, workflowId: configuration.id, goal }, configuration);
-      sessionId = session.id;
-      if (mounted.current) setStartedSession(session.id);
+      if (mounted.current) { setStartedSession(session.id); setShowNewWorkflow(false); refresh(); }
     } catch (cause) {
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -90,17 +69,20 @@ export function TaskWorkflowLauncher(props: {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
-    // Navigation is not launch acknowledgement; a navigation failure must never
-    // invite another command. The acknowledged lead remains available to open.
-    if (sessionId && mounted.current) props.openSession(sessionId);
+    // Stay on the Task: a workflow has multiple agents, not just one terminal.
+    // The acknowledged lead is still available while its progress is loading.
   };
 
   return <View style={styles.card}>
     <View style={styles.header}><Text style={styles.title}>Workflow</Text><WorkflowButton label="Templates" disabled={busy} onPress={props.openTemplates} /></View>
-    {leadSession ? <>
-      <Text style={styles.help}>{active ? `${active.workflowName} · ${active.status === "paused" ? "Paused" : active.steps[active.currentStepIndex]?.title ?? "Running"}` : "Workflow started"}</Text>
-      <PrimaryButton label="Open workflow agent" disabled={!online} onPress={() => props.openSession(leadSession)} />
-    </> : <>
+    {execution ? <WorkflowExecutionCard key={execution.id} execution={execution} sessions={props.sessions} statuses={props.statuses} online={online} agentDataStale={props.agentDataStale} checkedAt={checkedAt} refreshing={loading} error={readError} refresh={refresh} openSession={props.openSession} /> : null}
+    {startedSession && !active ? <>
+      <Text style={styles.help}>Workflow started. Waiting for the Mac’s progress snapshot…</Text>
+      <PrimaryButton label="Open workflow agent" disabled={!online} onPress={() => props.openSession(startedSession)} />
+      <WorkflowButton label="Refresh progress" disabled={!online || loading} onPress={refresh} />
+    </> : null}
+    {execution?.status === "completed" && !startedSession && !showNewWorkflow ? <WorkflowButton label="Start another workflow" disabled={!online} onPress={() => setShowNewWorkflow(true)} /> : null}
+    {!leadSession && (!execution || showNewWorkflow) ? <>
       <Text style={styles.help}>Choose a template and start its agents on this Task.</Text>
       {loading && !snapshot ? <ActivityIndicator color={color.accentStrong} /> : null}
       {configurations.length ? <>
@@ -116,11 +98,11 @@ export function TaskWorkflowLauncher(props: {
         <Text style={styles.help}>No workflow templates in this project yet. Create one on your phone or Mac, then return here to start it.</Text>
         <PrimaryButton label="Create workflow template" disabled={!online} onPress={props.openTemplates} />
       </> : null}
-    </>}
-    {blocked ? <Banner kind="warning" message={blocked} /> : null}
-    {readError ? <Banner kind="danger" message={readError} /> : null}
+    </> : null}
+    {blocked && !execution ? <Banner kind="warning" message={blocked} /> : null}
+    {readError && !execution ? <Banner kind="danger" message={`Could not load workflows. Check the Mac and mobile gateway. ${readError}`} /> : null}
     {error && !leadSession ? <Banner kind="warning" message={error} /> : null}
-    {readError || error ? <WorkflowButton label="Refresh workflows" disabled={!online || loading || busy} onPress={() => setReload((value) => value + 1)} /> : null}
+    {(readError || error) && !execution ? <WorkflowButton label="Refresh workflows" disabled={!online || loading || busy} onPress={refresh} /> : null}
   </View>;
 }
 
