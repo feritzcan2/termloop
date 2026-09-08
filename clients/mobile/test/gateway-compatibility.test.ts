@@ -12,6 +12,29 @@ const connection = {
 } as SavedConnection;
 
 describe("gateway compatibility probe", () => {
+  it("settles on suspension even when native fetch ignores cancellation", async () => {
+    vi.useFakeTimers();
+    const lifecycle = new AbortController();
+    let nativeSignal: AbortSignal | null | undefined;
+    const request = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      nativeSignal = init?.signal;
+      return new Promise<Response>(() => {});
+    });
+    const waking = waitForGatewayReachability(connection, request as typeof fetch, lifecycle.signal);
+    lifecycle.abort();
+    await expect(waking).rejects.toMatchObject({ reason: "requestRejected", requestCauseType: "AbortError" });
+    expect(nativeSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not start a native request for an already suspended attempt", async () => {
+    const lifecycle = new AbortController();
+    lifecycle.abort();
+    const request = vi.fn();
+    await expect(waitForGatewayReachability(connection, request as typeof fetch, lifecycle.signal)).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

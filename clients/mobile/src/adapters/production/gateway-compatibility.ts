@@ -47,9 +47,10 @@ type GatewayRequestOutcome =
 export async function waitForGatewayReachability(
   connection: SavedConnection,
   request: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<void> {
   const health = gatewayHttpEndpoint(connection, "/health");
-  const outcome = await requestWithTimeout(request, health.toString(), GATEWAY_WAKE_TIMEOUT_MS);
+  const outcome = await requestWithTimeout(request, health.toString(), GATEWAY_WAKE_TIMEOUT_MS, signal);
   if (outcome.kind === "timeout") {
     throw new GatewayReachabilityError("timeout", undefined, undefined, outcome.lateSettlement);
   }
@@ -96,8 +97,11 @@ async function requestWithTimeout(
   request: typeof fetch,
   url: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<GatewayRequestOutcome> {
+  if (signal?.aborted) return { kind: "requestRejected", causeType: "AbortError" };
   const controller = new AbortController();
+  let cancel: (() => void) | undefined;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   try {
@@ -131,6 +135,14 @@ async function requestWithTimeout(
         controller.abort();
       }, timeoutMs);
     });
+    const cancelled = new Promise<GatewayRequestOutcome>((resolve) => {
+      cancel = () => {
+        resolve({ kind: "requestRejected", causeType: "AbortError" });
+        controller.abort();
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) cancel();
+    });
     const requestOutcome = new Promise<GatewayRequestOutcome>((resolve) => {
       void response.then(
         (settled) => {
@@ -149,8 +161,10 @@ async function requestWithTimeout(
     return await Promise.race([
       requestOutcome,
       deadline,
+      cancelled,
     ]);
   } finally {
+    if (cancel !== undefined) signal?.removeEventListener("abort", cancel);
     if (timeout !== undefined) clearTimeout(timeout);
   }
 }

@@ -15,7 +15,9 @@ import {
 } from "../src/adapters/production/terminal-frame";
 
 describe("persistent mobile access gateway", () => {
-  it.each(process.platform === "win32" ? ["ipc"] : ["signal", "ipc"])("multiplexes control, invalidations, and terminal frames over one downstream socket (%s shutdown)", async (shutdown) => {
+  it.each(process.platform === "win32"
+    ? [["ipc", true], ["ipc", false]]
+    : [["signal", true], ["ipc", true], ["ipc", false]])("multiplexes control, invalidations, and terminal frames (%s shutdown, daemon receipts %s)", async (shutdown, daemonReceipts) => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-multiplex-"));
     const runtimeFile = path.join(directory, "runtime.json");
     const gatewayConfig = path.join(directory, "gateway.json");
@@ -73,7 +75,7 @@ describe("persistent mobile access gateway", () => {
     });
     const upstreamPort = await listen(upstreamServer);
     writeFileSync(runtimeFile, JSON.stringify({
-      ...JSON.parse(runtime(upstreamPort, "r", "t", "a", 1)),
+      ...JSON.parse(runtime(upstreamPort, "r", "t", "a", daemonReceipts ? 1 : undefined)),
       token: "a".repeat(64),
     }));
     const gatewayPort = await freePort();
@@ -173,14 +175,14 @@ describe("persistent mobile access gateway", () => {
         type: "mobile.authenticate",
         mobileTransportVersion: 2,
         mobileInputReceiptVersion: 1,
-        terminalInputAckVersion: 1,
+        ...(daemonReceipts ? { terminalInputAckVersion: 1 } : {}),
         controlToken: "c".repeat(64),
         terminalToken: "m".repeat(64),
       }));
       expect(JSON.parse((await message(mobile)).toString())).toEqual({
         event: "mobile.ready",
         mobileTransportVersion: 2,
-        terminalInputAckVersion: 1,
+        ...(daemonReceipts ? { terminalInputAckVersion: 1 } : { mobileInputReceiptVersion: 1 }),
       });
       mobile.send(JSON.stringify({
         id: "control-1",
@@ -214,13 +216,18 @@ describe("persistent mobile access gateway", () => {
 
       const inputReceipt = message(mobile);
       mobile.send(encodeFrame(session, 7, 2n, KIND_INPUT, new TextEncoder().encode("hello")));
-      expect(decodeFrame(new Uint8Array(await inputReceipt))).toMatchObject({
-        sessionId: session,
-        epoch: 7,
-        sequence: 2n,
-        kind: KIND_INPUT_ACK,
-      });
-      expect(inputAckEnabled).toBe(true);
+      const received = await inputReceipt;
+      if (daemonReceipts) {
+        expect(decodeFrame(new Uint8Array(received))).toMatchObject({
+          sessionId: session, epoch: 7, sequence: 2n, kind: KIND_INPUT_ACK,
+        });
+      } else {
+        expect(JSON.parse(received.toString())).toMatchObject({
+          event: "mobile.inputAccepted", sessionId: session, runtimeEpoch: 7, frameSequence: "2",
+        });
+        expect((await fetch(`http://127.0.0.1:${gatewayPort}/health`)).status).toBe(200);
+      }
+      expect(inputAckEnabled).toBe(daemonReceipts);
 
       await waitFor(() => subscriptionSocket !== undefined);
       subscriptionSocket.send(JSON.stringify({

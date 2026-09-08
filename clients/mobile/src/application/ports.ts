@@ -321,7 +321,13 @@ export interface TerminalPort {
     connectionId: string,
     session: Pick<SessionDto, "id" | "runtime_epoch">,
     onEvent: (event: TerminalEvent) => void,
+    options?: TerminalAttachOptions,
   ): Promise<TerminalAttachment>;
+}
+
+export interface TerminalAttachOptions {
+  readonly previousOutputTail?: Uint8Array;
+  readonly signal?: AbortSignal;
 }
 
 export interface NotificationRegistrationPort {

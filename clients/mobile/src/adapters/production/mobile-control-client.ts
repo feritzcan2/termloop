@@ -210,6 +210,7 @@ class MobileControlTransportError extends Error {
 /// daemon's current identity and performs only its exact allowlisted method set.
 export class MobileControlClient {
   private counter = 0;
+  private resetRevision = 0;
   private generation = 0;
   private socket: ReturnType<SocketFactory> | undefined;
   private connecting: {
@@ -251,13 +252,15 @@ export class MobileControlClient {
     method: M,
     params: Record<string, unknown> = {},
   ): Promise<MobileControlResults[M]> {
+    const resetRevision = this.resetRevision;
     try {
       return await this.callOnce(method, params);
     } catch (cause: unknown) {
       /// Reads are safe to repeat and a fresh socket is the fastest recovery from an
       /// iOS foreground zombie. Commands, previews, and launches are never retried:
       /// an ambiguous transport outcome must not duplicate user intent.
-      if (!(cause instanceof MobileControlTransportError) || !RETRYABLE_READ_METHODS.has(method)) {
+      if (resetRevision !== this.resetRevision
+        || !(cause instanceof MobileControlTransportError) || !RETRYABLE_READ_METHODS.has(method)) {
         throw cause;
       }
       this.diagnostics.report("control", "request_retry", {
@@ -318,7 +321,10 @@ export class MobileControlClient {
         reject,
         timeout,
       });
-      void Promise.resolve().then(() => this.connected()).then((socket) => {
+      void Promise.resolve().then(() => {
+        if (!this.pending.has(id)) throw new Error("Mobile read was cancelled.");
+        return this.connected();
+      }).then((socket) => {
         if (!this.pending.has(id)) return;
         try {
           socket.send(JSON.stringify({
@@ -366,6 +372,10 @@ export class MobileControlClient {
   }
 
   close(): void {
+    this.resetRevision += 1;
+    this.versionProbe = undefined;
+    this.cachedVersion = undefined;
+    this.lastSuccessfulResponseAtEpochMs = 0;
     const socket = this.socket ?? this.connecting?.socket;
     this.diagnostics.report("control", "client_closed", {
       connectionId: this.connectionId,
