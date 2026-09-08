@@ -1,0 +1,12 @@
+{
+  "id": "quick-actions",
+  "duration": 18.0,
+  "sourceSeconds": 5.625,
+  "size": 798976,
+  "sha256": "58a372a2272d8a89c549d9331e97c528afe9c5e0cb941484adc2ace392e4314f",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": true
+}

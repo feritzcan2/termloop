@@ -1,0 +1,540 @@
+[
+  {
+    "id": "quick-actions",
+    "group": "run",
+    "label": "Quick Actions",
+    "title": "Start the right agent with the right context.",
+    "description": "Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.",
+    "source": "assets/videos/quick-action.mp4",
+    "steps": [
+      "Open Quick Action with Shift Shift.",
+      "Describe the change and choose the agent settings.",
+      "Launch a Session with the context attached."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "task-worktrees",
+    "group": "run",
+    "label": "Task Worktrees",
+    "title": "Isolation when the task needs it.",
+    "description": "Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.",
+    "source": "assets/videos/task-worktree.mp4",
+    "steps": [
+      "Create a Task for one focused change.",
+      "Give the Task its own branch and managed worktree.",
+      "Keep parallel changes in separate checkouts."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "dev-server",
+    "group": "run",
+    "label": "Dev Server",
+    "title": "Define it once. Start it where you work.",
+    "description": "Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.",
+    "source": "assets/videos/dev-server.mp4",
+    "steps": [
+      "Save a preview command for the Project.",
+      "Start the command in the checkout you are using.",
+      "Follow the process output and discovered preview URL."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "multi-agent",
+    "group": "coordinate",
+    "label": "Multi-Agent",
+    "title": "One workspace. Several live agents.",
+    "description": "Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.",
+    "source": "assets/videos/multi-agent.mp4",
+    "steps": [
+      "Keep several agent Sessions in one Project.",
+      "Use the sidebar to see which Session needs attention.",
+      "Open the right terminal without losing the other Sessions."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "ask-to",
+    "group": "coordinate",
+    "label": "Ask To",
+    "title": "Get a second opinion without copy-paste.",
+    "description": "Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
+    "source": "assets/videos/ask-to-v2.mp4",
+    "steps": [
+      "Ask the current agent for a second opinion.",
+      "A visible helper Session receives the question and context.",
+      "The answer returns to the requesting agent."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "handoff",
+    "group": "coordinate",
+    "label": "Handoff",
+    "title": "Move context to the agent already in the work.",
+    "description": "Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.",
+    "source": "assets/videos/handoff.mp4",
+    "steps": [
+      "Choose the existing Session that should receive the brief.",
+      "Compose the context and the next action.",
+      "The destination Session receives the handoff in its terminal."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "fork",
+    "group": "coordinate",
+    "label": "Session Fork",
+    "title": "Explore another direction in a real terminal.",
+    "description": "Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.",
+    "source": "assets/videos/sidebar-fork.mp4",
+    "steps": [
+      "Choose a conversation to explore in a new direction.",
+      "Fork it from the Session menu.",
+      "Continue in a separate Session with visible parentage."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "changes",
+    "group": "review",
+    "label": "Changes",
+    "title": "Review the diff where the work happened.",
+    "description": "Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.",
+    "source": "assets/videos/changes-review.mp4",
+    "steps": [
+      "Open the changed files for the checkout.",
+      "Read the diff and attach a note to a relevant line.",
+      "Send review notes to the selected active agent."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "task-lifecycle",
+    "group": "review",
+    "label": "Task Lifecycle",
+    "title": "Close the work without erasing it.",
+    "description": "Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.",
+    "source": "assets/videos/task-lifecycle.mp4",
+    "steps": [
+      "Close a Task when the work is finished.",
+      "Keep completed work in the Closed section.",
+      "Reopen the Task when another change is needed."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "session-refresh",
+    "group": "review",
+    "label": "Session Refresh",
+    "title": "Refresh the display, not the identity.",
+    "description": "Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.",
+    "source": "assets/videos/session-refresh.mp4",
+    "steps": [
+      "Open the Session actions menu.",
+      "Refresh the provider display for the same conversation.",
+      "Return to the durable Session after the display restarts."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "steward",
+    "group": "operate",
+    "label": "Steward",
+    "title": "A Project-scoped operator that stays present.",
+    "description": "Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.",
+    "source": "assets/videos/steward.mp4",
+    "steps": [
+      "Open the Project Steward workspace.",
+      "Keep project-level instructions beside the work.",
+      "Coordinate Tasks through a persistent Project assistant."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "mobile",
+    "group": "operate",
+    "label": "Mobile Companion",
+    "title": "Check the loop when you leave the desk.",
+    "description": "Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.",
+    "source": "assets/videos/mobile-connect.mp4",
+    "steps": [
+      "Open Connect Mobile from the desktop.",
+      "Use the pairing flow on your trusted network.",
+      "Continue with project visibility and terminal input on your phone."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "mcp-prompts",
+    "group": "operate",
+    "label": "Mcp & Prompts",
+    "title": "Inspect the tools and instructions agents receive.",
+    "description": "Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.",
+    "source": "assets/videos/mcp-prompts.mp4",
+    "steps": [
+      "Open the tools and prompt libraries.",
+      "Read the instructions and tool descriptions agents receive.",
+      "Keep TermLoop-authored context inspectable."
+    ],
+    "provenance": "Original desktop recording · Launchpad",
+    "legacy": true
+  },
+  {
+    "id": "task-briefs",
+    "group": "run",
+    "label": "Task briefs",
+    "title": "Start with a clear definition of done.",
+    "description": "Give each Task a title, a focused brief, and acceptance criteria. Open its detail view to keep the goal beside Sessions and checkout state.",
+    "steps": [
+      "Open the onboarding Task from the sidebar.",
+      "Read its brief and concrete acceptance criteria.",
+      "Keep the goal attached to the work as the Task evolves."
+    ],
+    "captures": [
+      "task-briefs"
+    ],
+    "result": "task-briefs-detail",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "run-configurations",
+    "group": "run",
+    "label": "Run configurations",
+    "title": "Keep launch commands with the Project.",
+    "description": "Save named commands for preview servers, tests, and other local processes. Configure setup commands and fallback URLs in the same editor.",
+    "steps": [
+      "Open the saved Launchpad preview configuration.",
+      "Review pnpm dev, the setup command, and fallback URL.",
+      "Reuse the configuration when starting work in a checkout."
+    ],
+    "captures": [
+      "run-configurations"
+    ],
+    "result": "run-configuration",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "agent-library",
+    "group": "coordinate",
+    "label": "Agent library",
+    "title": "Choose a specialist for the next question.",
+    "description": "Browse reusable agent profiles with a defined purpose. Inspect their provider, working mode, reasoning, and instructions before running one.",
+    "steps": [
+      "Open the Agents library.",
+      "Inspect the Edge Case Hunter profile and its working mode.",
+      "Choose a profile whose instructions match the task."
+    ],
+    "captures": [
+      "agent-library"
+    ],
+    "result": "agent-library-profile",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "custom-agents",
+    "group": "coordinate",
+    "label": "Custom agents",
+    "title": "Save the reviewer your team actually needs.",
+    "description": "Create a reusable agent with its own name, provider settings, and instructions. The Launchpad example checks progress bounds, tests, and keyboard accessibility.",
+    "steps": [
+      "Start from a duplicate of an existing specialist.",
+      "Give the Launchpad reviewer focused, project-specific instructions.",
+      "Save the profile so the same brief can be used again."
+    ],
+    "captures": [
+      "custom-agents"
+    ],
+    "result": "custom-agent-saved",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "workflow-templates",
+    "group": "coordinate",
+    "label": "Workflow templates",
+    "title": "Make the collaboration repeatable.",
+    "description": "Define discussion, implementation, review, and fix steps in a Project template. Choose the agent conversation and instructions for each step before running it in a ready Task worktree.",
+    "steps": [
+      "Open the saved Discuss, build, review template.",
+      "Inspect the ordered discussion, implementation, and review steps.",
+      "Reuse the template for the next Task with a ready worktree."
+    ],
+    "captures": [
+      "workflow-templates"
+    ],
+    "result": "workflow-editor",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "review-cycles",
+    "group": "coordinate",
+    "label": "Review cycles",
+    "title": "Give review a clear stopping rule.",
+    "description": "Configure review and fix steps together, including a maximum number of review rounds. The template makes the review instructions and return path visible.",
+    "steps": [
+      "Select the accessibility and tests review step.",
+      "Give the reviewer a specific checklist to assess.",
+      "Bound the fix-and-review cycle with a maximum round count."
+    ],
+    "captures": [
+      "review-cycles"
+    ],
+    "result": "review-step",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "developer-notes",
+    "group": "review",
+    "label": "Developer notes",
+    "title": "Keep small follow-ups beside the Task.",
+    "description": "Turn the human checks around a change into a short checklist. Mark individual notes complete while keeping their context visible in the sidebar.",
+    "steps": [
+      "Start with the onboarding Task and its three checks.",
+      "Mark the completed tests and keyboard check as done.",
+      "See the checklist reach three of three without leaving the Task."
+    ],
+    "captures": [
+      "developer-notes"
+    ],
+    "result": "developer-notes-done",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "task-favorites",
+    "group": "review",
+    "label": "Task favorites",
+    "title": "Keep important work easy to recognize.",
+    "description": "Mark a Task as a favorite directly from its row. The explicit favorite state lets you distinguish priority work from the rest of the Project.",
+    "steps": [
+      "Reveal the actions on the onboarding Task.",
+      "Toggle the Task favorite with its star control.",
+      "Keep the Task marked while its notes and brief stay intact."
+    ],
+    "captures": [
+      "task-favorites"
+    ],
+    "result": "task-favorites-pinned",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "full-file-review",
+    "group": "review",
+    "label": "Full-file review",
+    "title": "Read the context around the diff.",
+    "description": "Switch from changed lines to the whole file when more context helps. Use unified or split comparison to inspect the same checkout changes.",
+    "steps": [
+      "Open the actual changes in src/releases.mjs.",
+      "Switch from Change focus to Full file.",
+      "Choose Split to compare the old and new versions side by side."
+    ],
+    "captures": [
+      "full-file-review"
+    ],
+    "result": "full-file-review",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "review-progress",
+    "group": "review",
+    "label": "Review progress",
+    "title": "Remember which files you have checked.",
+    "description": "Mark changed files as reviewed as you work through the diff. A visible counter shows what remains in the current review.",
+    "steps": [
+      "Start with two changed files in the Launchpad checkout.",
+      "Mark each file after inspecting its changes.",
+      "See two of two reviewed before returning to the Task."
+    ],
+    "captures": [
+      "review-progress"
+    ],
+    "result": "review-progress-complete",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "task-archive",
+    "group": "review",
+    "label": "Task archive",
+    "title": "Park context without deleting the Task.",
+    "description": "Use the archive preview to inspect whether a Task can be parked safely. Eligible Tasks move out of active work and remain available in Archived items.",
+    "steps": [
+      "Choose Archive Task from the Task actions.",
+      "Read the archive preview before confirming.",
+      "The Task moves out of the active list and into the archive."
+    ],
+    "captures": [
+      "task-archive",
+      "task-archive-action"
+    ],
+    "result": "task-restore/00000",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "task-restore",
+    "group": "review",
+    "label": "Restore archived work",
+    "title": "Bring a parked Task back into the Project.",
+    "description": "Expand Archived items and restore the Task when work resumes. Its brief and developer notes return with it; eligible agent recovery follows the archive restore flow.",
+    "steps": [
+      "Expand Archived items to find the onboarding Task.",
+      "Restore the Task from its archived row.",
+      "Its brief and completed developer notes return to active work."
+    ],
+    "captures": [
+      "task-restore"
+    ],
+    "result": "restored-task",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "terminal-reading",
+    "group": "operate",
+    "label": "Pause to read",
+    "title": "Read output while the Session keeps running.",
+    "description": "Pause the terminal display to inspect output at your own pace. Return to live when you are ready; pausing the view does not stop the process.",
+    "steps": [
+      "Run the five real Launchpad release tests.",
+      "Use Pause to read to hold the displayed output.",
+      "Return to live without ending the Session."
+    ],
+    "captures": [
+      "terminal-reading"
+    ],
+    "result": "terminal-live",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "keep-awake",
+    "group": "operate",
+    "label": "Keep Awake",
+    "title": "Give long-running work time to finish.",
+    "description": "Choose whether to keep the computer awake while agents run, continuously, or for a limited time. Keeping the display on is a separate option.",
+    "steps": [
+      "Open Keep Awake from the sidebar.",
+      "Compare Off, While agents run, and Always.",
+      "Use a timer or the separate display option when needed."
+    ],
+    "captures": [
+      "keep-awake"
+    ],
+    "result": "keep-awake-options",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "notifications",
+    "group": "operate",
+    "label": "Notification preferences",
+    "title": "Choose when each device should alert you.",
+    "description": "Configure desktop, iPhone, and Apple Watch notification preferences. Separate input requests, review-ready alerts, and Steward messages by device.",
+    "steps": [
+      "Open Settings and choose Notifications.",
+      "Review alerts for agent input, completed turns, and Steward messages.",
+      "Choose device-specific sound and active-computer behavior."
+    ],
+    "captures": [
+      "notifications"
+    ],
+    "result": "notification-settings",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "appearance",
+    "group": "operate",
+    "label": "Appearance",
+    "title": "Match the workspace to your environment.",
+    "description": "Choose Light, Dark, or System appearance. The resolved theme applies to the app and terminal panes, with System following the computer preference.",
+    "steps": [
+      "Open Appearance in Settings.",
+      "Compare the Light and Dark workspace themes.",
+      "Choose System to follow the computer automatically."
+    ],
+    "captures": [
+      "appearance"
+    ],
+    "result": "appearance-system",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "context-bank",
+    "group": "customize",
+    "label": "Context Bank",
+    "title": "See the instructions in your checkout.",
+    "description": "Browse project and folder-level instruction files in a searchable tree. Open the real file, inspect its contents, and see its recommended line budget.",
+    "steps": [
+      "Open Context for the Launchpad Project.",
+      "Read the root instructions, then the source-folder instructions.",
+      "Use the file path and line budget to keep context focused."
+    ],
+    "captures": [
+      "context-bank"
+    ],
+    "result": "context-bank-editor",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "context-sync",
+    "group": "customize",
+    "label": "Instruction consistency",
+    "title": "Resolve conflicting sibling instructions explicitly.",
+    "description": "Context Bank flags differing sibling instruction files such as AGENTS.md and CLAUDE.md. Choose the source of truth and review the overwrite count before applying it.",
+    "steps": [
+      "Rescan after sibling instruction files change.",
+      "Compare the source choices in the conflict resolver.",
+      "Choose the source file and apply the explicit synchronization."
+    ],
+    "captures": [
+      "context-sync"
+    ],
+    "result": "context-sync-result",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  },
+  {
+    "id": "skill-library",
+    "group": "customize",
+    "label": "Skill library",
+    "title": "Find and inspect reusable skills.",
+    "description": "Search discovered skills and open their actual instructions. The library shows their locations and provider deployment state so you can understand what is installed.",
+    "steps": [
+      "Search the skill library for simplify.",
+      "Open the skill and read its instructions in the editor.",
+      "Inspect its discovered locations and provider installation state."
+    ],
+    "captures": [
+      "skill-library"
+    ],
+    "result": "skill-editor",
+    "provenance": "Recorded in Launchpad Demo · September 2026",
+    "legacy": false
+  }
+]

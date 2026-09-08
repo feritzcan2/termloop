@@ -1,0 +1,12 @@
+{
+  "id": "notifications",
+  "duration": 18.0,
+  "sourceSeconds": 4.259,
+  "size": 198496,
+  "sha256": "422d98183a52cb2bac0462a6dce9f9343872a855965af50d9262706f0f7ea4e5",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": false
+}

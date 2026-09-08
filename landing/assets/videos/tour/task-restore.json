@@ -1,0 +1,12 @@
+{
+  "id": "task-restore",
+  "duration": 18.0,
+  "sourceSeconds": 4.336,
+  "size": 221126,
+  "sha256": "e1a18f6ba90acad2fc236107544a6f06e70b086ef15fcfec41c11a0bd3994d5d",
+  "width": 1600,
+  "height": 1040,
+  "fps": 24,
+  "captionSteps": 3,
+  "legacy": false
+}

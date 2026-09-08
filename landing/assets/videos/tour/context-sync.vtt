@@ -1,0 +1,13 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:06.000
+Rescan after sibling instruction files change.
+
+2
+00:00:06.000 --> 00:00:12.000
+Compare the source choices in the conflict resolver.
+
+3
+00:00:12.000 --> 00:00:18.000
+Choose the source file and apply the explicit synchronization.

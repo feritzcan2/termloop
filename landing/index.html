@@ -336,6 +336,7 @@
       .will-reveal { opacity:1; transform:none; }
     }
   </style>
+  <link rel="stylesheet" href="assets/feature-guide.css">
 </head>
 <body>
   <header class="topbar">
@@ -359,7 +360,7 @@
         <div class="hero-demo">
           <div class="term">
             <div class="term-bar"><i></i><i></i><i></i><code>termloop — launchpad</code><span class="term-right">live capture · 17s</span></div>
-            <video autoplay muted loop playsinline preload="metadata" poster="assets/product-tour-poster.jpg" aria-label="A real TermLoop workflow showing tasks, agents, changes, dev server, mobile, and MCP settings"><source src="assets/videos/product-tour.webm" type="video/webm"><source src="assets/videos/product-tour.mp4" type="video/mp4"></video>
+            <video controls muted loop playsinline preload="metadata" poster="assets/product-tour-poster.jpg" aria-label="A real TermLoop workflow showing tasks, agents, changes, dev server, mobile, and MCP settings"><source src="assets/videos/product-tour.webm" type="video/webm"><source src="assets/videos/product-tour.mp4" type="video/mp4"></video>
           </div>
           <div class="statusbar" role="group" aria-label="TermLoop fundamentals">
             <span class="session-tag">real app · real state</span>
@@ -385,83 +386,305 @@
     </div></section>
 
     <section class="tour" id="features"><div class="shell">
-      <div class="section-heading"><div><p class="prompt-line">product tour</p><h2>From prompt to reviewed change.</h2></div><p>Every demo below was recorded in the real desktop app with real TermLoop Sessions. Use the index like documentation, or scroll through the workflow end to end.</p></div>
-      <div class="tour-layout">
-        <aside class="feature-nav" aria-label="Feature navigation">
-          <p class="nav-title">On this page</p>
-          <nav>
-            <section><h3>Run</h3><a href="#quick-actions">Quick Actions</a><a href="#task-worktrees">Task worktrees</a><a href="#dev-server">Dev server</a></section>
-            <section><h3>Coordinate</h3><a href="#multi-agent">Multi-agent</a><a href="#ask-to">Ask another agent</a><a href="#handoff">Handoff</a><a href="#fork">Fork sessions</a></section>
-            <section><h3>Review</h3><a href="#changes">Changes & notes</a><a href="#task-lifecycle">Task lifecycle</a><a href="#session-refresh">Session refresh</a></section>
-            <section><h3>Operate</h3><a href="#steward">Steward</a><a href="#mobile">Mobile</a><a href="#mcp-prompts">MCP & prompts</a></section>
-          </nav>
-        </aside>
-        <div class="feature-groups">
-          <section class="feature-group" id="run"><header class="group-head"><h2>Run</h2><span>01 — launch and isolate work</span></header>
-            <article class="feature-story" id="quick-actions">
-              <div class="feature-copy"><span class="feature-kicker">quick actions</span><h3>Start the right agent with the right context.</h3><p>Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.</p><div class="feature-meta"><span>shift shift</span><span>versioned prompt</span><span>claude / codex</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>quick action · inspected launch</code></div><video muted loop playsinline preload="metadata" aria-label="TermLoop Quick Action launching a real agent Session"><source src="assets/videos/quick-action.webm" type="video/webm"><source src="assets/videos/quick-action.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="task-worktrees">
-              <div class="feature-copy"><span class="feature-kicker">task worktrees</span><h3>Isolation when the task needs it.</h3><p>Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.</p><div class="feature-meta"><span>real git</span><span>optional worktree</span><span>safe cleanup</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · managed worktree</code></div><video muted loop playsinline preload="metadata" aria-label="Creating and using a managed Task worktree in TermLoop"><source src="assets/videos/task-worktree.webm" type="video/webm"><source src="assets/videos/task-worktree.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="dev-server">
-              <div class="feature-copy"><span class="feature-kicker">dev server</span><h3>Define it once. Start it where you work.</h3><p>Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.</p><div class="feature-meta"><span>live process</span><span>project config</span><span>preview urls</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>launchpad preview · :4173</code></div><video muted loop playsinline preload="metadata" aria-label="Configuring and starting a real dev server in TermLoop"><source src="assets/videos/dev-server.webm" type="video/webm"><source src="assets/videos/dev-server.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="coordinate"><header class="group-head"><h2>Coordinate</h2><span>02 — agents working together</span></header>
-            <article class="feature-story" id="multi-agent">
-              <div class="feature-copy"><span class="feature-kicker">multi-agent</span><h3>One workspace. Several live agents.</h3><p>Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.</p><div class="feature-meta"><span>parallel sessions</span><span>live status</span><span>shared project</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>active agents · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Several real coding agents running together in TermLoop"><source src="assets/videos/multi-agent.webm" type="video/webm"><source src="assets/videos/multi-agent.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="ask-to">
-              <div class="feature-copy"><span class="feature-kicker">ask to</span><h3>Get a second opinion without copy-paste.</h3><p>Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p><div class="feature-meta"><span>mcp</span><span>claude ↔ codex</span><span>follow-up ready</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>ask_to · release review</code></div><video muted loop playsinline preload="metadata" aria-label="A TermLoop agent consulting a second real agent"><source src="assets/videos/ask-to-v2.webm" type="video/webm"><source src="assets/videos/ask-to-v2.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="handoff">
-              <div class="feature-copy"><span class="feature-kicker">handoff</span><h3>Move context to the agent already in the work.</h3><p>Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p><div class="feature-meta"><span>visible message</span><span>running session</span><span>no clipboard</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>handoff · activity feed</code></div><video muted loop playsinline preload="metadata" aria-label="A real handoff between two running TermLoop agents"><source src="assets/videos/handoff.webm" type="video/webm"><source src="assets/videos/handoff.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="fork">
-              <div class="feature-copy"><span class="feature-kicker">session fork</span><h3>Explore another direction in a real terminal.</h3><p>Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p><div class="feature-meta"><span>real terminal</span><span>visible lineage</span><span>independent context</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session fork · onboarding</code></div><video muted loop playsinline preload="metadata" aria-label="Forking a real agent Session from the TermLoop sidebar"><source src="assets/videos/sidebar-fork.webm" type="video/webm"><source src="assets/videos/sidebar-fork.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="review"><header class="group-head"><h2>Review</h2><span>03 — understand and control state</span></header>
-            <article class="feature-story" id="changes">
-              <div class="feature-copy"><span class="feature-kicker">changes</span><h3>Review the diff where the work happened.</h3><p>Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.</p><div class="feature-meta"><span>git diff</span><span>task counts</span><span>agent notes</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>changes · onboarding checklist</code></div><video muted loop playsinline preload="metadata" aria-label="Reviewing Git changes and leaving a note for an agent in TermLoop"><source src="assets/videos/changes-review.webm" type="video/webm"><source src="assets/videos/changes-review.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="task-lifecycle">
-              <div class="feature-copy"><span class="feature-kicker">task lifecycle</span><h3>Close the work without erasing it.</h3><p>Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.</p><div class="feature-meta"><span>open / closed</span><span>reopen</span><span>state preserved</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · close and retain</code></div><video muted loop playsinline preload="metadata" aria-label="Closing a Task and seeing it move to the Closed section"><source src="assets/videos/task-lifecycle.webm" type="video/webm"><source src="assets/videos/task-lifecycle.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="session-refresh">
-              <div class="feature-copy"><span class="feature-kicker">session refresh</span><h3>Refresh the display, not the identity.</h3><p>Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.</p><div class="feature-meta"><span>stable session</span><span>display recovery</span><span>explicit lifecycle</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session · refresh display</code></div><video muted loop playsinline preload="metadata" aria-label="Refreshing a real agent display from the Session context menu"><source src="assets/videos/session-refresh.webm" type="video/webm"><source src="assets/videos/session-refresh.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="operate"><header class="group-head"><h2>Operate</h2><span>04 — supervise beyond one terminal</span></header>
-            <article class="feature-story" id="steward">
-              <div class="feature-copy"><span class="feature-kicker">steward</span><h3>A Project-scoped operator that stays present.</h3><p>Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.</p><div class="feature-meta"><span>persistent</span><span>project-scoped</span><span>capability-limited</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>steward · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Using the Project Steward in TermLoop"><source src="assets/videos/steward.webm" type="video/webm"><source src="assets/videos/steward.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="mobile">
-              <div class="feature-copy"><span class="feature-kicker">mobile companion</span><h3>Check the loop when you leave the desk.</h3><p>Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.</p><div class="feature-meta"><span>qr pairing</span><span>tailscale ready</span><span>live terminal</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>mobile · secure pairing</code></div><video muted loop playsinline preload="metadata" aria-label="Pairing TermLoop Mobile with the desktop app"><source src="assets/videos/mobile-connect.webm" type="video/webm"><source src="assets/videos/mobile-connect.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="mcp-prompts">
-              <div class="feature-copy"><span class="feature-kicker">mcp &amp; prompts</span><h3>Inspect the tools and instructions agents receive.</h3><p>Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.</p><div class="feature-meta"><span>role profiles</span><span>prompt catalog</span><span>inspectable</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>application settings · MCP</code></div><video muted loop playsinline preload="metadata" aria-label="Inspecting TermLoop MCP tools and built-in prompts"><source src="assets/videos/mcp-prompts.webm" type="video/webm"><source src="assets/videos/mcp-prompts.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-        </div>
-      </div>
+      <div class="section-heading"><div><p class="prompt-line">feature guide · 32 demos</p><h2>Find your next better workflow.</h2></div><p>Explore 32 explained desktop demos, including 19 new recordings. Launchpad is a working demo Project with source files, release tests, Tasks, and real Git changes. Open a guide for the steps, or expand a video to see the details.</p></div>
+      <div class="tour-controls"><label class="tour-search">Find a feature<input id="feature-search" type="search" placeholder="Try workflow, context, review…" autocomplete="off"></label><label>Video speed<select id="video-speed" disabled><option value="0.75">0.75× · slower</option><option value="1" selected>1× · guided</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" disabled> Auto-play visible demos</label><button type="button" id="clear-feature-search" hidden>Clear search</button><p id="feature-count" role="status" aria-live="polite">32 features</p></div>
+      <div class="tour-layout"><aside class="feature-nav" aria-label="Feature navigation"><p class="nav-title">On this page</p><nav><section data-nav-group="run"><h3>Run</h3><a href="#quick-actions">Quick Actions</a><a href="#task-worktrees">Task Worktrees</a><a href="#dev-server">Dev Server</a><a href="#task-briefs">Task briefs</a><a href="#run-configurations">Run configurations</a></section>
+<section data-nav-group="coordinate"><h3>Coordinate</h3><a href="#multi-agent">Multi-Agent</a><a href="#ask-to">Ask To</a><a href="#handoff">Handoff</a><a href="#fork">Session Fork</a><a href="#agent-library">Agent library</a><a href="#custom-agents">Custom agents</a><a href="#workflow-templates">Workflow templates</a><a href="#review-cycles">Review cycles</a></section>
+<section data-nav-group="review"><h3>Review</h3><a href="#changes">Changes</a><a href="#task-lifecycle">Task Lifecycle</a><a href="#session-refresh">Session Refresh</a><a href="#developer-notes">Developer notes</a><a href="#task-favorites">Task favorites</a><a href="#full-file-review">Full-file review</a><a href="#review-progress">Review progress</a><a href="#task-archive">Task archive</a><a href="#task-restore">Restore archived work</a></section>
+<section data-nav-group="operate"><h3>Operate</h3><a href="#steward">Steward</a><a href="#mobile">Mobile Companion</a><a href="#mcp-prompts">Mcp &amp; Prompts</a><a href="#terminal-reading">Pause to read</a><a href="#keep-awake">Keep Awake</a><a href="#notifications">Notification preferences</a><a href="#appearance">Appearance</a></section>
+<section data-nav-group="customize"><h3>Customize</h3><a href="#context-bank">Context Bank</a><a href="#context-sync">Instruction consistency</a><a href="#skill-library">Skill library</a></section></nav></aside><div class="feature-groups"><section class="feature-group" id="run"><header class="group-head"><h2>Run</h2><span>01 — Launch and isolate work</span></header>
+<article class="feature-story" id="quick-actions" data-feature-group="run">
+  <div class="feature-copy"><span class="feature-kicker">quick actions</span><h3>Start the right agent with the right context.</h3><p>Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.</p>
+    <details class="feature-instructions"><summary>How to use Quick Actions</summary><ol><li>Open Quick Action with Shift Shift.</li><li>Describe the change and choose the agent settings.</li><li>Launch a Session with the context attached.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Quick Actions · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/quick-actions.jpg" width="1600" height="1040" aria-label="Quick Actions demonstration" aria-describedby="quick-actions-caption"><source src="assets/videos/tour/quick-actions.webm" type="video/webm"><source src="assets/videos/tour/quick-actions.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/quick-actions.vtt" srclang="en" label="English"><a href="assets/videos/tour/quick-actions.mp4">Watch the Quick Actions video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Quick Actions demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Quick Actions demo">Expand</button><a href="assets/videos/tour/quick-actions.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="quick-actions-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-worktrees" data-feature-group="run">
+  <div class="feature-copy"><span class="feature-kicker">task worktrees</span><h3>Isolation when the task needs it.</h3><p>Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.</p>
+    <details class="feature-instructions"><summary>How to use Task Worktrees</summary><ol><li>Create a Task for one focused change.</li><li>Give the Task its own branch and managed worktree.</li><li>Keep parallel changes in separate checkouts.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Task Worktrees · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-worktrees.jpg" width="1600" height="1040" aria-label="Task Worktrees demonstration" aria-describedby="task-worktrees-caption"><source src="assets/videos/tour/task-worktrees.webm" type="video/webm"><source src="assets/videos/tour/task-worktrees.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-worktrees.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-worktrees.mp4">Watch the Task Worktrees video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Task Worktrees demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Task Worktrees demo">Expand</button><a href="assets/videos/tour/task-worktrees.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-worktrees-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="dev-server" data-feature-group="run">
+  <div class="feature-copy"><span class="feature-kicker">dev server</span><h3>Define it once. Start it where you work.</h3><p>Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.</p>
+    <details class="feature-instructions"><summary>How to use Dev Server</summary><ol><li>Save a preview command for the Project.</li><li>Start the command in the checkout you are using.</li><li>Follow the process output and discovered preview URL.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Dev Server · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/dev-server.jpg" width="1600" height="1040" aria-label="Dev Server demonstration" aria-describedby="dev-server-caption"><source src="assets/videos/tour/dev-server.webm" type="video/webm"><source src="assets/videos/tour/dev-server.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/dev-server.vtt" srclang="en" label="English"><a href="assets/videos/tour/dev-server.mp4">Watch the Dev Server video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Dev Server demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Dev Server demo">Expand</button><a href="assets/videos/tour/dev-server.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="dev-server-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-briefs" data-feature-group="run">
+  <div class="feature-copy"><span class="feature-kicker">task briefs</span><h3>Start with a clear definition of done.</h3><p>Give each Task a title, a focused brief, and acceptance criteria. Open its detail view to keep the goal beside Sessions and checkout state.</p>
+    <details class="feature-instructions"><summary>How to use Task briefs</summary><ol><li>Open the onboarding Task from the sidebar.</li><li>Read its brief and concrete acceptance criteria.</li><li>Keep the goal attached to the work as the Task evolves.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Task briefs · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-briefs.jpg" width="1600" height="1040" aria-label="Task briefs demonstration" aria-describedby="task-briefs-caption"><source src="assets/videos/tour/task-briefs.webm" type="video/webm"><source src="assets/videos/tour/task-briefs.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-briefs.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-briefs.mp4">Watch the Task briefs video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Task briefs demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Task briefs demo">Expand</button><a href="assets/videos/tour/task-briefs.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-briefs-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="run-configurations" data-feature-group="run">
+  <div class="feature-copy"><span class="feature-kicker">run configurations</span><h3>Keep launch commands with the Project.</h3><p>Save named commands for preview servers, tests, and other local processes. Configure setup commands and fallback URLs in the same editor.</p>
+    <details class="feature-instructions"><summary>How to use Run configurations</summary><ol><li>Open the saved Launchpad preview configuration.</li><li>Review pnpm dev, the setup command, and fallback URL.</li><li>Reuse the configuration when starting work in a checkout.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Run configurations · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/run-configurations.jpg" width="1600" height="1040" aria-label="Run configurations demonstration" aria-describedby="run-configurations-caption"><source src="assets/videos/tour/run-configurations.webm" type="video/webm"><source src="assets/videos/tour/run-configurations.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/run-configurations.vtt" srclang="en" label="English"><a href="assets/videos/tour/run-configurations.mp4">Watch the Run configurations video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Run configurations demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Run configurations demo">Expand</button><a href="assets/videos/tour/run-configurations.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="run-configurations-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article></section>
+<section class="feature-group" id="coordinate"><header class="group-head"><h2>Coordinate</h2><span>02 — Agents working together</span></header>
+<article class="feature-story" id="multi-agent" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">multi-agent</span><h3>One workspace. Several live agents.</h3><p>Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.</p>
+    <details class="feature-instructions"><summary>How to use Multi-Agent</summary><ol><li>Keep several agent Sessions in one Project.</li><li>Use the sidebar to see which Session needs attention.</li><li>Open the right terminal without losing the other Sessions.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Multi-Agent · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/multi-agent.jpg" width="1600" height="1040" aria-label="Multi-Agent demonstration" aria-describedby="multi-agent-caption"><source src="assets/videos/tour/multi-agent.webm" type="video/webm"><source src="assets/videos/tour/multi-agent.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/multi-agent.vtt" srclang="en" label="English"><a href="assets/videos/tour/multi-agent.mp4">Watch the Multi-Agent video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Multi-Agent demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Multi-Agent demo">Expand</button><a href="assets/videos/tour/multi-agent.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="multi-agent-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="ask-to" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">ask to</span><h3>Get a second opinion without copy-paste.</h3><p>Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p>
+    <details class="feature-instructions"><summary>How to use Ask To</summary><ol><li>Ask the current agent for a second opinion.</li><li>A visible helper Session receives the question and context.</li><li>The answer returns to the requesting agent.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Ask To · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/ask-to.jpg" width="1600" height="1040" aria-label="Ask To demonstration" aria-describedby="ask-to-caption"><source src="assets/videos/tour/ask-to.webm" type="video/webm"><source src="assets/videos/tour/ask-to.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/ask-to.vtt" srclang="en" label="English"><a href="assets/videos/tour/ask-to.mp4">Watch the Ask To video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Ask To demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Ask To demo">Expand</button><a href="assets/videos/tour/ask-to.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="ask-to-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="handoff" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">handoff</span><h3>Move context to the agent already in the work.</h3><p>Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p>
+    <details class="feature-instructions"><summary>How to use Handoff</summary><ol><li>Choose the existing Session that should receive the brief.</li><li>Compose the context and the next action.</li><li>The destination Session receives the handoff in its terminal.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Handoff · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/handoff.jpg" width="1600" height="1040" aria-label="Handoff demonstration" aria-describedby="handoff-caption"><source src="assets/videos/tour/handoff.webm" type="video/webm"><source src="assets/videos/tour/handoff.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/handoff.vtt" srclang="en" label="English"><a href="assets/videos/tour/handoff.mp4">Watch the Handoff video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Handoff demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Handoff demo">Expand</button><a href="assets/videos/tour/handoff.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="handoff-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="fork" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">session fork</span><h3>Explore another direction in a real terminal.</h3><p>Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p>
+    <details class="feature-instructions"><summary>How to use Session Fork</summary><ol><li>Choose a conversation to explore in a new direction.</li><li>Fork it from the Session menu.</li><li>Continue in a separate Session with visible parentage.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Session Fork · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/fork.jpg" width="1600" height="1040" aria-label="Session Fork demonstration" aria-describedby="fork-caption"><source src="assets/videos/tour/fork.webm" type="video/webm"><source src="assets/videos/tour/fork.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/fork.vtt" srclang="en" label="English"><a href="assets/videos/tour/fork.mp4">Watch the Session Fork video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Session Fork demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Session Fork demo">Expand</button><a href="assets/videos/tour/fork.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="fork-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="agent-library" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">agent library</span><h3>Choose a specialist for the next question.</h3><p>Browse reusable agent profiles with a defined purpose. Inspect their provider, working mode, reasoning, and instructions before running one.</p>
+    <details class="feature-instructions"><summary>How to use Agent library</summary><ol><li>Open the Agents library.</li><li>Inspect the Edge Case Hunter profile and its working mode.</li><li>Choose a profile whose instructions match the task.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Agent library · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/agent-library.jpg" width="1600" height="1040" aria-label="Agent library demonstration" aria-describedby="agent-library-caption"><source src="assets/videos/tour/agent-library.webm" type="video/webm"><source src="assets/videos/tour/agent-library.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/agent-library.vtt" srclang="en" label="English"><a href="assets/videos/tour/agent-library.mp4">Watch the Agent library video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Agent library demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Agent library demo">Expand</button><a href="assets/videos/tour/agent-library.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="agent-library-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="custom-agents" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">custom agents</span><h3>Save the reviewer your team actually needs.</h3><p>Create a reusable agent with its own name, provider settings, and instructions. The Launchpad example checks progress bounds, tests, and keyboard accessibility.</p>
+    <details class="feature-instructions"><summary>How to use Custom agents</summary><ol><li>Start from a duplicate of an existing specialist.</li><li>Give the Launchpad reviewer focused, project-specific instructions.</li><li>Save the profile so the same brief can be used again.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Custom agents · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/custom-agents.jpg" width="1600" height="1040" aria-label="Custom agents demonstration" aria-describedby="custom-agents-caption"><source src="assets/videos/tour/custom-agents.webm" type="video/webm"><source src="assets/videos/tour/custom-agents.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/custom-agents.vtt" srclang="en" label="English"><a href="assets/videos/tour/custom-agents.mp4">Watch the Custom agents video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Custom agents demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Custom agents demo">Expand</button><a href="assets/videos/tour/custom-agents.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="custom-agents-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="workflow-templates" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">workflow templates</span><h3>Make the collaboration repeatable.</h3><p>Define discussion, implementation, review, and fix steps in a Project template. Choose the agent conversation and instructions for each step before running it in a ready Task worktree.</p>
+    <details class="feature-instructions"><summary>How to use Workflow templates</summary><ol><li>Open the saved Discuss, build, review template.</li><li>Inspect the ordered discussion, implementation, and review steps.</li><li>Reuse the template for the next Task with a ready worktree.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Workflow templates · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/workflow-templates.jpg" width="1600" height="1040" aria-label="Workflow templates demonstration" aria-describedby="workflow-templates-caption"><source src="assets/videos/tour/workflow-templates.webm" type="video/webm"><source src="assets/videos/tour/workflow-templates.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/workflow-templates.vtt" srclang="en" label="English"><a href="assets/videos/tour/workflow-templates.mp4">Watch the Workflow templates video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Workflow templates demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Workflow templates demo">Expand</button><a href="assets/videos/tour/workflow-templates.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="workflow-templates-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="review-cycles" data-feature-group="coordinate">
+  <div class="feature-copy"><span class="feature-kicker">review cycles</span><h3>Give review a clear stopping rule.</h3><p>Configure review and fix steps together, including a maximum number of review rounds. The template makes the review instructions and return path visible.</p>
+    <details class="feature-instructions"><summary>How to use Review cycles</summary><ol><li>Select the accessibility and tests review step.</li><li>Give the reviewer a specific checklist to assess.</li><li>Bound the fix-and-review cycle with a maximum round count.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Review cycles · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/review-cycles.jpg" width="1600" height="1040" aria-label="Review cycles demonstration" aria-describedby="review-cycles-caption"><source src="assets/videos/tour/review-cycles.webm" type="video/webm"><source src="assets/videos/tour/review-cycles.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/review-cycles.vtt" srclang="en" label="English"><a href="assets/videos/tour/review-cycles.mp4">Watch the Review cycles video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Review cycles demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Review cycles demo">Expand</button><a href="assets/videos/tour/review-cycles.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="review-cycles-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article></section>
+<section class="feature-group" id="review"><header class="group-head"><h2>Review</h2><span>03 — Understand and retain the work</span></header>
+<article class="feature-story" id="changes" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">changes</span><h3>Review the diff where the work happened.</h3><p>Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.</p>
+    <details class="feature-instructions"><summary>How to use Changes</summary><ol><li>Open the changed files for the checkout.</li><li>Read the diff and attach a note to a relevant line.</li><li>Send review notes to the selected active agent.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Changes · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/changes.jpg" width="1600" height="1040" aria-label="Changes demonstration" aria-describedby="changes-caption"><source src="assets/videos/tour/changes.webm" type="video/webm"><source src="assets/videos/tour/changes.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/changes.vtt" srclang="en" label="English"><a href="assets/videos/tour/changes.mp4">Watch the Changes video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Changes demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Changes demo">Expand</button><a href="assets/videos/tour/changes.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="changes-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-lifecycle" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">task lifecycle</span><h3>Close the work without erasing it.</h3><p>Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.</p>
+    <details class="feature-instructions"><summary>How to use Task Lifecycle</summary><ol><li>Close a Task when the work is finished.</li><li>Keep completed work in the Closed section.</li><li>Reopen the Task when another change is needed.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Task Lifecycle · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-lifecycle.jpg" width="1600" height="1040" aria-label="Task Lifecycle demonstration" aria-describedby="task-lifecycle-caption"><source src="assets/videos/tour/task-lifecycle.webm" type="video/webm"><source src="assets/videos/tour/task-lifecycle.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-lifecycle.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-lifecycle.mp4">Watch the Task Lifecycle video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Task Lifecycle demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Task Lifecycle demo">Expand</button><a href="assets/videos/tour/task-lifecycle.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-lifecycle-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="session-refresh" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">session refresh</span><h3>Refresh the display, not the identity.</h3><p>Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.</p>
+    <details class="feature-instructions"><summary>How to use Session Refresh</summary><ol><li>Open the Session actions menu.</li><li>Refresh the provider display for the same conversation.</li><li>Return to the durable Session after the display restarts.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Session Refresh · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/session-refresh.jpg" width="1600" height="1040" aria-label="Session Refresh demonstration" aria-describedby="session-refresh-caption"><source src="assets/videos/tour/session-refresh.webm" type="video/webm"><source src="assets/videos/tour/session-refresh.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/session-refresh.vtt" srclang="en" label="English"><a href="assets/videos/tour/session-refresh.mp4">Watch the Session Refresh video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Session Refresh demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Session Refresh demo">Expand</button><a href="assets/videos/tour/session-refresh.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="session-refresh-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="developer-notes" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">developer notes</span><h3>Keep small follow-ups beside the Task.</h3><p>Turn the human checks around a change into a short checklist. Mark individual notes complete while keeping their context visible in the sidebar.</p>
+    <details class="feature-instructions"><summary>How to use Developer notes</summary><ol><li>Start with the onboarding Task and its three checks.</li><li>Mark the completed tests and keyboard check as done.</li><li>See the checklist reach three of three without leaving the Task.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Developer notes · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/developer-notes.jpg" width="1600" height="1040" aria-label="Developer notes demonstration" aria-describedby="developer-notes-caption"><source src="assets/videos/tour/developer-notes.webm" type="video/webm"><source src="assets/videos/tour/developer-notes.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/developer-notes.vtt" srclang="en" label="English"><a href="assets/videos/tour/developer-notes.mp4">Watch the Developer notes video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Developer notes demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Developer notes demo">Expand</button><a href="assets/videos/tour/developer-notes.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="developer-notes-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-favorites" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">task favorites</span><h3>Keep important work easy to recognize.</h3><p>Mark a Task as a favorite directly from its row. The explicit favorite state lets you distinguish priority work from the rest of the Project.</p>
+    <details class="feature-instructions"><summary>How to use Task favorites</summary><ol><li>Reveal the actions on the onboarding Task.</li><li>Toggle the Task favorite with its star control.</li><li>Keep the Task marked while its notes and brief stay intact.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Task favorites · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-favorites.jpg" width="1600" height="1040" aria-label="Task favorites demonstration" aria-describedby="task-favorites-caption"><source src="assets/videos/tour/task-favorites.webm" type="video/webm"><source src="assets/videos/tour/task-favorites.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-favorites.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-favorites.mp4">Watch the Task favorites video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Task favorites demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Task favorites demo">Expand</button><a href="assets/videos/tour/task-favorites.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-favorites-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="full-file-review" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">full-file review</span><h3>Read the context around the diff.</h3><p>Switch from changed lines to the whole file when more context helps. Use unified or split comparison to inspect the same checkout changes.</p>
+    <details class="feature-instructions"><summary>How to use Full-file review</summary><ol><li>Open the actual changes in src/releases.mjs.</li><li>Switch from Change focus to Full file.</li><li>Choose Split to compare the old and new versions side by side.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Full-file review · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/full-file-review.jpg" width="1600" height="1040" aria-label="Full-file review demonstration" aria-describedby="full-file-review-caption"><source src="assets/videos/tour/full-file-review.webm" type="video/webm"><source src="assets/videos/tour/full-file-review.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/full-file-review.vtt" srclang="en" label="English"><a href="assets/videos/tour/full-file-review.mp4">Watch the Full-file review video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Full-file review demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Full-file review demo">Expand</button><a href="assets/videos/tour/full-file-review.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="full-file-review-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="review-progress" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">review progress</span><h3>Remember which files you have checked.</h3><p>Mark changed files as reviewed as you work through the diff. A visible counter shows what remains in the current review.</p>
+    <details class="feature-instructions"><summary>How to use Review progress</summary><ol><li>Start with two changed files in the Launchpad checkout.</li><li>Mark each file after inspecting its changes.</li><li>See two of two reviewed before returning to the Task.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Review progress · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/review-progress.jpg" width="1600" height="1040" aria-label="Review progress demonstration" aria-describedby="review-progress-caption"><source src="assets/videos/tour/review-progress.webm" type="video/webm"><source src="assets/videos/tour/review-progress.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/review-progress.vtt" srclang="en" label="English"><a href="assets/videos/tour/review-progress.mp4">Watch the Review progress video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Review progress demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Review progress demo">Expand</button><a href="assets/videos/tour/review-progress.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="review-progress-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-archive" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">task archive</span><h3>Park context without deleting the Task.</h3><p>Use the archive preview to inspect whether a Task can be parked safely. Eligible Tasks move out of active work and remain available in Archived items.</p>
+    <details class="feature-instructions"><summary>How to use Task archive</summary><ol><li>Choose Archive Task from the Task actions.</li><li>Read the archive preview before confirming.</li><li>The Task moves out of the active list and into the archive.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Task archive · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-archive.jpg" width="1600" height="1040" aria-label="Task archive demonstration" aria-describedby="task-archive-caption"><source src="assets/videos/tour/task-archive.webm" type="video/webm"><source src="assets/videos/tour/task-archive.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-archive.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-archive.mp4">Watch the Task archive video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Task archive demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Task archive demo">Expand</button><a href="assets/videos/tour/task-archive.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-archive-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="task-restore" data-feature-group="review">
+  <div class="feature-copy"><span class="feature-kicker">restore archived work</span><h3>Bring a parked Task back into the Project.</h3><p>Expand Archived items and restore the Task when work resumes. Its brief and developer notes return with it; eligible agent recovery follows the archive restore flow.</p>
+    <details class="feature-instructions"><summary>How to use Restore archived work</summary><ol><li>Expand Archived items to find the onboarding Task.</li><li>Restore the Task from its archived row.</li><li>Its brief and completed developer notes return to active work.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Restore archived work · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/task-restore.jpg" width="1600" height="1040" aria-label="Restore archived work demonstration" aria-describedby="task-restore-caption"><source src="assets/videos/tour/task-restore.webm" type="video/webm"><source src="assets/videos/tour/task-restore.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-restore.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-restore.mp4">Watch the Restore archived work video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Restore archived work demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Restore archived work demo">Expand</button><a href="assets/videos/tour/task-restore.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="task-restore-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article></section>
+<section class="feature-group" id="operate"><header class="group-head"><h2>Operate</h2><span>04 — Keep the workspace running</span></header>
+<article class="feature-story" id="steward" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">steward</span><h3>A Project-scoped operator that stays present.</h3><p>Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.</p>
+    <details class="feature-instructions"><summary>How to use Steward</summary><ol><li>Open the Project Steward workspace.</li><li>Keep project-level instructions beside the work.</li><li>Coordinate Tasks through a persistent Project assistant.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Steward · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/steward.jpg" width="1600" height="1040" aria-label="Steward demonstration" aria-describedby="steward-caption"><source src="assets/videos/tour/steward.webm" type="video/webm"><source src="assets/videos/tour/steward.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/steward.vtt" srclang="en" label="English"><a href="assets/videos/tour/steward.mp4">Watch the Steward video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Steward demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Steward demo">Expand</button><a href="assets/videos/tour/steward.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="steward-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="mobile" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">mobile companion</span><h3>Check the loop when you leave the desk.</h3><p>Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.</p>
+    <details class="feature-instructions"><summary>How to use Mobile Companion</summary><ol><li>Open Connect Mobile from the desktop.</li><li>Use the pairing flow on your trusted network.</li><li>Continue with project visibility and terminal input on your phone.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Mobile Companion · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/mobile.jpg" width="1600" height="1040" aria-label="Mobile Companion demonstration" aria-describedby="mobile-caption"><source src="assets/videos/tour/mobile.webm" type="video/webm"><source src="assets/videos/tour/mobile.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/mobile.vtt" srclang="en" label="English"><a href="assets/videos/tour/mobile.mp4">Watch the Mobile Companion video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Mobile Companion demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Mobile Companion demo">Expand</button><a href="assets/videos/tour/mobile.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="mobile-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="mcp-prompts" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">mcp &amp; prompts</span><h3>Inspect the tools and instructions agents receive.</h3><p>Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.</p>
+    <details class="feature-instructions"><summary>How to use Mcp &amp; Prompts</summary><ol><li>Open the tools and prompt libraries.</li><li>Read the instructions and tool descriptions agents receive.</li><li>Keep TermLoop-authored context inspectable.</li></ol></details>
+    <div class="feature-meta"><span>Original demo · re-edited</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Mcp &amp; Prompts · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/mcp-prompts.jpg" width="1600" height="1040" aria-label="Mcp &amp; Prompts demonstration" aria-describedby="mcp-prompts-caption"><source src="assets/videos/tour/mcp-prompts.webm" type="video/webm"><source src="assets/videos/tour/mcp-prompts.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/mcp-prompts.vtt" srclang="en" label="English"><a href="assets/videos/tour/mcp-prompts.mp4">Watch the Mcp &amp; Prompts video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Mcp &amp; Prompts demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Mcp &amp; Prompts demo">Expand</button><a href="assets/videos/tour/mcp-prompts.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="mcp-prompts-caption">Original desktop recording · Launchpad. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="terminal-reading" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">pause to read</span><h3>Read output while the Session keeps running.</h3><p>Pause the terminal display to inspect output at your own pace. Return to live when you are ready; pausing the view does not stop the process.</p>
+    <details class="feature-instructions"><summary>How to use Pause to read</summary><ol><li>Run the five real Launchpad release tests.</li><li>Use Pause to read to hold the displayed output.</li><li>Return to live without ending the Session.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Pause to read · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/terminal-reading.jpg" width="1600" height="1040" aria-label="Pause to read demonstration" aria-describedby="terminal-reading-caption"><source src="assets/videos/tour/terminal-reading.webm" type="video/webm"><source src="assets/videos/tour/terminal-reading.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/terminal-reading.vtt" srclang="en" label="English"><a href="assets/videos/tour/terminal-reading.mp4">Watch the Pause to read video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Pause to read demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Pause to read demo">Expand</button><a href="assets/videos/tour/terminal-reading.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="terminal-reading-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="keep-awake" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">keep awake</span><h3>Give long-running work time to finish.</h3><p>Choose whether to keep the computer awake while agents run, continuously, or for a limited time. Keeping the display on is a separate option.</p>
+    <details class="feature-instructions"><summary>How to use Keep Awake</summary><ol><li>Open Keep Awake from the sidebar.</li><li>Compare Off, While agents run, and Always.</li><li>Use a timer or the separate display option when needed.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Keep Awake · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/keep-awake.jpg" width="1600" height="1040" aria-label="Keep Awake demonstration" aria-describedby="keep-awake-caption"><source src="assets/videos/tour/keep-awake.webm" type="video/webm"><source src="assets/videos/tour/keep-awake.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/keep-awake.vtt" srclang="en" label="English"><a href="assets/videos/tour/keep-awake.mp4">Watch the Keep Awake video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Keep Awake demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Keep Awake demo">Expand</button><a href="assets/videos/tour/keep-awake.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="keep-awake-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="notifications" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">notification preferences</span><h3>Choose when each device should alert you.</h3><p>Configure desktop, iPhone, and Apple Watch notification preferences. Separate input requests, review-ready alerts, and Steward messages by device.</p>
+    <details class="feature-instructions"><summary>How to use Notification preferences</summary><ol><li>Open Settings and choose Notifications.</li><li>Review alerts for agent input, completed turns, and Steward messages.</li><li>Choose device-specific sound and active-computer behavior.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Notification preferences · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/notifications.jpg" width="1600" height="1040" aria-label="Notification preferences demonstration" aria-describedby="notifications-caption"><source src="assets/videos/tour/notifications.webm" type="video/webm"><source src="assets/videos/tour/notifications.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/notifications.vtt" srclang="en" label="English"><a href="assets/videos/tour/notifications.mp4">Watch the Notification preferences video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Notification preferences demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Notification preferences demo">Expand</button><a href="assets/videos/tour/notifications.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="notifications-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="appearance" data-feature-group="operate">
+  <div class="feature-copy"><span class="feature-kicker">appearance</span><h3>Match the workspace to your environment.</h3><p>Choose Light, Dark, or System appearance. The resolved theme applies to the app and terminal panes, with System following the computer preference.</p>
+    <details class="feature-instructions"><summary>How to use Appearance</summary><ol><li>Open Appearance in Settings.</li><li>Compare the Light and Dark workspace themes.</li><li>Choose System to follow the computer automatically.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Appearance · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/appearance.jpg" width="1600" height="1040" aria-label="Appearance demonstration" aria-describedby="appearance-caption"><source src="assets/videos/tour/appearance.webm" type="video/webm"><source src="assets/videos/tour/appearance.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/appearance.vtt" srclang="en" label="English"><a href="assets/videos/tour/appearance.mp4">Watch the Appearance video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Appearance demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Appearance demo">Expand</button><a href="assets/videos/tour/appearance.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="appearance-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article></section>
+<section class="feature-group" id="customize"><header class="group-head"><h2>Customize</h2><span>05 — Give agents the right instructions</span></header>
+<article class="feature-story" id="context-bank" data-feature-group="customize">
+  <div class="feature-copy"><span class="feature-kicker">context bank</span><h3>See the instructions in your checkout.</h3><p>Browse project and folder-level instruction files in a searchable tree. Open the real file, inspect its contents, and see its recommended line budget.</p>
+    <details class="feature-instructions"><summary>How to use Context Bank</summary><ol><li>Open Context for the Launchpad Project.</li><li>Read the root instructions, then the source-folder instructions.</li><li>Use the file path and line budget to keep context focused.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Context Bank · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/context-bank.jpg" width="1600" height="1040" aria-label="Context Bank demonstration" aria-describedby="context-bank-caption"><source src="assets/videos/tour/context-bank.webm" type="video/webm"><source src="assets/videos/tour/context-bank.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/context-bank.vtt" srclang="en" label="English"><a href="assets/videos/tour/context-bank.mp4">Watch the Context Bank video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Context Bank demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Context Bank demo">Expand</button><a href="assets/videos/tour/context-bank.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="context-bank-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="context-sync" data-feature-group="customize">
+  <div class="feature-copy"><span class="feature-kicker">instruction consistency</span><h3>Resolve conflicting sibling instructions explicitly.</h3><p>Context Bank flags differing sibling instruction files such as AGENTS.md and CLAUDE.md. Choose the source of truth and review the overwrite count before applying it.</p>
+    <details class="feature-instructions"><summary>How to use Instruction consistency</summary><ol><li>Rescan after sibling instruction files change.</li><li>Compare the source choices in the conflict resolver.</li><li>Choose the source file and apply the explicit synchronization.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Instruction consistency · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/context-sync.jpg" width="1600" height="1040" aria-label="Instruction consistency demonstration" aria-describedby="context-sync-caption"><source src="assets/videos/tour/context-sync.webm" type="video/webm"><source src="assets/videos/tour/context-sync.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/context-sync.vtt" srclang="en" label="English"><a href="assets/videos/tour/context-sync.mp4">Watch the Instruction consistency video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Instruction consistency demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Instruction consistency demo">Expand</button><a href="assets/videos/tour/context-sync.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="context-sync-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article>
+<article class="feature-story" id="skill-library" data-feature-group="customize">
+  <div class="feature-copy"><span class="feature-kicker">skill library</span><h3>Find and inspect reusable skills.</h3><p>Search discovered skills and open their actual instructions. The library shows their locations and provider deployment state so you can understand what is installed.</p>
+    <details class="feature-instructions"><summary>How to use Skill library</summary><ol><li>Search the skill library for simplify.</li><li>Open the skill and read its instructions in the editor.</li><li>Inspect its discovered locations and provider installation state.</li></ol></details>
+    <div class="feature-meta"><span>New demo</span><span>3 explained steps</span></div>
+  </div>
+  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>Skill library · Launchpad</code></div>
+    <video controls muted playsinline preload="none" poster="assets/videos/tour/skill-library.jpg" width="1600" height="1040" aria-label="Skill library demonstration" aria-describedby="skill-library-caption"><source src="assets/videos/tour/skill-library.webm" type="video/webm"><source src="assets/videos/tour/skill-library.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/skill-library.vtt" srclang="en" label="English"><a href="assets/videos/tour/skill-library.mp4">Watch the Skill library video</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play Skill library demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand Skill library demo">Expand</button><a href="assets/videos/tour/skill-library.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="skill-library-caption">Recorded in Launchpad Demo · September 2026. Explanations are included in the video.</p></div>
+</article></section><p id="feature-empty" hidden>No matching features. Try a broader search or clear the filter.</p></div></div>
     </div></section>
 
     <section class="section principles" id="principles"><div class="shell principles-grid">
@@ -499,48 +722,6 @@
     <span>© 2026</span>
   </div></footer>
 
-  <script>
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const featureStories = [...document.querySelectorAll('.feature-story')];
-    const featureVideos = [...document.querySelectorAll('.feature-story video')];
-    if (!reducedMotion && 'IntersectionObserver' in window) {
-      const videoObserver = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio > .35) entry.target.play().catch(() => {});
-          else entry.target.pause();
-        }
-      }, { threshold:[0,.35,.75] });
-      featureVideos.forEach((video) => videoObserver.observe(video));
-
-      featureStories.forEach((story) => story.classList.add('will-reveal'));
-      const revealObserver = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) { entry.target.classList.add('revealed'); revealObserver.unobserve(entry.target); }
-        }
-      }, { rootMargin:'0px 0px -8% 0px', threshold:.08 });
-      featureStories.forEach((story) => revealObserver.observe(story));
-    }
-    const navLinks = [...document.querySelectorAll('.feature-nav a')];
-    const sections = navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
-    let scrollSpyFrame;
-    const updateFeatureNav = () => {
-      scrollSpyFrame = undefined;
-      const focusLine = Math.min(window.innerHeight * .42, 420);
-      let activeSection = sections[0];
-      for (const section of sections) {
-        if (section.getBoundingClientRect().top > focusLine) break;
-        activeSection = section;
-      }
-      navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + activeSection?.id));
-    };
-    const scheduleFeatureNavUpdate = () => {
-      if (scrollSpyFrame) return;
-      scrollSpyFrame = requestAnimationFrame(updateFeatureNav);
-    };
-    window.addEventListener('scroll', scheduleFeatureNavUpdate, { passive:true });
-    window.addEventListener('resize', scheduleFeatureNavUpdate);
-    window.addEventListener('hashchange', scheduleFeatureNavUpdate);
-    updateFeatureNav();
-  </script>
+  <script type="module" src="assets/feature-guide.mjs"></script>
 </body>
 </html>

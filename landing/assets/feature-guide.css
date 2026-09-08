@@ -1,0 +1,25 @@
+.tour-controls { display:flex; flex-wrap:wrap; align-items:end; gap:18px; padding:22px; margin-bottom:48px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+.tour-controls label { display:grid; gap:8px; color:var(--muted); font:12px var(--mono); }
+.tour-controls input[type=search],.tour-controls select { color:var(--text); background:var(--ink); border:1px solid var(--line-strong); border-radius:7px; padding:11px 12px; font:14px var(--mono); max-width:100%; }
+.tour-search { flex:1 1 280px; }
+.tour-controls .autoplay-option { display:flex; align-items:center; min-height:42px; gap:9px; }
+.autoplay-option input { accent-color:var(--amber); }
+#feature-count { flex-basis:100%; margin:0; color:var(--faint); font:12px var(--mono); }
+.feature-nav { max-height:calc(100dvh - var(--nav) - 56px); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent; }
+.feature-story { gap:30px; }
+.feature-media video { width:100%; height:auto; aspect-ratio:20/13; object-fit:contain; }
+.feature-instructions { margin-top:20px; color:var(--muted); font-size:14px; }
+.feature-instructions summary { cursor:pointer; color:var(--text); line-height:1.5; }
+.feature-instructions ol { padding-left:22px; margin:14px 0 0; }
+.feature-instructions li { padding:0 0 10px 4px; line-height:1.6; }
+.demo-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px; }
+.demo-actions button,.tour-controls button { cursor:pointer; color:var(--text); background:var(--panel); border:1px solid var(--line-strong); border-radius:6px; padding:8px 12px; font:12px var(--mono); }
+.demo-actions button:first-child { color:var(--amber); border-color:rgba(240,184,96,.4); }
+.demo-actions a,.demo-actions span { color:var(--faint); font:11px var(--mono); }
+.demo-actions span { margin-left:auto; }
+.demo-caption { margin:12px 0 0; color:var(--faint); font:11px/1.6 var(--mono); }
+[hidden] { display:none !important; }
+:focus-visible { outline:2px solid var(--amber); outline-offset:4px; }
+@media(max-width:1000px) { .tour-layout { grid-template-columns:190px minmax(0,1fr); gap:30px; } }
+@media(max-width:780px) { .tour-layout { grid-template-columns:1fr; }.tour-controls{padding:16px;gap:14px}.tour-controls label{max-width:100%}.feature-nav{max-height:none;overflow-x:auto}.demo-actions{gap:8px}.feature-instructions{font-size:14px} }
+@media(prefers-reduced-motion:reduce) { html{scroll-behavior:auto !important} *{transition:none !important} }
