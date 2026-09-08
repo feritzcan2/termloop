@@ -933,13 +933,15 @@ impl CoreRuntime {
         &mut self,
         session_id: &str,
     ) -> Result<(u64, Option<crate::CodexRuntime>), CoreError> {
+        // A failed spawn must lose live authority even if durable rollback fails.
+        // Retire the rest of the endpoint only after its descriptor is removed.
         self.agent_observations.remove(session_id);
         self.mcp_authorizer.remove(session_id);
         let revision = self
             .store
             .rollback_assistant_launch(&self.write_authority, session_id)
             .map_err(store_error)?;
-        Ok((revision, self.codex_runtimes.remove(session_id)))
+        Ok((revision, self.retire_closed_session_runtime(session_id)))
     }
 }
 
