@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/react-native";
-import { Stack } from "expo-router";
+import { ErrorBoundary as ExpoErrorBoundary, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -13,6 +13,10 @@ import { StewardVoiceDock } from "@/components/steward-voice-dock";
 import { AppLifecycleProvider } from "@/platform/app-lifecycle";
 import "@/platform/mobile-sentry";
 import { color } from "@/theme/tokens";
+
+// Render failures can bypass ErrorUtils in Fabric. Keep a retry surface and
+// explicitly capture the error through Expo Router's supported Sentry boundary.
+export const ErrorBoundary = Sentry.wrapExpoRouterErrorBoundary(ExpoErrorBoundary);
 
 /// The native header is off for every route. Each screen renders its own 47pt header
 /// so it can carry the Project selector and a compact right slot at the geometry the
