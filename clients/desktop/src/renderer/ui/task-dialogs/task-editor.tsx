@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RemoteBranchDto, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
+import type { WorkflowConfigurationDto } from "@termloop/contract/current";
+import { workflowSummary, workflowLaunchSummary } from "../workflow-presentation.js";
 import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX, permissionLabel } from "../../project-task-automation.js";
 import { Icon } from "../Icon.js";
 import {
@@ -27,7 +29,7 @@ type TaskAgentStartSelection = {
   kickoffMessage: string | null;
 };
 
-export type TaskStartSelection = "terminal" | TaskAgentStartSelection;
+export type TaskStartSelection = "terminal" | TaskAgentStartSelection | { kind: "workflow"; workflowId: string; goal: string };
 
 function defaultAgentStart(
   capabilities: readonly AgentCapabilityDto[],
@@ -57,6 +59,7 @@ export type CreateTaskFlow = {
   listBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   loadProjectAutomation?(projectId: string): Promise<ProjectTaskAutomationGetResult>;
   agentCapabilities: readonly AgentCapabilityDto[];
+  workflowConfigurations?: readonly WorkflowConfigurationDto[];
   provisionWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
   /// Launches wait for the worktree to become ready; the rail owns that watch,
   /// so the dialog only registers what should start.
@@ -113,6 +116,9 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const [worktreePrefix, setWorktreePrefix] = useState(DEFAULT_TASK_WORKTREE_PREFIX);
   const [starts, setStarts] = useState<ReadonlySet<string>>(new Set());
   const [agentStarts, setAgentStarts] = useState<ReadonlyMap<string, TaskAgentStartSelection>>(new Map());
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const workflows = flow.workflowConfigurations ?? [];
+  const selectedWorkflow = workflows.find((workflow) => workflow.id === workflowId);
   const [branchMode, setBranchMode] = useState<"existing" | "create">("create");
   const [createdBranchName, setCreatedBranchName] = useState("");
   const [branchEdited, setBranchEdited] = useState(false);
@@ -152,6 +158,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
       setWorkspace(configuration.createWorktree ? "create" : "none");
       setWorktreePrefix(configuration.worktreePrefix);
       setAutomationBaseRef(configuration.baseRef);
+      setWorkflowId(configuration.createWorktree ? configuration.workflowId ?? null : null);
       const selectedAgent = configuration.createWorktree
         && configuration.agentId
         && configuration.model
@@ -243,7 +250,9 @@ function CreateTaskDialog({ close, createTask, flow }: {
   };
 
   const submit = async () => {
+    if (busy || automationLoading) return;
     if (!title.trim()) { setError("Enter a Task title."); return; }
+    if (workspace === "create" && workflowId && !selectedWorkflow) { setError("The selected workflow template is unavailable. Choose another template or turn it off."); return; }
     if (workspace === "create") {
       const invalid = validateWorkspace();
       if (invalid) { setError(invalid); return; }
@@ -273,7 +282,9 @@ function CreateTaskDialog({ close, createTask, flow }: {
           setError(`${failure} The Task itself was created — adjust the values and retry, or close and add the worktree later from the Task row.`);
           return;
         }
-        if (starts.size > 0) {
+        if (workflowId) {
+          flow.queueLaunches(taskId, [{ kind: "workflow", workflowId, goal: brief.trim() || title.trim() }]);
+        } else if (starts.size > 0) {
           const selections = [...starts].map((start): TaskStartSelection => {
             if (start === "terminal") return "terminal";
             return agentStarts.get(start) ?? defaultAgentStart(flow.agentCapabilities, start);
@@ -286,6 +297,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
   };
 
   const toggleStart = (start: string) => {
+    setWorkflowId(null);
     if (start !== "terminal" && !starts.has(start)) {
       setAgentStarts((current) => {
         if (current.has(start)) return current;
@@ -332,7 +344,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const submitLabel = busy
     ? (createdTaskId ? "Retrying…" : "Creating…")
     : createdTaskId ? "Retry worktree"
-      : workspace === "create" && starts.size > 0 ? "Create & Start"
+      : workspace === "create" && (starts.size > 0 || workflowId !== null) ? "Create & Start"
         : "Create Task";
 
   return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && close()}>
@@ -413,6 +425,20 @@ function CreateTaskDialog({ close, createTask, flow }: {
             </button>
           ))}
         </div>
+        {workflows.length > 0 || workflowId ? <div className="task-automation-choices">
+          <label htmlFor="create-workflow">Or start a workflow</label>
+          <select id="create-workflow" value={workflowId ?? ""} disabled={busy || automationLoading || workspace !== "create"} onChange={(event) => {
+            setWorkflowId(event.target.value || null);
+            if (event.target.value) setStarts(new Set());
+            setError(undefined);
+          }}>
+            <option value="">No workflow — use the choices above</option>
+            {workflowId && !selectedWorkflow ? <option value={workflowId}>Selected template (unavailable)</option> : null}
+            {workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+          </select>
+          {selectedWorkflow ? <><p className="field-help">{workflowSummary(selectedWorkflow)}</p><p className="field-help">{selectedWorkflow.coordinatorAgentId} lead · {workflowLaunchSummary(selectedWorkflow)}. The Task description is the workflow goal, falling back to its title.</p></> : null}
+          {workflowId && !selectedWorkflow ? <p className="form-error" role="alert">Choose an available workflow template. No agent will be substituted.</p> : null}
+        </div> : null}
         {workspace === "create" && selectedAgentIds.length > 0 ? (
           <div className="start-agent-configurations" aria-label="Agent launch settings">
             {selectedAgentIds.map((agentId) => {

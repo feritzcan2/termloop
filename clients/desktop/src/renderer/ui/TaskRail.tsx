@@ -483,6 +483,7 @@ export function TaskRail(props: TaskRailProps) {
         void (async () => {
           for (const start of starts) {
             if (start === "terminal") await props.launchTaskTerminal(taskId);
+            else if (start.kind === "workflow") await props.launchTaskWorkflow(taskId, start.workflowId, start.goal);
             else await props.launchTaskAgent(
               taskId,
               start.agentId,
@@ -502,7 +503,7 @@ export function TaskRail(props: TaskRailProps) {
       for (const taskId of settled) next.delete(taskId);
       return next;
     });
-  }, [pendingLaunches, props.tasks, props.deletingTaskIds, props.launchTaskTerminal, props.launchTaskAgent]);
+  }, [pendingLaunches, props.tasks, props.deletingTaskIds, props.launchTaskTerminal, props.launchTaskAgent, props.launchTaskWorkflow]);
   useEffect(() => {
     if (!props.provisionRequestedTaskId) return;
     const task = props.tasks.find((candidate) => candidate.id === props.provisionRequestedTaskId);
@@ -702,6 +703,7 @@ export function TaskRail(props: TaskRailProps) {
             ? { loadProjectAutomation: props.loadProjectTaskAutomation }
             : {}),
           agentCapabilities: props.agentCapabilities,
+          workflowConfigurations: props.workflowConfigurations,
           provisionWorktree: props.provisionTaskWorktree,
           queueLaunches,
         }}

@@ -4,6 +4,26 @@ use tokio::time::Instant;
 use super::super::super::AppState;
 use super::super::super::gates::ObservationPriority;
 
+/// Automation uses the same inspected launch and one-time ticket as an
+/// interactive workflow start. Provisioning has already completed outside Core.
+pub(in crate::app) async fn launch_automated_task_workflow(
+    mut params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let preview = preview_task_workflow_session(
+        params.clone(),
+        Instant::now() + std::time::Duration::from_secs(15),
+        state,
+    )
+    .await?;
+    let ticket = preview
+        .get("launch_ticket")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| CoreError::Store("Workflow preview returned no launch ticket".into()))?;
+    params["launchTicket"] = serde_json::json!(ticket);
+    super::session::launch_agent_session(params, state).await
+}
+
 pub(in crate::app::control) async fn preview_task_workflow_session(
     params: serde_json::Value,
     deadline: Instant,

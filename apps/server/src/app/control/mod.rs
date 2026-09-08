@@ -31,8 +31,9 @@ use errors::error_response;
 pub(super) use handlers::git_host_pull_request_list_background;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
 pub(in crate::app) use handlers::{
-    launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
-    project_list_local_branches, provision_task_worktree, terminate_session,
+    launch_automated_task_workflow, launch_task_session, preview_steward_task_agent_session,
+    preview_task_agent_session, project_list_local_branches, provision_task_worktree,
+    terminate_session,
 };
 pub(in crate::app) use task_source::{
     TaskSourceCredentialPresence, run_deadlines as run_task_source_deadlines,

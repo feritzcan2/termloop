@@ -35,6 +35,27 @@ import {
   taskCreationIntent,
 } from "../src/renderer/project-task-automation.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
+import { workflowConfiguration } from "./workflow-fixture.js";
+
+it("keeps workflow automation explicit, mutually exclusive, and aware of missing templates", () => {
+  const configuration = {
+    projectId: "project-1", createWorktree: true, worktreePrefix: "feature",
+    baseRef: "refs/remotes/origin/main", workflowId: "workflow-1", agentId: null,
+    model: null, permission: null, reasoning: null, kickoffMessage: null,
+  };
+  const draft = projectTaskAutomationDraftFrom(configuration);
+  expect(projectTaskAutomationError(draft, undefined, [workflowConfiguration()])).toBeUndefined();
+  expect(projectTaskAutomationChanged(draft, configuration)).toBe(false);
+  expect(projectTaskAutomationChanged({ ...draft, workflowId: null }, configuration)).toBe(true);
+  expect(taskAutomationSummary(draft, undefined, "Build and verify")).toContain("workflow · Build and verify");
+  expect(taskCreationIntent(draft)).toEqual({
+    worktreeIntent: "provision", worktreePrefix: "feature", baseRef: "refs/remotes/origin/main",
+    workflowId: "workflow-1", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null,
+  });
+  expect(projectTaskAutomationError(draft, undefined, [])).toContain("unavailable");
+  expect(projectTaskAutomationError({ ...draft, createWorktree: false })).toContain("requires worktree");
+  expect(() => taskCreationIntent({ ...draft, agentId: "codex" })).toThrow(/not both/);
+});
 
 export function source(overrides: Partial<TaskSourceDto> = {}): TaskSourceDto {
   return {
@@ -365,6 +386,7 @@ describe("Project New Task automation", () => {
   const configuration = {
     projectId: "project-1",
     createWorktree: true,
+    workflowId: null,
     worktreePrefix: "termloop",
     baseRef: "refs/remotes/origin/development" as string | null,
     agentId: "codex" as string | null,
@@ -373,9 +395,10 @@ describe("Project New Task automation", () => {
     reasoning: "high" as const,
     kickoffMessage: "Implement and verify." as string | null,
   };
-  const off = { createWorktree: false, worktreePrefix: "termloop", baseRef: "refs/remotes/origin/development", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null } as const;
+  const off = { createWorktree: false, workflowId: null, worktreePrefix: "termloop", baseRef: "refs/remotes/origin/development", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null } as const;
   const on = {
     createWorktree: true,
+    workflowId: null,
     worktreePrefix: "termloop",
     baseRef: "refs/remotes/origin/development",
     agentId: "codex",
@@ -411,6 +434,7 @@ describe("Project New Task automation", () => {
     expect(taskCreationIntent(on))
       .toEqual({
         worktreeIntent: "provision",
+        workflowId: null,
         worktreePrefix: "termloop",
         baseRef: "refs/remotes/origin/development",
         agentId: "codex",
@@ -420,11 +444,11 @@ describe("Project New Task automation", () => {
         kickoffMessage: "Implement and verify.",
       });
     expect(taskCreationIntent({ ...off, createWorktree: true }))
-      .toEqual({ worktreeIntent: "provision", worktreePrefix: "termloop", baseRef: "refs/remotes/origin/development", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "provision", workflowId: null, worktreePrefix: "termloop", baseRef: "refs/remotes/origin/development", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
     // Unchecked worktree drops the agent with it: the daemon rejects an agent
     // without one, and "none" must never smuggle a Project default back in.
     expect(taskCreationIntent({ ...on, createWorktree: false }))
-      .toEqual({ worktreeIntent: "none", worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "none", workflowId: null, worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
   });
 
   it("keeps a chosen but unavailable agent visible in the picker", () => {
