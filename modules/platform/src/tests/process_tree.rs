@@ -143,6 +143,9 @@ mod windows {
     }
 
     #[test]
+    // This fixture must exit before its descendant. The parent test owns the
+    // containing job and verifies that killing that job reaps the whole tree.
+    #[allow(clippy::zombie_processes)]
     fn job_leader_fixture() {
         let Some(directory) = std::env::var_os("TERMLOOP_TEST_JOB_LEADER_DIRECTORY") else {
             return;
