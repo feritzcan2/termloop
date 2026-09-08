@@ -638,6 +638,7 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
                     permission: params.permission,
                     reasoning: params.reasoning,
                     kickoff_message: params.kickoff_message,
+                    workflow_id: params.workflow_id,
                 },
                 state,
             )

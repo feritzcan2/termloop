@@ -557,7 +557,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        57..=58 => {
+        57..=59 => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             state.schema_version = CURRENT_SCHEMA_VERSION;
@@ -1167,6 +1167,7 @@ fn migrate_v42_to_v43_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                         termloop_domain::PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT.into(),
                     base_ref: None,
                     agent_id: first.1.clone(),
+                    workflow_id: None,
                     model: first.1.as_ref().map(|_| "default".into()),
                     permission: first.1.as_ref().map(|_| "default".into()),
                     reasoning: first.1.as_ref().map(|_| "default".into()),

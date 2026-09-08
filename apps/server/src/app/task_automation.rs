@@ -19,6 +19,8 @@ pub(super) struct TaskAutomationAction {
     permission: Option<String>,
     reasoning: Option<String>,
     kickoff_message: Option<String>,
+    workflow_id: Option<String>,
+    workflow_goal: String,
 }
 
 pub(super) struct TaskAutomationSelection {
@@ -30,6 +32,7 @@ pub(super) struct TaskAutomationSelection {
     pub(super) permission: Option<String>,
     pub(super) reasoning: Option<String>,
     pub(super) kickoff_message: Option<String>,
+    pub(super) workflow_id: Option<String>,
 }
 
 pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value, CoreError> {
@@ -44,6 +47,7 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
         permission: params.permission.clone(),
         reasoning: params.reasoning.clone(),
         kickoff_message: params.kickoff_message.clone(),
+        workflow_id: params.workflow_id.clone(),
     };
     let project_id = params.project_id.clone();
     let (task, action, state_revision) = {
@@ -124,6 +128,7 @@ pub(super) async fn auto_import_after_refresh(
                         permission: None,
                         reasoning: None,
                         kickoff_message: None,
+                        workflow_id: None,
                     },
                 )?);
             }
@@ -207,6 +212,7 @@ fn action_from_task(
         permission,
         reasoning,
         kickoff_message,
+        workflow_id,
     ) = effective_settings(configuration, selection)?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
@@ -220,6 +226,14 @@ fn action_from_task(
         permission,
         reasoning,
         kickoff_message,
+        workflow_id,
+        workflow_goal: task
+            .get("brief")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|brief| !brief.is_empty())
+            .unwrap_or(title)
+            .to_owned(),
     })
 }
 
@@ -236,6 +250,7 @@ fn effective_settings(
         permission,
         reasoning,
         kickoff_message,
+        workflow_id,
     } = selection;
     match (
         worktree_intent,
@@ -246,31 +261,50 @@ fn effective_settings(
         permission,
         reasoning,
         kickoff_message,
+        workflow_id,
     ) {
-        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None, None, None) => {
-            Ok((
-                configuration.create_worktree,
-                configuration.worktree_prefix.clone(),
-                configuration.base_ref.clone(),
-                configuration.agent_id.clone(),
-                configuration.model.clone(),
-                configuration.permission.clone(),
-                configuration.reasoning.clone(),
-                configuration.kickoff_message.clone(),
-            ))
-        }
-        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None, None, None) => {
-            Ok((
-                false,
-                configuration.worktree_prefix.clone(),
-                configuration.base_ref.clone(),
-                None,
-                None,
-                None,
-                None,
-                None,
-            ))
-        }
+        (
+            protocol::TaskCreateWorktreeIntent::Inherit,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) => Ok((
+            configuration.create_worktree,
+            configuration.worktree_prefix.clone(),
+            configuration.base_ref.clone(),
+            configuration.agent_id.clone(),
+            configuration.model.clone(),
+            configuration.permission.clone(),
+            configuration.reasoning.clone(),
+            configuration.kickoff_message.clone(),
+            configuration.workflow_id.clone(),
+        )),
+        (
+            protocol::TaskCreateWorktreeIntent::None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) => Ok((
+            false,
+            configuration.worktree_prefix.clone(),
+            configuration.base_ref.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )),
         (
             protocol::TaskCreateWorktreeIntent::Provision,
             Some(worktree_prefix),
@@ -280,6 +314,7 @@ fn effective_settings(
             permission,
             reasoning,
             kickoff_message,
+            workflow_id,
         ) => {
             let selection = ProjectTaskAutomationConfiguration {
                 project_id: configuration.project_id.clone(),
@@ -291,6 +326,7 @@ fn effective_settings(
                 permission: permission.map(|value| value.trim().to_owned()),
                 reasoning: reasoning.map(|value| value.trim().to_owned()),
                 kickoff_message: kickoff_message.map(|value| value.trim().to_owned()),
+                workflow_id: workflow_id.map(|value| value.trim().to_owned()),
             };
             if !selection.is_valid() {
                 return Err(CoreError::InvalidParams("taskAutomation".into()));
@@ -304,6 +340,7 @@ fn effective_settings(
                 selection.permission,
                 selection.reasoning,
                 selection.kickoff_message,
+                selection.workflow_id,
             ))
         }
         _ => Err(CoreError::InvalidParams("taskAutomation".into())),
@@ -311,8 +348,11 @@ fn effective_settings(
 }
 
 type EffectiveTaskAutomation = (
+    // Keep the workflow reference separate from the ordinary Agent launch
+    // settings; domain validation prevents both from being selected together.
     bool,
     String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -326,7 +366,17 @@ async fn run_one(action: &TaskAutomationAction, state: &AppState) -> Result<(), 
         return Ok(());
     }
     provision_worktree(action, state).await?;
-    if let Some(agent_id) = &action.agent_id {
+    if let Some(workflow_id) = &action.workflow_id {
+        super::control::launch_automated_task_workflow(
+            json!({
+                "taskId": action.task_id,
+                "workflowId": workflow_id,
+                "goal": action.workflow_goal,
+            }),
+            state,
+        )
+        .await?;
+    } else if let Some(agent_id) = &action.agent_id {
         launch_agent(action, agent_id, state).await?;
     }
     Ok(())
@@ -543,6 +593,7 @@ mod tests {
             worktree_prefix: "feature".into(),
             base_ref: Some("refs/remotes/origin/development".into()),
             agent_id: Some("codex".into()),
+            workflow_id: None,
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
             reasoning: Some("high".into()),
@@ -556,6 +607,7 @@ mod tests {
                     worktree_prefix: None,
                     base_ref: None,
                     agent_id: None,
+                    workflow_id: None,
                     model: None,
                     permission: None,
                     reasoning: None,
@@ -572,6 +624,7 @@ mod tests {
                 Some("bypassPermissions".into()),
                 Some("high".into()),
                 Some("Implement and verify.".into()),
+                None,
             )
         );
         assert_eq!(
@@ -582,6 +635,7 @@ mod tests {
                     worktree_prefix: None,
                     base_ref: None,
                     agent_id: None,
+                    workflow_id: None,
                     model: None,
                     permission: None,
                     reasoning: None,
@@ -598,6 +652,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
         );
         assert_eq!(
@@ -608,6 +663,7 @@ mod tests {
                     worktree_prefix: Some("custom".into()),
                     base_ref: Some("refs/remotes/upstream/main".into()),
                     agent_id: Some("claude".into()),
+                    workflow_id: None,
                     model: Some("sonnet".into()),
                     permission: Some("plan".into()),
                     reasoning: Some("medium".into()),
@@ -624,8 +680,84 @@ mod tests {
                 Some("plan".into()),
                 Some("medium".into()),
                 Some("Start with the regression test.".into()),
+                None,
             )
         );
+    }
+
+    #[test]
+    fn workflow_automation_inherits_overrides_or_declines_without_an_extra_agent() {
+        let defaults = ProjectTaskAutomationConfiguration {
+            project_id: "project-1".into(),
+            create_worktree: true,
+            worktree_prefix: "feature".into(),
+            base_ref: Some("refs/remotes/origin/develop".into()),
+            workflow_id: Some("workflow-1".into()),
+            agent_id: None,
+            model: None,
+            permission: None,
+            reasoning: None,
+            kickoff_message: None,
+        };
+        let selection = || TaskAutomationSelection {
+            worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+            worktree_prefix: None,
+            base_ref: None,
+            workflow_id: None,
+            agent_id: None,
+            model: None,
+            permission: None,
+            reasoning: None,
+            kickoff_message: None,
+        };
+        for brief in [
+            json!("  Build the new screen.\n "),
+            json!(null),
+            json!("  "),
+        ] {
+            let task = json!({"id": "task-1", "title": "New screen", "brief": brief});
+            let action = action_from_task(&defaults, &task, selection()).unwrap();
+            assert_eq!(action.workflow_id.as_deref(), Some("workflow-1"));
+            assert!(action.agent_id.is_none());
+            assert!(action.create_worktree);
+            assert_eq!(
+                action.workflow_goal,
+                if brief == json!("  Build the new screen.\n ") {
+                    "Build the new screen."
+                } else {
+                    "New screen"
+                }
+            );
+
+            let mut explicit = selection();
+            explicit.worktree_intent = protocol::TaskCreateWorktreeIntent::Provision;
+            explicit.worktree_prefix = Some("custom".into());
+            explicit.base_ref = Some("refs/remotes/upstream/main".into());
+            explicit.workflow_id = Some("workflow-2".into());
+            let action = action_from_task(&defaults, &task, explicit).unwrap();
+            assert_eq!(action.workflow_id.as_deref(), Some("workflow-2"));
+            assert_eq!(action.worktree_prefix, "custom");
+            assert!(action.agent_id.is_none());
+
+            let mut declined = selection();
+            declined.worktree_intent = protocol::TaskCreateWorktreeIntent::None;
+            let action = action_from_task(&defaults, &task, declined).unwrap();
+            assert!(!action.create_worktree);
+            assert!(action.workflow_id.is_none());
+        }
+        let mut mixed = selection();
+        mixed.worktree_intent = protocol::TaskCreateWorktreeIntent::Provision;
+        mixed.worktree_prefix = Some("feature".into());
+        mixed.base_ref = Some("refs/remotes/origin/develop".into());
+        mixed.workflow_id = Some("workflow-1".into());
+        mixed.agent_id = Some("codex".into());
+        mixed.model = Some("default".into());
+        mixed.permission = Some("default".into());
+        mixed.reasoning = Some("default".into());
+        assert!(matches!(
+            effective_settings(&defaults, mixed),
+            Err(CoreError::InvalidParams(_))
+        ));
     }
 
     #[test]

@@ -80,6 +80,7 @@ impl CoreRuntime {
                 worktree_prefix: PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT.into(),
                 base_ref: None,
                 agent_id: None,
+                workflow_id: None,
                 model: None,
                 permission: None,
                 reasoning: None,
@@ -110,6 +111,7 @@ impl CoreRuntime {
             .to_owned();
         let base_ref = nullable_trimmed_string(&params, "baseRef")?;
         let agent_id = nullable_trimmed_string(&params, "agentId")?;
+        let workflow_id = nullable_trimmed_string(&params, "workflowId")?;
         let model = nullable_trimmed_string(&params, "model")?;
         let permission = nullable_trimmed_string(&params, "permission")?;
         let reasoning = nullable_trimmed_string(&params, "reasoning")?;
@@ -124,6 +126,7 @@ impl CoreRuntime {
             worktree_prefix,
             base_ref,
             agent_id,
+            workflow_id,
             model,
             permission,
             reasoning,
@@ -131,6 +134,17 @@ impl CoreRuntime {
         };
         if !configuration.is_valid() {
             return Err(CoreError::InvalidParams("taskAutomation".into()));
+        }
+        if configuration
+            .workflow_id
+            .as_deref()
+            .is_some_and(|workflow_id| {
+                !self.store.workflow_configurations().iter().any(|workflow| {
+                    workflow.id == workflow_id && workflow.project_id == configuration.project_id
+                })
+            })
+        {
+            return Err(CoreError::InvalidParams("workflowId".into()));
         }
         self.store
             .set_project_task_automation_configuration(
@@ -691,6 +705,62 @@ mod tests {
                 .into_os_string()
                 .into_string()
                 .unwrap()
+        );
+        let _ = std::fs::remove_file(state_path);
+    }
+
+    #[test]
+    fn project_task_automation_workflow_is_project_scoped_revision_checked_and_durable() {
+        let (mut runtime, state_path) = runtime();
+        let project = runtime
+            .create_project(json!({ "name": "Automation", "folderPath": std::env::temp_dir() }))
+            .unwrap();
+        let other = runtime
+            .create_project(json!({ "name": "Other", "folderPath": std::env::temp_dir() }))
+            .unwrap();
+        let workflow = runtime
+            .create_workflow_configuration(json!({
+                "projectId": project["id"], "name": "Build", "coordinatorAgentId": "codex",
+                "model": "default", "permission": "default", "reasoning": "default",
+                "maxReviewCycles": 2, "expectedRevision": runtime.state_revision(),
+                "steps": [{ "id": "implement", "kind": "implement", "title": "Implement",
+                    "instructions": "Build and verify.", "agentId": null, "reuseStepId": null,
+                    "profileRef": null, "model": null, "permission": null, "reasoning": null }]
+            }))
+            .unwrap();
+        let params = json!({
+            "projectId": project["id"], "createWorktree": true,
+            "worktreePrefix": "feature", "baseRef": "refs/remotes/origin/develop",
+            "workflowId": workflow["configuration"]["id"], "agentId": null,
+            "model": null, "permission": null, "reasoning": null, "kickoffMessage": null,
+            "expectedRevision": runtime.state_revision()
+        });
+        for (field, value) in [
+            ("projectId", other["id"].clone()),
+            ("workflowId", json!("missing")),
+        ] {
+            let mut invalid = params.clone();
+            invalid[field] = value;
+            assert!(
+                matches!(runtime.set_project_task_automation(invalid), Err(CoreError::InvalidParams(field)) if field == "workflowId")
+            );
+        }
+        let updated = runtime.set_project_task_automation(params.clone()).unwrap();
+        assert_eq!(
+            updated["configuration"]["workflowId"],
+            workflow["configuration"]["id"]
+        );
+        assert!(matches!(
+            runtime.set_project_task_automation(params.clone()),
+            Err(CoreError::RevisionConflict)
+        ));
+        drop(runtime);
+        let reopened = CoreRuntime::open(&state_path, TerminalService::default(), 2).unwrap();
+        assert_eq!(
+            reopened
+                .get_project_task_automation(json!({"projectId": project["id"]}))
+                .unwrap()["configuration"],
+            updated["configuration"]
         );
         let _ = std::fs::remove_file(state_path);
     }

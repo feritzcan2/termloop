@@ -3,6 +3,7 @@ import type {
   ProjectTaskAutomationConfigurationDto,
   RemoteBranchDto,
   TaskCreateWorktreeIntent,
+  WorkflowConfigurationDto,
 } from "@termloop/contract/current";
 
 const utf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
@@ -15,6 +16,7 @@ export type ProjectTaskAutomationDraft = {
   worktreePrefix: string;
   baseRef: string | null;
   agentId: string | null;
+  workflowId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
   reasoning: AgentCapabilityDto["reasoning"][number] | null;
@@ -38,6 +40,7 @@ export function projectTaskAutomationDraftFrom(
     worktreePrefix: configuration.worktreePrefix,
     baseRef: configuration.baseRef ?? fallbackBaseRef ?? null,
     agentId: configuration.agentId,
+    workflowId: configuration.workflowId ?? null,
     model: configuration.model,
     permission: configuration.permission,
     reasoning: configuration.reasoning,
@@ -51,6 +54,7 @@ export function projectTaskAutomationDraftFrom(
 export function projectTaskAutomationError(
   draft: ProjectTaskAutomationDraft,
   baseBranches?: readonly RemoteBranchDto[],
+  workflows?: readonly WorkflowConfigurationDto[],
 ): string | undefined {
   if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(draft.worktreePrefix)) {
     return "Use 1–32 lowercase letters, numbers, or single hyphens for the branch/worktree prefix.";
@@ -60,6 +64,12 @@ export function projectTaskAutomationError(
   }
   if (draft.createWorktree && baseBranches && !baseBranches.some((branch) => branch.exact_ref === draft.baseRef)) {
     return "The selected remote base branch is no longer available. Choose another branch.";
+  }
+  if (draft.workflowId != null) {
+    if (!draft.createWorktree) return "Starting a workflow requires worktree creation.";
+    if (draft.agentId !== null || draft.model !== null || draft.permission !== null || draft.reasoning !== null || draft.kickoffMessage !== null) return "Choose a workflow or a single agent, not both.";
+    if (!draft.workflowId.trim() || (workflows && !workflows.some((workflow) => workflow.id === draft.workflowId))) return "The selected workflow template is unavailable. Choose another template.";
+    return undefined;
   }
   if (draft.agentId === null) {
     return draft.model === null && draft.permission === null && draft.reasoning === null && draft.kickoffMessage === null
@@ -88,6 +98,7 @@ export function projectTaskAutomationChanged(
     || draft.worktreePrefix !== configuration.worktreePrefix
     || draft.baseRef !== configuration.baseRef
     || draft.agentId !== configuration.agentId
+    || (draft.workflowId ?? null) !== (configuration.workflowId ?? null)
     || draft.model !== configuration.model
     || draft.permission !== configuration.permission
     || draft.reasoning !== configuration.reasoning
@@ -96,8 +107,9 @@ export function projectTaskAutomationChanged(
 
 /// One line naming what a new Task gets by default, for Project settings,
 /// source summaries, and one-shot import confirmation.
-export function taskAutomationSummary(draft: ProjectTaskAutomationDraft, agentName?: string): string {
+export function taskAutomationSummary(draft: ProjectTaskAutomationDraft, agentName?: string, workflowName?: string): string {
   if (!draft.createWorktree) return "Task only — no worktree, no agent";
+  if (draft.workflowId != null) return `Task, worktree, and workflow · ${workflowName ?? "Unavailable template"}`;
   if (draft.agentId === null) return "Task and worktree — no agent";
   const selection = [draft.model, draft.permission ? permissionLabel(draft.permission) : null, draft.reasoning ? `${draft.reasoning} reasoning` : null]
     .filter((value): value is string => value !== null)
@@ -117,15 +129,21 @@ export function taskCreationIntent(choice: TaskImportChoice): {
   worktreePrefix: string | null;
   baseRef: string | null;
   agentId: string | null;
+  workflowId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
   reasoning: AgentCapabilityDto["reasoning"][number] | null;
   kickoffMessage: string | null;
 } {
+  if (choice.workflowId != null) {
+    const error = projectTaskAutomationError(choice);
+    if (error) throw new Error(error);
+    return { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, baseRef: choice.baseRef, workflowId: choice.workflowId, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
+  }
   if (!choice.createWorktree || choice.agentId === null) {
     return choice.createWorktree
-      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, baseRef: choice.baseRef, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
-      : { worktreeIntent: "none", worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
+      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, baseRef: choice.baseRef, workflowId: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
+      : { worktreeIntent: "none", worktreePrefix: null, baseRef: null, workflowId: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
   }
   if (choice.model === null || choice.permission === null || choice.reasoning === null) {
     throw new Error("An explicit Task Agent selection requires model, permission, and reasoning.");
@@ -135,6 +153,7 @@ export function taskCreationIntent(choice: TaskImportChoice): {
     worktreePrefix: choice.worktreePrefix,
     baseRef: choice.baseRef,
     agentId: choice.agentId,
+    workflowId: null,
     model: choice.model,
     permission: choice.permission,
     reasoning: choice.reasoning,

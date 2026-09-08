@@ -2427,8 +2427,9 @@
       "x-codegen-name": "ProjectTaskAutomationConfigurationDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
+      "required": ["workflowId", "projectId", "createWorktree", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
+        "workflowId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
@@ -2455,6 +2456,10 @@
         "kickoffMessage": { "type": ["string", "null"], "minLength": 1, "maxLength": 8192 }
       },
       "allOf": [
+        {
+          "if": { "properties": { "workflowId": { "type": "string" } }, "required": ["workflowId"] },
+          "then": { "properties": { "createWorktree": { "const": true }, "agentId": { "const": null } } }
+        },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },
           "then": {
@@ -2494,6 +2499,7 @@
       "additionalProperties": false,
       "required": ["projectId", "createWorktree", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
       "properties": {
+        "workflowId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
@@ -2521,6 +2527,10 @@
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },
       "allOf": [
+        {
+          "if": { "properties": { "workflowId": { "type": "string" } }, "required": ["workflowId"] },
+          "then": { "properties": { "createWorktree": { "const": true }, "agentId": { "const": null } } }
+        },
         {
           "if": { "properties": { "createWorktree": { "const": true } }, "required": ["createWorktree"] },
           "then": { "properties": { "baseRef": { "type": "string" } } }
@@ -6025,6 +6035,7 @@
         "kickoffMessage"
       ],
       "properties": {
+        "workflowId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "projectId": {
           "type": "string",
           "minLength": 1
@@ -6085,6 +6096,10 @@
         }
       },
       "allOf": [
+        {
+          "if": { "properties": { "workflowId": { "type": "string" } }, "required": ["workflowId"] },
+          "then": { "properties": { "worktreeIntent": { "const": "provision" }, "agentId": { "const": null } } }
+        },
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
           "then": { "properties": {
@@ -14179,6 +14194,7 @@
       "additionalProperties": false,
       "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "worktreePrefix", "baseRef", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
+        "workflowId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "sourceId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "externalId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "expectedGeneration": { "type": "integer", "minimum": 1, "x-rust-type": "u64" },
@@ -14214,6 +14230,10 @@
         "kickoffMessage": { "type": ["string", "null"], "minLength": 1, "maxLength": 8192 }
       },
       "allOf": [
+        {
+          "if": { "properties": { "workflowId": { "type": "string" } }, "required": ["workflowId"] },
+          "then": { "properties": { "worktreeIntent": { "const": "provision" }, "agentId": { "const": null } } }
+        },
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
           "then": { "properties": {

@@ -1815,6 +1815,7 @@ export function Shell(props: ShellProps) {
               loaded={Boolean(mcpLibrary.value)}
               close={() => setStagePage(undefined)}
             />) : stagePage?.kind === "taskSettings" && props.selectedProject ? <TaskSourcesPanel
+              workflowConfigurations={props.workflowConfigurations}
               key={props.selectedProject.id}
               projectId={props.selectedProject.id}
               projectName={props.selectedProject.name}
