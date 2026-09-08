@@ -148,6 +148,7 @@ mod agent_accounts;
 mod agent_library;
 mod agent_plan;
 mod archive;
+mod archive_deletion;
 mod branch_binding;
 mod cleanup;
 mod companion;
