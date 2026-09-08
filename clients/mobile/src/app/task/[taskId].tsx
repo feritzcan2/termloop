@@ -1,7 +1,6 @@
-import type { TaskDto } from "@termloop/contract/current";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   Banner,
@@ -39,8 +38,9 @@ import {
   taskRemoteActionNote,
   taskStage,
 } from "@/presentation/task-presentation";
+import { taskAttachedAgents } from "@/presentation/task-browser";
 import type { RowTone } from "@/presentation/tone";
-import { color, space, toneColor } from "@/theme/tokens";
+import { color, geometry, space, toneColor } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
 /// Task detail keeps Task/worktree recovery read-only while attached Session rows
@@ -55,8 +55,11 @@ export default function TaskRoute() {
   const selected = selectingConnection ? undefined : connections.selected;
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [tab, setTab] = useState<"overview" | "playbook">("overview");
+  const [tab, setTab] = useState<"overview" | "workflow" | "playbook">("overview");
   const [actionSessionId, setActionSessionId] = useState<string>();
+  const scroll = useRef<ScrollView>(null);
+
+  useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [tab, taskId]);
 
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {
@@ -104,30 +107,53 @@ export default function TaskRoute() {
 
   const stage = taskStage(task);
   const remoteAction = taskRemoteActionNote(stage);
-  const attached = attachedAgentRows(model?.agents ?? [], task);
+  const attached = taskAttachedAgents(task, model?.agents ?? []);
   const changeCount = taskChangeCount(task);
   const glance = taskAtAGlance(stage, attached);
+  const primaryAgent = attached.find((agent) => agent.attachable);
+  const launchBlock = selected?.availability !== "online" ? "Reconnect to your Mac to start an agent." : launchBlockedReason(task);
+  const openAgent = (sessionId: string) => {
+    store.dismissReview(sessionId);
+    router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected?.id, { sessionId }) });
+  };
 
   return (
     <Screen>
       <ScreenHeader
-        back="Project"
+        back="Tasks"
+        backFallback={{ pathname: "/project/[projectId]", params: connectionRouteParams(selected?.id, { projectId: task.project_id, tab: "tasks" }) }}
         center={<ProjectSelector current={current} />}
         right={<MockBadge />}
       />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+      <View style={styles.detailHeader}>
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>{task.title}</Text>
           <View style={styles.pills}>
+            <Text style={styles.taskEyebrow}>TASK</Text>
             <StatePill tone={task.status === "closed" ? "done" : "quiet"} label={task.status} />
+            {task.jira_url === null ? null : (
+              <Pressable accessibilityRole="link" accessibilityLabel={`Open ${taskJiraIssueKey(task.jira_url)}`} onPress={() => { void Linking.openURL(task.jira_url!); }} style={styles.issueLink}>
+                <Text style={styles.link}>{taskJiraIssueKey(task.jira_url)} ↗</Text>
+              </Pressable>
+            )}
           </View>
+          <Text style={styles.title} numberOfLines={3} accessibilityRole="header">{task.title}</Text>
         </View>
 
         <View style={styles.tabs} accessibilityRole="tablist">
           <TaskTab label="Overview" selected={tab === "overview"} onPress={() => setTab("overview")} />
+          <TaskTab label="Workflow" selected={tab === "workflow"} onPress={() => setTab("workflow")} />
           <TaskTab label="Playbook" selected={tab === "playbook"} onPress={() => setTab("playbook")} />
         </View>
-
+      </View>
+      <ScrollView
+        ref={scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        refreshControl={<RefreshControl refreshing={store.refreshing} onRefresh={store.refresh} tintColor={color.textSecondary} />}
+      >
+        {store.error === undefined ? null : <Banner kind="warning" message="Showing the last known task state. Pull to refresh." action="Retry" onAction={store.refresh} />}
+        {selected?.availability === "online" ? null : <Banner kind="warning" message="Your Mac is disconnected. The last known task state is shown." />}
         {tab === "playbook" ? (
           <Section label="Playbook status">
             {selected === undefined ? (
@@ -145,188 +171,181 @@ export default function TaskRoute() {
               />
             )}
           </Section>
-        ) : (
+        ) : null}
+        {tab === "overview" ? (
           <>
-
-        {selected ? <TaskWorkflowLauncher
-          key={`${selected.id}:${task.id}`}
-          task={task}
-          connectionId={selected.id}
-          online={selected.availability === "online"}
-          templates={runtime.workflowTemplates}
-          launch={runtime.workflowLaunch}
-          control={runtime.control}
-          sessions={store.overview?.sessions ?? []}
-          statuses={store.overview?.agentStatuses ?? []}
-          agentDataStale={store.error !== undefined || store.load !== "ready"}
-          openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(selected.id, { projectId: task.project_id }) })}
-          openSession={(sessionId) => {
-            void store.refresh();
-            router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected.id, { sessionId, projectId: task.project_id, workflowTaskId: task.id }) });
-          }}
-        /> : null}
-
-        <Card>
-          <View style={styles.glance}>
-            <View style={styles.glanceHead}>
-              <View style={[styles.glanceDot, { backgroundColor: statusColor(glance.tone) }]} />
-              <Text style={styles.glanceLabel}>CURRENT STATUS</Text>
-            </View>
-            <Text style={styles.glanceTitle}>{glance.title}</Text>
-            <Text style={styles.glanceDetail}>{glance.detail}</Text>
-          </View>
-        </Card>
-
-        <View style={styles.actions}>
-          <PrimaryButton
-            label={attached.length > 0 ? "Start another agent" : "Start agent"}
-            disabled={selected === undefined || launchBlockedReason(task) !== undefined}
-            onPress={() => router.push({
-              pathname: "/launch/[taskId]",
-              params: connectionRouteParams(selected?.id, { taskId: task.id }),
-            })}
-          />
-          {changeCount === undefined ? null : (
-            <SecondaryButton
-              label={taskChangeLabel(changeCount)}
-              onPress={() => router.push({
-                pathname: "/task/[taskId]/changes",
-                params: connectionRouteParams(selected?.id, { taskId: task.id }),
-              })}
-            />
-          )}
-          <SecondaryButton
-            label="Ask Steward"
-            onPress={() => router.push({
-              pathname: "/steward/[projectId]",
-              params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
-            })}
-          />
-        </View>
-        {launchBlockedReason(task) === undefined ? null : (
-          <UnavailableNote>{launchBlockedReason(task)}</UnavailableNote>
-        )}
-
-        {attached.length === 0 ? null : (
-          <Section label="Agents" trailing={<Text style={styles.count}>{attached.length}</Text>}>
             <Card>
-              {attached.map((row, index) => {
-                const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
-                const content = (
-                  <Row
-                    tone={row.tone}
-                    title={row.title}
-                    state={row.stateLabel}
-                    detail={row.runner ?? row.state.summary}
-                    meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
-                    accessibleName={row.accessibleName}
-                    trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-                    onPress={() => {
-                      if (!row.attachable) {
-                        setActionSessionId(row.sessionId);
-                        return;
-                      }
-                      router.push({
-                        pathname: "/session/[sessionId]",
-                        params: connectionRouteParams(selected?.id, { sessionId: row.sessionId }),
-                      });
-                    }}
-                    onLongPress={() => setActionSessionId(row.sessionId)}
-                  />
-                );
-                return (
-                  <View key={row.sessionId}>
-                    {index === 0 ? null : <CardDivider />}
-                    {session === undefined
-                      ? content
-                      : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>}
-                  </View>
-                );
-              })}
+              <View style={styles.glance}>
+                <View style={styles.glanceHead}>
+                  <View style={[styles.glanceDot, { backgroundColor: statusColor(glance.tone) }]} />
+                  <Text style={styles.glanceLabel}>CURRENT STATUS</Text>
+                </View>
+                <Text style={styles.glanceTitle}>{glance.title}</Text>
+                <Text style={styles.glanceDetail}>{glance.detail}</Text>
+              </View>
             </Card>
-          </Section>
-        )}
 
-        <Section label="Goal">
-          {task.brief === null || task.brief.length === 0 ? (
-            <Text style={styles.emptyBody}>No description yet.</Text>
-          ) : (
-            <>
-              <Text style={styles.body} numberOfLines={briefExpanded ? undefined : 3}>{task.brief}</Text>
-              {task.brief.length > 140 ? (
-                <Text
-                  style={styles.more}
-                  accessibilityRole="button"
-                  onPress={() => setBriefExpanded((value) => !value)}
-                >
-                  {briefExpanded ? "less" : "more"}
-                </Text>
-              ) : null}
-            </>
-          )}
-        </Section>
+            <View style={styles.actions}>
+              <PrimaryButton
+                label={primaryAgent ? (primaryAgent.tone === "attention" ? "Reply to agent" : primaryAgent.tone === "review" ? "Review agent" : "Open agent") : "Start agent"}
+                disabled={primaryAgent === undefined && launchBlock !== undefined}
+                onPress={() => {
+                  if (primaryAgent) openAgent(primaryAgent.sessionId);
+                  else if (launchBlock === undefined) router.push({
+                    pathname: "/launch/[taskId]",
+                    params: connectionRouteParams(selected?.id, { taskId: task.id }),
+                  });
+                }}
+              />
+              <View style={styles.secondaryActions}>
+                {changeCount === undefined ? null : (
+                  <SecondaryButton
+                    label={`Review ${taskChangeLabel(changeCount)}`}
+                    onPress={() => router.push({
+                      pathname: "/task/[taskId]/changes",
+                      params: connectionRouteParams(selected?.id, { taskId: task.id }),
+                    })}
+                  />
+                )}
+                <SecondaryButton
+                  label="Ask Steward"
+                  onPress={() => router.push({
+                    pathname: "/steward/[projectId]",
+                    params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
+                  })}
+                />
+              </View>
+            </View>
+            {launchBlock === undefined || primaryAgent ? null : (
+              <UnavailableNote>{launchBlock}</UnavailableNote>
+            )}
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: detailsExpanded }}
-          onPress={() => setDetailsExpanded((value) => !value)}
-          style={({ pressed }) => [styles.detailsToggle, pressed && styles.detailsTogglePressed]}
-        >
-          <View>
-            <Text style={styles.detailsTitle}>Technical details</Text>
-            <Text style={styles.detailsSubtitle}>Progress, branch and workspace</Text>
-          </View>
-          <Text style={styles.detailsChevron}>{detailsExpanded ? "⌃" : "⌄"}</Text>
-        </Pressable>
+            {attached.length === 0 ? null : (
+              <Section label="Agents" trailing={<Text style={styles.count}>{attached.length}</Text>}>
+                <Card>
+                  {attached.map((row, index) => {
+                    const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
+                    const content = (
+                      <Row
+                        tone={row.tone}
+                        title={row.title}
+                        state={row.stateLabel}
+                        detail={row.runner ?? row.state.summary}
+                        meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
+                        accessibleName={row.accessibleName}
+                        trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
+                        onPress={() => {
+                          if (!row.attachable) {
+                            setActionSessionId(row.sessionId);
+                            return;
+                          }
+                          openAgent(row.sessionId);
+                        }}
+                        onLongPress={() => setActionSessionId(row.sessionId)}
+                      />
+                    );
+                    return (
+                      <View key={row.sessionId}>
+                        {index === 0 ? null : <CardDivider />}
+                        {session === undefined
+                          ? content
+                          : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>}
+                      </View>
+                    );
+                  })}
+                </Card>
+              </Section>
+            )}
+            {attached.length > 0 && launchBlock === undefined ? (
+              <SecondaryButton label="Start another agent" onPress={() => router.push({ pathname: "/launch/[taskId]", params: connectionRouteParams(selected?.id, { taskId: task.id }) })} />
+            ) : null}
 
-        {detailsExpanded ? (
-          <View style={styles.detailsBody}>
-            <Section label="Workspace">
-              {task.branch === null ? null : (
-                <>
-                  <Text style={styles.mono}>{task.branch.name}</Text>
-                  <Text style={styles.detail}>{taskBranchNote(task) ?? "Not observed yet."}</Text>
-                  <Text style={styles.repo} numberOfLines={1}>{basename(task.branch.repository_root)}</Text>
-                </>
-              )}
-              {task.worktree === null ? (
-                <UnavailableNote>No workspace has been created for this task.</UnavailableNote>
+            <Section label="Goal">
+              <Text style={styles.goalTitle}>{task.title}</Text>
+              {task.brief === null || task.brief.length === 0 ? (
+                <Text style={styles.emptyBody}>No description yet.</Text>
               ) : (
                 <>
-                  <Text style={styles.mono} numberOfLines={1}>{task.worktree.path}</Text>
-                  <Text style={styles.detail}>
-                    {[taskPresenceNote(task), stage.summary].filter(Boolean).join(" · ")}
-                  </Text>
+                  <Text style={styles.body} numberOfLines={briefExpanded || task.brief.length <= 140 ? undefined : 3}>{task.brief}</Text>
+                  {task.brief.length > 140 ? (
+                    <Pressable style={styles.moreButton} accessibilityRole="button" accessibilityState={{ expanded: briefExpanded }} onPress={() => setBriefExpanded((value) => !value)}>
+                      <Text style={styles.more}>{briefExpanded ? "Show less" : "Read full goal"}</Text>
+                    </Pressable>
+                  ) : null}
                 </>
-              )}
-              {taskDivergenceNote(task) === undefined ? null : (
-                <View style={styles.inlineBanner}>
-                  <Banner kind="warning" message={taskDivergenceNote(task) ?? ""} />
-                </View>
-              )}
-              {remoteAction === undefined ? null : (
-                <View style={styles.inlineBanner}>
-                  <Banner kind={stage.tone === "blocked" ? "danger" : "info"} message={remoteAction} />
-                </View>
               )}
             </Section>
 
-            {task.jira_url === null ? null : (
-              <Section label="Link">
-                <Text
-                  style={styles.link}
-                  accessibilityRole="link"
-                  accessibilityHint="Opens the issue in your browser"
-                  onPress={() => { void Linking.openURL(task.jira_url ?? ""); }}
-                >
-                  {taskJiraIssueKey(task.jira_url)} ↗
-                </Text>
-              </Section>
-            )}
-          </View>
-        ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: detailsExpanded }}
+              onPress={() => setDetailsExpanded((value) => !value)}
+              style={({ pressed }) => [styles.detailsToggle, pressed && styles.detailsTogglePressed]}
+            >
+              <View>
+                <Text style={styles.detailsTitle}>Technical details</Text>
+                <Text style={styles.detailsSubtitle}>Progress, branch and workspace</Text>
+              </View>
+              <Text style={styles.detailsChevron}>{detailsExpanded ? "⌃" : "⌄"}</Text>
+            </Pressable>
+
+            {detailsExpanded ? (
+              <View style={styles.detailsBody}>
+                <Section label="Workspace">
+                  {task.branch === null ? null : (
+                    <>
+                      <Text style={styles.mono}>{task.branch.name}</Text>
+                      <Text style={styles.detail}>{taskBranchNote(task) ?? "Not observed yet."}</Text>
+                      <Text style={styles.repo} numberOfLines={1}>{basename(task.branch.repository_root)}</Text>
+                    </>
+                  )}
+                  {task.worktree === null ? (
+                    <UnavailableNote>No workspace has been created for this task.</UnavailableNote>
+                  ) : (
+                    <>
+                      <Text style={styles.mono} numberOfLines={1}>{task.worktree.path}</Text>
+                      <Text style={styles.detail}>
+                        {[taskPresenceNote(task), stage.summary].filter(Boolean).join(" · ")}
+                      </Text>
+                    </>
+                  )}
+                  {taskDivergenceNote(task) === undefined ? null : (
+                    <View style={styles.inlineBanner}>
+                      <Banner kind="warning" message={taskDivergenceNote(task) ?? ""} />
+                    </View>
+                  )}
+                  {remoteAction === undefined ? null : (
+                    <View style={styles.inlineBanner}>
+                      <Banner kind={stage.tone === "blocked" ? "danger" : "info"} message={remoteAction} />
+                    </View>
+                  )}
+                </Section>
+
+              </View>
+            ) : null}
           </>
-        )}
+        ) : null}
+        {/* Keep the launcher mounted so tab changes retain edited goals and pending launch guards. */}
+        <View style={tab === "workflow" ? undefined : styles.hiddenPanel} accessibilityElementsHidden={tab !== "workflow"} importantForAccessibility={tab === "workflow" ? "auto" : "no-hide-descendants"}>
+          {selected ? <TaskWorkflowLauncher
+            key={`${selected.id}:${task.id}`}
+            task={task}
+            connectionId={selected.id}
+            online={selected.availability === "online"}
+            templates={runtime.workflowTemplates}
+            launch={runtime.workflowLaunch}
+            control={runtime.control}
+            sessions={store.overview?.sessions ?? []}
+            statuses={store.overview?.agentStatuses ?? []}
+            agentDataStale={store.error !== undefined || store.load !== "ready"}
+            openTemplates={() => router.push({ pathname: "/workflows/[projectId]", params: connectionRouteParams(selected.id, { projectId: task.project_id }) })}
+            openSession={(sessionId) => {
+              void store.refresh();
+              router.push({ pathname: "/session/[sessionId]", params: connectionRouteParams(selected.id, { sessionId, projectId: task.project_id, workflowTaskId: task.id }) });
+            }}
+          /> : null}
+
+        </View>
       </ScrollView>
       <SessionActionsSheet
         session={actionSession}
@@ -368,19 +387,6 @@ function statusColor(tone: RowTone): string {
   }
 }
 
-/// The Task's own attached sessions, taken from its presence projection and rendered
-/// with the same rows the overview uses, so a Session cannot describe itself
-/// differently on two screens.
-function attachedAgentRows(
-  agents: ReturnType<typeof buildProjectOverview>["agents"],
-  task: TaskDto,
-) {
-  const attachedIds = new Set(
-    (task.worktree_presence?.attached_sessions ?? []).map((entry) => entry.session_id),
-  );
-  return agents.filter((row) => attachedIds.has(row.sessionId));
-}
-
 function Section({ label, trailing, children }: {
   label: string;
   trailing?: ReactNode | undefined;
@@ -417,12 +423,16 @@ function TaskTab({ label, selected, onPress }: {
 
 const styles = StyleSheet.create({
   centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
+  content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl + 64 },
+  detailHeader: { padding: space.screen, gap: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
+  taskEyebrow: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  issueLink: { marginLeft: "auto", minHeight: geometry.touchTarget, justifyContent: "center" },
+  hiddenPanel: { display: "none" },
   titleBlock: { gap: space.sm },
   /// A Task title is human prose, so it stays sans while the chrome around it
   /// speaks mono.
   title: { color: color.text, fontSize: 20, fontWeight: "700", lineHeight: 27 },
-  pills: { flexDirection: "row", gap: 6 },
+  pills: { flexDirection: "row", alignItems: "center", gap: 8 },
   tabs: {
     flexDirection: "row",
     padding: 3,
@@ -430,7 +440,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.bgRaised,
   },
   tab: {
-    minHeight: 38,
+    minHeight: geometry.touchTarget,
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -456,6 +466,8 @@ const styles = StyleSheet.create({
   sectionBody: { gap: 4 },
   body: { ...text.body, lineHeight: 19 },
   emptyBody: { color: color.textMuted, fontSize: 13 },
+  goalTitle: { color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 21, marginBottom: 4 },
+  moreButton: { minHeight: geometry.touchTarget, justifyContent: "center", alignSelf: "flex-start" },
   more: { color: color.accentStrong, fontSize: 12, fontWeight: "700", paddingVertical: 4 },
   mono: { color: color.text, fontFamily: fontFamily.mono, fontSize: 13 },
   repo: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
@@ -468,7 +480,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   inlineBanner: { marginTop: 6 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, alignItems: "center" },
+  actions: { gap: space.xs },
+  secondaryActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   detailsToggle: {
     minHeight: 56,
     flexDirection: "row",
