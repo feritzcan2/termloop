@@ -231,7 +231,7 @@ export function createMockRuntime(options: { workflowPreview?: boolean } = {}): 
         return {
           sessionId: fixtureSessions[0]!.id,
           runtimeEpoch: fixtureSessions[0]!.runtime_epoch,
-          promptSubmitted: prompt?.trim() ? true : null,
+          promptDelivery: prompt?.trim() ? "submitting" : null,
         };
       },
       async previewProject(connectionId, project, selection) {
@@ -258,7 +258,7 @@ export function createMockRuntime(options: { workflowPreview?: boolean } = {}): 
         return {
           sessionId: fixtureSessions[0]!.id,
           runtimeEpoch: fixtureSessions[0]!.runtime_epoch,
-          promptSubmitted: prompt?.trim() ? true : null,
+          promptDelivery: prompt?.trim() ? "submitting" : null,
         };
       },
     },

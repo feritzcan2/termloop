@@ -2248,53 +2248,102 @@ describe("production pipeline, launch, and Steward adapters", () => {
       saved.id, "task-mobile", { agentId: "claude" }, "ticket-1",
     );
 
-    expect(result).toEqual({ sessionId, runtimeEpoch: 17, promptSubmitted: null });
+    expect(result).toEqual({ sessionId, runtimeEpoch: 17, promptDelivery: null });
     expect(requests.find(({ method }) => method === "task.launchAgent")?.params).toEqual({
       taskId: "task-mobile", agentId: "claude", launchTicket: "ticket-1",
     });
   });
 
-  it("submits the first message to the launched Session as bracketed paste plus Enter", async () => {
-    const sockets: FakeDataSocket[] = [];
+  it("binds a Task's first message to its preview and leaves all terminal delivery to the Mac", async () => {
     const requests: Array<{
       method: string;
       params: Record<string, unknown>;
       mobileApiVersion: number | undefined;
       protocolVersion: string | undefined;
     }> = [];
+    const terminalSocketFactory = vi.fn(() => { throw new Error("launch must not attach a terminal"); });
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
       controlSocketFactory: controlSocketFactory([], requests),
-      terminalSocketFactory() {
-        const socket = new FakeDataSocket();
-        sockets.push(socket);
-        return socket;
-      },
+      terminalSocketFactory,
     });
 
-    const launching = runtime.agentLaunch.launch(
+    const prompt = "  investigate\nthis\u0007 now  ";
+    const preview = await runtime.agentLaunch.preview(saved.id, "task-mobile", {
+      agentId: "claude", model: "default", permission: "default", reasoning: "default",
+    }, prompt);
+    const result = await runtime.agentLaunch.launch(
       saved.id,
       "task-mobile",
       { agentId: "claude" },
-      "ticket-1",
-      "  investigate\nthis\u0007 now  ",
+      preview.launchTicket,
+      prompt,
     );
-    await waitFor(() => sockets.length === 1);
-    sockets[0]!.open();
-    sockets[0]!.message("TLOK");
 
-    await expect(launching).resolves.toEqual({ sessionId, runtimeEpoch: 17, promptSubmitted: true });
+    expect(result).toEqual({ sessionId, runtimeEpoch: 17, promptDelivery: "submitting" });
+    expect(requests.find(({ method }) => method === "task.previewAgent")?.params).toEqual({
+      taskId: "task-mobile", agentId: "claude", kickoffMessage: "investigate\nthis now",
+    });
+    expect(requests.find(({ method }) => method === "task.launchAgent")?.params).toEqual({
+      taskId: "task-mobile", agentId: "claude", launchTicket: preview.launchTicket,
+    });
     expect(requests.find(({ method }) => method === "session.rename")?.params).toEqual({
       sessionId,
       name: "investigate",
     });
-    const frames = sockets[0]!.sent
-      .slice(1)
-      .map((data) => decodeFrame(new Uint8Array(data as ArrayBuffer))).filter((frame) => frame.kind !== 17);
-    expect(frames.map((frame) => frame.kind)).toEqual([KIND_ATTACH, KIND_INPUT, KIND_INPUT]);
-    expect(new TextDecoder().decode(frames[1]!.payload)).toBe("\u001b[200~investigate this now\u001b[201~");
-    expect([...frames[2]!.payload]).toEqual([13]);
-    expect(sockets[0]!.closed).toBe(true);
+    expect(terminalSocketFactory).not.toHaveBeenCalled();
+  });
+
+  it("uses an invocation-owned Project prompt with identical inspected options and no terminal writes", async () => {
+    const methods: string[] = [];
+    const requests: Parameters<typeof controlSocketFactory>[1] = [];
+    const terminalSocketFactory = vi.fn(() => { throw new Error("launch must not attach a terminal"); });
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: controlSocketFactory(methods, requests),
+      terminalSocketFactory,
+    });
+    const project = fixtureProjects[0]!;
+    const selection = { agentId: "codex", model: "gpt-5.6-sol", permission: "plan", reasoning: "high" } as const;
+    const prompt = "  investigate\r\nthe startup race  ";
+    const inspection = await runtime.agentLaunch.previewProject(saved.id, project, selection, prompt);
+    const result = await runtime.agentLaunch.launchProject(saved.id, project, selection, inspection.launchTicket, prompt);
+
+    expect(methods).toEqual(["quickAction.preview", "quickAction.launch"]);
+    expect(requests[0]?.params).toEqual({
+      projectId: project.id, cwd: project.folder_path, ...selection,
+      templateRef: "builtin.quick-action.free-prompt",
+      bindings: { prompt: "investigate\nthe startup race" }, attachments: [],
+    });
+    expect(requests[1]?.params).toEqual({ ...requests[0]?.params, launchTicket: inspection.launchTicket });
+    expect(result).toEqual({ sessionId, runtimeEpoch: 17, promptDelivery: "submitting" });
+    expect(terminalSocketFactory).not.toHaveBeenCalled();
+  });
+
+  it("keeps an empty first message on the ordinary Project launch path", async () => {
+    const methods: string[] = [];
+    const runtime = runtimeWith(methods, []);
+    const project = fixtureProjects[0]!;
+    const selection = { agentId: "claude", model: "default", permission: "default", reasoning: "default" } as const;
+    const inspection = await runtime.agentLaunch.previewProject(saved.id, project, selection, " \n\u0007 ");
+    const result = await runtime.agentLaunch.launchProject(saved.id, project, selection, inspection.launchTicket, " \n\u0007 ");
+    expect(methods).toEqual(["session.previewAgent", "session.launchAgent"]);
+    expect(result.promptDelivery).toBeNull();
+  });
+
+  it("does not replay or fall back to terminal input when a managed Project launch fails", async () => {
+    const methods: string[] = [];
+    const terminalSocketFactory = vi.fn(() => { throw new Error("launch must not attach a terminal"); });
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: controlSocketFactory(methods, [], new Set(["quickAction.launch"])),
+      terminalSocketFactory,
+    });
+    await expect(runtime.agentLaunch.launchProject(saved.id, fixtureProjects[0]!, {
+      agentId: "codex", model: "default", permission: "default", reasoning: "default",
+    }, "ticket-1", "Investigate the race")).rejects.toThrow();
+    expect(methods).toEqual(["quickAction.launch"]);
+    expect(terminalSocketFactory).not.toHaveBeenCalled();
   });
 
   it("uses the Project projection as the exact target for an unassigned Agent launch", async () => {
@@ -2310,7 +2359,9 @@ describe("production pipeline, launch, and Steward adapters", () => {
       agentId: "codex", model: "gpt-5.6-sol", permission: "plan", reasoning: "high",
     });
 
-    await runtime.agentLaunch.launchProject(saved.id, project, { agentId: "codex" }, inspection.launchTicket);
+    await runtime.agentLaunch.launchProject(saved.id, project, {
+      agentId: "codex", model: "gpt-5.6-sol", permission: "plan", reasoning: "high",
+    }, inspection.launchTicket);
 
     expect(requests.find(({ method }) => method === "session.previewAgent")?.params).toEqual({
       projectId: project.id,
@@ -2695,6 +2746,7 @@ function controlResult(
   }
   if (method === "routine.runNow") return { ok: true };
   if (method === "task.previewAgent"
+    || method === "quickAction.preview"
     || method === "session.previewAgent"
     || method === "session.previewResumeAgent") {
     return {
@@ -2720,6 +2772,7 @@ function controlResult(
     };
   }
   if (method === "task.launchAgent"
+    || method === "quickAction.launch"
     || method === "session.launchAgent"
     || method === "session.resumeAgent") {
     return { ...fixtureSessions[0], id: sessionId };
