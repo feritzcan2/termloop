@@ -1013,14 +1013,29 @@ async fn steward_task_command(
     status: &str,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
-    let automation_selection =
-        (method == "task.create").then_some((protocol::TaskCreateWorktreeIntent::Inherit, None));
+    use super::invalidation::CommitImpact;
+    use super::task_automation::{
+        PreparedTaskAutomation, TaskAutomationSelection, TaskCreationOutcome,
+    };
+
     let requested_task_id = params
         .get("taskId")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    let (task_id, created_task, state_revision) = {
+    let (result, creation, state_revision) = {
         let mut core = state.core.lock().await;
+        let automation = if method == "task.create" {
+            if !core.is_current_steward_session(project_id, session_id) {
+                return Err(termloop_core::CoreError::CapabilityDenied);
+            }
+            Some(PreparedTaskAutomation::prepare(
+                &core,
+                project_id,
+                TaskAutomationSelection::inherit(),
+            )?)
+        } else {
+            None
+        };
         let result = core.execute_steward_task_command(session_id, project_id, method, params)?;
         let task_id = requested_task_id
             .or_else(|| result.get("id").and_then(Value::as_str).map(str::to_owned))
@@ -1046,48 +1061,38 @@ async fn steward_task_command(
             None,
             super::current_epoch_ms(),
         );
-        let created_task = (method == "task.create").then_some(result);
-        (task_id, created_task, core.state_revision())
+        let state_revision = core.state_revision();
+        let creation = automation.map(|automation| {
+            TaskCreationOutcome::collect(CommitImpact::StewardTask, |committed| {
+                committed.record(&result, state_revision, Some(automation));
+                Ok(())
+            })
+        });
+        (
+            json!({ "taskId": task_id, "status": status }),
+            creation,
+            state_revision,
+        )
     };
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![
-            ProjectionTopic::Task,
-            ProjectionTopic::Companion,
-            ProjectionTopic::Steward,
-        ],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
+    if let Some(creation) = creation {
+        creation
+            .finish(state, state.observation_sequence.load(Ordering::Relaxed))
+            .await?;
+    } else {
+        let _ = state.invalidation_requests.try_send(InvalidationRequest {
+            topics: vec![
+                ProjectionTopic::Task,
+                ProjectionTopic::Companion,
+                ProjectionTopic::Steward,
+            ],
+            state_revision,
+            observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+        });
+    }
     if method == "task.delete" {
         super::health::refresh_all_health_demands(state).await;
     }
-    if let (Some(task), Some((worktree_intent, agent_id))) =
-        (created_task.as_ref(), automation_selection)
-    {
-        match super::task_automation::action_for_task(
-            task,
-            super::task_automation::TaskAutomationSelection {
-                worktree_intent,
-                worktree_prefix: None,
-                base_ref: None,
-                agent_id,
-                model: None,
-                permission: None,
-                reasoning: None,
-                kickoff_message: None,
-                workflow_id: None,
-            },
-            state,
-        )
-        .await
-        {
-            Ok(action) => super::task_automation::spawn(vec![action], state),
-            Err(error) => {
-                tracing::warn!(task_id = %task_id, %error, "Steward Task automation could not be planned")
-            }
-        }
-    }
-    Ok(json!({ "taskId": task_id, "status": status }))
+    Ok(result)
 }
 
 async fn set_steward_task_jira_url(
