@@ -52,6 +52,22 @@ describe("server agent account settings", () => {
     expect(button("Sign in")).toBeDefined();
   });
 
+  it("stops checking after a status timeout and retries just the failed account", async () => {
+    const api = actions();
+    vi.mocked(api.list).mockRejectedValueOnce(new Error("request timeout"));
+    await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
+    expect(container.textContent).toContain("This server took too long to respond");
+    expect(container.textContent).not.toContain("request timeout");
+    expect(container.textContent).not.toContain("Checking this account");
+    expect(api.list).toHaveBeenCalledTimes(2);
+    await act(async () => button("Retry account check").click());
+    expect(api.list).toHaveBeenCalledTimes(3);
+    expect(api.list).toHaveBeenLastCalledWith("netcup", { agentId: "codex", accountId: "default" });
+    expect(container.textContent).not.toContain("This server took too long to respond");
+    expect(button("Retry account check")).toBeUndefined();
+    expect(button("Sign in")).toBeDefined();
+  });
+
   it.each([{ ...profile, state: "offline" as const }, { ...profile, transport: "local" as const, scope: "local" as const, state: "offline" as const }, { ...profile, scope: "readOnly" as const }])("does not read or expose account controls without a full connected server", async (unavailable) => {
     const api = actions();
     await act(async () => root.render(createElement(AgentConnectionsPanel, { profile: unavailable, actions: api })));
