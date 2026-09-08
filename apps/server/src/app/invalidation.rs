@@ -12,7 +12,9 @@ use tokio::time::Duration;
 use super::{AppState, current_epoch_ms};
 
 mod session_mutation;
-pub(super) use session_mutation::{CommittedSessionMutation, finish_session_mutation};
+pub(super) use session_mutation::{
+    CommittedSessionMutation, finish_session_mutation, finish_session_mutation_with_cleanup,
+};
 
 const INVALIDATION_COALESCE_WINDOW: Duration = Duration::from_millis(100);
 
@@ -118,7 +120,7 @@ pub(super) async fn queue_commit_invalidation(
 
 /// Await backpressure so a full queue cannot silently lose a committed
 /// revision. Callers must release the serialized Core lock before entering.
-async fn queue_invalidation(
+pub(super) async fn queue_invalidation(
     sender: &mpsc::Sender<InvalidationRequest>,
     invalidation: InvalidationRequest,
 ) {

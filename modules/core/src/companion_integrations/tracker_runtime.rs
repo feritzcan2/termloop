@@ -1944,10 +1944,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            updated["configuration"]["executorSessionId"],
+            updated.result["configuration"]["executorSessionId"],
             "steward-session"
         );
-        assert_eq!(updated["configuration"]["generation"], 1);
+        assert_eq!(updated.result["configuration"]["generation"], 1);
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1972,11 +1972,11 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(updated["configuration"]["systemPrompt"], editable);
-        assert!(updated["configuration"]["executorSessionId"].is_null());
-        assert_eq!(updated["configuration"]["generation"], 2);
-        assert_eq!(updated["configuration"]["model"], "gpt-5.6-sol");
-        assert_eq!(updated["configuration"]["reasoning"], "high");
+        assert_eq!(updated.result["configuration"]["systemPrompt"], editable);
+        assert!(updated.result["configuration"]["executorSessionId"].is_null());
+        assert_eq!(updated.result["configuration"]["generation"], 2);
+        assert_eq!(updated.result["configuration"]["model"], "gpt-5.6-sol");
+        assert_eq!(updated.result["configuration"]["reasoning"], "high");
         let projected = runtime
             .get_steward_configuration(json!({"projectId": project_id}))
             .unwrap();

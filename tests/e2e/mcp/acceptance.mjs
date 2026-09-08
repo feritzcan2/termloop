@@ -130,7 +130,7 @@ try {
   assert.equal(helper.selectedModel, "opus");
   assert.equal(helper.selectedReasoning, "high");
   assert.equal(asker.followUpSelectionChangeDenied, true);
-  assert.deepEqual(asker.tools, ["ask_to", "send_to_agent"]);
+  assert.deepEqual(asker.tools, ["ask_to", "send_to_agent", "workflow_delegate", "workflow_step_complete"]);
   assert.deepEqual(helper.tools, ["ask_to", "send_to_agent", "reply_to_request"]);
   assert.equal(asker.discoveryFallback, true);
   assert.equal(asker.idempotentRequest, true);
@@ -140,9 +140,9 @@ try {
   assert.equal(asker.pushedFollowUpVisible, true);
   assert.equal(asker.followUpConversationId, asker.conversationId);
   assert.notEqual(asker.followUpRequestId, null);
-  assert.equal(helper.status, "delivered");
+  assert.equal(helper.status, "submitting");
   assert.equal(helper.duplicateReplyDeniedAfterDelivery, true);
-  assert.equal(helper.followUpStatus, "delivered");
+  assert.equal(helper.followUpStatus, "submitting");
   assert.equal(helper.followUpPromptVisible, true);
   assert.equal(helper.recoveryPromptVisible, true);
   assert.equal(helper.requestMismatchDenied, true);

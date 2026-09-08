@@ -228,14 +228,21 @@ fn relocation_ticket_is_exact_single_use_and_never_stores_task_parentage() {
         Some(source.as_str()),
         "durable ownership must remain at the source until commit"
     );
-    drop(plan);
-    let failed = fixture
+    let failure = fixture
         .runtime
-        .fail_agent_resume(
-            &session_id,
-            termloop_domain::ResumeFailureReason::DaemonInterrupted,
+        .begin_resume_failure(
+            &plan,
+            crate::AgentResumeFailureOutcome::Failed(
+                termloop_domain::ResumeFailureReason::DaemonInterrupted,
+            ),
         )
         .unwrap();
+    let observed = failure.reap(*plan);
+    assert_eq!(
+        fixture.runtime.store.session_relocation_operations().len(),
+        1
+    );
+    let failed = fixture.runtime.complete_resume_failure(observed).unwrap();
     assert_eq!(failed["process"]["cwd"], source);
     assert_eq!(failed["lifecycle_state"], "resumeFailed");
     assert!(

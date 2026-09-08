@@ -27,7 +27,8 @@ pub use companion_integrations::steward::{
     StewardTaskAgentStartPlan,
 };
 pub use configuration_version::{
-    ConfigurationApplicationEffects, ConfigurationApplicationPlan, target_kind_wire,
+    ConfigurationApplicationCommit, ConfigurationApplicationEffects, ConfigurationApplicationPlan,
+    target_kind_wire,
 };
 pub use context_bank::{
     ContextBankCatalogPlan, ContextBankFilePlan, ContextBankSiblingConflictPlan,
@@ -43,12 +44,15 @@ pub use runtime::generated_input_delivery::{
     GeneratedInputDeliveryCancelCause, GeneratedInputDeliveryDiagnostics,
     GeneratedInputDeliveryFailure, GeneratedInputDeliveryState, GeneratedInputRuntimeEvent,
 };
+pub use runtime::steward_change::{CommittedStewardChange, StewardConfigurationCommit};
 pub use session_launch::archive::SessionArchiveRetirementPlan;
 pub use session_launch::{
-    AgentLaunchCommit, AgentLaunchPlan, AgentResumeCandidate, AgentResumeLane, AgentResumePlan,
+    AgentLaunchCommit, AgentLaunchPlan, AgentResumeCandidate, AgentResumeCompletion,
+    AgentResumeFailureOutcome, AgentResumeFailurePlan, AgentResumeLane, AgentResumePlan,
     AgentResumePlanOutcome, AgentResumePreparationError, AgentResumeTargetValidation, CodexRuntime,
-    McpAuthorizer, McpPrincipal, ObservedSessionRelocationPreview, ObservedTaskWorktreeLaunch,
-    SessionRelocationPreviewOutcome, SessionRelocationPreviewPlan, TaskWorktreeLaunchPlan,
+    McpAuthorizer, McpPrincipal, ObservedAgentResumeFailure, ObservedSessionRelocationPreview,
+    ObservedTaskWorktreeLaunch, SessionRelocationPreviewOutcome, SessionRelocationPreviewPlan,
+    TaskWorktreeLaunchPlan,
 };
 pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};
