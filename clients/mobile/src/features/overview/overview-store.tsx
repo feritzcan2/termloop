@@ -6,6 +6,7 @@ import { useConnections } from "@/features/connection/connection-store";
 import { connectionPresentation } from "@/presentation/connection-presentation";
 import { reconcileReviewReadySessions, statusMap } from "@/presentation/agent-review-policy";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
+import { subscribeOverviewInvalidations } from "./overview-invalidations";
 import {
   emptyOverviewSnapshot as emptySnapshot,
   refreshIndicatorForOverviewRead,
@@ -26,7 +27,6 @@ export {
 /// calls, so it is slower than a bare version probe. Refreshing faster than the read can
 /// finish replaces each attempt just before it answers.
 const FALLBACK_REFRESH_MS = 120_000;
-const INVALIDATION_DEBOUNCE_MS = 120;
 
 /// Every readable Mac's Project/Task/Session/Agent-status projection, loaded once and
 /// shared by every screen that reads it. The selected connection remains a facade for
@@ -142,8 +142,6 @@ function ConnectionOverviewLoader({
   const readSequence = useRef(0);
   const activeRead = useRef<number | undefined>(undefined);
   const pendingInvalidation = useRef(false);
-  const invalidationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const lastInvalidation = useRef<string | undefined>(undefined);
   const readable = connectionPresentation(availability).block === undefined;
 
   useEffect(() => {
@@ -231,27 +229,13 @@ function ConnectionOverviewLoader({
 
   useEffect(() => {
     if (!lifecycle.active || !readable) return;
-    const unsubscribe = runtime.control.subscribeInvalidations(connectionId, (event) => {
-      const revision = `${event.stateRevision}:${event.observationSequence}`;
-      if (lastInvalidation.current === revision) return;
-      // A daemon restart may reset either counter. Invalidations are hints and
-      // reads remain authoritative, so reject only exact redelivery.
-      lastInvalidation.current = revision;
-      if (invalidationTimer.current !== undefined) clearTimeout(invalidationTimer.current);
-      invalidationTimer.current = setTimeout(() => {
-        invalidationTimer.current = undefined;
-        if (activeRead.current !== undefined) {
-          pendingInvalidation.current = true;
-          return;
-        }
-        setLocalReloads((count) => count + 1);
-      }, INVALIDATION_DEBOUNCE_MS);
+    return subscribeOverviewInvalidations(runtime.control, connectionId, () => {
+      if (activeRead.current !== undefined) {
+        pendingInvalidation.current = true;
+        return;
+      }
+      setLocalReloads((count) => count + 1);
     });
-    return () => {
-      unsubscribe();
-      if (invalidationTimer.current !== undefined) clearTimeout(invalidationTimer.current);
-      invalidationTimer.current = undefined;
-    };
   }, [runtime, lifecycle.active, readable, connectionId]);
 
   useEffect(() => {
