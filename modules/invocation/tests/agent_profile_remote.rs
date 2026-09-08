@@ -14,23 +14,65 @@ fn interactive_mcp() -> AgentMcpLaunch<'static> {
 
 #[test]
 fn profile_permissions_remain_user_selected() {
-    let profile = agent_profiles()[0];
-    for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
-        let launch = profile_quick_action_agent_with_attachments_for_conversation(
-            profile.id,
-            "codex",
-            "/tmp/project",
-            "default",
-            permission,
-            "default",
-            "Inspect this workflow",
-            &[],
-            AgentConversationLaunch::Fresh { resume_ref: None },
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(launch.inspectable_manifest().target.permission, permission);
+    for profile in agent_profiles() {
+        for agent_id in ["codex", "claude"] {
+            for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
+                let launch = profile_quick_action_agent_with_attachments_for_conversation(
+                    profile.id,
+                    agent_id,
+                    "/tmp/project",
+                    "default",
+                    permission,
+                    "default",
+                    "Inspect this workflow",
+                    &[],
+                    AgentConversationLaunch::Fresh { resume_ref: None },
+                    None,
+                    None,
+                )
+                .unwrap();
+                let manifest = launch.inspectable_manifest();
+                assert_eq!(manifest.target.permission, permission);
+                let instructions = &manifest
+                    .content_parts
+                    .iter()
+                    .find(|part| part.kind == "providerInstructions")
+                    .unwrap()
+                    .content;
+                assert_eq!(instructions, profile.instructions());
+                assert!(!instructions.contains("read-only"), "{}", profile.id);
+                assert!(
+                    !instructions.contains("Do not edit files"),
+                    "{}",
+                    profile.id
+                );
+                if agent_id == "codex" {
+                    assert_eq!(
+                        launch.codex_app_server_developer_instructions(),
+                        Some(instructions.as_str())
+                    );
+                } else {
+                    assert!(launch.args().windows(2).any(|pair| pair[0]
+                        == "--append-system-prompt"
+                        && pair[1] == *instructions));
+                }
+                if permission == "plan" {
+                    let expected = if agent_id == "codex" {
+                        ["--sandbox", "read-only"]
+                    } else {
+                        ["--permission-mode", "plan"]
+                    };
+                    assert!(launch.args().windows(2).any(|pair| pair == expected));
+                } else if permission == "bypassPermissions" {
+                    let expected = if agent_id == "codex" {
+                        "--dangerously-bypass-approvals-and-sandbox"
+                    } else {
+                        "--dangerously-skip-permissions"
+                    };
+                    assert!(launch.args().iter().any(|arg| arg == expected));
+                }
+            }
+        }
     }
 }
 
