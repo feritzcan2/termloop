@@ -8,6 +8,19 @@ export function connectionRouteParams<T extends Record<string, string>>(
   return connectionId === undefined ? params : { ...params, connectionId };
 }
 
+/// Workflow helpers may not be direct Task members. Carry the originating Task
+/// as navigation context, including after an OTA reload loses the native stack.
+export function sessionParentRoute(connectionId: string | undefined, projectId: string | undefined, workflowTaskId?: string) {
+  if (workflowTaskId) return {
+    label: "Workflow",
+    href: { pathname: "/task/[taskId]" as const, params: connectionRouteParams(connectionId, { taskId: workflowTaskId }) },
+  };
+  return {
+    label: "Project",
+    href: projectId === undefined ? undefined : { pathname: "/project/[projectId]" as const, params: connectionRouteParams(connectionId, { projectId }) },
+  };
+}
+
 export interface SessionConnectionScope {
   readonly connectionId: string;
   readonly sessionIds: readonly string[];
