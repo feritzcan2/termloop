@@ -117,7 +117,7 @@ function AccountStatus({ account, profileId, actions, refreshKey }: { account: A
     } catch (cause) { if (request === generation.current) setError(message(cause)); }
   }, [actions, profileId, account.agentId, account.accountId]);
   useEffect(() => { void refresh(); return () => { generation.current += 1; }; }, [refresh, refreshKey]);
-  return <>{error ? <p role="alert" className="conn-banner error">{error}</p> : null}{status ? <AgentAccountCard status={status} profileId={profileId} actions={actions} refresh={refresh} /> : <div role="status" className="conn-skeleton">Checking this account…</div>}</>;
+  return <>{error ? <div role="alert" className="conn-banner error"><p>{error}</p><button type="button" onClick={() => { setError(undefined); void refresh(); }}>Retry account check</button></div> : null}{status ? <AgentAccountCard status={status} profileId={profileId} actions={actions} refresh={refresh} /> : !error ? <div role="status" className="conn-skeleton">Checking this account…</div> : null}</>;
 }
 
 function AgentAccountCard({ status, profileId, actions, refresh }: { status: AgentAuthStatusDto; profileId: string; actions: AgentConnectionActions; refresh(): Promise<void> }) {
@@ -209,4 +209,11 @@ function AgentAccountCard({ status, profileId, actions, refresh }: { status: Age
   </article>;
 }
 
-function message(cause: unknown): string { return cause instanceof Error ? cause.message : "Account setup is unavailable. Reconnect to the server and try again."; }
+function message(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message.includes("request timeout")
+      ? "This server took too long to respond. Retry, or check its connection."
+      : cause.message;
+  }
+  return "Account setup is unavailable. Reconnect to the server and try again.";
+}
