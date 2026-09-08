@@ -188,10 +188,12 @@ impl McpAuthorizer {
         }
     }
 
-    pub(crate) fn remove_provisional(&self, session_id: &str, runtime_epoch: u64) {
+    pub(crate) fn remove_provisional(&self, session_id: &str, runtime_epoch: u64, token: &str) {
         if let Ok(mut entries) = self.entries.write()
             && entries.get(session_id).is_some_and(|entry| {
-                !entry.command_authorized && entry.principal.runtime_epoch == runtime_epoch
+                !entry.command_authorized
+                    && entry.principal.runtime_epoch == runtime_epoch
+                    && crate::capability_equal(entry.token.as_bytes(), token.as_bytes())
             })
         {
             entries.remove(session_id);
@@ -1369,7 +1371,7 @@ mod tests {
             AgentMcpRole::Interactive,
             "secret-b".into(),
         );
-        authorizer.remove_provisional("session-b", 5);
+        authorizer.remove_provisional("session-b", 5, "secret-b");
         assert!(authorizer.authenticate("secret-b").is_ok());
         authorizer.remove("session-b");
         assert!(matches!(
