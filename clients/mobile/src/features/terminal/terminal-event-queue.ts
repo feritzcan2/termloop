@@ -8,6 +8,7 @@ export class TerminalEventQueue {
   private bytes = 0;
   private running = false;
   private disposed = false;
+  private readonly idleListeners = new Set<() => void>();
 
   constructor(
     private readonly consume: (event: TerminalEvent) => Promise<void>,
@@ -30,6 +31,17 @@ export class TerminalEventQueue {
     this.disposed = true;
     this.events = [];
     this.bytes = 0;
+    this.resolveIdle();
+  }
+
+  whenIdle(): Promise<void> {
+    if (this.disposed || (!this.running && this.events.length === 0)) return Promise.resolve();
+    return new Promise((resolve) => this.idleListeners.add(resolve));
+  }
+
+  private resolveIdle(): void {
+    for (const listener of this.idleListeners) listener();
+    this.idleListeners.clear();
   }
 
   private async drain(): Promise<void> {
@@ -48,6 +60,7 @@ export class TerminalEventQueue {
       }
     } finally {
       this.running = false;
+      this.resolveIdle();
     }
   }
 }
