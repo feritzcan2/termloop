@@ -67,6 +67,47 @@ describe("assistant read coordinator", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it("invalidates failed writes before exposing the original error to a retry", async () => {
+    const coordinator = new AssistantReadCoordinator();
+    const load = vi.fn().mockResolvedValueOnce(7).mockResolvedValueOnce(12);
+    const otherIdentity = { profileId: "remote-b", projectId: "project-a" };
+    const otherLoad = vi.fn(async () => 3);
+    const failure = new Error("state revision changed; refresh and try again");
+    const mutate = coordinator.wrapMutation(IDENTITY, async () => { throw failure; });
+
+    await coordinator.read(IDENTITY, "steward.configurationGet", load);
+    await coordinator.read(otherIdentity, "steward.configurationGet", otherLoad);
+    await expect(mutate()).rejects.toBe(failure);
+
+    const [rail, panel] = await Promise.all([
+      coordinator.read(IDENTITY, "steward.configurationGet", load),
+      coordinator.read(IDENTITY, "steward.configurationGet", load),
+    ]);
+    expect([rail, panel]).toEqual([12, 12]);
+    expect(load).toHaveBeenCalledTimes(2);
+    await expect(coordinator.read(otherIdentity, "steward.configurationGet", otherLoad)).resolves.toBe(3);
+    expect(otherLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes an in-flight snapshot after a failed mutation", async () => {
+    const coordinator = new AssistantReadCoordinator();
+    let release!: (value: number) => void;
+    const load = vi.fn()
+      .mockImplementationOnce(() => new Promise<number>((resolve) => { release = resolve; }))
+      .mockResolvedValueOnce(12);
+    const pending = coordinator.read(IDENTITY, "playbook.get", load);
+    const failure = new Error("connection lost after submitting the write");
+    const mutate = coordinator.wrapMutation(IDENTITY, async () => { throw failure; });
+
+    await expect(mutate()).rejects.toBe(failure);
+    const refreshed = coordinator.read(IDENTITY, "playbook.get", load);
+    release(7);
+
+    await expect(pending).resolves.toBe(12);
+    await expect(refreshed).resolves.toBe(12);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it("coalesces invalidations received in flight into one trailing read", async () => {
     const coordinator = new AssistantReadCoordinator();
     const releases: Array<(value: number) => void> = [];
