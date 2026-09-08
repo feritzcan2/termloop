@@ -3239,6 +3239,11 @@ export interface RoutineFindingDraft {
 
 export type RoutineAssignmentStatus = "satisfied" | "pending" | "blocked";
 
+export interface RoutineAssignmentCompleteResult {
+  status: "completed" | "completedContextPreserved";
+  stewardReviewRequired: boolean;
+}
+
 export interface RoutineAssignmentCompleteParams {
   checkId: string;
   status: RoutineAssignmentStatus;
@@ -4341,7 +4346,7 @@ export function validateMcpToolResult(tool: string, result: unknown): boolean {
     case "routine_finding_read": return (isJsonObject(result) && (Object.hasOwn(result, "content") && (typeof result["content"] === "string" && [...result["content"]].length <= 262144)) && Object.keys(result).every((key) => ["content"].includes(key)));
     case "routine_finding_resolve": return (isJsonObject(result) && (Object.hasOwn(result, "status") && (typeof result["status"] === "string" && [...result["status"]].length >= 1 && [...result["status"]].length <= 64)) && Object.keys(result).every((key) => ["status"].includes(key)));
     case "steward_next_assignment": return (isJsonObject(result) && (Object.hasOwn(result, "content") && (typeof result["content"] === "string" && [...result["content"]].length <= 262144)) && Object.keys(result).every((key) => ["content"].includes(key)));
-    case "steward_complete_assignment": return (isJsonObject(result) && (Object.hasOwn(result, "status") && (typeof result["status"] === "string" && [...result["status"]].length >= 1 && [...result["status"]].length <= 64)) && Object.keys(result).every((key) => ["status"].includes(key)));
+    case "steward_complete_assignment": return (isJsonObject(result) && (Object.hasOwn(result, "status") && (typeof result["status"] === "string" && ["completed","completedContextPreserved"].includes(result["status"]))) && (Object.hasOwn(result, "stewardReviewRequired") && typeof result["stewardReviewRequired"] === "boolean") && Object.keys(result).every((key) => ["status","stewardReviewRequired"].includes(key)));
     case "playbook_read": return (isJsonObject(result) && (Object.hasOwn(result, "content") && (typeof result["content"] === "string" && [...result["content"]].length <= 262144)) && Object.keys(result).every((key) => ["content"].includes(key)));
     case "task_set_steward_brief": return (isJsonObject(result) && (Object.hasOwn(result, "taskId") && (typeof result["taskId"] === "string" && [...result["taskId"]].length >= 1)) && (Object.hasOwn(result, "status") && result["status"] === "updated") && (Object.hasOwn(result, "briefRevision") && (typeof result["briefRevision"] === "number" && Number.isInteger(result["briefRevision"]) && result["briefRevision"] >= 1)) && Object.keys(result).every((key) => ["taskId","status","briefRevision"].includes(key)));
     case "configuration_version_read": return (isJsonObject(result) && (Object.hasOwn(result, "activeVersionId") && ((typeof result["activeVersionId"] === "string" && [...result["activeVersionId"]].length >= 1 && [...result["activeVersionId"]].length <= 128) || result["activeVersionId"] === null)) && (Object.hasOwn(result, "content") && ((typeof result["content"] === "string" && [...result["content"]].length >= 1 && [...result["content"]].length <= 524288 && new TextEncoder().encode(result["content"]).byteLength <= 524288) || result["content"] === null)) && (Object.hasOwn(result, "stateRevision") && (typeof result["stateRevision"] === "number" && Number.isInteger(result["stateRevision"]) && result["stateRevision"] >= 0)) && Object.keys(result).every((key) => ["activeVersionId","content","stateRevision"].includes(key)));

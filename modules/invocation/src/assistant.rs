@@ -127,6 +127,7 @@ const RETIRED_STEWARD_EXECUTOR_DEFAULTS: &[&str] = &[
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v36.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v37.md"),
+    include_str!("../../../resources/prompts/retired/builtin.steward.executor.v38.md"),
 ];
 
 pub fn resolved_steward_system_prompt(configured: &str) -> &str {
@@ -385,7 +386,7 @@ pub fn assistant_wake_message(
     } else if reason == AssistantWakeReason::StewardPipelineMoved {
         "Follow the **Delivery pipeline moved** row in the visible Steward wake protocol."
     } else if reason == AssistantWakeReason::StewardPipelineMovedAndRoutineFinding {
-        "Follow the **Movement plus finding** row in the visible Steward wake protocol. Keep the movement update and any finding-bound approval proposal separate."
+        "Follow the **Movement plus finding** row in the visible Steward wake protocol. Combine related movement and finding disposition in one current-state message; split only unrelated decisions."
     } else if reason == AssistantWakeReason::StewardRoutineFinding {
         "Follow the **New Routine finding** row and the Routine-finding policy in the visible Steward instructions."
     } else if reason == AssistantWakeReason::StewardStartupRefresh {
