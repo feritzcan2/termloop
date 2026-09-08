@@ -25,6 +25,7 @@ import {
   connectionRouteParams,
   missingSessionRouteState,
   resolveSessionRouteConnectionId,
+  sessionParentRoute,
 } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
@@ -86,10 +87,11 @@ interface ComposerImage {
 }
 
 export default function SessionRoute() {
-  const { sessionId, connectionId, projectId: routeProjectId } = useLocalSearchParams<{
+  const { sessionId, connectionId, projectId: routeProjectId, workflowTaskId } = useLocalSearchParams<{
     sessionId: string;
     connectionId?: string;
     projectId?: string;
+    workflowTaskId?: string;
   }>();
   const router = useRouter();
   const focused = useIsFocused();
@@ -121,10 +123,7 @@ export default function SessionRoute() {
     ? undefined
     : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
   const backProjectId = session?.project_id ?? routeProjectId;
-  const backProjectRoute = backProjectId === undefined ? undefined : {
-    pathname: "/project/[projectId]" as const,
-    params: connectionRouteParams(resolvedRouteConnectionId ?? connectionId, { projectId: backProjectId }),
-  };
+  const parentRoute = sessionParentRoute(resolvedRouteConnectionId ?? connectionId, backProjectId, workflowTaskId);
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
   const changesTaskId = useMemo(() => {
     if (store.overview === undefined || session?.kind !== "Agent") return undefined;
@@ -258,8 +257,8 @@ export default function SessionRoute() {
     return (
       <Screen edges={["top", "bottom"]}>
         <ScreenHeader
-          back="Project"
-          backFallback={backProjectRoute}
+          back={parentRoute.label}
+          backFallback={parentRoute.href}
           title="Session"
           right={<MockBadge />}
         />
@@ -387,8 +386,8 @@ export default function SessionRoute() {
     <Screen edges={["top", "bottom"]}>
       <View style={styles.header}>
         <ScreenHeader
-          back="Project"
-          backFallback={backProjectRoute}
+          back={parentRoute.label}
+          backFallback={parentRoute.href}
           center={
             <View style={styles.identityZone}>
               <Text style={styles.identity} numberOfLines={1}>{identity}</Text>
