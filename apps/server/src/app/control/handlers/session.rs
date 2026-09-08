@@ -20,7 +20,7 @@ use super::super::super::gates::{
     MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
 };
 use super::super::super::invalidation::{
-    CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
+    CommittedSessionMutation, InvalidationRequest, finish_session_mutation_with_cleanup,
     publish_agent_resume_invalidation, publish_session_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::agent_launch::execute_agent_launch;
@@ -852,23 +852,23 @@ pub(in crate::app) async fn terminate_session(
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_session(&session_id);
     }
-    let cleanup = if let Some(runtime) = runtime {
-        // Wait for the ownership handoff outside Core before acknowledging
-        // termination, but preserve the committed effects even when reaping fails.
-        tokio::task::spawn_blocking(move || runtime.reap())
-            .await
-            .map_err(|error| CoreError::Terminal(error.to_string()))
-            .and_then(|result| {
-                result.map_err(|_| {
+    finish_session_mutation_with_cleanup(state, effects, async move {
+        if let Some(runtime) = runtime {
+            // Wait for the ownership handoff outside Core before acknowledging
+            // termination. Invalidation and presence refresh run concurrently,
+            // so slow cleanup cannot hide the descriptor's committed exit.
+            tokio::task::spawn_blocking(move || runtime.reap())
+                .await
+                .map_err(|error| CoreError::Terminal(error.to_string()))?
+                .map_err(|_| {
                     CoreError::Terminal(
                         "terminated Session runtime ownership could not be released".into(),
                     )
-                })
-            })
-    } else {
-        Ok(())
-    };
-    finish_session_mutation(state, effects, cleanup.map(|()| result)).await
+                })?;
+        }
+        Ok(result)
+    })
+    .await
 }
 
 pub(in crate::app::control) async fn resume_agent_session(

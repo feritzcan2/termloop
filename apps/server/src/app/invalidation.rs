@@ -12,7 +12,9 @@ use tokio::time::Duration;
 use super::{AppState, current_epoch_ms};
 
 mod session_mutation;
-pub(super) use session_mutation::{CommittedSessionMutation, finish_session_mutation};
+pub(super) use session_mutation::{
+    CommittedSessionMutation, finish_session_mutation, finish_session_mutation_with_cleanup,
+};
 
 const INVALIDATION_COALESCE_WINDOW: Duration = Duration::from_millis(100);
 
