@@ -9,6 +9,7 @@ import {
 } from "../../src/features/connection/connection-route";
 import {
   preferredConnectionId,
+  needsConnectionRecovery,
   shouldResetConnectionTransports,
 } from "../../src/features/connection/connection-resilience";
 import {
@@ -425,6 +426,15 @@ describe("task presentation", () => {
 });
 
 describe("connection presentation", () => {
+  it("keeps retrying the selected Mac after its reconnect grace expires", () => {
+    const selected = { ...mac("selected", "Selected Mac"), availability: "reconnecting" as const };
+    const away = { ...mac("away", "Other Mac"), availability: "offline" as const };
+    expect(needsConnectionRecovery([selected, away], selected.id)).toBe(true);
+    expect(needsConnectionRecovery([{ ...selected, availability: "offline" }, away], selected.id)).toBe(true);
+    expect(needsConnectionRecovery([{ ...selected, availability: "online" }, away], selected.id)).toBe(false);
+    expect(needsConnectionRecovery([{ ...selected, availability: "revoked" }, away], selected.id)).toBe(false);
+    expect(needsConnectionRecovery([selected, away], away.id)).toBe(true);
+  });
   it("forces fresh transports after foregrounding even when background never rendered", () => {
     const active = { active: true, foregroundRevision: 3 };
 

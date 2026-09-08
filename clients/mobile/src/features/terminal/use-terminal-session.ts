@@ -1,27 +1,21 @@
 import type { SessionDto } from "@termloop/contract/current";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { SelectedImage, TerminalAttachment, TerminalEvent } from "@/application/ports";
+import type { SelectedImage, TerminalAttachment } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import {
-  detachTerminalBuffer,
   emptyTerminalBuffer,
-  reduceTerminalEvent,
   terminalCapNotice,
-  withTerminalScreen,
   type TerminalBuffer,
 } from "@/presentation/terminal-buffer";
 import { scrollSequence } from "@/presentation/terminal-scroll";
-import { TerminalScreenProjection } from "@/presentation/terminal-screen";
 import { attachedImageMessage } from "@/presentation/terminal-image-message";
 import { submitTerminalTurn } from "./submit-terminal-turn";
 import { TerminalOutputBatcher } from "./output-batcher";
-import { projectTerminalOutput, TerminalEventQueue } from "./terminal-event-queue";
+import { TerminalSessionState } from "./terminal-session-state";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import {
-  appendTerminalOutputTail,
-  continueTerminalReplay,
   terminalContinuityCache,
   terminalContinuityKey,
 } from "./terminal-continuity";
@@ -98,10 +92,9 @@ export function useTerminalSession(
   const [reconnectRevision, setReconnectRevision] = useState(0);
   const attachment = useRef<TerminalAttachment | undefined>(undefined);
   const bufferRef = useRef<TerminalBuffer>(buffer);
-  const outputTail = useRef<Uint8Array<ArrayBufferLike>>(new Uint8Array(0));
   /// Held in a ref, not in the effect's closure, because a scroll gesture needs to ask
   /// it what the program said about mouse tracking long after the attach ran.
-  const projection = useRef<TerminalScreenProjection | undefined>(undefined);
+  const continuity = useRef<TerminalSessionState | undefined>(undefined);
   const encoder = useMemo(() => new TextEncoder(), []);
 
   const sessionId = session?.id;
@@ -112,108 +105,39 @@ export function useTerminalSession(
       || connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
     const continuityKey = terminalContinuityKey(connectionId, sessionId, runtimeEpoch);
     const cached = terminalContinuityCache.get(continuityKey);
+    const state = cached ?? new TerminalSessionState(connectionId, sessionId);
+    terminalContinuityCache.put(continuityKey, state);
+    continuity.current = state;
     let active = true;
-    let projecting = false;
-    let processingFailed = false;
-    let reconcilingReplay = cached !== undefined;
     let attachRetry: ReturnType<typeof setTimeout> | undefined;
     let attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
     let ownedAttachment: TerminalAttachment | undefined;
     const attachLifecycle = new AbortController();
-    /// A fresh decoder per attachment. Carrying one across attachments would let a
-    /// half-decoded character from the previous stream corrupt the first line of the
-    /// next one.
-    const decoder = new TextDecoder();
-    const decode = (bytes: Uint8Array) => decoder.decode(bytes);
-    projection.current = cached?.projection ?? new TerminalScreenProjection();
-    outputTail.current = cached?.outputTail ?? new Uint8Array(0);
-    bufferRef.current = cached?.buffer ?? emptyTerminalBuffer();
-    setBuffer(bufferRef.current);
+    const publish = (next: TerminalBuffer) => {
+      if (!active) return;
+      bufferRef.current = next;
+      setBuffer(next);
+    };
+    const unsubscribe = state.subscribe(publish, () => {
+      if (active) setReconnectRevision((current) => current + 1);
+    });
+    publish(state.buffer);
     setError(undefined);
     setImageError(undefined);
-
-    /// One state update per event, not two. The projector's verdict is known before the
-    /// reducer runs, so committing the reduced buffer and the screen separately would
-    /// only publish a half-updated frame and double the renders a redraw-heavy TUI
-    /// costs.
-    const onEvent = async (event: TerminalEvent) => {
-      if (!active || processingFailed) return;
-      if (event.type === "state" && event.state === "connected") {
-        /// A write can fail in the narrow window before the socket's close event.
-        /// The adapter reconnects from that failure; once the new socket is proven
-        /// connected, the old delivery error must not keep the composer disabled.
-        setError(undefined);
-      }
-      if (event.type === "reset") {
-        /// The next frozen replay decides whether this is a continuation. Clearing
-        /// now would recreate the stale-screen bug whenever iOS briefly suspended a
-        /// healthy socket or the user returned from another route.
-        reconcilingReplay = true;
-        return;
-      }
-      let effectiveEvent = event;
-      if (event.type === "replay" && reconcilingReplay) {
-        const continuation = continueTerminalReplay(outputTail.current, event.bytes);
-        reconcilingReplay = false;
-        if (!continuation.continuous) {
-          projection.current = new TerminalScreenProjection();
-          outputTail.current = new Uint8Array(0);
-          bufferRef.current = {
-            ...emptyTerminalBuffer(),
-            nextLineId: bufferRef.current.nextLineId,
-            continuityNotice: "Earlier output could not be matched. Showing the available recent output.",
-          };
-        }
-        effectiveEvent = { type: "replay", bytes: continuation.bytes };
-      } else if (event.type === "live") {
-        reconcilingReplay = false;
-      }
-      const outputBytes = effectiveEvent.type === "replay" || effectiveEvent.type === "live"
-        ? effectiveEvent.bytes
-        : undefined;
-      projecting = outputBytes !== undefined;
-      const projectionStartedAt = performance.now();
-      const screen = outputBytes === undefined ? undefined : await projectTerminalOutput(
-        projection.current!, outputBytes, () => active && !processingFailed,
-      );
-      if (!active || processingFailed) return;
-      projecting = false;
-      if (effectiveEvent.type === "replay") mobileDiagnostics.report("terminal", "replay_projected", {
-        connectionId, sessionId, bytes: effectiveEvent.bytes.byteLength,
-        durationMs: performance.now() - projectionStartedAt,
-      });
-      if (outputBytes !== undefined) outputTail.current = appendTerminalOutputTail(outputTail.current, outputBytes);
-      {
-        const next = reduceTerminalEvent(bufferRef.current, effectiveEvent, { decode, screenActive: screen !== undefined });
-        /// Only an output chunk carries a verdict. A gap or a state change says nothing
-        /// about who owns the display and must not clear a live screen.
-        const presented = outputBytes === undefined ? next : withTerminalScreen(next, screen);
-        bufferRef.current = presented;
-        terminalContinuityCache.put(continuityKey, {
-          buffer: presented,
-          projection: projection.current!,
-          outputTail: outputTail.current,
-        });
-        setBuffer(presented);
-      }
-    };
-
-    /// The runtime epoch is passed through unchanged. It is a fencing identity, not a
-    /// counter, so the client neither compares nor increments it — it hands back the
-    /// exact value the projection gave and lets the daemon refuse a stale one.
-    const queue = new TerminalEventQueue(onEvent, () => {
-      processingFailed = true;
-      mobileDiagnostics.report("terminal", "processing_failed");
-      setReconnectRevision((current) => current + 1);
+    mobileDiagnostics.report("terminal", "cache_restored", {
+      connectionId, sessionId, cacheHit: cached !== undefined,
+      retainedBytes: state.outputTail.byteLength,
+      hasContent: state.buffer.screen !== undefined || state.buffer.lines.length > 0
+        || state.buffer.pending.length > 0,
     });
-    const batcher = new TerminalOutputBatcher((event) => queue.push(event));
+    const batcher = new TerminalOutputBatcher((event) => state.push(event));
     const attach = () => {
       if (!active) return;
       runtime.terminal.attach(
         connectionId,
         { id: sessionId, runtime_epoch: runtimeEpoch },
-        (event) => batcher.push(event),
-        { previousOutputTail: outputTail.current, signal: attachLifecycle.signal },
+        (event) => { if (active) batcher.push(event); },
+        { previousOutputTail: state.outputTail, signal: attachLifecycle.signal },
       ).then(
         (value) => {
           if (active) {
@@ -224,12 +148,12 @@ export function useTerminalSession(
             /// The port promise resolves only after authentication. Reaffirm that
             /// fact at the hook boundary: a retained route can batch its old
             /// `reconnecting` cleanup after the adapter's first connected event.
-            queue.push({ type: "state", state: "connected" });
+            state.push({ type: "state", state: "connected" });
           } else void value.detach();
         },
         () => {
           if (!active) return;
-          queue.push({
+          state.push({
             type: "state", state: "connectionLost",
           });
           setError(undefined);
@@ -238,32 +162,27 @@ export function useTerminalSession(
         },
       );
     };
-    attach();
+    // Already received bytes can still be parsing after the previous route left.
+    // Show the cached frame now, then use its completed tail for a small replay.
+    void state.whenIdle().then(() => {
+      if (!active) return;
+      state.begin();
+      attach();
+    });
 
     return () => {
       batcher.flush();
       active = false;
       attachLifecycle.abort();
-      queue.dispose();
       if (attachRetry !== undefined) clearTimeout(attachRetry);
-      const retainedProjection = projection.current;
-      const detached = detachTerminalBuffer(bufferRef.current);
-      bufferRef.current = detached;
-      if (projecting || processingFailed) {
-        // Never cache a partially parsed replay as a complete terminal checkpoint.
-        terminalContinuityCache.delete(continuityKey);
-      } else if (retainedProjection !== undefined) {
-        terminalContinuityCache.put(continuityKey, {
-          buffer: detached,
-          projection: retainedProjection,
-          outputTail: outputTail.current,
-        });
-      }
-      projection.current = undefined;
+      unsubscribe();
+      state.detach();
+      bufferRef.current = state.buffer;
+      continuity.current = undefined;
       const open = ownedAttachment;
       if (attachment.current === open) attachment.current = undefined;
       if (open) void open.detach();
-      setBuffer(detached);
+      setBuffer(state.buffer);
     };
   }, [
     runtime,
@@ -349,7 +268,7 @@ export function useTerminalSession(
 
   const scrollBack = useCallback((lines: number) => {
     const open = attachment.current;
-    const current = projection.current;
+    const current = continuity.current?.projection;
     if (!canSend || open === undefined || current === undefined || lines === 0) return;
     const sequence = scrollSequence(lines, current.mouseTracking, current.sgrMouseEncoding);
     void deliver(open, encoder.encode(sequence));
