@@ -17,8 +17,8 @@ use super::super::super::gates::{
     MAX_ACTIVE_STEWARD_RESUMES, ObservationPriority, ResumeGateError,
 };
 use super::super::super::invalidation::{
-    InvalidationRequest, publish_agent_resume_invalidation, publish_session_invalidation,
-    refresh_task_presence_for_cwd,
+    CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
+    publish_agent_resume_invalidation, publish_session_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::agent_launch::execute_agent_launch;
 
@@ -845,40 +845,27 @@ pub(in crate::app) async fn terminate_session(
         let (result, runtime) = core.terminate_session(params)?;
         (result, runtime, core.state_revision(), cwd)
     };
-    if let Some(runtime) = runtime {
-        // The descriptor is already exited and the core lock is released, but
-        // an immediate explicit resume must not race the retired provider's
-        // session-scoped ownership record. Reap outside the core lock and wait
-        // for that bounded ownership handoff before acknowledging terminate.
-        tokio::task::spawn_blocking(move || runtime.reap())
-            .await
-            .map_err(|error| CoreError::Terminal(error.to_string()))?
-            .map_err(|_| {
-                CoreError::Terminal(
-                    "terminated Session runtime ownership could not be released".into(),
-                )
-            })?;
-    }
+    let effects = CommittedSessionMutation::terminated(state_revision, cwd);
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_session(&session_id);
     }
-    let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        // Exiting a assistant atomically clears its current
-        // Steward pointer in Store. Publish every projection changed
-        // by that commit rather than leaving the Project panel stale until an
-        // unrelated refresh.
-        topics: vec![
-            ProjectionTopic::Session,
-            ProjectionTopic::Steward,
-            ProjectionTopic::Routine,
-        ],
-        state_revision,
-        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
-    });
-    if let Some(cwd) = cwd {
-        refresh_task_presence_for_cwd(state, &cwd).await;
-    }
-    Ok(result)
+    let cleanup = if let Some(runtime) = runtime {
+        // Wait for the ownership handoff outside Core before acknowledging
+        // termination, but preserve the committed effects even when reaping fails.
+        tokio::task::spawn_blocking(move || runtime.reap())
+            .await
+            .map_err(|error| CoreError::Terminal(error.to_string()))
+            .and_then(|result| {
+                result.map_err(|_| {
+                    CoreError::Terminal(
+                        "terminated Session runtime ownership could not be released".into(),
+                    )
+                })
+            })
+    } else {
+        Ok(())
+    };
+    finish_session_mutation(state, effects, cleanup.map(|()| result)).await
 }
 
 pub(in crate::app::control) async fn resume_agent_session(
