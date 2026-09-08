@@ -685,7 +685,7 @@ impl CoreRuntime {
             mcp_authorizer: self.mcp_authorizer.clone(),
             observation_transport: transport,
             runtime_signal_sender: Some(self.agent_runtime_sender.clone()),
-            codex_runtime: None,
+            provider_runtime: Default::default(),
             preparation_kind: if source_was_running {
                 AgentResumePreparationKind::Restart {
                     retired_codex_runtime,

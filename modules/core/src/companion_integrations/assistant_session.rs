@@ -47,7 +47,7 @@ pub struct PersistentAssistantLaunchPlan {
     runtime_epoch: u64,
     observation_transport: crate::AgentObservationTransport,
     runtime_signal_sender: Option<std::sync::mpsc::Sender<crate::AgentRuntimeSignal>>,
-    codex_runtime: Option<crate::CodexRuntime>,
+    provider_runtime: crate::runtime::provider_runtime::PreparedProviderRuntime,
     launch: termloop_invocation::LaunchPayload,
 }
 
@@ -68,65 +68,36 @@ impl PersistentAssistantLaunchPlan {
     }
 
     pub fn prepare_runtime(&mut self) -> Result<(), CoreError> {
-        if let Some(account) = &self.account {
-            account.prepare().map_err(|_| {
-                CoreError::InvalidParams("Selected account directory is unavailable".into())
-            })?;
-        }
-        if self.target.agent_id != "codex"
-            || !self
-                .observation_transport
-                .daemon_owned_bridge_supported("codex")
-        {
-            return Ok(());
-        }
-        let runtime_signal_sender = self
-            .runtime_signal_sender
-            .take()
-            .ok_or_else(|| CoreError::Terminal("Codex runtime signal path unavailable".into()))?;
-        self.mcp_authorizer.register_provisional(
-            self.session_id.clone(),
-            self.runtime_epoch,
-            self.mcp_role.clone(),
-            self.mcp_token.clone(),
-        );
-        let runtime = crate::session_launch::start_codex_runtime(
-            &self.session_id,
-            self.runtime_epoch,
-            &self.target.cwd,
-            false,
-            self.account.as_ref(),
-            &self.observation_transport.provider_process_directory,
-            Some(termloop_invocation::AgentMcpLaunch {
-                endpoint: &self.observation_transport.mcp_endpoint,
-                token: &self.mcp_token,
-                claude_config_path: &self.observation_transport.claude_mcp_config_path,
-                profile: self.mcp_role.invocation_profile(),
-            }),
-            self.launch.codex_app_server_developer_instructions(),
-            runtime_signal_sender,
-        )
-        .map_err(|error| {
-            self.mcp_authorizer
-                .remove_provisional(&self.session_id, self.runtime_epoch);
-            CoreError::Terminal(error.to_string())
-        })?;
-        if let Err(error) = self
-            .launch
-            .bind_codex_app_server_endpoint(runtime.endpoint())
-        {
-            self.mcp_authorizer
-                .remove_provisional(&self.session_id, self.runtime_epoch);
-            return Err(CoreError::Terminal(error.to_string()));
-        }
-        self.codex_runtime = Some(runtime);
-        Ok(())
-    }
-
-    pub fn discard(mut self) {
-        self.mcp_authorizer
-            .remove_provisional(&self.session_id, self.runtime_epoch);
-        self.codex_runtime.take();
+        use crate::runtime::provider_runtime::{
+            ProviderRuntimeMode, ProviderRuntimePreparation, ProviderRuntimePreparationError,
+        };
+        self.provider_runtime
+            .prepare(ProviderRuntimePreparation {
+                agent_id: &self.target.agent_id,
+                session_id: &self.session_id,
+                runtime_epoch: self.runtime_epoch,
+                cwd: &self.target.cwd,
+                managed_worktree: false,
+                account: self.account.as_ref(),
+                transport: Some(&self.observation_transport),
+                mode: ProviderRuntimeMode::OptionalObservation,
+                authorizer: &self.mcp_authorizer,
+                mcp: Some((&self.mcp_token, &self.mcp_role)),
+                signals: &mut self.runtime_signal_sender,
+                launch: Some(&mut self.launch),
+                history: None,
+            })
+            .map_err(|error| match error {
+                ProviderRuntimePreparationError::AccountUnavailable => {
+                    CoreError::InvalidParams("Selected account directory is unavailable".into())
+                }
+                ProviderRuntimePreparationError::Runtime(error) => {
+                    CoreError::Terminal(error.to_string())
+                }
+                ProviderRuntimePreparationError::EndpointBindingFailed => {
+                    CoreError::AgentCapabilityUnproven
+                }
+            })
     }
 }
 
@@ -435,7 +406,7 @@ impl CoreRuntime {
             runtime_epoch: self.runtime_epoch,
             observation_transport: transport.clone(),
             runtime_signal_sender: Some(self.agent_runtime_sender.clone()),
-            codex_runtime: None,
+            provider_runtime: Default::default(),
             launch,
         })
     }
@@ -536,28 +507,20 @@ impl CoreRuntime {
 
     pub fn admit_persistent_assistant_launch(
         &mut self,
-        plan: PersistentAssistantLaunchPlan,
+        plan: &mut PersistentAssistantLaunchPlan,
         updated_at_epoch_ms: u64,
     ) -> Result<AdmittedPersistentAssistantLaunch, CoreError> {
-        let PersistentAssistantLaunchPlan {
-            account,
-            target,
-            session_id,
-            resume_ref,
-            observation_token,
-            mcp_token,
-            mcp_role,
-            mcp_authorizer,
-            runtime_epoch,
-            observation_transport: _,
-            runtime_signal_sender: _,
-            codex_runtime,
-            launch,
-        } = plan;
+        let target = &plan.target;
+        let session_id = plan.session_id.clone();
+        let account = plan.account.as_ref();
+        let resume_ref = plan.resume_ref.clone();
+        let observation_token = plan.observation_token.clone();
+        let launch = &plan.launch;
         let initial_input_submission = launch.initial_input_submission();
-        let generated_input_observable = observation_token.is_some() || codex_runtime.is_some();
+        let generated_input_observable =
+            observation_token.is_some() || plan.provider_runtime.codex().is_some();
         if initial_input_submission.is_some() && !generated_input_observable {
-            mcp_authorizer.remove_provisional(&session_id, runtime_epoch);
+            plan.provider_runtime.revoke_provisional();
             return Err(CoreError::AgentCapabilityUnproven);
         }
         let pending_generated_input = initial_input_submission;
@@ -568,7 +531,7 @@ impl CoreRuntime {
             &target.permission,
             &target.reasoning,
         );
-        selection.account_id = account.as_ref().map(|account| account.account_id.clone());
+        selection.account_id = account.map(|account| account.account_id.clone());
         let session = SessionRecord {
             launch_selection: selection,
             id: session_id.clone(),
@@ -611,11 +574,11 @@ impl CoreRuntime {
         } {
             Ok(Ok(configuration)) => configuration,
             Ok(Err(error)) => {
-                mcp_authorizer.remove_provisional(&session_id, runtime_epoch);
+                plan.provider_runtime.revoke_provisional();
                 return Err(CoreError::Store(error.to_string()));
             }
             Err(error) => {
-                mcp_authorizer.remove_provisional(&session_id, runtime_epoch);
+                plan.provider_runtime.revoke_provisional();
                 return Err(store_error(error));
             }
         };
@@ -624,7 +587,7 @@ impl CoreRuntime {
             runtime_epoch: self.runtime_epoch,
             program: launch.program().to_owned(),
             args: launch.args().to_vec(),
-            cwd: target.cwd,
+            cwd: target.cwd.clone(),
             environment: launch.environment().clone(),
             recent_output_replay: true,
         };
@@ -642,9 +605,13 @@ impl CoreRuntime {
                 },
             );
         }
-        self.mcp_authorizer
-            .register(session_id.clone(), self.runtime_epoch, mcp_role, mcp_token);
-        if let Some(runtime) = codex_runtime {
+        self.mcp_authorizer.register(
+            session_id.clone(),
+            self.runtime_epoch,
+            plan.mcp_role.clone(),
+            plan.mcp_token.clone(),
+        );
+        if let Some(runtime) = plan.provider_runtime.take_committed() {
             self.codex_runtimes.insert(session_id.clone(), runtime);
         }
         Ok(AdmittedPersistentAssistantLaunch {

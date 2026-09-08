@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::mpsc::Sender;
 use termloop_domain::{ResumeProvider, ResumeRef, SessionKind};
 
-use super::start_codex_runtime;
+use crate::runtime::provider_runtime::start_codex_runtime;
 use crate::{
     AgentRuntimeSignal, CoreError, CoreRuntime, ProviderHistoryRepairUnavailableReason,
     required_string, store_error, terminal_error,

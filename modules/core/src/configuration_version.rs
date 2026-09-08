@@ -266,9 +266,13 @@ pub struct ConfigurationApplicationPlan {
 
 #[derive(Debug, Default)]
 pub struct ConfigurationApplicationEffects {
-    pub retired_session_ids: Vec<String>,
-    pub steward_configuration_changed: bool,
+    pub steward_change: Option<crate::CommittedStewardChange>,
     pub tracker_runtime_changed: bool,
+}
+
+pub struct ConfigurationApplicationCommit {
+    pub result: Result<Value, CoreError>,
+    pub effects: ConfigurationApplicationEffects,
 }
 
 impl CoreRuntime {
@@ -493,15 +497,22 @@ impl CoreRuntime {
         plan: ConfigurationApplicationPlan,
         availability: AssistantAvailability,
         created_at_epoch_ms: u64,
-    ) -> Result<(Value, ConfigurationApplicationEffects), CoreError> {
+    ) -> Result<ConfigurationApplicationCommit, CoreError> {
+        let active = self
+            .store
+            .active_configuration_version(&plan.project_id, &plan.target);
+        if active.map(|version| version.id.as_str()) != plan.expected_previous_version_id.as_deref()
+            || active.map(|version| version.content.as_str())
+                != plan.expected_current_content.as_deref()
+        {
+            return Err(CoreError::RevisionConflict);
+        }
         let mut effects = ConfigurationApplicationEffects::default();
         let activated_target = match plan.target.target_kind {
             ImproverSessionTargetKind::AgentCreator => return Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot = parse_snapshot(&plan.content)?;
-                let previous_session_id = self.steward_executor_session_id(&plan.project_id);
-                let previous_revision = self.store.revision();
-                self.set_steward_configuration(StewardConfigurationUpdate {
+                let commit = self.set_steward_configuration(StewardConfigurationUpdate {
                     project_id: &plan.project_id,
                     agent_id: agent_wire(snapshot.agent_id),
                     model: snapshot.model,
@@ -513,13 +524,7 @@ impl CoreRuntime {
                     capability: availability,
                     updated_at_epoch_ms: created_at_epoch_ms,
                 })?;
-                effects.steward_configuration_changed = self.store.revision() != previous_revision;
-                let retained = self.steward_executor_session_id(&plan.project_id);
-                if previous_session_id != retained
-                    && let Some(session_id) = previous_session_id
-                {
-                    effects.retired_session_ids.push(session_id);
-                }
+                effects.steward_change = Some(commit.change);
                 plan.target.clone()
             }
             ImproverSessionTargetKind::RoutineInstructions => {
@@ -564,9 +569,7 @@ impl CoreRuntime {
             ImproverSessionTargetKind::Playbook => {
                 let snapshot: PlaybookSnapshot = parse_snapshot(&plan.content)?;
                 let current = self.store.playbook_for_project(&plan.project_id);
-                let steward_was_enabled = self
-                    .current_enabled_steward_wake(&plan.project_id)
-                    .is_some();
+                let before_steward = self.capture_steward_change(&plan.project_id);
                 let routine_capacity = snapshot.milestones.len()
                     + snapshot
                         .saved_pipelines
@@ -589,10 +592,10 @@ impl CoreRuntime {
                 )?;
                 let _ = result;
                 effects.tracker_runtime_changed = true;
-                effects.steward_configuration_changed = !steward_was_enabled
-                    && self
-                        .current_enabled_steward_wake(&plan.project_id)
-                        .is_some();
+                let steward_change = self.committed_steward_change(before_steward);
+                if steward_change.changed() {
+                    effects.steward_change = Some(steward_change);
+                }
                 plan.target.clone()
             }
             ImproverSessionTargetKind::RunConfiguration => {
@@ -653,8 +656,10 @@ impl CoreRuntime {
             activated_target,
             activated_content,
             created_at_epoch_ms,
-        )?;
-        Ok((result, effects))
+        );
+        // The target write already committed. Preserve its effects even if
+        // the subsequent version-metadata write fails.
+        Ok(ConfigurationApplicationCommit { result, effects })
     }
 
     fn apply_routine_snapshot(
@@ -1191,9 +1196,10 @@ mod tests {
                 "Use the workspace package manager".into(),
             )
             .unwrap();
-        let (result, _) = runtime
+        let commit = runtime
             .apply_owned_configuration_application(plan, AssistantAvailability::Proven, 2)
             .unwrap();
+        let result = commit.result.unwrap();
         let second_id = result["activeVersion"]["id"].as_str().unwrap().to_owned();
         assert_eq!(result["activeVersion"]["sequence"], 2);
         assert_eq!(
@@ -1220,13 +1226,14 @@ mod tests {
                 "No content change".into(),
             )
             .unwrap();
-        let (unchanged, unchanged_effects) = runtime
+        let commit = runtime
             .apply_owned_configuration_application(unchanged, AssistantAvailability::Proven, 3)
             .unwrap();
+        let unchanged = commit.result.unwrap();
+        let unchanged_effects = commit.effects;
         assert_eq!(unchanged["activeVersion"]["id"], second_id);
         assert_eq!(runtime.store.configuration_versions().len(), 2);
-        assert!(unchanged_effects.retired_session_ids.is_empty());
-        assert!(!unchanged_effects.steward_configuration_changed);
+        assert!(unchanged_effects.steward_change.is_none());
 
         let project_id = runtime.store.projects()[0].id.clone();
         let restore = runtime
@@ -1236,9 +1243,10 @@ mod tests {
                 "expectedActiveVersionId": second_id,
             }))
             .unwrap();
-        let (restored, _) = runtime
+        let commit = runtime
             .apply_owned_configuration_application(restore, AssistantAvailability::Proven, 4)
             .unwrap();
+        let restored = commit.result.unwrap();
         assert_eq!(restored["activeVersion"]["sequence"], 1);
         assert_eq!(runtime.store.configuration_versions().len(), 2);
         let listed = runtime
@@ -1287,9 +1295,10 @@ mod tests {
             selected_existing_version_id: None,
         };
 
-        let (result, _) = runtime
+        let commit = runtime
             .apply_owned_configuration_application(plan, AssistantAvailability::Proven, 2)
             .unwrap();
+        let result = commit.result.unwrap();
 
         assert_eq!(
             runtime.store.run_configurations().len(),

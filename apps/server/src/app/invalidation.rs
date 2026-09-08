@@ -118,7 +118,7 @@ pub(super) async fn queue_commit_invalidation(
 
 /// Await backpressure so a full queue cannot silently lose a committed
 /// revision. Callers must release the serialized Core lock before entering.
-async fn queue_invalidation(
+pub(super) async fn queue_invalidation(
     sender: &mpsc::Sender<InvalidationRequest>,
     invalidation: InvalidationRequest,
 ) {

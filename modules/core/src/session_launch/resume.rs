@@ -1,7 +1,6 @@
 use super::lifecycle::resume_failure_retryable;
 use super::{
     AgentResumePreviewTicket, CodexRuntime, MAX_QUICK_ACTION_PREVIEWS, QUICK_ACTION_PREVIEW_TTL,
-    start_codex_runtime,
 };
 use crate::{
     AgentObservationTransport, AgentRuntimeSignal, CoreError, CoreRuntime, required_string,
@@ -36,7 +35,7 @@ pub struct AgentResumePlan {
     pub(super) mcp_authorizer: super::McpAuthorizer,
     pub(super) observation_transport: AgentObservationTransport,
     pub(super) runtime_signal_sender: Option<Sender<AgentRuntimeSignal>>,
-    pub(super) codex_runtime: Option<CodexRuntime>,
+    pub(super) provider_runtime: crate::runtime::provider_runtime::PreparedProviderRuntime,
     pub(super) preparation_kind: AgentResumePreparationKind,
     pub(super) prepared_launch: Option<termloop_invocation::LaunchPayload>,
     pub(super) pending_generated_input: Option<termloop_invocation::GeneratedTerminalSubmission>,
@@ -186,7 +185,7 @@ impl AgentResumePlan {
     /// explicitly before publishing a retryable durable state; `Drop` remains
     /// only a last-resort safety net for unwinding.
     pub fn reap_uncommitted_runtime(&mut self) -> Result<(), AgentResumeReapError> {
-        self.revoke_provisional_mcp();
+        self.provider_runtime.revoke_provisional();
         if matches!(
             self.preparation_kind,
             AgentResumePreparationKind::Restart { .. }
@@ -198,9 +197,7 @@ impl AgentResumePlan {
             self.terminate_registered_pty()?;
             self.pty_spawned = false;
         }
-        if let Some(runtime) = self.codex_runtime.take() {
-            runtime.reap()?;
-        }
+        self.provider_runtime.abort()?;
         Ok(())
     }
 
@@ -213,22 +210,6 @@ impl AgentResumePlan {
             Ok(false) => Ok(()),
             Err(_) => Err(AgentResumeReapError),
         }
-    }
-
-    fn register_provisional_mcp(&self) {
-        if let (Some(token), Some(role)) = (self.mcp_token.as_ref(), self.mcp_role.as_ref()) {
-            self.mcp_authorizer.register_provisional(
-                self.session_id.clone(),
-                self.runtime_epoch,
-                role.clone(),
-                token.clone(),
-            );
-        }
-    }
-
-    fn revoke_provisional_mcp(&self) {
-        self.mcp_authorizer
-            .remove_provisional(&self.session_id, self.runtime_epoch);
     }
 
     pub(super) fn compose_resume_launch(
@@ -408,73 +389,33 @@ impl AgentResumePlan {
             }
         }
         self.target_validation().validate()?;
-        if let Some(account) = &self.account {
-            account
-                .prepare()
-                .map_err(|_| AgentResumePreparationError::ProviderRejected)?;
-        }
-        // Codex eagerly initializes configured MCP servers while its App Server
-        // and remote TUI are still becoming ready. Admit only transport-level
-        // MCP traffic during that window; core commands remain unauthorized
-        // until complete_agent_resume promotes this exact token.
-        self.register_provisional_mcp();
-        if self.agent_id == "codex" {
-            let developer_instructions = self
-                .prepared_launch
-                .as_ref()
-                .and_then(|launch| launch.codex_app_server_developer_instructions())
-                .map(str::to_owned);
-            let runtime = start_codex_runtime(
-                &self.session_id,
-                self.runtime_epoch,
-                &self.cwd,
-                self.managed_worktree_trust,
-                self.account.as_ref(),
-                &self.observation_transport.provider_process_directory,
-                self.mcp_token
-                    .as_ref()
-                    .map(|token| termloop_invocation::AgentMcpLaunch {
-                        endpoint: &self.observation_transport.mcp_endpoint,
-                        token,
-                        claude_config_path: &self.observation_transport.claude_mcp_config_path,
-                        profile: self
-                            .mcp_role
-                            .as_ref()
-                            .map(super::AgentMcpRole::invocation_profile)
-                            .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
-                    }),
-                developer_instructions.as_deref(),
-                self.runtime_signal_sender
-                    .take()
-                    .ok_or(AgentResumePreparationError::ProviderRejected)?,
-            )?;
-            // Prove the complete durable projection before the resume TUI can
-            // append. A damaged history is a repair state, while an unavailable
-            // probe fails closed so app restart cannot race another writer and
-            // create the same duplicate ordinal again.
-            if let Err(probe_error) =
-                runtime.warm_thread_history(&self.resume_ref.native_session_id)
-            {
-                self.revoke_provisional_mcp();
-                runtime
-                    .reap()
-                    .map_err(|_| AgentResumePreparationError::RuntimeOwnershipUncertain)?;
-                return Err(match probe_error {
-                    termloop_agents::CodexThreadHistoryProbeError::Damaged => {
-                        AgentResumePreparationError::ProviderHistoryDamaged
-                    }
-                    termloop_agents::CodexThreadHistoryProbeError::Unavailable => {
-                        AgentResumePreparationError::ProviderRejected
-                    }
-                });
-            }
-            if let Some(launch) = self.prepared_launch.as_mut() {
-                launch
-                    .bind_codex_app_server_endpoint(runtime.bridge.endpoint())
-                    .map_err(|_| AgentResumePreparationError::ProviderRejected)?;
-            }
-            self.codex_runtime = Some(runtime);
-        }
+        use crate::runtime::provider_runtime::{
+            ProviderRuntimeMode, ProviderRuntimePreparation, ProviderRuntimePreparationError,
+        };
+        self.provider_runtime
+            .prepare(ProviderRuntimePreparation {
+                agent_id: &self.agent_id,
+                session_id: &self.session_id,
+                runtime_epoch: self.runtime_epoch,
+                cwd: &self.cwd,
+                managed_worktree: self.managed_worktree_trust,
+                account: self.account.as_ref(),
+                transport: Some(&self.observation_transport),
+                mode: ProviderRuntimeMode::Resume,
+                authorizer: &self.mcp_authorizer,
+                mcp: self.mcp_token.as_deref().zip(self.mcp_role.as_ref()),
+                signals: &mut self.runtime_signal_sender,
+                launch: self.prepared_launch.as_mut(),
+                history: (self.agent_id == "codex")
+                    .then_some(self.resume_ref.native_session_id.as_str()),
+            })
+            .map_err(|error| match error {
+                ProviderRuntimePreparationError::Runtime(error) => error,
+                ProviderRuntimePreparationError::AccountUnavailable
+                | ProviderRuntimePreparationError::EndpointBindingFailed => {
+                    AgentResumePreparationError::ProviderRejected
+                }
+            })?;
         if self.shutdown.load(std::sync::atomic::Ordering::Acquire)
             || self.cancellation.load(std::sync::atomic::Ordering::Acquire)
         {
@@ -482,9 +423,9 @@ impl AgentResumePlan {
         }
 
         let codex_endpoint = self
-            .codex_runtime
-            .as_ref()
-            .map(|runtime| runtime.bridge.endpoint());
+            .provider_runtime
+            .codex()
+            .map(|runtime| runtime.endpoint());
         let observation = self.observation_transport.invocation_observation(
             &self.agent_id,
             &self.session_id,
@@ -1142,7 +1083,7 @@ impl CoreRuntime {
                 mcp_authorizer: self.mcp_authorizer.clone(),
                 observation_transport: transport,
                 runtime_signal_sender: Some(self.agent_runtime_sender.clone()),
-                codex_runtime: None,
+                provider_runtime: Default::default(),
                 preparation_kind: if restart_running {
                     AgentResumePreparationKind::Restart {
                         retired_codex_runtime,
@@ -1274,23 +1215,29 @@ impl CoreRuntime {
     pub fn complete_agent_resume(
         &mut self,
         plan: &mut crate::AgentResumePlan,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<super::AgentResumeCompletion, CoreError> {
         if !self.resume_reservations.contains(&plan.session_id) {
             return Err(CoreError::InvalidParams("sessionId".into()));
         }
         if !self.project_exists(&plan.project_id) {
-            return self.reject_prepared_resume(plan, ResumeFailureReason::LaunchReserved);
+            return Ok(super::AgentResumeCompletion::Rejected(
+                ResumeFailureReason::LaunchReserved,
+            ));
         }
         if self
             .ensure_launch_not_reserved(Path::new(&plan.cwd))
             .is_err()
         {
-            return self.reject_prepared_resume(plan, ResumeFailureReason::LaunchReserved);
+            return Ok(super::AgentResumeCompletion::Rejected(
+                ResumeFailureReason::LaunchReserved,
+            ));
         }
         if let Some(guard) = plan.launch_guard.as_ref()
             && !self.managed_worktree_guard_is_current(&plan.project_id, &plan.cwd, guard)
         {
-            return self.reject_prepared_resume(plan, ResumeFailureReason::CwdUnavailable);
+            return Ok(super::AgentResumeCompletion::Rejected(
+                ResumeFailureReason::CwdUnavailable,
+            ));
         }
         if !self.resume_ready.contains(&plan.session_id) {
             return Err(CoreError::InvalidParams("sessionId".into()));
@@ -1315,13 +1262,9 @@ impl CoreRuntime {
                 )
                 .map(|_| ())
         };
-        if let Err(error) = commit_result {
-            self.agent_observations.remove(&plan.session_id);
-            self.resume_reservations.remove(&plan.session_id);
-            self.resume_ready.remove(&plan.session_id);
-            self.pending_agent_resume_refs.remove(&plan.session_id);
-            return Err(store_error(error));
-        }
+        // A rejected commit still owns its prepared runtime and reservation.
+        // The failure coordinator must reap it before making Retry admissible.
+        commit_result.map_err(store_error)?;
         self.resume_reservations.remove(&plan.session_id);
         self.resume_ready.remove(&plan.session_id);
         self.pending_agent_resume_refs.remove(&plan.session_id);
@@ -1342,7 +1285,7 @@ impl CoreRuntime {
         // observation instead of weakening the successful resume transaction.
         let _ = self.deliver_pending_agent_generated_input(&plan.session_id);
         plan.committed = true;
-        if let Some(runtime) = plan.codex_runtime.take() {
+        if let Some(runtime) = plan.provider_runtime.take_committed() {
             self.codex_runtimes.insert(plan.session_id.clone(), runtime);
         }
         let session = self
@@ -1351,165 +1294,15 @@ impl CoreRuntime {
             .iter()
             .find(|session| session.id == plan.session_id)
             .ok_or(CoreError::NotFound)?;
-        Ok(self.project_session(session))
-    }
-
-    fn reject_prepared_resume(
-        &mut self,
-        plan: &crate::AgentResumePlan,
-        reason: ResumeFailureReason,
-    ) -> Result<Value, CoreError> {
-        self.resume_reservations.remove(&plan.session_id);
-        self.resume_ready.remove(&plan.session_id);
-        self.agent_observations.remove(&plan.session_id);
-        self.pending_agent_resume_refs.remove(&plan.session_id);
-        if let Some(relocation) = plan.relocation.as_ref() {
-            self.store
-                .fail_session_relocation(
-                    &self.write_authority,
-                    &plan.session_id,
-                    &relocation.operation_id,
-                    reason,
-                )
-                .map_err(store_error)?;
-        } else {
-            self.store
-                .mark_session_resume_failed(&self.write_authority, &plan.session_id, reason)
-                .map_err(store_error)?;
-        }
-        let session = self
-            .store
-            .sessions()
-            .iter()
-            .find(|session| session.id == plan.session_id)
-            .ok_or(CoreError::NotFound)?;
-        Ok(self.project_session(session))
+        Ok(super::AgentResumeCompletion::Committed(
+            self.project_session(session),
+        ))
     }
 
     pub fn agent_resume_readiness(&self, session_id: &str) -> Option<bool> {
         self.resume_reservations
             .contains(session_id)
             .then(|| self.resume_ready.contains(session_id))
-    }
-
-    /// Marks the exact resume whose prepared runtime is about to be reaped for
-    /// a known failure. Process teardown must stay outside Core's lock, so the
-    /// terminal exit reconciler uses this runtime-only marker to leave the
-    /// reservation and durable lifecycle untouched until `fail_agent_resume`
-    /// commits the caller's typed reason.
-    pub fn begin_agent_resume_failure_reap(&mut self, session_id: &str) -> Result<(), CoreError> {
-        let lifecycle = self
-            .store
-            .sessions()
-            .iter()
-            .find(|session| session.id == session_id && session.kind == SessionKind::Agent)
-            .map(|session| session.lifecycle_state.as_str())
-            .ok_or(CoreError::NotFound)?;
-        let relocation_pending = self
-            .store
-            .session_relocation_operations()
-            .iter()
-            .any(|operation| operation.session_id == session_id);
-        if self.resume_reservations.contains(session_id) {
-            if lifecycle != "resuming" && !relocation_pending {
-                return Err(CoreError::InvalidParams("sessionId".into()));
-            }
-            self.resume_ready.remove(session_id);
-            self.resume_failure_reaps.insert(session_id.to_owned());
-            return Ok(());
-        }
-        if matches!(lifecycle, "exited" | "resumeFailed") {
-            return Ok(());
-        }
-        Err(CoreError::InvalidParams("sessionId".into()))
-    }
-
-    pub fn cancel_agent_resume_for_shutdown(
-        &mut self,
-        session_id: &str,
-    ) -> Result<Value, CoreError> {
-        self.resume_failure_reaps.remove(session_id);
-        self.resume_reservations.remove(session_id);
-        self.resume_ready.remove(session_id);
-        self.agent_observations.remove(session_id);
-        self.pending_agent_resume_refs.remove(session_id);
-        if let Some(operation) = self
-            .store
-            .session_relocation_operations()
-            .iter()
-            .find(|operation| operation.session_id == session_id)
-            .cloned()
-        {
-            self.store
-                .fail_session_relocation(
-                    &self.write_authority,
-                    session_id,
-                    &operation.operation_id,
-                    ResumeFailureReason::DaemonInterrupted,
-                )
-                .map_err(store_error)?;
-        }
-        let session = self
-            .store
-            .sessions()
-            .iter()
-            .find(|session| session.id == session_id)
-            .ok_or(CoreError::NotFound)?;
-        Ok(self.project_session(session))
-    }
-
-    pub fn fail_agent_resume(
-        &mut self,
-        session_id: &str,
-        reason: ResumeFailureReason,
-    ) -> Result<Value, CoreError> {
-        self.resume_failure_reaps.remove(session_id);
-        self.resume_reservations.remove(session_id);
-        self.resume_ready.remove(session_id);
-        self.agent_observations.remove(session_id);
-        self.pending_agent_resume_refs.remove(session_id);
-        if let Some(operation) = self
-            .store
-            .session_relocation_operations()
-            .iter()
-            .find(|operation| operation.session_id == session_id)
-            .cloned()
-        {
-            let failed = self
-                .store
-                .fail_session_relocation(
-                    &self.write_authority,
-                    session_id,
-                    &operation.operation_id,
-                    reason,
-                )
-                .map_err(store_error)?;
-            return Ok(self.project_session(&failed));
-        }
-        if self.store.sessions().iter().any(|session| {
-            session.id == session_id
-                && matches!(session.lifecycle_state.as_str(), "exited" | "resumeFailed")
-        }) {
-            self.spawn_agent_terminal_hold(session_id)?;
-            let session = self
-                .store
-                .sessions()
-                .iter()
-                .find(|session| session.id == session_id)
-                .ok_or(CoreError::NotFound)?;
-            return Ok(self.project_session(session));
-        }
-        self.store
-            .mark_session_resume_failed(&self.write_authority, session_id, reason)
-            .map_err(store_error)?;
-        self.spawn_agent_terminal_hold(session_id)?;
-        let session = self
-            .store
-            .sessions()
-            .iter()
-            .find(|session| session.id == session_id)
-            .ok_or(CoreError::NotFound)?;
-        Ok(self.project_session(session))
     }
 
     pub fn startup_resume_session_ids(&mut self) -> Result<Vec<AgentResumeCandidate>, CoreError> {
@@ -1599,30 +1392,6 @@ impl CoreRuntime {
             .map_err(store_error)?;
         Ok(())
     }
-    pub fn mark_agent_resume_ownership_uncertain(
-        &mut self,
-        session_id: &str,
-    ) -> Result<Value, CoreError> {
-        self.resume_reservations.remove(session_id);
-        self.resume_ready.remove(session_id);
-        self.agent_observations.remove(session_id);
-        self.pending_agent_resume_refs.remove(session_id);
-        self.store
-            .mark_session_resume_failed(
-                &self.write_authority,
-                session_id,
-                ResumeFailureReason::RuntimeOwnershipUncertain,
-            )
-            .map_err(store_error)?;
-        let session = self
-            .store
-            .sessions()
-            .iter()
-            .find(|session| session.id == session_id)
-            .ok_or(CoreError::NotFound)?;
-        Ok(self.project_session(session))
-    }
-
     pub fn current_agent_resume(&self, session_id: &str) -> Result<Value, CoreError> {
         let session = self
             .store
