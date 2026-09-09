@@ -1,12 +1,15 @@
 {
   "id": "dev-server",
-  "duration": 18.0,
+  "duration": 10.5,
   "sourceSeconds": 8.0,
-  "size": 224941,
-  "sha256": "86a0204b4bdab3e6236a256b734b991b4bcf8eb28706937c1694bae5fa8809c5",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 305798,
+  "sha256": "6b456982f9366127592954061b1d2e8b4284e05ebe5319b2fe191ff9e2afa435",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

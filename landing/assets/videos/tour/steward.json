@@ -1,12 +1,15 @@
 {
   "id": "steward",
-  "duration": 18.0,
-  "sourceSeconds": 3.375,
-  "size": 158921,
-  "sha256": "c464b3a5fd5f811b775c791f5cbdc8dd433a5a52eca936bdb8280a1c5c435518",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 9.0,
+  "sourceSeconds": 3.4,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 204515,
+  "sha256": "1b5aacccd43af94fadc2e4117596c9a309333f8e4fa4b474fde60ab40af37c40",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

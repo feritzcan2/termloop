@@ -1,12 +1,15 @@
 {
   "id": "quick-actions",
-  "duration": 18.0,
-  "sourceSeconds": 5.625,
-  "size": 798976,
-  "sha256": "58a372a2272d8a89c549d9331e97c528afe9c5e0cb941484adc2ace392e4314f",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 9.0,
+  "sourceSeconds": 5.65,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 1091412,
+  "sha256": "0c22cd9e0b827b5a692c260f86e0113b4482b0fe078b9006b0268a1251a0c282",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

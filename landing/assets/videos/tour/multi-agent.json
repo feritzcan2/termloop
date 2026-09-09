@@ -1,12 +1,15 @@
 {
   "id": "multi-agent",
-  "duration": 18.0,
-  "sourceSeconds": 7.625,
-  "size": 705909,
-  "sha256": "d689bacdf7bbdf55fe884dfacc3cb343236bd5598cc523216c3e31f56e916bf8",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 10.1,
+  "sourceSeconds": 7.611111,
+  "sourceFps": 18.0,
+  "motionSpeed": 1,
+  "size": 917250,
+  "sha256": "634276768b14aafbcd1e6df23119854d4f635b9703e502b50c3dd0cdbd9a0a1b",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

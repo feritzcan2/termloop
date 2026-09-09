@@ -1,12 +1,15 @@
 {
   "id": "task-restore",
-  "duration": 18.0,
-  "sourceSeconds": 4.336,
-  "size": 221126,
-  "sha256": "e1a18f6ba90acad2fc236107544a6f06e70b086ef15fcfec41c11a0bd3994d5d",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 20.5,
+  "sourceSeconds": 18.0,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 388383,
+  "sha256": "7bb3a20b285a3d9147652c61a7ec475172dad07f41eac429a532785e99c34e24",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

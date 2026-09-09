@@ -1,12 +1,15 @@
 {
   "id": "mobile",
-  "duration": 18.0,
+  "duration": 9.0,
   "sourceSeconds": 2.5,
-  "size": 166270,
-  "sha256": "0fb467b31eb3549e11bfc24d59c17300c778fd2822feb3353704384e8baae268",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 216235,
+  "sha256": "ea850e271c7e86b5bb5d36b17e9ed71f61a83b08221261d911e2dfc7311d7d3b",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

@@ -1,12 +1,15 @@
 {
   "id": "terminal-reading",
-  "duration": 18.0,
-  "sourceSeconds": 7.691,
-  "size": 252075,
-  "sha256": "75e82e7736f891f1691e834b69d3233c61b57807c535bbe2cf689eb3df734c2d",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 28.7,
+  "sourceSeconds": 26.2,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 512603,
+  "sha256": "ddf09e87135517d41e80cf71d2836e3cd3ea82df47ba114b0344a572acee3845",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

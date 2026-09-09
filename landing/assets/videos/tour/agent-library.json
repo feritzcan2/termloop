@@ -1,12 +1,15 @@
 {
   "id": "agent-library",
-  "duration": 18.0,
-  "sourceSeconds": 4.19,
-  "size": 244714,
-  "sha256": "94babdcafd158c46825c7a901929b040c5cb21f3db6c1e3791b1dc03248d2811",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 23.333333,
+  "sourceSeconds": 20.833,
+  "sourceFps": 30.000480007680125,
+  "motionSpeed": 1,
+  "size": 417494,
+  "sha256": "9cb09038a42deae909d0d8e8cb688ea5fdb1b418688eb1cc16772290884ca1cb",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }
