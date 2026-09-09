@@ -1,6 +1,6 @@
 # TermLoop feature video guide
 
-The website now includes **32 feature demos**, up from 13. The pre-existing marketing archive contained 16 recording folders, including alternate cuts. There are **19 new feature recordings** from the working Launchpad Demo Project; the original 13 website demos are re-edited with the same three-step caption treatment.
+The website now includes **32 feature demos**, up from 13. The pre-existing marketing archive contained 16 recording folders, including alternate cuts. There are **19 added features** and **22 current OBS recordings** from the working Launchpad Demo Project. Ask To, Handoff, and Session Fork have been re-recorded in the current interface; 10 original clips retain the same three-step caption treatment.
 
 Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Continuous recordings retain the original action speed; long inactive waits can be cut before rendering. Brief orientation and result holds give the explanations room. The output is 1920 × 1248 at 30 FPS; older source recordings retain their original 15–20 FPS motion. Videos use a responsive layout capped to the recording and viewport and default to silent looping playback when visible, with pause and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.
 
@@ -23,10 +23,10 @@ Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and t
 
 - [Multi-Agent](../../landing/assets/videos/tour/multi-agent.mp4): Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.
   1. Keep several agent Sessions in one Project. 2. Use the sidebar to see which Session needs attention. 3. Open the right terminal without losing the other Sessions.
-- [Ask To](../../landing/assets/videos/tour/ask-to.mp4): Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
-  1. Ask the current agent for a second opinion. 2. A visible helper Session receives the question and context. 3. The answer returns to the requesting agent.
+- [Ask To](../../landing/assets/videos/tour/ask-to.mp4): Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
+  1. Open Agents > Ask to and choose a provider for the second opinion. 2. A visible helper Session receives the question and context. 3. The answer returns to the requesting agent.
 - [Handoff](../../landing/assets/videos/tour/handoff.mp4): Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.
-  1. Choose the existing Session that should receive the brief. 2. Compose the context and the next action. 3. The destination Session receives the handoff in its terminal.
+  1. Open Agents > Handover to and choose an existing Session. 2. The current agent composes the request, findings, and next action. 3. The destination receives the handoff in its own terminal.
 - [Session Fork](../../landing/assets/videos/tour/fork.mp4): Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
   1. Choose a conversation to explore in a new direction. 2. Fork it from the Session menu. 3. Continue in a separate Session with visible parentage.
 - [Agent library](../../landing/assets/videos/tour/agent-library.mp4): Browse reusable agent profiles with a defined purpose. Inspect their provider, working mode, reasoning, and instructions before running one.
@@ -103,4 +103,4 @@ Use a launcher-owned feature profile for a repeat capture. The September recordi
 
 ## Capture limits
 
-These videos demonstrate real UI operations, not comprehensive integration tests. Notification delivery, phone pairing, and provider-to-provider routing were not re-tested in this editing session. The original recordings retain their prior UI version. A new Playbook template recording was excluded after the running app reported a schema mismatch; no success claim or failed footage was added to the guide.
+These videos demonstrate real UI operations, not comprehensive integration tests. The refreshed collaboration demos exercised a real Codex helper reply, a handoff to the existing Codex Session, and a fork continued with a new prompt. Notification delivery, phone pairing, and cross-provider routing were not re-tested in this editing session. The original recordings retain their prior UI version. A new Playbook template recording was excluded after the running app reported a schema mismatch; no success claim or failed footage was added to the guide.

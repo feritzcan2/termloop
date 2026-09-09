@@ -64,15 +64,15 @@
     "group": "coordinate",
     "label": "Ask To",
     "title": "Get a second opinion without copy-paste.",
-    "description": "Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
+    "description": "Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
     "source": "assets/videos/ask-to-v2.mp4",
     "steps": [
-      "Ask the current agent for a second opinion.",
+      "Open Agents > Ask to and choose a provider for the second opinion.",
       "A visible helper Session receives the question and context.",
       "The answer returns to the requesting agent."
     ],
-    "provenance": "Original desktop recording · Launchpad",
-    "legacy": true
+    "provenance": "OBS Studio · Launchpad Demo · continuous 30 FPS recording",
+    "legacy": false
   },
   {
     "id": "handoff",
@@ -82,12 +82,12 @@
     "description": "Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.",
     "source": "assets/videos/handoff.mp4",
     "steps": [
-      "Choose the existing Session that should receive the brief.",
-      "Compose the context and the next action.",
-      "The destination Session receives the handoff in its terminal."
+      "Open Agents > Handover to and choose an existing Session.",
+      "The current agent composes the request, findings, and next action.",
+      "The destination receives the handoff in its own terminal."
     ],
-    "provenance": "Original desktop recording · Launchpad",
-    "legacy": true
+    "provenance": "OBS Studio · Launchpad Demo · continuous 30 FPS recording",
+    "legacy": false
   },
   {
     "id": "fork",
@@ -101,8 +101,8 @@
       "Fork it from the Session menu.",
       "Continue in a separate Session with visible parentage."
     ],
-    "provenance": "Original desktop recording · Launchpad",
-    "legacy": true
+    "provenance": "OBS Studio · Launchpad Demo · continuous 30 FPS recording",
+    "legacy": false
   },
   {
     "id": "changes",
