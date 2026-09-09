@@ -7,7 +7,8 @@ import { URL as FileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session, Task, WorkflowExecution } from "../src/renderer/model.js";
 import { ActiveAgentRail, activeAgentQueryMatches, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
-import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentLabels } from "../src/renderer/ui/active-agent-workflows.js";
+import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels } from "../src/renderer/ui/active-agent-workflows.js";
+import { workflowAgentSegments } from "../src/renderer/ui/WorkflowAgentGroup.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
 
 function agent(id: string, overrides: Partial<Session> = {}): Session {
@@ -42,6 +43,48 @@ function execution(overrides: Partial<WorkflowExecution> = {}): WorkflowExecutio
 
 const sessions = [agent("lead"), agent("helper-a", { ask_to_source_session_id: "lead" }), agent("helper-b", { ask_to_source_session_id: "lead" })];
 const task = { id: "task-1", project_id: "project-1", title: "Payments" } as Task;
+
+describe("workflow agent groups", () => {
+  it("groups only exact unarchived Agent members in the execution's project", () => {
+    const values = [...sessions, agent("unrelated", { name: "Build and verify", ask_to_source_session_id: "lead" })];
+    const groups = workflowAgentGroups([execution()], values, [task]);
+    expect([...groups.keys()]).toEqual(["lead", "helper-a", "helper-b"]);
+    expect(groups.get("lead")).toBe(groups.get("helper-a"));
+    expect(groups.get("lead")?.context).toBe("Payments · Build and verify · Running");
+    const unavailable = [agent("lead", { archived_at_epoch_ms: 3 }), agent("helper-a", { project_id: "other" }), agent("helper-b", { kind: "Terminal" })];
+    expect(workflowAgentGroups([execution()], unavailable).size).toBe(0);
+    expect(workflowAgentGroups([execution()], []).size).toBe(0);
+  });
+
+  it.each([
+    ["approved", "Approved", false],
+    ["completed", "Completed", false],
+    ["changesRequested", "Changes requested", true],
+    ["reviewLimitReached", "Review limit reached", true],
+  ] as const)("keeps the finished %s outcome visible", (completionOutcome, statusLabel, needsAttention) => {
+    const run = execution({ status: "completed", phase: "completed", completionOutcome });
+    const groups = workflowAgentGroups([run], sessions);
+    expect(groups.size).toBe(3);
+    expect(groups.get("lead")).toMatchObject({ executionId: run.id, name: run.workflowName, status: "completed", statusLabel, needsAttention });
+  });
+
+  it("uses the most recent exact execution without mutating the projection or leaking another project's task", () => {
+    const newer = execution({ id: "execution-2", status: "paused", updatedAtEpochMs: 5 });
+    const runs = [newer, execution()];
+    const groups = workflowAgentGroups(runs, sessions, [{ ...task, project_id: "other" }]);
+    expect(groups.get("lead")).toMatchObject({ executionId: "execution-2", statusLabel: "Paused", context: "Build and verify · Paused" });
+    expect(runs[0]).toBe(newer);
+  });
+
+  it("preserves row order and splits around helpers that do not belong to the workflow", () => {
+    const values = [sessions[0]!, agent("ordinary", { ask_to_source_session_id: "lead" }), ...sessions.slice(1)];
+    const segments = workflowAgentSegments(values, workflowAgentGroups([execution()], values));
+    expect(segments.map((segment) => [segment.workflow?.executionId, segment.sessions.map((session) => session.id)]))
+      .toEqual([["execution-1", ["lead"]], [undefined, ["ordinary"]], ["execution-1", ["helper-a", "helper-b"]]]);
+    expect(segments.flatMap((segment) => segment.sessions)).toEqual(values);
+    expect(workflowAgentSegments(values, undefined)).toEqual([{ workflow: undefined, sessions: values }]);
+  });
+});
 
 describe("workflow agent role labels", () => {
   it("names the implementer and exact reviewers, including completed workflows", () => {
@@ -171,6 +214,7 @@ describe("workflow actions in the Agents rail", () => {
       reviewReadySessionIds: new Set(), favoriteSessionIds: new Set(), taskAttachedSessionIds: new Set(), worktreeChangesBySessionId: new Map(),
       workflowsBySessionId: activeAgentWorkflows([run], values, [task]), menuSessionId: undefined,
       workflowAgentLabelsBySessionId: workflowAgentLabels([run], values),
+      workflowGroupsBySessionId: workflowAgentGroups([run], values, [task]),
       selectSession: vi.fn(), navigateSession: vi.fn(), openSessionMenu: vi.fn(), dismissSession: vi.fn(), resumeSession: vi.fn(), archiveSession: vi.fn(),
       toggleFavoriteSession: vi.fn(), openTaskChanges: vi.fn(), searchOpen: false, setSearchOpen: vi.fn(), nowEpochMs: 100,
       ...overrides,
@@ -189,6 +233,38 @@ describe("workflow actions in the Agents rail", () => {
     await act(async () => action.click());
     expect(props.resumeSession).toHaveBeenCalledExactlyOnceWith("helper-a");
     expect(props.selectSession).not.toHaveBeenCalled();
+  });
+
+  it("labels the workflow group and its final outcome while leaving ordinary helpers outside", async () => {
+    const values = [...sessions, agent("ordinary", { ask_to_source_session_id: "lead" })];
+    await render(values, execution({ status: "completed", phase: "completed", completionOutcome: "reviewLimitReached" }));
+    const groups = [...container.querySelectorAll('[data-workflow-group="execution-1"]')];
+    expect(groups).toHaveLength(1);
+    const group = groups[0]!;
+    expect(group.getAttribute("aria-label")).toBe("Workflow · Payments · Build and verify · Review limit reached");
+    expect(group.querySelector(".workflow-agent-group-title")?.textContent).toBe("WorkflowBuild and verify");
+    expect(group.querySelector(".workflow-agent-group-status")?.textContent).toBe("Review limit reached");
+    expect(group.classList.contains("needs-attention")).toBe(true);
+    expect([...group.querySelectorAll("[data-session-id]")].map((row) => row.getAttribute("data-session-id"))).toEqual(["lead", "helper-a", "helper-b"]);
+    expect(container.querySelector('[data-session-id="ordinary"]')?.closest("[data-workflow-group]")).toBeNull();
+  });
+
+  it("retains an explicitly detached helper as a separate root without losing workflow identification", async () => {
+    await render(sessions, execution(), { detachedRelationshipSessionIds: new Set(["helper-a"]) });
+    const helper = container.querySelector('[data-session-id="helper-a"]')!;
+    expect(helper.closest(".active-agent-helper-row")).toBeNull();
+    expect(helper.closest("[data-workflow-group]")?.getAttribute("data-workflow-group")).toBe("execution-1");
+    expect(container.querySelectorAll("[data-session-id]")).toHaveLength(3);
+  });
+
+  it.each(["Payments", "Build and verify", "Review limit reached"])("finds completed workflow groups by %s", async (query) => {
+    await render([...sessions, agent("ordinary")], execution({ status: "completed", phase: "completed", completionOutcome: "reviewLimitReached" }), { searchOpen: true });
+    const input = container.querySelector<HTMLInputElement>("input[type=search]")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...container.querySelectorAll("[data-session-id]")].map((row) => row.getAttribute("data-session-id"))).toEqual(["lead", "helper-a", "helper-b"]);
   });
 
   it("opens the running agent without resuming or interrupting it", async () => {
