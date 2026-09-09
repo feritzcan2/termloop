@@ -632,8 +632,8 @@ describe("Compact workflow menu", () => {
   it.each([
     ["approved", "All reviewers approved", false],
     ["completed", "No final review approval recorded", false],
-    ["changesRequested", "Changes requested", true],
-    ["reviewLimitReached", "Review limit reached", true],
+    ["changesRequested", "Automation finished · review still needs attention", true],
+    ["reviewLimitReached", "Automation finished · review still needs attention", true],
   ] as const)("distinguishes a finished %s outcome without opening the steps", async (completionOutcome, summary, needsAttention) => {
     const f = await launcherFixture({ executions: [{ ...execution, status: "completed", phase: "completed", completionOutcome }] });
     try {
@@ -642,7 +642,7 @@ describe("Compact workflow menu", () => {
       expect(start.nextElementSibling).toBe(row);
       expect(start.querySelector(".workflow-add")).not.toBeNull();
       expect(row.closest(".task-launch")).toBeNull();
-      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Completed");
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe(workflowStatusLabel({ ...execution, status: "completed", completionOutcome }));
       expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe(summary);
       expect(row.classList.contains("needs-attention")).toBe(needsAttention);
       expect(row.querySelector(".workflow-execution-symbol")?.textContent).toBe(needsAttention ? "!" : "✓");
@@ -661,7 +661,7 @@ describe("Compact workflow menu", () => {
       expect(f.container.querySelector(".workflow-sidebar-progress")).toBeNull();
       f.props.executions = [{ ...execution, status: "completed", phase: "completed", completionOutcome: "approved" }];
       await f.render();
-      expect(f.container.querySelector(".workflow-execution-state")?.textContent).toBe("Completed");
+      expect(f.container.querySelector(".workflow-execution-state")?.textContent).toBe("Approved");
       expect(f.container.querySelector(".workflow-execution-detail")?.textContent).toBe("All reviewers approved");
     } finally { await f.dispose(); }
   });

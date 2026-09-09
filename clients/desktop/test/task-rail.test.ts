@@ -596,6 +596,67 @@ describe("Task rail row anatomy", () => {
       .toBeLessThan(markup.indexOf('data-session-id="ordinary-agent"'));
   });
 
+  it("surfaces live workflow activity above Task metadata even after automation finishes", () => {
+    const coordinator = agentSession("workflow-lead");
+    const run = { ...workflowExecution(coordinator.id, "reviewer"), status: "completed" as const, phase: "completed" as const, completionOutcome: "reviewLimitReached" as const };
+    const markup = renderRail({ sessions: [coordinator], statuses: [agentStatus(coordinator.id, "working")], workflowExecutions: [run] });
+    expect(markup).toContain("Codex · Working");
+    expect(markup).toContain("Workflow · Discuss, build, review · Lead agent");
+    expect(markup).toContain("Automation finished; agent is still active.");
+    expect(markup).toContain('class="workflow-execution-state">Review limit reached');
+    expect(markup.indexOf('class="task-workflow-activity"')).toBeLessThan(markup.indexOf('class="task-meta"'));
+    expect(markup).not.toContain('class="workflow-execution-state">Completed');
+  });
+
+  it("keeps activity visible on a folded Task, opens the exact agent, and clears it when work stops", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const session = agentSession("workflow-lead");
+    const props = { ...railProps({ sessions: [session], statuses: [agentStatus(session.id, "working")], workflowExecutions: [workflowExecution(session.id, "reviewer")] }), selectSession: vi.fn() };
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(TaskRail, props)));
+      await act(async () => container.querySelector<HTMLButtonElement>('.task-toggle')!.click());
+      expect(container.querySelector('.task-toggle')?.getAttribute("aria-expanded")).toBe("false");
+      expect(container.querySelector('.workflow-sidebar-progress')).toBeNull();
+      const activity = container.querySelector<HTMLButtonElement>('.task-workflow-active-agent')!;
+      expect(activity.textContent).toContain("Codex · Working");
+      await act(async () => activity.click());
+      expect(props.selectSession).toHaveBeenCalledExactlyOnceWith(session.id);
+      expect(container.querySelector('.task-toggle')?.getAttribute("aria-expanded")).toBe("false");
+      await act(async () => root.render(createElement(TaskRail, { ...props, statusesById: new Map([[session.id, agentStatus(session.id, "idle")]]) })));
+      expect(container.querySelector('.task-workflow-activity')).toBeNull();
+    } finally { await act(async () => root.unmount()); container.remove(); }
+  });
+
+  it("counts exact workflow members once and excludes unrelated agents in the same checkout", () => {
+    const lead = agentSession("lead");
+    const reviewer = { ...agentSession("reviewer"), process: { ...agentSession("reviewer").process, agent_id: "claude" } };
+    const outsider = agentSession("outside");
+    const run = workflowExecution(lead.id, reviewer.id);
+    const markup = renderRail({ sessions: [lead, reviewer, outsider], statuses: [lead, reviewer, outsider].map((session) => agentStatus(session.id, "working")), workflowExecutions: [{ ...run, participants: [...run.participants, ...run.participants] }] });
+    expect(markup).toContain("2 workflow agents active");
+    expect(markup.match(/class="task-workflow-active-agent"/gu)).toHaveLength(2);
+    expect(markup).toContain("Claude · Working");
+  });
+
+  it.each(["exited", "archived", "otherProject", "idle", "missing", "otherTask"])("does not advertise %s workflow activity from stale or unrelated projections", (scenario) => {
+    let session = agentSession("lead");
+    if (scenario === "exited") session = { ...session, lifecycle_state: "exited" };
+    if (scenario === "archived") session = { ...session, archived_at_epoch_ms: 3 };
+    if (scenario === "otherProject") session = { ...session, project_id: "other" };
+    const run = workflowExecution(session.id, "reviewer");
+    const markup = renderRail({ sessions: scenario === "missing" ? [] : [session], statuses: [agentStatus(session.id, scenario === "idle" ? "idle" : "working")], workflowExecutions: [{ ...run, taskId: scenario === "otherTask" ? "other-task" : run.taskId }] });
+    expect(markup).not.toContain('class="task-workflow-activity"');
+  });
+
+  it("names compaction explicitly instead of claiming the agent is implementing", () => {
+    const session = agentSession("lead");
+    const markup = renderRail({ sessions: [session], statuses: [agentStatus(session.id, "compacting")], workflowExecutions: [workflowExecution(session.id, "reviewer")] });
+    expect(markup).toContain("Codex · Compacting");
+    expect(markup).not.toContain("Codex · Working");
+  });
+
   it("offers an idle run as a launcher chip in the Task's Start row, not a card", () => {
     const markup = renderRail({ runConfigurations: [runConfiguration()] });
     expect(markup).toContain('class="run-chip"');
