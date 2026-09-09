@@ -1,5 +1,6 @@
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -55,7 +56,12 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
 
   return (
     <View style={[styles.shell, { width: voiceDockWidth(viewportWidth) }]}>
-      <View style={styles.details}>
+      <ScrollView
+        bounces={false}
+        contentContainerStyle={styles.details}
+        keyboardShouldPersistTaps="handled"
+        style={styles.detailsScroll}
+      >
         <View style={styles.detailsHeader}>
           <View style={styles.headingZone}>
             <Text style={styles.eyebrow}>STEWARD • SESLİ MESAJ</Text>
@@ -133,7 +139,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
           <Text style={styles.hint}>Mikrofona dokun, mesajını söyle, metni kontrol edip gönder.</Text>
         ) : null}
         {props.error === undefined ? null : <Text style={styles.error}>{props.error}</Text>}
-      </View>
+      </ScrollView>
 
       <View style={styles.bar}>
         <View style={styles.statusZone}>
@@ -206,6 +212,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.38 },
   shell: {
     maxWidth: 560,
+    maxHeight: "100%",
     borderRadius: radius.sheet,
     borderWidth: 1,
     borderColor: color.borderStrong,
@@ -217,6 +224,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 14,
   },
+  detailsScroll: { flexShrink: 1 },
   details: { padding: space.lg, gap: space.md, borderBottomWidth: 1, borderBottomColor: color.rule },
   detailsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headingZone: { flex: 1 },
