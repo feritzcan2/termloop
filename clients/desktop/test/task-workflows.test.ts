@@ -169,12 +169,14 @@ describe("Task workflow editor", () => {
     })));
 
     await startNewTemplate(container);
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Model"]')?.value).toBe("default");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Permission"]')?.value).toBe("bypassPermissions");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Thinking"]')?.value).toBe("default");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Model"]')?.value).toBe("default");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Permission"]')?.value).toBe("bypassPermissions");
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Step Thinking"]')?.value).toBe("default");
+    await act(async () => container.querySelector<HTMLButtonElement>(".workflow-lead-card")!.click());
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Model"]')?.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Permission"]')?.value).toBe("bypassPermissions");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Coordinator Thinking"]')?.value).toBe("default");
+    expect(container.querySelector('[aria-label="Step Model"]')).toBeNull();
 
     await act(async () => root.unmount());
     container.remove();
@@ -650,6 +652,105 @@ async function editorFixture(overrides: Partial<ComponentProps<typeof WorkflowEd
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   } };
+}
+
+describe("Workflow lead card", () => {
+  it("keeps the lead inside the workflow but outside the numbered, draggable steps", async () => {
+    const f = await editorFixture({ configuration: workflow });
+    try {
+      const lead = f.container.querySelector<HTMLButtonElement>(".workflow-lead-card")!;
+      expect(lead.closest(".workflow-pipeline")).not.toBeNull();
+      expect(lead.closest(".workflow-canvas")).toBeNull();
+      expect(lead.querySelector(".workflow-step-number,.workflow-drag-handle")).toBeNull();
+      expect(f.container.querySelector(".workflow-builder-top")?.textContent).toBe("Template name");
+      expect(f.container.textContent).not.toContain("Advanced lead agent settings");
+      expect(f.container.querySelector("#workflow-pipeline-title")?.textContent).toBe("Workflow 3/8 steps");
+      await act(async () => lead.click());
+      expect(lead.getAttribute("aria-pressed")).toBe("true");
+      expect(f.container.querySelector(".workflow-step-card.selected")).toBeNull();
+      const inspector = f.container.querySelector(`#${lead.getAttribute("aria-controls")}`)!;
+      expect(inspector.getAttribute("aria-label")).toBe("Workflow lead agent settings");
+      expect(inspector.querySelector("#workflow-coordinator")).not.toBeNull();
+      expect(inspector.textContent).toContain("It is not an extra step");
+      expect(inspector.querySelector('[aria-label^="Remove"]')).toBeNull();
+      expect(rootButton(f.container, "Save changes").disabled).toBe(true);
+      expect(f.props.save).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("edits lead settings without overwriting helper settings or adding a step to the saved template", async () => {
+    const save = vi.fn(async (_params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams) => workflow);
+    const f = await editorFixture({ configuration: workflow, save });
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-lead-card")!.click());
+      await selectValue(f.container, "#workflow-coordinator", "claude");
+      await selectValue(f.container, "#workflow-coordinator-model", "sonnet");
+      await selectValue(f.container, "#workflow-coordinator-permission", "plan");
+      await selectValue(f.container, "#workflow-coordinator-reasoning", "high");
+      const lead = f.container.querySelector(".workflow-lead-card")!;
+      expect(lead.textContent).toContain("Lead agent · Claude");
+      expect(lead.textContent).toContain("sonnet · Plan only · High");
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".kind-implement .workflow-step-select")!.click());
+      expect(f.container.querySelector(".workflow-owned-step")?.textContent).toContain("Uses workflow lead · Claude");
+      expect(f.container.querySelector(".workflow-owned-step")?.textContent).toContain("sonnet · Plan only · High");
+      expect(lead.getAttribute("aria-pressed")).toBe("false");
+      await act(async () => rootButton(f.container, "Edit lead agent").click());
+      expect(f.container.querySelector<HTMLSelectElement>("#workflow-coordinator-model")?.value).toBe("sonnet");
+      await act(async () => rootButton(f.container, "Save changes").click());
+      expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workflowId: workflow.id, coordinatorAgentId: "claude", model: "sonnet", permission: "plan", reasoning: "high", steps: workflow.steps }));
+    } finally { await f.dispose(); }
+  });
+
+  it.each(["implement", "fix"])("links the %s inspector back to the single workflow lead", async (kind) => {
+    const f = await editorFixture();
+    try {
+      const card = f.container.querySelector<HTMLButtonElement>(`.kind-${kind} .workflow-step-select`)!;
+      expect(card.textContent).toContain("Uses workflow lead");
+      await act(async () => card.click());
+      await act(async () => rootButton(f.container, "Edit lead agent").click());
+      expect(f.container.querySelector(".workflow-lead-card")?.getAttribute("aria-pressed")).toBe("true");
+      expect(f.container.querySelectorAll("#workflow-coordinator")).toHaveLength(1);
+      expect(f.container.querySelectorAll(".workflow-step-card")).toHaveLength(5);
+    } finally { await f.dispose(); }
+  });
+
+  it("does not display or silently reinterpret an invalid saved lead identity", async () => {
+    const invalidId = "tlc:36:eb49f1e9-2fa7-4490-8815-e3d79ae3653dcodex";
+    const save = vi.fn(async (_params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams) => workflow);
+    const f = await editorFixture({ configuration: { ...workflow, coordinatorAgentId: invalidId as WorkflowConfiguration["coordinatorAgentId"] }, save });
+    try {
+      expect(f.container.textContent).not.toContain(invalidId);
+      await setText(f.container, "#workflow-name", "Repaired workflow");
+      await act(async () => rootButton(f.container, "Save changes").click());
+      expect(save).not.toHaveBeenCalled();
+      expect(f.container.querySelector<HTMLSelectElement>("#workflow-coordinator")?.selectedOptions[0]?.textContent).toBe("Unavailable agent — choose a lead");
+      expect(f.container.textContent).toContain("Choose a supported lead agent");
+      expect(f.container.textContent).not.toContain(invalidId);
+      await selectValue(f.container, "#workflow-coordinator", "codex");
+      await act(async () => rootButton(f.container, "Save changes").click());
+      expect(save.mock.calls[0]?.[0].coordinatorAgentId).toBe("codex");
+    } finally { await f.dispose(); }
+  });
+
+  it("returns to the incomplete step when saving from the lead inspector", async () => {
+    const f = await editorFixture();
+    try {
+      await setText(f.container, "textarea", " ");
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-lead-card")!.click());
+      await act(async () => rootButton(f.container, "Create template").click());
+      expect(f.props.save).not.toHaveBeenCalled();
+      expect(f.container.querySelector(".workflow-inspector-head")?.textContent).toContain("Step 1 · Discuss");
+      expect(f.container.querySelector(".workflow-lead-card")?.getAttribute("aria-pressed")).toBe("false");
+    } finally { await f.dispose(); }
+  });
+});
+
+async function selectValue(container: Element, selector: string, value: string) {
+  await act(async () => {
+    const select = container.querySelector<HTMLSelectElement>(selector)!;
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 
 describe("Workflow review regressions", () => {
