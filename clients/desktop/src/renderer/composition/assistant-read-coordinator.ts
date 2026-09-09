@@ -80,9 +80,13 @@ export class AssistantReadCoordinator {
     mutation: (...args: Args) => Promise<Result>,
   ): (...args: Args) => Promise<Result> {
     return async (...args) => {
-      const result = await mutation(...args);
-      this.invalidate(identity);
-      return result;
+      try {
+        return await mutation(...args);
+      } finally {
+        // A rejected write can mean our revision is stale, or its result was
+        // lost in transit. Recovery must re-read the daemon before retrying.
+        this.invalidate(identity);
+      }
     };
   }
 

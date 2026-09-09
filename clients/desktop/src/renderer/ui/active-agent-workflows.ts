@@ -1,6 +1,6 @@
 import type { Session, Task, WorkflowExecution } from "../model.js";
 import { agentName, isLiveSession, sessionLabel } from "../model.js";
-import { workflowStepSessionId } from "./workflow-presentation.js";
+import { workflowStatusLabel, workflowStepSessionId } from "./workflow-presentation.js";
 
 export type ActiveAgentWorkflow = {
   executionId: string;
@@ -106,4 +106,43 @@ export function workflowAgentLabels(
     }
   }
   return labels;
+}
+
+export type WorkflowAgentGroup = {
+  executionId: string;
+  name: string;
+  status: WorkflowExecution["status"];
+  statusLabel: string;
+  needsAttention: boolean;
+  context: string;
+};
+
+/// A visual group is backed by the execution's exact membership, not by its
+/// name, worktree or an arbitrary Ask-To helper attached to the same lead.
+export function workflowAgentGroups(
+  executions: readonly WorkflowExecution[],
+  sessions: readonly Session[],
+  tasks: readonly Task[] = [],
+): ReadonlyMap<string, WorkflowAgentGroup> {
+  const groups = new Map<string, WorkflowAgentGroup>();
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
+    const task = tasksById.get(execution.taskId);
+    const statusLabel = workflowStatusLabel(execution);
+    const group: WorkflowAgentGroup = {
+      executionId: execution.id,
+      name: execution.workflowName,
+      status: execution.status,
+      statusLabel,
+      needsAttention: execution.status === "completed"
+        && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached"),
+      context: [task?.project_id === execution.projectId ? task.title : undefined, execution.workflowName, statusLabel].filter(Boolean).join(" · "),
+    };
+    for (const sessionId of [execution.coordinatorSessionId, ...execution.participants.map((participant) => participant.sessionId)]) {
+      const session = sessionsById.get(sessionId);
+      if (session?.kind === "Agent" && session.archived_at_epoch_ms === null && session.project_id === execution.projectId) groups.set(sessionId, group);
+    }
+  }
+  return groups;
 }
