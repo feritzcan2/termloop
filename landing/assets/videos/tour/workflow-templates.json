@@ -1,12 +1,15 @@
 {
   "id": "workflow-templates",
-  "duration": 18.0,
-  "sourceSeconds": 7.368,
-  "size": 345729,
-  "sha256": "01b12298b296a6cb7abe7db065457f4a3cf5b562121ca2d6d2c8f50675efa0ad",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 18.633333,
+  "sourceSeconds": 16.133,
+  "sourceFps": 30.00061984751751,
+  "motionSpeed": 1,
+  "size": 501538,
+  "sha256": "221ee92facba780f915d455184b59109e553fe74b2d98319eaad53fa2d603505",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

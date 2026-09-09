@@ -1,12 +1,15 @@
 {
   "id": "changes",
-  "duration": 24.75,
+  "duration": 17.5,
   "sourceSeconds": 15.0,
-  "size": 568246,
-  "sha256": "89d43e31d8d605a4af5c4ca51ec987ae955d98e331fedaaf1be6ac1bd66b684f",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "sourceFps": 15.0,
+  "motionSpeed": 1,
+  "size": 762247,
+  "sha256": "15aaa1140292b9caf64668b035396f2c20a31184799326bdc9ba3e9dd32bb55c",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

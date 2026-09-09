@@ -255,7 +255,7 @@
     "title": "Save the reviewer your team actually needs.",
     "description": "Create a reusable agent with its own name, provider settings, and instructions. The Launchpad example checks progress bounds, tests, and keyboard accessibility.",
     "steps": [
-      "Start from a duplicate of an existing specialist.",
+      "Open your saved Launchpad reviewer profile.",
       "Give the Launchpad reviewer focused, project-specific instructions.",
       "Save the profile so the same brief can be used again."
     ],

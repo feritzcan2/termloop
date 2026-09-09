@@ -1,12 +1,15 @@
 {
   "id": "context-bank",
-  "duration": 18.0,
-  "sourceSeconds": 7.4,
-  "size": 168289,
-  "sha256": "893426e55956641e937b903015a400946afc47a556501f6e9efb37bb94bfad1f",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 27.066667,
+  "sourceSeconds": 24.566,
+  "sourceFps": 29.999592949892133,
+  "motionSpeed": 1,
+  "size": 361845,
+  "sha256": "c8e4e97c31c4b22c4ee7945c1c7fb8c0de153f295b30989fe2cc75d4ab37393c",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

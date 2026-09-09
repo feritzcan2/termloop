@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:06.000
+00:00:00.000 --> 00:00:09.567
 Run the five real Launchpad release tests.
 
 2
-00:00:06.000 --> 00:00:12.000
+00:00:09.567 --> 00:00:19.133
 Use Pause to read to hold the displayed output.
 
 3
-00:00:12.000 --> 00:00:18.000
+00:00:19.133 --> 00:00:28.700
 Return to live without ending the Session.

@@ -1,12 +1,15 @@
 {
   "id": "review-progress",
-  "duration": 18.0,
-  "sourceSeconds": 7.363,
-  "size": 192055,
-  "sha256": "440d64c0453d80689cc494e35551a3558dde648acd3d685addd02e1cb5f7de86",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 24.6,
+  "sourceSeconds": 22.1,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 398744,
+  "sha256": "75caffe56fa7a2b635a16b2734526ee75277717cc364e8a7388e66d3bbe46465",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

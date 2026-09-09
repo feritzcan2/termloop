@@ -1,12 +1,15 @@
 {
   "id": "developer-notes",
-  "duration": 18.0,
-  "sourceSeconds": 7.858,
-  "size": 214427,
-  "sha256": "dcd27b89532cf9954855bb620146563a792bcb9f3a4eade7c06db2d75ef3dad2",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 33.133333,
+  "sourceSeconds": 30.633,
+  "sourceFps": 30.00032644533673,
+  "motionSpeed": 1,
+  "size": 470874,
+  "sha256": "2a280d8849e1a8e264676ff1b0464b971e80d7b2a10b569b68098152c102bca6",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

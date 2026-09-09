@@ -1,12 +1,15 @@
 {
   "id": "full-file-review",
-  "duration": 18.0,
-  "sourceSeconds": 7.543,
-  "size": 284337,
-  "sha256": "029d68c7fcce9638ee20051abfbc26b4e98dfab3fe1f5e8578243722d05efedd",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 27.466667,
+  "sourceSeconds": 24.966,
+  "sourceFps": 29.99959947130212,
+  "motionSpeed": 1,
+  "size": 592790,
+  "sha256": "57b76901b726efdc55cbf95de9413c233b20125aace9f51d636a6ca1f9acba0a",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

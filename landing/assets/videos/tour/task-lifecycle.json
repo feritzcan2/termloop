@@ -1,12 +1,15 @@
 {
   "id": "task-lifecycle",
-  "duration": 18.0,
+  "duration": 9.0,
   "sourceSeconds": 2.75,
-  "size": 180403,
-  "sha256": "0b67264c4c5c934397d3f8a06b7e794d090cc62ada6dd5e7acc55120bee78aa4",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 229933,
+  "sha256": "40ac9b357583574409a66c6bb12275dfc3caa5702ddfd825095996cd246465dc",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

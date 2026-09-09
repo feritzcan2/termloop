@@ -2,7 +2,7 @@
 
 The website now includes **32 feature demos**, up from 13. The pre-existing marketing archive contained 16 recording folders, including alternate cuts. There are **19 new feature recordings** from the working Launchpad Demo Project; the original 13 website demos are re-edited with the same three-step caption treatment.
 
-Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Short source clips have deliberate orientation and result holds. Videos use a large, full-width layout and default to silent looping playback when visible, with pause and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.
+Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Continuous recordings retain the original action speed; long inactive waits can be cut before rendering. Brief orientation and result holds give the explanations room. The output is 1920 × 1248 at 30 FPS; older source recordings retain their original 15–20 FPS motion. Videos use a responsive layout capped to the recording and viewport and default to silent looping playback when visible, with pause and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.
 
 ## Feature list
 
@@ -32,7 +32,7 @@ Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and t
 - [Agent library](../../landing/assets/videos/tour/agent-library.mp4): Browse reusable agent profiles with a defined purpose. Inspect their provider, working mode, reasoning, and instructions before running one.
   1. Open the Agents library. 2. Inspect the Edge Case Hunter profile and its working mode. 3. Choose a profile whose instructions match the task.
 - [Custom agents](../../landing/assets/videos/tour/custom-agents.mp4): Create a reusable agent with its own name, provider settings, and instructions. The Launchpad example checks progress bounds, tests, and keyboard accessibility.
-  1. Start from a duplicate of an existing specialist. 2. Give the Launchpad reviewer focused, project-specific instructions. 3. Save the profile so the same brief can be used again.
+  1. Open your saved Launchpad reviewer profile. 2. Give the Launchpad reviewer focused, project-specific instructions. 3. Save the profile so the same brief can be used again.
 - [Workflow templates](../../landing/assets/videos/tour/workflow-templates.mp4): Define discussion, implementation, review, and fix steps in a Project template. Choose the agent conversation and instructions for each step before running it in a ready Task worktree.
   1. Open the saved Discuss, build, review template. 2. Inspect the ordered discussion, implementation, and review steps. 3. Reuse the template for the next Task with a ready worktree.
 - [Review cycles](../../landing/assets/videos/tour/review-cycles.mp4): Configure review and fix steps together, including a maximum number of review rounds. The template makes the review instructions and return path visible.
@@ -95,9 +95,9 @@ Use a launcher-owned feature profile for a repeat capture. The September recordi
 
 ## Reproduce the assets
 
-1. Import `tools/marketing/capture.mjs` in the CUA REPL and pass its documented App binding and a temporary capture directory to `createRecorder`. Record actual app operations with `record(name, actions)`. Capture and UI actions are serialized so accessibility IDs cannot change between lookup and click.
-2. Install Pillow in a temporary Python environment and have `ffmpeg` / `ffprobe` on PATH. Set `TERMLOOP_MARKETING_CAPTURES` to that directory, then run `python tools/marketing/render.py`. The font can be supplied with `TERMLOOP_MARKETING_FONT` on other hosts. Raw PNGs and render QA sheets stay outside the repository.
-3. Run `node tools/marketing/build-guide.mjs`, then `node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs` and `node tools/marketing/verify.mjs`.
+1. In OBS Studio, add a macOS Screen Capture source in Window Capture mode and select only the TermLoop demo window. Use a 1920px-wide window, a 1920 × 1080 canvas and output, 30 FPS, high-quality recording, and muted audio. Enable the password-protected WebSocket server for the capture session. Keep raw recordings outside the repository.
+2. Set `TERMLOOP_MARKETING_RECORDINGS` to a temporary directory. Run `node tools/marketing/capture.mjs start`, perform the feature's real UI actions, then `node tools/marketing/capture.mjs stop <feature-id>`. The helper confirms that recording started, waits for the file to finish writing, checks for skipped encoding frames, and remuxes the continuous source without resampling. Disable the OBS WebSocket server after capture. Install Pillow in a temporary Python environment and have `ffmpeg` / `ffprobe` on PATH, then run `python tools/marketing/render.py`. The font can be supplied with `TERMLOOP_MARKETING_FONT` on other hosts. Only caption panels and render QA use still images; they stay outside the repository.
+3. Run `node tools/marketing/build-guide.mjs`, then `node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs`, `python tools/marketing/render_test.py`, and `node tools/marketing/verify.mjs`.
 
 `catalog.json` owns the labels, copy, source mapping, and three explanation steps. The website HTML is generated statically so the guide and direct video links remain available without JavaScript. Original source videos stay unchanged; captioned deliveries live in `landing/assets/videos/tour/`.
 

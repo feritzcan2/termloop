@@ -1,12 +1,15 @@
 {
   "id": "session-refresh",
-  "duration": 18.0,
-  "sourceSeconds": 2.625,
-  "size": 159328,
-  "sha256": "30851b38cbcdfd8c46b62943b6e9941f6b5a0833a4cbcc0a35ddb91d0c7051f0",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 9.0,
+  "sourceSeconds": 2.65,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 208617,
+  "sha256": "6c7486d05e282e8a79dcfe05e8490e8d7d33a2ad4a4d81b2d60ac3cd512a17ba",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

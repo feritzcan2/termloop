@@ -1,12 +1,15 @@
 {
   "id": "task-briefs",
-  "duration": 18.0,
-  "sourceSeconds": 4.496,
-  "size": 217264,
-  "sha256": "f9772aadba3f76216f284e5373789b1ee1e80c3bd577bad1f88c2f97623af346",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 23.366667,
+  "sourceSeconds": 20.867,
+  "sourceFps": 29.999520774428525,
+  "motionSpeed": 1,
+  "size": 379846,
+  "sha256": "7ede77a1fb04508fd93cd38eadf765170c9b0861f251278a6a027862d19f1f42",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }
