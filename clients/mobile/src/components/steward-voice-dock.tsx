@@ -34,7 +34,7 @@ import {
   stewardVoiceAudioErrorMessage,
 } from "@/platform/steward-voice-audio";
 import { stewardLiveActivity } from "@/platform/steward-live-activity";
-import { space } from "@/theme/tokens";
+import { geometry, space } from "@/theme/tokens";
 
 const PCM_STREAM_START_TIMEOUT_MS = 2_000;
 const MIN_CAPTURE_MS = 250;
@@ -338,10 +338,15 @@ export function StewardVoiceDock() {
 
   return (
     <KeyboardAvoidingView
-      behavior="position"
-      contentContainerStyle={styles.overlayContent}
+      behavior="padding"
       pointerEvents="box-none"
-      style={[styles.overlay, { bottom: insets.bottom + 8 }]}
+      style={[
+        styles.overlay,
+        {
+          top: insets.top + geometry.header + space.sm,
+          bottom: insets.bottom + space.sm,
+        },
+      ]}
     >
       <StewardVoiceControls
         active={active}
@@ -415,7 +420,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
+    justifyContent: "flex-end",
     paddingHorizontal: space.screen,
   },
-  overlayContent: { width: "100%", alignItems: "center" },
 });
