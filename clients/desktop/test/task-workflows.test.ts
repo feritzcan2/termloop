@@ -506,6 +506,10 @@ describe("Compact workflow menu", () => {
     const f = await launcherFixture({ executions: [{ ...execution, status: "completed", phase: "completed", completionOutcome }] });
     try {
       const row = f.container.querySelector(".workflow-execution-row")!;
+      const start = f.container.querySelector(".task-launch")!;
+      expect(start.nextElementSibling).toBe(row);
+      expect(start.querySelector(".workflow-add")).not.toBeNull();
+      expect(row.closest(".task-launch")).toBeNull();
       expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Completed");
       expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe(summary);
       expect(row.classList.contains("needs-attention")).toBe(needsAttention);

@@ -603,6 +603,7 @@ async fn tool_call_inner(
             "TermLoop MCP produced an invalid result",
             None,
         ),
+        Err(error) if name == "steward_complete_assignment" => assignment_report_error(id, &error),
         Err(error) => core_tool_error(id, &error),
     }
 }
@@ -1317,24 +1318,6 @@ async fn steward_complete_assignment(
     let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
 
     if let Some(task_id) = focused_task_id {
-        if params.expected_context_revision.is_some()
-            || params.context_markdown.is_some()
-            || params.summary.is_some()
-            || params
-                .source_references
-                .as_ref()
-                .is_some_and(|references| !references.is_empty())
-            || params
-                .findings
-                .as_ref()
-                .is_some_and(|findings| !findings.is_empty())
-            || params
-                .related_task_ids
-                .as_ref()
-                .is_some_and(|task_ids| !task_ids.is_empty())
-        {
-            return Err(termloop_core::CoreError::TrackerReportInvalid);
-        }
         let task_read_completed =
             state
                 .tracker_report_capabilities
@@ -1348,29 +1331,10 @@ async fn steward_complete_assignment(
                         super::current_epoch_ms(),
                     )
                 });
-        if !task_read_completed {
-            return Err(termloop_core::CoreError::TrackerReportInvalid);
-        }
-        let verdict = match params.status {
-            RoutineAssignmentStatus::Satisfied => {
-                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed
-            }
-            RoutineAssignmentStatus::Pending => {
-                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting
-            }
-            RoutineAssignmentStatus::Blocked => {
-                termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked
-            }
-        };
+        let verdict = playbook_assignment_verdict(params, task_id, task_read_completed)?;
         let result = state.core.lock().await.report_steward_step_verdicts(
             &capability,
-            vec![
-                termloop_core::companion_integrations::playbook_runtime::StewardStepVerdict {
-                    task_id,
-                    verdict,
-                    evidence: params.evidence,
-                },
-            ],
+            vec![verdict],
             termloop_platform::generate_opaque_id(),
             super::current_epoch_ms(),
         );
@@ -1464,6 +1428,88 @@ async fn steward_complete_assignment(
     let wake_reason = routine_finding_wake(&result);
     finish_routine_report(project_id, state, wake_reason).await;
     Ok(routine_completion_result(&result))
+}
+
+fn playbook_assignment_verdict(
+    params: RoutineAssignmentCompleteParams,
+    task_id: String,
+    task_read_completed: bool,
+) -> Result<
+    termloop_core::companion_integrations::playbook_runtime::StewardStepVerdict,
+    termloop_core::CoreError,
+> {
+    use termloop_core::companion_integrations::playbook_runtime::{
+        PlaybookStepVerdict, StewardStepVerdict,
+    };
+
+    let routine_fields: Vec<_> = [
+        (
+            "expectedContextRevision",
+            params.expected_context_revision.is_some(),
+        ),
+        ("contextMarkdown", params.context_markdown.is_some()),
+        (
+            "sourceReferences",
+            params
+                .source_references
+                .as_ref()
+                .is_some_and(|values| !values.is_empty()),
+        ),
+        (
+            "findings",
+            params
+                .findings
+                .as_ref()
+                .is_some_and(|values| !values.is_empty()),
+        ),
+        (
+            "relatedTaskIds",
+            params
+                .related_task_ids
+                .as_ref()
+                .is_some_and(|values| !values.is_empty()),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(name, present)| present.then_some(name))
+    .collect();
+    if !routine_fields.is_empty() {
+        return Err(termloop_core::CoreError::InvalidParams(format!(
+            "Playbook assignment: omit {}. Resubmit the same checkId, status, and evidence; no Routine context is required.",
+            routine_fields.join(", ")
+        )));
+    }
+    if !task_read_completed {
+        return Err(termloop_core::CoreError::InvalidParams(
+            "Playbook assignment: first call task_read with the exact Task ID and checkId from the assignment, then resubmit the report.".into(),
+        ));
+    }
+    // The public schema accepts an optional summary. For a Playbook it is
+    // redundant; only the required evidence contributes to the Task verdict.
+    Ok(StewardStepVerdict {
+        task_id,
+        verdict: match params.status {
+            RoutineAssignmentStatus::Satisfied => PlaybookStepVerdict::Passed,
+            RoutineAssignmentStatus::Pending => PlaybookStepVerdict::Waiting,
+            RoutineAssignmentStatus::Blocked => PlaybookStepVerdict::Blocked,
+        },
+        evidence: params.evidence,
+    })
+}
+
+fn assignment_report_error(id: Value, error: &termloop_core::CoreError) -> Response {
+    match error {
+        termloop_core::CoreError::InvalidParams(reason) => {
+            tool_error(id, "invalidReport", reason, None)
+        }
+        termloop_core::CoreError::TrackerReportInvalid => tool_error(
+            id,
+            "invalidReport",
+            "Assignment report is invalid. For a Playbook, read the exact Task with task_read and submit checkId, status, and nonblank evidence only. For a scheduled Routine, follow its context and finding fields; a blocked report uses evidence and optional sourceReferences only.",
+            None,
+        ),
+        _ => core_tool_error(id, error),
+    }
 }
 
 fn routine_completion_result(result: &Value) -> Value {
@@ -2060,6 +2106,99 @@ mod tests {
             Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(routine_finding_wake(&json!({})), None);
+    }
+
+    #[test]
+    fn playbook_reports_accept_optional_summary_without_changing_the_verdict() {
+        use termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict;
+
+        for (status, expected) in [
+            ("satisfied", PlaybookStepVerdict::Passed),
+            ("pending", PlaybookStepVerdict::Waiting),
+            ("blocked", PlaybookStepVerdict::Blocked),
+        ] {
+            let arguments = json!({
+                "checkId": "3cc959550b1942b84c529183ec53ae08",
+                "status": status,
+                "evidence": "The Task-owned primary branch has no commit ahead of development.",
+                "summary": "Change committed remains unproven; whileWaiting is off.",
+                "findings": [], "sourceReferences": [], "relatedTaskIds": []
+            });
+            assert!(protocol::validate_mcp_tool_params(
+                "steward_complete_assignment",
+                &arguments
+            ));
+            let verdict = playbook_assignment_verdict(
+                serde_json::from_value(arguments.clone()).unwrap(),
+                "task-1".into(),
+                true,
+            )
+            .unwrap();
+            assert_eq!(verdict.task_id, "task-1");
+            assert_eq!(verdict.verdict, expected);
+            assert_eq!(verdict.evidence, arguments["evidence"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn playbook_report_errors_name_the_fields_to_remove() {
+        let params = serde_json::from_value(json!({
+            "checkId": "check-1", "status": "pending", "evidence": "The branch is unchanged.",
+            "summary": "Still waiting.", "expectedContextRevision": 1,
+            "contextMarkdown": "The branch is unchanged.", "relatedTaskIds": ["task-1"]
+        }))
+        .unwrap();
+        let error = playbook_assignment_verdict(params, "task-1".into(), true).unwrap_err();
+        let response = response_json(assignment_report_error(json!(1), &error)).await;
+        let report = &response["result"]["structuredContent"];
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(report["code"], "invalidReport");
+        assert_eq!(
+            report["message"],
+            "Playbook assignment: omit expectedContextRevision, contextMarkdown, relatedTaskIds. Resubmit the same checkId, status, and evidence; no Routine context is required."
+        );
+    }
+
+    #[test]
+    fn playbook_summary_never_bypasses_scoped_task_read_or_accepts_routine_writes() {
+        let arguments = json!({
+            "checkId": "check-1", "status": "pending", "evidence": "Still waiting.",
+            "summary": "Still waiting."
+        });
+        let error = playbook_assignment_verdict(
+            serde_json::from_value(arguments.clone()).unwrap(),
+            "task-1".into(),
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, termloop_core::CoreError::InvalidParams(reason) if reason.contains("first call task_read"))
+        );
+        for (field, value) in [
+            ("expectedContextRevision", json!(1)),
+            ("contextMarkdown", json!("")),
+            ("sourceReferences", json!(["provider://item"])),
+            ("relatedTaskIds", json!(["other-task"])),
+            (
+                "findings",
+                json!([{
+                    "sourceKey": "provider:item", "summary": "Finding", "evidence": "Observed",
+                    "sourceReferences": [], "relatedTaskIds": []
+                }]),
+            ),
+        ] {
+            let mut payload = arguments.clone();
+            payload[field] = value;
+            let error = playbook_assignment_verdict(
+                serde_json::from_value(payload).unwrap(),
+                "task-1".into(),
+                true,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, termloop_core::CoreError::InvalidParams(reason) if reason.contains(field))
+            );
+        }
     }
 
     #[test]

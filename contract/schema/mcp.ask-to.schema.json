@@ -475,7 +475,7 @@
       }
     },
     "steward_complete_assignment": {
-      "description": "Finish the exact claimed assignment once with one factual status: satisfied when its completion rule is proven, pending when it was inspected successfully but is not complete yet, or blocked when required access, configuration, or execution failed. For a Playbook assignment, first call task_read with its exact Task and check IDs; TermLoop derives the Task from the claim, so no Task selector is accepted here. Its completion needs only checkId, status, and concise evidence. Scheduled Routines additionally replace rolling context after a successful inspection, may report deduplicated findings, and may attach sourceReferences to a blocked outcome. Never include raw provider content or a recommended action.",
+      "description": "Finish the exact claimed assignment once with one factual status: satisfied when its completion rule is proven, pending when it was inspected successfully but is not complete yet, or blocked when required access, configuration, or execution failed. For a Playbook assignment, first call task_read with its exact Task and check IDs; TermLoop derives the Task from the claim, so no Task selector is accepted here. Its completion needs only checkId, status, and concise evidence; an optional summary is accepted as redundant text, but omit context, findings, sourceReferences, and relatedTaskIds. Scheduled Routines additionally replace rolling context after a successful inspection, may report deduplicated findings, and may attach sourceReferences to a blocked outcome. Never include raw provider content or a recommended action.",
       "role": "steward",
       "params": {
         "$ref": "#/$defs/routineAssignmentCompleteParams"
@@ -1458,7 +1458,7 @@
           "x-utf8-max-bytes": 2048
         },
         "summary": {
-          "description": "Optional concise non-finding outcome for the Steward. Omit when nothing changed.",
+          "description": "Optional concise non-finding outcome after a scheduled Routine inspection. For a Playbook it is accepted as redundant text; the verdict uses evidence only. Omit for blocked scheduled Routines or when nothing changed.",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
