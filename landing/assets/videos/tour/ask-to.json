@@ -1,15 +1,15 @@
 {
   "id": "ask-to",
-  "duration": 13.2,
-  "sourceSeconds": 10.7,
-  "sourceFps": 20.0,
+  "duration": 38.5,
+  "sourceSeconds": 36.0,
+  "sourceFps": 30.0,
   "motionSpeed": 1,
-  "size": 1487809,
-  "sha256": "8077644b60d021a47985bae3c0b470e18343987a560cbb4925700bf154e3587e",
+  "size": 1677098,
+  "sha256": "2beb1090d887ba372737d8477a8014fed8c2a33ec17696d9d0130fdfde0dd081",
   "width": 1920,
   "height": 1248,
   "fps": 30,
   "captionSteps": 3,
-  "legacy": true,
+  "legacy": false,
   "captureKind": "continuous-video"
 }
