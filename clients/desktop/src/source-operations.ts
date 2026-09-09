@@ -64,6 +64,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   taskAgentLaunch: "termloop:task-launch-agent",
   taskWorkflowPreview: "termloop:task-preview-workflow",
   taskWorkflowLaunch: "termloop:task-launch-workflow",
+  projectWorkflowPreview: "termloop:project-preview-workflow",
+  projectWorkflowLaunch: "termloop:project-launch-workflow",
   taskCreate: "termloop:task-create",
   taskRename: "termloop:task-rename",
   taskUpdateBrief: "termloop:task-update-brief",

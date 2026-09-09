@@ -7,9 +7,9 @@ describe("workflow execution presentation", () => {
     const { execution } = fixtureWorkflowProgress();
     const completed = { ...execution, id: "newer-completed", status: "completed" as const, startedAtEpochMs: execution.startedAtEpochMs + 1 };
     const items = [completed, { ...execution, taskId: "other", id: "other" }, execution];
-    expect(taskWorkflowExecution(items, execution.taskId)).toBe(execution);
+    expect(taskWorkflowExecution(items, execution.taskId!)).toBe(execution);
     expect(items[0]).toBe(completed);
-    expect(taskWorkflowExecution([completed, { ...completed, startedAtEpochMs: 0 }], execution.taskId)).toBe(completed);
+    expect(taskWorkflowExecution([completed, { ...completed, startedAtEpochMs: 0 }], execution.taskId!)).toBe(completed);
     expect(taskWorkflowExecution(items, "missing")).toBeUndefined();
   });
 

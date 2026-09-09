@@ -5,9 +5,10 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkflowConfigurationCreateParams, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
-import type { Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
+import type { Project, Task, WorkflowConfiguration, WorkflowExecution } from "../src/renderer/model.js";
 import {
   TaskWorkflowLaunchers,
+  WorkflowLaunchers,
   WorkflowEditorPanel,
   initialWorkflowSteps,
   moveWorkflowStep,
@@ -15,6 +16,7 @@ import {
   workflowStepResultFileName,
 } from "../src/renderer/ui/TaskWorkflows.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
+import { WorkspaceViewSwitch } from "../src/renderer/ui/WorkspaceViewSwitch.js";
 import { removeWorkflowStep, type WorkflowEditorDraft } from "../src/renderer/ui/WorkflowEditorPanel.js";
 import { workflowPhaseLabel, workflowStatusLabel, workflowSummary } from "../src/renderer/ui/workflow-presentation.js";
 
@@ -472,6 +474,134 @@ async function launcherFixture(overrides: Partial<ComponentProps<typeof TaskWork
     },
   };
 }
+
+async function projectLauncherFixture(overrides: Partial<Extract<ComponentProps<typeof WorkflowLaunchers>, { project: Project }>> = {}) {
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const props: Extract<ComponentProps<typeof WorkflowLaunchers>, { project: Project }> = {
+    project: { id: "project-1", name: "App", folder_path: "/repo", connectionProfileId: "local" },
+    configurations: [workflow], executions: [], agentProfiles: [], launchable: true,
+    showLaunchers: true, overlayContainer: undefined, overlayVisibilityChanged: vi.fn(),
+    renderLaunchers: (button) => button, edit: vi.fn(), launch: vi.fn(async () => undefined), cancel: vi.fn(),
+    openSession: vi.fn(), sessionPresentation: () => undefined, ...overrides,
+  };
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const render = async () => { await act(async () => root.render(createElement(WorkspaceViewSwitch, {
+    view: "agents", disabled: Boolean(props.disabled), select: vi.fn(), launchTerminal: vi.fn(), launchAgent: vi.fn(),
+    agents: [fullAgentCapability("codex")],
+    workflowLauncher: createElement(WorkflowLaunchers, { ...props, key: `${props.project.connectionProfileId}:${props.project.id}` }),
+  }))); };
+  await render();
+  const trigger = () => container.querySelector<HTMLButtonElement>('[aria-label="Workflow"]')!;
+  const open = async () => { await act(async () => trigger().click()); };
+  return { container, props, trigger, render, open,
+    async run() {
+      await open();
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')!.click());
+    },
+    async dispose() { await act(async () => root.unmount()); container.remove(); delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT; },
+  };
+}
+
+describe("Agents Project workflow launcher", () => {
+  it("places + Workflow between agent icons and History without an extra Task row", async () => {
+    const f = await projectLauncherFixture();
+    try {
+      expect(f.trigger().parentElement?.className).toBe("workspace-session-launchers");
+      expect(f.trigger().parentElement?.parentElement?.className).toBe("workspace-launch-actions");
+      expect(f.trigger().previousElementSibling?.className).toBe("codex");
+      expect(f.trigger().nextElementSibling?.className).toBe("workspace-history-separator");
+      expect(f.container.querySelector(".task-launch")).toBeNull();
+      expect(f.container.querySelector(".workflow-execution-row")).toBeNull();
+      await f.run();
+      expect(f.container.querySelector(".workflow-run-scope")?.textContent).toContain("/repo");
+      expect(f.container.textContent).toContain("No Task or isolated worktree will be created.");
+      expect(f.container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("");
+      await act(async () => rootButton(f.container, "Start workflow").click());
+      expect(f.props.launch).not.toHaveBeenCalled();
+      await setText(f.container, "textarea", "  Implement the feature  ");
+      await act(async () => rootButton(f.container, "Start workflow").click());
+      expect(f.props.launch).toHaveBeenCalledExactlyOnceWith("project-1", workflow.id, "Implement the feature");
+      expect(document.activeElement).toBe(f.trigger());
+    } finally { await f.dispose(); }
+  });
+
+  it("keeps the current Project workflow accessible and blocks another, but ignores Task executions", async () => {
+    const f = await projectLauncherFixture({ executions: [execution, { ...execution, id: "project-run", taskId: null }] });
+    try {
+      await f.open();
+      expect(f.container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')?.disabled).toBe(true);
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Open current workflow"]')!.click());
+      expect(f.container.querySelector(".workflow-progress-dialog")).not.toBeNull();
+      await act(async () => rootButton(f.container, "Stop automation").click());
+      expect(f.props.cancel).toHaveBeenCalledExactlyOnceWith("project-run");
+      f.props.executions = [execution]; await f.render(); await f.open();
+      expect(f.container.querySelector<HTMLButtonElement>('[aria-label^="Run workflow"]')?.disabled).toBe(false);
+    } finally { await f.dispose(); }
+  });
+
+  it("opens the saved current workflow even if its template was deleted", async () => {
+    const f = await projectLauncherFixture({ configurations: [], executions: [{ ...execution, taskId: null }] });
+    try {
+      await f.open();
+      expect(f.container.querySelector('[aria-label="Open current workflow"]')).not.toBeNull();
+      expect(f.props.edit).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("creates a template when empty and disables the shortcut offline", async () => {
+    const f = await projectLauncherFixture({ configurations: [] });
+    try {
+      await f.open(); expect(f.props.edit).toHaveBeenCalledExactlyOnceWith(undefined);
+      f.props.disabled = true; await f.render();
+      expect(f.trigger().disabled).toBe(true);
+    } finally { await f.dispose(); }
+  });
+
+  it("guards double-click launches and keeps an actionable failure in the dialog", async () => {
+    let finish!: (error: string | undefined) => void;
+    const launch = vi.fn(() => new Promise<string | undefined>((resolve) => { finish = resolve; }));
+    const f = await projectLauncherFixture({ launch });
+    try {
+      await f.run(); await setText(f.container, "textarea", "Build it");
+      await act(async () => { const start = rootButton(f.container, "Start workflow"); start.click(); start.click(); });
+      expect(launch).toHaveBeenCalledTimes(1);
+      expect(rootButton(f.container, "Starting…").disabled).toBe(true);
+      await act(async () => finish("The selected agent CLI is unavailable."));
+      expect(f.container.querySelector('[role="alert"]')?.textContent).toContain("CLI is unavailable");
+      expect(rootButton(f.container, "Start workflow").disabled).toBe(false);
+    } finally { await f.dispose(); }
+  });
+
+  it("dismisses stale dialogs when the Project source changes or disconnects", async () => {
+    const f = await projectLauncherFixture();
+    try {
+      await f.run();
+      f.props.project = { ...f.props.project, connectionProfileId: "other-mac" }; await f.render();
+      expect(f.container.querySelector('[role="dialog"]')).toBeNull();
+      await f.run(); f.props.disabled = true; await f.render();
+      expect(f.container.querySelector('[role="dialog"]')).toBeNull();
+      expect(f.props.overlayVisibilityChanged).toHaveBeenLastCalledWith(false);
+      expect(f.props.launch).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("blocks a stale template selection and restores keyboard focus on Escape", async () => {
+    const f = await projectLauncherFixture();
+    try {
+      await f.run();
+      const start = rootButton(f.container, "Start workflow"); start.focus();
+      await act(async () => start.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })));
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Close dialog");
+      f.props.configurations = [{ ...workflow, generation: 2 }]; await f.render();
+      expect(start.disabled).toBe(true);
+      expect(f.container.textContent).toContain("This template changed or was deleted");
+      await act(async () => f.container.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(f.container.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.activeElement).toBe(f.trigger());
+    } finally { await f.dispose(); }
+  });
+});
 
 describe("Compact workflow menu", () => {
   it("places execution status in its own row after all Start controls", async () => {

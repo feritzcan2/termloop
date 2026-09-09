@@ -9,6 +9,7 @@ export function WorkflowTemplateMenu(props: {
   taskTitle: string;
   configurations: readonly WorkflowConfigurationDto[];
   unavailableReason: string | undefined;
+  currentWorkflow?: { name: string; status: string; open(): void } | undefined;
   close(): void;
   run(configuration: WorkflowConfigurationDto): void;
   edit(configuration: WorkflowConfigurationDto | undefined): void;
@@ -53,6 +54,12 @@ export function WorkflowTemplateMenu(props: {
   }}>
     <button type="button" tabIndex={-1} className="context-menu-backdrop" aria-label="Close workflow menu" onClick={props.close} />
     <section ref={menu} className="context-menu workflow-template-menu" role="menu" aria-label="Workflow templates" style={position}>
+      {props.currentWorkflow ? <>
+        <button type="button" role="menuitem" aria-label="Open current workflow" onClick={props.currentWorkflow.open}>
+          <Icon name="branch" /><span><strong>{props.currentWorkflow.name}</strong><small>{props.currentWorkflow.status} · View workflow</small></span>
+        </button>
+        <div className="context-menu-divider" role="separator" />
+      </> : null}
       {props.unavailableReason ? <p className="workflow-menu-notice">{props.unavailableReason}</p> : null}
       <div className="workflow-template-menu-list" role="none">
         {props.configurations.map((configuration) => <div className="workflow-template-menu-row" role="none" key={configuration.id}>

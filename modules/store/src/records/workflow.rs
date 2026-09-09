@@ -173,21 +173,26 @@ pub(super) fn validate_workflow_coordinator_session(
         || !execution.is_valid()
         || state.sessions.iter().any(|value| value.id == session.id)
         || state.workflow_executions.iter().any(|current| {
-            current.task_id == execution.task_id
-                && current.phase != WorkflowExecutionPhase::Completed
+            current.shares_scope(execution) && current.phase != WorkflowExecutionPhase::Completed
         })
     {
         return Err(StoreError::ConstraintViolation);
     }
-    let task_exists = state
-        .tasks
+    let scope_exists = state
+        .projects
         .iter()
-        .any(|task| task.id == execution.task_id && task.project_id == execution.project_id);
+        .any(|project| project.id == execution.project_id)
+        && execution.task_id.as_ref().is_none_or(|task_id| {
+            state
+                .tasks
+                .iter()
+                .any(|task| &task.id == task_id && task.project_id == execution.project_id)
+        });
     let preference =
         session.process.agent_id.as_deref().map(|agent_id| {
             SavedAgentLaunchSelection::new(agent_id, session.launch_selection.clone())
         });
-    if !task_exists {
+    if !scope_exists {
         return Err(StoreError::ConstraintViolation);
     }
     preference
@@ -201,6 +206,6 @@ pub(super) fn apply_workflow_coordinator_execution(
 ) {
     state
         .workflow_executions
-        .retain(|current| current.task_id != execution.task_id);
+        .retain(|current| !current.shares_scope(execution));
     state.workflow_executions.push(execution.clone());
 }

@@ -255,14 +255,15 @@ impl WorkflowStepResult {
     }
 }
 
-/// The single current execution snapshot for one Task. It contains routing
+/// The single current execution snapshot for one Task or the Project checkout. It contains routing
 /// state only: provider replies and review text remain in Agent conversations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowExecution {
     pub id: String,
     pub project_id: String,
-    pub task_id: String,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
+    pub task_id: Option<String>,
     pub configuration: WorkflowConfiguration,
     pub goal: String,
     pub coordinator_session_id: String,
@@ -288,6 +289,10 @@ pub struct WorkflowExecution {
 }
 
 impl WorkflowExecution {
+    pub fn shares_scope(&self, other: &Self) -> bool {
+        self.project_id == other.project_id && self.task_id == other.task_id
+    }
+
     pub fn completion_outcome(&self) -> Option<WorkflowCompletionOutcome> {
         if self.phase != WorkflowExecutionPhase::Completed {
             return None;
@@ -401,7 +406,7 @@ impl WorkflowExecution {
         });
         bounded_slug(&self.id, WORKFLOW_EXECUTION_ID_MAX_BYTES)
             && !self.project_id.trim().is_empty()
-            && !self.task_id.trim().is_empty()
+            && self.task_id.as_ref().is_none_or(|id| !id.trim().is_empty())
             && self.configuration.is_valid()
             && self.configuration.project_id == self.project_id
             && bounded_text(&self.goal, WORKFLOW_GOAL_MAX_BYTES)
@@ -683,7 +688,7 @@ mod tests {
         let mut execution = WorkflowExecution {
             id: "execution-1".into(),
             project_id: configuration.project_id.clone(),
-            task_id: "task-1".into(),
+            task_id: Some("task-1".into()),
             configuration,
             goal: "Implement the workflow engine".into(),
             coordinator_session_id: "coordinator-1".into(),
@@ -725,7 +730,7 @@ mod tests {
         let mut execution = WorkflowExecution {
             id: "execution-1".into(),
             project_id: "project-1".into(),
-            task_id: "task-1".into(),
+            task_id: Some("task-1".into()),
             configuration: configuration(),
             goal: "Implement the workflow engine".into(),
             coordinator_session_id: "coordinator-1".into(),
@@ -760,7 +765,7 @@ mod tests {
         let mut execution = WorkflowExecution {
             id: "execution-1".into(),
             project_id: "project-1".into(),
-            task_id: "task-1".into(),
+            task_id: Some("task-1".into()),
             configuration: configuration(),
             goal: "Build".into(),
             coordinator_session_id: "coordinator-1".into(),
@@ -822,7 +827,7 @@ mod tests {
         let mut execution = WorkflowExecution {
             id: "execution-1".into(),
             project_id: "project-1".into(),
-            task_id: "task-1".into(),
+            task_id: Some("task-1".into()),
             configuration: configuration(),
             goal: "Implement the workflow engine".into(),
             coordinator_session_id: "coordinator-1".into(),

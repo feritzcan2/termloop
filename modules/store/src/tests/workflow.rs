@@ -119,7 +119,7 @@ pub(super) fn execution(
     WorkflowExecution {
         id: id.into(),
         project_id: configuration.project_id.clone(),
-        task_id: task_id.into(),
+        task_id: Some(task_id.into()),
         configuration,
         goal: "Ship Core-managed workflows.".into(),
         coordinator_session_id: coordinator_session_id.into(),
@@ -544,5 +544,142 @@ fn coordinator_and_current_execution_are_atomic_bounded_and_durable() {
         .unwrap();
     assert_eq!(removed, first);
     assert!(reopened.workflow_executions().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn project_workflows_are_taskless_scope_bounded_and_survive_reopen() {
+    let (path, authority, mut store) = open_store("project-scope");
+    for id in ["project-a", "project-b"] {
+        store.insert_project(&authority, project(id)).unwrap();
+        let mut run = execution(
+            &format!("execution-{id}"),
+            "unused",
+            &format!("lead-{id}"),
+            configuration(&format!("workflow-{id}"), id),
+        );
+        run.task_id = None;
+        run.current_step_index = 1;
+        run.coordinator_prompt_pending = true;
+        store
+            .insert_workflow_coordinator_session(
+                &authority,
+                coordinator_session(&format!("lead-{id}"), id),
+                run,
+            )
+            .unwrap();
+    }
+    assert!(store.tasks().is_empty());
+    assert_eq!(store.workflow_executions().len(), 2);
+    let mut duplicate = store.workflow_executions()[0].clone();
+    duplicate.id = "another".into();
+    duplicate.coordinator_session_id = "another".into();
+    let revision = store.revision();
+    assert!(matches!(
+        store.insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("another", "project-a"),
+            duplicate.clone()
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+    assert!(
+        !store
+            .sessions()
+            .iter()
+            .any(|session| session.id == "another")
+    );
+
+    // A Task workflow is independent even while its Project workflow is active.
+    store
+        .insert_task(&authority, task("task-a", "project-a"))
+        .unwrap();
+    store
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("task-lead", "project-a"),
+            execution(
+                "task-execution",
+                "task-a",
+                "task-lead",
+                configuration("task-workflow", "project-a"),
+            ),
+        )
+        .unwrap();
+    let expected = store.workflow_executions().to_vec();
+    drop(store);
+    let mut reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.workflow_executions(), expected);
+    let current = reopened.workflow_executions()[0].clone();
+    let mut completed = current.clone();
+    completed.phase = WorkflowExecutionPhase::Completed;
+    completed.coordinator_prompt_pending = false;
+    completed.current_step_index = completed.configuration.steps.len() as u8;
+    reopened
+        .replace_workflow_execution(&authority, &current, completed)
+        .unwrap();
+    reopened
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("another", "project-a"),
+            duplicate,
+        )
+        .unwrap();
+    assert_eq!(reopened.workflow_executions().len(), 3);
+    assert!(
+        !reopened
+            .workflow_executions()
+            .iter()
+            .any(|run| run.id == current.id)
+    );
+    assert!(
+        reopened
+            .workflow_executions()
+            .iter()
+            .any(|run| run.project_id == "project-b")
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn v61_task_workflow_migrates_without_losing_scope_or_progress() {
+    let (path, authority, mut store) = open_store("v61-workflow");
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .insert_task(&authority, task("task-a", "project-a"))
+        .unwrap();
+    let run = execution(
+        "execution-a",
+        "task-a",
+        "lead-a",
+        configuration("workflow-a", "project-a"),
+    );
+    store
+        .insert_workflow_coordinator_session(
+            &authority,
+            coordinator_session("lead-a", "project-a"),
+            run.clone(),
+        )
+        .unwrap();
+    drop(store);
+    let mut legacy: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["schema_version"] = serde_json::json!(61);
+    assert_eq!(legacy["workflow_executions"][0]["taskId"], "task-a");
+    let mut missing_scope = legacy["workflow_executions"][0].clone();
+    missing_scope.as_object_mut().unwrap().remove("taskId");
+    assert!(serde_json::from_value::<WorkflowExecution>(missing_scope).is_err());
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.workflow_executions(), std::slice::from_ref(&run));
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        persisted["schema_version"],
+        super::super::CURRENT_SCHEMA_VERSION
+    );
     let _ = std::fs::remove_file(path);
 }

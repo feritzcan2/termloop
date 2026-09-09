@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateMethodResult } from "../dist/current.js";
+import { METHODS, validateMethodResult, READ_ONLY_METHODS, COMPANION_METHODS } from "../dist/current.js";
 
 test("workflow completion and pending reviewers are bounded generated projections", () => {
   const execution = {
@@ -25,4 +25,14 @@ test("workflow completion and pending reviewers are bounded generated projection
   assert.ok(!valid({ ...execution, pendingReviewStepIds: Array.from({ length: 9 }, (_, index) => `review-${index}`) }));
   const { completionOutcome, ...missingOutcome } = execution;
   assert.ok(!valid(missingOutcome));
+  assert.ok(valid({ ...execution, taskId: null }));
+  assert.ok(!valid({ ...execution, taskId: "" }));
+});
+
+test("Project workflow methods are available to full-control clients only", () => {
+  for (const method of ["project.previewWorkflow", "project.launchWorkflow"]) {
+    assert.ok(METHODS.includes(method));
+    assert.ok(!READ_ONLY_METHODS.includes(method));
+    assert.ok(!COMPANION_METHODS.includes(method));
+  }
 });

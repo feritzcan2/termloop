@@ -335,7 +335,7 @@ impl Store {
             .retain(|progress| progress.task_id != task_id);
         self.state
             .workflow_executions
-            .retain(|execution| execution.task_id != task_id);
+            .retain(|execution| execution.task_id.as_deref() != Some(task_id));
         for routine in &mut self.state.tracker_configurations {
             routine.related_task_ids.retain(|id| id != task_id);
             routine
@@ -460,7 +460,7 @@ impl Store {
             .retain(|progress| progress.task_id != task_id);
         self.state
             .workflow_executions
-            .retain(|execution| execution.task_id != task_id);
+            .retain(|execution| execution.task_id.as_deref() != Some(task_id));
         for routine in &mut self.state.tracker_configurations {
             routine.related_task_ids.retain(|id| id != task_id);
             routine
