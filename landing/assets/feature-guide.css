@@ -6,7 +6,14 @@
 .autoplay-option input { accent-color:var(--amber); }
 #feature-count { flex-basis:100%; margin:0; color:var(--faint); font:12px var(--mono); }
 .feature-nav { max-height:calc(100dvh - var(--nav) - 56px); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent; }
-.feature-story { gap:30px; }
+.tour > .shell { --max:1480px; }
+.tour-layout { grid-template-columns:180px minmax(0,1fr); gap:44px; }
+.feature-story,.feature-story:nth-of-type(even) { grid-template-columns:minmax(0,1fr); gap:24px; }
+.feature-story .feature-copy,.feature-story:nth-of-type(even) .feature-copy { order:0; max-width:900px; }
+.feature-story .feature-media,.feature-story:nth-of-type(even) .feature-media { order:1; width:100%; }
+.feature-copy h3 { font-size:clamp(26px,2.5vw,34px); }
+.feature-instructions summary { padding-top:14px; padding-bottom:14px; }
+.feature-instructions summary::before { top:14px; }
 .feature-media video { width:100%; height:auto; aspect-ratio:20/13; object-fit:contain; }
 .feature-instructions { margin-top:20px; color:var(--muted); font-size:14px; }
 .feature-instructions summary { cursor:pointer; color:var(--text); line-height:1.5; }

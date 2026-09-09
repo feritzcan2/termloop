@@ -4,6 +4,15 @@ export function matchesFeature(text, query) {
   return words.every(word => haystack.includes(word));
 }
 
+// A tall demo can fill the viewport without 55% of the entire video fitting on screen.
+export function visibleVideoFraction(entry) {
+  if (!entry.isIntersecting) return 0;
+  const availableHeight = Math.min(entry.boundingClientRect.height, entry.rootBounds?.height ?? entry.boundingClientRect.height);
+  if (availableHeight <= 0 || entry.boundingClientRect.width <= 0) return 0;
+  return Math.min(1, entry.intersectionRect.height / availableHeight)
+    * Math.min(1, entry.intersectionRect.width / entry.boundingClientRect.width);
+}
+
 export function autoplayCandidate(entries, { enabled, reducedMotion, pageHidden }) {
   if (!enabled || reducedMotion || pageHidden) return undefined;
   return entries.filter(entry => !entry.hidden && !entry.manuallyPaused && entry.ratio >= .55)
@@ -48,6 +57,7 @@ export function initializeGuide(document, window) {
   };
   speed.disabled = false;
   autoplay.disabled = !('IntersectionObserver' in window);
+  if (motion.matches || autoplay.disabled) autoplay.checked = false;
   const applySpeed = () => videos.forEach(video => { video.playbackRate = validPlaybackRate(speed.value); });
   speed.addEventListener('change', applySpeed);
   autoplay.addEventListener('change', () => {
@@ -60,6 +70,9 @@ export function initializeGuide(document, window) {
     const play = story.querySelector('[data-play-demo]');
     const expanded = story.querySelector('[data-expand-demo]');
     const label = story.querySelector('.feature-kicker').textContent;
+    // Keep the native seek controls in fullscreen; inline playback stays unobstructed.
+    video.controls = false;
+    video.muted = true;
     play.hidden = false;
     expanded.hidden = false;
     play.addEventListener('click', () => {
@@ -100,9 +113,9 @@ export function initializeGuide(document, window) {
   }
   if ('IntersectionObserver' in window) {
     const observer = new window.IntersectionObserver(entries => {
-      for (const entry of entries) rows.find(row => row.video === entry.target).ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+      for (const entry of entries) rows.find(row => row.video === entry.target).ratio = visibleVideoFraction(entry);
       updateAutoplay();
-    }, { threshold: [0, .3, .55, .8, 1] });
+    }, { threshold: Array.from({ length: 21 }, (_, i) => i / 20) });
     videos.forEach(video => observer.observe(video));
   }
   const navigation = [...document.querySelectorAll('.feature-nav a')];
@@ -151,6 +164,9 @@ export function initializeGuide(document, window) {
     const target = stories.find(story => story.id === id);
     if (target?.hidden) { search.value = ''; applyFilter(); target.scrollIntoView(); }
     updateNavigation();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    videos.forEach(video => { video.controls = document.fullscreenElement === video; });
   });
   document.addEventListener('visibilitychange', updateAutoplay);
   motion.addEventListener('change', () => {
