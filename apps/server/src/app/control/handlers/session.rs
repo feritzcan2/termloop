@@ -1,4 +1,6 @@
 mod resume_failure;
+#[cfg(test)]
+mod stack_tests;
 use resume_failure::{fail_agent_resume_attempt, shutdown_agent_resume_attempt};
 
 use std::collections::VecDeque;
@@ -983,7 +985,10 @@ async fn run_agent_resume_session(
             }
             return Ok(value);
         }
-        termloop_core::AgentResumePlanOutcome::Prepare(plan) => *plan,
+        // Keep Core's allocation across every await and cleanup handoff. Moving
+        // the plan by value inflates nested debug polling frames enough to
+        // overflow the default worker stack beneath control dispatch.
+        termloop_core::AgentResumePlanOutcome::Prepare(plan) => plan,
     };
     let session_id = plan.session_id().to_owned();
     let project_id = plan.project_id().to_owned();
@@ -1567,7 +1572,7 @@ fn agent_resume_startup_poll(
     }
 }
 
-async fn reap_agent_resume_plan(mut plan: termloop_core::AgentResumePlan) -> bool {
+async fn reap_agent_resume_plan(mut plan: Box<termloop_core::AgentResumePlan>) -> bool {
     tokio::task::spawn_blocking(move || plan.reap_uncommitted_runtime().is_ok())
         .await
         .unwrap_or(false)
