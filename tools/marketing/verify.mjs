@@ -11,7 +11,7 @@ const catalog = JSON.parse(readFileSync(path.join(root, 'tools/marketing/catalog
 const page = readFileSync(path.join(landing, 'index.html'), 'utf8');
 assert.equal(catalog.length, 32);
 assert.equal(new Set(catalog.map(feature => feature.id)).size, 32);
-assert.equal(catalog.filter(feature => !feature.legacy).length, 19);
+assert.equal(catalog.filter(feature => !feature.legacy).length, 22);
 assert.equal([...page.matchAll(/class="feature-story"/g)].length, 32);
 assert.equal([...page.matchAll(/<track kind="captions"/g)].length, 32);
 for (const [, asset] of page.matchAll(/(?:src|poster|href)="(assets\/[^"#]+)"/g)) {
@@ -57,4 +57,4 @@ const docs = readFileSync(docsPath, 'utf8');
 execFileSync(process.execPath, ['tools/marketing/build-guide.mjs'], { cwd: root });
 assert.equal(readFileSync(path.join(landing, 'index.html'), 'utf8'), page, 'Guide generation must be idempotent');
 assert.equal(readFileSync(docsPath, 'utf8'), docs, 'Documentation generation must be idempotent');
-console.log(`PASS: 32 guides, 19 new demos, 64 decoded videos, captions/assets/checksums, and repeatable generation. ${minDuration.toFixed(1)}–${maxDuration.toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB total video delivery.`);
+console.log(`PASS: 32 guides, 22 current recordings, 64 decoded videos, captions/assets/checksums, and repeatable generation. ${minDuration.toFixed(1)}–${maxDuration.toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB total video delivery.`);

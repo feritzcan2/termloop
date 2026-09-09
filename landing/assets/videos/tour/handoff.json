@@ -1,15 +1,15 @@
 {
   "id": "handoff",
-  "duration": 9.0,
-  "sourceSeconds": 2.95,
-  "sourceFps": 20.0,
+  "duration": 38.5,
+  "sourceSeconds": 36.0,
+  "sourceFps": 30.0,
   "motionSpeed": 1,
-  "size": 858960,
-  "sha256": "d9cea4bb656c7a7025c78206d67c96c75cb1fe115b93d71010f8638df25659a9",
+  "size": 1940202,
+  "sha256": "266b7bcddf239949b7944abb6b6619fa9920ca7ef7756eb49e2d5af627af91c5",
   "width": 1920,
   "height": 1248,
   "fps": 30,
   "captionSteps": 3,
-  "legacy": true,
+  "legacy": false,
   "captureKind": "continuous-video"
 }

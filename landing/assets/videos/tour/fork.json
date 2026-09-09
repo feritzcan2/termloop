@@ -1,15 +1,15 @@
 {
   "id": "fork",
-  "duration": 14.9,
-  "sourceSeconds": 12.4,
-  "sourceFps": 15.0,
+  "duration": 38.5,
+  "sourceSeconds": 36.0,
+  "sourceFps": 30.0,
   "motionSpeed": 1,
-  "size": 944077,
-  "sha256": "0b600a526f7000e24f806c649d4fb1771ede5a11265d7461a9f6e5a2b1aadd4f",
+  "size": 1645051,
+  "sha256": "a5c8dc6becd5591dbd4932f2033e6e2d4733fd71f9f9bb19d71c72e43c62c06f",
   "width": 1920,
   "height": 1248,
   "fps": 30,
   "captionSteps": 3,
-  "legacy": true,
+  "legacy": false,
   "captureKind": "continuous-video"
 }

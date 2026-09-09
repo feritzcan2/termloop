@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:04.400
-Ask the current agent for a second opinion.
+00:00:00.000 --> 00:00:12.833
+Open Agents > Ask to and choose a provider for the second opinion.
 
 2
-00:00:04.400 --> 00:00:08.800
+00:00:12.833 --> 00:00:25.667
 A visible helper Session receives the question and context.
 
 3
-00:00:08.800 --> 00:00:13.200
+00:00:25.667 --> 00:00:38.500
 The answer returns to the requesting agent.
