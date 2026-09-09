@@ -1,19 +1,24 @@
 import type {
+  TaskDto,
   TaskWorktreeChangeEntryDto,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
 } from "@termloop/contract/current";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { ChangeReviewEditor, ChangeReviewPanel } from "@/components/change-review";
 import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader, StatePill } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
 import { WorktreeDiff } from "@/components/worktree-diff";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
+import { useChangeReview, type ChangeReview } from "@/features/changes/use-change-review";
+import { reviewLineKey } from "@/presentation/change-review-notes";
+import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import {
   nextUnreviewedEntryId,
   reviewProgress,
@@ -27,16 +32,31 @@ type LoadState = "idle" | "loading" | "ready" | "failed";
 
 /// One Task checkout, one current worktree observation. This is intentionally a
 /// review surface rather than a Git client: every patch is addressed by the
-/// observation returned with its file list, and the only mutable client state is
-/// the reviewer’s temporary checkmarks.
+/// observation returned with its file list. Checkmarks and feedback are temporary
+/// presentation state scoped to the selected Mac and Task.
 export default function TaskChangesRoute() {
   const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
-  const runtime = useMobileRuntime();
   const connections = useConnections();
   const selectingConnection = connectionId !== undefined && connections.selectedId !== connectionId;
   const connection = selectingConnection ? undefined : connections.selected;
   const overview = useOverview();
   const task = overview.overview?.tasks.find((candidate) => candidate.id === taskId);
+  useEffect(() => {
+    if (connectionId !== undefined && connections.selectedId !== connectionId) connections.select(connectionId);
+  }, [connectionId, connections.select, connections.selectedId]);
+  if (selectingConnection) return <Screen><ScreenHeader back="Task" title="Changes" /><ActivityIndicator color={color.accentStrong} /></Screen>;
+  if (!connection) return <UnavailableChanges title="No Mac selected" body="Select a paired Mac before reading this Task's worktree." />;
+  if (!task) return <UnavailableChanges title="Task unavailable" body="This Task is no longer in the selected Mac's current projection." />;
+  if (!task.worktree) return <UnavailableChanges title="No worktree" body="Create a worktree on your Mac before reviewing changes here." />;
+  return <TaskChangesScreen key={`${connection.id}:${task.id}`} connectionId={connection.id} task={task} />;
+}
+
+function TaskChangesScreen({ connectionId, task }: { connectionId: string; task: TaskDto }) {
+  const runtime = useMobileRuntime();
+  const overview = useOverview();
+  const review = useChangeReview(runtime, connectionId, task, overview.overview?.sessions ?? []);
+  const listSequence = useRef(0);
+  const taskId = task.id;
   const [load, setLoad] = useState<LoadState>("idle");
   const [changes, setChanges] = useState<TaskWorktreeChangeListResult | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -51,18 +71,13 @@ export default function TaskChangesRoute() {
   const [preImageLoading, setPreImageLoading] = useState(false);
   const [preImageError, setPreImageError] = useState<string | undefined>();
 
-  useEffect(() => {
-    if (connectionId !== undefined && connections.selectedId !== connectionId) {
-      connections.select(connectionId);
-    }
-  }, [connectionId, connections.select, connections.selectedId]);
-
   const reload = useCallback(async () => {
-    if (connection === undefined || task === undefined || task.worktree === null) return;
+    const sequence = ++listSequence.current;
     setLoad("loading");
     setError(undefined);
     try {
-      const next = await runtime.worktreeChanges.listTask(connection.id, task.id);
+      const next = await runtime.worktreeChanges.listTask(connectionId, taskId);
+      if (sequence !== listSequence.current) return;
       setChanges(next);
       // A refresh is a new Git observation, not proof that the previous review
       // still covers the new checkout. Start the temporary review tracker over.
@@ -76,18 +91,20 @@ export default function TaskChangesRoute() {
       setPreImageError(undefined);
       setLoad("ready");
     } catch (cause) {
+      if (sequence !== listSequence.current) return;
       setError(messageOf(cause, "This worktree could not be read."));
       setLoad("failed");
     }
-  }, [connection, runtime.worktreeChanges, task]);
+  }, [connectionId, runtime.worktreeChanges, taskId]);
 
   useEffect(() => {
     void reload();
+    return () => { listSequence.current += 1; };
   }, [reload]);
 
   const selectedEntry = changes?.entries.find((entry) => entry.entry_id === selectedEntryId);
   useEffect(() => {
-    if (connection === undefined || task === undefined || changes === undefined || selectedEntry === undefined) {
+    if (changes === undefined || selectedEntry === undefined) {
       setDiff(undefined);
       setDiffError(undefined);
       setDiffLoading(false);
@@ -95,7 +112,7 @@ export default function TaskChangesRoute() {
     }
     if (selectedEntry.render_state !== "available") {
       setDiff({
-        task_id: task.id,
+        task_id: taskId,
         observation_id: changes.observation_id,
         entry_id: selectedEntry.entry_id,
         state: "notShown",
@@ -110,8 +127,8 @@ export default function TaskChangesRoute() {
     setDiffError(undefined);
     setDiffLoading(true);
     void runtime.worktreeChanges.diffTask(
-      connection.id,
-      task.id,
+      connectionId,
+      taskId,
       changes.observation_id,
       selectedEntry.entry_id,
     ).then((next) => {
@@ -124,7 +141,7 @@ export default function TaskChangesRoute() {
       setDiffLoading(false);
     });
     return () => { current = false; };
-  }, [changes, connection, runtime.worktreeChanges, selectedEntry, task]);
+  }, [changes, connectionId, runtime.worktreeChanges, selectedEntry, taskId]);
 
   // Full-file content is opt-in and belongs to one exact selected patch. Clear
   // it as soon as that selection changes, so a pre-image can never be shown for
@@ -137,7 +154,7 @@ export default function TaskChangesRoute() {
   }, [changes?.observation_id, selectedEntry?.entry_id]);
 
   useEffect(() => {
-    if (!fullFile || connection === undefined || task === undefined || changes === undefined || selectedEntry === undefined) {
+    if (!fullFile || changes === undefined || selectedEntry === undefined) {
       return;
     }
     let current = true;
@@ -145,8 +162,8 @@ export default function TaskChangesRoute() {
     setPreImageError(undefined);
     setPreImageLoading(true);
     void runtime.worktreeChanges.preImageTask(
-      connection.id,
-      task.id,
+      connectionId,
+      taskId,
       changes.observation_id,
       selectedEntry.entry_id,
     ).then((next) => {
@@ -159,7 +176,7 @@ export default function TaskChangesRoute() {
       setPreImageLoading(false);
     });
     return () => { current = false; };
-  }, [changes, connection, fullFile, runtime.worktreeChanges, selectedEntry, task]);
+  }, [changes, connectionId, fullFile, runtime.worktreeChanges, selectedEntry, taskId]);
 
   const sections = useMemo(
     () => changes === undefined ? [] : unreviewedSections(changes.entries, reviewedEntryIds),
@@ -213,23 +230,8 @@ export default function TaskChangesRoute() {
     setSelectedEntryId(undefined);
   }, []);
 
-  if (selectingConnection) {
-    return (
-      <Screen>
-        <ScreenHeader back="Task" title="Changes" />
-        <View style={styles.centre}><ActivityIndicator color={color.accentStrong} /></View>
-      </Screen>
-    );
-  }
-  if (connection === undefined) {
-    return <UnavailableChanges title="No Mac selected" body="Select a paired Mac before reading this Task's worktree." />;
-  }
-  if (task === undefined) {
-    return <UnavailableChanges title="Task unavailable" body="This Task is no longer in the selected Mac's current projection." />;
-  }
-  if (task.worktree === null) {
-    return <UnavailableChanges title="No worktree" body="Create a worktree on your Mac before reviewing changes here." />;
-  }
+  const currentDiff = diff?.entry_id === selectedEntryId && diff?.observation_id === changes?.observation_id ? diff : undefined;
+  const currentPreImage = preImage?.entry_id === selectedEntryId && preImage?.observation_id === changes?.observation_id ? preImage : undefined;
 
   return (
     <Screen>
@@ -326,23 +328,32 @@ export default function TaskChangesRoute() {
           ) : null}
         </ScrollView>
       )}
-      {selectedEntry === undefined ? null : (
+      <View style={styles.feedbackBar}>
+        <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
+        <Text style={styles.modalFooterHint}>Add line comments, then send together</Text>
+      </View>
+      {selectedEntry === undefined && !review.showNotes ? null : (
         <ChangeDiffModal
           entry={selectedEntry}
-          diff={diff}
+          diff={currentDiff}
           loading={diffLoading}
           error={diffError}
           position={selectedEntryPosition}
           total={changes?.entries.length ?? 0}
           hasNext={nextEntryIdAfterReview !== undefined}
           fullFile={fullFile}
-          fullFileAvailable={diff?.state === "patch" && diffError === undefined}
-          preImage={preImage}
+          fullFileAvailable={currentDiff?.state === "patch" && diffError === undefined}
+          preImage={currentPreImage}
           preImageLoading={preImageLoading}
           preImageError={preImageError}
           onFullFileChange={setFullFile}
-          onReview={() => markReviewed(selectedEntry.entry_id, true)}
+          review={review}
+          observationId={changes?.observation_id}
+          onReview={() => { if (selectedEntry) markReviewed(selectedEntry.entry_id, true); }}
           onClose={() => {
+            if (review.sending) return;
+            review.finishDraft();
+            review.setShowNotes(false);
             setFullFile(false);
             setSelectedEntryId(undefined);
           }}
@@ -415,11 +426,13 @@ function ChangeDiffModal({
   preImage,
   preImageLoading,
   preImageError,
+  review,
+  observationId,
   onFullFileChange,
   onReview,
   onClose,
 }: {
-  entry: TaskWorktreeChangeEntryDto;
+  entry: TaskWorktreeChangeEntryDto | undefined;
   diff: TaskWorktreeDiffResult | undefined;
   loading: boolean;
   error: string | undefined;
@@ -431,6 +444,8 @@ function ChangeDiffModal({
   preImage: TaskWorktreePreImageResult | undefined;
   preImageLoading: boolean;
   preImageError: string | undefined;
+  review: ChangeReview;
+  observationId: string | undefined;
   onFullFileChange(value: boolean): void;
   onReview(): void;
   onClose(): void;
@@ -438,13 +453,15 @@ function ChangeDiffModal({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <Screen>
+        <KeyboardAvoidingView style={styles.modalScroll} behavior={keyboardAvoidingBehavior}>
         <ScreenHeader
-          title="Diff"
-          subtitle={entry.display_path}
+          title={review.showNotes ? "Feedback" : "Diff"}
+          subtitle={review.showNotes ? `${review.notes.length} pending comments` : entry?.display_path}
           right={(
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close diff"
+              disabled={review.sending}
               onPress={onClose}
               hitSlop={10}
               style={({ pressed }) => [styles.closeButton, pressed ? styles.closeButtonPressed : null]}
@@ -453,7 +470,10 @@ function ChangeDiffModal({
             </Pressable>
           )}
         />
-        <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} bounces={false}>
+        {review.error ? <Banner kind="danger" message={review.error} /> : null}
+        {review.showNotes ? (
+          <ChangeReviewPanel review={review} observationId={observationId} onBackToDiff={entry ? () => { review.finishDraft(); review.setShowNotes(false); } : undefined} />
+        ) : entry ? <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.modalMeta}>
             <Text style={styles.modalMetaLabel}>FILE {position}/{total}</Text>
             <Text style={styles.modalMetaHint}>{fullFile ? "Current file" : "Change focus"}</Text>
@@ -505,14 +525,21 @@ function ChangeDiffModal({
                 preImage={preImage}
                 fullFileLoading={preImageLoading}
                 fullFileError={preImageError}
+                review={observationId && !review.sending ? {
+                  notedLines: new Set(review.notes.filter((note) => note.observationId === observationId && note.entryId === entry.entry_id).map(reviewLineKey)),
+                  onSelectLine: (line) => review.openLine(observationId, entry, line),
+                } : undefined}
               />
             ) : (
               <View style={styles.diffError}><Banner kind="danger" message={error} /></View>
             )}
           </Card>
-        </ScrollView>
-        <View style={styles.modalFooter}>
-          <Text style={styles.modalFooterHint}>Ready after you inspect this diff</Text>
+        </ScrollView> : null}
+        {review.draft ? <ChangeReviewEditor review={review} /> : review.showNotes ? null : <View style={styles.modalFooter}>
+          <View style={styles.feedbackBar}>
+            <Text style={styles.modalFooterHint}>Tap + beside a line to add feedback</Text>
+            <SecondaryButton label={`Feedback (${review.notes.length})`} onPress={() => review.setShowNotes(true)} />
+          </View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={hasNext ? "Mark reviewed and open next file" : "Mark reviewed"}
@@ -521,7 +548,8 @@ function ChangeDiffModal({
           >
             <Text style={styles.reviewNextButtonText}>{hasNext ? "Review & next  →" : "Mark reviewed  ✓"}</Text>
           </Pressable>
-        </View>
+        </View>}
+        </KeyboardAvoidingView>
       </Screen>
     </Modal>
   );
@@ -548,6 +576,7 @@ function reviewPercent(progress: { reviewed: number; total: number }): number {
 }
 
 const styles = StyleSheet.create({
+  feedbackBar: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.md, paddingVertical: space.xs },
   centre: { flex: 1, justifyContent: "center", padding: space.screen },
   content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
   summary: {

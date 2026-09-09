@@ -1,24 +1,30 @@
 import { parseDiff, type IChange, type IFile } from "react-native-diff-view";
 import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { TaskWorktreeDiffState, TaskWorktreePreImageResult } from "@termloop/contract/current";
 import { reconstructFullFile, type FullFileDisplayLine } from "@/presentation/worktree-full-file";
-import { color, radius, space } from "@/theme/tokens";
+import { diffReviewLine, reviewLineKey, type ReviewLine } from "@/presentation/change-review-notes";
+import { color, geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// `react-native-diff-view` owns the unified-patch parser. Its stock renderer
 /// carries a fixed palette, so this small native renderer consumes its typed
 /// hunk model and keeps the review surface inside TermLoop's light theme.
 export type WorktreeDiffMode = "diff" | "fullFile";
+export type WorktreeDiffReview = {
+  notedLines: ReadonlySet<string>;
+  onSelectLine(line: ReviewLine): void;
+};
 
-export function WorktreeDiff({ state, patch, mode = "diff", preImage, fullFileLoading = false, fullFileError }: {
+export function WorktreeDiff({ state, patch, mode = "diff", preImage, fullFileLoading = false, fullFileError, review }: {
   state: TaskWorktreeDiffState;
   patch: string | null;
   mode?: WorktreeDiffMode | undefined;
   preImage?: TaskWorktreePreImageResult | undefined;
   fullFileLoading?: boolean | undefined;
   fullFileError?: string | undefined;
+  review?: WorktreeDiffReview | undefined;
 }) {
   if (state !== "patch" || patch === null) {
     return <Text style={styles.unavailable}>{diffStateMessage(state)}</Text>;
@@ -29,15 +35,17 @@ export function WorktreeDiff({ state, patch, mode = "diff", preImage, fullFileLo
     preImage={preImage}
     fullFileLoading={fullFileLoading}
     fullFileError={fullFileError}
+    review={review}
   />;
 }
 
-function ParsedPatch({ patch, mode, preImage, fullFileLoading, fullFileError }: {
+function ParsedPatch({ patch, mode, preImage, fullFileLoading, fullFileError, review }: {
   patch: string;
   mode: WorktreeDiffMode;
   preImage: TaskWorktreePreImageResult | undefined;
   fullFileLoading: boolean;
   fullFileError: string | undefined;
+  review: WorktreeDiffReview | undefined;
 }) {
   const files = useMemo(() => {
     try {
@@ -57,23 +65,25 @@ function ParsedPatch({ patch, mode, preImage, fullFileLoading, fullFileError }: 
       preImage={preImage}
       loading={fullFileLoading}
       error={fullFileError}
+      review={review}
     />;
   }
 
   return (
     <ScrollView horizontal bounces={false} showsHorizontalScrollIndicator contentContainerStyle={styles.scrollContent}>
       <View style={styles.patch}>
-        {files.map((file, fileIndex) => <ParsedFile key={`${file.oldPath}:${file.newPath}:${fileIndex}`} file={file} />)}
+        {files.map((file, fileIndex) => <ParsedFile key={`${file.oldPath}:${file.newPath}:${fileIndex}`} file={file} review={files.length === 1 ? review : undefined} />)}
       </View>
     </ScrollView>
   );
 }
 
-function ExpandedFile({ files, preImage, loading, error }: {
+function ExpandedFile({ files, preImage, loading, error, review }: {
   files: readonly IFile[];
   preImage: TaskWorktreePreImageResult | undefined;
   loading: boolean;
   error: string | undefined;
+  review: WorktreeDiffReview | undefined;
 }) {
   if (loading) return <Text style={styles.unavailable}>Loading the full file…</Text>;
   if (error !== undefined) return <Text style={styles.unavailable}>{error}</Text>;
@@ -94,21 +104,21 @@ function ExpandedFile({ files, preImage, loading, error }: {
       </Text>
       <ScrollView horizontal bounces={false} showsHorizontalScrollIndicator contentContainerStyle={styles.scrollContent}>
         <View style={styles.fullFile}>
-          {chunks.map((chunk, index) => <FullFileChunk key={index} lines={chunk} />)}
+          {chunks.map((chunk, index) => <FullFileChunk key={index} lines={chunk} review={review} />)}
         </View>
       </ScrollView>
     </View>
   );
 }
 
-function ParsedFile({ file }: { file: IFile }) {
+function ParsedFile({ file, review }: { file: IFile; review: WorktreeDiffReview | undefined }) {
   return (
     <View style={styles.file}>
       {file.hunks.map((hunk, hunkIndex) => (
         <View key={`${hunk.content}:${hunkIndex}`} style={styles.hunk}>
           <Text style={styles.hunkHeader}>{hunk.content}</Text>
           {hunk.changes.map((change, changeIndex) => (
-            <DiffLine key={`${change.oldLineNumber ?? ""}:${change.newLineNumber ?? ""}:${changeIndex}`} change={change} />
+            <DiffLine key={`${change.oldLineNumber ?? ""}:${change.newLineNumber ?? ""}:${changeIndex}`} change={change} review={review} />
           ))}
         </View>
       ))}
@@ -116,13 +126,21 @@ function ParsedFile({ file }: { file: IFile }) {
   );
 }
 
-function DiffLine({ change }: { change: IChange }) {
+function DiffLine({ change, review }: { change: IChange; review: WorktreeDiffReview | undefined }) {
   const isInsert = change.type === "insert";
   const isDelete = change.type === "delete";
   const oldLine = change.oldLineNumber ?? (isDelete ? change.lineNumber : undefined);
   const newLine = change.newLineNumber ?? (isInsert ? change.lineNumber : undefined);
+  const line = diffReviewLine(change);
+  const noted = line !== undefined && review?.notedLines.has(reviewLineKey(line));
   return (
-    <View style={[styles.line, isInsert ? styles.lineInsert : null, isDelete ? styles.lineDelete : null]}>
+    <View style={[styles.line, review ? styles.commentableLine : null, isInsert ? styles.lineInsert : null, isDelete ? styles.lineDelete : null]}>
+      {review && line ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`${noted ? "Edit feedback on" : "Comment on"} ${line.lineSide} line ${line.lineNumber}`}
+          onPress={() => review.onSelectLine(line)} style={styles.commentTrigger}>
+          <Text style={styles.commentGlyph}>{noted ? "●" : "+"}</Text>
+        </Pressable>
+      ) : null}
       <Text style={styles.lineNumber}>{oldLine ?? ""}</Text>
       <Text style={styles.lineNumber}>{newLine ?? ""}</Text>
       <Text style={[styles.prefix, isInsert ? styles.insertText : isDelete ? styles.deleteText : null]}>
@@ -183,11 +201,16 @@ function numberedLineChunks(lines: readonly FullFileDisplayLine[]): readonly (re
     : line));
 }
 
-function FullFileChunk({ lines }: { lines: readonly NumberedFullFileLine[] }) {
+function FullFileChunk({ lines, review }: { lines: readonly NumberedFullFileLine[]; review: WorktreeDiffReview | undefined }) {
   return (
-    <Text selectable style={styles.fullFileCode}>
+    <Text selectable={!review} style={[styles.fullFileCode, review ? styles.fullFileCommentable : null]}>
       {lines.map((line, index) => line.type === "code" ? (
-        <Text key={index} style={line.changed ? styles.fullFileChanged : undefined}>{line.content}{"\n"}</Text>
+        <Text key={index} style={line.changed ? styles.fullFileChanged : undefined}
+          accessibilityRole={review ? "button" : undefined}
+          accessibilityLabel={review ? `${review.notedLines.has(`new:${line.number}`) ? "Edit feedback on" : "Comment on"} new line ${line.number}` : undefined}
+          onPress={review ? () => review.onSelectLine({ lineSide: "new", lineNumber: line.number }) : undefined}>
+          {review ? (review.notedLines.has(`new:${line.number}`) ? "●  " : "+  ") : ""}{line.content}{"\n"}
+        </Text>
       ) : (
         <Text key={index} style={styles.fullFileDeleted}>    − {line.count} {line.count === 1 ? "line" : "lines"} removed{"\n"}</Text>
       ))}
@@ -213,6 +236,9 @@ const styles = StyleSheet.create({
   line: { flexDirection: "row", alignItems: "stretch", backgroundColor: color.bgTerminal, minWidth: "100%" },
   lineInsert: { backgroundColor: color.successWash },
   lineDelete: { backgroundColor: color.dangerWash },
+  commentableLine: { minHeight: geometry.touchTarget, alignItems: "center" },
+  commentTrigger: { width: geometry.touchTarget, minHeight: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
+  commentGlyph: { color: color.accentStrong, fontSize: 18, fontFamily: fontFamily.mono },
   lineNumber: {
     width: 34,
     color: color.textMuted,
@@ -230,6 +256,7 @@ const styles = StyleSheet.create({
   fullFileSummary: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10.5, paddingHorizontal: space.md, paddingTop: space.sm },
   fullFile: { gap: 0, minWidth: "100%", padding: space.md },
   fullFileCode: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 18 },
+  fullFileCommentable: { lineHeight: geometry.touchTarget },
   fullFileChanged: { backgroundColor: color.successWash, color: color.success },
   fullFileDeleted: { backgroundColor: color.dangerWash, color: color.danger },
 });
