@@ -1,4 +1,4 @@
-import type { AgentLibraryEntry, AssistantPermission, StewardAgentId, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepKind, WorkflowStepResultDto } from "@termloop/contract/current";
+import type { AgentLibraryEntry, AssistantPermission, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepKind, WorkflowStepResultDto } from "@termloop/contract/current";
 import type { WorkflowExecution } from "../model.js";
 
 export type WorkflowReasoning = NonNullable<WorkflowStepDto["reasoning"]>;
@@ -38,10 +38,9 @@ export function agentLabel(agentId: string | null): string {
 export function stepOwnerSummary(
   step: WorkflowStepDto,
   steps: readonly WorkflowStepDto[],
-  coordinatorAgentId: StewardAgentId,
   agentProfiles: readonly AgentLibraryEntry[],
 ): string {
-  if (!isHelperStep(step)) return `${agentLabel(coordinatorAgentId)} · lead agent`;
+  if (!isHelperStep(step)) return "Uses workflow lead";
   if (!step.reuseStepId) return `${workflowAgentProfileLabel(step, agentProfiles)} · new conversation`;
   const source = steps.find((candidate) => candidate.id === step.reuseStepId);
   return `${workflowAgentProfileLabel(source ?? step, agentProfiles)} · continues “${source?.title ?? step.reuseStepId}”`;

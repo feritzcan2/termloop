@@ -34,6 +34,8 @@ type WorkflowDraft = {
   steps: WorkflowStepDto[];
 };
 
+type WorkflowEditorSelection = { kind: "lead" } | { kind: "step"; id: string };
+
 export type WorkflowEditorDraft = {
   value: WorkflowDraft;
   baseline: WorkflowDraft;
@@ -56,7 +58,7 @@ export function WorkflowEditorPanel(props: {
   const [draft, setDraft] = useState<WorkflowDraft>(() => props.initialDraft?.value ?? workflowDraft(props.configuration));
   const [baseline, setBaseline] = useState(() => props.initialDraft?.baseline ?? workflowDraft(props.configuration));
   const [generation, setGeneration] = useState(() => props.initialDraft?.generation ?? props.configuration?.generation);
-  const [selectedStepId, setSelectedStepId] = useState(() => draft.steps[0]?.id);
+  const [selection, setSelection] = useState<WorkflowEditorSelection>(() => draft.steps[0] ? { kind: "step", id: draft.steps[0].id } : { kind: "lead" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -65,8 +67,8 @@ export function WorkflowEditorPanel(props: {
   const nameRef = useRef<HTMLInputElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const flowHeadingRef = useRef<HTMLSpanElement>(null);
-  const selectStep = (id: string) => {
-    setSelectedStepId(id);
+  const selectItem = (item: WorkflowEditorSelection) => {
+    setSelection(item);
     requestAnimationFrame(() => {
       const inspector = inspectorRef.current;
       if (inspector && (inspector.parentElement?.clientWidth ?? 0) <= 760) {
@@ -74,11 +76,17 @@ export function WorkflowEditorPanel(props: {
       }
     });
   };
+  const selectStep = (id: string) => selectItem({ kind: "step", id });
+  const selectLead = () => {
+    selectItem({ kind: "lead" });
+    requestAnimationFrame(() => inspectorRef.current?.querySelector<HTMLSelectElement>("#workflow-coordinator")?.focus({ preventScroll: true }));
+  };
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const selectedStep = draft.steps.find((step) => step.id === selectedStepId) ?? draft.steps[0];
+  const selectedStep = selection.kind === "step" ? draft.steps.find((step) => step.id === selection.id) ?? draft.steps[0] : undefined;
+  const leadSelected = selection.kind === "lead";
   const discussions = draft.steps.filter((step) => step.kind === "discuss");
   const implementation = draft.steps.find((step) => step.kind === "implement");
   const reviews = draft.steps.filter((step) => step.kind === "review");
@@ -102,7 +110,7 @@ export function WorkflowEditorPanel(props: {
   const chooseStart = (start: WorkflowStartingPoint) => {
     const steps = initialWorkflowSteps(start);
     setDraft((current) => ({ ...current, steps }));
-    setSelectedStepId(steps[0]?.id);
+    setSelection(steps[0] ? { kind: "step", id: steps[0].id } : { kind: "lead" });
     setError(undefined);
   };
 
@@ -154,7 +162,7 @@ export function WorkflowEditorPanel(props: {
       ...current,
       steps: remaining,
     }));
-    setSelectedStepId(remaining[0]?.id);
+    setSelection(remaining[0] ? { kind: "step", id: remaining[0].id } : { kind: "lead" });
     if (fix && !remaining.some((step) => step.kind === "fix") && id !== fix.id) {
       setError("The fix step was removed too: it needs at least one reviewer. Add a reviewer to enable it again.");
     }
@@ -197,6 +205,11 @@ export function WorkflowEditorPanel(props: {
     if (!name) {
       setError("Give this template a name before saving.");
       nameRef.current?.focus();
+      return;
+    }
+    if (!agents.some((agent) => agent.id === draft.coordinatorAgentId)) {
+      setError("Choose a supported lead agent before saving this template.");
+      selectLead();
       return;
     }
     const incompleteStep = steps.find((step) => !step.title || !step.instructions);
@@ -276,24 +289,18 @@ export function WorkflowEditorPanel(props: {
       {choosingStart ? <WorkflowTemplateStarter choose={chooseStart} /> : <fieldset className="workflow-builder-body workflow-builder-stage-body" disabled={busy}>
         <div className="workflow-builder-top">
           <div><label htmlFor="workflow-name">Template name</label><input ref={nameRef} id="workflow-name" autoFocus required placeholder="e.g. Review a feature before merging" value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></div>
-          <div><label htmlFor="workflow-coordinator">Lead agent</label><select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => {
-            const coordinatorAgentId = event.target.value as StewardAgentId;
-            const defaults = workflowLaunchDefaults(workflowAgent(coordinatorAgentId, agents));
-            setDraft((current) => ({ ...current, coordinatorAgentId, ...defaults }));
-          }}>{agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}{agent.available ? "" : " (unavailable)"}</option>)}</select></div>
         </div>
-        <details className="workflow-advanced">
-          <summary>Advanced lead agent settings <span>{workflowPermissionLabel(draft.permission)}</span></summary>
-          <div className="workflow-advanced-fields">
-          <div><label htmlFor="workflow-coordinator-model">Model</label><select id="workflow-coordinator-model" aria-label="Coordinator Model" value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}>{selectionOptions(coordinatorAgent.models, draft.model).map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select></div>
-          <div><label htmlFor="workflow-coordinator-permission">Permission</label><select id="workflow-coordinator-permission" aria-label="Coordinator Permission" value={draft.permission} onChange={(event) => setDraft((current) => ({ ...current, permission: event.target.value as AssistantPermission }))}>{selectionOptions(coordinatorAgent.permissions, draft.permission).map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select></div>
-          <div><label htmlFor="workflow-coordinator-reasoning">Thinking</label><select id="workflow-coordinator-reasoning" aria-label="Coordinator Thinking" value={draft.reasoning} onChange={(event) => setDraft((current) => ({ ...current, reasoning: event.target.value as WorkflowReasoning }))}>{selectionOptions(coordinatorAgent.reasoning, draft.reasoning).map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select></div>
-          </div>
-        </details>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
           <div className="workflow-builder-grid">
             <WorkflowPipeline>
-              <div className="plan-head"><span ref={flowHeadingRef} className="plan-heading" id="workflow-pipeline-title">Workflow steps <small>{draft.steps.length}/8</small></span><small className="plan-sub">Select a step to edit</small></div>
+              <div className="plan-head"><span ref={flowHeadingRef} className="plan-heading" id="workflow-pipeline-title">Workflow <small>{draft.steps.length}/8 steps</small></span><small className="plan-sub">Select the lead or a step to edit</small></div>
+              <div className="workflow-lead-context">
+                <button type="button" className={`workflow-lead-card${leadSelected ? " selected" : ""}`} aria-pressed={leadSelected} aria-controls="workflow-inspector-panel" onClick={selectLead}>
+                  <Icon name={coordinatorAgent.id === "claude" ? "claude" : coordinatorAgent.id === "codex" ? "codex" : "agent"} />
+                  <span className="workflow-lead-copy"><b>Lead agent · {coordinatorAgent.label}</b><small>Coordinates every step · implements and fixes</small><small>{workflowLaunchSummary(draft)}</small></span>
+                  <span className="workflow-lead-edit">Edit</span>
+                </button>
+              </div>
               <aside className="workflow-node-palette" aria-label="Add workflow steps">
                 <WorkflowPaletteItem kind="discuss" label="Discussion" disabled={draft.steps.length >= 8} add={() => addStep("discuss")} />
                 <WorkflowPaletteItem kind="review" label="Reviewer" disabled={draft.steps.length >= 8} add={() => addStep("review")} />
@@ -309,7 +316,6 @@ export function WorkflowEditorPanel(props: {
                       step={step}
                       index={draft.steps.indexOf(step)}
                       selected={step.id === selectedStep?.id}
-                      coordinatorAgentId={draft.coordinatorAgentId}
                       steps={draft.steps}
                       agentProfiles={props.agentProfiles}
                       select={() => selectStep(step.id)}
@@ -319,7 +325,6 @@ export function WorkflowEditorPanel(props: {
                     step={implementation}
                     index={draft.steps.indexOf(implementation)}
                     selected={implementation.id === selectedStep?.id}
-                    coordinatorAgentId={draft.coordinatorAgentId}
                     steps={draft.steps}
                     agentProfiles={props.agentProfiles}
                     select={() => selectStep(implementation.id)}
@@ -331,7 +336,6 @@ export function WorkflowEditorPanel(props: {
                         step={step}
                         index={draft.steps.indexOf(step)}
                         selected={step.id === selectedStep?.id}
-                        coordinatorAgentId={draft.coordinatorAgentId}
                         steps={draft.steps}
                         agentProfiles={props.agentProfiles}
                         select={() => selectStep(step.id)}
@@ -343,7 +347,6 @@ export function WorkflowEditorPanel(props: {
                     step={fix}
                     index={draft.steps.indexOf(fix)}
                     selected={fix.id === selectedStep?.id}
-                    coordinatorAgentId={draft.coordinatorAgentId}
                     steps={draft.steps}
                     agentProfiles={props.agentProfiles}
                     select={() => selectStep(fix.id)}
@@ -353,15 +356,16 @@ export function WorkflowEditorPanel(props: {
                 </div>
               </SortableContext>
             </WorkflowPipeline>
-            <section ref={inspectorRef} className="workflow-inspector" aria-label="Selected workflow step">
+            <section ref={inspectorRef} id="workflow-inspector-panel" className="workflow-inspector" aria-label={leadSelected ? "Workflow lead agent settings" : "Selected workflow step"}>
               <button type="button" className="workflow-back-to-steps secondary-button" onClick={() => flowHeadingRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })}>↑ Back to steps</button>
-              {selectedStep ? <WorkflowStepInspector
+              {leadSelected ? <WorkflowLeadInspector draft={draft} agents={agents} update={(update) => setDraft((current) => ({ ...current, ...update }))} /> : selectedStep ? <WorkflowStepInspector
                 step={selectedStep}
                 steps={draft.steps}
                 coordinatorAgentId={draft.coordinatorAgentId}
                 coordinatorSelection={{ model: draft.model, permission: draft.permission, reasoning: draft.reasoning }}
                 agents={agents}
                 agentProfiles={props.agentProfiles}
+                editLead={selectLead}
                 remove={selectedStep.kind !== "implement" ? () => removeStep(selectedStep.id) : undefined}
                 update={(update) => updateStep(selectedStep.id, update)}
               /> : null}
@@ -436,7 +440,6 @@ function SortableWorkflowStepCard(props: {
   step: WorkflowStepDto;
   index: number;
   selected: boolean;
-  coordinatorAgentId: StewardAgentId;
   steps: readonly WorkflowStepDto[];
   agentProfiles: readonly AgentLibraryEntry[];
   select(): void;
@@ -452,7 +455,7 @@ function SortableWorkflowStepCard(props: {
   >
     <button type="button" className="workflow-step-select" aria-pressed={props.selected} onClick={props.select}>
       <span className="workflow-step-number">{props.index + 1}</span>
-      <span className="workflow-step-copy"><b>{props.step.title || "Untitled step"}</b><small>{stepOwnerSummary(props.step, props.steps, props.coordinatorAgentId, props.agentProfiles)}</small></span>
+      <span className="workflow-step-copy"><b>{props.step.title || "Untitled step"}</b><small>{stepOwnerSummary(props.step, props.steps, props.agentProfiles)}</small></span>
       <span className={`workflow-kind kind-${props.step.kind}`}>{stepKindLabel(props.step.kind)}</span>
     </button>
     {movable ? <button
@@ -466,6 +469,40 @@ function SortableWorkflowStepCard(props: {
   </article>;
 }
 
+function WorkflowLeadInspector(props: {
+  draft: WorkflowLeadInspectorDraft;
+  agents: readonly WorkflowAgent[];
+  update(update: Partial<WorkflowLeadInspectorDraft>): void;
+}) {
+  const { draft, agents } = props;
+  const agent = workflowAgent(draft.coordinatorAgentId, agents);
+  const supported = agents.some((candidate) => candidate.id === draft.coordinatorAgentId);
+  return <>
+    <header className="workflow-inspector-head"><div><span className="workflow-kind">Whole workflow</span><h3>Lead agent settings</h3></div></header>
+    <div className="workflow-inspector-fields">
+      <p className="field-help">The lead coordinates discussions and reviews, implements the Task goal, and applies fixes. It is not an extra step.</p>
+      <label htmlFor="workflow-coordinator">Lead agent</label>
+      <select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => {
+        const coordinatorAgentId = event.target.value as StewardAgentId;
+        props.update({ coordinatorAgentId, ...workflowLaunchDefaults(workflowAgent(coordinatorAgentId, agents)) });
+      }}>
+        {!supported ? <option value={draft.coordinatorAgentId} disabled>Unavailable agent — choose a lead</option> : null}
+        {agents.map((candidate) => <option key={candidate.id} value={candidate.id} disabled={!candidate.available}>{candidate.label}{candidate.available ? "" : " (unavailable)"}</option>)}
+      </select>
+      {!supported ? <p className="field-help" role="alert">This template’s saved lead is not supported. Choose an available agent to repair it.</p> : null}
+      <label htmlFor="workflow-coordinator-model">Model</label>
+      <select id="workflow-coordinator-model" aria-label="Coordinator Model" value={draft.model} onChange={(event) => props.update({ model: event.target.value })}>{selectionOptions(agent.models, draft.model).map((model) => <option key={model} value={model}>{workflowModelLabel(model)}</option>)}</select>
+      <label htmlFor="workflow-coordinator-permission">Permission</label>
+      <select id="workflow-coordinator-permission" aria-label="Coordinator Permission" value={draft.permission} onChange={(event) => props.update({ permission: event.target.value as AssistantPermission })}>{selectionOptions(agent.permissions, draft.permission).map((permission) => <option key={permission} value={permission}>{workflowPermissionLabel(permission)}</option>)}</select>
+      <label htmlFor="workflow-coordinator-reasoning">Thinking</label>
+      <select id="workflow-coordinator-reasoning" aria-label="Coordinator Thinking" value={draft.reasoning} onChange={(event) => props.update({ reasoning: event.target.value as WorkflowReasoning })}>{selectionOptions(agent.reasoning, draft.reasoning).map((reasoning) => <option key={reasoning} value={reasoning}>{workflowReasoningLabel(reasoning)}</option>)}</select>
+      <p className="field-help">Implement and Fix use these settings. Discussion and reviewer agents keep their own settings.</p>
+    </div>
+  </>;
+}
+
+type WorkflowLeadInspectorDraft = Pick<WorkflowDraft, "coordinatorAgentId" | "model" | "permission" | "reasoning">;
+
 function WorkflowStepInspector(props: {
   step: WorkflowStepDto;
   steps: readonly WorkflowStepDto[];
@@ -473,6 +510,7 @@ function WorkflowStepInspector(props: {
   coordinatorSelection: WorkflowLaunchSelection;
   agents: readonly WorkflowAgent[];
   agentProfiles: readonly AgentLibraryEntry[];
+  editLead(): void;
   remove?: (() => void) | undefined;
   update(update: Partial<WorkflowStepDto>): void;
 }) {
@@ -565,7 +603,7 @@ function WorkflowStepInspector(props: {
           </div>
           </details>
         </>}
-      </> : <div className="workflow-owned-step"><Icon name={props.coordinatorAgentId === "claude" ? "claude" : "codex"} /><span><b>{agentLabel(props.coordinatorAgentId)} lead agent</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"} · {workflowLaunchSummary(props.coordinatorSelection)}</small></span></div>}
+      </> : <div className="workflow-owned-step"><span><b>Uses workflow lead · {workflowAgent(props.coordinatorAgentId, props.agents).label}</b><small>{props.step.kind === "fix" ? "Applies the combined review findings" : "Works in the Task worktree"} · {workflowLaunchSummary(props.coordinatorSelection)}</small><button type="button" className="secondary-button" onClick={props.editLead}>Edit lead agent</button></span></div>}
     </div>
   </>;
 }
@@ -597,7 +635,7 @@ function workflowAgents(capabilities: readonly AgentCapabilityDto[]): WorkflowAg
 function workflowAgent(agentId: StewardAgentId, agents: readonly WorkflowAgent[]): WorkflowAgent {
   return agents.find((agent) => agent.id === agentId) ?? {
     id: agentId,
-    label: agentLabel(agentId),
+    label: "Unavailable agent",
     available: false,
     models: ["default"],
     permissions: ["default", "bypassPermissions"],
