@@ -9,6 +9,7 @@ portable-pty.workspace = true
 termloop-platform = { path = "../platform" }
 thiserror.workspace = true
 tokio.workspace = true
+vte = { version = "0.15.0", default-features = false }
 
 [dev-dependencies]
 termloop-platform = { path = "../platform", features = ["test-support"] }

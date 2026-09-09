@@ -4,6 +4,8 @@ mod input_activity;
 mod input_readiness;
 mod input_writer;
 mod output_settlement;
+mod shell_history;
+pub use shell_history::{ShellHistory, ShellHistorySnapshot};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::collections::{HashMap, VecDeque};
@@ -247,6 +249,7 @@ struct TerminalServiceInner {
     activity: broadcast::Sender<TerminalActivityEvent>,
     process_registry: Option<std::path::PathBuf>,
     spawn_grids: Mutex<SpawnGrids>,
+    shell_histories: Mutex<VecDeque<(String, u64, ShellHistory)>>,
 }
 
 struct LaunchReservationState {
@@ -290,6 +293,7 @@ impl Default for TerminalService {
                 activity,
                 process_registry: None,
                 spawn_grids: Mutex::new(SpawnGrids::default()),
+                shell_histories: Mutex::new(VecDeque::new()),
             }),
         }
     }
@@ -311,6 +315,7 @@ struct Runtime {
     input_readiness: InputReadinessTracker,
     output_activity: OutputActivityTracker,
     recent_replay: Arc<Mutex<RecentReplay>>,
+    shell_history: Option<ShellHistory>,
     _ownership_record: Option<termloop_platform::TrackedProcessLease>,
     // Held for the child's whole lifetime. On Windows this is the kill-on-
     // close Job Object that signal_process_tree(pid, Kill) terminates; drop
@@ -505,11 +510,20 @@ impl TerminalService {
                 activity,
                 process_registry: Some(registry_directory),
                 spawn_grids: Mutex::new(SpawnGrids::default()),
+                shell_histories: Mutex::new(VecDeque::new()),
             }),
         }
     }
 
     pub fn spawn(&self, spec: PtySpawnSpec) -> Result<(), TerminalError> {
+        self.spawn_with_shell_history(spec, None)
+    }
+
+    fn spawn_with_shell_history(
+        &self,
+        spec: PtySpawnSpec,
+        shell_history: Option<ShellHistory>,
+    ) -> Result<(), TerminalError> {
         let reservation = self.reserve_launch(&spec.session_id, spec.runtime_epoch)?;
         if reservation.cancelled() {
             return Err(TerminalError::LaunchCancelled);
@@ -616,6 +630,13 @@ impl TerminalService {
             enabled: spec.recent_output_replay,
             ..RecentReplay::default()
         }));
+        if let Some(history) = &shell_history {
+            let mut replay = recent_replay.lock().expect("recent replay buffer poisoned");
+            for chunk in history.replay_prefix().chunks(MAX_IO_CHUNK_BYTES) {
+                replay.record_output(chunk);
+            }
+        }
+        let reader_shell_history = shell_history.clone();
         let reader_recent_replay = recent_replay.clone();
         let lifecycle_events = self.inner.lifecycle.clone();
         let activity_events = self.inner.activity.clone();
@@ -626,6 +647,9 @@ impl TerminalService {
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => {
+                        if let Some(history) = &reader_shell_history {
+                            history.close();
+                        }
                         reader_input_readiness.close();
                         reader_output_activity.close();
                         let mut replay = reader_recent_replay
@@ -643,6 +667,9 @@ impl TerminalService {
                     }
                     Ok(count) => {
                         let bytes = buffer[..count].to_vec();
+                        if let Some(history) = &reader_shell_history {
+                            history.record(&bytes);
+                        }
                         reader_client_input_activity.record_output(&bytes);
                         reader_input_readiness.record(&bytes);
                         reader_output_activity.record(&bytes);
@@ -658,6 +685,9 @@ impl TerminalService {
                         drop(replay);
                     }
                     Err(_) => {
+                        if let Some(history) = &reader_shell_history {
+                            history.close();
+                        }
                         reader_input_readiness.close();
                         reader_output_activity.close();
                         let mut replay = reader_recent_replay
@@ -690,6 +720,7 @@ impl TerminalService {
             input_readiness,
             output_activity,
             recent_replay,
+            shell_history,
             _ownership_record: ownership_record,
             _process_tree_guard: process_tree_guard,
         }));
@@ -1327,7 +1358,13 @@ impl TerminalService {
             if runtime_epoch.is_some_and(|epoch| runtime_guard.epoch != epoch) {
                 return Err(TerminalError::SessionNotFound);
             }
+            if let Some(history) = &runtime_guard.shell_history {
+                history.remember_directory(runtime_guard.child.process_id());
+            }
             terminate_child(runtime_guard.child.as_mut())?;
+            if let Some(history) = &runtime_guard.shell_history {
+                history.wait_closed();
+            }
         }
 
         let mut registry = self

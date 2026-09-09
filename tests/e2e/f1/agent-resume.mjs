@@ -521,12 +521,13 @@ try {
     const sessions = await controlCall(record, "session.list");
     const restoredClaude = sessions.find((session) => session.id === claude.id);
     const restoredCodex = sessions.find((session) => session.id === codex.id);
-    const staleTerminal = sessions.find((session) => session.id === terminal.id);
+    const restoredTerminal = sessions.find((session) => session.id === terminal.id);
     return restoredClaude?.lifecycle_state === "running"
       && restoredCodex?.lifecycle_state === "running"
       && restoredClaude.runtime_epoch !== claude.runtime_epoch
       && restoredCodex.runtime_epoch !== codex.runtime_epoch
-      && staleTerminal?.lifecycle_state === "stale"
+      && restoredTerminal?.lifecycle_state === "running"
+      && restoredTerminal.runtime_epoch !== terminal.runtime_epoch
       ? sessions
       : undefined;
   }, 12_000, "Sessions did not converge after daemon restart");
@@ -542,7 +543,7 @@ try {
       ?.some((attached) => attached.session_id === claude.id) || undefined;
   }, 4_000, "resumed Task agent stayed absent until another launch refreshed presence");
   evidence.checks.taskPresenceRestoredWithoutNewLaunch = true;
-  evidence.checks.genericTerminalStayedStale = restored.find((session) => session.id === terminal.id)?.lifecycle_state === "stale";
+  evidence.checks.genericTerminalReopened = restored.find((session) => session.id === terminal.id)?.lifecycle_state === "running";
   await waitUntil(async () => {
     const trace = await readFile(tracePath, "utf8").catch(() => "");
     return trace.includes("claude-resume") && trace.includes("codex-resume") ? true : undefined;
@@ -556,8 +557,9 @@ try {
   ]);
   await new Promise((resolve) => setTimeout(resolve, 200));
   evidence.checks.runningRetryIsIdempotent = await readFile(tracePath, "utf8") === traceBeforeRetry;
+  await controlCall(record, "session.terminate", { sessionId: terminal.id });
   const closed = await controlCall(record, "session.close", { sessionId: terminal.id });
-  evidence.checks.staleCloseDeletesDescriptor = closed.closed === true
+  evidence.checks.terminalCloseDeletesDescriptor = closed.closed === true
     && !(await controlCall(record, "session.list")).some((session) => session.id === terminal.id);
   }
 } catch (error) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import os from "node:os";
@@ -141,6 +141,7 @@ const evidence = { capturedAt: new Date().toISOString(), platform: process.platf
 let acceptedProjectId;
 let firstRuntimeEpoch;
 let renamedSessionId;
+let restorableTerminal;
 try {
   const { runtimePath, record } = await waitForRuntime();
   assert.match(record.controlUrl, /^ws:\/\/127\.0\.0\.1:\d+\/control$/);
@@ -259,6 +260,26 @@ try {
     if (!terminalExited) await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.equal(terminalExited, true); evidence.checks.naturalExitReconciled = true;
+  const restorable = await rawCall(record, { method: "session.launchTerminal", params: { projectId: acceptedProjectId, cwd: process.cwd() } });
+  assert.equal(restorable.ok, true);
+  restorableTerminal = restorable.result;
+  await terminalRoundTrip(record, restorableTerminal, "TERMLOOP_PERSISTED_SHELL_OUTPUT");
+  const historyDirectory = path.join(runtimeDir, "terminal-history");
+  let checkpointed = false;
+  for (let attempt = 0; attempt < 100 && !checkpointed; attempt++) {
+    const slots = await readdir(historyDirectory);
+    assert.ok(slots.length <= 64);
+    for (const slot of slots.filter((name) => name.endsWith(".bin"))) {
+      const file = path.join(historyDirectory, slot);
+      const metadata = await stat(file);
+      assert.ok(metadata.size <= 1024 * 1024);
+      if (process.platform !== "win32") assert.equal(metadata.mode & 0o777, 0o600);
+      if ((await readFile(file)).includes(Buffer.from("TERMLOOP_PERSISTED_SHELL_OUTPUT"))) checkpointed = true;
+    }
+    if (!checkpointed) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(checkpointed, true, "shell output was not checkpointed while the daemon was running");
+  evidence.checks.boundedPrivateShellHistoryCheckpointed = true;
   if (agentResponse) await rawCall(record, { method: "session.terminate", params: { sessionId: agentResponse.result.id } });
 
   const desktop = spawnSync("pnpm", ["--filter", "@termloop/desktop", "smoke"], { env, encoding: "utf8", timeout: process.platform === "win32" ? 90000 : 30000, shell: process.platform === "win32" });
@@ -285,6 +306,14 @@ try {
   const sessionsAfterRestart = await rawCall(restartRecord, { method: "session.list" });
   assert.equal(sessionsAfterRestart.result.find((session) => session.id === renamedSessionId).name, "Acceptance shell");
   evidence.checks.sessionNameDurableAcrossRestart = true;
+  const restoredTerminal = sessionsAfterRestart.result.find((session) => session.id === restorableTerminal.id);
+  assert.equal(restoredTerminal?.lifecycle_state, "running");
+  assert.notEqual(restoredTerminal.runtime_epoch, restorableTerminal.runtime_epoch);
+  const restoredOutput = await terminalRoundTrip(restartRecord, restoredTerminal, "TERMLOOP_NEW_SHELL_INPUT_WORKS");
+  assert.ok(restoredOutput.includes("TERMLOOP_PERSISTED_SHELL_OUTPUT"));
+  assert.ok(restoredOutput.includes("New shell after application restart"));
+  evidence.checks.shellHistoryAndLogicalSessionSurviveRestart = true;
+  await rawCall(restartRecord, { method: "session.terminate", params: { sessionId: restoredTerminal.id } });
   const restartedSession = await rawCall(restartRecord, { method: "session.launchTerminal", params: { projectId: acceptedProjectId, cwd: process.cwd() } });
   assert.equal(restartedSession.ok, true);
   assert.notEqual(restartedSession.result.runtime_epoch, firstRuntimeEpoch); evidence.checks.daemonRestartEpochChanged = true;
@@ -296,6 +325,7 @@ try {
 
 await writeFile("artifacts/evidence/s0/local.json", JSON.stringify(evidence, null, 2));
 const requiredChecks = ["loopbackDiscovery", "cli_version", "cli_capabilities", "cli_ping", "unauthenticated", "credentialShapeValidated", "unsupportedVersion", "identityPreflightBeforeDecodeCapabilityAndDispatch", "identityShapeValidated", "methodNotFound", "schemaEnvelopeValidated", "oversizedRequestTyped", "concurrentControlClients", "binaryTerminalHandshake", "terminalCredentialIsolation", "capabilityDenied", "readOnlyCapability", "invalidParamsTyped", "projectCreate", "cliProjectFlow", "domainErrorsTyped", "sessionRenameCapabilityAndReadProjection", "staleEpochRejected", "terminalReattach", "cliSessionFlow", "secretFreeProcessDescriptor", "naturalExitReconciled", "desktopSmoke", "durableProjectAcrossRestart", "sessionNameDurableAcrossRestart", "daemonRestartEpochChanged"];
+requiredChecks.push("boundedPrivateShellHistoryCheckpointed", "shellHistoryAndLogicalSessionSurviveRestart");
 const failedChecks = requiredChecks.filter((name) => evidence.checks[name] !== true);
 const status = failedChecks.length === 0 ? "PASS" : "FAIL";
 const rows = Object.entries(evidence.checks).map(([name, value]) => `| ${name} | ${String(value)} |`).join("\n");
