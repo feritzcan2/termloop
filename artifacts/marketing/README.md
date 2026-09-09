@@ -2,7 +2,7 @@
 
 The website now includes **32 feature demos**, up from 13. The pre-existing marketing archive contained 16 recording folders, including alternate cuts. There are **19 new feature recordings** from the working Launchpad Demo Project; the original 13 website demos are re-edited with the same three-step caption treatment.
 
-Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Short source clips have deliberate orientation and result holds. Videos default to manual playback, with optional viewport autoplay and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.
+Each published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Short source clips have deliberate orientation and result holds. Videos use a large, full-width layout and default to silent looping playback when visible, with pause and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.
 
 ## Feature list
 
