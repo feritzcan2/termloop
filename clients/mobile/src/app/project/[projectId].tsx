@@ -15,6 +15,9 @@ import { SwipeableSessionRow } from "@/features/session-actions/swipeable-sessio
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
+import { useMobileRuntime } from "@/composition/runtime-context";
+import { WorkflowAgentGroupFrame, WorkflowAgentList } from "@/features/workflows/workflow-agent-list";
+import { workflowAgentSegments, type WorkflowAgentMembership } from "@/presentation/workflow-agent-groups";
 import {
   agentClusterMembers,
   buildProjectOverview,
@@ -40,6 +43,7 @@ export default function ProjectRoute() {
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
+  const runtime = useMobileRuntime();
   const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>(tab === "tasks" ? "tasks" : "agents");
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string>();
@@ -194,14 +198,19 @@ export default function ProjectRoute() {
                     body="Start an Agent for this Project and its Session will appear here."
                   />
                 ) : (
-                  <Card>
-                    {agentClusters.map((cluster, index) => (
-                      <View key={cluster.key}>
-                        {index === 0 ? null : <CardDivider />}
-                        <AgentClusterView cluster={cluster} nowMs={nowMs} openActions={setActionSessionId} />
-                      </View>
-                    ))}
-                  </Card>
+                  <WorkflowAgentList
+                    key={`${connections.selectedId}:${projectId}`}
+                    connectionId={connections.selectedId ?? ""}
+                    projectId={projectId}
+                    online={connections.selected?.availability === "online"}
+                    agentDataStale={store.error !== undefined}
+                    templates={runtime.workflowTemplates}
+                    control={runtime.control}
+                    sessions={store.overview?.sessions ?? []}
+                    tasks={store.overview?.tasks ?? []}
+                    clusters={agentClusters}
+                    renderCluster={(cluster, memberships, stale) => <AgentClusterView cluster={cluster} memberships={memberships} workflowDataStale={stale} nowMs={nowMs} openActions={setActionSessionId} />}
+                  />
                 )}
               </View>
 
@@ -287,24 +296,30 @@ export default function ProjectRoute() {
   );
 }
 
-function AgentClusterView({ cluster, nowMs, openActions }: {
+function AgentClusterView({ cluster, memberships, workflowDataStale, nowMs, openActions }: {
   cluster: AgentCluster;
+  memberships: ReadonlyMap<string, WorkflowAgentMembership>;
+  workflowDataStale: boolean;
   nowMs: number;
   openActions(sessionId: string): void;
 }) {
   const rows = cluster.groups.map(({ source, helpers }, groupIndex) => (
     <View key={source.sessionId}>
       {groupIndex === 0 ? null : <CardDivider />}
-      <AgentRowView row={source} nowMs={nowMs} openActions={openActions} />
-      {helpers.map((helper) => (
-        <View key={helper.sessionId} style={styles.helperWrap}>
-          <View style={styles.helperConnector} />
-          <View style={styles.helperBody}>
-            <CardDivider />
-            <AgentRowView row={helper} nowMs={nowMs} openActions={openActions} />
-          </View>
-        </View>
-      ))}
+      {workflowAgentSegments([source, ...helpers], memberships).map((segment) => {
+        const members = segment.rows.map((row) => row.sessionId === source.sessionId
+          ? <AgentRowView key={row.sessionId} row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />
+          : <View key={row.sessionId} style={styles.helperWrap}>
+            <View style={styles.helperConnector} />
+            <View style={styles.helperBody}>
+              <CardDivider />
+              <AgentRowView row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />
+            </View>
+          </View>);
+        return segment.group
+          ? <WorkflowAgentGroupFrame key={segment.rows[0]!.sessionId} group={segment.group} stale={workflowDataStale}>{members}</WorkflowAgentGroupFrame>
+          : <View key={segment.rows[0]!.sessionId}>{members}</View>;
+      })}
     </View>
   ));
   if (cluster.manualGroup === undefined) return <>{rows}</>;
@@ -335,15 +350,15 @@ function AgentClusterView({ cluster, nowMs, openActions }: {
   );
 }
 
-function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: number; openActions(sessionId: string): void }) {
+function AgentRowView({ row, membership, nowMs, openActions }: { row: AgentRow; membership?: WorkflowAgentMembership | undefined; nowMs: number; openActions(sessionId: string): void }) {
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
   const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
   /// The headline is what the agent is for. The avatar already names the agent, so a
   /// Task-attached row spends its title on the Task and its state line on who runs it.
-  const title = row.taskTitle ?? row.title;
-  const detail = row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
+  const title = membership?.displayName ?? row.taskTitle ?? row.title;
+  const detail = membership || row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
   const content = (
     <Row
       tone={row.tone}
@@ -351,7 +366,7 @@ function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: numbe
       state={row.stateLabel}
       detail={detail}
       meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
-      accessibleName={row.accessibleName}
+      accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
       trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
       onPress={() => {
         if (!row.attachable) {
