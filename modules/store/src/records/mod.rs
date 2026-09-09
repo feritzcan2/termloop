@@ -17,6 +17,7 @@ mod steward;
 mod task;
 pub(crate) mod task_branch;
 mod task_source;
+mod terminal_restore;
 mod tracker;
 mod workflow;
 
