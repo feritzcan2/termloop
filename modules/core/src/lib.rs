@@ -210,16 +210,8 @@ pub struct CoreRuntime {
     /// persistence is retried without consuming its runtime retirement intent.
     pub(crate) pending_session_exits: HashMap<String, termloop_terminal::ReapedTerminal>,
     pub(crate) pending_agent_resume_refs: HashMap<String, termloop_domain::ResumeRef>,
-    pub(crate) quick_action_previews: VecDeque<(String, session_launch::QuickActionPreviewTicket)>,
-    pub(crate) agent_launch_previews: VecDeque<(String, session_launch::AgentLaunchPreviewTicket)>,
-    pub(crate) agent_resume_previews: VecDeque<(String, session_launch::AgentResumePreviewTicket)>,
+    pub(crate) preview_tickets: runtime::preview_tickets::PreviewTicketRuntime,
     pub(crate) session_history: session_launch::session_history::SessionHistoryRuntime,
-    pub(crate) session_relocation_previews:
-        VecDeque<(String, session_launch::SessionRelocationPreviewTicket)>,
-    pub(crate) session_archive_previews:
-        VecDeque<(String, session_launch::archive::SessionArchivePreviewTicket)>,
-    pub(crate) task_archive_previews:
-        VecDeque<(String, task_worktree::archive::TaskArchivePreviewTicket)>,
     pub(crate) resume_shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(crate) worktree_projections: task_worktree::WorktreeProjectionCache,
     pub(crate) worktree_change_observations: task_worktree::WorktreeChangeObservationCache,
@@ -694,13 +686,8 @@ impl CoreRuntime {
             agent_terminal_holds: HashSet::new(),
             pending_session_exits: HashMap::new(),
             pending_agent_resume_refs: HashMap::new(),
-            quick_action_previews: VecDeque::new(),
-            agent_launch_previews: VecDeque::new(),
-            agent_resume_previews: VecDeque::new(),
+            preview_tickets: runtime::preview_tickets::PreviewTicketRuntime::default(),
             session_history: session_launch::session_history::SessionHistoryRuntime::default(),
-            session_relocation_previews: VecDeque::new(),
-            session_archive_previews: VecDeque::new(),
-            task_archive_previews: VecDeque::new(),
             resume_shutdown: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             worktree_projections: task_worktree::WorktreeProjectionCache::default(),
             worktree_change_observations: task_worktree::WorktreeChangeObservationCache::default(),

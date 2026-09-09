@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use termloop_domain::{
@@ -8,9 +7,6 @@ use termloop_domain::{
 
 use super::health::comparison_key;
 use crate::{CoreError, CoreRuntime, required_string, store_error, terminal_error};
-
-const ARCHIVE_PREVIEW_TTL: Duration = Duration::from_secs(30);
-const ARCHIVE_PREVIEW_CAP: usize = 32;
 
 #[derive(Clone)]
 pub struct TaskArchiveRetirementPlan {
@@ -37,7 +33,6 @@ pub(crate) struct TaskArchivePreviewTicket {
     operation: TaskArchiveOperation,
     blockers: Vec<String>,
     blocker_session_ids: Vec<String>,
-    deadline: termloop_platform::MonotonicDeadline,
 }
 
 impl TaskArchivePreviewTicket {
@@ -393,35 +388,19 @@ impl CoreRuntime {
             targets,
             state: TaskArchiveOperationState::Prepared,
         };
-        self.task_archive_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.task_archive_previews.len() >= ARCHIVE_PREVIEW_CAP {
-            self.task_archive_previews.pop_front();
-        }
-        let mut archive_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .task_archive_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &archive_ticket)
-        {
-            archive_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(ARCHIVE_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.task_archive_previews.push_back((
-            archive_ticket.clone(),
-            TaskArchivePreviewTicket {
+        let archive_ticket = self
+            .preview_tickets
+            .task_archive
+            .issue(TaskArchivePreviewTicket {
                 task_updated_at_epoch_ms: task.updated_at_epoch_ms,
                 operation,
                 blockers: blockers.clone(),
                 blocker_session_ids: blocker_session_ids.clone(),
-                deadline,
-            },
-        ));
+            })?;
         Ok(json!({
             "task_id": task.id,
             "archive_ticket": archive_ticket,
-            "expires_in_ms": 30_000,
+            "expires_in_ms": crate::runtime::preview_tickets::PREVIEW_TTL_MS,
             "sessions": projected_sessions,
             "blockers": blockers,
             "can_archive": blockers.is_empty(),
@@ -457,22 +436,16 @@ impl CoreRuntime {
         &mut self,
         params: Value,
     ) -> Result<TaskArchiveRetirementPlan, CoreError> {
-        self.task_archive_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let task_id = required_string(&params, "taskId")?;
         let operation_id = required_string(&params, "operationId")?;
         let archive_ticket = required_string(&params, "archiveTicket")?;
-        let position = self
-            .task_archive_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &archive_ticket)
+        let mut preview = self
+            .preview_tickets
+            .task_archive
+            .consume_once(&archive_ticket)
             .ok_or_else(|| CoreError::ArchivePreviewStale {
                 task_id: task_id.clone(),
             })?;
-        let (_, mut preview) = self
-            .task_archive_previews
-            .remove(position)
-            .expect("archive ticket position came from the same bounded queue");
         if preview.operation.task_id != task_id {
             return Err(CoreError::ArchivePreviewStale { task_id });
         }

@@ -3213,20 +3213,22 @@ fn quick_action_preview_is_project_scoped_and_matches_versioned_delivery() {
         let preview = runtime.preview_quick_action(params.clone()).unwrap();
         bounded_tickets.push(preview["launch_ticket"].as_str().unwrap().to_owned());
     }
-    assert_eq!(runtime.quick_action_previews.len(), 64);
-    assert!(
-        !runtime
-            .quick_action_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &bounded_tickets[0])
-    );
-    assert_eq!(
-        runtime.quick_action_previews.back().unwrap().0,
-        *bounded_tickets.last().unwrap()
-    );
-    let discard_ticket = runtime.quick_action_previews.front().unwrap().0.clone();
-    runtime.discard_quick_action_preview(&discard_ticket);
-    assert_eq!(runtime.quick_action_previews.len(), 63);
+    runtime.discard_quick_action_preview(&bounded_tickets[1]);
+    for (index, ticket) in bounded_tickets.iter().enumerate() {
+        let mut launch_params = params.clone();
+        launch_params["launchTicket"] = Value::String(ticket.clone());
+        if index < 2 {
+            // The oldest was evicted, and the next was explicitly discarded.
+            assert!(runtime.take_quick_action_launch(launch_params).is_err());
+        } else {
+            assert!(
+                runtime
+                    .take_quick_action_launch(launch_params.clone())
+                    .is_ok()
+            );
+            assert!(runtime.take_quick_action_launch(launch_params).is_err());
+        }
+    }
     assert_eq!(runtime.state_revision(), revision);
     assert!(runtime.store.sessions().is_empty());
     let _ = std::fs::remove_dir_all(root);

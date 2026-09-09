@@ -143,6 +143,54 @@ fn relocation_preview(fixture: &mut Fixture, session_id: &str, task_id: &str) ->
 }
 
 #[test]
+fn assistant_reset_invalidates_relocation_even_when_its_session_is_preserved() {
+    let (mut fixture, task_id, session_id, target) = prepare_relocation_fixture();
+    fixture
+        .runtime
+        .set_steward_configuration(crate::StewardConfigurationUpdate {
+            project_id: &fixture.project_id,
+            agent_id: "codex",
+            model: "default".into(),
+            permission: "bypassPermissions".into(),
+            reasoning: "default".into(),
+            enabled: false,
+            system_prompt: "Coordinate the Project.".into(),
+            expected_revision: fixture.runtime.state_revision(),
+            capability: crate::AssistantAvailability::Unavailable,
+            updated_at_epoch_ms: 1,
+        })
+        .unwrap();
+    let preview = relocation_preview(&mut fixture, &session_id, &task_id);
+    assert_eq!(preview["expires_in_ms"], 30_000);
+    let commit = fixture
+        .runtime
+        .reset_project_assistant(&fixture.project_id, fixture.runtime.state_revision(), 20)
+        .unwrap();
+    assert!(commit.session_ids.is_empty());
+    fixture
+        .runtime
+        .finish_project_assistant_reset(&fixture.project_id);
+    assert!(matches!(
+        fixture.runtime.plan_ticketed_agent_relocation(json!({
+            "sessionId": session_id,
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "relocationTicket": preview["relocation_ticket"],
+        })),
+        Err(CoreError::InvalidParams(field)) if field == "relocationTicket"
+    ));
+    assert!(
+        fixture
+            .runtime
+            .store
+            .session_relocation_operations()
+            .is_empty()
+    );
+    assert!(!fixture.runtime.resume_reservations.contains(&session_id));
+    let _ = std::fs::remove_dir_all(target);
+}
+
+#[test]
 fn relocation_ticket_is_exact_single_use_and_never_stores_task_parentage() {
     let (mut fixture, task_id, session_id, target) = prepare_relocation_fixture();
     let source = fixture.runtime.session_cwd(&session_id).unwrap();

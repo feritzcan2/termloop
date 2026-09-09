@@ -60,15 +60,8 @@ impl CoreRuntime {
             .iter()
             .filter_map(|session_id| self.retire_closed_session_runtime(session_id))
             .collect::<Vec<_>>();
-        self.quick_action_previews.retain(|(_, ticket)| {
-            ticket.project_id() != project_id || !ticket.is_assistant_prompt_improver()
-        });
-        self.agent_resume_previews
-            .retain(|(_, ticket)| !session_id_set.contains(ticket.session_id()));
-        self.session_archive_previews
-            .retain(|(_, ticket)| !session_id_set.contains(ticket.session_id()));
-        self.session_relocation_previews
-            .retain(|(_, ticket)| ticket.project_id() != project_id);
+        self.preview_tickets
+            .invalidate_assistant_reset(project_id, &session_id_set);
         self.retain_current_tracker_runtime();
 
         Ok(ProjectAssistantResetCommit {

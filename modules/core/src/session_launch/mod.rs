@@ -53,7 +53,6 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::mpsc::Sender;
-use std::time::Duration;
 use termloop_domain::{
     AgentLaunchSelection, ImproverSessionTarget, ImproverSessionTargetKind, IssueLinkProvider,
     ProcessDescriptor, ResumeProvider, ResumeRef, SessionKind, SessionRecord,
@@ -62,8 +61,6 @@ use termloop_gitio::{GitError, GitFailureKind, GitRunner, RegisteredPathState};
 use termloop_terminal::PtySpawnSpec;
 use uuid::Uuid;
 
-const QUICK_ACTION_PREVIEW_TTL: Duration = Duration::from_secs(30);
-const MAX_QUICK_ACTION_PREVIEWS: usize = 64;
 const SESSION_NAME_MAX_CHARS: usize = 80;
 
 pub struct AgentLaunchCommit {
@@ -137,7 +134,6 @@ pub struct AgentLaunchPlan {
 
 pub(crate) struct QuickActionPreviewTicket {
     plan: AgentLaunchPlan,
-    deadline: termloop_platform::MonotonicDeadline,
 }
 
 impl QuickActionPreviewTicket {
@@ -152,7 +148,6 @@ impl QuickActionPreviewTicket {
 
 pub(crate) struct AgentLaunchPreviewTicket {
     plan: AgentLaunchPlan,
-    deadline: termloop_platform::MonotonicDeadline,
 }
 
 impl AgentLaunchPreviewTicket {
@@ -167,7 +162,6 @@ pub(crate) struct AgentResumePreviewTicket {
     observation_token: Option<String>,
     mcp_token: Option<String>,
     managed_worktree_trust: bool,
-    deadline: termloop_platform::MonotonicDeadline,
 }
 
 impl AgentResumePreviewTicket {
@@ -842,18 +836,12 @@ impl CoreRuntime {
     /// inspected selection, and the exact template. Each improver then adds the
     /// target check its own bindings carry.
     fn take_improver_ticket(&mut self, params: &Value) -> Result<AgentLaunchPlan, CoreError> {
-        self.quick_action_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let launch_ticket = required_string(params, "launchTicket")?;
-        let position = self
-            .quick_action_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &launch_ticket)
+        let preview = self
+            .preview_tickets
+            .quick_action
+            .consume_once(&launch_ticket)
             .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
-        let (_, preview) = self
-            .quick_action_previews
-            .remove(position)
-            .expect("ticket position came from the same bounded queue");
         if !matches!(&preview.plan.mcp_role, AgentMcpRole::Improver { .. }) {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
@@ -1128,25 +1116,10 @@ impl CoreRuntime {
         manifest: termloop_invocation::InspectableLaunchManifest,
         delivered_preview: String,
     ) -> Result<Value, CoreError> {
-        self.quick_action_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.quick_action_previews.len() >= MAX_QUICK_ACTION_PREVIEWS {
-            self.quick_action_previews.pop_front();
-        }
-        let mut launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .quick_action_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &launch_ticket)
-        {
-            launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(QUICK_ACTION_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.quick_action_previews.push_back((
-            launch_ticket.clone(),
-            QuickActionPreviewTicket { plan, deadline },
-        ));
+        let launch_ticket = self
+            .preview_tickets
+            .quick_action
+            .issue(QuickActionPreviewTicket { plan })?;
         Ok(json!({
             "agent_id": manifest.target.agent_id,
             "model": manifest.target.model,
@@ -1180,41 +1153,20 @@ impl CoreRuntime {
         let launch = resolve_interactive_agent_launch(&plan)?;
         let manifest = launch.inspectable_manifest().clone();
         plan.prepared_launch = Some(launch);
-        self.agent_launch_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.agent_launch_previews.len() >= MAX_QUICK_ACTION_PREVIEWS {
-            self.agent_launch_previews.pop_front();
-        }
-        let mut launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .agent_launch_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &launch_ticket)
-        {
-            launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(QUICK_ACTION_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.agent_launch_previews.push_back((
-            launch_ticket.clone(),
-            AgentLaunchPreviewTicket { plan, deadline },
-        ));
+        let launch_ticket = self
+            .preview_tickets
+            .agent_launch
+            .issue(AgentLaunchPreviewTicket { plan })?;
         Ok(json!({ "launch_ticket": launch_ticket, "manifest": manifest }))
     }
 
     pub fn take_agent_launch(&mut self, params: Value) -> Result<AgentLaunchPlan, CoreError> {
-        self.agent_launch_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let launch_ticket = required_string(&params, "launchTicket")?;
-        let position = self
-            .agent_launch_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &launch_ticket)
+        let preview = self
+            .preview_tickets
+            .agent_launch
+            .consume_once(&launch_ticket)
             .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
-        let (_, preview) = self
-            .agent_launch_previews
-            .remove(position)
-            .expect("ticket position came from the same bounded queue");
         if params
             .get("agentId")
             .and_then(Value::as_str)
@@ -1289,18 +1241,12 @@ impl CoreRuntime {
         &mut self,
         params: Value,
     ) -> Result<AgentLaunchPlan, CoreError> {
-        self.quick_action_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let launch_ticket = required_string(&params, "launchTicket")?;
-        let position = self
-            .quick_action_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &launch_ticket)
+        let preview = self
+            .preview_tickets
+            .quick_action
+            .consume_once(&launch_ticket)
             .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
-        let (_, preview) = self
-            .quick_action_previews
-            .remove(position)
-            .expect("ticket position came from the same bounded queue");
         let quick_action = preview
             .plan
             .quick_action
@@ -1344,13 +1290,7 @@ impl CoreRuntime {
     }
 
     pub fn discard_quick_action_preview(&mut self, launch_ticket: &str) {
-        if let Some(position) = self
-            .quick_action_previews
-            .iter()
-            .position(|(ticket, _)| ticket == launch_ticket)
-        {
-            self.quick_action_previews.remove(position);
-        }
+        self.preview_tickets.quick_action.discard(launch_ticket);
     }
 
     pub fn plan_quick_action_launch(&self, params: Value) -> Result<AgentLaunchPlan, CoreError> {
