@@ -1,12 +1,15 @@
 {
   "id": "context-sync",
-  "duration": 18.0,
-  "sourceSeconds": 4.237,
-  "size": 147202,
-  "sha256": "32710323cf29b969a74b9082d20fab6c54570d1113e79d8dbb860707971d8191",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 42.1,
+  "sourceSeconds": 39.6,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 440260,
+  "sha256": "6e9b40cc5e99185883fdff1a8f4fe646d2d17e8ade92b4ca18ae2e08cc38911d",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

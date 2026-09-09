@@ -1,12 +1,15 @@
 {
   "id": "appearance",
-  "duration": 18.833333,
-  "sourceSeconds": 10.278,
-  "size": 189158,
-  "sha256": "a986d4ab0780bac5edccf06ea885d55b25c2c4c11f887bb416819a5daaac0eab",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 28.066667,
+  "sourceSeconds": 25.566,
+  "sourceFps": 29.99960887081003,
+  "motionSpeed": 1,
+  "size": 472196,
+  "sha256": "5029f319be820df8398ddab89be2a0b7230fe773629269a6a838c05aa899c812",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

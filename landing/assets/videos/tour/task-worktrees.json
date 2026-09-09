@@ -1,12 +1,15 @@
 {
   "id": "task-worktrees",
-  "duration": 18.0,
-  "sourceSeconds": 9.125,
-  "size": 381800,
-  "sha256": "a7012365647dfeaac51d6a24daadcaa36b2c2f5f3b3099cf0ac937b84593a9c1",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 11.666667,
+  "sourceSeconds": 9.166667,
+  "sourceFps": 18.0,
+  "motionSpeed": 1,
+  "size": 501439,
+  "sha256": "2aa63012f3f363a60f7e79b93ea50d5a8284976766ad4e09febb5e8626a389c7",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

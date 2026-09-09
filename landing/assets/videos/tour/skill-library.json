@@ -1,12 +1,15 @@
 {
   "id": "skill-library",
-  "duration": 18.0,
-  "sourceSeconds": 4.195,
-  "size": 304066,
-  "sha256": "a744a9adf92adc4e87bb5ec1482a5de21dd2c53f126ff3828938db379d9b0a32",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 31.0,
+  "sourceSeconds": 28.5,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 458902,
+  "sha256": "080fe2713e3b2e60f0698071104205f020d5df95fb017fbe76dc471455161caa",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }
