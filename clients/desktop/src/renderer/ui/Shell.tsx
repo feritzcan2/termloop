@@ -2082,6 +2082,7 @@ export function Shell(props: ShellProps) {
         agentConnections={props.agentConnections}
         initialProfileId={selectedConnectionProfileId}
         list={props.listConnectionProfiles}
+        reconnect={props.reconnectSource}
         connect={props.connectConnectionProfile}
         setEnabled={props.setConnectionProfileEnabled}
         remove={props.removeConnectionProfile}

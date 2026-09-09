@@ -34,6 +34,7 @@ export type ConnectionProfilesDialogProps = {
   enableHost(transport: RemoteHostTransport): Promise<RemoteHostStatus>;
   hostStatus(): Promise<RemoteHostStatus>;
   list(): Promise<ConnectionProfileSummary[]>;
+  reconnect(profileId: string): Promise<void>;
   remove(profileId: string): Promise<ConnectionProfileSummary[]>;
   setEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   subscribeStatus(listener: (summary: ConnectionSourceSummary) => void): () => void;
@@ -50,6 +51,7 @@ export function ConnectionProfilesDialog({
   enableHost,
   hostStatus,
   list,
+  reconnect,
   remove,
   setEnabled,
   subscribeStatus,
@@ -59,6 +61,7 @@ export function ConnectionProfilesDialog({
   const [profiles, setProfiles] = useState<ConnectionProfileSummary[]>();
   const [message, setMessage] = useState<Message>();
   const [busy, setBusy] = useState(false);
+  const [refreshingProfiles, setRefreshingProfiles] = useState<string[]>([]);
 
   // Discovery-first "add a computer" flow.
   const [discovery, setDiscovery] = useState<TailscaleServerDiscovery>();
@@ -197,6 +200,27 @@ export function ConnectionProfilesDialog({
     );
   };
 
+  const refreshProfile = async (profile: ConnectionProfileSummary) => {
+    if (busy || !profile.enabled || refreshingProfiles.includes(profile.id)) return;
+    setRefreshingProfiles((current) => [...current, profile.id]);
+    clearPlacedMessage("profiles");
+    // Only events from this retry should override its fresh connection snapshot.
+    latestStatuses.current.delete(profile.id);
+    try {
+      await reconnect(profile.id);
+      const next = await list();
+      if (mounted.current) setProfiles(mergeConnectionProfileStatuses(next, latestStatuses.current));
+    } catch (error) {
+      if (mounted.current) setMessage({
+        kind: "error",
+        text: `Could not refresh ${profile.name}: ${errorMessage(error)}`,
+        placement: "profiles",
+      });
+    } finally {
+      if (mounted.current) setRefreshingProfiles((current) => current.filter((id) => id !== profile.id));
+    }
+  };
+
   const changeEnabled = async (profileId: string, enabled: boolean) => {
     setBusy(true);
     setMessage(undefined);
@@ -261,6 +285,7 @@ export function ConnectionProfilesDialog({
 
   function renderComputerCard(profile: ConnectionProfileSummary) {
     const isLocal = profile.transport === "local";
+    const refreshing = refreshingProfiles.includes(profile.id);
     const status = profileStatus(profile);
     return (
       <article className={isLocal ? "conn-card local" : "conn-card"} key={profile.id}>
@@ -278,6 +303,16 @@ export function ConnectionProfilesDialog({
           {profile.warning ? <small className="conn-warn-text">{profile.warning}</small> : null}
         </div>
         <div className="conn-card-actions">
+          <button
+            type="button"
+            className="conn-refresh"
+            aria-label={`Refresh ${profile.name} connection`}
+            aria-busy={refreshing}
+            disabled={busy || refreshing || !profile.enabled}
+            onClick={() => void refreshProfile(profile)}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
           {agentConnections ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("agents"); }}>Manage agents</button> : null}
           {isLocal ? <span className="conn-always">Always on</span> : (
             <>
@@ -287,12 +322,12 @@ export function ConnectionProfilesDialog({
                 aria-checked={profile.enabled}
                 aria-label={profile.enabled ? `Disable ${profile.name}` : `Enable ${profile.name}`}
                 className={profile.enabled ? "conn-switch on" : "conn-switch"}
-                disabled={busy}
+                disabled={busy || refreshing}
                 onClick={() => void changeEnabled(profile.id, !profile.enabled)}
               >
                 <span />
               </button>
-              <button type="button" className="conn-remove" disabled={busy} onClick={() => void removeProfile(profile.id)}>Remove</button>
+              <button type="button" className="conn-remove" disabled={busy || refreshing} onClick={() => void removeProfile(profile.id)}>Remove</button>
             </>
           )}
         </div>
