@@ -114,14 +114,17 @@ function ExpandedFile({ files, preImage, loading, error, review }: {
 function ParsedFile({ file, review }: { file: IFile; review: WorktreeDiffReview | undefined }) {
   return (
     <View style={styles.file}>
-      {file.hunks.map((hunk, hunkIndex) => (
+      {file.hunks.map((hunk, hunkIndex) => {
+        const context = hunk.content.replace(/^@@[^@]*@@\s?/, "").trim();
+        return (
         <View key={`${hunk.content}:${hunkIndex}`} style={styles.hunk}>
-          <Text style={styles.hunkHeader}>{hunk.content}</Text>
+          {context ? <Text style={styles.hunkHeader}>{context}</Text> : null}
           {hunk.changes.map((change, changeIndex) => (
             <DiffLine key={`${change.oldLineNumber ?? ""}:${change.newLineNumber ?? ""}:${changeIndex}`} change={change} review={review} />
           ))}
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -129,27 +132,27 @@ function ParsedFile({ file, review }: { file: IFile; review: WorktreeDiffReview 
 function DiffLine({ change, review }: { change: IChange; review: WorktreeDiffReview | undefined }) {
   const isInsert = change.type === "insert";
   const isDelete = change.type === "delete";
-  const oldLine = change.oldLineNumber ?? (isDelete ? change.lineNumber : undefined);
-  const newLine = change.newLineNumber ?? (isInsert ? change.lineNumber : undefined);
   const line = diffReviewLine(change);
   const noted = line !== undefined && review?.notedLines.has(reviewLineKey(line));
+  const commentable = review !== undefined && line !== undefined;
   return (
-    <View style={[styles.line, review ? styles.commentableLine : null, isInsert ? styles.lineInsert : null, isDelete ? styles.lineDelete : null]}>
-      {review && line ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`${noted ? "Edit feedback on" : "Comment on"} ${line.lineSide} line ${line.lineNumber}`}
-          onPress={() => review.onSelectLine(line)} style={styles.commentTrigger}>
-          <Text style={styles.commentGlyph}>{noted ? "●" : "+"}</Text>
-        </Pressable>
+    <Pressable
+      accessibilityRole={commentable ? "button" : undefined}
+      accessibilityLabel={commentable ? `${noted ? "Edit feedback on" : "Comment on"} ${line.lineSide} line ${line.lineNumber}` : undefined}
+      disabled={!commentable}
+      onPress={commentable ? () => review.onSelectLine(line) : undefined}
+      style={[styles.line, commentable ? styles.commentableLine : null, isInsert ? styles.lineInsert : null, isDelete ? styles.lineDelete : null]}
+    >
+      {commentable ? (
+        <Text style={styles.commentGlyph} accessibilityElementsHidden>{noted ? "●" : "+"}</Text>
       ) : null}
-      <Text style={styles.lineNumber}>{oldLine ?? ""}</Text>
-      <Text style={styles.lineNumber}>{newLine ?? ""}</Text>
       <Text style={[styles.prefix, isInsert ? styles.insertText : isDelete ? styles.deleteText : null]}>
         {isInsert ? "+" : isDelete ? "−" : " "}
       </Text>
-      <Text selectable style={[styles.code, isInsert ? styles.insertText : isDelete ? styles.deleteText : null]}>
+      <Text selectable={!commentable} style={[styles.code, isInsert ? styles.insertText : isDelete ? styles.deleteText : null]}>
         {change.content ?? ""}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -186,7 +189,6 @@ type NumberedFullFileLine =
   | { type: "deleted"; count: number };
 
 function numberedLineChunks(lines: readonly FullFileDisplayLine[]): readonly (readonly NumberedFullFileLine[])[] {
-  const width = String(lines.filter((line) => line.type === "code").length).length;
   let number = 0;
   const numbered = lines.map((line): NumberedFullFileLine => line.type === "code"
     ? { ...line, number: ++number }
@@ -196,9 +198,7 @@ function numberedLineChunks(lines: readonly FullFileDisplayLine[]): readonly (re
   for (let start = 0; start < numbered.length; start += 120) {
     chunks.push(numbered.slice(start, start + 120));
   }
-  return chunks.map((chunk) => chunk.map((line) => line.type === "code"
-    ? { ...line, content: `${String(line.number).padStart(width, " ")}  ${line.content}` }
-    : line));
+  return chunks;
 }
 
 function FullFileChunk({ lines, review }: { lines: readonly NumberedFullFileLine[]; review: WorktreeDiffReview | undefined }) {
@@ -209,7 +209,7 @@ function FullFileChunk({ lines, review }: { lines: readonly NumberedFullFileLine
           accessibilityRole={review ? "button" : undefined}
           accessibilityLabel={review ? `${review.notedLines.has(`new:${line.number}`) ? "Edit feedback on" : "Comment on"} new line ${line.number}` : undefined}
           onPress={review ? () => review.onSelectLine({ lineSide: "new", lineNumber: line.number }) : undefined}>
-          {review ? (review.notedLines.has(`new:${line.number}`) ? "●  " : "+  ") : ""}{line.content}{"\n"}
+          {review ? (review.notedLines.has(`new:${line.number}`) ? "● " : "+ ") : ""}{line.content}{"\n"}
         </Text>
       ) : (
         <Text key={index} style={styles.fullFileDeleted}>    − {line.count} {line.count === 1 ? "line" : "lines"} removed{"\n"}</Text>
@@ -237,18 +237,8 @@ const styles = StyleSheet.create({
   lineInsert: { backgroundColor: color.successWash },
   lineDelete: { backgroundColor: color.dangerWash },
   commentableLine: { minHeight: geometry.touchTarget, alignItems: "center" },
-  commentTrigger: { width: geometry.touchTarget, minHeight: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
-  commentGlyph: { color: color.accentStrong, fontSize: 18, fontFamily: fontFamily.mono },
-  lineNumber: {
-    width: 34,
-    color: color.textMuted,
-    fontFamily: fontFamily.mono,
-    fontSize: 10.5,
-    lineHeight: 18,
-    paddingHorizontal: 4,
-    textAlign: "right",
-  },
-  prefix: { width: 17, color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  commentGlyph: { width: 24, textAlign: "center", color: color.accentStrong, fontSize: 16, fontFamily: fontFamily.mono },
+  prefix: { width: 12, color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 18, textAlign: "center" },
   code: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, lineHeight: 18, paddingRight: space.sm },
   insertText: { color: color.success },
   deleteText: { color: color.danger },

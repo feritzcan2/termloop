@@ -7,7 +7,7 @@ pub(super) async fn fail_agent_resume_attempt(
     state: &AppState,
     session_id: &str,
     reason: ResumeFailureReason,
-    plan: AgentResumePlan,
+    plan: Box<AgentResumePlan>,
 ) -> Result<Value, CoreError> {
     debug_assert_eq!(session_id, plan.session_id());
     finalize_resume_failure(state, plan, AgentResumeFailureOutcome::Failed(reason)).await
@@ -15,14 +15,14 @@ pub(super) async fn fail_agent_resume_attempt(
 
 pub(super) async fn shutdown_agent_resume_attempt(
     state: &AppState,
-    plan: AgentResumePlan,
+    plan: Box<AgentResumePlan>,
 ) -> Result<Value, CoreError> {
     finalize_resume_failure(state, plan, AgentResumeFailureOutcome::Shutdown).await
 }
 
 async fn finalize_resume_failure(
     state: &AppState,
-    plan: AgentResumePlan,
+    plan: Box<AgentResumePlan>,
     outcome: AgentResumeFailureOutcome,
 ) -> Result<Value, CoreError> {
     let failure = state.core.lock().await.begin_resume_failure(&plan, outcome);
@@ -36,7 +36,7 @@ async fn finalize_resume_failure(
         }
     };
     let uncertain = failure.clone();
-    let observed = tokio::task::spawn_blocking(move || failure.reap(plan))
+    let observed = tokio::task::spawn_blocking(move || failure.reap(*plan))
         .await
         .unwrap_or_else(|_| uncertain.cleanup_failed());
     state.core.lock().await.complete_resume_failure(observed)
