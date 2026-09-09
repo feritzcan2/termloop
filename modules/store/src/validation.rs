@@ -981,13 +981,16 @@ fn workflow_executions_are_invalid(state: &CurrentState) -> bool {
                     project.id == execution.project_id
                         && execution.configuration.project_id == project.id
                 })
-                || !state.tasks.iter().any(|task| {
-                    task.id == execution.task_id && task.project_id == execution.project_id
+                || execution.task_id.as_ref().is_some_and(|task_id| {
+                    !state
+                        .tasks
+                        .iter()
+                        .any(|task| &task.id == task_id && task.project_id == execution.project_id)
                 })
                 || state.workflow_executions[index + 1..]
                     .iter()
                     .any(|candidate| {
-                        candidate.id == execution.id || candidate.task_id == execution.task_id
+                        candidate.id == execution.id || candidate.shares_scope(execution)
                     })
         })
 }

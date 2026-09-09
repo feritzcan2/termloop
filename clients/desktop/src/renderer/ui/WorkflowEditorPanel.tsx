@@ -257,7 +257,7 @@ export function WorkflowEditorPanel(props: {
     if ((event.metaKey || event.ctrlKey) && event.key === "s") { event.preventDefault(); void submit(); }
   }}>
       <header className="stage-editor-head">
-        <div className="stage-editor-title"><span>{props.configuration ? "Project template · editing" : choosingStart ? "New template · 1 of 2" : "New template · 2 of 2"}</span><h2 id="workflow-editor-title">{props.configuration ? `Edit “${props.configuration.name}”` : choosingStart ? "Create a workflow template" : "Make this workflow yours"}</h2><code>{props.configuration ? "Changes apply to future runs in this project." : "A reusable set of steps. Give each Task its own goal when you run it."}</code></div>
+        <div className="stage-editor-title"><span>{props.configuration ? "Project template · editing" : choosingStart ? "New template · 1 of 2" : "New template · 2 of 2"}</span><h2 id="workflow-editor-title">{props.configuration ? `Edit “${props.configuration.name}”` : choosingStart ? "Create a workflow template" : "Make this workflow yours"}</h2><code>{props.configuration ? "Changes apply to future runs in this project." : "Reusable in this Project checkout or any Task. Give each run its own goal."}</code></div>
         <div className="stage-editor-actions">
           {dirty ? <span className="workflow-unsaved">{props.configuration ? "Unsaved changes" : "Not saved yet"}</span> : null}
           {!choosingStart ? <button type="button" className="primary-button" disabled={busy || !dirty} onClick={() => void submit()}>{busy ? "Saving…" : props.configuration ? "Save changes" : "Create template"}</button> : null}
@@ -309,7 +309,7 @@ export function WorkflowEditorPanel(props: {
               </aside>
               <SortableContext items={draft.steps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
                 <div className="workflow-canvas" role="list" aria-label="Workflow flow">
-                  <WorkflowCoreNode label="Task goal" detail="You provide this when you run the workflow" />
+                  <WorkflowCoreNode label="Run goal" detail="You provide this when you run the workflow" />
                   {discussions.length ? <WorkflowCanvasStage label="Discuss in order" className="discussion-stage">
                     {discussions.map((step) => <SortableWorkflowStepCard
                       key={step.id}
@@ -480,7 +480,7 @@ function WorkflowLeadInspector(props: {
   return <>
     <header className="workflow-inspector-head"><div><span className="workflow-kind">Whole workflow</span><h3>Lead agent settings</h3></div></header>
     <div className="workflow-inspector-fields">
-      <p className="field-help">The lead coordinates discussions and reviews, implements the Task goal, and applies fixes. It is not an extra step.</p>
+      <p className="field-help">The lead coordinates discussions and reviews, implements the run goal, and applies fixes. It is not an extra step.</p>
       <label htmlFor="workflow-coordinator">Lead agent</label>
       <select id="workflow-coordinator" value={draft.coordinatorAgentId} onChange={(event) => {
         const coordinatorAgentId = event.target.value as StewardAgentId;
@@ -578,7 +578,7 @@ function WorkflowStepInspector(props: {
       <input id={`workflow-${props.step.id}-title`} value={props.step.title} maxLength={120} onChange={(event) => props.update({ title: event.target.value })} />
       <label htmlFor={`workflow-${props.step.id}-instructions`}>Instructions</label>
       <textarea id={`workflow-${props.step.id}-instructions`} rows={5} value={props.step.instructions} maxLength={4096} onChange={(event) => props.update({ instructions: event.target.value })} />
-      <p className="field-help">Describe what this step should do. The Task goal is included automatically at run time.</p>
+      <p className="field-help">Describe what this step should do. The run goal is included automatically at run time.</p>
       {isHelperStep(props.step) ? <>
         <label htmlFor={`workflow-${props.step.id}-participant`}>Agent conversation</label>
         <select id={`workflow-${props.step.id}-participant`} value={participantValue} onChange={(event) => setParticipant(event.target.value)}>

@@ -1,7 +1,7 @@
-# Task workflow step
+# Project workflow step
 
-- id: `builtin.agent.task-workflow`
-- version: `5`
+- id: `builtin.agent.project-workflow`
+- version: `1`
 - delivery: `terminalInput`
 
 ---
@@ -9,7 +9,8 @@
 You are the coordinator for the Core-managed TermLoop workflow "{{workflow_name}}".
 
 Goal: {{goal}}
-Task: {{title}}
+Project: {{title}}
+Scope: this Project's own checkout. No Task or isolated worktree was created. Work in the current working directory and preserve other in-progress changes.
 {{jira_context}}{{brief_context}}
 Route:
 {{workflow_steps}}

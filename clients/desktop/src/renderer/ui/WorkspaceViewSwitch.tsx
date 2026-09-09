@@ -1,10 +1,11 @@
 import { Icon, type IconName } from "./Icon.js";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "../workspace-view-memory.js";
+import type { ReactNode } from "react";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -15,6 +16,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   select(view: WorkspaceView): void;
   launchTerminal(): Promise<void>;
   launchAgent(agentId: string): Promise<void>;
+  workflowLauncher?: ReactNode;
   setupAgents?(): void;
   /// Present only until this Project has a dev server to run. It states the
   /// whole offer in words because nothing on screen has taught the icon yet.
@@ -136,6 +138,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             ><Icon name="edit" /></button>
           </span>
         ) : null}
+        <span className="workspace-session-launchers">
         <button id="new-terminal" type="button" title="New Terminal" aria-label="New Terminal" disabled={disabled} onClick={() => void launchTerminal()}><Icon name="terminal" /></button>
         {agents.map((agent) => {
           const icon = agent.agent_id === "claude" ? "claude" : agent.agent_id === "codex" ? "codex" : "agent";
@@ -152,6 +155,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             onClick={() => agent.available ? void launchAgent(agent.agent_id) : setupAgents?.()}
           ><Icon name={icon} /></button>;
         })}
+        {workflowLauncher}
         <span className="workspace-history-separator" aria-hidden="true" />
         <button
           type="button"
@@ -161,6 +165,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
           aria-pressed={selected("history")}
           onClick={() => select("history")}
         ><Icon name="history" /></button>
+        </span>
       </div>}
     </div>
   );

@@ -137,6 +137,8 @@ pub enum CoreError {
     AskToRequestGone,
     #[error("Task {task_id} already has an active workflow execution")]
     WorkflowExecutionActive { task_id: String },
+    #[error("Project {project_id} already has an active workflow execution")]
+    ProjectWorkflowExecutionActive { project_id: String },
     #[error("the workflow execution is not waiting for this action")]
     WorkflowExecutionState,
     #[error("branch is held by Task {task_id}")]

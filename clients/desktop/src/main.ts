@@ -834,6 +834,12 @@ handleIpc("termloop:task-preview-workflow", (_event, taskId: string, workflowId:
 handleIpc("termloop:task-launch-workflow", (_event, taskId: string, workflowId: string, goal: string, launchTicket: string) =>
   typedControlCall("task.launchWorkflow", { taskId, workflowId, goal, launchTicket }),
 );
+handleIpc("termloop:project-preview-workflow", (_event, projectId: string, workflowId: string, goal: string) =>
+  typedControlCall("project.previewWorkflow", { projectId, workflowId, goal }),
+);
+handleIpc("termloop:project-launch-workflow", (_event, projectId: string, workflowId: string, goal: string, launchTicket: string) =>
+  typedControlCall("project.launchWorkflow", { projectId, workflowId, goal, launchTicket }),
+);
 // Interactive desktop creation resolves the Project default into choices the
 // user can see and edit, then provisions and launches those exact choices. The
 // create command itself must stay Task-only so it cannot race that flow.

@@ -1431,6 +1431,30 @@ export function DesktopApp() {
       return message;
     }
   }, []);
+  const launchProjectWorkflow = useCallback(async (projectId: string, workflowId: string, goal: string) => {
+    const activation = captureSessionActivation();
+    try {
+      const api = sourceApiForProject(projectId);
+      const inspected = await api.projectWorkflowPreview(projectId, workflowId, goal);
+      if (!inspected.ok) {
+        const message = taskLaunchFailureMessage(inspected);
+        projectionStore.setMessage(message);
+        return message;
+      }
+      const outcome = await api.projectWorkflowLaunch(projectId, workflowId, goal, inspected.result.launch_ticket);
+      if (!outcome.ok) {
+        const message = taskLaunchFailureMessage(outcome);
+        projectionStore.setMessage(message);
+        return message;
+      }
+      await activateSession(activation, outcome.result);
+      return undefined;
+    } catch (error) {
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, []);
   const inspectTaskWorktreeRepair = useCallback(async (taskId: string, candidatePath: string) => {
     const outcome = await sourceApiForTask(taskId).taskInspectWorktreeRepair(taskId, candidatePath);
     if (outcome.ok) return outcome.result;
@@ -2495,6 +2519,7 @@ export function DesktopApp() {
       launchTaskTerminal={launchTaskTerminal}
       launchTaskAgent={launchTaskAgent}
       launchTaskWorkflow={launchTaskWorkflow}
+      launchProjectWorkflow={launchProjectWorkflow}
       runImprovement={runImprovement}
       settingsImprovement={settingsImprovement}
       saveRunConfiguration={saveRunConfiguration}

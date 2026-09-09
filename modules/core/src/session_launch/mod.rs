@@ -9,6 +9,7 @@ pub(crate) mod ask_to;
 mod deleted;
 mod history_repair;
 mod lifecycle;
+mod project_workflow;
 mod terminal_restore;
 pub use terminal_restore::{ShellHistoryCheckpoint, ShellHistoryCheckpointPlan, ShellHistoryStore};
 mod relocation;
@@ -208,7 +209,7 @@ struct TaskKickoffLaunch {
 #[derive(Clone)]
 struct WorkflowLaunch {
     execution_id: String,
-    task_id: String,
+    task_id: Option<String>,
     title: String,
     brief: Option<String>,
     jira_url: Option<String>,
@@ -1250,16 +1251,16 @@ impl CoreRuntime {
         {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
-        if let Some(workflow) = preview.plan.workflow_launch.as_ref() {
-            let current = self
-                .store
-                .workflow_configurations()
-                .iter()
-                .find(|configuration| configuration.id == workflow.configuration.id)
-                .ok_or(CoreError::NotFound)?;
-            if current != &workflow.configuration {
-                return Err(CoreError::RevisionConflict);
-            }
+        self.revalidate_workflow_launch(&preview.plan)?;
+        if preview
+            .plan
+            .workflow_launch
+            .as_ref()
+            .is_some_and(|workflow| {
+                params.get("taskId").and_then(Value::as_str) != workflow.task_id.as_deref()
+            })
+        {
+            return Err(CoreError::InvalidParams("launchTicket".into()));
         }
         if let Some(assignment) = preview.plan.steward_task_assignment.as_ref() {
             let current = self.current_task_agent_sessions_for_steward_start(
@@ -1518,7 +1519,7 @@ impl CoreRuntime {
         }
         self.validate_workflow_agent_profiles(&configuration.steps)?;
         if self.store.workflow_executions().iter().any(|execution| {
-            execution.task_id == task.id
+            execution.task_id.as_deref() == Some(task.id.as_str())
                 && execution.phase != termloop_domain::WorkflowExecutionPhase::Completed
         }) {
             return Err(CoreError::WorkflowExecutionActive {
@@ -1712,7 +1713,7 @@ impl CoreRuntime {
         .map_err(|_| CoreError::InvalidParams("goal".into()))?;
         plan.workflow_launch = Some(WorkflowLaunch {
             execution_id,
-            task_id: task_id.to_owned(),
+            task_id: Some(task_id.to_owned()),
             title: task.title.clone(),
             brief: task.brief.clone(),
             jira_url: jira_url.map(str::to_owned),
@@ -1768,6 +1769,7 @@ impl CoreRuntime {
         if !self.project_exists(&plan.project_id) {
             return Err(CoreError::NotFound);
         }
+        self.revalidate_workflow_launch(plan)?;
         self.validate_history_launch_plan(plan)?;
         if plan.history_source_ref.is_some()
             && (!plan.history_source_validated
@@ -2602,6 +2604,22 @@ fn resolve_interactive_agent_launch_with_transport(
         }
     } else if let Some(workflow) = &plan.workflow_launch {
         let selection = plan.interactive_options.clone().unwrap_or_default();
+        if workflow.task_id.is_none() && !managed_worktree {
+            return termloop_invocation::project_agent_with_workflow_for_conversation(
+                &plan.agent_id,
+                &plan.cwd,
+                &selection.model,
+                &selection.permission,
+                &selection.reasoning,
+                &workflow.execution_id,
+                &workflow.title,
+                &workflow.goal,
+                &workflow.configuration,
+                conversation,
+                observation,
+                mcp,
+            );
+        }
         if !managed_worktree {
             return Err(termloop_invocation::InvocationError::InvalidPromptBinding);
         }
@@ -2612,7 +2630,10 @@ fn resolve_interactive_agent_launch_with_transport(
             &selection.permission,
             &selection.reasoning,
             &workflow.execution_id,
-            &workflow.task_id,
+            workflow
+                .task_id
+                .as_deref()
+                .ok_or(termloop_invocation::InvocationError::InvalidPromptBinding)?,
             &workflow.title,
             workflow.brief.as_deref(),
             workflow.jira_url.as_deref(),

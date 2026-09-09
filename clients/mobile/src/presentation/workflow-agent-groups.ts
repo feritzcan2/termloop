@@ -29,11 +29,11 @@ export function workflowAgentMemberships(
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   for (const execution of [...executions].sort((a, b) => a.updatedAtEpochMs - b.updatedAtEpochMs)) {
     if (execution.projectId !== projectId) continue;
-    const task = tasksById.get(execution.taskId);
+    const task = execution.taskId ? tasksById.get(execution.taskId) : undefined;
     const view = workflowExecutionView(execution, [], []);
     const group: WorkflowAgentGroup = {
       executionId: execution.id, name: execution.workflowName,
-      taskTitle: task?.project_id === projectId ? task.title : undefined,
+      taskTitle: execution.taskId === null ? "Project checkout" : task?.project_id === projectId ? task.title : undefined,
       status: view.label, tone: view.tone,
     };
     const add = (sessionId: string, role: string, coordinator = false) => {

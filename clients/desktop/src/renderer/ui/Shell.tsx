@@ -9,8 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
-import { basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
-import { agentActivityPriority } from "../session-presentation.js";
+import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
+import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
 import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
@@ -68,6 +68,7 @@ import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
 import { WorkflowEditorPanel, type WorkflowEditorDraft } from "./WorkflowEditorPanel.js";
+import { WorkflowLaunchers } from "./TaskWorkflows.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import type { ErrorLogEntry } from "../state/projection-store.js";
 import type { SessionHistoryListResult } from "@termloop/contract/current";
@@ -291,6 +292,7 @@ export type ShellProps = {
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  launchProjectWorkflow(projectId: string, workflowId: string, goal: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   settingsImprovement: ConfigurationVersionActions & {
     start(target: SettingsImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
@@ -438,6 +440,7 @@ export function shellNativeOverlayOpen(state: {
   projectRelocation: boolean;
   providerHistoryRepair: boolean;
   taskRail: boolean;
+  projectWorkflow?: boolean;
   archivedRail: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
@@ -578,6 +581,7 @@ export function Shell(props: ShellProps) {
   /// click, and drops itself when the Task leaves the Project.
   const [detailTaskId, setDetailTaskId] = useState<string>();
   const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useState(false);
+  const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useState(false);
   /// Tab-bar state for the two rails that lost their title rows: the Agents
   /// search toggle and the Tasks create request both live beside the tabs.
   const [agentSearchOpen, setAgentSearchOpen] = useState(false);
@@ -989,7 +993,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = mobileConnectOpen || Boolean(settingsPage) || shellShortcutsBlocked({
+  const shortcutsBlocked = mobileConnectOpen || projectWorkflowOverlayOpen || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -1016,6 +1020,7 @@ export function Shell(props: ShellProps) {
     projectRelocation: Boolean(projectRelocationSession),
     providerHistoryRepair: Boolean(providerHistoryRepairSession),
     taskRail: taskRailOverlayOpen,
+    projectWorkflow: projectWorkflowOverlayOpen,
     archivedRail: archivedRailOverlayOpen,
   });
   useEffect(() => {
@@ -1391,6 +1396,29 @@ export function Shell(props: ShellProps) {
             select={selectWorkspaceView}
             launchTerminal={props.launchTerminal}
             launchAgent={launchOrConfigureAgent}
+            workflowLauncher={workspaceView === "agents" && props.selectedProject ? <WorkflowLaunchers
+              key={`${props.selectedProject.connectionProfileId}:${props.selectedProject.id}`}
+              project={props.selectedProject}
+              configurations={props.workflowConfigurations}
+              executions={props.workflowExecutions}
+              agentProfiles={props.agentLibrary?.value?.profiles ?? []}
+              launchable={!disabled}
+              disabled={disabled}
+              showLaunchers
+              renderLaunchers={(button) => button}
+              overlayContainer={props.overlayContainer}
+              overlayVisibilityChanged={setProjectWorkflowOverlayOpen}
+              edit={(configuration) => openStagePage({ kind: "workflow", id: configuration?.id ?? null })}
+              launch={props.launchProjectWorkflow}
+              cancel={props.cancelWorkflowExecution}
+              openSession={selectSession}
+              sessionPresentation={(sessionId) => {
+                const session = props.projectSessions.find((candidate) => candidate.id === sessionId);
+                if (!session) return undefined;
+                const state = sessionState(session, statusesById.get(sessionId), props.reviewReadySessionIds.has(sessionId));
+                return { agentLabel: agentName(session), stateLabel: state.label ?? (state.id === "idle" ? "Idle" : state.id === "live" ? "Running" : "No status"), tone: state.tone };
+              }}
+            /> : undefined}
             setupDevServer={props.selectedProject && !devServerRun ? () => setRunEditor("new") : undefined}
             runDevServer={props.selectedProject && devServerRun ? {
               name: devServerRun.name,
