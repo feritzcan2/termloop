@@ -19,14 +19,12 @@ use termloop_contract::current::{
     SendToAgentParams, StewardTaskAgentRequestParams, WorkflowDelegateParams,
     WorkflowStepCompleteParams,
 };
-use tokio::time::{Duration, Instant};
+use tokio::time::Instant;
 
 use super::AppState;
+use super::agent_launch::execute_ask_to_launch;
 use super::core_lock::{in_operation, record_operation_duration};
-use super::invalidation::{
-    CommitImpact, CommittedSessionMutation, InvalidationRequest, finish_session_mutation,
-    queue_durable_commit_invalidation,
-};
+use super::invalidation::{CommitImpact, InvalidationRequest, queue_durable_commit_invalidation};
 
 // 32,768 Unicode scalar bindings can expand to six-byte JSON escapes plus
 // framing. Keep the HTTP cap explicit without silently narrowing the schema.
@@ -654,7 +652,7 @@ async fn run_planned_ask_to(
     let launch_state = state.clone();
     let launch_request_id = request_id.clone();
     let launch = tokio::spawn(async move {
-        execute_ask_to_launch(plan, &launch_request_id, &launch_state).await
+        execute_ask_to_launch(&launch_state, plan, &launch_request_id).await
     });
     match launch.await {
         Ok(result) => result,
@@ -674,48 +672,6 @@ async fn publish_workflow_invalidation(state: &AppState) {
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
-}
-
-async fn execute_ask_to_launch(
-    mut plan: termloop_core::session_launch::AgentLaunchPlan,
-    request_id: &str,
-    state: &AppState,
-) -> Result<Value, termloop_core::CoreError> {
-    plan = match tokio::task::spawn_blocking(move || -> Result<_, termloop_core::CoreError> {
-        plan.observe_task_worktree(Duration::from_secs(8))?;
-        plan.prepare_runtime();
-        Ok(plan)
-    })
-    .await
-    {
-        Ok(Ok(plan)) => plan,
-        Ok(Err(error)) => {
-            state.core.lock().await.fail_ask_to_launch(request_id);
-            return Err(error);
-        }
-        Err(error) => {
-            state.core.lock().await.fail_ask_to_launch(request_id);
-            return Err(termloop_core::CoreError::Terminal(format!(
-                "helper runtime preparation failed: {error}"
-            )));
-        }
-    };
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "helper status runtime unavailable; launching without observation");
-    }
-    let result = {
-        let mut core = state.core.lock().await;
-        let result = core.complete_ask_to_launch(request_id, &mut plan);
-        if result.is_err() {
-            core.fail_ask_to_launch(request_id);
-        }
-        result
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    let completion = result?;
-    let effects =
-        CommittedSessionMutation::launched(&completion.session, completion.state_revision, false);
-    finish_session_mutation(state, effects, Ok(completion.acknowledgement)).await
 }
 
 fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'static str {

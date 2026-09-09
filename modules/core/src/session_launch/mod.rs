@@ -2179,10 +2179,19 @@ impl AgentLaunchPlan {
         self.workflow_launch.is_some()
     }
 
-    pub fn fork_task_scope(&self) -> Option<(&str, &str)> {
+    /// The exact Task whose worktree still needs observation before this launch.
+    /// Previewed ordinary launches have already observed their worktree; helpers
+    /// and forks must use the server's same bounded observation queue.
+    pub fn launch_observation_scope(&self) -> Option<(&str, &str)> {
         self.fork_worktree_plan
             .as_ref()
             .map(|plan| (plan.task_id.as_str(), plan.project_id.as_str()))
+            .or_else(|| {
+                self.task_guard
+                    .as_ref()
+                    .filter(|_| self.task_guard_requires_observation)
+                    .map(|guard| (guard.task_id.as_str(), self.project_id.as_str()))
+            })
     }
 
     pub fn observe_fork_worktree(&mut self, timeout: std::time::Duration) -> Result<(), CoreError> {

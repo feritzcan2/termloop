@@ -12,6 +12,9 @@ use termloop_terminal::TerminalService;
 use tokio::time::{Duration, Instant};
 
 use super::super::super::AppState;
+use super::super::super::agent_launch::{
+    PendingAgentFork, execute_agent_fork_attempt, execute_agent_launch,
+};
 use super::super::super::core_lock::in_operation;
 use super::super::super::gates::{
     AGENT_RELOCATION_ATTEMPT_TIMEOUT, AGENT_RESUME_ATTEMPT_TIMEOUT,
@@ -24,7 +27,6 @@ use super::super::super::invalidation::{
     finish_session_mutation_with_cleanup, publish_agent_resume_invalidation,
     publish_session_invalidation, refresh_task_presence_for_cwd,
 };
-use super::super::agent_launch::execute_agent_launch;
 
 pub(in crate::app::control) async fn launch_agent_session(
     params: serde_json::Value,
@@ -187,77 +189,16 @@ async fn fork_agent_session_once(
     deadline: Instant,
     state: &AppState,
 ) -> Result<serde_json::Value, AgentForkAttemptFailure> {
-    let mut plan = {
-        let core = state.core.lock().await;
-        core.plan_agent_fork(params)?
-    };
-    let task_scope = plan
-        .fork_task_scope()
-        .map(|(task_id, project_id)| (task_id.to_owned(), project_id.to_owned()));
-    let permit = if let Some((task_id, project_id)) = task_scope.as_ref() {
-        Some(
-            state
-                .git_observation_gate
-                .acquire_until(project_id.as_str(), ObservationPriority::Explicit, deadline)
-                .await
-                .map_err(|_| task_launch_timeout(task_id))?,
-        )
-    } else {
-        None
-    };
-    let remaining = deadline
-        .checked_duration_since(Instant::now())
-        .filter(|remaining| !remaining.is_zero())
-        .ok_or_else(|| {
-            task_scope
-                .as_ref()
-                .map(|(task_id, _)| task_launch_timeout(task_id))
-                .unwrap_or(CoreError::AgentForkUnavailable {
-                    reason: termloop_core::AgentForkUnavailableReason::RuntimeConflict,
-                })
-        })?;
-    plan = tokio::task::spawn_blocking(move || -> Result<_, CoreError> {
-        plan.observe_fork_worktree(remaining)?;
-        plan.prepare_runtime();
-        plan.verify_fork_source_history()?;
-        Ok(plan)
-    })
-    .await
-    .map_err(|error| CoreError::Terminal(format!("agent fork preparation failed: {error}")))??;
-    drop(permit);
-    if !plan.fork_runtime_ready() {
-        return Err(CoreError::AgentForkUnavailable {
-            reason: termloop_core::AgentForkUnavailableReason::RuntimeConflict,
-        }
-        .into());
-    }
-    if let Some(error) = plan.observation_warning() {
-        tracing::warn!(%error, "forked agent status runtime unavailable");
-    }
-    let session_id = plan.session_id().to_owned();
-    let runtime_epoch = plan.runtime_epoch();
-    let startup_deadline = deadline.min(Instant::now() + AGENT_RESUME_ATTEMPT_TIMEOUT);
-    let result = {
-        let mut core = state.core.lock().await;
-        match core.complete_agent_launch(&mut plan) {
-            Ok(commit) => {
-                match state
-                    .terminal
-                    .set_exit_replay_retention(&session_id, runtime_epoch, true)
-                {
-                    Ok(()) => Ok(commit.session),
-                    Err(error) => Err(AgentForkAttemptFailure::with_child(
-                        CoreError::Terminal(error.to_string()),
-                        &session_id,
-                        runtime_epoch,
-                    )),
-                }
-            }
-            Err(error) => Err(error.into()),
-        }
-    };
-    tokio::task::spawn_blocking(move || drop(plan));
-    let value = result?;
+    let plan = state.core.lock().await.plan_agent_fork(params)?;
+    let PendingAgentFork {
+        session: value,
+        session_id,
+        runtime_epoch,
+        startup_deadline,
+        retention,
+    } = execute_agent_fork_attempt(state, plan, deadline).await?;
+    retention
+        .map_err(|error| AgentForkAttemptFailure::with_child(error, &session_id, runtime_epoch))?;
     if let Err(reason) = wait_for_agent_fork_startup(
         state,
         &session_id,
