@@ -5,9 +5,22 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultNotificationPreferences } from "../src/notification-preferences.js";
+import type { ConnectionProfileSummary, ConnectionSourceSummary } from "../src/connection-profile-types.js";
 import { SettingsDialog } from "../src/renderer/ui/SettingsDialog.js";
 
 type SettingsDialogProps = ComponentProps<typeof SettingsDialog>;
+
+const netcup: ConnectionProfileSummary = {
+  id: "netcup",
+  name: "Netcup",
+  transport: "ssh",
+  scope: "full",
+  endpoint: "termloop-admin@89.58.14.155:43717",
+  enabled: true,
+  persistence: "encrypted",
+  state: "offline",
+  message: "Version mismatch: server old, desktop new",
+};
 
 function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProps {
   const hostStatus = {
@@ -25,6 +38,7 @@ function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProp
     enableHost: vi.fn(async () => hostStatus),
     hostStatus: vi.fn(async () => hostStatus),
     list: vi.fn(async () => []),
+    reconnect: vi.fn(async () => undefined),
     remove: vi.fn(async () => []),
     setEnabled: vi.fn(async () => []),
     subscribeStatus: vi.fn(() => () => undefined),
@@ -129,5 +143,94 @@ describe("SettingsDialog", () => {
 
     await act(async () => light?.click());
     expect(changeAppearancePreference).toHaveBeenCalledWith("light");
+  });
+
+  it("refreshes only the selected enabled server and preserves live status over a delayed snapshot", async () => {
+    const disabled = { ...netcup, id: "disabled", name: "Disabled server", enabled: false };
+    const other = { ...netcup, id: "other", name: "Other server", transport: "tailscale" as const };
+    let finishReconnect!: () => void;
+    let finishList!: (value: ConnectionProfileSummary[]) => void;
+    let onStatus!: (summary: ConnectionSourceSummary) => void;
+    const reconnect = vi.fn(() => new Promise<void>((resolve) => { finishReconnect = resolve; }));
+    const list = vi.fn<SettingsDialogProps["list"]>()
+      .mockResolvedValueOnce([netcup, disabled, other])
+      .mockImplementationOnce(() => new Promise((resolve) => { finishList = resolve; }));
+    const settings = props({
+      initialPage: "servers", list, reconnect,
+      subscribeStatus: (listener) => { onStatus = listener; return () => undefined; },
+    });
+    await act(async () => root.render(createElement(SettingsDialog, settings)));
+    await act(async () => onStatus({ ...netcup, state: "offline" }));
+    const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh Netcup connection"]')!;
+    const disabledRefresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh Disabled server connection"]')!;
+    const otherRefresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh Other server connection"]')!;
+    const card = refresh.closest(".conn-card")!;
+    expect(disabledRefresh.disabled).toBe(true);
+    await act(async () => disabledRefresh.click());
+    expect(reconnect).not.toHaveBeenCalled();
+
+    await act(async () => refresh.click());
+    expect(refresh.textContent).toBe("Refreshing…");
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.getAttribute("aria-busy")).toBe("true");
+    expect(otherRefresh.disabled).toBe(false);
+    await act(async () => refresh.click());
+    expect(reconnect).toHaveBeenCalledExactlyOnceWith(netcup.id);
+    expect(settings.setEnabled).not.toHaveBeenCalled();
+    expect(settings.connect).not.toHaveBeenCalled();
+
+    const { message: _oldError, ...withoutError } = netcup;
+    const connecting = { ...withoutError, state: "connecting" as const };
+    await act(async () => onStatus(connecting));
+    expect(card.textContent).toContain("Connecting…");
+    expect(card.textContent).not.toContain("Version mismatch");
+    await act(async () => finishReconnect());
+    await act(async () => onStatus({ ...withoutError, state: "connected" }));
+    await act(async () => finishList([connecting, disabled, other]));
+    expect(card.textContent).toContain("Connected");
+    expect(refresh.disabled).toBe(false);
+    expect(refresh.textContent).toBe("Refresh");
+    expect(disabledRefresh.disabled).toBe(true);
+  });
+
+  it("allows retry after refresh fails and replaces a cached error with the fresh snapshot", async () => {
+    let onStatus!: (summary: ConnectionSourceSummary) => void;
+    const { message: _oldError, ...withoutError } = netcup;
+    const reconnect = vi.fn<SettingsDialogProps["reconnect"]>()
+      .mockRejectedValueOnce(new Error("SSH unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const list = vi.fn<SettingsDialogProps["list"]>()
+      .mockResolvedValueOnce([netcup])
+      .mockResolvedValueOnce([{ ...withoutError, state: "connected" }]);
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "servers", list, reconnect,
+      subscribeStatus: (listener) => { onStatus = listener; return () => undefined; },
+    }))));
+    const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh Netcup connection"]')!;
+    await act(async () => refresh.click());
+    expect(container.textContent).toContain("Could not refresh Netcup: SSH unavailable");
+    expect(refresh.disabled).toBe(false);
+
+    await act(async () => onStatus({ ...netcup, state: "offline" }));
+    await act(async () => refresh.click());
+    expect(reconnect).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("SSH unavailable");
+    expect(container.textContent).not.toContain("Version mismatch");
+    expect(refresh.closest(".conn-card")?.textContent).toContain("Connected");
+  });
+
+  it.each(["local", "tailscale", "ssh"] as const)("waits for connection status after a %s refresh is accepted", async (transport) => {
+    const { message: _oldError, ...withoutError } = netcup;
+    const reconnect = vi.fn(async () => undefined);
+    const list = vi.fn<SettingsDialogProps["list"]>()
+      .mockResolvedValueOnce([{ ...netcup, transport }])
+      .mockResolvedValueOnce([{ ...withoutError, transport, state: "connecting" }]);
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "servers", list, reconnect }))));
+    const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh Netcup connection"]')!;
+    await act(async () => refresh.click());
+    expect(reconnect).toHaveBeenCalledExactlyOnceWith(netcup.id);
+    expect(refresh.closest(".conn-card")?.textContent).toContain("Connecting…");
+    expect(refresh.closest(".conn-card")?.textContent).not.toContain("Connected");
+    expect(refresh.disabled).toBe(false);
   });
 });
