@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use termloop_domain::{SessionArchiveOperation, SessionArchiveOperationState, SessionKind};
@@ -7,14 +6,10 @@ use uuid::Uuid;
 
 use crate::{CoreError, CoreRuntime, required_string, store_error, terminal_error};
 
-const SESSION_ARCHIVE_PREVIEW_TTL: Duration = Duration::from_secs(30);
-const SESSION_ARCHIVE_PREVIEW_CAP: usize = 64;
-
 #[derive(Clone)]
 pub(crate) struct SessionArchivePreviewTicket {
     session_id: String,
     runtime_epoch: u64,
-    deadline: termloop_platform::MonotonicDeadline,
     can_archive: bool,
 }
 
@@ -136,34 +131,18 @@ impl CoreRuntime {
             .find(|session| session.id == session_id)
             .cloned()
             .ok_or(CoreError::NotFound)?;
-        self.session_archive_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.session_archive_previews.len() >= SESSION_ARCHIVE_PREVIEW_CAP {
-            self.session_archive_previews.pop_front();
-        }
-        let mut archive_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .session_archive_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &archive_ticket)
-        {
-            archive_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(SESSION_ARCHIVE_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.session_archive_previews.push_back((
-            archive_ticket.clone(),
-            SessionArchivePreviewTicket {
-                session_id,
-                runtime_epoch: session.runtime_epoch,
-                deadline,
-                can_archive: blocker.is_none(),
-            },
-        ));
+        let archive_ticket =
+            self.preview_tickets
+                .session_archive
+                .issue(SessionArchivePreviewTicket {
+                    session_id,
+                    runtime_epoch: session.runtime_epoch,
+                    can_archive: blocker.is_none(),
+                })?;
         Ok(json!({
             "session": self.project_session(&session),
             "archive_ticket": archive_ticket,
-            "expires_in_ms": 30_000,
+            "expires_in_ms": crate::runtime::preview_tickets::PREVIEW_TTL_MS,
             "can_archive": blocker.is_none(),
             "blocker": blocker,
         }))
@@ -192,19 +171,12 @@ impl CoreRuntime {
         Uuid::parse_str(&operation_id)
             .map_err(|_| CoreError::InvalidParams("operationId".into()))?;
         let archive_ticket = required_string(&params, "archiveTicket")?;
-        let index = self
-            .session_archive_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &archive_ticket)
+        let preview = self
+            .preview_tickets
+            .session_archive
+            .consume_once(&archive_ticket)
             .ok_or_else(|| CoreError::InvalidParams("archiveTicket".into()))?;
-        let (_, preview) = self
-            .session_archive_previews
-            .remove(index)
-            .expect("preview index was present");
-        if preview.deadline.remaining().is_none()
-            || preview.session_id != session_id
-            || !preview.can_archive
-        {
+        if preview.session_id != session_id || !preview.can_archive {
             return Err(CoreError::InvalidParams("archiveTicket".into()));
         }
         let session = self

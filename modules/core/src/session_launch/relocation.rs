@@ -12,9 +12,6 @@ use super::resume::AgentResumePreparationKind;
 use super::{AgentMcpRole, AgentResumePlan, AgentResumePlanOutcome, TaskWorktreeLaunchPlan};
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 
-const RELOCATION_PREVIEW_TTL: Duration = Duration::from_secs(30);
-const RELOCATION_PREVIEW_CAP: usize = 64;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionRelocationMode {
     Resume,
@@ -68,7 +65,6 @@ pub(crate) struct SessionRelocationPreviewTicket {
     observation_token: Option<String>,
     mcp_token: Option<String>,
     mcp_role: AgentMcpRole,
-    deadline: termloop_platform::MonotonicDeadline,
 }
 
 impl SessionRelocationPreviewTicket {
@@ -253,38 +249,22 @@ impl CoreRuntime {
         )
         .map_err(super::invocation_error)?;
         let manifest = launch.inspectable_manifest().clone();
-        self.session_relocation_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.session_relocation_previews.len() >= RELOCATION_PREVIEW_CAP {
-            self.session_relocation_previews.pop_front();
-        }
-        let mut relocation_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .session_relocation_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &relocation_ticket)
-        {
-            relocation_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(RELOCATION_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.session_relocation_previews.push_back((
-            relocation_ticket.clone(),
-            SessionRelocationPreviewTicket {
-                session: current_session.clone(),
-                task: current_task.clone(),
-                task_launch: Some(observed.plan.task_launch),
-                target: SessionRelocationTarget::TaskWorktree,
-                target_cwd: target_cwd.to_owned(),
-                launch,
-                resume_ref,
-                mode: observed.plan.mode,
-                observation_token,
-                mcp_token,
-                mcp_role: AgentMcpRole::Interactive,
-                deadline,
-            },
-        ));
+        let relocation_ticket =
+            self.preview_tickets
+                .relocation
+                .issue(SessionRelocationPreviewTicket {
+                    session: current_session.clone(),
+                    task: current_task.clone(),
+                    task_launch: Some(observed.plan.task_launch),
+                    target: SessionRelocationTarget::TaskWorktree,
+                    target_cwd: target_cwd.to_owned(),
+                    launch,
+                    resume_ref,
+                    mode: observed.plan.mode,
+                    observation_token,
+                    mcp_token,
+                    mcp_role: AgentMcpRole::Interactive,
+                })?;
         self.session_relocation_preview_value(
             &current_session,
             &current_task,
@@ -420,38 +400,22 @@ impl CoreRuntime {
         }
         .map_err(super::invocation_error)?;
         let manifest = launch.inspectable_manifest().clone();
-        self.session_relocation_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.session_relocation_previews.len() >= RELOCATION_PREVIEW_CAP {
-            self.session_relocation_previews.pop_front();
-        }
-        let mut relocation_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .session_relocation_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &relocation_ticket)
-        {
-            relocation_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(RELOCATION_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.session_relocation_previews.push_back((
-            relocation_ticket.clone(),
-            SessionRelocationPreviewTicket {
-                session: session.clone(),
-                task: task.clone(),
-                task_launch: None,
-                target: SessionRelocationTarget::ProjectRoot,
-                target_cwd: project.folder_path.clone(),
-                launch,
-                resume_ref,
-                mode: SessionRelocationMode::Resume,
-                observation_token,
-                mcp_token,
-                mcp_role,
-                deadline,
-            },
-        ));
+        let relocation_ticket =
+            self.preview_tickets
+                .relocation
+                .issue(SessionRelocationPreviewTicket {
+                    session: session.clone(),
+                    task: task.clone(),
+                    task_launch: None,
+                    target: SessionRelocationTarget::ProjectRoot,
+                    target_cwd: project.folder_path.clone(),
+                    launch,
+                    resume_ref,
+                    mode: SessionRelocationMode::Resume,
+                    observation_token,
+                    mcp_token,
+                    mcp_role,
+                })?;
         self.project_relocation_preview_value(
             &session,
             Some(&task),
@@ -533,18 +497,12 @@ impl CoreRuntime {
             return Err(CoreError::OperationIdReused { operation_id });
         }
 
-        self.session_relocation_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let relocation_ticket = required_string(&params, "relocationTicket")?;
-        let position = self
-            .session_relocation_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &relocation_ticket)
+        let preview = self
+            .preview_tickets
+            .relocation
+            .consume_once(&relocation_ticket)
             .ok_or_else(|| CoreError::InvalidParams("relocationTicket".into()))?;
-        let (_, preview) = self
-            .session_relocation_previews
-            .remove(position)
-            .expect("ticket position came from the same bounded queue");
         let preview_target_matches = preview.target == requested_target.0
             && match preview.target {
                 SessionRelocationTarget::TaskWorktree => preview.task.id == requested_target.1,
@@ -1127,7 +1085,7 @@ impl CoreRuntime {
             "blockers": blockers,
             "can_relocate": can_relocate,
             "relocation_ticket": relocation_ticket,
-            "expires_in_ms": 30_000,
+            "expires_in_ms": crate::runtime::preview_tickets::PREVIEW_TTL_MS,
             "manifest": manifest,
         }))
     }
@@ -1186,7 +1144,7 @@ impl CoreRuntime {
             "blockers": blockers,
             "can_relocate": can_relocate,
             "relocation_ticket": relocation_ticket,
-            "expires_in_ms": 30_000,
+            "expires_in_ms": crate::runtime::preview_tickets::PREVIEW_TTL_MS,
             "manifest": manifest,
         }))
     }
