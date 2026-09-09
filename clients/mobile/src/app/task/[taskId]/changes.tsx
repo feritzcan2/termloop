@@ -8,6 +8,7 @@ import type {
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ChangeReviewEditor, ChangeReviewPanel } from "@/components/change-review";
 import { Banner, Card, CardDivider, EmptyState, SecondaryButton, SectionHeader, StatePill } from "@/components/primitives";
@@ -18,6 +19,7 @@ import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import { useChangeReview, type ChangeReview } from "@/features/changes/use-change-review";
 import { reviewLineKey } from "@/presentation/change-review-notes";
+import { basename } from "@/presentation/dto-readers";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import {
   nextUnreviewedEntryId,
@@ -452,11 +454,12 @@ function ChangeDiffModal({
 }) {
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider>
       <Screen>
         <KeyboardAvoidingView style={styles.modalScroll} behavior={keyboardAvoidingBehavior}>
         <ScreenHeader
           title={review.showNotes ? "Feedback" : "Diff"}
-          subtitle={review.showNotes ? `${review.notes.length} pending comments` : entry?.display_path}
+          subtitle={review.showNotes ? `${review.notes.length} pending comments` : entry ? basename(entry.display_path) : undefined}
           right={(
             <Pressable
               accessibilityRole="button"
@@ -551,6 +554,7 @@ function ChangeDiffModal({
         </View>}
         </KeyboardAvoidingView>
       </Screen>
+      </SafeAreaProvider>
     </Modal>
   );
 }

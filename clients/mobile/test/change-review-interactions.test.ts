@@ -13,7 +13,7 @@ type Props = Record<string, any>;
 const patch = "diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -2,3 +2,4 @@\n context\n-old\n+new\n+added\n tail\n";
 
 describe("line feedback interaction", () => {
-  it("routes diff gutter presses with exact old/new numbers and marks saved comments", async () => {
+  it("keeps line numbers out of the diff while whole-row presses retain exact feedback addresses", async () => {
     const ui = await diffHarness();
     const onSelectLine = vi.fn();
     const tree = expand(ui.WorktreeDiff({ state: "patch", patch, review: { notedLines: new Set(["new:4"]), onSelectLine } }));
@@ -23,6 +23,24 @@ describe("line feedback interaction", () => {
     expect(onSelectLine.mock.calls).toEqual([
       [{ lineSide: "old", lineNumber: 3 }], [{ lineSide: "new", lineNumber: 4 }], [{ lineSide: "new", lineNumber: 5 }],
     ]);
+    const texts = nodes(tree).filter((node) => node.type === "Text").map((node) => node.props.children);
+    expect(texts).toContain("context");
+    expect(texts).not.toContain(2);
+    expect(texts).not.toContain(3);
+    expect(texts).not.toContain(4);
+    expect(texts).not.toContain(5);
+    expect(texts.some((text) => typeof text === "string" && text.startsWith("@@"))).toBe(false);
+    const row = byLabel(tree, "Comment on old line 3");
+    expect(nodes(row).some((node) => node.type === "Text" && node.props.children === "old")).toBe(true);
+  });
+
+  it("shows section context without Git's line-range header", async () => {
+    const ui = await diffHarness();
+    const contextualPatch = patch.replace("@@ -2,3 +2,4 @@", "@@ -2,3 +2,4 @@ public record SessionData(");
+    const tree = expand(ui.WorktreeDiff({ state: "patch", patch: contextualPatch }));
+    const texts = nodes(tree).filter((node) => node.type === "Text").map((node) => node.props.children);
+    expect(texts).toContain("public record SessionData(");
+    expect(texts.some((text) => typeof text === "string" && text.includes("@@"))).toBe(false);
   });
 
   it("comments on unchanged full-file lines and keeps new numbers after deletions and chunk boundaries", async () => {
@@ -40,6 +58,8 @@ describe("line feedback interaction", () => {
       [{ lineSide: "new", lineNumber: 1 }], [{ lineSide: "new", lineNumber: 4 }], [{ lineSide: "new", lineNumber: 135 }],
     ]);
     expect(nodes(tree).filter((node) => node.props.accessibilityLabel?.startsWith("Comment on old"))).toHaveLength(0);
+    expect(byLabel(tree, "Comment on new line 1").props.children.join("")).toBe("+ first\n");
+    expect(byLabel(tree, "Comment on new line 135").props.children.join("")).toBe("+ rest 129\n");
   });
 
   it("offers no line actions for unavailable or unparseable patches", async () => {
@@ -49,6 +69,42 @@ describe("line feedback interaction", () => {
       expect(nodes(tree).filter((node) => node.props.onPress)).toHaveLength(0);
     }
   });
+});
+
+it("gives the Changes modal its own safe-area root and a compact file subtitle", async () => {
+  const hooks = hookState();
+  const runtime = createMockRuntime();
+  const task = fixtureTasks[0]!;
+  const connection = (await runtime.connections.list())[0]!;
+  const route = await load<typeof import("../src/app/task/[taskId]/changes")>("../src/app/task/[taskId]/changes.tsx", {
+    react: hooks.react,
+    "expo-router": { useLocalSearchParams: () => ({ taskId: task.id, connectionId: connection.id }) },
+    "react-native-safe-area-context": { SafeAreaProvider: "SafeAreaProvider" },
+    "@/components/screen": { Screen: "Screen", ScreenHeader: "ScreenHeader" },
+    "@/components/worktree-diff": { WorktreeDiff: "WorktreeDiff" },
+    "@/components/change-review": { ChangeReviewEditor: "ChangeReviewEditor", ChangeReviewPanel: "ChangeReviewPanel" },
+    "@/composition/runtime-context": { useMobileRuntime: () => runtime },
+    "@/features/connection/connection-store": { useConnections: () => ({ selected: connection, selectedId: connection.id, select: vi.fn() }) },
+    "@/features/overview/overview-store": { useOverview: () => ({ overview: { tasks: [task], sessions: fixtureSessions } }) },
+  });
+  const render = () => {
+    hooks.begin();
+    const screen = route.default();
+    return (screen.type as (props: Props) => ReactNode)(screen.props);
+  };
+  render();
+  await vi.waitFor(() => expect(nodes(render()).some((node) => node.props.entry?.entry_id === fixtureTaskWorktreeChanges.entries[0]!.entry_id)).toBe(true));
+  const row = nodes(render()).find((node) => node.props.entry && node.props.onSelect)!;
+  row.props.onSelect();
+  const sheet = nodes(render()).find((node) => node.props.onFullFileChange)!;
+  const modal = (sheet.type as (props: Props) => ReactElement<Props>)(sheet.props);
+  expect(modal.type).toBe("Modal");
+  expect(modal.props.children.type).toBe("SafeAreaProvider");
+  expect(modal.props.children.props.children.type).toBe("Screen");
+  const header = nodes(modal).find((node) => node.type === "ScreenHeader")!;
+  expect(header.props.subtitle).toBe("[taskId].tsx");
+  expect(nodes(modal).some((node) => node.props.selectable && node.props.children === row.props.entry.display_path)).toBe(true);
+  hooks.unmount();
 });
 
 describe("feedback batch state", () => {
@@ -146,6 +202,7 @@ function hookState() {
   let cursor = 0;
   return { begin: () => { cursor = 0; }, unmount: () => cleanups.forEach((cleanup) => cleanup()), react: {
     ...require("react"),
+    useCallback: (callback: unknown) => callback,
     useState: (initial: any) => {
       const index = cursor++;
       if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
@@ -166,7 +223,7 @@ function hookState() {
 async function load<T>(path: string, overrides: Record<string, unknown>): Promise<T> {
   const bundle = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, write: false,
     platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", ...Object.keys(overrides)] });
-  const native = { Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View",
+  const native = { Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View", Modal: "Modal", KeyboardAvoidingView: "KeyboardAvoidingView", ActivityIndicator: "ActivityIndicator", RefreshControl: "RefreshControl",
     Platform: { OS: "ios", select: (values: Props) => values.ios ?? values.default },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 0.5 } };
   const module = { exports: {} as T };

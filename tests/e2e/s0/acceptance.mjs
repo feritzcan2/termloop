@@ -219,6 +219,17 @@ try {
   assert.equal(unsupportedAgent.error.code, "invalidMessage");
   const missingSession = await rawCall(record, { method: "session.terminate", params: { sessionId: "00000000-0000-0000-0000-000000000000" } });
   assert.equal(missingSession.error.code, "notFound"); evidence.checks.domainErrorsTyped = true;
+  // Schema-valid requests must enter the real resume handlers on the default
+  // Tokio worker stack, even when the Session does not exist. This previously
+  // aborted the daemon before the handler could return its domain error.
+  for (const method of ["session.resumeAgent", "session.restartAgent"]) {
+    const params = { sessionId: "00000000-0000-0000-0000-000000000000" };
+    if (method === "session.resumeAgent") params.launchTicket = "0".repeat(64);
+    const response = await rawCall(record, { method, params });
+    assert.equal(response.error?.code, "notFound", `${method}: ${JSON.stringify(response)}`);
+    assert.equal((await rawCall(record)).ok, true, `daemon stopped after ${method}`);
+  }
+  evidence.checks.resumeHandlersSurviveDefaultWorkerStack = true;
   const terminalResponse = await rawCall(record, { method: "session.launchTerminal", params: { projectId: projectResponse.result.id, cwd: process.cwd() } });
   assert.equal(terminalResponse.ok, true);
   renamedSessionId = terminalResponse.result.id;
@@ -326,6 +337,7 @@ try {
 await writeFile("artifacts/evidence/s0/local.json", JSON.stringify(evidence, null, 2));
 const requiredChecks = ["loopbackDiscovery", "cli_version", "cli_capabilities", "cli_ping", "unauthenticated", "credentialShapeValidated", "unsupportedVersion", "identityPreflightBeforeDecodeCapabilityAndDispatch", "identityShapeValidated", "methodNotFound", "schemaEnvelopeValidated", "oversizedRequestTyped", "concurrentControlClients", "binaryTerminalHandshake", "terminalCredentialIsolation", "capabilityDenied", "readOnlyCapability", "invalidParamsTyped", "projectCreate", "cliProjectFlow", "domainErrorsTyped", "sessionRenameCapabilityAndReadProjection", "staleEpochRejected", "terminalReattach", "cliSessionFlow", "secretFreeProcessDescriptor", "naturalExitReconciled", "desktopSmoke", "durableProjectAcrossRestart", "sessionNameDurableAcrossRestart", "daemonRestartEpochChanged"];
 requiredChecks.push("boundedPrivateShellHistoryCheckpointed", "shellHistoryAndLogicalSessionSurviveRestart");
+requiredChecks.push("resumeHandlersSurviveDefaultWorkerStack");
 const failedChecks = requiredChecks.filter((name) => evidence.checks[name] !== true);
 const status = failedChecks.length === 0 ? "PASS" : "FAIL";
 const rows = Object.entries(evidence.checks).map(([name, value]) => `| ${name} | ${String(value)} |`).join("\n");
