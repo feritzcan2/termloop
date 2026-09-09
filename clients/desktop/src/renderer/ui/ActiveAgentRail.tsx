@@ -10,7 +10,8 @@ import { SessionRowButton, SessionRowClose, sessionRelationshipLabel } from "./S
 import { taskChangeLabel } from "../task-presentation.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
-import { activeAgentWorkflowAction, type ActiveAgentWorkflow } from "./active-agent-workflows.js";
+import { activeAgentWorkflowAction, type ActiveAgentWorkflow, type WorkflowAgentGroup } from "./active-agent-workflows.js";
+import { WorkflowAgentGroupFrame, workflowAgentSegments } from "./WorkflowAgentGroup.js";
 
 export type ActiveAgentSections = {
   actionNeeded: readonly Session[];
@@ -228,11 +229,12 @@ export function activeAgentQueryMatches(session: Session, normalizedQuery: strin
     || workflows.some((workflow) => workflow.context.toLowerCase().includes(normalizedQuery));
 }
 
-function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>): ActiveAgentGroupSections {
+function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>, workflowGroups?: ReadonlyMap<string, WorkflowAgentGroup>): ActiveAgentGroupSections {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return sections;
   const matching = (groups: readonly AgentSessionCluster[]) => groups.filter(
-    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id))),
+    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id))
+      || workflowGroups?.get(session.id)?.context.toLowerCase().includes(normalized)),
   );
   return {
     actionNeeded: matching(sections.actionNeeded),
@@ -262,6 +264,7 @@ export type ActiveAgentRailProps = {
   worktreeChangesBySessionId: ReadonlyMap<string, ActiveAgentWorktreeChanges>;
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
+  workflowGroupsBySessionId?: ReadonlyMap<string, WorkflowAgentGroup> | undefined;
   agentGroups?: readonly AgentGroupLayout[] | undefined;
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
   detachRelationship?: ((sessionId: string) => void) | undefined;
@@ -312,8 +315,8 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   const sections = naturalSections;
   const allOrdered = useMemo(() => flattenGroupSections(sections), [sections]);
   const visibleSections = useMemo(
-    () => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId),
-    [sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId],
+    () => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId, props.workflowGroupsBySessionId),
+    [sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId, props.workflowGroupsBySessionId],
   );
   const filtering = visibleSections !== sections;
   const ordered = useMemo(
@@ -433,14 +436,19 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
               renameGroup={props.renameAgentGroup}
               ungroup={props.ungroupAgentGroup}
             >
-              {cluster.groups.map(({ source, helpers }) => (
-                <Fragment key={source.id}>
-                  <ActiveAgentRow session={source} props={props} sessionsById={sessionsById} />
-                  {helpers.map((helper) => (
-                    <ActiveAgentRow key={helper.id} session={helper} source={source} props={props} sessionsById={sessionsById} />
-                  ))}
-                </Fragment>
-              ))}
+              {cluster.groups.flatMap(({ source, helpers }) =>
+                workflowAgentSegments([source, ...helpers], props.workflowGroupsBySessionId).map((segment) => {
+                  const rows = segment.sessions.map((session) => <ActiveAgentRow
+                    key={session.id}
+                    session={session}
+                    source={session.id === source.id ? undefined : source}
+                    props={props}
+                    sessionsById={sessionsById}
+                  />);
+                  return segment.workflow
+                    ? <WorkflowAgentGroupFrame key={segment.sessions[0]!.id} workflow={segment.workflow}>{rows}</WorkflowAgentGroupFrame>
+                    : <Fragment key={segment.sessions[0]!.id}>{rows}</Fragment>;
+                }))}
             </AgentGroupFrame>
           ))}
         </div>
