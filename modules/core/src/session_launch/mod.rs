@@ -9,6 +9,8 @@ pub(crate) mod ask_to;
 mod deleted;
 mod history_repair;
 mod lifecycle;
+mod terminal_restore;
+pub use terminal_restore::{ShellHistoryCheckpoint, ShellHistoryCheckpointPlan, ShellHistoryStore};
 mod relocation;
 mod resume;
 mod resume_failure;
@@ -469,7 +471,7 @@ impl CoreRuntime {
 
     fn launch_terminal_at(&mut self, project_id: String, cwd: String) -> Result<Value, CoreError> {
         let session_id = Uuid::new_v4().to_string();
-        let (program, args) = termloop_platform::default_shell();
+        let (program, args) = terminal_restore::shell_program();
         let session = SessionRecord {
             launch_selection: Default::default(),
             id: session_id,
@@ -495,19 +497,22 @@ impl CoreRuntime {
             resume_launch_guard: None,
             resume_failure: None,
         };
-        if let Err(error) = self.terminal.spawn(PtySpawnSpec {
-            session_id: session.id.clone(),
-            runtime_epoch: self.runtime_epoch,
-            program,
-            args,
-            cwd,
-            environment: termloop_platform::LaunchEnvironment::os_baseline(),
-            // A shell can emit startup output before its first renderer
-            // attaches. On Windows, PowerShell may then block waiting for a
-            // cursor-position response to a DSR request that would otherwise
-            // be lost before the terminal subscriber exists.
-            recent_output_replay: true,
-        }) {
+        if let Err(error) = self.terminal.spawn_shell(
+            PtySpawnSpec {
+                session_id: session.id.clone(),
+                runtime_epoch: self.runtime_epoch,
+                program,
+                args,
+                cwd,
+                environment: termloop_platform::LaunchEnvironment::os_baseline(),
+                // A shell can emit startup output before its first renderer
+                // attaches. On Windows, PowerShell may then block waiting for a
+                // cursor-position response to a DSR request that would otherwise
+                // be lost before the terminal subscriber exists.
+                recent_output_replay: true,
+            },
+            termloop_terminal::ShellHistory::default(),
+        ) {
             return Err(terminal_error(error));
         }
         if let Err(error) = self

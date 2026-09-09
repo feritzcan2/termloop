@@ -36,6 +36,7 @@ mod invalidation;
 mod keep_awake;
 mod mcp;
 mod runtime_health;
+mod shell_history;
 mod steward_change;
 mod steward_presence;
 mod steward_task_start;
@@ -402,14 +403,29 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         terminal.clone(),
         runtime_epoch,
     )?;
+    let shell_history_store = match termloop_core::ShellHistoryStore::open(&state_directory) {
+        Ok(store) => Some(store),
+        Err(error) => {
+            tracing::warn!(%error, "terminal history storage unavailable");
+            None
+        }
+    };
+    let uncertain_process_sessions = uncertain_process_sessions.into_iter().collect::<Vec<_>>();
     core.install_daemon_restart_handoff(agent_restart_handoffs);
     core.configure_mcp_tool_catalog(generated_mcp_tool_catalog()?)?;
     core.mark_startup_runtime_ownership_uncertain(
-        &uncertain_process_sessions.into_iter().collect::<Vec<_>>(),
+        &uncertain_process_sessions,
         unscoped_process_uncertainty,
     )?;
     apply_agent_resume_stall_quarantine(&mut core, &agent_resume_stall_path)?;
     core.restore_agent_terminal_holds();
+    for (session_id, error) in core.restore_terminal_sessions(
+        shell_history_store.as_ref(),
+        &uncertain_process_sessions,
+        unscoped_process_uncertainty,
+    ) {
+        tracing::warn!(%session_id, %error, "terminal could not be reopened after daemon restart");
+    }
     let resume_shutdown_flag = Arc::new(AtomicBool::new(false));
     core.configure_resume_shutdown(resume_shutdown_flag.clone());
     core.configure_agent_observations(termloop_core::AgentObservationTransport {
@@ -645,6 +661,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         companion_process_directory.clone(),
         runtime_directory.clone(),
     ));
+    let shell_history_writer = shell_history_store
+        .map(|store| shell_history::ShellHistoryWriter::spawn(state.clone(), store));
     let server_result = server.await?;
     state.access_plane.shutdown().await;
     server_result?;
@@ -657,6 +675,9 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     stop_terminal_exit_reconciler(terminal_exit_reconciler).await;
     if let Err(error) = terminal.terminate_all() {
         tracing::warn!(%error, "failed to reap every PTY during daemon shutdown");
+    }
+    if let Some(writer) = shell_history_writer {
+        writer.finish().await;
     }
     for directory in [
         provider_process_directory,

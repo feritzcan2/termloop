@@ -213,7 +213,7 @@ impl CoreRuntime {
         Ok(self.project_session(&restored))
     }
 
-    fn archived_worktree_paths(&self) -> Vec<String> {
+    pub(super) fn archived_worktree_paths(&self) -> Vec<String> {
         let mut paths = self
             .store
             .tasks()
