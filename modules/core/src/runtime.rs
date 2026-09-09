@@ -2,6 +2,7 @@
 
 mod agent_accounts;
 pub(crate) mod generated_input_delivery;
+pub(crate) mod preview_tickets;
 pub(crate) mod provider_observation_ingress;
 pub(crate) mod provider_runtime;
 mod session_retirement;

@@ -361,7 +361,8 @@ impl CoreRuntime {
             .retain_outside_tasks(&task_id_set);
         self.git_host_projections
             .retain_outside_project(&project_id);
-        self.retain_previews_outside_project(&project_id, &session_id_set, &task_id_set);
+        self.preview_tickets
+            .invalidate_project(&project_id, &session_id_set, &task_id_set);
         self.project_delete_reservations.remove(&project_id);
         self.retain_current_tracker_runtime();
         self.retain_current_task_source_runtime();
@@ -371,30 +372,6 @@ impl CoreRuntime {
             session_ids,
             changed_cwds,
         })
-    }
-
-    /// Drops every inspected-but-unconfirmed preview bound to the deleted
-    /// Project, its Sessions, or its Tasks. Each ticket carries a launch or
-    /// retirement authorization for a subject that no longer exists, so none of
-    /// them may survive the delete and wait for a confirmation.
-    fn retain_previews_outside_project(
-        &mut self,
-        project_id: &str,
-        session_ids: &HashSet<String>,
-        task_ids: &HashSet<String>,
-    ) {
-        self.quick_action_previews
-            .retain(|(_, ticket)| ticket.project_id() != project_id);
-        self.agent_launch_previews
-            .retain(|(_, ticket)| ticket.project_id() != project_id);
-        self.agent_resume_previews
-            .retain(|(_, ticket)| !session_ids.contains(ticket.session_id()));
-        self.session_relocation_previews
-            .retain(|(_, ticket)| ticket.project_id() != project_id);
-        self.session_archive_previews
-            .retain(|(_, ticket)| !session_ids.contains(ticket.session_id()));
-        self.task_archive_previews
-            .retain(|(_, ticket)| !task_ids.contains(ticket.task_id()));
     }
 
     fn project_delete_has_worktree(&self, project_id: &str) -> bool {
