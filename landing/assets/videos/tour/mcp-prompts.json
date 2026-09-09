@@ -1,12 +1,15 @@
 {
   "id": "mcp-prompts",
-  "duration": 18.0,
+  "duration": 9.0,
   "sourceSeconds": 3.0,
-  "size": 313897,
-  "sha256": "583fd777c7996c65d04a33174288e0cda1d4fb3b686648d488b5cfba8367b7cc",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "sourceFps": 20.0,
+  "motionSpeed": 1,
+  "size": 414840,
+  "sha256": "0496257e3aa58112eef752fceb4485eda68351386b39eacbb9939fe7ee3886e5",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": true
+  "legacy": true,
+  "captureKind": "continuous-video"
 }

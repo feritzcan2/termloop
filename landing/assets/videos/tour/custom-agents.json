@@ -1,12 +1,15 @@
 {
   "id": "custom-agents",
-  "duration": 18.0,
-  "sourceSeconds": 7.488,
-  "size": 236620,
-  "sha256": "e5e2df82cae7b2e4886e74dc9dbdf0ad8e1ac3696aa56360029a67d451dd5017",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 27.566667,
+  "sourceSeconds": 25.067,
+  "sourceFps": 29.99960106913472,
+  "motionSpeed": 1,
+  "size": 431561,
+  "sha256": "336736a1bd1ea940c0542ef8cebb265086482dbbad2e89a2d67c9a0dc77bbf5c",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

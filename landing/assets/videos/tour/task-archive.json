@@ -1,12 +1,15 @@
 {
   "id": "task-archive",
-  "duration": 18.0,
-  "sourceSeconds": 7.111,
-  "size": 263368,
-  "sha256": "0f5668948234a6e22099c5def00a8e5b51595838611703d2a41bb2797e70b9f8",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 29.0,
+  "sourceSeconds": 26.5,
+  "sourceFps": 30.0,
+  "motionSpeed": 1,
+  "size": 643032,
+  "sha256": "b9a0a29b36d7733ece4e0b3cf8e7348592b10af98eab32a6de3515b0257054dd",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

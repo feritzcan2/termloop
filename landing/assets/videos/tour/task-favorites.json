@@ -1,12 +1,15 @@
 {
   "id": "task-favorites",
-  "duration": 18.0,
-  "sourceSeconds": 7.455,
-  "size": 181755,
-  "sha256": "7a9e4f388e3a53df32756461cdec65baa8abb407360760ca7b27af99351841ea",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 21.266667,
+  "sourceSeconds": 18.767,
+  "sourceFps": 29.999467149784195,
+  "motionSpeed": 1,
+  "size": 341324,
+  "sha256": "68da140c7008002ec5c9517cc9df2cb364465456646f29a02d9022865afd1844",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }

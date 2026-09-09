@@ -1,12 +1,15 @@
 {
   "id": "review-cycles",
-  "duration": 18.0,
-  "sourceSeconds": 4.357,
-  "size": 278390,
-  "sha256": "55cdfee37045495302554fbe21d1e72df55fdd5d70f4e7ad902b1397f3cca616",
-  "width": 1600,
-  "height": 1040,
-  "fps": 24,
+  "duration": 27.433333,
+  "sourceSeconds": 24.933,
+  "sourceFps": 30.00040107488068,
+  "motionSpeed": 1,
+  "size": 692888,
+  "sha256": "45fb44a13ae6037199babc5f4807b197e2bab1a83d05b80295b20c3fb5dd93d0",
+  "width": 1920,
+  "height": 1248,
+  "fps": 30,
   "captionSteps": 3,
-  "legacy": false
+  "legacy": false,
+  "captureKind": "continuous-video"
 }
