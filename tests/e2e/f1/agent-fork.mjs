@@ -210,6 +210,8 @@ try {
   evidence.checks.nativeProviderForkPathsUsed = claudeForkCount >= 3
     && claudeForkCount <= 6
     && trace.filter((line) => line === "codex-fork").length === 9;
+  evidence.checks.providerHistoryValidatedBeforeEveryNativeCodexFork = trace.every((mode, index) =>
+    mode !== "codex-fork" || trace[index - 1] === "codex-history-probe");
 
   git(["-C", taskWorktreeDirectory, "checkout", "--detach"]);
   const countBeforeDetachedFork = (await controlCall(record, "session.list")).length;
@@ -293,6 +295,24 @@ if (args[0] === "app-server") {
   const appServer = new WebSocketServer({ host: endpoint.hostname, port: Number(endpoint.port) });
   appServer.on("connection", (socket) => socket.on("message", (raw) => {
     const initialize = JSON.parse(String(raw));
+    if (initialize.method === "initialize") {
+      socket.send(JSON.stringify({ id: initialize.id, result: { codexHome: ${JSON.stringify(path.join(testHomeDirectory, ".codex"))} } }));
+      return;
+    }
+    if (initialize.method === "initialized") return;
+    if (initialize.method === "thread/read") {
+      socket.send(JSON.stringify({ id: initialize.id, result: { thread: { id: initialize.params.threadId } } }));
+      return;
+    }
+    if (initialize.method === "thread/fork") {
+      if (initialize.params.ephemeral !== true || initialize.params.excludeTurns !== true) {
+        socket.send(JSON.stringify({ id: initialize.id, error: { message: "Expected a bounded ephemeral history probe" } }));
+        return;
+      }
+      fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-history-probe\\n");
+      socket.send(JSON.stringify({ id: initialize.id, result: { thread: { id: crypto.randomUUID() } } }));
+      return;
+    }
     socket.send(JSON.stringify({ method: "thread/started", params: { thread: { id: initialize.mode === "resume" ? initialize.sourceId : crypto.randomUUID() } } }));
   }));
   return;
