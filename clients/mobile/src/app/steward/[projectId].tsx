@@ -97,13 +97,17 @@ export default function StewardRoute() {
     }
   }, []);
 
-  const stopSpeech = useCallback(() => {
+  const cancelSpeech = useCallback(() => {
     speechAttempt.current += 1;
-    player.pause();
     stewardLocalSpeech.stop();
     cleanSpeechFile();
+  }, [cleanSpeechFile]);
+
+  const stopSpeech = useCallback(() => {
+    player.pause();
+    cancelSpeech();
     setSpeakingMessageId(undefined);
-  }, [cleanSpeechFile, player]);
+  }, [cancelSpeech, player]);
 
   const readAloud = useCallback(async (message: StewardMessage) => {
     if (connectionId === undefined) {
@@ -120,6 +124,7 @@ export default function StewardRoute() {
     setSpeechError(undefined);
     try {
       await configureVoicePlaybackAudio();
+      if (attempt !== speechAttempt.current) return;
       const audio = await runtime.steward.speech(connectionId, projectId, message.sequence);
       if (attempt !== speechAttempt.current) return;
       const file = new File(Paths.cache, `termloop-steward-message-${message.sequence}.mp3`);
@@ -131,6 +136,7 @@ export default function StewardRoute() {
       if (attempt !== speechAttempt.current) return;
       try {
         await configureVoicePlaybackAudio();
+        if (attempt !== speechAttempt.current) return;
         const spoken = await stewardLocalSpeech.speak(message.content);
         if (!spoken) throw new Error("iPhone seslendirmesi kullanılamıyor.");
         if (attempt === speechAttempt.current) setSpeakingMessageId(undefined);
@@ -150,7 +156,9 @@ export default function StewardRoute() {
     setSpeakingMessageId(undefined);
   }, [cleanSpeechFile, playerStatus.didJustFinish]);
 
-  useEffect(() => () => stopSpeech(), [stopSpeech]);
+  // useAudioPlayer releases its native player before this unmount cleanup.
+  // Cancel pending speech and clean our resources without touching that player.
+  useEffect(() => cancelSpeech, [cancelSpeech]);
 
   const respond = useCallback(async (messageId: string, action: "approve" | "decline" | "accept") => {
     if (connectionId === undefined || projectId === undefined) return;
