@@ -1,5 +1,6 @@
 mod agent_accounts;
 mod exit_reconciliation;
+mod launch_observation;
 use super::resume::AgentResumePreparationKind;
 use super::*;
 use termloop_domain::{IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ResumeFailureReason};

@@ -23,6 +23,7 @@ use tokio::time::{Duration, MissedTickBehavior};
 
 mod access_plane;
 mod agent_connections;
+mod agent_launch;
 mod attachments;
 mod companion_supervisor;
 mod control;
