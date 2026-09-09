@@ -14,7 +14,9 @@ mod launch_target;
 mod managed_process;
 mod path;
 mod private_command;
+mod private_snapshot;
 mod process;
+mod process_directory;
 mod process_tree;
 mod runtime;
 mod secure_credentials;
@@ -77,11 +79,13 @@ pub use path::{
 pub use private_command::{
     PrivateCommandExit, PrivateCommandFailure, PrivateCommandRequest, run_private_command,
 };
+pub use private_snapshot::{atomic_replace_private_snapshot, remove_atomic_replace_temporaries};
 pub use process::{
     CommandOutcome, CommandProbe, CommandRequest, CommandTermination, ResolvedExecutable,
     current_executable, os_string_from_process_bytes, path_from_process_bytes, probe_command,
     process_bytes_from_os_str, resolve_executable, run_command, sibling_executable,
 };
+pub use process_directory::process_working_directory;
 pub use process_tree::{ProcessTreeGuard, SignalDelivery, attach_process_tree_guard};
 pub use runtime::{
     MonotonicDeadline, current_epoch_ms, default_shell, generate_capability_token,
