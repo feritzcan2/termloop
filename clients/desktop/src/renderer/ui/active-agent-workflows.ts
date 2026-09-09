@@ -22,7 +22,7 @@ export function activeAgentWorkflows(
     if (execution.phase === "completed" || execution.status === "completed") continue;
     const current = execution.steps[execution.currentStepIndex];
     if (!current) continue;
-    const task = tasksById.get(execution.taskId);
+    const task = execution.taskId ? tasksById.get(execution.taskId) : undefined;
     const taskTitle = task?.project_id === execution.projectId ? task.title : undefined;
     const assigned = new Set<string>();
     const add = (sessionId: string | undefined, index: number, prefix?: string): boolean => {
@@ -33,7 +33,7 @@ export function activeAgentWorkflows(
       if (assigned.has(session.id)) return true;
       assigned.add(session.id);
       const stepLabel = `${prefix ? `${prefix} · ` : ""}${index + 1}/${execution.steps.length} ${step.title}`;
-      const context = [taskTitle, execution.workflowName, stepLabel,
+      const context = [execution.taskId === null ? "Project checkout" : taskTitle, execution.workflowName, stepLabel,
         execution.reviewCycle > 1 ? `Review cycle ${execution.reviewCycle}` : undefined,
       ].filter(Boolean).join(" · ");
       const entries = result.get(session.id) ?? [];
@@ -128,7 +128,7 @@ export function workflowAgentGroups(
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
-    const task = tasksById.get(execution.taskId);
+    const task = execution.taskId ? tasksById.get(execution.taskId) : undefined;
     const statusLabel = workflowStatusLabel(execution);
     const group: WorkflowAgentGroup = {
       executionId: execution.id,
@@ -137,7 +137,7 @@ export function workflowAgentGroups(
       statusLabel,
       needsAttention: execution.status === "completed"
         && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached"),
-      context: [task?.project_id === execution.projectId ? task.title : undefined, execution.workflowName, statusLabel].filter(Boolean).join(" · "),
+      context: [execution.taskId === null ? "Project checkout" : task?.project_id === execution.projectId ? task.title : undefined, execution.workflowName, statusLabel].filter(Boolean).join(" · "),
     };
     for (const sessionId of [execution.coordinatorSessionId, ...execution.participants.map((participant) => participant.sessionId)]) {
       const session = sessionsById.get(sessionId);

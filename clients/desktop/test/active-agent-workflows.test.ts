@@ -45,6 +45,13 @@ const sessions = [agent("lead"), agent("helper-a", { ask_to_source_session_id: "
 const task = { id: "task-1", project_id: "project-1", title: "Payments" } as Task;
 
 describe("workflow agent groups", () => {
+  it("keeps Taskless workflow groups and resume cues on exact Agents", () => {
+    const run = execution({ taskId: null });
+    const groups = workflowAgentGroups([run], sessions);
+    expect(groups.size).toBe(3);
+    expect(groups.get("lead")?.context).toContain("Project checkout");
+    expect(activeAgentWorkflows([run], sessions).get("lead")?.[0]?.context).toContain("Project checkout");
+  });
   it("groups only exact unarchived Agent members in the execution's project", () => {
     const values = [...sessions, agent("unrelated", { name: "Build and verify", ask_to_source_session_id: "lead" })];
     const groups = workflowAgentGroups([execution()], values, [task]);

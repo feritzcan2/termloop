@@ -1,7 +1,7 @@
 # Task workflow step
 
 - id: `builtin.agent.task-workflow`
-- version: `4`
+- version: `5`
 - delivery: `terminalInput`
 
 ---
