@@ -1324,6 +1324,7 @@ button.task-signal.issue:hover { color: var(--warning); }
 .conn-verified { flex: none; padding: 2px 6px; border-radius: 5px; background: rgba(92,201,149,.14); color: var(--success); font: 600 9px/1.3 var(--font-ui); }
 
 .conn-status { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font: 11px/1.3 var(--font-ui); }
+.conn-status > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .conn-status.big { gap: 10px; }
 .conn-status.big strong { display: block; color: var(--text); font: 600 12px/1.3 var(--font-ui); }
 .conn-status.big small { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--text-muted); font: 10px/1.4 var(--font-mono); }
@@ -1353,9 +1354,9 @@ button.task-signal.issue:hover { color: var(--warning); }
 .conn-danger:hover:not(:disabled) { background: rgba(225,117,126,.16); }
 .conn-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 
-.conn-scan { display: inline-flex; align-items: center; flex: none; gap: 6px; height: 28px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text-secondary); font: 600 10px/1 var(--font-ui); cursor: pointer; }
-.conn-scan:hover:not(:disabled) { color: var(--text); }
-.conn-scan:disabled { opacity: .8; cursor: default; }
+.conn-scan, .conn-refresh { display: inline-flex; align-items: center; flex: none; gap: 6px; height: 28px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 6px; background: transparent; color: var(--text-secondary); font: 600 10px/1 var(--font-ui); cursor: pointer; }
+.conn-scan:hover:not(:disabled), .conn-refresh:hover:not(:disabled) { color: var(--text); }
+.conn-scan:disabled, .conn-refresh:disabled { opacity: .8; cursor: default; }
 .conn-scan-idle { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
 .conn-scan-spin { width: 11px; height: 11px; border: 2px solid var(--border-strong); border-top-color: var(--accent-strong); border-radius: 50%; animation: conn-spin .7s linear infinite; }
 @keyframes conn-spin { to { transform: rotate(360deg); } }
@@ -1413,6 +1414,8 @@ button.task-signal.issue:hover { color: var(--warning); }
   .conn-form-row { grid-template-columns: 1fr; }
   .conn-field.port { max-width: none; }
   .conn-section-head { display: grid; }
+  .conn-card { flex-direction: column; align-items: stretch; }
+  .conn-card-actions { flex-wrap: wrap; }
   .conn-share-hero { flex-direction: column; align-items: stretch; }
   .conn-actions { justify-content: stretch; }
 }

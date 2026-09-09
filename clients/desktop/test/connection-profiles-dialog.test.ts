@@ -43,6 +43,7 @@ describe("ConnectionProfilesDialog", () => {
       enableHost: vi.fn(),
       hostStatus: vi.fn(),
       list: vi.fn(async () => []),
+      reconnect: vi.fn(),
       remove: vi.fn(),
       subscribeStatus: vi.fn(() => () => undefined),
     }));
