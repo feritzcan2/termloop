@@ -1,7 +1,5 @@
 use super::lifecycle::resume_failure_retryable;
-use super::{
-    AgentResumePreviewTicket, CodexRuntime, MAX_QUICK_ACTION_PREVIEWS, QUICK_ACTION_PREVIEW_TTL,
-};
+use super::{AgentResumePreviewTicket, CodexRuntime};
 use crate::{
     AgentObservationTransport, AgentRuntimeSignal, CoreError, CoreRuntime, required_string,
     store_error, terminal_error,
@@ -719,32 +717,16 @@ impl CoreRuntime {
         }
         .map_err(super::invocation_error)?;
         let manifest = launch.inspectable_manifest().clone();
-        self.agent_resume_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
-        if self.agent_resume_previews.len() >= MAX_QUICK_ACTION_PREVIEWS {
-            self.agent_resume_previews.pop_front();
-        }
-        let mut launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        while self
-            .agent_resume_previews
-            .iter()
-            .any(|(ticket, _)| ticket == &launch_ticket)
-        {
-            launch_ticket = termloop_platform::generate_opaque_runtime_token();
-        }
-        let deadline = termloop_platform::MonotonicDeadline::after(QUICK_ACTION_PREVIEW_TTL)
-            .map_err(|error| CoreError::Terminal(error.to_string()))?;
-        self.agent_resume_previews.push_back((
-            launch_ticket.clone(),
-            AgentResumePreviewTicket {
+        let launch_ticket = self
+            .preview_tickets
+            .agent_resume
+            .issue(AgentResumePreviewTicket {
                 session_id,
                 launch,
                 observation_token,
                 mcp_token,
                 managed_worktree_trust,
-                deadline,
-            },
-        ));
+            })?;
         Ok(serde_json::json!({ "launch_ticket": launch_ticket, "manifest": manifest }))
     }
 
@@ -752,23 +734,17 @@ impl CoreRuntime {
         &mut self,
         params: Value,
     ) -> Result<crate::AgentResumePlanOutcome, CoreError> {
-        self.agent_resume_previews
-            .retain(|(_, preview)| preview.deadline.remaining().is_some());
         let launch_ticket = required_string(&params, "launchTicket")?;
         let session_id = required_string(&params, "sessionId")?;
         self.ensure_session_not_individually_archived(&session_id)?;
         if self.session_is_archive_suspended(&session_id) {
             return Err(CoreError::SessionSuspendedByTaskArchive { session_id });
         }
-        let position = self
-            .agent_resume_previews
-            .iter()
-            .position(|(ticket, _)| ticket == &launch_ticket)
+        let preview = self
+            .preview_tickets
+            .agent_resume
+            .consume_once(&launch_ticket)
             .ok_or_else(|| CoreError::InvalidParams("launchTicket".into()))?;
-        let (_, preview) = self
-            .agent_resume_previews
-            .remove(position)
-            .expect("ticket position came from the same bounded queue");
         if preview.session_id != session_id {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
