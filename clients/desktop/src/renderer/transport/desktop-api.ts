@@ -424,6 +424,8 @@ export type DesktopApi = {
   taskAgentLaunch(taskId: string, agentId: string, launchTicket: string): Promise<TaskControlDesktopResult<Session>>;
   taskWorkflowPreview(taskId: string, workflowId: string, goal: string): Promise<TaskControlDesktopResult<AgentLaunchPreviewResult>>;
   taskWorkflowLaunch(taskId: string, workflowId: string, goal: string, launchTicket: string): Promise<TaskControlDesktopResult<Session>>;
+  projectWorkflowPreview(projectId: string, workflowId: string, goal: string): Promise<TaskControlDesktopResult<AgentLaunchPreviewResult>>;
+  projectWorkflowLaunch(projectId: string, workflowId: string, goal: string, launchTicket: string): Promise<TaskControlDesktopResult<Session>>;
   sessionTerminate(sessionId: string): Promise<TaskControlDesktopResult<unknown>>;
   sessionPreviewResumeAgent(sessionId: string): Promise<AgentLaunchPreviewResult>;
   sessionResumeAgent(sessionId: string, launchTicket: string): Promise<Session>;

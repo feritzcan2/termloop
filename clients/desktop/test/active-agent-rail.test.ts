@@ -767,7 +767,7 @@ describe("Workspace view switch", () => {
     // Session History closes it.
     expect(markup.slice(action, launch)).toMatch(/<\/button><\/div>$/u);
     expect(markup.slice(launch)).toMatch(/^<div class="workspace-launch-actions" aria-label="Launch Session"><span class="run-dev-server-chip">/u);
-    expect(markup).toMatch(/aria-label="Session History"[^>]*><svg[^]*?<\/svg><\/button><\/div><\/div>$/u);
+    expect(markup).toMatch(/aria-label="Session History"[^>]*><svg[^]*?<\/svg><\/button><\/span><\/div><\/div>$/u);
   });
 
   it("stays in place with no tab selected while another rail owns the sidebar", () => {

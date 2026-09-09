@@ -652,6 +652,14 @@
         "$ref": "#/$defs/sessionDto"
       }
     },
+    "project.previewWorkflow": {
+      "params": { "$ref": "#/$defs/projectPreviewWorkflowParams" },
+      "result": { "$ref": "#/$defs/agentLaunchPreviewResult" }
+    },
+    "project.launchWorkflow": {
+      "params": { "$ref": "#/$defs/projectLaunchWorkflowParams" },
+      "result": { "$ref": "#/$defs/sessionDto" }
+    },
     "task.previewWorkflow": {
       "params": {
         "$ref": "#/$defs/taskPreviewWorkflowParams"
@@ -1657,6 +1665,8 @@
         "task.launchTerminal",
         "task.previewAgent",
         "task.launchAgent",
+        "project.previewWorkflow",
+        "project.launchWorkflow",
         "task.previewWorkflow",
         "task.launchWorkflow",
         "task.startRun",
@@ -9457,6 +9467,31 @@
         "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       }
     },
+    "projectPreviewWorkflowParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectPreviewWorkflowParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "workflowId", "goal"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "workflowId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "goal": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "\\S" }
+      }
+    },
+    "projectLaunchWorkflowParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectLaunchWorkflowParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "workflowId", "goal", "launchTicket"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "workflowId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "goal": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "\\S" },
+        "launchTicket": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
     "taskPreviewWorkflowParams": {
       "x-codegen": true,
       "x-codegen-name": "TaskPreviewWorkflowParams",
@@ -12365,7 +12400,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "projectId": { "type": "string", "minLength": 1 },
-        "taskId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": ["string", "null"], "minLength": 1 },
         "workflowId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "workflowGeneration": { "type": "integer", "minimum": 1 },
         "workflowName": { "type": "string", "minLength": 1, "maxLength": 80, "x-utf8-max-bytes": 80 },

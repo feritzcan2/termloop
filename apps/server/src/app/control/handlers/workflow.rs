@@ -4,6 +4,17 @@ use tokio::time::Instant;
 use super::super::super::AppState;
 use super::super::super::gates::ObservationPriority;
 
+pub(in crate::app::control) async fn preview_project_workflow_session(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    state
+        .core
+        .lock()
+        .await
+        .preview_project_workflow_launch(params)
+}
+
 /// Automation uses the same inspected launch and one-time ticket as an
 /// interactive workflow start. Provisioning has already completed outside Core.
 pub(in crate::app) async fn launch_automated_task_workflow(

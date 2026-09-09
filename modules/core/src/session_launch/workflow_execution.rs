@@ -1,4 +1,4 @@
-//! Core-owned progression for one current Task workflow execution.
+//! Core-owned progression for one current Task or Project workflow execution.
 
 use serde_json::{Value, json};
 use termloop_domain::{
@@ -470,14 +470,16 @@ impl CoreRuntime {
         let current_is_workflow_prompt = self
             .generated_input_deliveries
             .provenance(coordinator_session_id, runtime_epoch)
-            .is_some_and(|provenance| provenance.template_ref == "builtin.agent.task-workflow");
+            .is_some_and(|provenance| {
+                provenance.template_ref == workflow_prompt_template(&execution)
+            });
         let queued_workflow_prompt = self
             .pending_generated_input_queues
             .get(coordinator_session_id)
             .filter(|queue| queue.runtime_epoch == runtime_epoch)
             .is_some_and(|queue| {
                 queue.submissions.iter().any(|submission| {
-                    submission.provenance().template_ref == "builtin.agent.task-workflow"
+                    submission.provenance().template_ref == workflow_prompt_template(&execution)
                 })
             });
         if current_is_workflow_prompt || queued_workflow_prompt {
@@ -559,7 +561,7 @@ impl CoreRuntime {
         if self
             .generated_input_deliveries
             .provenance(coordinator_session_id, runtime_epoch)
-            .is_none_or(|provenance| provenance.template_ref != "builtin.agent.task-workflow")
+            .is_none_or(|provenance| provenance.template_ref != workflow_prompt_template(&expected))
         {
             return Ok(false);
         }
@@ -576,11 +578,28 @@ impl CoreRuntime {
         &self,
         execution: &WorkflowExecution,
     ) -> Result<termloop_invocation::AskToTerminalPrompt, CoreError> {
+        let Some(task_id) = &execution.task_id else {
+            let project = self
+                .store
+                .projects()
+                .iter()
+                .find(|project| project.id == execution.project_id)
+                .ok_or(CoreError::NotFound)?;
+            return termloop_invocation::project_workflow_step_prompt(
+                &execution.id,
+                &project.name,
+                &execution.goal,
+                &execution.configuration,
+                usize::from(execution.current_step_index),
+                execution.review_cycle,
+            )
+            .map_err(|_| CoreError::WorkflowExecutionState);
+        };
         let task = self
             .store
             .tasks()
             .iter()
-            .find(|task| task.id == execution.task_id && task.project_id == execution.project_id)
+            .find(|task| &task.id == task_id && task.project_id == execution.project_id)
             .ok_or(CoreError::NotFound)?;
         let jira_url = self
             .store
@@ -600,6 +619,14 @@ impl CoreRuntime {
             execution.review_cycle,
         )
         .map_err(|_| CoreError::WorkflowExecutionState)
+    }
+}
+
+fn workflow_prompt_template(execution: &WorkflowExecution) -> &'static str {
+    if execution.task_id.is_some() {
+        "builtin.agent.task-workflow"
+    } else {
+        "builtin.agent.project-workflow"
     }
 }
 
@@ -730,11 +757,61 @@ mod tests {
     use super::*;
     use termloop_domain::{AgentLaunchSelection, WorkflowConfiguration, WorkflowStep};
 
+    #[test]
+    fn taskless_next_step_keeps_project_scope_and_the_current_review_cycle() {
+        let root =
+            std::env::temp_dir().join(format!("termloop-project-step-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut runtime = CoreRuntime::new(
+            termloop_store::Store::open(root.join("state.json")).unwrap(),
+            termloop_store::issue_core_write_authority_for_composition(),
+            termloop_terminal::TerminalService::default(),
+            2,
+        )
+        .unwrap();
+        let project = runtime
+            .handle(
+                "project.create",
+                json!({"name":"Payments", "folderPath":root}),
+            )
+            .unwrap();
+        let mut run = execution();
+        run.project_id = project["id"].as_str().unwrap().into();
+        run.configuration.project_id = run.project_id.clone();
+        run.task_id = None;
+        run.current_step_index = 4;
+        run.review_cycle = 2;
+        let prompt = runtime.compose_workflow_step_prompt(&run).unwrap();
+        assert_eq!(
+            prompt.provenance().template_ref,
+            workflow_prompt_template(&run)
+        );
+        assert!(prompt.delivered_prompt().contains("Project: Payments"));
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Current step: 5/5 — FIX")
+        );
+        assert!(prompt.delivered_prompt().contains("Review cycle: 2/2"));
+        assert!(runtime.store.tasks().is_empty());
+        // A missing Task remains a failure, never an implicit Project fallback.
+        run.task_id = Some("deleted-task".into());
+        assert_eq!(
+            workflow_prompt_template(&run),
+            "builtin.agent.task-workflow"
+        );
+        assert!(matches!(
+            runtime.compose_workflow_step_prompt(&run),
+            Err(CoreError::NotFound)
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn execution() -> WorkflowExecution {
         WorkflowExecution {
             id: "workflow-execution-1".into(),
             project_id: "project-1".into(),
-            task_id: "task-1".into(),
+            task_id: Some("task-1".into()),
             configuration: WorkflowConfiguration {
                 id: "workflow-1".into(),
                 project_id: "project-1".into(),

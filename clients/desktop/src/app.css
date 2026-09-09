@@ -2562,12 +2562,14 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 /* Two rows: the view tabs with the selected view's action, then the Project's
    launch row (RUN, terminal, agents, history). Side by side they needed ~430px
    of a 270px rail. */
-.workspace-view-bar { display: grid; gap: 3px; margin: -4px 10px 5px; padding-left: 2px; }
+.workspace-view-bar { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; margin: -4px 10px 5px; padding-left: 2px; }
 .workspace-view-row, .workspace-view-switch, .workspace-launch-actions { display: flex; min-height: 22px; align-items: center; gap: 2px; }
 .workspace-view-row { gap: 6px; }
 /* RUN holds the left of the launch row; the Session launchers gather on the
    right with Session History, so the row reads start-here | new-Session. */
-.workspace-launch-actions { justify-content: flex-end; }
+.workspace-launch-actions { justify-content: flex-end; flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+.workspace-session-launchers { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px; min-width: 0; }
+.workspace-session-launchers > button { flex-shrink: 0; }
 .workspace-launch-actions > .setup-dev-server, .workspace-launch-actions > .run-dev-server-chip { margin-right: auto; }
 .workspace-view-switch button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); }
 .workspace-view-switch button:hover { background: light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); color: var(--sidebar-text); }
@@ -2579,6 +2581,11 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workspace-launch-actions svg { width: 14px; height: 14px; }
 .workspace-launch-actions .claude { color: var(--agent-claude); }
 .workspace-launch-actions .codex { color: var(--agent-codex); }
+.workspace-launch-actions .workspace-workflow { display: inline-flex; width: auto; flex: 0 0 auto; gap: 3px; padding: 0 5px; white-space: nowrap; }
+.workspace-launch-actions .workspace-workflow svg { width: 10px; height: 10px; }
+.workflow-run-scope { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--accent-wash); margin-bottom: 14px; }
+.workflow-run-scope code { overflow-wrap: anywhere; font-size: 11px; }
+.workflow-run-scope p { margin: 0; color: var(--sidebar-dim); font-size: 12px; }
 .workspace-history-separator { width: 1px; height: 14px; margin: 0 3px; background: var(--rule); }
 .workspace-launch-actions .workspace-history.selected { border-color: rgba(102,179,255,.34); background: var(--accent-wash); color: var(--accent-strong); }
 /* The one launcher that names itself, because a Project with no dev server has

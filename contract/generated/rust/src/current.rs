@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:16da8fbc970fbadef6bfe3769fe8ec27e7a645e0847577d30b6539084791d546";
+    "sha256:83e99608bbc8ab1d4bf0069fda6deb2c660f7656baccfa6980369917acf06934";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -291,6 +291,8 @@ pub const METHODS: &[&str] = &[
     "task.launchTerminal",
     "task.previewAgent",
     "task.launchAgent",
+    "project.previewWorkflow",
+    "project.launchWorkflow",
     "task.previewWorkflow",
     "task.launchWorkflow",
     "task.startRun",
@@ -4235,6 +4237,28 @@ pub struct TaskPreviewAgentParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct ProjectPreviewWorkflowParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "workflowId")]
+    pub workflow_id: String,
+    pub goal: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectLaunchWorkflowParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "workflowId")]
+    pub workflow_id: String,
+    pub goal: String,
+    #[serde(rename = "launchTicket")]
+    pub launch_ticket: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TaskPreviewWorkflowParams {
     #[serde(rename = "taskId")]
     pub task_id: String,
@@ -5528,8 +5552,8 @@ pub struct WorkflowExecutionDto {
     pub id: String,
     #[serde(rename = "projectId")]
     pub project_id: String,
-    #[serde(rename = "taskId")]
-    pub task_id: String,
+    #[serde(rename = "taskId", deserialize_with = "deserialize_required_nullable")]
+    pub task_id: Option<String>,
     #[serde(rename = "workflowId")]
     pub workflow_id: String,
     #[serde(rename = "workflowGeneration")]
@@ -8235,6 +8259,8 @@ pub type TaskDeleteArchivedResult = TaskDeleteResult;
 pub type TaskLaunchTerminalResult = SessionDto;
 pub type TaskPreviewAgentResult = AgentLaunchPreviewResult;
 pub type TaskLaunchAgentResult = SessionDto;
+pub type ProjectPreviewWorkflowResult = AgentLaunchPreviewResult;
+pub type ProjectLaunchWorkflowResult = SessionDto;
 pub type TaskPreviewWorkflowResult = AgentLaunchPreviewResult;
 pub type TaskLaunchWorkflowResult = SessionDto;
 pub type TaskStartRunResult = SessionDto;
@@ -8432,6 +8458,8 @@ fn validate_method(value: &Value) -> bool {
             "task.launchTerminal",
             "task.previewAgent",
             "task.launchAgent",
+            "project.previewWorkflow",
+            "project.launchWorkflow",
             "task.previewWorkflow",
             "task.launchWorkflow",
             "task.startRun",
@@ -18222,6 +18250,75 @@ fn validate_task_preview_agent_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_project_preview_workflow_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("workflowId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("goal").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 8192
+                        && contract_pattern_matches("\\S", text)
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "workflowId", "goal"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_launch_workflow_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("workflowId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("goal").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 8192
+                        && contract_pattern_matches("\\S", text)
+                })
+            })
+            && object.get("launchTicket").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+            })
+            && object.keys().all(|key| {
+                ["projectId", "workflowId", "goal", "launchTicket"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_task_preview_workflow_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -21529,9 +21626,9 @@ fn validate_workflow_execution_dto(value: &Value) -> bool {
         }) && object
             .get("projectId")
             .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object
-                .get("taskId")
-                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("taskId").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| text.chars().count() >= 1) || field.is_null())
+            })
             && object.get("workflowId").is_some_and(|field| {
                 field
                     .as_str()
@@ -29884,6 +29981,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<TaskLaunchAgentParams>(params.clone()).is_ok()
                 && validate_task_launch_agent_params(params)
         }
+        "project.previewWorkflow" => {
+            serde_json::from_value::<ProjectPreviewWorkflowParams>(params.clone()).is_ok()
+                && validate_project_preview_workflow_params(params)
+        }
+        "project.launchWorkflow" => {
+            serde_json::from_value::<ProjectLaunchWorkflowParams>(params.clone()).is_ok()
+                && validate_project_launch_workflow_params(params)
+        }
         "task.previewWorkflow" => {
             serde_json::from_value::<TaskPreviewWorkflowParams>(params.clone()).is_ok()
                 && validate_task_preview_workflow_params(params)
@@ -30683,6 +30788,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "task.launchAgent" => {
             serde_json::from_value::<TaskLaunchAgentResult>(result.clone()).is_ok()
+                && validate_session_dto(result)
+        }
+        "project.previewWorkflow" => {
+            serde_json::from_value::<ProjectPreviewWorkflowResult>(result.clone()).is_ok()
+                && validate_agent_launch_preview_result(result)
+        }
+        "project.launchWorkflow" => {
+            serde_json::from_value::<ProjectLaunchWorkflowResult>(result.clone()).is_ok()
                 && validate_session_dto(result)
         }
         "task.previewWorkflow" => {

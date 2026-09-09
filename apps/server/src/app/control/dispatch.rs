@@ -29,8 +29,8 @@ use super::handlers::{
     launch_assistant_prompt_improver, launch_project_run, launch_quick_action,
     launch_run_configuration_improver, launch_settings_improver, launch_task_run,
     launch_task_session, list_deleted_sessions, list_session_history, paste_agent_image,
-    preview_agent_session, preview_assistant_prompt_improver, preview_quick_action,
-    preview_relocate_agent_session, preview_relocate_agent_to_project,
+    preview_agent_session, preview_assistant_prompt_improver, preview_project_workflow_session,
+    preview_quick_action, preview_relocate_agent_session, preview_relocate_agent_to_project,
     preview_resume_agent_session, preview_run_configuration_improver,
     preview_session_history_resume, preview_settings_improver, preview_task_agent_session,
     preview_task_workflow_session, project_list_local_branches, project_worktree_change_list,
@@ -1496,6 +1496,10 @@ async fn dispatch_inner(
                 preview_task_workflow_session(request.params, task_launch_deadline, state).await
             }
             "task.launchWorkflow" => launch_agent_session(request.params, state).await,
+            "project.previewWorkflow" => {
+                preview_project_workflow_session(request.params, state).await
+            }
+            "project.launchWorkflow" => launch_agent_session(request.params, state).await,
             "task.startRun" => {
                 launch_task_run(request.params, false, task_launch_deadline, state).await
             }
@@ -2071,6 +2075,15 @@ async fn dispatch_inner(
                     "Task {task_id} already has an active workflow; cancel it before starting another"
                 ),
             ),
+            Err(termloop_core::CoreError::ProjectWorkflowExecutionActive { project_id }) => {
+                response_error(
+                    request.id,
+                    ErrorCode::Conflict,
+                    &format!(
+                        "Project {project_id} already has an active workflow; finish or stop it before starting another"
+                    ),
+                )
+            }
             Err(termloop_core::CoreError::AgentForkUnavailable { reason }) => {
                 let reason = match reason {
                     termloop_core::AgentForkUnavailableReason::SourceNotRunning => {

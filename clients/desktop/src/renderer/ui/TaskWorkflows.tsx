@@ -1,6 +1,6 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { AgentLibraryEntry, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepResultDto } from "@termloop/contract/current";
-import type { Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
+import type { Project, Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import type { RowTone } from "../row-tone.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
@@ -15,12 +15,18 @@ export type WorkflowSessionPresentation = {
   tone: RowTone;
 };
 
-export function TaskWorkflowLaunchers(props: {
-  task: Task;
+type WorkflowLaunchScope = { task: Task; project?: never } | { task?: never; project: Project };
+
+export function TaskWorkflowLaunchers(props: Extract<ComponentProps<typeof WorkflowLaunchers>, { task: Task }>) {
+  return <WorkflowLaunchers {...props} />;
+}
+
+export function WorkflowLaunchers(props: WorkflowLaunchScope & {
   configurations: readonly WorkflowConfiguration[];
   executions: readonly WorkflowExecution[];
   agentProfiles: readonly AgentLibraryEntry[];
   launchable: boolean;
+  disabled?: boolean;
   showLaunchers: boolean;
   renderLaunchers?(workflowButton: ReactNode): ReactNode;
   overlayContainer: Element | undefined;
@@ -31,15 +37,20 @@ export function TaskWorkflowLaunchers(props: {
   openSession(sessionId: string): void;
   sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
 }) {
-  const execution = props.executions.find((candidate) => candidate.taskId === props.task.id);
+  const scopeId = props.task ? props.task.id : props.project.id;
+  const scopeTitle = props.task ? props.task.title : props.project.name;
+  const execution = props.executions.find((candidate) => props.task
+    ? candidate.taskId === props.task.id && candidate.projectId === props.task.project_id
+    : candidate.taskId === null && candidate.projectId === props.project.id);
   const executionActive = execution !== undefined && execution.status !== "completed";
   const executionNeedsAttention = execution?.status === "completed"
     && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached");
   const currentStep = execution?.steps[execution.currentStepIndex];
   const executionSummaryId = useId();
   const [running, setRunning] = useState<WorkflowConfigurationDto>();
+  const trigger = useRef<HTMLButtonElement>(null);
   const [templateTrigger, setTemplateTrigger] = useState<HTMLButtonElement>();
-  const templatesOpen = props.showLaunchers && templateTrigger !== undefined;
+  const templatesOpen = props.showLaunchers && !props.disabled && templateTrigger !== undefined;
   const [inspectingExecution, setInspectingExecution] = useState(false);
   const [inspectingResult, setInspectingResult] = useState<{ stepId: string; reviewCycle: number }>();
   const [progressPreference, setProgressPreference] = useState<{ executionId: string; expanded: boolean }>();
@@ -54,23 +65,29 @@ export function TaskWorkflowLaunchers(props: {
     overlayVisibilityChanged(Boolean(templatesOpen || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
     return () => overlayVisibilityChanged(false);
   }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running, templatesOpen]);
-  useEffect(() => { if (!props.showLaunchers) setTemplateTrigger(undefined); }, [props.showLaunchers]);
+  useEffect(() => {
+    if (!props.showLaunchers || props.disabled) {
+      setTemplateTrigger(undefined); setRunning(undefined); setInspectingExecution(false); setInspectingResult(undefined);
+    }
+  }, [props.showLaunchers, props.disabled]);
   const closeTemplates = () => { setTemplateTrigger(undefined); templateTrigger?.focus(); };
   const workflowButton = <button
+    ref={trigger}
     type="button"
-    className="workflow-add"
+    className={`workflow-add${props.project ? " workspace-workflow" : ""}`}
+    disabled={props.disabled}
     aria-label="Workflow"
-    aria-haspopup={props.configurations.length ? "menu" : undefined}
+    aria-haspopup={props.configurations.length || (props.project && execution) ? "menu" : undefined}
     aria-expanded={templatesOpen}
     title={props.configurations.length ? "Run or edit a workflow" : "Create a workflow template"}
-    onClick={(event) => props.configurations.length ? setTemplateTrigger(event.currentTarget) : props.edit(undefined)}
+    onClick={(event) => props.configurations.length || (props.project && execution) ? setTemplateTrigger(event.currentTarget) : props.edit(undefined)}
   ><Icon name="add" />Workflow</button>;
 
   return <>
     {props.showLaunchers ? props.renderLaunchers
       ? props.renderLaunchers(workflowButton)
       : <div className="task-launch">{workflowButton}</div> : null}
-    {execution ? <section
+    {execution && props.task ? <section
       className={`workflow-execution-row status-${execution.status}${executionNeedsAttention ? " needs-attention" : ""}`}
       aria-label={`${execution.workflowName} workflow`}
     >
@@ -108,25 +125,35 @@ export function TaskWorkflowLaunchers(props: {
     <OverlayPortal container={props.overlayContainer}>
       {templatesOpen ? <WorkflowTemplateMenu
         anchor={templateTrigger}
-        taskTitle={props.task.title}
+        taskTitle={scopeTitle}
         configurations={props.configurations}
         unavailableReason={!props.launchable
-          ? "The Task worktree must be ready before a workflow can run."
+          ? props.task ? "The Task worktree must be ready before a workflow can run." : "Connect to this Project before starting a workflow."
           : executionActive ? `Finish or stop ${execution.workflowName} first.` : undefined}
+        currentWorkflow={props.project && execution ? {
+          name: execution.workflowName,
+          status: workflowStatusLabel(execution),
+          open: () => { closeTemplates(); setInspectingExecution(true); },
+        } : undefined}
         close={closeTemplates}
         run={(configuration) => { closeTemplates(); setRunning(configuration); }}
         edit={(configuration) => { closeTemplates(); props.edit(configuration); }}
       /> : null}
       {running ? <WorkflowRunDialog
-        task={props.task}
+        initialGoal={props.task ? props.task.brief?.trim() || props.task.title : ""}
+        project={props.project}
         configuration={running}
-        close={() => setRunning(undefined)}
-        launch={props.launch}
+        close={() => { setRunning(undefined); trigger.current?.focus(); }}
+        launch={(goal) => props.launch(scopeId, running.id, goal)}
+        unavailableReason={!props.launchable ? "This checkout is not available for launch."
+          : executionActive ? `Finish or stop ${execution.workflowName} first.`
+          : props.configurations.find((configuration) => configuration.id === running.id)?.generation !== running.generation
+            ? "This template changed or was deleted. Close this dialog and select it again." : undefined}
       /> : null}
       {inspectingExecution && execution ? <WorkflowExecutionDialog
         execution={execution}
         agentProfiles={props.agentProfiles}
-        close={() => setInspectingExecution(false)}
+        close={() => { setInspectingExecution(false); trigger.current?.focus(); }}
         cancel={props.cancel}
         openSession={props.openSession}
         sessionPresentation={props.sessionPresentation}
@@ -386,45 +413,65 @@ function WorkflowSessionButton(props: {
 }
 
 function WorkflowRunDialog(props: {
-  task: Task;
+  initialGoal: string;
+  project?: Project | undefined;
   configuration: WorkflowConfigurationDto;
+  unavailableReason?: string | undefined;
   close(): void;
-  launch(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
+  launch(goal: string): Promise<string | undefined>;
 }) {
-  const [goal, setGoal] = useState(() => props.task.brief?.trim() || props.task.title);
+  const [goal, setGoal] = useState(props.initialGoal);
+  const starting = useRef(false);
+  const dialog = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const start = async () => {
+    if (starting.current || props.unavailableReason) return;
     const normalized = goal.trim();
     if (!normalized) { setError("Describe what this workflow should accomplish."); return; }
-    setBusy(true); setError(undefined);
+    starting.current = true; setBusy(true); setError(undefined);
     try {
-      const failure = await props.launch(props.task.id, props.configuration.id, normalized);
+      const failure = await props.launch(normalized);
       if (failure) { setError(failure); return; }
       props.close();
-    } finally { setBusy(false); }
+    } catch { setError("Could not start this workflow. Check your connection and try again."); }
+    finally { starting.current = false; setBusy(false); }
   };
-  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && !busy && props.close()}>
+  return <div className="dialog-layer" onKeyDown={(event) => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) props.close(); }
+    if (event.key === "Tab") {
+      const elements = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled)') ?? [])];
+      const first = elements[0]; const last = elements.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  }}>
     <button className="dialog-backdrop" aria-label="Cancel workflow launch" disabled={busy} onClick={props.close} />
-    <section className="dialog-card workflow-run-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-run-title">
+    <section ref={dialog} className="dialog-card workflow-run-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-run-title">
       <header className="dialog-header">
         <div><span className="dialog-eyebrow">Run workflow</span><h2 id="workflow-run-title">{props.configuration.name}</h2></div>
         <button className="icon-button quiet" aria-label="Close dialog" disabled={busy} onClick={props.close}><Icon name="close" /></button>
       </header>
       <div className="dialog-body">
+        {props.project ? <div className="workflow-run-scope">
+          <strong>Project checkout · {props.project.name}</strong>
+          <code>{props.project.folder_path}</code>
+          <p>No Task or isolated worktree will be created. Changes apply directly to this checkout.</p>
+        </div> : null}
         <div className="workflow-run-route" aria-label="Workflow steps">
           {workflowSummary(props.configuration).split(" → ").map((label, index) => <span key={index} className="workflow-run-node">
             {index > 0 ? <i aria-hidden="true">→</i> : null}<b>{label}</b>
           </span>)}
         </div>
         <label htmlFor="workflow-run-goal">What should this run accomplish?</label>
-        <textarea id="workflow-run-goal" autoFocus rows={5} maxLength={32768} value={goal} onChange={(event) => setGoal(event.target.value)} />
-        <p className="field-help">This goal applies only to this Task. The template stays reusable; your lead agent carries the goal through every step.</p>
+        <textarea id="workflow-run-goal" autoFocus rows={5} maxLength={8192} disabled={busy} value={goal} onChange={(event) => setGoal(event.target.value)} />
+        <p className="field-help">This goal applies only to this {props.project ? "run" : "Task"}. The template stays reusable; your lead agent carries the goal through every step.</p>
+        {props.unavailableReason ? <p className="form-error" role="alert">{props.unavailableReason}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
       <footer className="dialog-actions">
         <button type="button" className="secondary-button" disabled={busy} onClick={props.close}>Cancel</button>
-        <button type="button" className="primary-button" disabled={busy} onClick={() => void start()}><Icon name="play" />{busy ? "Starting…" : "Start workflow"}</button>
+        <button type="button" className="primary-button" disabled={busy || Boolean(props.unavailableReason)} onClick={() => void start()}><Icon name="play" />{busy ? "Starting…" : "Start workflow"}</button>
       </footer>
     </section>
   </div>;

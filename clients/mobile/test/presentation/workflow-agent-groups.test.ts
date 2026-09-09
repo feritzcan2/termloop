@@ -11,6 +11,11 @@ const sessions = fixture.sessions.map((session, index): SessionDto => ({ ...sess
 const memberships = (runs = [execution], values = sessions) => workflowAgentMemberships(runs, values, fixtureTasks, execution.projectId);
 
 describe("workflow identity in mobile Agents", () => {
+  it("labels Taskless workflow members as Project checkout", () => {
+    const groups = memberships([{ ...execution, taskId: null }]);
+    expect(groups.size).toBe(3);
+    expect(groups.get(sessions[0]!.id)?.group.taskTitle).toBe("Project checkout");
+  });
   it("names the lead and reviewers from exact assigned roles without renaming stored Sessions", () => {
     const groups = memberships();
     expect([...groups.values()].map((item) => item.displayName)).toEqual(["Implementer · Codex", "Reviewer · Claude", "Reviewer · Codex"]);

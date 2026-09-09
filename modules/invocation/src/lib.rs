@@ -5,7 +5,11 @@ mod codex_config;
 mod manifest;
 mod personal_agent;
 mod profiles;
+mod project_workflow;
 pub use personal_agent::personal_agent_for_conversation;
+pub use project_workflow::{
+    project_agent_with_workflow_for_conversation, project_workflow_step_prompt,
+};
 mod submission;
 
 pub use manifest::{
@@ -235,7 +239,7 @@ const AGENT_TASK_KICKOFF_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.task-workflow",
-    version: 4,
+    version: 5,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.task-workflow.md"),
 };
 
@@ -280,6 +284,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         STEWARD_TASK_ASSIGNMENT_TEMPLATE,
         AGENT_TASK_KICKOFF_TEMPLATE,
         AGENT_TASK_WORKFLOW_TEMPLATE,
+        project_workflow::PROJECT_WORKFLOW_TEMPLATE,
     ]
 }
 
@@ -3447,7 +3452,7 @@ pub fn task_workflow_prompt(
 ) -> Result<AskToTerminalPrompt, InvocationError> {
     let composed = compose_task_workflow(
         execution_id,
-        task_id,
+        Some(task_id),
         title,
         brief,
         jira_url,
@@ -3484,7 +3489,7 @@ pub fn task_agent_with_workflow_for_managed_worktree_conversation(
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
     let composed = compose_task_workflow(
         execution_id,
-        task_id,
+        Some(task_id),
         title,
         brief,
         jira_url,
@@ -3512,7 +3517,7 @@ pub fn task_agent_with_workflow_for_managed_worktree_conversation(
 #[allow(clippy::too_many_arguments)]
 fn compose_task_workflow(
     execution_id: &str,
-    task_id: &str,
+    task_id: Option<&str>,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -3584,7 +3589,7 @@ fn compose_task_workflow(
             )
         }
         termloop_domain::WorkflowStepKind::Implement => {
-            "Perform this implementation yourself in the Task worktree and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of what changed and what was verified for the workflow sidebar.".to_owned()
+            "Perform this implementation yourself in the current working directory and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of what changed and what was verified for the workflow sidebar.".to_owned()
         }
         termloop_domain::WorkflowStepKind::Fix => {
             "Address the actionable findings collected from every reviewer in this review cycle yourself and run proportionate verification. When the step is genuinely complete, call `workflow_step_complete` with outcome `completed` and a concise `summary` of fixes and verification for the workflow sidebar. TermLoop will either re-run the parallel review group or finish at the configured cycle limit.".to_owned()
@@ -3595,14 +3600,14 @@ fn compose_task_workflow(
     let step_number = (current_step_index + 1).to_string();
     let step_count = workflow.steps.len().to_string();
     if execution_id.trim().is_empty()
-        || task_id.trim().is_empty()
+        || task_id.is_some_and(|id| id.trim().is_empty())
         || title.trim().is_empty()
         || goal.trim().is_empty()
         || goal.len() > termloop_domain::WORKFLOW_GOAL_MAX_BYTES
         || !workflow.is_valid()
         || jira_url.is_some_and(|jira_url| jira_url.trim().is_empty() || jira_url.len() > 2_048)
         || [
-            task_id,
+            task_id.unwrap_or(&workflow.project_id),
             title,
             brief_context.as_str(),
             jira_context.as_str(),
@@ -3624,7 +3629,14 @@ fn compose_task_workflow(
     }
     let template = prompt_templates()
         .iter()
-        .find(|template| template.id == "builtin.agent.task-workflow")
+        .find(|template| {
+            template.id
+                == if task_id.is_some() {
+                    "builtin.agent.task-workflow"
+                } else {
+                    "builtin.agent.project-workflow"
+                }
+        })
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
     let message_template = template
@@ -3652,21 +3664,25 @@ fn compose_task_workflow(
     let delivered_prompt = bind_ordered(message_template, &delivered_bindings)?;
     Ok(ComposedTaskKickoff {
         template,
-        bindings: std::iter::once(("task_id".to_owned(), task_id.to_owned()))
-            .chain(std::iter::once((
-                "workflow_id".to_owned(),
-                workflow.id.clone(),
-            )))
-            .chain(std::iter::once((
-                "workflow_generation".to_owned(),
-                workflow.generation.to_string(),
-            )))
-            .chain(
-                delivered_bindings
-                    .into_iter()
-                    .map(|(name, value)| (name.to_owned(), value.to_owned())),
-            )
-            .collect(),
+        bindings: std::iter::once(if let Some(task_id) = task_id {
+            ("task_id".to_owned(), task_id.to_owned())
+        } else {
+            ("project_id".to_owned(), workflow.project_id.clone())
+        })
+        .chain(std::iter::once((
+            "workflow_id".to_owned(),
+            workflow.id.clone(),
+        )))
+        .chain(std::iter::once((
+            "workflow_generation".to_owned(),
+            workflow.generation.to_string(),
+        )))
+        .chain(
+            delivered_bindings
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.to_owned())),
+        )
+        .collect(),
         delivered_prompt,
     })
 }
@@ -3686,7 +3702,7 @@ pub fn task_workflow_step_prompt(
 ) -> Result<AskToTerminalPrompt, InvocationError> {
     let composed = compose_task_workflow(
         execution_id,
-        task_id,
+        Some(task_id),
         title,
         brief,
         jira_url,
@@ -7402,7 +7418,68 @@ mod tests {
             prompt.provenance().template_ref,
             "builtin.agent.task-workflow"
         );
-        assert_eq!(prompt.provenance().template_version, 4);
+        assert_eq!(prompt.provenance().template_version, 5);
+        let project_prompt = project_workflow_step_prompt(
+            "project-execution-1",
+            "Payments",
+            "Fix checkout",
+            &workflow,
+            0,
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            project_prompt.provenance().template_ref,
+            "builtin.agent.project-workflow"
+        );
+        assert!(
+            project_prompt
+                .delivered_prompt()
+                .contains("Project: Payments")
+        );
+        assert!(!project_prompt.delivered_prompt().contains("Task:"));
+        let project_launch = project_agent_with_workflow_for_conversation(
+            "codex",
+            "/tmp/project",
+            "gpt-5.6-sol",
+            "acceptEdits",
+            "high",
+            "project-execution-1",
+            "Payments",
+            "Fix checkout",
+            &workflow,
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            project_launch
+                .initial_input()
+                .unwrap()
+                .trim_end_matches(['\r', '\n']),
+            project_prompt.delivered_prompt()
+        );
+        assert!(
+            !project_launch
+                .args()
+                .iter()
+                .any(|arg| arg.contains("trust_level"))
+        );
+        let next = project_workflow_step_prompt(
+            "project-execution-1",
+            "Payments",
+            "Fix checkout",
+            &workflow,
+            2,
+            2,
+        )
+        .unwrap();
+        assert!(next.delivered_prompt().contains("Review cycle: 2/2"));
+        assert!(
+            next.delivered_prompt()
+                .contains("Call `workflow_delegate` 2 time(s)")
+        );
         assert!(prompt.delivered_prompt().contains("1. DISCUSS"));
         assert!(prompt.delivered_prompt().contains("2. IMPLEMENT"));
         assert!(prompt.delivered_prompt().contains("3. REVIEW"));
