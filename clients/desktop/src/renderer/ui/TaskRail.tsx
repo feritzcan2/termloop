@@ -24,6 +24,7 @@ import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memo
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
 import { TaskWorkflowLaunchers } from "./TaskWorkflows.js";
+import { TaskWorkflowActivity } from "./TaskWorkflowActivity.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { TaskDeveloperNotes } from "./TaskDeveloperNotes.js";
 
@@ -871,7 +872,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// is the same gate the launchers need. Deriving it from the stage keeps the
   /// two from drifting and drops a second `taskWorktreeInlineAction` call.
   const launchable = stage.id === "ready";
-  const workflowExecution = props.workflowExecutions.find((execution) => execution.taskId === task.id);
+  const workflowExecution = props.workflowExecutions.find((execution) => execution.taskId === task.id && execution.projectId === task.project_id);
   const workflowExecutionVisible = workflowExecution !== undefined;
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
     ? props.branchCommitSummary.count
@@ -1223,6 +1224,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           ><Icon name="more" /></button>
         </div>
       </div>
+      {workflowExecution && !props.deleting ? <TaskWorkflowActivity
+        execution={workflowExecution}
+        sessionsById={props.sessionsById}
+        statusesById={props.statusesById}
+        reviewReadySessionIds={props.reviewReadySessionIds}
+        openSession={props.selectSession}
+      /> : null}
       {archiveRow ? null : <TaskMetaLine
         task={task}
         stage={stage}

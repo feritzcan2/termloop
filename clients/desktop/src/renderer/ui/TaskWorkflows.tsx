@@ -104,12 +104,12 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
           {executionActive ? <Icon name="branch" /> : executionNeedsAttention ? "!" : "✓"}
         </span>
         <span className="workflow-execution-name">{execution.workflowName}</span>
-        <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{executionActive ? workflowStatusLabel(execution) : "Completed"}</span>
+        <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{workflowStatusLabel(execution)}</span>
         <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
         <span id={`${executionSummaryId}-detail`} className="workflow-execution-detail">
           {executionActive
             ? currentStep ? `Step ${execution.currentStepIndex + 1} of ${execution.steps.length} · ${currentStep.title}` : "Waiting for the next step"
-            : executionNeedsAttention ? workflowStatusLabel(execution)
+            : executionNeedsAttention ? "Automation finished · review still needs attention"
               : execution.completionOutcome === "approved" ? "All reviewers approved" : "No final review approval recorded"}
         </span>
       </button>

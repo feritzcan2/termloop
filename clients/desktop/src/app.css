@@ -462,7 +462,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group.focused:hover .task-open-hint { opacity: 1; }
 /* The hint speaks for the card's own click, so it stays up over the title row
    too and yields only above controls that do something else. */
-.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
+.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-workflow-activity, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .task-open-hint { transition: none; } }
 .task-group.focused[data-disclosed] { margin: 0 8px 6px; padding: 7px 7px 8px; }
 .task-group.focused:has(.task-item.showing-detail) { border-color: rgba(102,179,255,.28); background: rgba(102,179,255,.05); }
@@ -684,6 +684,17 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-execution-detail { grid-column: 2 / -1; min-width: 0; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 .workflow-execution-toggle .workflow-disclosure { width: 10px; height: 10px; color: var(--sidebar-dim); transition: transform .14s ease; }
 .workflow-execution-toggle .workflow-disclosure.expanded { transform: rotate(180deg); }
+.task-workflow-activity { display: grid; min-width: 0; gap: 3px; margin: 4px 5px 7px 28px; padding: 5px; border: 1px solid color-mix(in srgb,var(--agent-status-working) 32%,var(--rule)); border-left: 3px solid var(--agent-status-working); border-radius: 6px; background: color-mix(in srgb,var(--agent-status-working) 8%,var(--bg-sidebar)); }
+.task-workflow-active-agent { display: grid; grid-template-columns: 8px minmax(0,1fr) 14px; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-text); text-align: left; }
+.task-workflow-active-agent:hover { background: color-mix(in srgb,var(--agent-status-working) 12%,transparent); }
+.task-workflow-active-agent:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
+.task-workflow-active-agent > i { width: 7px; height: 7px; border-radius: 50%; background: var(--agent-status-working); box-shadow: 0 0 0 3px color-mix(in srgb,var(--agent-status-working) 15%,transparent); }
+.task-workflow-active-agent > span { display: grid; min-width: 0; gap: 3px; }
+.task-workflow-active-agent strong { color: var(--agent-status-working); font: 700 11px/1.4 var(--font-ui); overflow-wrap: anywhere; }
+.task-workflow-active-agent small { overflow: hidden; color: var(--sidebar-dim); font: 9px/1.4 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.task-workflow-active-agent > svg { width: 14px; height: 14px; color: var(--agent-status-working); }
+.task-workflow-activity-count { padding: 2px 4px; color: var(--sidebar-dim); font: 600 9px/1.4 var(--font-ui); }
+.task-workflow-activity > p { margin: 2px 4px; color: var(--sidebar-dim); font: 9px/1.4 var(--font-ui); }
 .workflow-status-badge > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #4ba675; box-shadow: 0 0 0 2px color-mix(in srgb,#4ba675 14%,transparent); }
 .workflow-status-badge.status-paused > i { background: #d09555; box-shadow: 0 0 0 2px color-mix(in srgb,#d09555 14%,transparent); }
 .workflow-status-badge.status-completed > i { background: #7b8790; box-shadow: none; }
@@ -737,6 +748,8 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-participant-session[data-tone="blocked"] > i { background: var(--state-error); box-shadow: 0 0 3px rgba(201,61,54,.45); }
 .workflow-participant-session > b { overflow: hidden; color: inherit; font: 650 8.5px/1.2 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 .workflow-participant-session > small { flex: none; overflow: visible; color: var(--sidebar-dimmer); font: 8px/1.2 var(--font-ui); white-space: nowrap; }
+.workflow-participant-session[data-tone="working"] { border-color: color-mix(in srgb,var(--agent-status-working) 40%,var(--border)); background: color-mix(in srgb,var(--agent-status-working) 10%,var(--bg-sidebar)); }
+.workflow-participant-session[data-tone="working"] > small { color: var(--agent-status-working); font-weight: 750; }
 .workflow-participant-session > em { flex: none; color: light-dark(#5575b6,#89aaf0); font: 700 7px/1 var(--font-mono); font-style: normal; letter-spacing: .03em; text-transform: uppercase; }
 .workflow-result-file { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 4px; min-height: 19px; padding: 2px 5px; border: 1px solid color-mix(in srgb,#6b8ed6 25%,var(--border)); border-radius: 4px; background: color-mix(in srgb,#6b8ed6 6%,transparent); color: light-dark(#5575b6,#89aaf0); text-align: left; }
 .workflow-result-file:hover { border-color: color-mix(in srgb,#6b8ed6 58%,var(--border)); background: var(--accent-wash); color: var(--accent-strong); }
