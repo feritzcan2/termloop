@@ -1,4 +1,5 @@
 import { color } from "../theme/tokens";
+import { webUrl } from "./web-links";
 
 const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(0x07);
@@ -44,6 +45,7 @@ const CUBE_STEPS = [0, 95, 135, 175, 215, 255] as const;
 /// One run of identically styled cells. The view renders spans, not cells, so a
 /// mostly-uniform line costs a handful of text nodes instead of one per column.
 export interface TerminalStyle {
+  readonly hyperlink?: string | undefined;
   readonly foreground: string;
   readonly background: string | undefined;
   readonly bold: boolean;
@@ -84,7 +86,7 @@ export type TerminalMouseTracking = "unknown" | "none" | "x10" | "normal" | "but
 const styleCache = new Map<string, TerminalStyle>();
 
 function internStyle(candidate: TerminalStyle): TerminalStyle {
-  const key = `${candidate.foreground}|${candidate.background ?? ""}|${candidate.bold ? 1 : 0}${candidate.italic ? 1 : 0}${candidate.underline ? 1 : 0}`;
+  const key = `${candidate.foreground}|${candidate.background ?? ""}|${candidate.bold ? 1 : 0}${candidate.italic ? 1 : 0}${candidate.underline ? 1 : 0}|${candidate.hyperlink ?? ""}`;
   const existing = styleCache.get(key);
   if (existing !== undefined) return existing;
   /// A truecolor stream could mint styles without bound. The cache is only a render
@@ -332,6 +334,7 @@ export class TerminalScreenProjection {
   #mouseTracking: TerminalMouseTracking = "unknown";
   #sgrMouseEncoding = false;
   #pen = freshPen();
+  #hyperlink: string | undefined;
   #style = DEFAULT_TERMINAL_STYLE;
 
   /// Read at gesture time rather than published in the snapshot: it changes on its own
@@ -453,8 +456,11 @@ export class TerminalScreenProjection {
     }
     if (next === "]") {
       for (let index = start + 2; index < value.length; index += 1) {
-        if (value[index] === BEL) return index - start + 1;
-        if (value[index] === ESC && value[index + 1] === "\\") return index - start + 2;
+        const terminatorLength = value[index] === BEL ? 1 : value[index] === ESC && value[index + 1] === "\\" ? 2 : 0;
+        if (terminatorLength) {
+          this.#osc(value.slice(start + 2, index));
+          return index - start + terminatorLength;
+        }
       }
       return 0;
     }
@@ -618,7 +624,18 @@ export class TerminalScreenProjection {
 
   #setPen(pen: Pen): void {
     this.#pen = pen;
-    this.#style = resolvePen(pen);
+    const style = resolvePen(pen);
+    this.#style = this.#hyperlink ? internStyle({ ...style, hyperlink: this.#hyperlink }) : style;
+  }
+
+  #osc(value: string): void {
+    if (!value.startsWith("8;")) return;
+    const separator = value.indexOf(";", 2);
+    if (separator < 0) return;
+    this.#hyperlink = webUrl(value.slice(separator + 1));
+    this.#setPen(this.#pen);
+    // Labeled links need the cell projection even in otherwise plain output.
+    if (this.#hyperlink) this.#claim();
   }
 
   /// Relative downward movement discovers height the same way absolute addressing
@@ -848,6 +865,7 @@ export class TerminalScreenProjection {
     this.#scrollTop = 0;
     this.#scrollBottom = this.#rows - 1;
     this.#regionSet = false;
+    this.#hyperlink = undefined;
     this.#setPen(freshPen());
   }
 
