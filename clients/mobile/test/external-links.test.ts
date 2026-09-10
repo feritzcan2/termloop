@@ -48,6 +48,25 @@ describe("external link controls", () => {
     expect(openTask).toHaveBeenCalledExactlyOnceWith(tasks[0]!.id);
   });
 
+  it("keeps the redesigned task agent's Jira link independent from agent navigation and actions", async () => {
+    const h = await harness("features/tasks/task-agent-row.tsx");
+    const model = buildProjectOverview({ projects: fixtureProjects, tasks: fixtureTasks, sessions: fixtureSessions, agentStatuses: fixtureAgentStatuses, stewardEnabledProjectIds: [], stewardExecutorSessionIds: {}, agentGroupsByProject: {} }, fixtureTasks[0]!.project_id);
+    const row = model.agents.find((agent) => agent.taskId === fixtureTasks[0]!.id)!;
+    const onPress = vi.fn(), onLongPress = vi.fn();
+    const tree = expand(h.module.TaskAgentRow({ row, task: { ...fixtureTasks[0]!, jira_url: url }, age: "2m", onPress, onLongPress }));
+    const nodes = all(tree);
+    expect(nodes.some((node) => node.props.children === fixtureTasks[0]!.title)).toBe(true);
+    expect(nodes.some((node) => node.props.children === row.title)).toBe(true);
+    expect(nodes.some((node) => node.props.children === row.stateLabel)).toBe(true);
+    const button = nodes.find((node) => node.props.accessibilityRole === "button")!;
+    expect(all(button).some((node) => node.props.accessibilityRole === "link")).toBe(false);
+    nodes.find((node) => node.props.accessibilityRole === "link")!.props.onPress();
+    expect(h.openURL).toHaveBeenCalledExactlyOnceWith(url);
+    expect(onPress).not.toHaveBeenCalled();
+    button.props.onPress(); button.props.onLongPress();
+    expect(onPress).toHaveBeenCalledOnce(); expect(onLongPress).toHaveBeenCalledOnce();
+  });
+
   it.each(["stream", "pending", "screen"])("opens links in %s output only on tap", async (kind) => {
     const h = await harness("components/terminal-view.tsx");
     const buffer = { ...emptyTerminalBuffer(), ready: true };
