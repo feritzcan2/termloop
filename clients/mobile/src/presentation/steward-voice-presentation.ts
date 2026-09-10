@@ -1,4 +1,5 @@
 import type { MobileOverview } from "@/application/ports";
+import { voiceUploadPcm } from "./voice-upload-pcm";
 
 export type VoicePhase =
   | "ready"
@@ -107,33 +108,29 @@ export function appendVoiceFloatPcmBuffer(
   };
 }
 
-/// Wraps captured little-endian signed 16-bit PCM in a canonical WAV container
-/// accepted by the Steward transcription endpoint.
+/// Encodes a 30-second native capture below the endpoint's 2 MiB limit without
+/// truncating speech. A 48 kHz mono capture becomes a 960,044-byte 16 kHz WAV.
 export function createVoicePcmWav(capture: VoicePcmCapture): ArrayBuffer {
   if (capture.byteLength === 0 || capture.sampleRate <= 0 || capture.channels <= 0) {
     throw new Error("Kaydedilen ses hazırlanamadı.");
   }
-  const output = new ArrayBuffer(44 + capture.byteLength);
+  const upload = voiceUploadPcm(capture.chunks, capture.byteLength, capture.sampleRate, capture.channels);
+  const output = new ArrayBuffer(44 + upload.bytes.byteLength);
   const view = new DataView(output);
   writeAscii(view, 0, "RIFF");
-  view.setUint32(4, 36 + capture.byteLength, true);
+  view.setUint32(4, 36 + upload.bytes.byteLength, true);
   writeAscii(view, 8, "WAVE");
   writeAscii(view, 12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
-  view.setUint16(22, capture.channels, true);
-  view.setUint32(24, capture.sampleRate, true);
-  view.setUint32(28, capture.sampleRate * capture.channels * 2, true);
-  view.setUint16(32, capture.channels * 2, true);
+  view.setUint16(22, upload.channels, true);
+  view.setUint32(24, upload.sampleRate, true);
+  view.setUint32(28, upload.sampleRate * upload.channels * 2, true);
+  view.setUint16(32, upload.channels * 2, true);
   view.setUint16(34, 16, true);
   writeAscii(view, 36, "data");
-  view.setUint32(40, capture.byteLength, true);
-  const bytes = new Uint8Array(output);
-  let offset = 44;
-  for (const chunk of capture.chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
+  view.setUint32(40, upload.bytes.byteLength, true);
+  new Uint8Array(output).set(upload.bytes, 44);
   return output;
 }
 

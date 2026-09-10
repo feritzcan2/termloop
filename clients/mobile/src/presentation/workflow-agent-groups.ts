@@ -1,5 +1,5 @@
 import type { SessionDto, TaskDto, WorkflowExecutionDto } from "@termloop/contract/current";
-import type { AgentRow } from "./attention-overview";
+import { agentClusterMembers, type AgentCluster, type AgentRow } from "./attention-overview";
 import { agentName, sessionLabel } from "./dto-readers";
 import type { RowTone } from "./tone";
 import { workflowExecutionView } from "./workflow-execution";
@@ -9,6 +9,7 @@ export interface WorkflowAgentGroup {
   name: string;
   taskTitle: string | undefined;
   taskId?: string | undefined;
+  jiraUrl?: string | undefined;
   status: string;
   tone: RowTone;
 }
@@ -36,6 +37,7 @@ export function workflowAgentMemberships(
       executionId: execution.id, name: execution.workflowName,
       taskTitle: execution.taskId === null ? "Project checkout" : task?.project_id === projectId ? task.title : undefined,
       taskId: task?.project_id === projectId ? task.id : undefined,
+      jiraUrl: task?.project_id === projectId ? task.jira_url ?? undefined : undefined,
       status: view.label, tone: view.tone,
     };
     const add = (sessionId: string, role: string, coordinator = false) => {
@@ -54,6 +56,29 @@ export function workflowAgentMemberships(
     }
   }
   return memberships;
+}
+
+/** One execution can have several independent roots. Keep its rows together at
+ * the first member's urgency position, without absorbing unrelated helpers or
+ * crossing a desktop-authored manual group. */
+export function workflowAgentClusters(clusters: readonly AgentCluster[], memberships: ReadonlyMap<string, WorkflowAgentMembership>): AgentCluster[] {
+  const result: AgentCluster[] = [];
+  const indexByExecution = new Map<string, number>();
+  for (const cluster of clusters) {
+    const members = agentClusterMembers(cluster);
+    const executionId = members[0] && memberships.get(members[0].sessionId)?.group.executionId;
+    const homogeneous = executionId && cluster.manualGroup === undefined
+      && members.every((row) => memberships.get(row.sessionId)?.group.executionId === executionId);
+    const index = homogeneous ? indexByExecution.get(executionId) : undefined;
+    if (index !== undefined) {
+      const previous = result[index]!;
+      result[index] = { ...previous, groups: [...previous.groups, ...cluster.groups] };
+    } else {
+      if (homogeneous) indexByExecution.set(executionId, result.length);
+      result.push(cluster);
+    }
+  }
+  return result;
 }
 
 /** Preserve existing hierarchy/order; unrelated Ask-To helpers break the frame. */

@@ -1,3 +1,4 @@
+import { reportVoiceFailure } from "@/platform/voice-diagnostics";
 import { AudioModule, setAudioModeAsync, useAudioStream } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -131,6 +132,7 @@ export function AgentVoiceButton({
       transition("listening");
     } catch (cause) {
       if (attempt !== captureAttemptRef.current) return;
+      reportVoiceFailure(cause, "agent", "recording", pcmCaptureRef.current);
       clearCapture();
       setError(stewardVoiceAudioErrorMessage(cause, "Mikrofon başlatılamadı."));
       transition("error");
@@ -149,11 +151,14 @@ export function AgentVoiceButton({
     firstBufferRef.current = undefined;
     stopVoiceAudioStream(stream);
     transition("transcribing");
+    let uploadBytes: number | undefined;
     try {
       if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
       if (targetConnectionId === undefined) throw new Error("Mac bağlantısı bulunamadı.");
+      const bytes = createVoicePcmWav(capture);
+      uploadBytes = bytes.byteLength;
       const transcript = await runtime.steward.transcribeVoice(targetConnectionId, {
-        bytes: createVoicePcmWav(capture),
+        bytes,
         mediaType: RECORDING_MEDIA_TYPE,
       });
       if (attempt !== captureAttemptRef.current || scope !== scopeRef.current) return;
@@ -161,6 +166,7 @@ export function AgentVoiceButton({
       setError(undefined);
       transition("ready");
     } catch (cause) {
+      reportVoiceFailure(cause, "agent", uploadBytes === undefined ? "encoding" : "transcription", capture, uploadBytes);
       if (attempt !== captureAttemptRef.current || scope !== scopeRef.current) return;
       setError(cause instanceof Error ? cause.message : "Konuşma yazıya çevrilemedi.");
       transition("error");
