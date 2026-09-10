@@ -7,7 +7,7 @@ import { Banner, Card, CardDivider } from "../../components/primitives";
 import { JiraIssueLink } from "../../components/external-link";
 import type { AgentCluster } from "../../presentation/attention-overview";
 import { workflowAgentClusters, workflowAgentMemberships, type WorkflowAgentGroup, type WorkflowAgentMembership } from "../../presentation/workflow-agent-groups";
-import { color, space, toneColor } from "../../theme/tokens";
+import { color, radius, space, toneColor } from "../../theme/tokens";
 import { fontFamily } from "../../theme/typography";
 import { useWorkflowSnapshot } from "./use-workflow-snapshot";
 
@@ -60,11 +60,21 @@ export function WorkflowAgentGroupFrame({ group, stale, children }: { group: Wor
 
 const styles = StyleSheet.create({
   list: { gap: space.sm }, notice: { color: color.textSecondary, fontSize: 12 },
-  group: { minWidth: 0, overflow: "hidden" },
-  header: { paddingHorizontal: space.md, paddingTop: space.md, paddingBottom: space.xs, backgroundColor: `${color.bgSidebar}66` },
+  group: {
+    minWidth: 0,
+    margin: space.sm,
+    borderWidth: 1,
+    borderColor: color.borderStrong,
+    borderLeftWidth: 3,
+    borderLeftColor: color.accent,
+    borderRadius: radius.card,
+    backgroundColor: color.bgRaised,
+    overflow: "hidden",
+  },
+  header: { paddingHorizontal: space.md, paddingTop: space.md, paddingBottom: space.xs, backgroundColor: color.accentWash },
   identity: { minWidth: 0, gap: 4 },
   workflowLine: { flexDirection: "row", alignItems: "center", gap: space.sm, justifyContent: "space-between" },
-  kind: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
+  kind: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
   name: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   task: { color: color.text, fontSize: 16, lineHeight: 22, fontWeight: "600" },
   statusText: { flexShrink: 1, fontSize: 11, fontWeight: "600", textAlign: "right" },
