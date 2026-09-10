@@ -1,3 +1,4 @@
+import { VoiceTranscriptionError, retryableVoiceHttpStatus } from "../../application/voice-transcription-error";
 import {
   type QuickActionParams,
   type SocketFactory,
@@ -628,7 +629,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         const result = await control.call("companion.transcriptList", { projectId, limit: STEWARD_TRANSCRIPT_LIMIT });
         return orderedTranscript(result.messages);
       },
-      async transcribeVoice(connectionId, clip) {
+      async transcribeVoice(connectionId, clip, signal) {
         const connection = await resolve(connectionId);
         if (!validStewardVoiceClip(clip)) {
           throw new Error("This recording cannot be transcribed.");
@@ -641,8 +642,9 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
             "content-type": clip.mediaType,
           },
           body: clip.bytes,
+          ...(signal ? { signal } : {}),
         });
-        if (!response.ok) throw new Error(stewardVoiceFailure(response.status));
+        if (!response.ok) throw new VoiceTranscriptionError(stewardVoiceFailure(response.status), retryableVoiceHttpStatus(response.status), response.status);
         const value: unknown = await response.json();
         const transcript = (value as { transcript?: unknown } | null)?.transcript;
         if (typeof transcript !== "string" || transcript.trim().length === 0) {
