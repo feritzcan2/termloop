@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMockRuntime } from "../src/adapters/mock/mock-runtime";
 import { fixtureProjects, fixtureTasks } from "../src/fixtures/mobile-overview";
 import { fixtureWorkflowProgress } from "../src/fixtures/workflow-progress";
-import { buildProjectOverview } from "../src/presentation/attention-overview";
+import { agentClusterMembers, buildProjectOverview } from "../src/presentation/attention-overview";
 
 const require = createRequire(import.meta.url);
 type Components = typeof import("../src/features/workflows/workflow-agent-list");
@@ -15,12 +15,14 @@ type Snapshot = ReturnType<typeof import("../src/features/workflows/use-workflow
 type NodeProps = Record<string, any>;
 
 describe("mobile workflow group presentation", () => {
-  it("reads only the selected Mac and Project and keeps the supplied cluster order", async () => {
+  it("reads only the selected Mac and Project and combines independent workflow roots at the first member position", async () => {
     const h = await harness();
     const tree = h.render();
     expect(h.read).toHaveBeenCalledExactlyOnceWith(h.props.templates, h.props.control, "mac-a", h.props.projectId, true);
-    expect(h.props.renderCluster).toHaveBeenCalledTimes(h.props.clusters.length);
-    expect(vi.mocked(h.props.renderCluster).mock.calls.map(([cluster]) => cluster.key)).toEqual(h.props.clusters.map((cluster) => cluster.key));
+    expect(h.props.renderCluster).toHaveBeenCalledTimes(1);
+    const merged = vi.mocked(h.props.renderCluster).mock.calls[0]![0];
+    expect(merged.key).toBe(h.props.clusters[0]!.key);
+    expect(agentClusterMembers(merged)).toEqual(h.props.clusters.flatMap(agentClusterMembers));
     const membership = vi.mocked(h.props.renderCluster).mock.calls[0]![1];
     expect(membership.size).toBe(3);
     expect(find(tree, (props) => props.message)).toBeUndefined();
@@ -42,12 +44,14 @@ describe("mobile workflow group presentation", () => {
 
   it("states Workflow, full name, task and review-limit outcome in an accessible header without hiding member controls", async () => {
     const h = await harness();
-    const frame = h.components.WorkflowAgentGroupFrame({ group: { executionId: "run-a", name: "All", taskTitle: "Payments", status: "Review limit reached", tone: "attention" }, stale: false, children: "Independent member controls" });
+    const frame = h.components.WorkflowAgentGroupFrame({ group: { executionId: "run-a", name: "All", taskTitle: "Payments", jiraUrl: "https://example.com/browse/KAN-1", status: "Review limit reached", tone: "attention" }, stale: false, children: "Independent member controls" });
     expect(find(frame, (props) => props.testID)?.props.accessible).toBeUndefined();
     const header = find(frame, (props) => props.accessibilityRole === "header")!;
     expect(header.props.accessibilityLabel).toBe("Workflow · All · Payments · Review limit reached");
     expect(find(header, (props) => props.children === "WORKFLOW")).toBeDefined();
     expect(find(header, (props) => props.children === "All")).toBeDefined();
+    expect(find(frame, (props) => props.url === "https://example.com/browse/KAN-1")).toBeDefined();
+    expect(find(header, (props) => props.url !== undefined)).toBeUndefined();
     const status = find(header, (props) => props.children === "Review limit reached")!;
     expect(status.props.numberOfLines).toBeUndefined(); // Long outcomes may wrap on narrow phones / large text.
   });

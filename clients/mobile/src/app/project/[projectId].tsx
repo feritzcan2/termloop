@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
-import { JiraIssueLink } from "@/components/external-link";
+import { TaskAgentRow } from "@/features/tasks/task-agent-row";
 import { Banner, Card, CardDivider, EmptyState } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
@@ -304,25 +304,24 @@ function AgentClusterView({ cluster, memberships, workflowDataStale, nowMs, open
   nowMs: number;
   openActions(sessionId: string): void;
 }) {
-  const rows = cluster.groups.map(({ source, helpers }, groupIndex) => (
-    <View key={source.sessionId}>
-      {groupIndex === 0 ? null : <CardDivider />}
-      {workflowAgentSegments([source, ...helpers], memberships).map((segment) => {
-        const members = segment.rows.map((row) => row.sessionId === source.sessionId
-          ? <AgentRowView key={row.sessionId} row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />
-          : <View key={row.sessionId} style={styles.helperWrap}>
-            <View style={styles.helperConnector} />
-            <View style={styles.helperBody}>
-              <CardDivider />
-              <AgentRowView row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />
-            </View>
-          </View>);
-        return segment.group
-          ? <WorkflowAgentGroupFrame key={segment.rows[0]!.sessionId} group={segment.group} stale={workflowDataStale}>{members}</WorkflowAgentGroupFrame>
-          : <View key={segment.rows[0]!.sessionId}>{members}</View>;
-      })}
-    </View>
-  ));
+  const sourceIds = new Set(cluster.groups.map(({ source }) => source.sessionId));
+  const rows = workflowAgentSegments(agentClusterMembers(cluster), memberships).map((segment, segmentIndex) => {
+    const members = segment.rows.map((row, index) => {
+      const content = <AgentRowView row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />;
+      return segment.group || sourceIds.has(row.sessionId)
+        ? <View key={row.sessionId}>{index === 0 ? null : <CardDivider />}{content}</View>
+        : <View key={row.sessionId} style={styles.helperWrap}>
+          <View style={styles.helperConnector} />
+          <View style={styles.helperBody}><CardDivider />{content}</View>
+        </View>;
+    });
+    return <View key={segment.rows[0]!.sessionId}>
+      {segmentIndex === 0 ? null : <CardDivider />}
+      {segment.group
+        ? <WorkflowAgentGroupFrame group={segment.group} stale={workflowDataStale}>{members}</WorkflowAgentGroupFrame>
+        : members}
+    </View>;
+  });
   if (cluster.manualGroup === undefined) return <>{rows}</>;
   const count = agentClusterMembers(cluster).length;
   const name = cluster.manualGroup.name;
@@ -359,40 +358,32 @@ function AgentRowView({ row, membership, nowMs, openActions }: { row: AgentRow; 
   const taskId = row.taskId ?? membership?.group.taskId;
   const task = store.overview?.tasks.find((candidate) => candidate.id === taskId);
   const title = membership?.displayName ?? row.title;
-  const content = (
-    <View>
-      <Row
-        tone={row.tone}
-        title={title}
-        state={row.stateLabel}
-        detail={row.runner ?? row.folder}
-        meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
-        accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
-        trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-        onPress={() => {
-          if (!row.attachable) {
-            openActions(row.sessionId);
-            return;
-          }
-          store.dismissReview(row.sessionId);
-          router.push({
-            pathname: "/session/[sessionId]",
-            params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
-          });
-        }}
-        onLongPress={() => openActions(row.sessionId)}
-      />
-      {task === undefined ? null : (
-        <View style={styles.agentTask}>
-          <View style={styles.agentTaskIdentity}>
-            <Text style={styles.agentTaskBadge}>TASK</Text>
-            <Text style={styles.agentTaskTitle}>{task.title}</Text>
-          </View>
-          <JiraIssueLink url={task.jira_url} />
-        </View>
-      )}
-    </View>
-  );
+  const age = row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs);
+  const onPress = () => {
+    if (!row.attachable) {
+      openActions(row.sessionId);
+      return;
+    }
+    store.dismissReview(row.sessionId);
+    router.push({
+      pathname: "/session/[sessionId]",
+      params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
+    });
+  };
+  const onLongPress = () => openActions(row.sessionId);
+  const content = task && !membership
+    ? <TaskAgentRow row={row} task={task} age={age} onPress={onPress} onLongPress={onLongPress} />
+    : <Row
+      tone={row.tone}
+      title={title}
+      state={row.stateLabel}
+      detail={row.runner ?? row.folder}
+      meta={age}
+      accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
+      trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
+      onPress={onPress}
+      onLongPress={onLongPress}
+    />;
   return session === undefined
     ? content
     : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>;
@@ -403,10 +394,6 @@ function asksForUser(tone: AgentRow["tone"]): boolean {
 }
 
 const styles = StyleSheet.create({
-  agentTask: { marginHorizontal: 10, marginBottom: space.sm, padding: space.sm, borderRadius: 6, backgroundColor: `${color.bgSidebar}66` },
-  agentTaskIdentity: { flexDirection: "row", alignItems: "flex-start", gap: space.sm },
-  agentTaskBadge: { color: color.textSecondary, backgroundColor: color.bgSidebar, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 3, fontFamily: fontFamily.mono, fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
-  agentTaskTitle: { flex: 1, color: color.textSecondary, fontSize: 13, lineHeight: 18 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
   headerAction: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   headerActionDisabled: { opacity: 0.4 },
