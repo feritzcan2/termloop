@@ -2,8 +2,8 @@ import type { SessionDto } from "@termloop/contract/current";
 import { describe, expect, it } from "vitest";
 import { fixtureTasks } from "../../src/fixtures/mobile-overview";
 import { fixtureWorkflowProgress } from "../../src/fixtures/workflow-progress";
-import type { AgentRow } from "../../src/presentation/attention-overview";
-import { workflowAgentMemberships, workflowAgentSegments } from "../../src/presentation/workflow-agent-groups";
+import type { AgentCluster, AgentRow } from "../../src/presentation/attention-overview";
+import { workflowAgentClusters, workflowAgentMemberships, workflowAgentSegments } from "../../src/presentation/workflow-agent-groups";
 
 const fixture = fixtureWorkflowProgress(1_700_000_000_000);
 const { execution } = fixture;
@@ -59,6 +59,25 @@ describe("workflow identity in mobile Agents", () => {
     const runs = [newer, execution];
     expect(memberships(runs).get(sessions[0]!.id)?.group).toMatchObject({ executionId: "newer", status: "Paused", tone: "blocked" });
     expect(runs[0]).toBe(newer);
+  });
+
+  it("combines an execution's independent roots once without mutation or absorbing unrelated/manual groups", () => {
+    const cluster = (id: string): AgentCluster => ({ key: id, manualGroup: undefined, groups: [{ source: { sessionId: id } as AgentRow, helpers: [] }] });
+    const roots = sessions.map((session) => cluster(session.id));
+    const ordinary = cluster("ordinary");
+    const manual = { ...roots[1]!, manualGroup: { name: "Custom", sessionIds: [sessions[1]!.id] } };
+    const mixed = { ...roots[2]!, groups: [{ source: roots[2]!.groups[0]!.source, helpers: [{ sessionId: "helper" } as AgentRow] }] };
+    const input = [roots[0]!, ordinary, roots[1]!, roots[2]!];
+    const before = structuredClone(input);
+    const result = workflowAgentClusters(input, memberships());
+    expect(result.map((value) => value.key)).toEqual([roots[0]!.key, "ordinary"]);
+    expect(result[0]!.groups).toEqual(roots.flatMap((value) => value.groups));
+    expect(input).toEqual(before);
+    expect(workflowAgentClusters([roots[0]!, manual, mixed], memberships())).toEqual([roots[0]!, manual, mixed]);
+    const splitMemberships = new Map(memberships());
+    const member = splitMemberships.get(sessions[1]!.id)!;
+    splitMemberships.set(sessions[1]!.id, { ...member, group: { ...member.group, executionId: "other-run" } });
+    expect(workflowAgentClusters(roots.slice(0, 2), splitMemberships)).toEqual(roots.slice(0, 2));
   });
 
   it("segments in place without absorbing unrelated helpers or joining different manual roots", () => {

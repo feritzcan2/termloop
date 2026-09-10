@@ -1,3 +1,4 @@
+import { reportVoiceFailure } from "@/platform/voice-diagnostics";
 import {
   AudioModule,
   setAudioModeAsync,
@@ -204,6 +205,7 @@ export function StewardVoiceDock() {
       transition("listening");
     } catch (cause) {
       if (attempt !== captureAttemptRef.current) return;
+      reportVoiceFailure(cause, "steward", "recording", pcmCaptureRef.current);
       stopCapture();
       setError(stewardVoiceAudioErrorMessage(cause, "Mikrofon başlatılamadı."));
       transition("error");
@@ -221,11 +223,14 @@ export function StewardVoiceDock() {
     firstBufferRef.current = undefined;
     stopVoiceAudioStream(stream);
     transition("transcribing");
+    let uploadBytes: number | undefined;
     try {
       if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
       if (target === undefined) throw new Error("Kaydedilen ses hazırlanamadı.");
+      const bytes = createVoicePcmWav(capture);
+      uploadBytes = bytes.byteLength;
       const transcript = await runtime.steward.transcribeVoice(target.connectionId, {
-        bytes: createVoicePcmWav(capture),
+        bytes,
         mediaType: STEWARD_RECORDING_MEDIA_TYPE,
       });
       if (!activeRef.current || activeTargetRef.current?.id !== targetId) return;
@@ -235,6 +240,7 @@ export function StewardVoiceDock() {
       setError(undefined);
       transition("reviewing");
     } catch (cause) {
+      reportVoiceFailure(cause, "steward", uploadBytes === undefined ? "encoding" : "transcription", capture, uploadBytes);
       if (!activeRef.current) return;
       setError(describe(cause, "Konuşma yazıya çevrilemedi."));
       transition("error");
