@@ -68,6 +68,18 @@ function stateOf(id: SessionStateId): SessionState {
   return { id, ...sessionStatePresentation[id] };
 }
 
+/// Match desktop: inspecting an interruption acknowledges only that observation.
+/// The daemon's last-turn result stays intact; a newer interruption stays visible.
+export function presentedAgentStatus(
+  status: AgentStatusDto,
+  acknowledgedInterruptedSessionObservations: ReadonlyMap<string, number>,
+): AgentStatusDto {
+  return status.status === "interrupted"
+    && acknowledgedInterruptedSessionObservations.get(status.sessionId) === status.observedAtEpochMs
+    ? { ...status, status: "idle" }
+    : status;
+}
+
 /// A Session's own status is only live while its lifecycle is running. A status
 /// observed just before the process stopped must not keep describing the row, so
 /// the recovery states below shadow it entirely.

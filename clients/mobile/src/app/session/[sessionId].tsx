@@ -28,6 +28,7 @@ import {
   sessionParentRoute,
 } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
+import { useSessionInterruptionAcknowledgement } from "@/features/overview/use-session-interruption-acknowledgement";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { AgentVoiceButton } from "@/features/terminal/agent-voice-button";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
@@ -125,6 +126,13 @@ export default function SessionRoute() {
   const backProjectId = session?.project_id ?? routeProjectId;
   const parentRoute = sessionParentRoute(resolvedRouteConnectionId ?? connectionId, backProjectId, workflowTaskId);
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
+  useSessionInterruptionAcknowledgement(
+    focused,
+    session === undefined ? undefined : resolvedRouteConnectionId,
+    session?.id,
+    status,
+    store.acknowledgeInterruption,
+  );
   const changesTaskId = useMemo(() => {
     if (store.overview === undefined || session?.kind !== "Agent") return undefined;
     const taskId = taskIdBySessionId(store.overview.tasks).get(session.id);

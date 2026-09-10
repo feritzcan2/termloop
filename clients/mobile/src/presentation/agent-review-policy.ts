@@ -36,3 +36,13 @@ export function reconcileReviewReadySessions(
 export function statusMap(statuses: readonly AgentStatusDto[]): ReadonlyMap<string, string> {
   return new Map(statuses.map((status) => [status.sessionId, status.status]));
 }
+
+export function reconcileAcknowledgedInterruptions(
+  existing: ReadonlyMap<string, number>,
+  current: readonly AgentStatusDto[],
+): ReadonlyMap<string, number> {
+  return new Map(current
+    .filter((status) => status.status === "interrupted"
+      && existing.get(status.sessionId) === status.observedAtEpochMs)
+    .map((status) => [status.sessionId, status.observedAtEpochMs]));
+}
