@@ -16,6 +16,26 @@ const require = createRequire(import.meta.url);
 type NodeProps = Record<string, any>;
 
 describe("Project Agents workflow integration", () => {
+  it("shows the exact task title and Jira link on ordinary and workflow Agents without hiding either navigation", async () => {
+    const h = await harness();
+    const url = "https://example.atlassian.net/browse/KAN-321";
+    h.store.overview.tasks[0]!.jira_url = url;
+    const list = find(h.render(), (props) => typeof props.renderCluster === "function")!;
+    const memberships = workflowPresentation.workflowAgentMemberships([h.execution], h.sessions, h.store.overview.tasks, h.projectId);
+    const tree = expand(list.props.renderCluster(list.props.clusters[0], memberships, false));
+    expect(find(tree, (props) => props.children === fixtureTasks[0]!.title)).toBeDefined();
+    expect(find(tree, (props) => props.children === "TASK")).toBeDefined();
+    expect(find(tree, (props) => props.url === url)).toBeDefined();
+    expect(find(tree, (props) => props.title === "Reviewer · Claude")).toBeDefined();
+    const peer = find(tree, (props) => props.title === "Peer")!;
+    expect(peer).toBeDefined();
+    expect(find(peer, (props) => props.url === url)).toBeUndefined();
+    expect(h.router.push).not.toHaveBeenCalled();
+    h.store.overview.tasks = [];
+    const withoutTask = expand(list.props.renderCluster(list.props.clusters[0], memberships, false));
+    expect(find(withoutTask, (props) => props.children === "TASK")).toBeUndefined();
+    expect(find(withoutTask, (props) => props.url === url)).toBeUndefined();
+  });
   it("frames exact members inside a manual group and preserves each Agent's original navigation and actions", async () => {
     const h = await harness();
     const list = find(h.render(), (props) => typeof props.renderCluster === "function")!;
@@ -68,7 +88,7 @@ async function harness() {
   const params: { projectId: string; connectionId?: string } = { projectId, connectionId: "mac-a" };
   const connections = { selectedId: "mac-a", selected: { name: "Mac", availability: "online" }, select: vi.fn() };
   const dismissReview = vi.fn(), router = { push: vi.fn(), replace: vi.fn() };
-  const tasks = fixtureTasks.map((task) => ({ ...task, worktree_presence: task.worktree_presence ? { ...task.worktree_presence, attached_sessions: [...task.worktree_presence.attached_sessions, { session_id: "peer", kind: "Agent" as const }], total_count: 2, agent_count: 2 } : null }));
+  const tasks = fixtureTasks.map((task) => ({ ...task, ...(task.worktree_presence ? { worktree_presence: { ...task.worktree_presence, attached_sessions: [...task.worktree_presence.attached_sessions, { session_id: "peer", kind: "Agent" as const }], total_count: 2, agent_count: 2 } } : {}) }));
   const store = { overview: { projects: fixtureProjects, tasks, sessions, agentStatuses: fixture.statuses, stewardEnabledProjectIds: [], stewardExecutorSessionIds: {}, agentGroupsByProject: { [projectId]: [{ name: "Review crew", sessionIds: [sessions[0]!.id, "peer"] }] } }, reviewReadySessionIds: new Set(), dismissReview, refresh: vi.fn() };
   const slots: any[] = []; let cursor = 0;
   const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/app/project/[projectId].tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "expo-router", "@/*"] });
@@ -90,7 +110,7 @@ async function harness() {
     if (name.startsWith("@/components/") || name.startsWith("@/features/")) return new Proxy({}, { get: (_target, property) => property });
     return require(name);
   }, module, module.exports);
-  return { execution: fixture.execution, sessions, projectId, params, connections, router, dismissReview, render: () => { cursor = 0; return module.exports.default(); } };
+  return { execution: fixture.execution, sessions, store, projectId, params, connections, router, dismissReview, render: () => { cursor = 0; return module.exports.default(); } };
 }
 
 function expand(node: ReactNode): ReactNode {

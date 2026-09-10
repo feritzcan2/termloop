@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { EmptyState, SecondaryButton } from "@/components/primitives";
+import { JiraIssueLink } from "@/components/external-link";
 import type { AgentRow, TaskRow } from "@/presentation/attention-overview";
 import { buildTaskBrowserItems, filterTaskItems, taskFilters, type TaskBrowserItem, type TaskFilter } from "@/presentation/task-browser";
 import { taskChangeLabel } from "@/presentation/task-presentation";
@@ -131,6 +132,20 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
   const actionTint = row.attention ? toneColor[row.attention.tone] : tint;
   return (
     <View style={[styles.card, prominent ? { borderColor: tint, borderLeftWidth: 4 } : null]}>
+      <View style={[styles.cardMeta, prominent ? { backgroundColor: wash } : null]}>
+        <View style={styles.status}>
+          {prominent ? (
+            <View style={[styles.statusIcon, { backgroundColor: tint }]}>
+              <Text style={styles.statusGlyph} accessibilityElementsHidden>{item.filter === "active" ? "↗" : row.tone === "review" ? "✓" : "!"}</Text>
+            </View>
+          ) : <View style={[styles.statusDot, { backgroundColor: tint }]} />}
+          <View style={styles.statusCopy}>
+            <Text style={[styles.statusLabel, prominent ? styles.statusLabelProminent : null, { color: tint }]}>{item.status}</Text>
+            {item.statusDetail ? <Text style={[styles.statusDetail, { color: tint }]}>{item.statusDetail}</Text> : null}
+          </View>
+        </View>
+        <JiraIssueLink url={task.jira_url} />
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${item.status}. ${task.title}. ${item.statusDetail ?? row.stage.summary}`}
@@ -138,29 +153,15 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
         onPress={() => openTask(task.id)}
         style={({ pressed }) => [pressed ? styles.pressed : null]}
       >
-        <View style={[styles.cardMeta, prominent ? { backgroundColor: wash } : null]}>
-          <View style={styles.status}>
-            {prominent ? (
-              <View style={[styles.statusIcon, { backgroundColor: tint }]}>
-                <Text style={styles.statusGlyph} accessibilityElementsHidden>{item.filter === "active" ? "↗" : row.tone === "review" ? "✓" : "!"}</Text>
-              </View>
-            ) : <View style={[styles.statusDot, { backgroundColor: tint }]} />}
-            <View style={styles.statusCopy}>
-              <Text style={[styles.statusLabel, prominent ? styles.statusLabelProminent : null, { color: tint }]}>{item.status}</Text>
-              {item.statusDetail ? <Text style={[styles.statusDetail, { color: tint }]}>{item.statusDetail}</Text> : null}
-            </View>
-          </View>
-          {item.issueKey ? <Text style={styles.issue} numberOfLines={1}>{item.issueKey}</Text> : null}
-        </View>
         <View style={styles.cardBody}>
-        <View style={styles.cardTitleRow}>
-          <Text style={styles.cardTitle} numberOfLines={3}>{task.title}</Text>
-          <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
-        </View>
-        <Text style={styles.cardDetail} numberOfLines={2}>
-          {row.stage.id !== "ready" ? row.stage.summary : task.brief?.trim() || "Open this task to see its agents and progress."}
-        </Text>
-        {task.branch === null ? null : <Text style={styles.branch} numberOfLines={1}>{task.branch.name}</Text>}
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle} numberOfLines={3}>{task.title}</Text>
+            <Text style={styles.chevron} accessibilityElementsHidden>›</Text>
+          </View>
+          <Text style={styles.cardDetail} numberOfLines={2}>
+            {row.stage.id !== "ready" ? row.stage.summary : task.brief?.trim() || "Open this task to see its agents and progress."}
+          </Text>
+          {task.branch === null ? null : <Text style={styles.branch} numberOfLines={1}>{task.branch.name}</Text>}
         </View>
       </Pressable>
       {agent === undefined && item.changeCount === undefined ? null : (
@@ -209,8 +210,8 @@ const styles = StyleSheet.create({
   listContent: { padding: space.screen, paddingTop: space.md, paddingBottom: space.xl + 64, gap: space.md, flexGrow: 1 },
   card: { backgroundColor: color.bgRaised, borderRadius: 16, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: color.border },
   cardBody: { padding: space.lg, paddingTop: space.md, gap: 9 },
-  cardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md },
-  status: { flexDirection: "row", alignItems: "center", gap: space.sm, flex: 1 },
+  cardMeta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md },
+  status: { flexDirection: "row", alignItems: "center", gap: space.sm, flexGrow: 1, flexShrink: 1, flexBasis: 160 },
   statusCopy: { flex: 1 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
@@ -218,7 +219,6 @@ const styles = StyleSheet.create({
   statusLabel: { fontSize: 12, fontWeight: "600", flexShrink: 1 },
   statusLabelProminent: { fontSize: 14, fontWeight: "800" },
   statusDetail: { fontSize: 12, lineHeight: 17, marginTop: 3 },
-  issue: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, maxWidth: "40%" },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   cardTitle: { flex: 1, color: color.text, fontSize: 17, fontWeight: "600", lineHeight: 23, letterSpacing: -0.2 },
   chevron: { color: color.textMuted, fontSize: 23 },
