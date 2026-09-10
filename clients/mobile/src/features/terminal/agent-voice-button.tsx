@@ -3,6 +3,8 @@ import { AudioModule, setAudioModeAsync, useAudioStream } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useVoiceTranscription } from "@/features/voice/use-voice-transcription";
+import { VoiceRetryActions } from "@/components/voice-retry-actions";
 import { MicrophoneGlyph } from "@/components/microphone-glyph";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import {
@@ -12,12 +14,12 @@ import {
 import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
-  createVoicePcmWav,
   updateVoiceSilence,
   type VoicePcmCapture,
   type VoiceSilenceState,
 } from "@/presentation/steward-voice-presentation";
 import {
+  canRetryVoiceRecording,
   configureStewardAudioSession,
   stopVoiceAudioStream,
   stewardVoiceAudioErrorMessage,
@@ -26,8 +28,6 @@ import { color, geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 const PCM_STREAM_START_TIMEOUT_MS = 2_000;
-const MIN_CAPTURE_MS = 250;
-const RECORDING_MEDIA_TYPE = "audio/wav";
 
 export function AgentVoiceButton({
   connectionId,
@@ -44,6 +44,7 @@ export function AgentVoiceButton({
 }) {
   const runtime = useMobileRuntime();
   const [phase, setPhase] = useState<AgentComposerVoicePhase>("ready");
+  const [retryRecording, setRetryRecording] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [recorderState, setRecorderState] = useState<{
     durationMillis: number;
@@ -54,7 +55,6 @@ export function AgentVoiceButton({
   const scopeRef = useRef(sessionScope);
   const captureAttemptRef = useRef(0);
   const capturingRef = useRef(false);
-  const stoppingRef = useRef(false);
   const firstBufferRef = useRef<(() => void) | undefined>(undefined);
   const pcmCaptureRef = useRef<VoicePcmCapture>(createVoicePcmCapture());
   const silenceRef = useRef<VoiceSilenceState>({ heardVoice: false, lastVoiceAtMs: 0 });
@@ -82,6 +82,22 @@ export function AgentVoiceButton({
     setPhase(next);
   }, []);
 
+  const { controller: transcription, state: transcriptionState } = useVoiceTranscription({
+    scope: sessionScope,
+    method: "agent",
+    transcribe: (...args) => runtime.steward.transcribeVoice(...args),
+    onState(next) {
+      if (next.phase === "idle") return;
+      setError(next.error);
+      transition(next.phase === "failed" ? "error" : "transcribing");
+    },
+    onTranscript(transcript) {
+      onTranscriptRef.current(transcript);
+      setError(undefined);
+      transition("ready");
+    },
+  });
+
   const clearCapture = useCallback(() => {
     captureAttemptRef.current += 1;
     capturingRef.current = false;
@@ -93,15 +109,18 @@ export function AgentVoiceButton({
   }, [stream]);
 
   const reset = useCallback(() => {
+    transcription.cancel();
+    setRetryRecording(false);
     clearCapture();
-    stoppingRef.current = false;
     setError(undefined);
     transition("ready");
     void deactivateVoiceAudio().catch(() => undefined);
-  }, [clearCapture, transition]);
+  }, [clearCapture, transcription, transition]);
 
   const startRecording = useCallback(async () => {
     if (disabled || connectionId === undefined || !["ready", "error"].includes(phaseRef.current)) return;
+    transcription.cancel();
+    setRetryRecording(false);
     const attempt = captureAttemptRef.current + 1;
     const scope = scopeRef.current;
     captureAttemptRef.current = attempt;
@@ -134,50 +153,24 @@ export function AgentVoiceButton({
       if (attempt !== captureAttemptRef.current) return;
       reportVoiceFailure(cause, "agent", "recording", pcmCaptureRef.current);
       clearCapture();
+      setRetryRecording(canRetryVoiceRecording(cause));
       setError(stewardVoiceAudioErrorMessage(cause, "Mikrofon başlatılamadı."));
       transition("error");
     }
-  }, [clearCapture, connectionId, disabled, stream, transition]);
+  }, [clearCapture, connectionId, disabled, stream, transcription, transition]);
 
-  const stopAndTranscribe = useCallback(async () => {
-    if (phaseRef.current !== "listening" || stoppingRef.current) return;
-    stoppingRef.current = true;
-    const targetConnectionId = connectionId;
-    const scope = scopeRef.current;
+  const stopAndTranscribe = useCallback(() => {
+    if (phaseRef.current !== "listening") return;
     const capture = pcmCaptureRef.current;
-    const attempt = captureAttemptRef.current + 1;
-    captureAttemptRef.current = attempt;
-    capturingRef.current = false;
-    firstBufferRef.current = undefined;
-    stopVoiceAudioStream(stream);
-    transition("transcribing");
-    let uploadBytes: number | undefined;
-    try {
-      if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
-      if (targetConnectionId === undefined) throw new Error("Mac bağlantısı bulunamadı.");
-      const bytes = createVoicePcmWav(capture);
-      uploadBytes = bytes.byteLength;
-      const transcript = await runtime.steward.transcribeVoice(targetConnectionId, {
-        bytes,
-        mediaType: RECORDING_MEDIA_TYPE,
-      });
-      if (attempt !== captureAttemptRef.current || scope !== scopeRef.current) return;
-      onTranscriptRef.current(transcript);
-      setError(undefined);
-      transition("ready");
-    } catch (cause) {
-      reportVoiceFailure(cause, "agent", uploadBytes === undefined ? "encoding" : "transcription", capture, uploadBytes);
-      if (attempt !== captureAttemptRef.current || scope !== scopeRef.current) return;
-      setError(cause instanceof Error ? cause.message : "Konuşma yazıya çevrilemedi.");
+    clearCapture();
+    void deactivateVoiceAudio().catch(() => undefined);
+    if (connectionId === undefined) {
+      setError("Mac bağlantısı bulunamadı.");
       transition("error");
-    } finally {
-      stoppingRef.current = false;
-      pcmCaptureRef.current = createVoicePcmCapture();
-      silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
-      setRecorderState({ durationMillis: 0, metering: undefined });
-      void deactivateVoiceAudio().catch(() => undefined);
+      return;
     }
-  }, [connectionId, runtime, stream, transition]);
+    void transcription.start(connectionId, capture);
+  }, [clearCapture, connectionId, transcription, transition]);
 
   useEffect(() => {
     if (phase !== "listening") return;
@@ -192,10 +185,10 @@ export function AgentVoiceButton({
   }, [phase, recorderState.durationMillis, recorderState.metering, stopAndTranscribe]);
 
   useEffect(() => {
-    if (scopeRef.current === sessionScope && !disabled) return;
+    if (scopeRef.current === sessionScope) return;
     scopeRef.current = sessionScope;
     reset();
-  }, [disabled, reset, sessionScope]);
+  }, [reset, sessionScope]);
 
   useEffect(() => () => {
     captureAttemptRef.current += 1;
@@ -210,7 +203,7 @@ export function AgentVoiceButton({
     return () => onBusyChange(false);
   }, [busy, onBusyChange]);
 
-  const recordingEnabled = !disabled && ["ready", "listening", "error"].includes(phase);
+  const recordingEnabled = phase === "listening" || (!disabled && ["ready", "error"].includes(phase));
   const status = error ?? agentComposerVoiceStatus(phase, recorderState.durationMillis);
 
   return (
@@ -218,6 +211,13 @@ export function AgentVoiceButton({
       {status === undefined ? null : (
         <View style={[styles.statusBubble, error !== undefined && styles.errorBubble]}>
           <Text style={[styles.statusText, error !== undefined && styles.errorText]}>{status}</Text>
+          {phase === "error" || phase === "transcribing" ? <VoiceRetryActions
+            retryable={transcriptionState.retryable || (retryRecording && !disabled)}
+            recordingSaved={transcriptionState.retryable}
+            busy={phase === "transcribing"}
+            onRetry={() => { if (transcriptionState.retryable) void transcription.retry(); else void startRecording(); }}
+            onCancel={reset}
+          /> : null}
         </View>
       )}
       <Pressable

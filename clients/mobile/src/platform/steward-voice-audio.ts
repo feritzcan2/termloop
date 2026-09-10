@@ -48,6 +48,11 @@ export function stewardVoiceAudioErrorMessage(cause: unknown, fallback: string):
   return cause instanceof Error ? cause.message : fallback;
 }
 
+export function canRetryVoiceRecording(cause: unknown): boolean {
+  return isAudioSessionPriorityCause(cause)
+    || (cause instanceof Error && cause.message.includes("Mikrofondan ses verisi alınamadı"));
+}
+
 function isAudioSessionPriorityCause(cause: unknown): boolean {
   const message = cause instanceof Error ? cause.message : String(cause);
   return message.includes("561017449") || message.includes("!pri");

@@ -278,7 +278,7 @@ export interface StewardPort {
   send(connectionId: string, projectId: string, content: string): Promise<readonly StewardMessage[]>;
   /// Transcribes one bounded recording without appending it. The caller shows
   /// this preview so a recognition mistake can be corrected before delivery.
-  transcribeVoice(connectionId: string, clip: StewardVoiceClip): Promise<string>;
+  transcribeVoice(connectionId: string, clip: StewardVoiceClip, signal?: AbortSignal): Promise<string>;
   /// Appends the user-confirmed transcript as a voice turn and returns the
   /// sequence that a later Steward reply must follow.
   commitVoice(connectionId: string, projectId: string, transcript: string): Promise<StewardVoiceAppend>;
