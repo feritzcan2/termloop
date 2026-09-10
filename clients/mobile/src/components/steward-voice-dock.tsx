@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useVoiceTranscription } from "@/features/voice/use-voice-transcription";
 import { StewardVoiceControls } from "@/components/steward-voice-controls";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
@@ -21,7 +22,6 @@ import {
 import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
-  createVoicePcmWav,
   updateVoiceSilence,
   voiceProjectId,
   type VoicePcmCapture,
@@ -30,6 +30,7 @@ import {
   type VoiceSilenceState,
 } from "@/presentation/steward-voice-presentation";
 import {
+  canRetryVoiceRecording,
   configureStewardAudioSession,
   stopVoiceAudioStream,
   stewardVoiceAudioErrorMessage,
@@ -38,8 +39,6 @@ import { stewardLiveActivity } from "@/platform/steward-live-activity";
 import { geometry, space } from "@/theme/tokens";
 
 const PCM_STREAM_START_TIMEOUT_MS = 2_000;
-const MIN_CAPTURE_MS = 250;
-const STEWARD_RECORDING_MEDIA_TYPE = "audio/wav";
 const SENT_CONFIRMATION_MS = 1_800;
 
 /// A bounded voice-message composer for Steward.
@@ -75,6 +74,7 @@ export function StewardVoiceDock() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(undefined);
   const [activeTargetId, setActiveTargetId] = useState<string | undefined>(undefined);
   const [phase, setPhase] = useState<VoicePhase>("ready");
+  const [retryRecording, setRetryRecording] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [editingDraft, setEditingDraft] = useState(false);
@@ -88,7 +88,6 @@ export function StewardVoiceDock() {
   const phaseRef = useRef<VoicePhase>("ready");
   const captureAttemptRef = useRef(0);
   const capturingRef = useRef(false);
-  const stoppingRef = useRef(false);
   const firstBufferRef = useRef<(() => void) | undefined>(undefined);
   const pcmCaptureRef = useRef<VoicePcmCapture>(createVoicePcmCapture());
   const silenceRef = useRef<VoiceSilenceState>({ heardVoice: false, lastVoiceAtMs: 0 });
@@ -122,6 +121,25 @@ export function StewardVoiceDock() {
     setPhase(next);
   }, []);
 
+  const { controller: transcription, state: transcriptionState } = useVoiceTranscription({
+    scope: activeTargetId ?? "",
+    method: "steward",
+    transcribe: (...args) => runtime.steward.transcribeVoice(...args),
+    onState(next) {
+      if (next.phase === "idle") return;
+      setError(next.error);
+      transition(next.phase === "failed" ? "error" : "transcribing");
+    },
+    onTranscript(transcript) {
+      if (!activeRef.current) return;
+      draftRef.current = transcript;
+      setDraft(transcript);
+      setEditingDraft(false);
+      setError(undefined);
+      transition("reviewing");
+    },
+  });
+
   const clearSentTimer = useCallback(() => {
     if (sentTimerRef.current !== undefined) clearTimeout(sentTimerRef.current);
     sentTimerRef.current = undefined;
@@ -137,21 +155,26 @@ export function StewardVoiceDock() {
     setRecorderState({ durationMillis: 0, metering: undefined });
   }, [stream]);
 
-  const closeComposer = useCallback(() => {
-    clearSentTimer();
-    activeRef.current = false;
-    activeTargetRef.current = undefined;
-    setActive(false);
-    setActiveTargetId(undefined);
+  const cancelRecording = useCallback(() => {
+    transcription.cancel();
     stopCapture();
-    stoppingRef.current = false;
+    setRetryRecording(false);
     draftRef.current = "";
     setDraft("");
     setEditingDraft(false);
     setError(undefined);
     transition("ready");
     void deactivateVoiceAudio().catch(() => undefined);
-  }, [clearSentTimer, stopCapture, transition]);
+  }, [stopCapture, transcription, transition]);
+
+  const closeComposer = useCallback(() => {
+    clearSentTimer();
+    activeRef.current = false;
+    activeTargetRef.current = undefined;
+    setActive(false);
+    setActiveTargetId(undefined);
+    cancelRecording();
+  }, [cancelRecording, clearSentTimer]);
 
   const openComposer = useCallback(() => {
     if (selectedTarget === undefined) return;
@@ -176,6 +199,8 @@ export function StewardVoiceDock() {
       transition("error");
       return;
     }
+    transcription.cancel();
+    setRetryRecording(false);
     const attempt = captureAttemptRef.current + 1;
     captureAttemptRef.current = attempt;
     transition("permission");
@@ -207,51 +232,25 @@ export function StewardVoiceDock() {
       if (attempt !== captureAttemptRef.current) return;
       reportVoiceFailure(cause, "steward", "recording", pcmCaptureRef.current);
       stopCapture();
+      setRetryRecording(canRetryVoiceRecording(cause));
       setError(stewardVoiceAudioErrorMessage(cause, "Mikrofon başlatılamadı."));
       transition("error");
     }
-  }, [stopCapture, stream, transition]);
+  }, [stopCapture, stream, transcription, transition]);
 
-  const stopAndPreview = useCallback(async () => {
-    if (phaseRef.current !== "listening" || stoppingRef.current) return;
-    stoppingRef.current = true;
+  const stopAndPreview = useCallback(() => {
+    if (phaseRef.current !== "listening") return;
     const target = activeTargetRef.current;
-    const targetId = target?.id;
     const capture = pcmCaptureRef.current;
-    captureAttemptRef.current += 1;
-    capturingRef.current = false;
-    firstBufferRef.current = undefined;
-    stopVoiceAudioStream(stream);
-    transition("transcribing");
-    let uploadBytes: number | undefined;
-    try {
-      if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
-      if (target === undefined) throw new Error("Kaydedilen ses hazırlanamadı.");
-      const bytes = createVoicePcmWav(capture);
-      uploadBytes = bytes.byteLength;
-      const transcript = await runtime.steward.transcribeVoice(target.connectionId, {
-        bytes,
-        mediaType: STEWARD_RECORDING_MEDIA_TYPE,
-      });
-      if (!activeRef.current || activeTargetRef.current?.id !== targetId) return;
-      draftRef.current = transcript;
-      setDraft(transcript);
-      setEditingDraft(false);
-      setError(undefined);
-      transition("reviewing");
-    } catch (cause) {
-      reportVoiceFailure(cause, "steward", uploadBytes === undefined ? "encoding" : "transcription", capture, uploadBytes);
-      if (!activeRef.current) return;
-      setError(describe(cause, "Konuşma yazıya çevrilemedi."));
+    stopCapture();
+    void deactivateVoiceAudio().catch(() => undefined);
+    if (!target) {
+      setError("Kaydedilen ses hazırlanamadı.");
       transition("error");
-    } finally {
-      stoppingRef.current = false;
-      pcmCaptureRef.current = createVoicePcmCapture();
-      silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
-      setRecorderState({ durationMillis: 0, metering: undefined });
-      void deactivateVoiceAudio().catch(() => undefined);
+      return;
     }
-  }, [runtime, stream, transition]);
+    void transcription.start(target.connectionId, capture);
+  }, [stopCapture, transcription, transition]);
 
   useEffect(() => {
     if (phase !== "listening") return;
@@ -269,6 +268,7 @@ export function StewardVoiceDock() {
     const current = activeTargetRef.current;
     const target = switchableVoiceTarget(targets, current?.id, targetId, phaseRef.current);
     if (target === undefined) return;
+    cancelRecording();
     activeTargetRef.current = target;
     setActiveTargetId(target.id);
     setSelectedTargetId(target.id);
@@ -277,7 +277,7 @@ export function StewardVoiceDock() {
     draftRef.current = "";
     setEditingDraft(false);
     transition("ready");
-  }, [targets, transition]);
+  }, [cancelRecording, targets, transition]);
 
   const changeDraft = useCallback((value: string) => {
     draftRef.current = value;
@@ -290,18 +290,19 @@ export function StewardVoiceDock() {
     const targetId = target?.id;
     const content = draftRef.current.trim();
     if (target === undefined || content.length === 0) return;
+    const attempt = ++captureAttemptRef.current;
     transition("sending");
     setEditingDraft(false);
     setError(undefined);
     try {
       const appended = await runtime.steward.commitVoice(target.connectionId, target.projectId, content);
-      if (!activeRef.current || activeTargetRef.current?.id !== targetId) return;
+      if (!activeRef.current || activeTargetRef.current?.id !== targetId || attempt !== captureAttemptRef.current) return;
       draftRef.current = appended.transcript;
       setDraft(appended.transcript);
       transition("sent");
       sentTimerRef.current = setTimeout(closeComposer, SENT_CONFIRMATION_MS);
     } catch (cause) {
-      if (!activeRef.current) return;
+      if (!activeRef.current || attempt !== captureAttemptRef.current) return;
       setError(describe(cause, "Sesli mesaj gönderilemedi."));
       setEditingDraft(true);
       transition("reviewing");
@@ -327,6 +328,9 @@ export function StewardVoiceDock() {
   }, [closeComposer, targets]);
 
   useEffect(() => () => {
+    activeRef.current = false;
+    captureAttemptRef.current += 1;
+    capturingRef.current = false;
     clearSentTimer();
     stopVoiceAudioStream(streamRef.current);
     void deactivateVoiceAudio().catch(() => undefined);
@@ -360,6 +364,10 @@ export function StewardVoiceDock() {
         durationMillis={recorderState.durationMillis}
         editingDraft={editingDraft}
         error={error}
+        retryable={transcriptionState.retryable || retryRecording}
+        recordingSaved={transcriptionState.retryable}
+        onRetry={() => { if (transcriptionState.retryable) void transcription.retry(); else void startRecording(); }}
+        onCancelRecording={cancelRecording}
         onBeginCorrection={() => setEditingDraft(true)}
         onClose={closeComposer}
         onCommitDraft={() => { void commitDraft(); }}

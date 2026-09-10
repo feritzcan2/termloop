@@ -2487,6 +2487,21 @@ describe("production pipeline, launch, and Steward adapters", () => {
     });
   });
 
+  it.each([[401, false], [413, false], [422, false], [429, true], [503, true]] as const)("exposes retry eligibility for transcription HTTP %i and forwards cancellation", async (status, retryable) => {
+    const controller = new AbortController();
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }));
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: controlSocketFactory([], []),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      fetch: request,
+    });
+    await expect(runtime.steward.transcribeVoice(saved.id, {
+      bytes: new Uint8Array([1, 2, 3]).buffer, mediaType: "audio/wav",
+    }, controller.signal)).rejects.toMatchObject({ name: "VoiceTranscriptionError", retryable, status });
+    expect(request.mock.calls[0]![1]?.signal).toBe(controller.signal);
+  });
+
   it("answers a proposal and a suggestion through their own named commands", async () => {
     const requests: Array<{
       method: string;

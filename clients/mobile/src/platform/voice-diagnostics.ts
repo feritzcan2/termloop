@@ -1,3 +1,4 @@
+import { VoiceTranscriptionError } from "../application/voice-transcription-error";
 import type { VoicePcmCapture } from "../presentation/steward-voice-presentation";
 import { mobileDiagnostics, type MobileDiagnosticReporter } from "./mobile-diagnostics";
 
@@ -20,10 +21,12 @@ export function reportVoiceFailure(
   else if (/2 MB|cannot be transcribed/.test(message)) reason = "invalid_clip";
   else if (/could not hear speech/.test(message)) reason = "no_speech";
   else if (/credential/.test(message)) reason = "credential_rejected";
-  else if (/network|timeout|timed out|abort/i.test(message)) reason = "network";
+  else if (/network|timeout|timed out|abort|zaman aşım/i.test(message)) reason = "network";
   diagnostics.report("control", `voice_${stage}_failed`, {
     method, reason, durationMs: Math.round(capture.durationMillis),
     captureBytes: capture.byteLength, sampleRate: capture.sampleRate,
     channels: capture.channels, uploadBytes,
+    status: cause instanceof VoiceTranscriptionError ? cause.status : undefined,
+    retryable: cause instanceof VoiceTranscriptionError ? cause.retryable : undefined,
   });
 }
