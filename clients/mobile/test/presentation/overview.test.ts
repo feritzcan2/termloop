@@ -489,6 +489,7 @@ describe("connection presentation", () => {
       overview: baseOverview,
       refreshing: true,
       reviewReadySessionIds: new Set<string>(),
+      acknowledgedInterruptedSessionObservations: new Map<string, number>(),
       readAtEpochMs: 100,
     };
     expect(snapshotWhileUnavailable("offline", previous)).toMatchObject({
@@ -508,6 +509,7 @@ describe("connection presentation", () => {
       overview: baseOverview,
       refreshing: true,
       reviewReadySessionIds: new Set<string>(),
+      acknowledgedInterruptedSessionObservations: new Map<string, number>(),
       readAtEpochMs: 100,
     };
 
@@ -525,6 +527,7 @@ describe("connection presentation", () => {
       overview: baseOverview,
       refreshing: false,
       reviewReadySessionIds: new Set<string>(),
+      acknowledgedInterruptedSessionObservations: new Map<string, number>(),
       readAtEpochMs: 100,
     };
 

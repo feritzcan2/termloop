@@ -4,9 +4,10 @@ import type { ConnectionAvailability } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionPresentation } from "@/presentation/connection-presentation";
-import { reconcileReviewReadySessions, statusMap } from "@/presentation/agent-review-policy";
+import { reconcileAcknowledgedInterruptions, reconcileReviewReadySessions, statusMap } from "@/presentation/agent-review-policy";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
 import { subscribeOverviewInvalidations } from "./overview-invalidations";
+import { acknowledgeSnapshotInterruption, presentedOverviewSnapshot } from "./overview-presentation";
 import {
   emptyOverviewSnapshot as emptySnapshot,
   refreshIndicatorForOverviewRead,
@@ -43,6 +44,7 @@ export interface OverviewStore extends ConnectionOverviewSnapshot {
   byConnection: ReadonlyMap<string, ConnectionOverviewSnapshot>;
   refresh: () => void;
   dismissReview: (sessionId: string) => void;
+  acknowledgeInterruption: (connectionId: string, sessionId: string, observedAtEpochMs: number) => void;
 }
 
 const OverviewContext = createContext<OverviewStore | undefined>(undefined);
@@ -86,17 +88,28 @@ export function OverviewProvider({ children }: PropsWithChildren) {
     });
   }, [selected]);
 
+  const acknowledgeInterruption = useCallback((connectionId: string, sessionId: string, observedAtEpochMs: number) => {
+    setByConnection((current) => {
+      const snapshot = current.get(connectionId);
+      if (snapshot === undefined) return current;
+      const next = acknowledgeSnapshotInterruption(snapshot, sessionId, observedAtEpochMs);
+      return next === snapshot ? current : new Map(current).set(connectionId, next);
+    });
+  }, []);
+  const presentedByConnection = useMemo(() => new Map([...byConnection]
+    .map(([connectionId, snapshot]) => [connectionId, presentedOverviewSnapshot(snapshot)])), [byConnection]);
   const selectedSnapshot = selected === undefined
     ? emptySnapshot()
-    : byConnection.get(selected.id) ?? emptySnapshot();
+    : presentedByConnection.get(selected.id) ?? emptySnapshot();
   const value = useMemo<OverviewStore>(
     () => ({
       ...selectedSnapshot,
-      byConnection,
+      byConnection: presentedByConnection,
       refresh,
       dismissReview,
+      acknowledgeInterruption,
     }),
-    [selectedSnapshot, byConnection, refresh, dismissReview],
+    [selectedSnapshot, presentedByConnection, refresh, dismissReview, acknowledgeInterruption],
   );
 
   return (
@@ -190,6 +203,10 @@ function ConnectionOverviewLoader({
             overview: nextOverview,
             refreshing: false,
             reviewReadySessionIds: nextReviewReady,
+            acknowledgedInterruptedSessionObservations: reconcileAcknowledgedInterruptions(
+              previous.acknowledgedInterruptedSessionObservations,
+              nextOverview.agentStatuses,
+            ),
             readAtEpochMs: Date.now(),
           };
         });
