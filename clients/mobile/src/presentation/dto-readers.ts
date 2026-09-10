@@ -59,7 +59,11 @@ export function ellipsizeMiddle(value: string, max = 34): string {
 }
 
 export function taskJiraIssueKey(jiraUrl: string): string {
-  return jiraUrl.slice(jiraUrl.lastIndexOf("/") + 1);
+  try {
+    return new URL(jiraUrl).pathname.split("/").filter(Boolean).at(-1) ?? jiraUrl;
+  } catch {
+    return jiraUrl;
+  }
 }
 
 /// A checkout sitting on a different local branch than the Task's own branch is

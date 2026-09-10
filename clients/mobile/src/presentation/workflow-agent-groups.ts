@@ -8,6 +8,7 @@ export interface WorkflowAgentGroup {
   executionId: string;
   name: string;
   taskTitle: string | undefined;
+  taskId?: string | undefined;
   status: string;
   tone: RowTone;
 }
@@ -34,6 +35,7 @@ export function workflowAgentMemberships(
     const group: WorkflowAgentGroup = {
       executionId: execution.id, name: execution.workflowName,
       taskTitle: execution.taskId === null ? "Project checkout" : task?.project_id === projectId ? task.title : undefined,
+      taskId: task?.project_id === projectId ? task.id : undefined,
       status: view.label, tone: view.tone,
     };
     const add = (sessionId: string, role: string, coordinator = false) => {

@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { JiraIssueLink } from "@/components/external-link";
 
 import {
   Banner,
@@ -26,7 +27,7 @@ import { useOverview } from "@/features/overview/overview-store";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { TaskWorkflowLauncher } from "@/features/workflows/task-workflow-launcher";
 import { buildProjectOverview, buildProjectSummaries } from "@/presentation/attention-overview";
-import { basename, taskJiraIssueKey } from "@/presentation/dto-readers";
+import { basename } from "@/presentation/dto-readers";
 import { relativeAge } from "@/presentation/relative-time";
 import {
   taskBranchNote,
@@ -130,11 +131,7 @@ export default function TaskRoute() {
           <View style={styles.pills}>
             <Text style={styles.taskEyebrow}>TASK</Text>
             <StatePill tone={task.status === "closed" ? "done" : "quiet"} label={task.status} />
-            {task.jira_url === null ? null : (
-              <Pressable accessibilityRole="link" accessibilityLabel={`Open ${taskJiraIssueKey(task.jira_url)}`} onPress={() => { void Linking.openURL(task.jira_url!); }} style={styles.issueLink}>
-                <Text style={styles.link}>{taskJiraIssueKey(task.jira_url)} ↗</Text>
-              </Pressable>
-            )}
+            <JiraIssueLink url={task.jira_url} />
           </View>
           <Text style={styles.title} numberOfLines={3} accessibilityRole="header">{task.title}</Text>
         </View>
@@ -428,7 +425,6 @@ const styles = StyleSheet.create({
   content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl + 64 },
   detailHeader: { padding: space.screen, gap: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
   taskEyebrow: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
-  issueLink: { marginLeft: "auto", minHeight: geometry.touchTarget, justifyContent: "center" },
   hiddenPanel: { display: "none" },
   titleBlock: { gap: space.sm },
   /// A Task title is human prose, so it stays sans while the chrome around it
@@ -501,5 +497,4 @@ const styles = StyleSheet.create({
   detailsSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
   detailsChevron: { color: color.textSecondary, fontSize: 16 },
   detailsBody: { gap: space.lg },
-  link: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 13, paddingVertical: 6 },
 });

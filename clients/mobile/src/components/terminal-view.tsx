@@ -22,7 +22,9 @@ import {
   earlierTerminalHistory, recentTerminalHistory, reconcileTerminalHistory,
   terminalReadingAnchor, terminalReadingOffset, type TerminalHistoryPage,
 } from "@/presentation/terminal-history";
-import type { TerminalSpan, TerminalStyle } from "@/presentation/terminal-screen";
+import { DEFAULT_TERMINAL_STYLE, type TerminalSpan, type TerminalStyle } from "@/presentation/terminal-screen";
+import { terminalLinkSpans } from "@/presentation/terminal-links";
+import { ExternalLink } from "@/components/external-link";
 import { color, space, terminalGeometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -224,7 +226,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
               ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
               : shown.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
             <View style={{ height: rows.after }} />
-            {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{shown.pending}</Text> : null}
+            {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: shown.pending, style: DEFAULT_TERMINAL_STYLE }])}</Text> : null}
           </View>
         </ScrollView>
       </ScrollView>
@@ -275,9 +277,7 @@ const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lin
     <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
       {spans.length === 0
         ? " "
-        : spans.map((span, index) => (
-            <Text key={index} style={spanStyle(span.style)}>{span.text}</Text>
-          ))}
+        : renderSpans(spans)}
     </Text>
   );
 });
@@ -291,9 +291,15 @@ function TerminalLineText({ line, fontSize, lineHeight }: {
   /// dependency of its own.
   return (
     <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
-      {line.text.length === 0 ? " " : line.text}
+      {line.text.length === 0 ? " " : renderSpans([{ text: line.text, style: DEFAULT_TERMINAL_STYLE }])}
     </Text>
   );
+}
+
+function renderSpans(spans: readonly TerminalSpan[]) {
+  return terminalLinkSpans(spans).map((span, index) => span.url
+    ? <ExternalLink key={index} url={span.url} style={spanStyle(span.style)}>{span.text}</ExternalLink>
+    : <Text key={index} style={spanStyle(span.style)}>{span.text}</Text>);
 }
 
 const styles = StyleSheet.create({
