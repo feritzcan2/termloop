@@ -8,6 +8,7 @@ export interface ConnectionOverviewSnapshot {
   overview: MobileOverview | undefined;
   refreshing: boolean;
   reviewReadySessionIds: ReadonlySet<string>;
+  acknowledgedInterruptedSessionObservations: ReadonlyMap<string, number>;
   readAtEpochMs: number | undefined;
 }
 
@@ -18,6 +19,7 @@ export function emptyOverviewSnapshot(): ConnectionOverviewSnapshot {
     overview: undefined,
     refreshing: false,
     reviewReadySessionIds: new Set(),
+    acknowledgedInterruptedSessionObservations: new Map(),
     readAtEpochMs: undefined,
   };
 }
