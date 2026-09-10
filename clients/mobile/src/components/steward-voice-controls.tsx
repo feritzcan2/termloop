@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 
+import { VoiceRetryActions } from "@/components/voice-retry-actions";
 import { MicrophoneGlyph } from "@/components/microphone-glyph";
 import { StewardVoiceProjectSelector } from "@/components/steward-voice-project-selector";
 import { canSwitchVoiceProject } from "@/presentation/steward-voice-project-selection";
@@ -24,6 +25,10 @@ export interface StewardVoiceControlsProps {
   readonly phase: VoicePhase;
   readonly durationMillis: number;
   readonly error: string | undefined;
+  readonly retryable: boolean;
+  readonly recordingSaved: boolean;
+  readonly onRetry: () => void;
+  readonly onCancelRecording: () => void;
   readonly draft: string;
   readonly editingDraft: boolean;
   readonly onStart: () => void;
@@ -139,6 +144,13 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
           <Text style={styles.hint}>Mikrofona dokun, mesajını söyle, metni kontrol edip gönder.</Text>
         ) : null}
         {props.error === undefined ? null : <Text style={styles.error}>{props.error}</Text>}
+        {props.phase === "error" || props.phase === "transcribing" ? <VoiceRetryActions
+          retryable={props.retryable}
+          recordingSaved={props.recordingSaved}
+          busy={props.phase === "transcribing"}
+          onRetry={props.onRetry}
+          onCancel={props.onCancelRecording}
+        /> : null}
       </ScrollView>
 
       <View style={styles.bar}>
@@ -180,7 +192,7 @@ function voiceStatus(phase: VoicePhase, durationMs: number): string {
     case "reviewing": return "Göndermeden önce kontrol et";
     case "sending": return "Gönderiliyor";
     case "sent": return "Gönderildi";
-    case "error": return "Tekrar kaydetmeye hazır";
+    case "error": return "İşlem tamamlanamadı";
   }
 }
 
