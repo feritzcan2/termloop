@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
+import { JiraIssueLink } from "@/components/external-link";
 import { Banner, Card, CardDivider, EmptyState } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
@@ -355,32 +356,42 @@ function AgentRowView({ row, membership, nowMs, openActions }: { row: AgentRow; 
   const connections = useConnections();
   const store = useOverview();
   const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
-  /// The headline is what the agent is for. The avatar already names the agent, so a
-  /// Task-attached row spends its title on the Task and its state line on who runs it.
-  const title = membership?.displayName ?? row.taskTitle ?? row.title;
-  const detail = membership || row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
+  const taskId = row.taskId ?? membership?.group.taskId;
+  const task = store.overview?.tasks.find((candidate) => candidate.id === taskId);
+  const title = membership?.displayName ?? row.title;
   const content = (
-    <Row
-      tone={row.tone}
-      title={title}
-      state={row.stateLabel}
-      detail={detail}
-      meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
-      accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
-      trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-      onPress={() => {
-        if (!row.attachable) {
-          openActions(row.sessionId);
-          return;
-        }
-        store.dismissReview(row.sessionId);
-        router.push({
-          pathname: "/session/[sessionId]",
-          params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
-        });
-      }}
-      onLongPress={() => openActions(row.sessionId)}
-    />
+    <View>
+      <Row
+        tone={row.tone}
+        title={title}
+        state={row.stateLabel}
+        detail={row.runner ?? row.folder}
+        meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
+        accessibleName={membership ? `${membership.displayName}, Workflow ${membership.group.name}, ${row.accessibleName}` : row.accessibleName}
+        trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
+        onPress={() => {
+          if (!row.attachable) {
+            openActions(row.sessionId);
+            return;
+          }
+          store.dismissReview(row.sessionId);
+          router.push({
+            pathname: "/session/[sessionId]",
+            params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
+          });
+        }}
+        onLongPress={() => openActions(row.sessionId)}
+      />
+      {task === undefined ? null : (
+        <View style={styles.agentTask}>
+          <View style={styles.agentTaskIdentity}>
+            <Text style={styles.agentTaskBadge}>TASK</Text>
+            <Text style={styles.agentTaskTitle}>{task.title}</Text>
+          </View>
+          <JiraIssueLink url={task.jira_url} />
+        </View>
+      )}
+    </View>
   );
   return session === undefined
     ? content
@@ -392,6 +403,10 @@ function asksForUser(tone: AgentRow["tone"]): boolean {
 }
 
 const styles = StyleSheet.create({
+  agentTask: { marginHorizontal: 10, marginBottom: space.sm, padding: space.sm, borderRadius: 6, backgroundColor: `${color.bgSidebar}66` },
+  agentTaskIdentity: { flexDirection: "row", alignItems: "flex-start", gap: space.sm },
+  agentTaskBadge: { color: color.textSecondary, backgroundColor: color.bgSidebar, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 3, fontFamily: fontFamily.mono, fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
+  agentTaskTitle: { flex: 1, color: color.textSecondary, fontSize: 13, lineHeight: 18 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
   headerAction: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   headerActionDisabled: { opacity: 0.4 },
