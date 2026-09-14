@@ -115,7 +115,7 @@ def stamp(seconds):
 
 
 def restore_archive(feature, edit, output):
-    """Keep an explicitly selected earlier edit byte-for-byte, including its FPS."""
+    """Keep an earlier edit's timing and FPS, optionally skipping its intro."""
     source = ROOT / 'landing' / edit['archiveSource']
     data = source.read_bytes()
     if hashlib.sha256(data).hexdigest() != edit['sourceSha256']:
@@ -127,16 +127,31 @@ def restore_archive(feature, edit, output):
         raise ValueError('Archive must contain only a silent video')
     if (video['width'], video['height']) != (1920, 1080) or rate != edit['sourceFps']:
         raise ValueError('Archive dimensions or frame rate changed')
-    duration = float(info['format']['duration'])
+    source_duration = float(info['format']['duration'])
+    start = edit.get('sourceStart', 0)
+    if not 0 <= start < source_duration or abs(start * rate - round(start * rate)) > 1e-6:
+        raise ValueError('Archive start must be a frame boundary inside the clip')
+    duration = source_duration - start
     anchors = edit['stepsAt']
     if len(anchors) != len(feature['steps']) or anchors[0] != 0 or any(
             not a < b for a, b in zip(anchors, anchors[1:] + [duration])):
         raise ValueError('Archive captions must follow the recording')
     output.mkdir(parents=True, exist_ok=True)
     target = output / feature['id']
+    if start:
+        with tempfile.TemporaryDirectory(prefix='termloop-trim-') as temporary:
+            staged = Path(temporary)/'demo.mp4'
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', str(start),
+                '-i', str(source), '-map', '0:v:0', '-an', '-c:v', 'libx264',
+                '-preset', 'slow', '-crf', '17', '-threads', '4', '-pix_fmt', 'yuv420p',
+                '-r', str(rate), '-fps_mode', 'cfr', '-movflags', '+faststart', str(staged)], check=True)
+            data = staged.read_bytes()
+            trimmed = probe(staged)
+            video = trimmed['streams'][0]
+            duration = float(trimmed['format']['duration'])
     target.with_suffix('.mp4').write_bytes(data)
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', str(edit['posterAt']),
-        '-i', str(source), '-frames:v', '1', '-q:v', '2', '-update', '1',
+        '-i', str(target.with_suffix('.mp4')), '-frames:v', '1', '-q:v', '2', '-update', '1',
         str(target.with_suffix('.jpg'))], check=True)
     target.with_suffix('.vtt').write_text(('WEBVTT\n\n' + ''.join(
         f'{i+1}\n{stamp(a)} --> {stamp(b)}\n{text}\n\n'
@@ -145,14 +160,63 @@ def restore_archive(feature, edit, output):
         'fps': rate, 'frames': int(video['nb_frames']), 'audio': False,
         'captureKind': 'archive-video', 'source': edit['archiveSource'],
         'sourceSha256': edit['sourceSha256'], 'sourceFps': rate,
-        'sourceSeconds': duration, 'sourceCoverage': [0, duration],
-        'sha256': edit['sourceSha256'],
-        'editing': 'Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects.'}
+        'sourceSeconds': source_duration, 'sourceCoverage': [start, source_duration],
+        'sha256': hashlib.sha256(data).hexdigest(),
+        'editing': (f'Opening {start:g} seconds skipped. Remaining interval keeps its original timing and frame rate; no interior cuts or new effects.'
+            if start else 'Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects.')}
     target.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(f'{feature["id"]}: restored original {duration:.2f}s, {rate:g} fps', flush=True)
+    print(f'{feature["id"]}: {duration:.2f}s, {rate:g} fps, source starts at {start:g}s', flush=True)
+
+
+def join_edits(feature, edit, output):
+    """Join complete approved chapters without re-encoding their video frames."""
+    output.mkdir(parents=True, exist_ok=True)
+    target = output / feature['id']
+    chapters = []
+    elapsed = 0
+    with tempfile.TemporaryDirectory(prefix='termloop-join-') as temporary:
+        temporary = Path(temporary)
+        for i, segment in enumerate(edit['segments']):
+            source = ROOT / 'landing' / segment['source']
+            duration, rate = validate_source(source, segment['sourceSha256'])
+            if len(probe(source)['streams']) != 1:
+                raise ValueError('Joined chapters must be silent videos')
+            (temporary/f'{i}.mp4').write_bytes(source.read_bytes())
+            chapters.append({**segment, 'outputStart': elapsed, 'duration': duration, 'fps': rate})
+            elapsed += duration
+        if len(chapters) < 2:
+            raise ValueError('A joined demo needs at least two chapters')
+        playlist = temporary/'chapters.txt'
+        playlist.write_text(''.join(f"file '{i}.mp4'\n" for i in range(len(chapters))))
+        staged = temporary/'joined.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '1',
+            '-i', str(playlist), '-map', '0:v:0', '-c', 'copy', '-movflags', '+faststart', str(staged)], check=True)
+        info = probe(staged)
+        duration = float(info['format']['duration'])
+        video = info['streams'][0]
+        target.with_suffix('.mp4').write_bytes(staged.read_bytes())
+    anchors = edit['stepsAt']
+    if len(anchors) != len(feature['steps']) or anchors[0] != 0 or any(
+            not a < b for a, b in zip(anchors, anchors[1:] + [duration])):
+        raise ValueError('Joined captions must follow the chapters')
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', str(edit['posterAt']),
+        '-i', str(target.with_suffix('.mp4')), '-frames:v', '1', '-q:v', '2', '-update', '1',
+        str(target.with_suffix('.jpg'))], check=True)
+    target.with_suffix('.vtt').write_text(('WEBVTT\n\n' + ''.join(
+        f'{i+1}\n{stamp(a)} --> {stamp(b)}\n{text}\n\n'
+        for i, (a, b, text) in enumerate(zip(anchors, anchors[1:] + [duration], feature['steps'])))).rstrip()+'\n')
+    report = {'id': feature['id'], 'duration': duration, 'width': 1920, 'height': 1080,
+        'fps': FPS, 'frames': int(video['nb_frames']), 'audio': False,
+        'captureKind': 'joined-video', 'chapters': chapters,
+        'sha256': hashlib.sha256(target.with_suffix('.mp4').read_bytes()).hexdigest(),
+        'editing': 'Complete Task brief and worktree chapters joined without re-encoding. Their existing timing and click effects are preserved.'}
+    target.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n')
+    print(f'{feature["id"]}: {duration:.2f}s, {FPS} fps, {len(chapters)} complete chapters', flush=True)
 
 
 def render(feature, edit, recordings, output=OUTPUT):
+    if edit.get('segments'):
+        return join_edits(feature, edit, output)
     if edit.get('archiveSource'):
         return restore_archive(feature, edit, output)
     source = recordings / edit['source']
@@ -210,7 +274,7 @@ def main():
     catalog = json.loads((ROOT/'tools/marketing/catalog.json').read_text())
     edits = json.loads((ROOT/'tools/marketing/edits.json').read_text())
     selected = [f for f in catalog if not args.only or f['id'] in args.only]
-    if args.recordings is None and any(not edits[f['id']].get('archiveSource') for f in selected):
+    if args.recordings is None and any(not (edits[f['id']].get('archiveSource') or edits[f['id']].get('segments')) for f in selected):
         parser.error('Pass --recordings or set TERMLOOP_MARKETING_RECORDINGS')
     for feature in selected:
         render(feature, edits[feature['id']], Path(args.recordings) if args.recordings else None)
