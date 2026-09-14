@@ -9,6 +9,9 @@ export type SshTunnelRequest = {
   host: string;
   user?: string;
   remotePort: number;
+  sshPort?: number;
+  identityFile?: string;
+  knownHostsFile?: string;
 };
 
 export type SshTunnelProcess = {
@@ -166,12 +169,16 @@ export function sshTunnelArgs(request: SshTunnelRequest, localPort: number, supp
     throw new Error("SSH user contains unsupported characters");
   }
   const target = request.user ? `${request.user}@${request.host}` : request.host;
+  if (request.sshPort !== undefined && (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65535)) throw new Error("SSH port is invalid");
   return [
     "-N",
     "-T",
     "-o", "BatchMode=yes",
     "-o", "ExitOnForwardFailure=yes",
     "-o", "StrictHostKeyChecking=yes",
+    ...(request.sshPort !== undefined ? ["-p", String(request.sshPort)] : []),
+    ...(request.identityFile ? ["-F", devNull, "-i", request.identityFile, "-o", "IdentitiesOnly=yes"] : []),
+    ...(request.knownHostsFile ? ["-o", `UserKnownHostsFile="${request.knownHostsFile.replaceAll('"', '\\"')}"`, "-o", `GlobalKnownHostsFile=${devNull}`] : []),
     // Keep the forward owned by this foreground child, even with user multiplexing.
     "-o", "ControlMaster=no",
     "-o", "ControlPath=none",

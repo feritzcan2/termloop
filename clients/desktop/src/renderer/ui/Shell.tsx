@@ -1,3 +1,4 @@
+import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { TerminalStatus } from "./TerminalStatus.js";
@@ -175,6 +176,7 @@ export type ShellProps = {
   agentConnections?: AgentConnectionActions;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
+  sshSetup?: SshSetupActions;
   setConnectionProfileEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   removeConnectionProfile(profileId: string): Promise<ConnectionProfileSummary[]>;
   subscribeConnectionStatus(listener: (summary: ConnectionSourceSummary) => void): () => void;
@@ -2086,6 +2088,7 @@ export function Shell(props: ShellProps) {
         list={props.listConnectionProfiles}
         reconnect={props.reconnectSource}
         connect={props.connectConnectionProfile}
+        {...(props.sshSetup ? { sshSetup: props.sshSetup } : {})}
         setEnabled={props.setConnectionProfileEnabled}
         remove={props.removeConnectionProfile}
         subscribeStatus={props.subscribeConnectionStatus}

@@ -10,6 +10,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const [binaries, cli, output] = process.argv.slice(2);
 if (!binaries || !cli || !output) throw new Error('Usage: package-server.mjs <musl-binary-directory> <bundled-cli> <output-directory>');
 const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const generatedContract = await readFile(path.join(root, 'contract/generated/typescript/src/current.ts'), 'utf8');
+const protocolVersion = generatedContract.match(/^export const CONTRACT_IDENTITY = "(sha256:[a-f0-9]{64})"/m)?.[1];
+if (!protocolVersion) throw new Error('Generated server protocol identity is missing; run codegen first');
 const { stdout } = await execute('git', ['rev-parse', 'HEAD'], { cwd: root });
 const stage = await mkdtemp(path.join(os.tmpdir(), 'termloop-server-package-'));
 try {
@@ -25,10 +28,10 @@ try {
   }
   await chmod(path.join(stage, 'install.sh'), 0o755);
   await writeFile(path.join(stage, 'server-package.json'), JSON.stringify({
-    schema: 1, version, platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-musl', commit: stdout.trim(),
+    schema: 1, version, protocolVersion, platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-musl', commit: stdout.trim(),
   }, null, 2) + '\n');
   await mkdir(output, { recursive: true });
   const archive = path.resolve(output, `termloop-server-linux-x64-${version}.tar.gz`);
-  await execute('tar', ['-C', stage, '-czf', archive, '.']);
+  await execute('tar', ['-C', stage, '-czf', archive, '.'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
   console.log(archive);
 } finally { await rm(stage, { recursive: true, force: true }); }

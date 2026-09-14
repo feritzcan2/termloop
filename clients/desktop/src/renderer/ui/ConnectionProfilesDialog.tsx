@@ -1,4 +1,6 @@
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
+import { SshSetupWizard } from "./SshSetupWizard.js";
+import type { SshSetupActions } from "../../ssh-setup-types.js";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type {
@@ -24,6 +26,7 @@ type Tone = "ok" | "warn" | "danger" | "idle";
 const DISCOVERY_REFRESH_MS = 10_000;
 
 export type ConnectionProfilesDialogProps = {
+  sshSetup?: SshSetupActions;
   agentConnections?: AgentConnectionActions | undefined;
   initialProfileId?: string;
   close(): void;
@@ -41,6 +44,7 @@ export type ConnectionProfilesDialogProps = {
 };
 
 export function ConnectionProfilesDialog({
+  sshSetup,
   agentConnections,
   initialProfileId = "local",
   close,
@@ -75,6 +79,16 @@ export function ConnectionProfilesDialog({
   const [sshHost, setSshHost] = useState("");
   const [sshUser, setSshUser] = useState("");
   const [sshPort, setSshPort] = useState("43717");
+  const [sshConnectionPort, setSshConnectionPort] = useState("");
+  const [legacySsh, setLegacySsh] = useState(false);
+  const [resumeSetup, setResumeSetup] = useState(false);
+  useEffect(() => {
+    let stopped = false;
+    void sshSetup?.current().then((state) => {
+      if (!stopped && state) { setResumeSetup(true); setManualTransport("ssh"); }
+    }).catch(() => undefined);
+    return () => { stopped = true; };
+  }, [sshSetup?.current]);
 
   // Share this computer.
   const [shareTransport, setShareTransport] = useState<"tailscale" | "ssh">("tailscale");
@@ -190,6 +204,7 @@ export function ConnectionProfilesDialog({
               host: sshHost.trim(),
               ...(sshUser.trim() ? { user: sshUser.trim() } : {}),
               remotePort: Number(sshPort),
+              ...(sshConnectionPort ? { sshPort: Number(sshConnectionPort) } : {}),
             },
       },
       () => {
@@ -366,6 +381,18 @@ export function ConnectionProfilesDialog({
   }
 
   function renderManualForm() {
+    if (manualTransport === "ssh" && sshSetup && !legacySsh) return <div className="conn-manual">
+      <ConnTabs value={manualTransport} change={(value) => { setManualTransport(value); clearPlacedMessage("manual"); }} label="Connection transport" />
+      <SshSetupWizard actions={sshSetup} useExisting={() => setLegacySsh(true)} connected={async (result) => {
+        const next = await list();
+        if (!mounted.current) return;
+        setProfiles(mergeConnectionProfileStatuses(next, latestStatuses.current));
+        setSelectedProfileId(result.profile.id);
+        setView("agents");
+        setMessage({ kind: "success", text: `Connected to ${result.profile.name}.`, placement: "profiles" });
+      }} />
+      <button type="button" className="conn-text-button" onClick={() => setLegacySsh(true)}>Use an existing SSH configuration instead</button>
+    </div>;
     return (
       <form className="conn-manual" onSubmit={(event) => void submitManual(event)}>
         <ConnTabs value={manualTransport} change={(value) => { setManualTransport(value); clearPlacedMessage("manual"); }} label="Connection transport" />
@@ -373,13 +400,15 @@ export function ConnectionProfilesDialog({
         {manualTransport === "tailscale" ? (
           <label className="conn-field"><span>Server address</span><input required value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="wss://server.tailnet-name.ts.net:43717" /></label>
         ) : (
-          <div className="conn-form-row">
+          <div className="conn-form-row conn-ssh-existing">
             <label className="conn-field"><span>SSH host</span><input required value={sshHost} onChange={(event) => setSshHost(event.target.value)} placeholder="server.example or 100.x.y.z" /></label>
             <label className="conn-field"><span>SSH user</span><input value={sshUser} onChange={(event) => setSshUser(event.target.value)} placeholder="optional" /></label>
-            <label className="conn-field port"><span>Access port</span><input required inputMode="numeric" value={sshPort} onChange={(event) => setSshPort(event.target.value)} /></label>
+            <label className="conn-field port"><span>SSH port</span><input inputMode="numeric" placeholder="22 or SSH config" value={sshConnectionPort} onChange={(event) => setSshConnectionPort(event.target.value)} /></label>
+            <label className="conn-field port"><span>TermLoop port</span><input required inputMode="numeric" value={sshPort} onChange={(event) => setSshPort(event.target.value)} /></label>
           </div>
         )}
-        {manualTransport === "ssh" ? <p className="conn-note">TermLoop uses the system OpenSSH client and never auto-accepts a host key.</p> : null}
+        {manualTransport === "ssh" ? <p className="conn-note">TermLoop must be running with SSH sharing enabled on the other computer. In the desktop app, open Settings → Servers → Share this computer. Use its TermLoop port (usually 43717); the SSH port is usually 22. Your SSH key and the server’s verified host key must already work in your terminal.</p> : null}
+        {manualTransport === "ssh" && sshSetup ? <button type="button" className="conn-text-button" onClick={() => setLegacySsh(false)}>Set up a new server instead</button> : null}
         {manualTransport === "tailscale" ? <p className="conn-note">The server must already have sharing enabled. Its identity is saved when you connect.</p> : null}
         <MessageBanner message={message?.placement === "manual" ? message : undefined} />
         <div className="conn-actions">
@@ -433,7 +462,7 @@ export function ConnectionProfilesDialog({
               : "No shared TermLoop computers found yet. On the other computer, open “Share this computer” and turn it on — it appears here automatically."}</p>
           ) : null}
 
-          <details className="conn-advanced" onToggle={(event) => { if (!event.currentTarget.open) clearPlacedMessage("manual"); }}>
+          <details className="conn-advanced" open={resumeSetup || undefined} onToggle={(event) => { if (!event.currentTarget.open) clearPlacedMessage("manual"); }}>
             <summary>Add by address instead</summary>
             {renderManualForm()}
           </details>

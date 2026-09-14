@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { activateRelease, currentRelease, installationPaths, pruneReleases, runManager, serviceDefinitions } from './termloop-server-manager.mjs';
+import { activateRelease, assertPackageProtocol, currentRelease, installationPaths, pruneReleases, runManager, serviceDefinitions } from './termloop-server-manager.mjs';
 import { newerVersion, packageFiles, parseVersion, resolveRelease, stageRelease, stageSourceArchive, validateArchiveListing } from './server-release.mjs';
 
 const execute = promisify(execFile);
@@ -253,4 +253,53 @@ test('cleanup retains the previous source build and removes only marked managed 
 test('source archives cannot change the automatic update or status action', async () => {
   for (const action of ['update', 'status']) await assert.rejects(runManager(action, undefined, undefined, '/tmp/source.tar.gz'), /only by install/);
   await assert.rejects(runManager('install', '2.0.4', undefined, '/tmp/source.tar.gz'), /without --version/);
+});
+
+
+test('package compatibility is checked without changing the installed release or state', native, async (context) => {
+  const paths = await fixture(context);
+  const previous = await release(paths, '2.0.4');
+  await symlink('releases/2.0.4', paths.current);
+  await mkdir(paths.state);
+  await writeFile(path.join(paths.state, 'state.v1.json'), 'existing data');
+  const expected = `sha256:${'a'.repeat(64)}`;
+  for (const protocolVersion of [undefined, `sha256:${'b'.repeat(64)}`]) {
+    const source = await sourcePackage(paths, { protocolVersion });
+    const staged = await stageSourceArchive(source.archive, source.stage);
+    await assert.rejects(assertPackageProtocol(staged.payload, expected), /compatibility information|not compatible/);
+    assert.deepEqual(await currentRelease(paths), previous);
+    assert.equal(await readFile(path.join(paths.state, 'state.v1.json'), 'utf8'), 'existing data');
+  }
+  const matching = await sourcePackage(paths, { protocolVersion: expected });
+  assert.equal(await assertPackageProtocol(matching.payload, expected), expected);
+});
+
+test('a runtime protocol mismatch rolls back even when both builds have the same version', native, async (context) => {
+  const paths = await fixture(context);
+  const previous = { ...await release(paths, '2.0.4'), protocolVersion: `sha256:${'a'.repeat(64)}` };
+  const candidate = await sourcePackage(paths, { protocolVersion: `sha256:${'b'.repeat(64)}` });
+  const next = { version: previous.version, directory: candidate.payload, protocolVersion: `sha256:${'b'.repeat(64)}` };
+  await symlink('releases/2.0.4', paths.current);
+  const checks = [];
+  await assert.rejects(activateRelease(paths, next, previous, {
+    stop: async () => {}, start: async () => {}, healthy: async (version, protocol) => {
+      checks.push([version, protocol]);
+      if (protocol === next.protocolVersion) throw new Error('runtime protocol mismatch');
+    },
+  }), /restored TermLoop/);
+  assert.equal((await currentRelease(paths)).directory, previous.directory);
+  assert.deepEqual(checks, [[next.version, next.protocolVersion], [previous.version, previous.protocolVersion]]);
+});
+
+
+test('legacy packages use their unambiguous bundled CLI identity before installation', native, async (context) => {
+  const paths = await fixture(context);
+  const source = await sourcePackage(paths);
+  const expected = `sha256:${'a'.repeat(64)}`;
+  const declaration = `var CONTRACT_IDENTITY = "${expected}";\n`;
+  await writeFile(path.join(source.payload, 'termloopctl'), declaration);
+  assert.equal(await assertPackageProtocol(source.payload, expected), expected);
+  await assert.rejects(assertPackageProtocol(source.payload, `sha256:${'b'.repeat(64)}`), /not compatible/);
+  await writeFile(path.join(source.payload, 'termloopctl'), declaration + declaration);
+  await assert.rejects(assertPackageProtocol(source.payload, expected), /no compatibility information/);
 });
