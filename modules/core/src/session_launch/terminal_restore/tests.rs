@@ -436,11 +436,14 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
         "printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED"
     };
     let command = format!("cd '{}'; {output_command}\r", changed_directory.display());
-    fixture
-        .core
-        .terminal
-        .input("shell", command.as_bytes())
-        .unwrap();
+    let mut submitted = !cfg!(windows);
+    if submitted {
+        fixture
+            .core
+            .terminal
+            .input_user("shell", 20, command.as_bytes())
+            .unwrap();
+    }
     let mut bytes = Vec::new();
     let mut answered = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -458,6 +461,19 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
                         .input_user("shell", 20, b"\x1b[1;1R")
                         .unwrap();
                     answered += 1;
+                }
+                // ConPTY asks for the cursor before PowerShell is ready. Do
+                // not interleave that terminal reply with the submitted line.
+                if !submitted
+                    && String::from_utf8_lossy(&bytes)
+                        .contains(&format!("PS {}> ", fixture.root.display()))
+                {
+                    fixture
+                        .core
+                        .terminal
+                        .input_user("shell", 20, command.as_bytes())
+                        .unwrap();
+                    submitted = true;
                 }
                 if String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED") {
                     break;
