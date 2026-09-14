@@ -66,6 +66,12 @@
       "outputTime": 2.338095
     }
   ],
-  "sha256": "9c217769b8288a2b49300ad5e8fae3c31842cfb879dff64e3972c21c71647dab",
-  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+  "sha256": "81abe8a3f1402bcd2b6d37a1715ddc984bd35324b753bb3cb0b5ddd4f9b8662c",
+  "crop": [
+    0,
+    80,
+    1120,
+    630
+  ],
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. Fixed close-up of the sidebar; no interior cuts, added caption panels or terminal highlights."
 }

@@ -1,151 +1,59 @@
 {
   "id": "full-file-review",
-  "duration": 24.2,
+  "duration": 5.0,
   "width": 1920,
   "height": 1080,
   "fps": 30,
-  "frames": 726,
+  "frames": 150,
   "audio": false,
-  "captureKind": "continuous-video",
-  "source": "full-file-review.mp4",
-  "recordedAt": "2026-09-14",
-  "recoveredFrom": null,
-  "captureCursorRemoved": true,
-  "sourceSha256": "218d06107ac696501c75c77ed90a57fa4bd734f5d0f86a534be84441dc046444",
-  "sourceSeconds": 70.533,
-  "sourceFps": 30.000141777607645,
-  "sourceCoverage": [
-    0,
-    70.533
-  ],
-  "speedMap": [
+  "captureKind": "edited-video",
+  "sources": [
     {
-      "start": 0.0,
-      "end": 6.95,
-      "speed": 8
-    },
-    {
-      "start": 6.95,
-      "end": 8.8,
-      "speed": 1
-    },
-    {
-      "start": 8.8,
-      "end": 14.2,
-      "speed": 4
-    },
-    {
-      "start": 14.2,
-      "end": 16.4,
-      "speed": 1
-    },
-    {
-      "start": 16.4,
-      "end": 20.1,
-      "speed": 5
-    },
-    {
-      "start": 20.1,
-      "end": 22.7,
-      "speed": 1
-    },
-    {
-      "start": 22.7,
-      "end": 27.8,
-      "speed": 5
-    },
-    {
-      "start": 27.8,
-      "end": 30.0,
-      "speed": 1
-    },
-    {
-      "start": 30.0,
-      "end": 50.2,
-      "speed": 18
-    },
-    {
-      "start": 50.2,
-      "end": 52.5,
-      "speed": 1
-    },
-    {
-      "start": 52.5,
-      "end": 58.6,
-      "speed": 5
-    },
-    {
-      "start": 58.6,
-      "end": 60.4,
-      "speed": 1
-    },
-    {
-      "start": 60.4,
-      "end": 64.3,
-      "speed": 5
-    },
-    {
-      "start": 64.3,
-      "end": 68.2,
-      "speed": 1
-    },
-    {
-      "start": 68.2,
-      "end": 70.533,
-      "speed": 10
+      "source": "full-file-review.mp4",
+      "root": "recordings",
+      "sourceSha256": "218d06107ac696501c75c77ed90a57fa4bd734f5d0f86a534be84441dc046444",
+      "duration": 70.533,
+      "fps": 30.000141777607645
     }
   ],
-  "clicks": [
+  "shots": [
     {
-      "sourceTime": 7.26,
-      "x": 440,
-      "y": 117,
-      "label": "Open changes",
-      "outputTime": 1.182078
+      "source": 0,
+      "start": 14.1,
+      "end": 16.1,
+      "duration": 1.7,
+      "crop": [
+        480,
+        30,
+        1440,
+        810
+      ]
     },
     {
-      "sourceTime": 14.5,
-      "x": 1744,
-      "y": 70,
-      "label": "Full file",
-      "outputTime": 4.377334
+      "source": 0,
+      "start": 20,
+      "end": 22.3,
+      "duration": 1.7,
+      "crop": [
+        480,
+        30,
+        1440,
+        810
+      ]
     },
     {
-      "sourceTime": 20.43,
-      "x": 1595,
-      "y": 70,
-      "label": "Split comparison",
-      "outputTime": 7.348455
-    },
-    {
-      "sourceTime": 28.1,
-      "x": 758,
-      "y": 275,
-      "label": "Mark file reviewed",
-      "outputTime": 10.937907
-    },
-    {
-      "sourceTime": 50.5,
-      "x": 758,
-      "y": 275,
-      "label": "Mark next file reviewed",
-      "outputTime": 14.264048
-    },
-    {
-      "sourceTime": 58.93,
-      "x": 559,
-      "y": 216,
-      "label": "Show reviewed files",
-      "outputTime": 17.802565
-    },
-    {
-      "sourceTime": 64.6,
-      "x": 610,
-      "y": 313,
-      "label": "Reopen reviewed code",
-      "outputTime": 20.364097
+      "source": 0,
+      "start": 27.6,
+      "end": 29.2,
+      "duration": 1.6,
+      "crop": [
+        460,
+        120,
+        1120,
+        630
+      ]
     }
   ],
-  "sha256": "4ba522bd2524ed95fb4a9f5736cbfe71a046b2565098089f7563309f4772a804",
-  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+  "sha256": "c88a1f6059b1a36a57b84b887805230a258c537416d41806bc2c6b69253a6fe0",
+  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
 }
