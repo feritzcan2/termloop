@@ -13,6 +13,19 @@
     "provenance": "Launchpad Demo"
   },
   {
+    "id": "quick-actions",
+    "group": "run",
+    "label": "Quick Actions",
+    "title": "From a prompt to a running agent.",
+    "description": "Open Quick Actions, write the request and launch an agent with the right context.",
+    "steps": [
+      "Open Quick Actions with Shift Shift.",
+      "Write a prompt and choose the agent settings.",
+      "Launch the Session and follow its work in the terminal."
+    ],
+    "provenance": "Original desktop recording"
+  },
+  {
     "id": "handoff",
     "group": "coordinate",
     "label": "Handoff",
@@ -63,6 +76,19 @@
       "The Task now has its own branch and worktree."
     ],
     "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "changes",
+    "group": "review",
+    "label": "Changes",
+    "title": "Turn review notes into the next change.",
+    "description": "Open the diff, leave a note on a line and send the review to a running agent.",
+    "steps": [
+      "Open the changed files for the Task.",
+      "Attach a review note to the relevant line.",
+      "Send the notes to the active agent and follow the update."
+    ],
+    "provenance": "Original desktop recording"
   },
   {
     "id": "full-file-review",
