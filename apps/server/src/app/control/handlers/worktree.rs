@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use super::super::super::AppState;
 use super::super::super::gates::ObservationPriority;
-use super::super::super::health::refresh_all_health_demands;
+use super::super::super::health::{HealthTrigger, refresh_all_health_demands};
 use super::super::super::invalidation::{
     InvalidationRequest, invalidate_automatic_git_host_task, publish_scoped_task_invalidation,
     publish_task_invalidation_now, queue_task_invalidation,
@@ -85,6 +85,11 @@ pub(in crate::app::control) async fn task_worktree_change_list(
     params: serde_json::Value,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
+    let task_id = params
+        .get("taskId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     let plan = {
         let core = state.core.lock().await;
         core.plan_task_worktree_change_list(params)?
@@ -92,14 +97,34 @@ pub(in crate::app::control) async fn task_worktree_change_list(
     let project_id = plan.project_id().to_owned();
     let permit = state
         .git_observation_gate
-        .acquire(project_id, ObservationPriority::Explicit)
+        .acquire(project_id.clone(), ObservationPriority::Explicit)
         .await?;
     let observed = tokio::task::spawn_blocking(move || plan.observe())
         .await
         .map_err(|error| CoreError::Store(format!("change list worker failed: {error}")))?;
     drop(permit);
-    let mut core = state.core.lock().await;
-    core.complete_task_worktree_change_list(observed)
+    let (result, target) = {
+        let mut core = state.core.lock().await;
+        let result = core.complete_task_worktree_change_list(observed)?;
+        let target = core
+            .task_worktree_watch_targets(&[project_id])
+            .into_iter()
+            .find(|target| target.task_id == task_id);
+        (result, target)
+    };
+    // Opening or refreshing Changes must also renew the sidebar's cached
+    // count when a filesystem notification was missed. Use the existing
+    // coalesced health lane: staged and unstaged entries can name one file.
+    if let Some(target) = target {
+        let _ = state
+            .health_triggers
+            .send(HealthTrigger::Target {
+                target,
+                unknown: false,
+            })
+            .await;
+    }
+    Ok(result)
 }
 
 pub(in crate::app::control) async fn task_worktree_diff(
