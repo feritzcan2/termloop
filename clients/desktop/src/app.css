@@ -1246,6 +1246,9 @@ button.task-signal.issue:hover { color: var(--warning); }
 .settings-nav button:has(small) { height: auto; min-height: 44px; padding-top: 7px; padding-bottom: 7px; }
 .settings-nav button small { display: block; margin-top: 4px; color: var(--text-secondary); font: 400 10px/1.3 var(--font-ui); }
 .settings-scope-label, .stage-editor-title .settings-scope-label { display: block; margin: 0 0 8px; color: var(--text-secondary); font: 500 11px/1.5 var(--font-ui); text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
+.library-scope-header { display: grid; gap: 3px; padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-secondary); font: 400 11px/1.5 var(--font-ui); overflow-wrap: anywhere; }
+.library-scope-header > strong { color: var(--sidebar-text); font-weight: 600; }
+.library-scope-header .settings-scope-label { margin: 0; }
 .settings-content { min-width: 0; overflow: auto; padding: 20px; }
 .settings-page-header { margin: 0 0 18px; }
 .settings-page-header h3 { margin: 0; color: var(--text); font: 600 15px/1.25 var(--font-ui); }
