@@ -1,0 +1,80 @@
+[
+  {
+    "id": "ask-to",
+    "group": "coordinate",
+    "label": "Ask To",
+    "title": "Get a second opinion without copy-paste.",
+    "description": "Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
+    "steps": [
+      "Open Agents > Ask to and choose a provider for the second opinion.",
+      "A visible helper Session receives the question and context.",
+      "The answer returns to the requesting agent."
+    ],
+    "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "handoff",
+    "group": "coordinate",
+    "label": "Handoff",
+    "title": "Move context to the agent already in the work.",
+    "description": "Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.",
+    "steps": [
+      "Open Agents > Handover to and choose an existing Session.",
+      "The current agent composes the request, findings, and next action.",
+      "The destination receives the handoff in its own terminal."
+    ],
+    "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "fork",
+    "group": "coordinate",
+    "label": "Session Fork",
+    "title": "Explore another direction in a real terminal.",
+    "description": "Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.",
+    "steps": [
+      "Choose a conversation to explore in a new direction.",
+      "Fork it from the Session menu.",
+      "Continue in a separate Session with visible parentage."
+    ],
+    "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "task-briefs",
+    "group": "run",
+    "label": "Tasks",
+    "title": "Keep the goal beside the work.",
+    "description": "Keep a clear brief, acceptance criteria and a small checklist attached to each Task.",
+    "steps": [
+      "Open the Task beside the real project tests.",
+      "Read the goal and acceptance criteria.",
+      "Mark completed checks without losing the Task context."
+    ],
+    "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "task-worktrees",
+    "group": "run",
+    "label": "Task Worktrees",
+    "title": "Give each change its own workspace.",
+    "description": "Create a branch and managed worktree directly from a Task. Keep parallel changes in separate checkouts.",
+    "steps": [
+      "Choose Create worktree on the Task.",
+      "Name a new branch and choose its base.",
+      "The Task now has its own branch and worktree."
+    ],
+    "provenance": "Launchpad Demo"
+  },
+  {
+    "id": "full-file-review",
+    "group": "review",
+    "label": "Code review",
+    "title": "Review changes where they happened.",
+    "description": "Read the diff, compare versions side by side and keep track of the files you have checked.",
+    "steps": [
+      "Open the changed files in the Project.",
+      "Use Full file and Split to compare code with its context.",
+      "Mark files reviewed and revisit them from the reviewed list."
+    ],
+    "provenance": "Launchpad Demo"
+  }
+]

@@ -1,0 +1,113 @@
+{
+  "id": "ask-to",
+  "duration": 17.2,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 516,
+  "audio": false,
+  "captureKind": "continuous-video",
+  "source": "ask-to.mkv",
+  "recordedAt": "2026-09-14",
+  "recoveredFrom": null,
+  "captureCursorRemoved": false,
+  "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836",
+  "sourceSeconds": 151.933,
+  "sourceFps": 30.0,
+  "sourceCoverage": [
+    0,
+    151.933
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 16.0,
+      "speed": 64
+    },
+    {
+      "start": 16.0,
+      "end": 20.0,
+      "speed": 5
+    },
+    {
+      "start": 20.0,
+      "end": 23.0,
+      "speed": 24
+    },
+    {
+      "start": 23.0,
+      "end": 28.0,
+      "speed": 3
+    },
+    {
+      "start": 28.0,
+      "end": 29.8,
+      "speed": 1
+    },
+    {
+      "start": 29.8,
+      "end": 64.2,
+      "speed": 56
+    },
+    {
+      "start": 64.2,
+      "end": 65.4,
+      "speed": 1
+    },
+    {
+      "start": 65.4,
+      "end": 111.0,
+      "speed": 36
+    },
+    {
+      "start": 111.0,
+      "end": 114.0,
+      "speed": 10
+    },
+    {
+      "start": 114.0,
+      "end": 117.0,
+      "speed": 1
+    },
+    {
+      "start": 117.0,
+      "end": 140.0,
+      "speed": 24
+    },
+    {
+      "start": 140.0,
+      "end": 145.0,
+      "speed": 1
+    },
+    {
+      "start": 145.0,
+      "end": 151.933,
+      "speed": 32
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 23.3,
+      "x": 230,
+      "y": 263,
+      "label": "Open Session menu",
+      "outputTime": 1.279785
+    },
+    {
+      "sourceTime": 28.25,
+      "x": 320,
+      "y": 478,
+      "label": "Agents menu",
+      "outputTime": 3.097519
+    },
+    {
+      "sourceTime": 64.4,
+      "x": 500,
+      "y": 533,
+      "label": "Ask To / Codex",
+      "outputTime": 5.458453
+    }
+  ],
+  "sha256": "e2958d3e7ef975adc2af900679b55689982ee93389c1a67519aae519787748cd",
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+}
