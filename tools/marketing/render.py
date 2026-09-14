@@ -1,45 +1,112 @@
 #!/usr/bin/env python3
-"""Caption continuous video recordings without discarding or stretching motion frames."""
+"""Render continuous 1080p demos with smooth time compression and click ripples."""
 import argparse
 import hashlib
 import json
 import os
 import subprocess
 import tempfile
-import textwrap
 from fractions import Fraction
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
-RECORDINGS = Path(os.environ.get('TERMLOOP_MARKETING_RECORDINGS', '/tmp/termloop-marketing-native-20260909'))
 OUTPUT = ROOT / 'landing/assets/videos/tour'
-WIDTH, HEIGHT, STAGE, FPS = 1920, 1248, 1080, 30
-FONT = os.environ.get('TERMLOOP_MARKETING_FONT', '/System/Library/Fonts/Supplemental/Arial.ttf')
-
-
-def run(*args):
-    subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
+FPS = 30
 
 
 def probe(path):
-    return json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_streams', '-show_format', '-of', 'json', str(path)]))
+    return json.loads(subprocess.check_output([
+        'ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)]))
 
 
-def caption(feature, step):
-    panel = Image.new('RGB', (WIDTH, HEIGHT-STAGE), '#121c29')
-    draw = ImageDraw.Draw(panel)
-    draw.rectangle((0, 0, WIDTH*(step+1)//3, 3), fill='#f0b860')
-    small = ImageFont.truetype(FONT, 29)
-    body = ImageFont.truetype(FONT, 36)
-    draw.text((46, 26), f'{step+1:02} / 03   {feature["label"].upper()}', font=small, fill='#f0b860')
-    draw.text((1680, 26), 'TERMLOOP', font=small, fill='#899bb3')
-    lines = textwrap.wrap(feature['steps'][step], width=92)
-    if len(lines) > 2:
-        raise ValueError(f'Caption too long: {feature["id"]}')
-    for i, line in enumerate(lines):
-        draw.text((46, 76+i*42), line, font=body, fill='#f4f6fa')
-    return panel
+def validate_source(source, expected_hash):
+    if not source.is_file():
+        raise FileNotFoundError(f'{source}: a continuous video recording is required')
+    info = probe(source)
+    video = next(s for s in info['streams'] if s['codec_type'] == 'video')
+    rate = float(Fraction(video['avg_frame_rate']))
+    if rate < 29.9:
+        raise ValueError('Capture rate is too low; record at 30 fps')
+    if rate > 30.1:
+        raise ValueError('Capture exceeds 30 fps; do not silently discard motion frames')
+    if (video['width'], video['height']) != (1920, 1080):
+        raise ValueError('A native 1920 × 1080 recording is required; do not upscale')
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if digest != expected_hash:
+        raise ValueError('Source checksum differs from the reviewed take')
+    return float(info['format']['duration']), rate
+
+
+class TimeMap:
+    """Integrate smooth inverse-speed ramps, keeping source time strictly ordered."""
+    def __init__(self, duration, runs):
+        self.spans = []
+        start = 0.0
+        for end, speed in runs:
+            end = duration if end is None else float(end)
+            if not start < end <= duration or not 1 <= speed <= 128:
+                raise ValueError('Speed map must increase continuously within the source')
+            self.spans.append({'start': start, 'end': end, 'speed': speed})
+            start = end
+        if not self.spans or abs(start - duration) > 1e-6:
+            raise ValueError('Speed map must cover the entire selected recording')
+        self.pieces = []
+        cursor = 0.0
+        previous = 1 / self.spans[0]['speed']
+        for left, right in zip(self.spans, self.spans[1:]):
+            boundary = left['end']
+            half = min(.6, (left['end']-left['start'])/4, (right['end']-right['start'])/4)
+            if boundary-half > cursor:
+                self.pieces.append((cursor, boundary-half, previous, previous))
+            following = 1 / right['speed']
+            self.pieces.append((boundary-half, boundary+half, previous, following))
+            cursor, previous = boundary+half, following
+        self.pieces.append((cursor, duration, previous, previous))
+
+    def mapped(self, time):
+        result = 0.0
+        for a, b, r0, r1 in self.pieces:
+            u = max(0.0, min(1.0, (time-a)/(b-a)))
+            result += (b-a)*(r0*u+(r1-r0)*(u**3-.5*u**4))
+        return result
+
+    def expression(self):
+        terms = []
+        for a, b, r0, r1 in self.pieces:
+            length = b-a
+            u = f'clip((T-{a:.9f})/{length:.9f},0,1)'
+            if r0 == r1:
+                terms.append(f'clip(T-{a:.9f},0,{length:.9f})*{r0:.12f}')
+            else:
+                terms.append(f'{length:.9f}*({r0:.12f}*({u})+{r1-r0:.12f}*(pow({u},3)-0.5*pow({u},4)))')
+        return '+'.join(terms)
+
+
+def filters_for(timing, clicks, source_end, remove_capture_cursor=False):
+    # Remove the recorder's stationary coordinate cursor from an empty corner.
+    cleanup = 'delogo=x=1558:y=940:w=66:h=47:show=0,' if remove_capture_cursor else ''
+    filters = [f"[0:v]{cleanup}trim=end={source_end},setpts=PTS-STARTPTS,setpts='({timing.expression()})/TB',fps={FPS},format=yuv420p[retimed]"]
+    previous = 'retimed'
+    for i, click in enumerate(clicks):
+        if not 0 <= click['sourceTime'] < source_end:
+            raise ValueError('Click falls outside the recording')
+        if not 0 <= click['x'] <= 1920 or not 0 <= click['y'] <= 1080:
+            raise ValueError('Click falls outside the window')
+        time = timing.mapped(click['sourceTime'])
+        click['outputTime'] = round(time, 6)
+        distance = '(X-64)*(X-64)+(Y-64)*(Y-64)'
+        ring = f'if(lt(abs(sqrt({distance})-(8+20*T/0.45)),2.2),210,0)'
+        core = f'if(lt(T,0.1)*lt({distance},16),170,0)'
+        glow = f'14*exp(-({distance})/(2*24*24))'
+        filters.append(
+            f"color=c=black:s=128x128:r={FPS}:d=0.45,format=rgba,"
+            f"geq=r='172':g='239':b='227':a='max({glow},{ring}+{core})',"
+            f"fade=t=in:st=0:d=0.033333:alpha=1,fade=t=out:st=0.1:d=0.35:alpha=1,"
+            f"setpts=PTS-STARTPTS+{max(0,time-.04):.9f}/TB[click{i}]")
+        filters.append(f'[{previous}][click{i}]overlay={click["x"]-64}:{click["y"]-64}:eof_action=pass:repeatlast=0[v{i}]')
+        previous = f'v{i}'
+    filters.append(f'[{previous}]format=yuv420p[final]')
+    return ';\n'.join(filters)+'\n'
 
 
 def stamp(seconds):
@@ -47,56 +114,67 @@ def stamp(seconds):
     return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02}.{ms%1000:03}'
 
 
-def render(feature, webm=True):
-    source = ROOT/'landing'/feature['source'] if feature['legacy'] else RECORDINGS/f'{feature["id"]}.mp4'
-    if not source.is_file():
-        raise FileNotFoundError(f'{source}: a continuous video recording is required; PNG frame sequences are not accepted')
-    info = probe(source)
-    source_duration = float(info['format']['duration'])
-    source_fps = float(Fraction(info['streams'][0]['avg_frame_rate']))
-    if source_fps < (15 if feature['legacy'] else 29):
-        raise ValueError(f'{source}: capture rate {source_fps:.2f} FPS is too low; record again')
-    if source_fps > FPS + .1:
-        raise ValueError(f'{source}: capture exceeds {FPS} FPS; do not silently discard motion frames')
-    # Motion always runs at its recorded speed. Only the first/last stills are held.
-    orientation = .75
-    result_hold = max(1.75, 9-source_duration-orientation) if feature['legacy'] else 1.75
-    total = source_duration+orientation+result_hold
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='termloop-tour-') as temporary:
-        workspace = Path(temporary)
-        inputs = ['-i', str(source)]
-        for step in range(3):
-            panel = workspace/f'caption-{step}.png'
-            caption(feature, step).save(panel)
-            inputs += ['-loop', '1', '-framerate', '1', '-i', str(panel)]
-        filters = [f'[0:v]fps={FPS},scale={WIDTH}:{STAGE}:force_original_aspect_ratio=decrease:flags=lanczos,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:({STAGE}-ih)/2:color=0x080d15,setsar=1,tpad=start_mode=clone:start_duration={orientation}:stop_mode=clone:stop_duration={result_hold}[base]']
-        for step in range(3):
-            previous = 'base' if step == 0 else f'captioned{step-1}'
-            filters.append(f"[{previous}][{step+1}:v]overlay=0:{STAGE}:enable='gte(t,{step*total/3})*lt(t,{(step+1)*total/3})'[captioned{step}]")
-        target = OUTPUT/feature['id']
-        run('ffmpeg', '-v', 'error', '-y', *inputs, '-filter_complex', ';'.join(filters), '-map', '[captioned2]', '-t', str(total), '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', str(target.with_suffix('.mp4')))
-        if webm:
-            run('ffmpeg', '-v', 'error', '-y', '-i', str(target.with_suffix('.mp4')), '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '28', '-row-mt', '1', '-cpu-used', '4', '-an', str(target.with_suffix('.webm')))
-        run('ffmpeg', '-v', 'error', '-y', '-ss', str(total-.25), '-i', str(target.with_suffix('.mp4')), '-frames:v', '1', '-q:v', '2', '-update', '1', str(target.with_suffix('.jpg')))
-        target.with_suffix('.vtt').write_text('WEBVTT\n\n'+''.join(f'{i+1}\n{stamp(i*total/3)} --> {stamp((i+1)*total/3)}\n{text}\n\n' for i, text in enumerate(feature['steps'])).rstrip()+'\n')
-        qa = Path(os.environ.get('TERMLOOP_MARKETING_QA', '/tmp/termloop-marketing-native-qa-20260909'))
-        qa.mkdir(parents=True, exist_ok=True)
-        run('ffmpeg', '-v', 'error', '-y', '-i', str(target.with_suffix('.mp4')), '-vf', f'fps={3/total},scale=400:260,tile=3x1', '-frames:v', '1', '-update', '1', str(qa/f'{feature["id"]}.jpg'))
-        report = {'id': feature['id'], 'duration': float(probe(target.with_suffix('.mp4'))['format']['duration']), 'sourceSeconds': source_duration, 'sourceFps': source_fps, 'motionSpeed': 1, 'size': target.with_suffix('.mp4').stat().st_size, 'sha256': hashlib.sha256(target.with_suffix('.mp4').read_bytes()).hexdigest(), 'width': WIDTH, 'height': HEIGHT, 'fps': FPS, 'captionSteps': 3, 'legacy': feature['legacy'], 'captureKind': 'continuous-video'}
-        target.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n')
-        print(json.dumps(report), flush=True)
+def render(feature, edit, recordings, output=OUTPUT):
+    source = recordings / edit['source']
+    source_duration, source_fps = validate_source(source, edit['sourceSha256'])
+    end = edit.get('sourceEnd', source_duration)
+    if not 0 < end <= source_duration:
+        raise ValueError('Invalid source endpoint')
+    timing = TimeMap(end, edit['runs'])
+    clicks = [dict(c) for c in edit['clicks']]
+    if len(edit['stepsAt']) != len(feature['steps']):
+        raise ValueError('Each written step needs a source-time anchor')
+    anchors = [timing.mapped(t) for t in edit['stepsAt']]
+    if anchors != sorted(anchors) or any(t < 0 or t >= end for t in edit['stepsAt']):
+        raise ValueError('Step anchors must follow the recording')
+    output.mkdir(parents=True, exist_ok=True)
+    target = output / feature['id']
+    with tempfile.TemporaryDirectory(prefix='termloop-retime-') as temporary:
+        graph = Path(temporary)/'retime.ffmpeg'
+        graph.write_text(filters_for(timing, clicks, end, edit.get('removeCaptureCursor', False)))
+        staged = Path(temporary)/'demo.mp4'
+        subprocess.run(['ffmpeg','-v','error','-y','-i',str(source),
+            '-filter_complex_script',str(graph),'-map','[final]','-an',
+            '-c:v','libx264','-preset','slow','-crf','17','-threads','4',
+            '-r',str(FPS),'-fps_mode','cfr','-movflags','+faststart',str(staged)], check=True)
+        info = probe(staged)
+        duration = float(info['format']['duration'])
+        video = info['streams'][0]
+        target.with_suffix('.mp4').write_bytes(staged.read_bytes())
+    subprocess.run(['ffmpeg','-v','error','-y','-ss',str(timing.mapped(edit['posterAt'])),
+        '-i',str(target.with_suffix('.mp4')),'-frames:v','1','-q:v','2','-update','1',
+        str(target.with_suffix('.jpg'))], check=True)
+    anchors[0] = 0
+    ends = anchors[1:] + [duration]
+    target.with_suffix('.vtt').write_text('WEBVTT\n\n'+''.join(
+        f'{i+1}\n{stamp(a)} --> {stamp(b)}\n{text}\n\n'
+        for i,(a,b,text) in enumerate(zip(anchors, ends, feature['steps']))))
+    report = {'id':feature['id'], 'duration':duration, 'width':1920, 'height':1080,
+        'fps':FPS, 'frames':int(video['nb_frames']), 'audio':False,
+        'captureKind':'continuous-video', 'source':edit['source'],
+        'recordedAt':edit['recordedAt'], 'recoveredFrom':edit.get('recoveredFrom'),
+        'captureCursorRemoved':edit.get('removeCaptureCursor', False),
+        'sourceSha256':edit['sourceSha256'], 'sourceSeconds':source_duration,
+        'sourceFps':source_fps, 'sourceCoverage':[0,end], 'speedMap':timing.spans,
+        'clicks':clicks, 'sha256':hashlib.sha256(target.with_suffix('.mp4').read_bytes()).hexdigest(),
+        'editing':'Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights.'}
+    target.with_suffix('.json').write_text(json.dumps(report,indent=2)+'\n')
+    print(f'{feature["id"]}: {duration:.2f}s, 1920×1080, {FPS} fps, {len(clicks)} clicks', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--recordings', type=Path, default=os.environ.get('TERMLOOP_MARKETING_RECORDINGS'))
+    parser.add_argument('--only', nargs='+')
+    args = parser.parse_args()
+    if args.recordings is None:
+        parser.error('Pass --recordings or set TERMLOOP_MARKETING_RECORDINGS')
+    catalog = json.loads((ROOT/'tools/marketing/catalog.json').read_text())
+    edits = json.loads((ROOT/'tools/marketing/edits.json').read_text())
+    for feature in catalog:
+        if not args.only or feature['id'] in args.only:
+            render(feature, edits[feature['id']], Path(args.recordings))
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--only', nargs='*')
-    parser.add_argument('--legacy-only', action='store_true')
-    parser.add_argument('--mp4-only', action='store_true')
-    args = parser.parse_args()
-    for feature in json.loads((ROOT/'tools/marketing/catalog.json').read_text()):
-        if args.only and feature['id'] not in args.only:
-            continue
-        if args.legacy_only and not feature['legacy']:
-            continue
-        render(feature, webm=not args.mp4_only)
+    main()
