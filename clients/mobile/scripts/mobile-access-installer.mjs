@@ -533,7 +533,7 @@ After=network-online.target
 [Service]
 Type=simple
 ${electronRunAsNode ? "Environment=ELECTRON_RUN_AS_NODE=1\n" : ""}ExecStart=${systemdQuote(nodeExecutable)} ${systemdQuote(gatewayScript)} ${systemdQuote(configFile)}
-WorkingDirectory=${systemdQuote(stateDirectory)}
+WorkingDirectory=${systemdPath(stateDirectory)}
 Restart=always
 RestartSec=2
 UMask=0077
@@ -615,8 +615,14 @@ function xml(value) {
 }
 
 function systemdQuote(value) {
+  return `"${systemdPath(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+// WorkingDirectory is a single path, not an ExecStart argument list: quotes
+// would become part of the path. Both settings still expand unit specifiers.
+function systemdPath(value) {
   if (/[\r\n]/.test(value)) throw new Error("systemd service paths cannot contain newlines.");
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
+  return value.replaceAll("%", "%%");
 }
 
 function delay(ms) {
