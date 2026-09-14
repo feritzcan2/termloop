@@ -1,10 +1,13 @@
+import type { SettingsScopeContext } from "../settings-scope.js";
+import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useState, type FormEvent } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry } from "@termloop/contract/current";
 import { agentDraft, type AgentDraft, type AgentLibraryController } from "../agent-library.js";
 import { permissionLabel, type QuickActionPermission } from "../quick-action-memory.js";
 import { Icon } from "./Icon.js";
 
-export function AgentProfilePanel({ profile, duplicate, library, capabilities, canRun, open, copy, run, close }: {
+export function AgentProfilePanel({ scopeContext, profile, duplicate, library, capabilities, canRun, open, copy, run, close }: {
+  scopeContext?: SettingsScopeContext | undefined;
   profile: AgentLibraryEntry | undefined;
   duplicate: boolean;
   library: AgentLibraryController;
@@ -55,7 +58,7 @@ export function AgentProfilePanel({ profile, duplicate, library, capabilities, c
     if ((event.metaKey || event.ctrlKey) && event.key === "s") { event.preventDefault(); save(); }
   }}>
     <header className="stage-editor-head">
-      <div className="stage-editor-title"><span>{creating ? "My agents" : profile.source === "builtIn" ? "Built-in agent" : "My agents"}</span><h2>{creating ? "Create agent" : profile.name}</h2><p>{creating ? "Save a role you can use across projects." : profile.description}</p></div>
+      <div className="stage-editor-title"><SettingsScopeLabel context={scopeContext} /><span>{creating ? "My agents" : profile.source === "builtIn" ? "Built-in agent" : "My agents"}</span><h2>{creating ? "Create agent" : profile.name}</h2><p>{creating ? "Save a role you can use across projects." : profile.description}</p></div>
       <div className="stage-editor-actions">
         {!creating ? <>
           <button className="secondary-button" type="button" aria-label={profile.favorite ? "Remove agent from favorites" : "Add agent to favorites"} aria-pressed={profile.favorite} disabled={busy || revision === undefined} onClick={() => void act(() => library.favorite(profile.id, !profile.favorite, revision!))}>{profile.favorite ? "★ Favorited" : "☆ Favorite"}</button>

@@ -12,6 +12,7 @@ import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
 import { onProjectionInvalidated } from "../transport/projection-events.js";
 import { onConnectionStatus } from "../transport/connection-events.js";
+import { useSettingsComputers } from "./use-settings-computers.js";
 import { onAgentAttentionActivated } from "../transport/agent-attention.js";
 import {
   layoutPreservationProfileIds,
@@ -715,6 +716,11 @@ export function DesktopApp() {
     terminalPool.setVisible(nativeTerminalSurfaceVisible(shellTerminalOccluded, nativeOverlayActive));
   }, [nativeOverlayActive, shellTerminalOccluded]);
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
+  const settingsComputers = useSettingsComputers();
+  const computerKeepAwake = useMemo(() => ({
+    load: (profileId: string) => desktopApi.source(profileId).keepAwakeGet(),
+    save: (profileId: string, params: Parameters<SourceDesktopApi["keepAwakeSet"]>[0]) => desktopApi.source(profileId).keepAwakeSet(params),
+  }), []);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
@@ -928,7 +934,7 @@ export function DesktopApp() {
       // The daemon takes and releases the hold on its own as agents come and
       // go, so the footer control follows its projection rather than assuming
       // its own last write is still current.
-      if (selectedSourceMatches && payload.topics.includes("keepAwake")) {
+      if (payload.topics.includes("keepAwake")) {
         setKeepAwakeRefreshToken((current) => current + 1);
       }
       // Task Source observations and the Project-owned defaults used by import
@@ -2403,7 +2409,9 @@ export function DesktopApp() {
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
       agentConnections={agentConnections}
-      listConnectionProfiles={desktopApi.connectionProfileList}
+      connectionProfiles={settingsComputers.profiles}
+      computerKeepAwake={{ ...computerKeepAwake, refreshToken: keepAwakeRefreshToken }}
+      listConnectionProfiles={settingsComputers.list}
       sshSetup={{
         current: desktopApi.sshSetupCurrent,
         start: desktopApi.sshSetupStart,
@@ -2426,11 +2434,13 @@ export function DesktopApp() {
       setConnectionProfileEnabled={async (profileId, enabled) => {
         const profiles = await desktopApi.connectionProfileSetEnabled(profileId, enabled);
         await refreshProjection();
+        await settingsComputers.list();
         return profiles;
       }}
       removeConnectionProfile={async (profileId) => {
         const profiles = await desktopApi.connectionProfileRemove(profileId);
         await refreshProjection();
+        await settingsComputers.list();
         return profiles;
       }}
       subscribeConnectionStatus={onConnectionStatus}
@@ -2603,7 +2613,6 @@ export function DesktopApp() {
       setTerminalOccluded={setShellTerminalOccluded}
       subscribeNativeShellShortcut={ghosttyBridge.onShellShortcut}
       setNativeOverlayOpen={setShellNativeOverlayOpen}
-      setNativeOverlaySuppressed={setShellNativeOverlaySuppressed}
       overlayContainer={nativeOverlayContainer}
       openSessionInSplit={openSessionInSplit}
       openSessionInSplitAtPane={openSessionInSplitAtPane}
