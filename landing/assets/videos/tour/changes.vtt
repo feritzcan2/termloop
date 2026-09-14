@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:05.833
-Open the changed files for the checkout.
+00:00:00.000 --> 00:00:04.000
+Open the changed files for the Task.
 
 2
-00:00:05.833 --> 00:00:11.667
-Read the diff and attach a note to a relevant line.
+00:00:04.000 --> 00:00:10.000
+Attach a review note to the relevant line.
 
 3
-00:00:11.667 --> 00:00:17.500
-Send review notes to the selected active agent.
+00:00:10.000 --> 00:00:15.000
+Send the notes to the active agent and follow the update.

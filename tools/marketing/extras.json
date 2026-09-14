@@ -1,0 +1,50 @@
+[
+  {
+    "id": "keep-awake",
+    "label": "Keep Awake",
+    "description": "Keep the computer awake while agents work. Add a timer, or keep the display on too.",
+    "preview": "While agents run",
+    "hint": "Keep the work moving",
+    "docAnchor": "keep-awake"
+  },
+  {
+    "id": "terminal-reading",
+    "label": "Pause to Read",
+    "description": "Freeze the terminal view to read the output. The Session keeps running in the background.",
+    "preview": "Reading paused",
+    "hint": "Session keeps running",
+    "docAnchor": "pause-to-read"
+  },
+  {
+    "id": "task-favorites",
+    "label": "Task Favorites",
+    "description": "Star the Tasks that matter, so priority work is easy to spot in the Project.",
+    "preview": "Release polish",
+    "hint": "Marked as a favorite",
+    "docAnchor": "task-favorites"
+  },
+  {
+    "id": "developer-notes",
+    "label": "Developer Notes",
+    "description": "Keep a small checklist beside each Task and tick off the checks as you finish them.",
+    "preview": "Tests pass",
+    "hint": "One more check done",
+    "docAnchor": "developer-notes"
+  },
+  {
+    "id": "notifications",
+    "label": "Notifications",
+    "description": "Choose which input requests and review alerts reach your desktop, iPhone and Apple Watch.",
+    "preview": "Ready for review",
+    "hint": "On the devices you choose",
+    "docAnchor": "notification-preferences"
+  },
+  {
+    "id": "appearance",
+    "label": "Appearance",
+    "description": "Choose Light, Dark or System. Your terminal panes follow the workspace theme.",
+    "preview": "Light · Dark · System",
+    "hint": "A workspace that feels right",
+    "docAnchor": "appearance"
+  }
+]

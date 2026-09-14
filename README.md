@@ -13,13 +13,19 @@
   <a href="docs/development.md">Build from source</a>
 </p>
 
-Six short loops from a populated demo Project. Click a preview for the 1080p video, playback controls and written steps.
+Eight short loops from real Projects. Click a preview for the 1080p video, playback controls and written steps.
 
 ### Ask To — Get a second opinion without copy-paste.
 
 Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
 
 <a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif" alt="Ask To: The answer returns to the requesting agent." width="960"></a>
+
+### Quick Actions — From a prompt to a running agent.
+
+Open Quick Actions, write the request and launch an agent with the right context.
+
+<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
 
 ### Handoff — Move context to the agent already in the work.
 
@@ -45,15 +51,34 @@ Create a branch and managed worktree directly from a Task. Keep parallel changes
 
 <a href="https://termloop.ai/#task-worktrees"><img src="artifacts/marketing/readme/task-worktrees.gif" alt="Task Worktrees: The Task now has its own branch and worktree." width="960"></a>
 
+### Changes — Turn review notes into the next change.
+
+Open the diff, leave a note on a line and send the review to a running agent.
+
+<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif" alt="Changes: Send the notes to the active agent and follow the update." width="960"></a>
+
 ### Code review — Review changes where they happened.
 
 Read the diff, compare versions side by side and keep track of the files you have checked.
 
 <a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif" alt="Code review: Mark files reviewed and revisit them from the reviewed list." width="960"></a>
 
+### Useful every day
+
+Small controls that stay close to the work.
+
+| Feature | What it helps with |
+| --- | --- |
+| [Keep Awake](docs/features.md#keep-awake) | Keep the computer awake while agents work. Add a timer, or keep the display on too. |
+| [Pause to Read](docs/features.md#pause-to-read) | Freeze the terminal view to read the output. The Session keeps running in the background. |
+| [Task Favorites](docs/features.md#task-favorites) | Star the Tasks that matter, so priority work is easy to spot in the Project. |
+| [Developer Notes](docs/features.md#developer-notes) | Keep a small checklist beside each Task and tick off the checks as you finish them. |
+| [Notifications](docs/features.md#notification-preferences) | Choose which input requests and review alerts reach your desktop, iPhone and Apple Watch. |
+| [Appearance](docs/features.md#appearance) | Choose Light, Dark or System. Your terminal panes follow the workspace theme. |
+
 Also included: multiple live agents, mobile terminal access, Project Steward, reusable workflows, Context Bank, skills, MCP tools and notifications. Explore the [complete feature guide](docs/features.md).
 
-The GIFs follow the same timing as the website videos, with visible clicks and smoothly accelerated waits. Website demos loop silently when visible and respect reduced-motion preferences.
+The GIFs follow the same timing as the website videos. Quick Actions and Changes keep their original edits; the six September edits use visible clicks and smoothly accelerated waits. Website demos loop silently when visible and respect reduced-motion preferences.
 
 ## Start using TermLoop
 
