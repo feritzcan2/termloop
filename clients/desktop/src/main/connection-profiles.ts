@@ -98,7 +98,7 @@ export class ConnectionProfileStore {
   }
 
   async list(): Promise<ConnectionProfileSummary[]> {
-    await this.#mutationTail;
+    // Readers use the last committed snapshot while connection setup is in flight.
     await this.#load();
     return this.#summaries();
   }
@@ -138,14 +138,14 @@ export class ConnectionProfileStore {
       throw new Error("connection profile limit reached");
     }
     this.#assertCanEnable("new-profile");
-    const temporaryId = `connect-${randomUUID()}`;
-    const baseUrl = await this.#transportBaseUrl(temporaryId, input.transport);
     const keys = generateKeyPairSync("ed25519");
     const publicKey = keys.publicKey.export({ format: "jwk" });
     const privateKey = keys.privateKey.export({ format: "jwk" });
     if (!publicKey.x) throw new Error("generated device public key is unavailable");
+    const temporaryId = `connect-${randomUUID()}`;
     let enrolled: AccessEnrolled;
     try {
+      const baseUrl = await this.#transportBaseUrl(temporaryId, input.transport);
       enrolled = await enrollDevice(
         accessEndpoint(baseUrl, "enroll"),
         this.#deviceName,
@@ -244,7 +244,6 @@ export class ConnectionProfileStore {
   }
 
   async remoteConfig(profileId: string): Promise<RemoteConnectionConfig> {
-    await this.#mutationTail;
     await this.#load();
     if (!this.#isEnabled(profileId)) throw new Error("connection profile is disabled");
     const session = this.#sessionProfiles.get(profileId);
@@ -270,13 +269,11 @@ export class ConnectionProfileStore {
   }
 
   async enabledSourceIds(): Promise<string[]> {
-    await this.#mutationTail;
     await this.#load();
     return ["local", ...this.#stored.enabledProfileIds, ...this.#enabledSessionProfileIds];
   }
 
   async layoutMigrationProfileId(): Promise<string> {
-    await this.#mutationTail;
     await this.#load();
     return this.#layoutMigrationProfileId;
   }

@@ -1,7 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
+import { devNull } from "node:os";
 
 const MAX_LOCAL_PORT_ATTEMPTS = 3;
+let foregroundOptionSupport: Promise<boolean> | undefined;
 
 export type SshTunnelRequest = {
   host: string;
@@ -17,7 +19,9 @@ export type SshTunnelProcess = {
 
 export class SshRuntimeError extends Error {
   constructor(
-    readonly code: "sshUnavailable" | "sshHostKeyMismatch" | "sshForwardFailed",
+    readonly code: "sshUnavailable" | "sshHostKeyMismatch" | "sshHostKeyUnknown"
+      | "sshHostKeyRejected" | "sshAuthenticationFailed" | "sshHostUnresolved"
+      | "sshReadinessTimedOut" | "sshForwardFailed",
     message: string,
   ) {
     super(message);
@@ -26,9 +30,12 @@ export class SshRuntimeError extends Error {
 }
 
 export async function spawnSshTunnel(request: SshTunnelRequest): Promise<SshTunnelProcess> {
+  // Validate before starting even the capability probe.
+  sshTunnelArgs(request, 1);
+  const supportsForegroundOption = await supportsForkAfterAuthentication();
   for (let attempt = 1; attempt <= MAX_LOCAL_PORT_ATTEMPTS; attempt += 1) {
     const localPort = await reserveLoopbackPort();
-    const child = spawn("ssh", sshTunnelArgs(request, localPort), {
+    const child = spawn("ssh", sshTunnelArgs(request, localPort, supportsForegroundOption), {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -37,22 +44,81 @@ export async function spawnSshTunnel(request: SshTunnelRequest): Promise<SshTunn
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${String(chunk)}`.slice(-8_192);
     });
+    // Register before exit: Node may deliver the final stderr bytes after exit.
+    let closed = false;
+    const onClose = () => { closed = true; };
+    child.once("close", onClose);
     try {
       await waitForTunnel(child, localPort);
       return runningTunnel(child, localPort);
     } catch (error) {
       child.kill();
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new SshRuntimeError("sshUnavailable", "OpenSSH client is not installed or is not on PATH");
-      }
-      if (/host key verification failed|remote host identification has changed/i.test(stderr)) {
-        throw new SshRuntimeError("sshHostKeyMismatch", "SSH host key verification failed; verify and update the host key outside TermLoop");
-      }
+      if (!closed) await waitForProcessClose(child);
+      const classified = classifySshFailure(error, stderr);
+      if (classified) throw classified;
       if (attempt < MAX_LOCAL_PORT_ATTEMPTS && isSshLocalForwardBindFailure(stderr)) continue;
       throw new SshRuntimeError("sshForwardFailed", "SSH port forwarding could not be established");
+    } finally {
+      child.off("close", onClose);
     }
   }
   throw new SshRuntimeError("sshForwardFailed", "SSH port forwarding could not be established");
+}
+
+function supportsForkAfterAuthentication(): Promise<boolean> {
+  foregroundOptionSupport ??= new Promise<boolean>((resolve, reject) => {
+    // -G does not connect; an empty config also avoids user Match exec commands.
+    // The option was added in OpenSSH 8.7. Older clients cannot enable it either.
+    execFile("ssh", ["-G", "-F", devNull, "-o", "ForkAfterAuthentication=no", "-N", "probe.invalid"], {
+      windowsHide: true,
+      timeout: 2_000,
+      maxBuffer: 256 * 1024,
+    }, (error, _stdout, stderr) => {
+      if (!error) resolve(true);
+      else if (/bad configuration option:\s*forkafterauthentication\b/i.test(stderr)) resolve(false);
+      else reject(classifySshFailure(error, stderr)
+        ?? new SshRuntimeError("sshForwardFailed", "OpenSSH client configuration could not be checked"));
+    });
+  }).catch((error) => {
+    foregroundOptionSupport = undefined;
+    throw error;
+  });
+  return foregroundOptionSupport;
+}
+
+function classifySshFailure(error: unknown, stderr: string): SshRuntimeError | undefined {
+  if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+    return new SshRuntimeError("sshUnavailable", "OpenSSH client is not installed or is not on PATH");
+  }
+  if (/remote host identification has changed|offending .* key in/i.test(stderr)) {
+    return new SshRuntimeError("sshHostKeyMismatch", "SSH host key changed; verify the server identity before updating its trusted key outside TermLoop");
+  }
+  if (/no .* host key is known for .*strict checking/i.test(stderr)) {
+    return new SshRuntimeError("sshHostKeyUnknown", "SSH host key is not trusted yet; verify and trust this server using OpenSSH outside TermLoop");
+  }
+  if (/host key verification failed/i.test(stderr)) {
+    return new SshRuntimeError("sshHostKeyRejected", "SSH host key could not be verified; check the server identity and trusted keys outside TermLoop");
+  }
+  if (/permission denied \(|too many authentication failures/i.test(stderr)) {
+    return new SshRuntimeError("sshAuthenticationFailed", "SSH authentication failed; check the user and SSH key, and unlock or load the key in your SSH agent");
+  }
+  if (/could not resolve hostname/i.test(stderr)) {
+    return new SshRuntimeError("sshHostUnresolved", "SSH host could not be resolved; check the host name, SSH configuration, and network connection");
+  }
+  if (error instanceof SshRuntimeError) return error;
+  return undefined;
+}
+
+async function waitForProcessClose(child: ChildProcess): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      child.off("close", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 250);
+    child.once("close", finish);
+  });
 }
 
 function runningTunnel(child: ChildProcess, localPort: number): SshTunnelProcess {
@@ -84,7 +150,7 @@ export function isSshLocalForwardBindFailure(stderr: string): boolean {
   return /address already in use|cannot listen to port|could not request local forwarding/i.test(stderr);
 }
 
-export function sshTunnelArgs(request: SshTunnelRequest, localPort: number): string[] {
+export function sshTunnelArgs(request: SshTunnelRequest, localPort: number, supportsForegroundOption = false): string[] {
   if (!Number.isSafeInteger(localPort) || localPort < 1 || localPort > 65_535) {
     throw new Error("SSH local port is invalid");
   }
@@ -106,6 +172,11 @@ export function sshTunnelArgs(request: SshTunnelRequest, localPort: number): str
     "-o", "BatchMode=yes",
     "-o", "ExitOnForwardFailure=yes",
     "-o", "StrictHostKeyChecking=yes",
+    // Keep the forward owned by this foreground child, even with user multiplexing.
+    "-o", "ControlMaster=no",
+    "-o", "ControlPath=none",
+    "-o", "ControlPersist=no",
+    ...(supportsForegroundOption ? ["-o", "ForkAfterAuthentication=no"] : []),
     "-o", "ServerAliveInterval=15",
     "-o", "ServerAliveCountMax=3",
     "-L", `127.0.0.1:${localPort}:127.0.0.1:${request.remotePort}`,
@@ -131,29 +202,31 @@ async function reserveLoopbackPort(): Promise<number> {
 
 async function waitForTunnel(child: ChildProcess, localPort: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const deadline = Date.now() + 10_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let socket: net.Socket | undefined;
     let settled = false;
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      clearTimeout(deadline);
+      socket?.destroy();
       child.off("error", fail);
       child.off("exit", exited);
       error ? reject(error) : resolve();
     };
     const fail = (error: Error) => finish(error);
     const exited = () => finish(new Error("ssh exited before the forward became ready"));
+    const deadline = setTimeout(() => finish(new SshRuntimeError(
+      "sshReadinessTimedOut",
+      "SSH connection timed out before port forwarding was ready; check the server and network connection",
+    )), 10_000);
     const probe = () => {
       if (settled) return;
-      if (Date.now() >= deadline) {
-        finish(new Error("ssh forward readiness timed out"));
-        return;
-      }
-      const socket = net.connect({ host: "127.0.0.1", port: localPort });
-      socket.once("connect", () => { socket.destroy(); finish(); });
+      socket = net.connect({ host: "127.0.0.1", port: localPort });
+      socket.once("connect", () => finish());
       socket.once("error", () => {
-        socket.destroy();
+        socket?.destroy();
         if (settled) return;
         timer = setTimeout(probe, 100);
       });
