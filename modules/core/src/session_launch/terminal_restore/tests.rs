@@ -465,7 +465,12 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
         }
     })
     .await
-    .expect("the fresh shell did not execute new user input");
+    .unwrap_or_else(|_| {
+        panic!(
+            "the fresh shell did not execute new user input; received {:?}",
+            String::from_utf8_lossy(&bytes)
+        )
+    });
     // No periodic checkpoint happened yet. Graceful shutdown must capture the
     // final directory before killing the shell and retain its drained output.
     fixture.core.terminal.terminate_all().unwrap();
