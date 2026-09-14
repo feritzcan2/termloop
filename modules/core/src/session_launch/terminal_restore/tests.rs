@@ -424,35 +424,16 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
     std::fs::create_dir(&changed_directory).unwrap();
     // Exercise real OS shell output and cwd changes without emulating an
     // interactive line editor. Restart below still resolves the default shell.
-    let (program, args): (String, Vec<String>) = if cfg!(windows) {
-        // A batch file avoids PowerShell's interactive console startup. Report
-        // the shell's actual cwd using the same OSC contract as our prompt hook:
-        // Windows has no process_working_directory implementation.
-        let script = fixture.root.join("history-fixture.cmd");
-        std::fs::write(
-            &script,
-            "@echo off\r\ncd /d \"%~dp0changed\"\r\nif errorlevel 1 exit /b 1\r\n\
-             echo \x1b]9;9;%CD%\x07\r\necho TL_SHELL_HISTORY_EXECUTED\r\n",
-        )
-        .unwrap();
-        (
-            "cmd.exe".into(),
-            vec![
-                "/D".into(),
-                "/Q".into(),
-                "/K".into(),
-                script.display().to_string(),
-            ],
-        )
-    } else {
-        (
-            "/bin/sh".into(),
-            vec![
-                "-c".into(),
-                "cd changed && printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED && read -r reply".into(),
-            ],
-        )
-    };
+    // The batch fixture reports its real cwd through the prompt hook's OSC
+    // contract, because Windows cannot observe process cwd directly.
+    let (program, args) = termloop_platform::test_support::persistent_shell_fixture(
+        &fixture.root,
+        "history-fixture",
+        "cd changed && printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED && read -r reply",
+        "@echo off\r\ncd /d \"%~dp0changed\"\r\nif errorlevel 1 exit /b 1\r\n\
+         echo \x1b]9;9;%CD%\x07\r\necho TL_SHELL_HISTORY_EXECUTED\r\n",
+    )
+    .unwrap();
     let process = ProcessDescriptor {
         program: program.clone(),
         args: args.clone(),

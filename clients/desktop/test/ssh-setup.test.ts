@@ -7,6 +7,7 @@ import { parseSshSetupAddress } from "../src/ssh-setup-types.js";
 import { authenticateSetup, configuredAgent, resolveIdentityAgent, expandSshPath, createManagedIdentity, discoverHostIdentity, hostFingerprint, managedIdentityPaths, remoteCommand, type SetupTarget } from "../src/platform/ssh-setup-connection.js";
 import { inspectMachineScript, prepareUserScript, installNodeScript, serverUserCommand, shellQuote } from "../src/platform/ssh-setup-scripts.js";
 import { sshTunnelArgs, spawnSshTunnel } from "../src/platform/ssh-runtime.js";
+import { supportsPosixFileModes } from "../src/platform/test-support.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -111,7 +112,7 @@ describe("SSH setup transport", () => {
     const managed = await createManagedIdentity(root, id, fixture.target, identity);
     // Windows exposes synthetic mode bits; OpenSSH below checks actual key access
     // on every host, while POSIX hosts also enforce owner-only file permissions.
-    if (process.platform !== "win32") expect((await stat(managed.identityFile)).mode & 0o777).toBe(0o600);
+    if (supportsPosixFileModes) expect((await stat(managed.identityFile)).mode & 0o777).toBe(0o600);
     expect(await readFile(managed.knownHostsFile, "utf8")).toContain(`[127.0.0.1]:${fixture.target.port}`);
     expect((await createManagedIdentity(root, id, fixture.target, identity)).publicKey).toBe(managed.publicKey);
     const client = await authenticateSetup(fixture.target, identity, {}, signal, managed);
