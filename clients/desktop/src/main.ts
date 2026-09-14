@@ -58,6 +58,7 @@ import { connectionEntityKey } from "./connection-scope.js";
 import { interactiveTaskCreateParams } from "./task-automation-transport.js";
 import { remoteConnectionFailureMessage } from "./main/access-websocket.js";
 import { connectionProfiles } from "./main/connection-profiles.js";
+import { prepareRemoteMobileAccess } from "./platform/remote-mobile-access.js";
 import type {
   ConnectionProfileConnectInput,
   RemoteHostTransport,
@@ -369,6 +370,18 @@ handleIpc("termloop:system-info", async () => {
         : error instanceof Error ? error.message : String(error),
     };
   }
+});
+
+const remoteMobilePairings = new Map<string, ReturnType<typeof prepareRemoteMobileAccess>>();
+handleIpc("termloop:remote-mobile-access-pairing", async (event, profileId: string) => {
+  requireMainRenderer(event);
+  if (typeof profileId !== "string") throw new Error("Select a saved server.");
+  const connection = await connectionProfiles().mobileAccessSshConnection(profileId);
+  const pending = remoteMobilePairings.get(profileId);
+  if (pending) return pending;
+  const pairing = prepareRemoteMobileAccess(connection).finally(() => remoteMobilePairings.delete(profileId));
+  remoteMobilePairings.set(profileId, pairing);
+  return pairing;
 });
 
 handleIpc("termloop:mobile-access-pairing", async (event) => {

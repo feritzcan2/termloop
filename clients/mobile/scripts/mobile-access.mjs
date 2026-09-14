@@ -111,7 +111,7 @@ async function enroll(desired) {
   };
   if (logFile !== undefined && existing === undefined) await initializeGatewayLog(logFile);
   await installExisting(stateDirectory, hostPlatform, desired, config, "enrollment");
-  await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`]);
+  await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`], { timeout: 20_000, maxBuffer: 32 * 1024 });
 
   const payload = {
     version: 1,

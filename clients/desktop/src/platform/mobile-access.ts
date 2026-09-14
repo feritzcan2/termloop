@@ -69,6 +69,10 @@ export async function prepareMobileAccessQr(
   if (!code || code.length > 8 * 1024) {
     throw new Error("Mobile Access did not produce a valid pairing code.");
   }
+  return mobilePairingQr(code);
+}
+
+export async function mobilePairingQr(code: string): Promise<string> {
   const svg = await QRCode.toString(code, {
     type: "svg",
     errorCorrectionLevel: "L",

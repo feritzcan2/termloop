@@ -174,6 +174,7 @@ export type ShellProps = {
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
+  prepareRemoteMobileAccess?(profileId: string): Promise<MobileAccessPairingResult>;
   loadVoiceSettings(): Promise<VoiceSettingsResult>;
   saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
@@ -2134,6 +2135,7 @@ export function Shell(props: ShellProps) {
         localComputerName={localComputerName}
         keepAwake={props.computerKeepAwake}
         mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
+        prepareRemoteMobileAccess={props.prepareRemoteMobileAccess}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
