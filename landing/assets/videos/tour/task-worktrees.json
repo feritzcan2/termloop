@@ -1,15 +1,105 @@
 {
   "id": "task-worktrees",
-  "duration": 11.666667,
-  "sourceSeconds": 9.166667,
-  "sourceFps": 18.0,
-  "motionSpeed": 1,
-  "size": 501439,
-  "sha256": "2aa63012f3f363a60f7e79b93ea50d5a8284976766ad4e09febb5e8626a389c7",
+  "duration": 17.233333,
   "width": 1920,
-  "height": 1248,
+  "height": 1080,
   "fps": 30,
-  "captionSteps": 3,
-  "legacy": true,
-  "captureKind": "continuous-video"
+  "frames": 517,
+  "audio": false,
+  "captureKind": "continuous-video",
+  "source": "task-worktrees.mp4",
+  "recordedAt": "2026-09-14",
+  "recoveredFrom": null,
+  "captureCursorRemoved": true,
+  "sourceSha256": "a1d9574cce4ca56180ecd62c9aadb1782fe6031904e7444ece1056e1c324bf23",
+  "sourceSeconds": 58.167,
+  "sourceFps": 29.999828081214435,
+  "sourceCoverage": [
+    0,
+    30.5
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 5.0,
+      "speed": 6
+    },
+    {
+      "start": 5.0,
+      "end": 7.0,
+      "speed": 1
+    },
+    {
+      "start": 7.0,
+      "end": 10.15,
+      "speed": 2.5
+    },
+    {
+      "start": 10.15,
+      "end": 12.3,
+      "speed": 1
+    },
+    {
+      "start": 12.3,
+      "end": 14.5,
+      "speed": 2
+    },
+    {
+      "start": 14.5,
+      "end": 16.2,
+      "speed": 1
+    },
+    {
+      "start": 16.2,
+      "end": 21.2,
+      "speed": 4
+    },
+    {
+      "start": 21.2,
+      "end": 23.0,
+      "speed": 1
+    },
+    {
+      "start": 23.0,
+      "end": 26.55,
+      "speed": 3
+    },
+    {
+      "start": 26.55,
+      "end": 30.5,
+      "speed": 1
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 5.33,
+      "x": 95,
+      "y": 351,
+      "label": "Create worktree",
+      "outputTime": 1.167079
+    },
+    {
+      "sourceTime": 10.46,
+      "x": 968,
+      "y": 470,
+      "label": "Branch options",
+      "outputTime": 4.4088
+    },
+    {
+      "sourceTime": 14.7,
+      "x": 915,
+      "y": 489,
+      "label": "Create a new branch",
+      "outputTime": 7.550173
+    },
+    {
+      "sourceTime": 26.9,
+      "x": 1110,
+      "y": 738,
+      "label": "Create worktree",
+      "outputTime": 13.633147
+    }
+  ],
+  "sha256": "ed03e4ae3a49ef3d7ff8b5aaaf29e39d561f610efaf5974d1555275bca07054d",
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
 }
