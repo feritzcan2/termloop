@@ -155,7 +155,7 @@ describe("Quick Action draft", () => {
     props.launch.mockResolvedValue(undefined);
     await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
     const account = container.querySelector<HTMLSelectElement>("#quick-action-account")!;
-    expect(account.value).toBe(accounts[1]!.accountId);
+    expect(account.value).toBe("");
     await act(async () => { account.value = "default"; account.dispatchEvent(new Event("change", { bubbles: true })); });
     await act(async () => {
       const prompt = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
@@ -175,12 +175,54 @@ describe("Quick Action draft", () => {
     const loadAccounts = vi.fn((projectId: string) => projectId === "project-1" ? new Promise<typeof accounts>((resolve) => { deliver = resolve; }) : Promise.resolve(accounts));
     const accounts = [{ agentId: "codex" as const, accountId: "default", name: "Remote account", isDefault: true }];
     await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
-    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.disabled).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.disabled).toBe(false);
     await act(async () => { const project = container.querySelector<HTMLSelectElement>('select[aria-label="Run in Project"]')!; project.value = "project-2"; project.dispatchEvent(new Event("change", { bubbles: true })); });
     await act(async () => deliver([{ agentId: "codex", accountId: "c3dcf1a0-2548-420c-b662-2a2143a567da", name: "Old server", isDefault: true }]));
-    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.value).toBe("");
     expect(container.textContent).toContain("Remote account");
     expect(container.textContent).not.toContain("Old server");
+  });
+
+  it.each(["pending", "failed", "empty"])("runs with the server default while the account list is %s", async (state) => {
+    const props = composerProps();
+    const loadAccounts = vi.fn(() => state === "pending" ? new Promise<never>(() => {})
+      : state === "failed" ? Promise.reject(new Error("request timeout")) : Promise.resolve([]));
+    props.preview.mockResolvedValue({ launch_ticket: "approved-ticket", manifest: {} });
+    props.launch.mockResolvedValue(undefined);
+    await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
+    await act(async () => {
+      const prompt = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Run this now");
+      prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(props.preview.mock.calls.at(-1)?.at(-1)).toBeUndefined();
+    expect(props.launch).toHaveBeenCalledOnce();
+    expect(props.launch.mock.calls[0]?.slice(-2)).toEqual(["approved-ticket", undefined]);
+    expect(props.close).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("Loading server accounts");
+  });
+
+  it("retries account choices without replacing the draft or requiring accounts to launch", async () => {
+    const props = composerProps();
+    const loadAccounts = vi.fn().mockRejectedValueOnce(new Error("request timeout"))
+      .mockResolvedValueOnce([{ agentId: "codex", accountId: "work", name: "Work", isDefault: true }]);
+    await act(async () => root.render(createElement(QuickActionComposer, { ...props, loadAccounts })));
+    await act(async () => {
+      const prompt = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Keep this draft");
+      prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("server default");
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Retry loading accounts"]')!.click());
+    expect(loadAccounts).toHaveBeenCalledTimes(2);
+    expect(container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!.value).toBe("Keep this draft");
+    expect(container.querySelector<HTMLSelectElement>("#quick-action-account")!.value).toBe("");
+    expect(container.querySelector(".quick-action-account")?.textContent).toContain("Work");
+    expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
 });
