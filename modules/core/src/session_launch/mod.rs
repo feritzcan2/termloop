@@ -1,8 +1,8 @@
 //! Session/agent launch and resume ownership boundary.
 
 mod agent_creator;
-mod workflow_creator;
 mod agent_library;
+mod workflow_creator;
 
 mod agent_message;
 pub mod archive;
@@ -2242,10 +2242,10 @@ fn resolve_quick_action_launch(
 }
 
 fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarget> {
-    if plan.workflow_creator.is_some() {
-        if let AgentMcpRole::Improver { target } = &plan.mcp_role {
-            return Some(target.clone());
-        }
+    if plan.workflow_creator.is_some()
+        && let AgentMcpRole::Improver { target } = &plan.mcp_role
+    {
+        return Some(target.clone());
     }
     if plan.mcp_role.is_agent_creator() {
         return Some(ImproverSessionTarget {

@@ -1463,9 +1463,17 @@ async fn dispatch_inner(
             "agent.creatorPreview" => {
                 super::handlers::preview_agent_creator(request.params, state).await
             }
-            "workflow.creatorPreview" => super::handlers::preview_workflow_creator(request.params, state).await,
-            "workflow.creatorLaunch" => super::handlers::launch_workflow_creator(request.params, state).await,
-            "workflow.creatorDraftGet" => state.core.lock().await.get_workflow_creator_draft(request.params),
+            "workflow.creatorPreview" => {
+                super::handlers::preview_workflow_creator(request.params, state).await
+            }
+            "workflow.creatorLaunch" => {
+                super::handlers::launch_workflow_creator(request.params, state).await
+            }
+            "workflow.creatorDraftGet" => state
+                .core
+                .lock()
+                .await
+                .get_workflow_creator_draft(request.params),
             "agent.creatorLaunch" => {
                 super::handlers::launch_agent_creator(request.params, state).await
             }
