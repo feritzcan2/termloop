@@ -1978,6 +1978,7 @@ export function Shell(props: ShellProps) {
         close={props.closeProjectDialog}
         projects={props.projects}
         listProfiles={props.listConnectionProfiles}
+        subscribeConnectionStatus={props.subscribeConnectionStatus}
         defaultProjectsRoot={props.defaultProjectsRoot}
         browseDirectory={props.browseDirectory}
         createProject={props.createProject}
@@ -1992,6 +1993,7 @@ export function Shell(props: ShellProps) {
         actions={{
           defaultRoot: () => props.defaultProjectsRoot(props.selectedProject?.connectionProfileId ?? "local"),
           browse: (folderPath) => props.browseDirectory(props.selectedProject?.connectionProfileId ?? "local", folderPath),
+          subscribeStatus: props.subscribeConnectionStatus,
         }}
         updateProject={props.updateProject}
         pickLocalFolder={props.pickLocalFolder}
