@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
+import { verifyWorktreeChangeCount } from "./worktree-change-count.mjs";
 
 const SERVER_DISCOVERY_ATTEMPTS = 600;
 const SERVER_DISCOVERY_POLL_MS = 50;
@@ -293,6 +294,13 @@ try {
   evidence.checks.boundedPrivateShellHistoryCheckpointed = true;
   if (agentResponse) await rawCall(record, { method: "session.terminate", params: { sessionId: agentResponse.result.id } });
 
+  await verifyWorktreeChangeCount(async (method, params) => {
+    const response = await rawCall(record, { method, params });
+    assert.equal(response.ok, true, `${method}: ${JSON.stringify(response.error)}`);
+    return response.result;
+  }, runtimeDir);
+  evidence.checks.changeListRefreshesStaleWorktreeCount = true;
+
   const desktop = spawnSync("pnpm", ["--filter", "@termloop/desktop", "smoke"], { env, encoding: "utf8", timeout: process.platform === "win32" ? 90000 : 30000, shell: process.platform === "win32" });
   assert.equal(desktop.status, 0, `${desktop.stdout}\n${desktop.stderr}\n${desktop.error ?? ""}`);
   assert.match(desktop.stdout, /TERMLOOP_DESKTOP_SMOKE_READY/); evidence.checks.desktopSmoke = true;
@@ -338,6 +346,7 @@ await writeFile("artifacts/evidence/s0/local.json", JSON.stringify(evidence, nul
 const requiredChecks = ["loopbackDiscovery", "cli_version", "cli_capabilities", "cli_ping", "unauthenticated", "credentialShapeValidated", "unsupportedVersion", "identityPreflightBeforeDecodeCapabilityAndDispatch", "identityShapeValidated", "methodNotFound", "schemaEnvelopeValidated", "oversizedRequestTyped", "concurrentControlClients", "binaryTerminalHandshake", "terminalCredentialIsolation", "capabilityDenied", "readOnlyCapability", "invalidParamsTyped", "projectCreate", "cliProjectFlow", "domainErrorsTyped", "sessionRenameCapabilityAndReadProjection", "staleEpochRejected", "terminalReattach", "cliSessionFlow", "secretFreeProcessDescriptor", "naturalExitReconciled", "desktopSmoke", "durableProjectAcrossRestart", "sessionNameDurableAcrossRestart", "daemonRestartEpochChanged"];
 requiredChecks.push("boundedPrivateShellHistoryCheckpointed", "shellHistoryAndLogicalSessionSurviveRestart");
 requiredChecks.push("resumeHandlersSurviveDefaultWorkerStack");
+requiredChecks.push("changeListRefreshesStaleWorktreeCount");
 const failedChecks = requiredChecks.filter((name) => evidence.checks[name] !== true);
 const status = failedChecks.length === 0 ? "PASS" : "FAIL";
 const rows = Object.entries(evidence.checks).map(([name, value]) => `| ${name} | ${String(value)} |`).join("\n");
