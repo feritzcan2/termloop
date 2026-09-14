@@ -1,0 +1,10 @@
+{
+  "name": "launchpad-demo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
