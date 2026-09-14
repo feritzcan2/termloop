@@ -264,6 +264,64 @@ describe("workflow actions in the Agents rail", () => {
     expect(container.querySelectorAll("[data-session-id]")).toHaveLength(3);
   });
 
+  it.each([0, 12])("shows a shared checkout and %i changes only once with a working group-level action", async (changeCount) => {
+    const values = sessions.map((session) => ({ ...session, process: { ...session.process, cwd: "/repo/worktrees/feature-payments" } }));
+    // Helpers already inherit their exact source's checkout change projection.
+    const worktreeChangesBySessionId = new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount }]]);
+    const props = await render(values, execution(), { worktreeChangesBySessionId });
+    const group = container.querySelector('[data-workflow-group="execution-1"]')!;
+    expect(group.querySelector('.workflow-agent-group-checkout')?.textContent).toBe("feature-payments");
+    expect(group.querySelector('.workflow-agent-group-checkout')?.getAttribute("title")).toBe("/repo/worktrees/feature-payments");
+    expect(group.querySelectorAll('.row-subtitle')).toHaveLength(0);
+    expect(group.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(0);
+    expect(group.querySelectorAll('.active-agent-row.has-worktree-changes')).toHaveLength(0);
+    const action = group.querySelector<HTMLButtonElement>('.workflow-agent-group-changes')!;
+    expect(action.textContent).toBe(`${changeCount} changes`);
+    await act(async () => action.click());
+    expect(props.openTaskChanges).toHaveBeenCalledExactlyOnceWith("task-1");
+    expect(props.selectSession).not.toHaveBeenCalled();
+    expect(group.querySelectorAll('.active-agent-favorite')).toHaveLength(3);
+    expect(group.querySelectorAll('.active-agent-workflow')).toHaveLength(1);
+  });
+
+  it("keeps unknown changes unknown and labels the Project checkout once", async () => {
+    await render(sessions, execution({ taskId: null }));
+    expect(container.querySelector('.workflow-agent-group-checkout')?.textContent).toBe("Project checkout");
+    expect(container.querySelectorAll('.workflow-agent-group-changes')).toHaveLength(0);
+    expect(container.querySelectorAll('.row-subtitle')).toHaveLength(0);
+  });
+
+  it("never collapses different checkouts with the same basename", async () => {
+    const values = sessions.map((session, index) => ({ ...session, process: { ...session.process, cwd: index === 2 ? "/other/feature-payments" : "/repo/feature-payments" } }));
+    await render(values, execution(), { worktreeChangesBySessionId: new Map(values.map((session) => [session.id, { taskId: "task-1", taskTitle: "Payments", changeCount: 4 }])) });
+    expect(container.querySelector('.workflow-agent-group-meta')).toBeNull();
+    expect([...container.querySelectorAll('.row-subtitle')].map((node) => node.getAttribute("title"))).toEqual(["/repo/feature-payments", "/repo/feature-payments", "/other/feature-payments"]);
+    expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(3);
+  });
+
+  it.each(["taskId", "changeCount", "taskTitle"] as const)("keeps conflicting %s projections on their own rows", async (field) => {
+    const changes = { taskId: "task-1", taskTitle: "Payments", changeCount: 4 };
+    await render(sessions, execution(), { worktreeChangesBySessionId: new Map(sessions.map((session, index) => [session.id, index === 2 ? { ...changes, [field]: field === "changeCount" ? 8 : "different" } : changes])) });
+    expect(container.querySelectorAll('.workflow-agent-group-checkout')).toHaveLength(1);
+    expect(container.querySelector('.workflow-agent-group-changes')).toBeNull();
+    expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(3);
+  });
+
+  it("updates shared counts and preserves agent-specific state and ordinary helper metadata", async () => {
+    const values = [...sessions, agent("ordinary", { ask_to_source_session_id: "lead" })].map((session) => ({ ...session, process: { ...session.process, cwd: "/repo/worktrees/feature-payments" } }));
+    const overrides = {
+      worktreeChangesBySessionId: new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount: 4 }]]),
+      statusesById: new Map([["helper-a", { sessionId: "helper-a", status: "working" as const, source: "appServer" as const, observedAtEpochMs: 3 }]]),
+    };
+    await render(values, execution(), overrides);
+    const group = container.querySelector('[data-workflow-group="execution-1"]')!;
+    expect(group.querySelector('[data-session-id="helper-a"] .row-state')?.textContent).toBe("Working");
+    expect(container.querySelector('[data-session-id="ordinary"] .row-subtitle')?.textContent).toBe("feature-payments");
+    expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(1);
+    await render(values, execution(), { ...overrides, worktreeChangesBySessionId: new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount: 9 }]]) });
+    expect(container.querySelector('.workflow-agent-group-changes')?.textContent).toBe("9 changes");
+  });
+
   it.each(["Payments", "Build and verify", "Review limit reached"])("finds completed workflow groups by %s", async (query) => {
     await render([...sessions, agent("ordinary")], execution({ status: "completed", phase: "completed", completionOutcome: "reviewLimitReached" }), { searchOpen: true });
     const input = container.querySelector<HTMLInputElement>("input[type=search]")!;
