@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:01.500
-Write a request in Quick Actions.
+00:00:00.000 --> 00:00:01.300 line:5%
+Write a request.
 
 2
-00:00:01.500 --> 00:00:02.050
-Confirm the agent and launch settings.
+00:00:01.300 --> 00:00:02.400 line:5%
+Choose an agent.
 
 3
-00:00:02.050 --> 00:00:03.900
-Launch the Session and follow its work in the terminal.
+00:00:02.400 --> 00:00:05.000 line:5%
+Launch the Session.

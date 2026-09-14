@@ -1,20 +1,47 @@
 {
   "id": "quick-actions",
-  "duration": 3.9,
+  "duration": 5.0,
   "width": 1920,
   "height": 1080,
-  "fps": 20.0,
-  "frames": 78,
+  "fps": 20,
+  "frames": 100,
   "audio": false,
-  "captureKind": "archive-video",
-  "source": "assets/videos/quick-action.mp4",
-  "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
-  "sourceFps": 20.0,
-  "sourceSeconds": 5.65,
-  "sourceCoverage": [
-    1.75,
-    5.65
+  "captureKind": "edited-video",
+  "sources": [
+    {
+      "source": "assets/videos/quick-action.mp4",
+      "root": "landing",
+      "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
+      "duration": 5.65,
+      "fps": 20.0
+    }
   ],
-  "sha256": "dac3680e6748da18bd5f9ff6458b1d49f3013954e85a639477c93d453b16093f",
-  "editing": "Opening 1.75 seconds skipped. Remaining interval keeps its original timing and frame rate; no interior cuts or new effects."
+  "shots": [
+    {
+      "source": 0,
+      "start": 1.75,
+      "end": 3.8,
+      "duration": 2.4,
+      "crop": [
+        360,
+        200,
+        1200,
+        675
+      ]
+    },
+    {
+      "source": 0,
+      "start": 3.8,
+      "end": 5.65,
+      "duration": 2.6,
+      "crop": [
+        0,
+        0,
+        1120,
+        630
+      ]
+    }
+  ],
+  "sha256": "47a92adbdbbfdc1a7d479e2bbf68ebf365ac12a8e5a42cc3aec9d82f804347c5",
+  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
 }

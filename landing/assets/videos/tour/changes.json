@@ -1,20 +1,59 @@
 {
   "id": "changes",
-  "duration": 15.0,
+  "duration": 5.0,
   "width": 1920,
   "height": 1080,
-  "fps": 15.0,
-  "frames": 225,
+  "fps": 15,
+  "frames": 75,
   "audio": false,
-  "captureKind": "archive-video",
-  "source": "assets/videos/changes-review.mp4",
-  "sourceSha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
-  "sourceFps": 15.0,
-  "sourceSeconds": 15.0,
-  "sourceCoverage": [
-    0,
-    15.0
+  "captureKind": "edited-video",
+  "sources": [
+    {
+      "source": "assets/videos/changes-review.mp4",
+      "root": "landing",
+      "sourceSha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
+      "duration": 15.0,
+      "fps": 15.0
+    }
   ],
-  "sha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
-  "editing": "Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects."
+  "shots": [
+    {
+      "source": 0,
+      "start": 7.3,
+      "end": 10.1,
+      "duration": 1.6,
+      "crop": [
+        960,
+        160,
+        960,
+        540
+      ]
+    },
+    {
+      "source": 0,
+      "start": 11.2,
+      "end": 12,
+      "duration": 1.4,
+      "crop": [
+        1040,
+        580,
+        880,
+        495
+      ]
+    },
+    {
+      "source": 0,
+      "start": 13.1,
+      "end": 14.8,
+      "duration": 2,
+      "crop": [
+        640,
+        180,
+        800,
+        450
+      ]
+    }
+  ],
+  "sha256": "6d5171e27f42b51f2648dca63d46c1dac6374395d91606907e2ad4cfc111166c",
+  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
 }

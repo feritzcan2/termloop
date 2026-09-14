@@ -1,28 +1,66 @@
 {
   "id": "tasks",
-  "duration": 30.933008,
+  "duration": 6.0,
   "width": 1920,
   "height": 1080,
   "fps": 30,
-  "frames": 928,
+  "frames": 180,
   "audio": false,
-  "captureKind": "joined-video",
-  "chapters": [
+  "captureKind": "edited-video",
+  "sources": [
     {
       "source": "assets/videos/tour/task-briefs.mp4",
+      "root": "landing",
       "sourceSha256": "75b2d2dc03a03edb6f1ef9d4d4078fef594bfa0ed37c00fcfd7c22a1a014e2ff",
-      "outputStart": 0,
       "duration": 13.7,
       "fps": 30.0
     },
     {
       "source": "assets/videos/tour/task-worktrees.mp4",
+      "root": "landing",
       "sourceSha256": "ed03e4ae3a49ef3d7ff8b5aaaf29e39d561f610efaf5974d1555275bca07054d",
-      "outputStart": 13.7,
       "duration": 17.233333,
       "fps": 30.0
     }
   ],
-  "sha256": "c0e9dba935ebde8fb82b07feffab3507b3b768e985d8ccf17f885b3ea9278305",
-  "editing": "Complete Task brief and worktree chapters joined without re-encoding. Their existing timing and click effects are preserved."
+  "shots": [
+    {
+      "source": 0,
+      "start": 2,
+      "end": 3.6,
+      "duration": 1.6,
+      "crop": [
+        0,
+        0,
+        1120,
+        630
+      ]
+    },
+    {
+      "source": 0,
+      "start": 6.9,
+      "end": 11.3,
+      "duration": 1.4,
+      "crop": [
+        0,
+        200,
+        960,
+        540
+      ]
+    },
+    {
+      "source": 1,
+      "start": 12.9,
+      "end": 16.2,
+      "duration": 3,
+      "crop": [
+        0,
+        100,
+        1440,
+        810
+      ]
+    }
+  ],
+  "sha256": "5ed9ffde293d150e4a521b2e00d6570e6084a06782598949d772e031080f6050",
+  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
 }

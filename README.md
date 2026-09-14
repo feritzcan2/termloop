@@ -19,43 +19,43 @@ Seven short loops from real Projects. Click a preview for the 1080p video, playb
 
 Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
 
-<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif" alt="Ask To: The answer returns to the requesting agent." width="960"></a>
+<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif?v=3d96d2f93fcc" alt="Ask To: The answer returns to the requesting agent." width="960"></a>
 
 ### Quick Actions — From a prompt to a running agent.
 
 Open Quick Actions, write the request and launch an agent with the right context.
 
-<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif?v=f38d77cc0170" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
+<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif?v=e7ee5021a7f1" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
 
 ### Handoff — Move context to the agent already in the work.
 
 Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.
 
-<a href="https://termloop.ai/#handoff"><img src="artifacts/marketing/readme/handoff.gif" alt="Handoff: The destination receives the handoff in its own terminal." width="960"></a>
+<a href="https://termloop.ai/#handoff"><img src="artifacts/marketing/readme/handoff.gif?v=5b3652d04424" alt="Handoff: The destination receives the handoff in its own terminal." width="960"></a>
 
 ### Session Fork — Explore another direction in a real terminal.
 
 Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
 
-<a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
+<a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif?v=f6d4a78d45af" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
 
 ### Tasks — Define the work. Add a worktree when needed.
 
 Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
 
-<a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=1c8cb4e8c9b1" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
+<a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=a0f4d09ed5a4" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
 
 ### Changes — Turn review notes into the next change.
 
 Open the diff, leave a note on a line and send the review to a running agent.
 
-<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif" alt="Changes: Send the notes to the active agent and follow the update." width="960"></a>
+<a href="https://termloop.ai/#changes"><img src="artifacts/marketing/readme/changes.gif?v=034f576eaa16" alt="Changes: Send the notes to the active agent and follow the update." width="960"></a>
 
 ### Code review — Review changes where they happened.
 
 Read the diff, compare versions side by side and keep track of the files you have checked.
 
-<a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif" alt="Code review: Mark files reviewed and revisit them from the reviewed list." width="960"></a>
+<a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif?v=4a187822c00c" alt="Code review: Mark files reviewed and revisit them from the reviewed list." width="960"></a>
 
 ### Useful every day
 
@@ -72,7 +72,7 @@ Small controls that stay close to the work.
 
 Also included: multiple live agents, mobile terminal access, Project Steward, reusable workflows, Context Bank, skills, MCP tools and notifications. Explore the [complete feature guide](docs/features.md).
 
-The GIFs follow the same timing as the website videos. Quick Actions begins on the prompt composer, and Tasks includes optional worktree creation in the same loop. The September footage uses visible clicks and smoothly accelerated waits; Changes keeps its earlier edit. Website demos loop silently when visible and respect reduced-motion preferences.
+The GIFs match the website videos: five-second close-ups of each action, with six seconds for Tasks and its optional worktree. Captions stay brief; cuts skip waits. Website demos loop silently when visible and respect reduced-motion preferences.
 
 ## Start using TermLoop
 
