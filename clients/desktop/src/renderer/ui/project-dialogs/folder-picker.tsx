@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { DirectoryBrowseResult } from "@termloop/contract/current";
+import type { ConnectionSourceSummary } from "../../../connection-profile-types.js";
 
 import { Icon } from "../Icon.js";
 import { worktreePathParent } from "../worktree-path-suggestion.js";
@@ -8,10 +9,16 @@ import { collapseFolderTrail, folderLeafName, folderTrail, type FolderTrailSegme
 export type FolderPickerActions = {
   defaultRoot(): Promise<{ path: string }>;
   browse(path: string): Promise<DirectoryBrowseResult>;
+  subscribeStatus?(listener: (summary: ConnectionSourceSummary) => void): () => void;
 };
 
 function failureMessage(failure: unknown): string {
-  return failure instanceof Error ? failure.message : String(failure);
+  const message = (failure instanceof Error ? failure.message : String(failure))
+    .replace(/^Error invoking remote method '[^']*':\s*/, "")
+    .replace(/^Error:\s*/, "");
+  return message === "SSH tunnel is reconnecting"
+    ? "The server is reconnecting. Try again when the connection is available."
+    : message;
 }
 
 /// The folder chooser rendered inside a Project dialog rather than stacked on
@@ -45,6 +52,8 @@ export function FolderPicker({ actions, sourceKey, initialPath, quickJumps = [],
   const [filter, setFilter] = useState("");
   const [pathDraft, setPathDraft] = useState<string>();
   const requestRef = useRef(0);
+  const recoveryRef = useRef(0);
+  const retryRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const rowsRef = useRef(new Map<string, HTMLDivElement>());
   const pendingFocusRef = useRef<string | undefined>(undefined);
   const actionsRef = useRef(actions);
@@ -62,6 +71,8 @@ export function FolderPicker({ actions, sourceKey, initialPath, quickJumps = [],
   /// and a listing failure must not quietly reassign it.
   const open = useCallback(async (path: string, options?: { prefer?: string; pin?: string }) => {
     const token = ++requestRef.current;
+    const recovery = recoveryRef.current;
+    retryRef.current = undefined;
     setLoading(true);
     setError(undefined);
     if (options?.pin) selectRef.current(options.pin);
@@ -78,9 +89,15 @@ export function FolderPicker({ actions, sourceKey, initialPath, quickJumps = [],
     } catch (failure) {
       // The previous listing stays on screen so a denied or deleted folder
       // leaves the user somewhere they can still navigate from.
-      if (requestRef.current === token) setError(failureMessage(failure));
+      if (requestRef.current === token) {
+        retryRef.current = () => open(path, options);
+        setError(failureMessage(failure));
+      }
     } finally {
-      if (requestRef.current === token) setLoading(false);
+      if (requestRef.current === token) {
+        setLoading(false);
+        if (recoveryRef.current !== recovery) void retryRef.current?.();
+      }
     }
   }, []);
 
@@ -96,38 +113,74 @@ export function FolderPicker({ actions, sourceKey, initialPath, quickJumps = [],
     await open(parent || chosen, parent ? { prefer: chosen, pin: chosen } : { pin: chosen });
   }, [open]);
 
-  useEffect(() => {
+  const loadInitial = useCallback(async function loadInitial(): Promise<void> {
     const token = ++requestRef.current;
+    const recovery = recoveryRef.current;
+    const currentActions = actionsRef.current;
+    retryRef.current = undefined;
     setLoading(true);
     setError(undefined);
     setListing(undefined);
     setFilter("");
     setPathDraft(undefined);
-    void (async () => {
-      const requested = initialPath?.trim();
+    const requested = initialPath?.trim();
+    try {
+      const start = requested || (await currentActions.defaultRoot()).path;
+      if (requestRef.current !== token) return;
       try {
-        const start = requested || (await actionsRef.current.defaultRoot()).path;
-        try {
-          const result = await actionsRef.current.browse(start);
-          if (requestRef.current !== token) return;
-          setListing(result);
-        } catch (failure) {
-          // A Project's recorded folder can be renamed or unmounted. Landing on
-          // the default root keeps the dialog usable, and the recorded folder is
-          // left selected so saving without a new pick changes nothing.
-          if (!requested) throw failure;
-          const fallback = await actionsRef.current.browse((await actionsRef.current.defaultRoot()).path);
-          if (requestRef.current !== token) return;
-          setListing(fallback);
-          setError(`${requested} could not be opened (${failureMessage(failure)}). Pick a folder below.`);
-        }
+        const result = await currentActions.browse(start);
+        if (requestRef.current !== token) return;
+        setListing(result);
       } catch (failure) {
-        if (requestRef.current === token) setError(failureMessage(failure));
-      } finally {
-        if (requestRef.current === token) setLoading(false);
+        if (requestRef.current !== token) return;
+        // A Project's recorded folder can be renamed or unmounted. Landing on
+        // the default root keeps the dialog usable, and the recorded folder is
+        // left selected so saving without a new pick changes nothing.
+        if (!requested) throw failure;
+        const fallbackRoot = await currentActions.defaultRoot();
+        if (requestRef.current !== token) return;
+        const fallback = await currentActions.browse(fallbackRoot.path);
+        if (requestRef.current !== token) return;
+        setListing(fallback);
+        retryRef.current = loadInitial;
+        setError(`${requested} could not be opened (${failureMessage(failure)}). Pick a folder below.`);
       }
-    })();
-  }, [initialPath, sourceKey]);
+    } catch (failure) {
+      if (requestRef.current === token) {
+        retryRef.current = loadInitial;
+        setError(failureMessage(failure));
+      }
+    } finally {
+      if (requestRef.current === token) {
+        setLoading(false);
+        if (recoveryRef.current !== recovery) void retryRef.current?.();
+      }
+    }
+  }, [initialPath]);
+
+  useEffect(() => {
+    void loadInitial();
+    return () => {
+      requestRef.current += 1;
+      retryRef.current = undefined;
+    };
+  }, [loadInitial, sourceKey]);
+
+  const subscribeStatus = actions.subscribeStatus;
+  useEffect(() => {
+    let previousState: ConnectionSourceSummary["state"] | undefined;
+    return subscribeStatus?.((summary) => {
+      if (summary.id !== sourceKey) return;
+      const recovered = summary.state === "connected" && previousState !== "connected";
+      previousState = summary.state;
+      // Repeated successful reads also publish status. Only a new connection
+      // can retry a failed read; otherwise a missing folder could loop forever.
+      if (recovered) {
+        recoveryRef.current += 1;
+        void retryRef.current?.();
+      }
+    });
+  }, [sourceKey, subscribeStatus]);
 
   useLayoutEffect(() => {
     const path = pendingFocusRef.current;
@@ -259,7 +312,10 @@ export function FolderPicker({ actions, sourceKey, initialPath, quickJumps = [],
         <span className="folder-filter-count">{loading && !listing ? "…" : query ? `${matches.length}/${entries.length}` : `${entries.length}`}</span>
       </div>
 
-      {error ? <p className="folder-picker-error" role="alert">{error}</p> : null}
+      {error ? <div className="folder-picker-error" role="alert">
+        {error}{" "}
+        <button type="button" className="quiet-text-button" disabled={loading} onClick={() => void retryRef.current?.()}>Try again</button>
+      </div> : null}
 
       <div id={listId} className="folder-picker-list" role="listbox" aria-label="Folders" aria-busy={loading} data-loading={loading ? "true" : undefined}>
         {loading && !listing ? <p className="folder-picker-note">Loading folders…</p> : null}
