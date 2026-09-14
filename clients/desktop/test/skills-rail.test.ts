@@ -154,7 +154,7 @@ describe("Skills rail", () => {
     ]);
     const codexLocation = locations.find((row) => row.textContent?.includes("Project Codex skills"));
     await act(async () => codexLocation?.querySelector<HTMLButtonElement>(".skill-rail-open")?.click());
-    expect(openEditor).toHaveBeenCalledWith("e".repeat(64));
+    expect(openEditor).toHaveBeenCalledWith("e".repeat(64), "project");
   });
 
   it("flags differing descriptions inside a same-named group", async () => {
@@ -244,7 +244,7 @@ describe("Skills rail", () => {
       .find((button) => button.textContent?.includes("release"));
     await act(async () => row?.click());
 
-    expect(openEditor).toHaveBeenCalledWith("b".repeat(64));
+    expect(openEditor).toHaveBeenCalledWith("b".repeat(64), "project");
   });
 
   it("offers Improve with agent on a skill row", async () => {
