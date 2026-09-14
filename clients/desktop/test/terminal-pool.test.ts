@@ -113,6 +113,34 @@ function agentSession(id: string, projectId = "project-a"): Session {
 }
 
 describe("TerminalPool", () => {
+  it("waits for native geometry before attaching when Session projections refresh during mount", async () => {
+    let finishMount!: () => void;
+    const attachment = new FakeAttachment();
+    const attach = vi.fn(async () => attachment);
+    const pool = new TerminalPool((_input, resize) => {
+      const surface = new FakeSurface();
+      surface.mount = () => new Promise<void>((resolve) => {
+        finishMount = () => { resize(48, 160); resolve(); };
+      });
+      return surface;
+    }, attach);
+    const value = session("native-startup");
+    pool.reconcile([value]);
+    const mounting = pool.mount(value.id, {} as HTMLElement);
+
+    pool.reconcile([{ ...value, name: "Updated Session" }]);
+    pool.reconnectAttachments();
+    await Promise.resolve();
+    expect(attach).not.toHaveBeenCalled();
+
+    finishMount();
+    await mounting;
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(attachment.resizes).toEqual([{ rows: 48, cols: 160 }]);
+    expect(attachment.operations).toEqual(["resize", "listen"]);
+    pool.dispose();
+  });
+
   it("applies appearance changes to existing and newly created surfaces", async () => {
     const surfaces: FakeSurface[] = [];
     const pool = new TerminalPool(() => {

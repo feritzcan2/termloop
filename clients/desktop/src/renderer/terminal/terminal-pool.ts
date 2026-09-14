@@ -35,6 +35,7 @@ type Entry = {
   readRevision: number;
   rendererFailed: boolean;
   surface: TerminalSurface | undefined;
+  surfaceReady: boolean;
   attachment: TerminalAttachmentLike | undefined;
   attaching: Promise<void> | undefined;
   dimensions: { rows: number; cols: number } | undefined;
@@ -146,6 +147,7 @@ export class TerminalPool {
         }
         if (runtimeChanged) { entry.tail.clear(); this.#present(entry, { phase: "connecting", notice: "Terminal runtime changed.", reading: undefined }); }
         if (runtimeChanged && entry.mounted) {
+          entry.surfaceReady = false;
           entry.mountToken = undefined;
           entry.surface?.unmount();
           entry.mounted = false;
@@ -167,6 +169,7 @@ export class TerminalPool {
           readRevision: 0,
           rendererFailed: false,
           surface: undefined,
+          surfaceReady: false,
           attachment: undefined,
           attaching: undefined,
           dimensions: undefined,
@@ -219,10 +222,12 @@ export class TerminalPool {
     const mountToken = {};
     entry.mounted = true;
     entry.mountToken = mountToken;
+    entry.surfaceReady = false;
     const surface = entry.surface;
     const mounting = surface.mount(container, true);
     if (mounting) await mounting;
     if (!entry.mounted || entry.mountToken !== mountToken || entry.surface !== surface) return;
+    entry.surfaceReady = true;
     entry.surface.setVisible?.(this.#visible && entry.presentation.reading === undefined);
     if (sessionHasAttachableTerminal(entry.session)) {
       await this.#ensureAttachment(entry);
@@ -344,6 +349,9 @@ export class TerminalPool {
   }
 
   async #ensureAttachment(entry: Entry): Promise<void> {
+    // Reconciliation and reconnect can also enter here while a native mount
+    // is still measuring its pane. They must obey the same geometry gate.
+    if (!entry.surfaceReady) return;
     if (!sessionHasAttachableTerminal(entry.session)) return;
     if (entry.attachment || entry.attaching) return entry.attaching;
     const surface = entry.surface;
@@ -464,6 +472,7 @@ export class TerminalPool {
     entry.removeErrorListener = undefined;
     entry.surface?.dispose();
     entry.surface = undefined;
+    entry.surfaceReady = false;
     entry.rendererFailed = false;
     entry.readRevision++;
     entry.dimensions = undefined;
