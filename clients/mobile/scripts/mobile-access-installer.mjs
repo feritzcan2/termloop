@@ -284,15 +284,17 @@ async function systemdPlan(input) {
   const file = path.join(directory, unit);
   const desired = systemdUserUnit(input);
   const installed = await readFile(file, "utf8").catch(() => undefined);
+  const running = installed === desired && await execFile(input.systemctlBin, ["--user", "is-active", "--quiet", unit])
+    .then(() => true, () => false);
   return {
-    changed: installed !== desired,
+    changed: installed !== desired || !running,
     async apply({ restartRequired }) {
       if (installed !== desired) {
         await atomicWrite(file, desired, 0o644);
         await execFile(input.systemctlBin, ["--user", "daemon-reload"]);
         await execFile(input.systemctlBin, ["--user", "enable", unit]);
       }
-      if (restartRequired || installed !== desired) {
+      if (restartRequired || installed !== desired || !running) {
         await execFile(input.systemctlBin, ["--user", "restart", unit]);
       }
     },

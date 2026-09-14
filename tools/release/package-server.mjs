@@ -4,6 +4,9 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { buildGatewayArtifact, defaultArtifactMetadata } from '../../clients/mobile/scripts/mobile-access-installer.mjs';
+import { mobileAssetFiles } from '../server/server-mobile-access.mjs';
 
 const execute = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -23,12 +26,33 @@ try {
   await copyFile(cli, path.join(stage, 'termloopctl'));
   await chmod(path.join(stage, 'termloopctl'), 0o755);
   await copyFile(path.join(root, 'tools/skills-manager/LICENSE'), path.join(stage, 'skills-manager-LICENSE'));
-  for (const name of ['install.sh', 'termloop-server-manager.mjs', 'server-release.mjs']) {
+  for (const name of ['install.sh', 'server-release.mjs']) {
     await copyFile(path.join(root, 'tools/server', name), path.join(stage, name));
   }
+  const mobileStage = await mkdtemp(path.join(os.tmpdir(), 'termloop-server-mobile-'));
+  try {
+    const scriptsDirectory = path.join(root, 'clients/mobile/scripts');
+    const [major, minor, patch] = version.split('.').map(Number);
+    await buildGatewayArtifact({ scriptsDirectory, artifactDirectory: mobileStage, metadata: defaultArtifactMetadata({
+      releaseVersion: version, channel: 'production', owner: 'ai.termloop.server',
+      sequence: major * 1_000_000 + minor * 1_000 + patch,
+    }) });
+    for (const name of ['mobile-access.mjs', 'mobile-access-installer.mjs']) {
+      await copyFile(path.join(scriptsDirectory, name), path.join(mobileStage, name));
+    }
+    const assets = Object.fromEntries(await Promise.all(mobileAssetFiles.map(async (name) => [name, await readFile(path.join(mobileStage, name), 'utf8')])));
+    const { build } = createRequire(path.join(root, 'clients/mobile/package.json'))('esbuild');
+    await build({
+      entryPoints: [path.join(root, 'tools/server/termloop-server-manager.mjs')],
+      outfile: path.join(stage, 'termloop-server-manager.mjs'),
+      bundle: true, platform: 'node', format: 'esm', target: 'node22',
+      external: ['./server-release.mjs'],
+      define: { __TERMLOOP_SERVER_MOBILE_ASSETS__: JSON.stringify(assets) },
+    });
+  } finally { await rm(mobileStage, { recursive: true, force: true }); }
   await chmod(path.join(stage, 'install.sh'), 0o755);
   await writeFile(path.join(stage, 'server-package.json'), JSON.stringify({
-    schema: 1, version, protocolVersion, platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-musl', commit: stdout.trim(),
+    schema: 1, version, protocolVersion, mobileAccess: 1, platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-musl', commit: stdout.trim(),
   }, null, 2) + '\n');
   await mkdir(output, { recursive: true });
   const archive = path.resolve(output, `termloop-server-linux-x64-${version}.tar.gz`);
