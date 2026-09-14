@@ -1,3 +1,5 @@
+import type { SettingsScopeContext } from "../settings-scope.js";
+import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useCallback, useEffect, useState } from "react";
 
 import type {
@@ -18,7 +20,8 @@ import { ConfigurationVersions, useConfigurationVersions, type ConfigurationVers
 /// Stage page for one MCP tool description. Saves carry the revision the rail
 /// was loaded with, so a change made in another client surfaces as a conflict
 /// and reloads the current text instead of overwriting it.
-export function McpToolPanel({ tool, stateRevision, update, reset, apply, versions, reload, close }: {
+export function McpToolPanel({ scopeContext, tool, stateRevision, update, reset, apply, versions, reload, close }: {
+  scopeContext?: SettingsScopeContext | undefined;
   tool: McpToolSettingsDto;
   stateRevision: number;
   update(params: McpToolDescriptionUpdateParams): Promise<McpSettingsMutationResult>;
@@ -87,6 +90,7 @@ export function McpToolPanel({ tool, stateRevision, update, reset, apply, versio
     <section className="stage-editor" aria-label={`${tool.title} MCP tool`}>
       <header className="stage-editor-head">
         <div className="stage-editor-title">
+          <SettingsScopeLabel context={scopeContext} />
           <span>MCP tool</span>
           <h2>{tool.title}</h2>
           <code>{tool.name}</code>

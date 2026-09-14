@@ -106,7 +106,7 @@ export function SkillsRail({
 }: {
   load(): Promise<SkillCatalogResult>;
   setDeployment(skillId: string, agent: SkillAgent, deployed: boolean): Promise<SkillCatalogResult>;
-  openEditor(skillId: string): void;
+  openEditor(skillId: string, scope: "project" | "computer"): void;
   /// Absent while no Project is open: the improver runs in a checkout.
   improveSkill?: ((skillId: string, name: string) => void) | undefined;
   listRemoteComputers?: (() => Promise<RemoteSkillComputer[]>) | undefined;
@@ -321,7 +321,7 @@ export function SkillsRail({
       type="button"
       disabled={disabled}
       title={skill.locations.map((location) => location.path).join("\n")}
-      onClick={() => openEditor(skill.id)}
+      onClick={() => openEditor(skill.id, skill.scopes.includes("project") ? "project" : "computer")}
     >
       <strong>{skill.name}</strong>
       <small>{skill.description}</small>
@@ -392,7 +392,7 @@ export function SkillsRail({
               type="button"
               disabled={disabled}
               title={skillPaths.join("\n")}
-              onClick={() => openEditor(skill.id)}
+              onClick={() => openEditor(skill.id, skill.scopes.includes("project") ? "project" : "computer")}
             >
               <strong>{sources}</strong>
               <small>{skillPaths.join(" · ")}</small>

@@ -11,9 +11,9 @@ export function keepAwakeModeLabel(mode: KeepAwakeMode): string {
   }
 }
 
-export function keepAwakeModeHint(mode: KeepAwakeMode): string {
+export function keepAwakeModeHint(mode: KeepAwakeMode, computerName?: string): string {
   switch (mode) {
-    case "off": return "This computer sleeps on its usual schedule.";
+    case "off": return `${computerName ?? "This computer"} sleeps on its usual schedule.`;
     case "whileAgentsRun": return "Held only while at least one agent process is alive.";
     case "always": return "Held for as long as TermLoop is running.";
   }
@@ -24,17 +24,17 @@ export function keepAwakeModeHint(mode: KeepAwakeMode): string {
  * the computer cannot sleep: the daemon reports the hold it took, and the
  * limitations list carries what the OS can still override.
  */
-export function keepAwakeSummary(status: KeepAwakeStatusResult): string {
+export function keepAwakeSummary(status: KeepAwakeStatusResult, computerName = "this computer"): string {
   switch (status.state) {
     case "unsupported": return "Not available on this system.";
     case "failed": return "The system refused the request.";
     case "active": return status.expiresAtEpochMs !== null
-      ? "Holding this computer awake until the timer ends."
+      ? `Holding ${computerName} awake until the timer ends.`
       : status.mode === "always"
-      ? "Holding this computer awake."
-      : `Holding this computer awake for ${agentCount(status.eligibleAgentCount)}.`;
+      ? `Holding ${computerName} awake.`
+      : `Holding ${computerName} awake for ${agentCount(status.eligibleAgentCount)}.`;
     case "inactive": return status.reason === "modeOff"
-      ? "Not holding this computer awake."
+      ? `Not holding ${computerName} awake.`
       : status.reason === "timerExpired"
       ? "The keep-awake timer has finished."
       : "Waiting for an agent to start.";

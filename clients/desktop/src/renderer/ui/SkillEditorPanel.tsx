@@ -1,3 +1,5 @@
+import type { SettingsScopeContext } from "../settings-scope.js";
+import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useCallback, useEffect, useState } from "react";
 
 import type { SkillDefinitionDto } from "@termloop/contract/current";
@@ -9,7 +11,9 @@ import { Icon } from "./Icon.js";
  * Saves go through the daemon's stale-guarded definition command; a conflict
  * surfaces as an error and Reload fetches the current on-disk content.
  */
-export function SkillEditorPanel({ skillId, load, save, versions, close }: {
+export function SkillEditorPanel({ scopeContext, scope, skillId, load, save, versions, close }: {
+  scopeContext?: SettingsScopeContext | undefined;
+  scope?: "project" | "computer" | undefined;
   skillId: string;
   load(skillId: string): Promise<SkillDefinitionDto>;
   save(skillId: string, expectedContentSha256: string, content: string): Promise<SkillDefinitionDto>;
@@ -66,6 +70,7 @@ export function SkillEditorPanel({ skillId, load, save, versions, close }: {
     <section className="stage-editor" aria-label={definition ? `${definition.name} SKILL.md` : "Skill definition"}>
       <header className="stage-editor-head">
         <div className="stage-editor-title">
+          <SettingsScopeLabel context={scopeContext} scope={scope ?? "computer"} />
           <span>SKILL.md</span>
           <h2>{definition?.name ?? "Skill"}</h2>
           {definition ? <code title={definition.path}>{definition.path}</code> : null}
