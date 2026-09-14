@@ -109,7 +109,9 @@ describe("SSH setup transport", () => {
     const signal = new AbortController().signal;
     const identity = await discoverHostIdentity(fixture.target, signal);
     const managed = await createManagedIdentity(root, id, fixture.target, identity);
-    expect((await stat(managed.identityFile)).mode & 0o777).toBe(0o600);
+    // Windows exposes synthetic mode bits; OpenSSH below checks actual key access
+    // on every host, while POSIX hosts also enforce owner-only file permissions.
+    if (process.platform !== "win32") expect((await stat(managed.identityFile)).mode & 0o777).toBe(0o600);
     expect(await readFile(managed.knownHostsFile, "utf8")).toContain(`[127.0.0.1]:${fixture.target.port}`);
     expect((await createManagedIdentity(root, id, fixture.target, identity)).publicKey).toBe(managed.publicKey);
     const client = await authenticateSetup(fixture.target, identity, {}, signal, managed);
