@@ -1,9 +1,12 @@
+import type { SettingsScopeContext } from "../settings-scope.js";
+import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useCallback, useEffect, useState } from "react";
 
 import type { ContextBankFileDto } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
 
-export function ContextBankEditorPanel({ fileId, load, save, onSaved, close }: {
+export function ContextBankEditorPanel({ scopeContext, fileId, load, save, onSaved, close }: {
+  scopeContext?: SettingsScopeContext | undefined;
   fileId: string;
   load(fileId: string): Promise<ContextBankFileDto>;
   save(fileId: string, expectedContentSha256: string, content: string): Promise<ContextBankFileDto>;
@@ -58,7 +61,8 @@ export function ContextBankEditorPanel({ fileId, load, save, onSaved, close }: {
   return <section className="stage-editor context-bank-editor" aria-label={file ? `${file.relativePath} Context Bank editor` : "Context Bank editor"}>
     <header className="stage-editor-head">
       <div className="stage-editor-title">
-        <span>Context Bank</span>
+        <SettingsScopeLabel context={scopeContext} scope="project" />
+          <span>Context Bank</span>
         <h2>{file?.relativePath ?? "Project instructions"}</h2>
         {file ? <code title={file.path}>{file.path}</code> : null}
       </div>

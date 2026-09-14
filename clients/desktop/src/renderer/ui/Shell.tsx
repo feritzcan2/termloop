@@ -46,7 +46,8 @@ import { SkillEditorPanel } from "./SkillEditorPanel.js";
 import { SkillsRail, type RemoteSkillComputer } from "./SkillsRail.js";
 import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
-import { KeepAwakePanel } from "./KeepAwakePanel.js";
+import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
+import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
 import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
@@ -74,7 +75,6 @@ import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import type { ErrorLogEntry } from "../state/projection-store.js";
 import type { SessionHistoryListResult } from "@termloop/contract/current";
 import { ErrorLogPanel } from "./ErrorLogPanel.js";
-import { MobileConnectDialog } from "./MobileConnectDialog.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { SettingsDialog, type SettingsPage } from "./SettingsDialog.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
@@ -174,6 +174,8 @@ export type ShellProps = {
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   agentConnections?: AgentConnectionActions;
+  connectionProfiles: readonly ConnectionProfileSummary[];
+  computerKeepAwake: KeepAwakeActions;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   sshSetup?: SshSetupActions;
@@ -327,7 +329,6 @@ export type ShellProps = {
   setTerminalOccluded(occluded: boolean): void;
   subscribeNativeShellShortcut(listener: (shortcut: GhosttyShellShortcut) => void): () => void;
   setNativeOverlayOpen(open: boolean): void;
-  setNativeOverlaySuppressed(suppressed: boolean): void;
   overlayContainer: Element | undefined;
   openSessionInSplit(sessionId: string, direction: SplitDirection): void;
   openSessionInSplitAtPane(sessionId: string, paneId: string, direction: SplitDirection, placement: SplitPlacement): boolean;
@@ -393,7 +394,7 @@ export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts" | 
 /// The page currently covering the terminal stage, addressed by what it edits.
 export type StagePage =
   | { kind: "agent"; id?: string; duplicate?: boolean }
-  | { kind: "skill"; id: string }
+  | { kind: "skill"; id: string; scope?: "project" | "computer" }
   | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
@@ -401,7 +402,7 @@ export type StagePage =
   | { kind: "workflow"; id: string | null };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
-  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings" || page?.kind === "workflow"
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings" || page?.kind === "workflow" || (page?.kind === "prompt" && page.id.startsWith("runtime."))
     ? undefined
     : page;
 }
@@ -482,7 +483,6 @@ export function Shell(props: ShellProps) {
     projectRunSessionId
     && props.projectSessions.some((session) => session.id === projectRunSessionId && isLiveSession(session)),
   );
-  const [mobileConnectOpen, setMobileConnectOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>();
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState>();
   const [relocationSessionId, setRelocationSessionId] = useState<string>();
@@ -548,7 +548,7 @@ export function Shell(props: ShellProps) {
   const [quickActionProfile, setQuickActionProfile] = useState<string>();
   useEffect(() => {
     setQuickActionOpen(false); setQuickActionProfile(undefined);
-    setStagePage((page) => page?.kind === "agent" ? undefined : page);
+    setStagePage(undefined);
   }, [props.selectedProject?.connectionProfileId]);
   const [improverSetup, setImproverSetup] = useState<ImproverSetup>();
   const openPromptImproverSetup = useCallback((target: AssistantPromptImproverTarget) => {
@@ -979,6 +979,12 @@ export function Shell(props: ShellProps) {
   }, [props.selectedProject?.id]);
   const selectedSourceOffline = props.selectedProject?.connectionState === "offline";
   const selectedConnectionProfileId = props.selectedProject?.connectionProfileId ?? "local";
+  const showSettingsScope = hasRemoteComputers(props.connectionProfiles) || selectedConnectionProfileId !== "local";
+  const selectedComputer = props.connectionProfiles.find((profile) => profile.id === selectedConnectionProfileId);
+  const localComputerName = props.connectionProfiles.find((profile) => profile.transport === "local")?.name ?? "This computer";
+  const computerName = selectedComputer?.name ?? props.selectedProject?.connectionProfileName ?? localComputerName;
+  const scopeName = computerScopeName(computerName, selectedConnectionProfileId === "local");
+  const settingsScope = showSettingsScope ? { computerName: scopeName, projectName: props.selectedProject?.name } : undefined;
   const disabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
   const archived = useArchivedTasks({
     projectId: props.selectedProject?.id,
@@ -995,7 +1001,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = mobileConnectOpen || projectWorkflowOverlayOpen || Boolean(settingsPage) || shellShortcutsBlocked({
+  const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -1029,15 +1035,10 @@ export function Shell(props: ShellProps) {
     props.setNativeOverlayOpen(nativeOverlayOpen);
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
-  useEffect(() => {
-    props.setNativeOverlaySuppressed(mobileConnectOpen);
-    return () => props.setNativeOverlaySuppressed(false);
-  }, [mobileConnectOpen, props.setNativeOverlaySuppressed]);
   const terminalOccluded = shellTerminalOccluded(
     Boolean(changesSubject),
     sidebarDragging,
     sessionDragging,
-    mobileConnectOpen,
   );
   useEffect(() => {
     props.setTerminalOccluded(terminalOccluded);
@@ -1342,13 +1343,6 @@ export function Shell(props: ShellProps) {
             </div>
             <div className="brand-actions"><button className="icon-button quiet" title="Command palette" aria-label="Open command palette" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={openCommandPalette}><Icon name="search" /></button><button className="icon-button quiet" title="Add Project" aria-label="Add Project" onClick={props.openProjectDialog}><Icon name="add" /></button></div>
           </header>
-          <nav className="agent-library-navigation" aria-label="Libraries">
-            <button className="agent-library-trigger prompt-settings-trigger" type="button" aria-pressed={railMode === "agents"} onClick={() => { toggleRail("agents"); props.agentLibrary?.reload(); }}><span aria-hidden="true" /><strong>Agents</strong></button>
-            <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
-            <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
-            <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
-            <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
-          </nav>
           <ProjectCheckoutHeader
             {...(props.selectedProject
               ? { changes: { summary: props.projectWorktreeSummary, open: () => setChangesPresentation({ kind: "project" }) } }
@@ -1375,8 +1369,8 @@ export function Shell(props: ShellProps) {
                 <span className="project-avatar" aria-hidden="true">{props.selectedProject?.name.slice(0, 1).toUpperCase() ?? "–"}</span>
                 <span className="project-trigger-copy">
                   <strong id="project-title">{props.selectedProject?.name ?? "No Project"}</strong>
-                  {props.selectedProject?.connectionProfileName && props.projects.some((project) => project.connectionProfileId !== "local")
-                    ? <small>{props.selectedProject.connectionProfileName}{selectedSourceOffline ? " · Offline" : ""}</small>
+                  {showSettingsScope
+                    ? <small>{scopeName}{selectedConnectionProfileId !== "local" ? " · Remote" : ""}{selectedSourceOffline ? " · Offline" : ""}</small>
                     : null}
                 </span>
                 <Icon name="chevronDown" />
@@ -1389,6 +1383,13 @@ export function Shell(props: ShellProps) {
               ) : null}
             </div>
           </ProjectCheckoutHeader>
+          <nav className="agent-library-navigation" aria-label="Libraries">
+            <button className="agent-library-trigger prompt-settings-trigger" type="button" aria-pressed={railMode === "agents"} onClick={() => { toggleRail("agents"); props.agentLibrary?.reload(); }}><span aria-hidden="true" /><strong>Agents</strong></button>
+            <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
+            <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
+            <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
+            <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
+          </nav>
           <WorkspaceViewSwitch
             setupAgents={() => setSettingsPage("servers")}
             view={workspaceView}
@@ -1455,7 +1456,7 @@ export function Shell(props: ShellProps) {
             listRemoteComputers={props.listRemoteSkillComputers}
             loadRemoteCatalog={props.loadRemoteSkillCatalog}
             createRemoteSkill={props.createRemoteSkill}
-            openEditor={(skillId) => openStagePage({ kind: "skill", id: skillId })}
+            openEditor={(skillId, scope) => openStagePage({ kind: "skill", id: skillId, scope })}
             improveSkill={props.selectedProject
               ? (skillId, name) => openSettingsImproverSetup(
                 { kind: "skill", id: skillId, name: null, path: null, content: null },
@@ -1736,7 +1737,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}
             <div className="sidebar-footer-actions">
-              <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
@@ -1820,6 +1821,7 @@ export function Shell(props: ShellProps) {
               remove={props.deleteWorkflowConfiguration}
             /> : stagePage?.kind === "agent" && props.agentLibrary ? (
               props.agentLibrary.value && (!stagePage.id || props.agentLibrary.value.profiles.some((profile) => profile.id === stagePage.id)) ? <AgentProfilePanel
+              scopeContext={settingsScope}
                 key={`${props.selectedProject?.connectionProfileId}:${stagePage.id ?? "new"}:${Boolean(stagePage.duplicate)}`}
                 profile={props.agentLibrary.value.profiles.find((profile) => profile.id === stagePage.id)}
                 duplicate={Boolean(stagePage.duplicate)}
@@ -1832,6 +1834,8 @@ export function Shell(props: ShellProps) {
                 close={() => setStagePage(undefined)}
               /> : <StageEditorPlaceholder label="Agent" error={props.agentLibrary.error} loaded={Boolean(props.agentLibrary.value)} close={() => setStagePage(undefined)} />
             ) : stagePage?.kind === "skill" ? <SkillEditorPanel
+              scopeContext={settingsScope}
+              scope={stagePage.scope}
               key={stagePage.id}
               skillId={stagePage.id}
               load={props.loadSkillDefinition}
@@ -1839,6 +1843,7 @@ export function Shell(props: ShellProps) {
               versions={props.settingsImprovement}
               close={() => setStagePage(undefined)}
             /> : stagePage?.kind === "contextFile" ? <ContextBankEditorPanel
+              scopeContext={settingsScope}
               key={stagePage.id}
               fileId={stagePage.id}
               load={props.loadContextBankFile}
@@ -1846,6 +1851,7 @@ export function Shell(props: ShellProps) {
               onSaved={() => setContextBankRefreshToken((current) => current + 1)}
               close={() => setStagePage(undefined)}
             /> : stagePage?.kind === "mcpTool" ? (stageMcpTool && mcpLibrary.value ? <McpToolPanel
+              scopeContext={settingsScope}
               key={stageMcpTool.name}
               tool={stageMcpTool}
               stateRevision={mcpLibrary.value.stateRevision}
@@ -1872,6 +1878,7 @@ export function Shell(props: ShellProps) {
               openExternal={props.openExternal}
               close={() => setStagePage(undefined)}
             /> : stagePage?.kind === "prompt" ? (stagePrompt ? <PromptPanel
+              scopeContext={settingsScope}
               key={stagePrompt.id}
               prompt={stagePrompt}
               update={props.updatePromptAsset}
@@ -2079,6 +2086,10 @@ export function Shell(props: ShellProps) {
       /> : null}
       {settingsPage ? <SettingsDialog
         initialPage={settingsPage}
+        showScope={showSettingsScope}
+        localComputerName={localComputerName}
+        keepAwake={props.computerKeepAwake}
+        mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
@@ -2185,12 +2196,6 @@ export function Shell(props: ShellProps) {
         repairProviderHistory={repairBackgroundRelocation}
       />
       </OverlayPortal>
-      {mobileConnectOpen ? <MobileConnectDialog
-        prepare={props.prepareMobileAccess}
-        loadVoiceSettings={props.loadVoiceSettings}
-        saveVoiceCredentials={props.saveVoiceCredentials}
-        close={() => setMobileConnectOpen(false)}
-      /> : null}
     </>
   );
 }

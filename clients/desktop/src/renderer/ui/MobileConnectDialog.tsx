@@ -4,12 +4,16 @@ import type { VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/c
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { voiceCredentialErrorMessage } from "../control-error.js";
 
-export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoiceCredentials }: {
+export type MobileConnectDialogProps = {
   close(): void;
   prepare(): Promise<MobileAccessPairingResult>;
   loadVoiceSettings(): Promise<VoiceSettingsResult>;
   saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
-}) {
+  embedded?: boolean;
+  computerName?: string | undefined;
+};
+
+export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoiceCredentials, embedded = false, computerName }: MobileConnectDialogProps) {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<MobileAccessPairingResult>();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean>();
@@ -83,16 +87,14 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
     }
   };
 
-  return (
-    <div className="mobile-connect-layer" role="presentation">
-      <button className="mobile-connect-backdrop" type="button" tabIndex={-1} aria-label="Close mobile connection" onClick={close} />
-      <section className="mobile-connect-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-connect-title">
-        <header>
+  const content = <>
+        <header className={embedded ? "settings-page-header" : undefined}>
           <div>
-            <span>TermLoop Mobile</span>
+            <span>{computerName ? `${computerName} · This computer` : "TermLoop Mobile"}</span>
             <h2 id="mobile-connect-title">Connect your phone</h2>
+            {computerName ? <p>Pair your phone with {computerName}. Voice settings are saved on this computer.</p> : null}
           </div>
-          <button type="button" aria-label="Close" onClick={close}>×</button>
+          {!embedded ? <button type="button" aria-label="Close" onClick={close}>×</button> : null}
         </header>
         <div className="mobile-connect-body">
           {result === undefined ? (
@@ -165,9 +167,12 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
           </section>
         </div>
         <footer>The OpenAI key never leaves the daemon except as provider authorization.</footer>
-      </section>
-    </div>
-  );
+  </>;
+  if (embedded) return <section className="mobile-connect-settings" aria-labelledby="mobile-connect-title">{content}</section>;
+  return <div className="mobile-connect-layer" role="presentation">
+    <button className="mobile-connect-backdrop" type="button" tabIndex={-1} aria-label="Close mobile connection" onClick={close} />
+    <section className="mobile-connect-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-connect-title">{content}</section>
+  </div>;
 }
 
 function validApiKey(value: string): boolean {
