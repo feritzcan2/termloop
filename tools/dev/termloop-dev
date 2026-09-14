@@ -1156,6 +1156,9 @@ source_server_binary="$cargo_target_dir/debug/termloop-server"
 source_companion_binary="$cargo_target_dir/debug/termloop-companion"
 source_skills_manager_binary="$cargo_target_dir/debug/skills-manager-cli"
 if [[ "$reuse_build" == false ]]; then
+  # A checkout update may add dependencies even when the existing native build
+  # tools are present. Reconcile the whole workspace before compiling anything.
+  pnpm install --frozen-lockfile
   CARGO_TARGET_DIR="$cargo_target_dir" cargo build -p termloop-server -p termloop-companion
   node "$skills_manager_fetcher" --output "$source_skills_manager_binary"
 fi
@@ -1175,10 +1178,6 @@ if [[ ! -x "$supervisor_script" ]]; then
 fi
 if [[ "$launcher_os" == "Darwin" ]]; then
   if [[ "$reuse_build" == false ]]; then
-    if [[ ! -x "$checkout/clients/desktop/node_modules/.bin/node-gyp" || \
-          ! -e "$checkout/clients/desktop/node_modules/node-addon-api" ]]; then
-      pnpm install --frozen-lockfile
-    fi
     pnpm --filter @termloop/desktop native:ghostty:dev
   else
     for artifact in \
