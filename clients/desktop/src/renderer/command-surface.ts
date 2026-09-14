@@ -5,6 +5,7 @@ export type KeyboardPlatform = "mac" | "windows" | "linux";
 export type ShellShortcutId =
   | "commandPalette"
   | "newTerminal"
+  | "renameSession"
   | "focusPreviousPane"
   | "focusNextPane";
 
@@ -60,9 +61,17 @@ type Shortcut = {
 const SHORTCUTS: Record<ShellShortcutId, Shortcut> = {
   commandPalette: { code: "KeyP", shift: true },
   newTerminal: { code: "KeyT" },
+  renameSession: { code: "KeyR" },
   focusPreviousPane: { code: "ArrowLeft", alt: true },
   focusNextPane: { code: "ArrowRight", alt: true },
 };
+
+function shortcutFor(id: ShellShortcutId, platform: KeyboardPlatform): Shortcut {
+  // Ctrl+R belongs to terminal history search on Windows and Linux.
+  return id === "renameSession" && platform !== "mac"
+    ? { ...SHORTCUTS[id], shift: true }
+    : SHORTCUTS[id];
+}
 
 export function keyboardPlatform(userAgent: string): KeyboardPlatform {
   if (/macintosh|mac os x/iu.test(userAgent)) return "mac";
@@ -78,11 +87,12 @@ export function showsWindowDragRegion(platform: KeyboardPlatform): boolean {
 }
 
 export function shortcutLabel(id: ShellShortcutId, platform: KeyboardPlatform): string {
-  const shortcut = SHORTCUTS[id];
+  const shortcut = shortcutFor(id, platform);
   const key = shortcut.code === "KeyP" ? "P"
     : shortcut.code === "KeyT" ? "T"
-      : shortcut.code === "ArrowLeft" ? "←"
-        : "→";
+      : shortcut.code === "KeyR" ? "R"
+        : shortcut.code === "ArrowLeft" ? "←"
+          : "→";
   if (platform === "mac") {
     return `${shortcut.alt ? "⌥" : ""}${shortcut.shift ? "⇧" : ""}⌘${key}`;
   }
@@ -94,7 +104,7 @@ export function matchesShellShortcut(
   id: ShellShortcutId,
   platform: KeyboardPlatform,
 ): boolean {
-  const shortcut = SHORTCUTS[id];
+  const shortcut = shortcutFor(id, platform);
   const primary = platform === "mac" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
   return primary
     && event.code === shortcut.code
@@ -129,6 +139,7 @@ export function nativeProjectShortcutIndex(shortcut: GhosttyShellShortcut): numb
 export function nativeShellCommandId(shortcut: GhosttyShellShortcut): ShellShortcutId | undefined {
   return shortcut === "commandPalette"
     || shortcut === "newTerminal"
+    || shortcut === "renameSession"
     || shortcut === "focusPreviousPane"
     || shortcut === "focusNextPane"
     ? shortcut

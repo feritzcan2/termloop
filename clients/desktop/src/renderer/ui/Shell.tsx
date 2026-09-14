@@ -1144,6 +1144,16 @@ export function Shell(props: ShellProps) {
       perform: () => selectSession(session.id),
     })),
     {
+      id: "session.rename",
+      title: "Rename Selected Session",
+      detail: props.selectedSession ? sessionLabel(props.selectedSession) : "Select a Session first.",
+      group: "Session",
+      keywords: ["name", "title", "agent", "terminal"],
+      shortcutId: "renameSession",
+      disabled: disabled || !props.selectedSession,
+      perform: () => { if (props.selectedSession) setRenameSessionId(props.selectedSession.id); },
+    },
+    {
       id: "session.dismiss",
       title: props.selectedSession && sessionDismissCommand(props.selectedSession) === "close" ? "Remove Selected Session" : "Close Selected Session",
       detail: props.selectedSession ? `${sessionLabel(props.selectedSession)} · ${sessionDismissCommand(props.selectedSession) === "close" ? "Remove its stopped descriptor." : "End its process and remove the Session."}` : "Select a Session first.",
@@ -1183,7 +1193,7 @@ export function Shell(props: ShellProps) {
   selectProjectRef.current = selectProject;
 
   useEffect(() => {
-    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "focusPreviousPane", "focusNextPane"];
+    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "focusPreviousPane", "focusNextPane"];
     const keyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (matchesShellShortcut(event, "commandPalette", platform)) {

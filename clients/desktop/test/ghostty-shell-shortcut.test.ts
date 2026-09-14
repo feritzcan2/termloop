@@ -7,6 +7,7 @@ describe("Ghostty shell shortcut boundary", () => {
     "quickAction",
     "commandPalette",
     "newTerminal",
+    "renameSession",
     "focusPreviousPane",
     "focusNextPane",
     "project.1",

@@ -97,6 +97,7 @@ export function CommandPalette({ commands, platform, close }: {
 const SHORTCUT_ROWS: readonly { id: ShellShortcutId; label: string; detail: string }[] = [
   { id: "commandPalette", label: "Command palette", detail: "Captured anywhere in the TermLoop window." },
   { id: "newTerminal", label: "New terminal", detail: "Creates a Session in the selected Project." },
+  { id: "renameSession", label: "Rename selected Session", detail: "Changes the selected terminal or agent name." },
   { id: "focusPreviousPane", label: "Focus previous pane", detail: "Cycles without changing Session lifecycle." },
   { id: "focusNextPane", label: "Focus next pane", detail: "Cycles without changing Session lifecycle." },
 ];
