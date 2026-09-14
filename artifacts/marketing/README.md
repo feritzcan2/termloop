@@ -16,7 +16,7 @@ Everyday tools use compact illustrated cards with links to their written guides,
 
 ## Recording provenance
 
-Ask To, both Tasks chapters and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
+Ask To, Fork, both Tasks chapters and Code review were captured on September 14, 2026. Fork shows the Session menu action and the resulting child Session with visible parentage in five seconds. Handoff reuses the September 9 OBS delivery with its added caption band removed, then receives the same new timing and click treatment. Its earlier interface remains visible; it is not a new September 14 take. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of that recovered delivery contained cuts.
 
 The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. A stationary recorder coordinate overlay in an empty corner of the three new feature takes is removed. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
 

@@ -86,6 +86,7 @@ for (const feature of catalog) {
   assert.equal(video.avg_frame_rate, `${archived ? edit.sourceFps : 30}/1`);
   const duration = Number(media.format.duration);
   assert(duration >= (edit.sourceStart ? 3 : 5) && duration <= (joined ? 32 : 30), `${feature.id}: unexpected duration ${duration}`);
+  if (feature.id === 'fork') assert(duration <= 5, 'Session Fork must stay within five seconds');
   assert(Math.abs(duration - report.duration) < .04);
   assert.equal(Number(video.nb_frames), report.frames);
   if (!archived && !joined) {

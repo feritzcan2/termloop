@@ -133,11 +133,32 @@ describe("TerminalPool", () => {
     await Promise.resolve();
     expect(attach).not.toHaveBeenCalled();
 
+    await expect(pool.submitInput(value.id, "early input")).rejects.toThrow("target Session is still mounting");
+
     finishMount();
     await mounting;
     expect(attach).toHaveBeenCalledTimes(1);
     expect(attachment.resizes).toEqual([{ rows: 48, cols: 160 }]);
     expect(attachment.operations).toEqual(["resize", "listen"]);
+    pool.dispose();
+  });
+
+  it("does not reconnect an unmounted surface until fresh mount geometry is ready", async () => {
+    const attach = vi.fn(async () => new FakeAttachment());
+    const pool = new TerminalPool(() => new FakeSurface(), attach);
+    const value = session("unmounted-reconnect");
+    pool.reconcile([value]);
+    await pool.mount(value.id, {} as HTMLElement);
+    expect(attach).toHaveBeenCalledTimes(1);
+
+    pool.unmount(value.id);
+    pool.reconnectAttachments();
+    pool.reconcile([{ ...value }]);
+    await Promise.resolve();
+    expect(attach).toHaveBeenCalledTimes(1);
+
+    await pool.mount(value.id, {} as HTMLElement);
+    expect(attach).toHaveBeenCalledTimes(2);
     pool.dispose();
   });
 
