@@ -1,10 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { autoplayCandidate, validPlaybackRate, visibleVideoFraction } from '../../landing/assets/feature-guide.mjs';
 
 const options = { enabled: true, reducedMotion: false, pageHidden: false };
 const visible = { video: 'visible', ratio: .9, hidden: false, manuallyPaused: false };
+test('published assets change URL with their contents so returning visitors receive new styles and videos', () => {
+  const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
+  const assets = [...page.matchAll(/(?:src|poster|href)="(assets\/[^"?#]+)([^"#]*)"/g)];
+  assert(assets.some(([, asset]) => asset.endsWith('feature-guide.css')));
+  assert.equal(assets.filter(([, asset]) => asset.endsWith('.mp4')).length, 24);
+  for (const [, asset, query] of assets) {
+    const content = readFileSync(new URL(`../../landing/${asset}`, import.meta.url));
+    assert.equal(query, `?v=${createHash('sha256').update(content).digest('hex').slice(0, 12)}`, asset);
+  }
+});
 test('autoplay respects motion preference, hidden pages, and opting out', () => {
   for (const override of [{enabled:false}, {reducedMotion:true}, {pageHidden:true}])
     assert.equal(autoplayCandidate([visible], {...options,...override}), undefined);
