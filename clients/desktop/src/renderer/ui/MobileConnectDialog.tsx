@@ -90,7 +90,7 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
   const content = <>
         <header className={embedded ? "settings-page-header" : undefined}>
           <div>
-            <span>{computerName ? `${computerName} · This computer` : "TermLoop Mobile"}</span>
+            <span>{computerName ? computerName === "This computer" ? computerName : `${computerName} · This computer` : "TermLoop Mobile"}</span>
             <h2 id="mobile-connect-title">Connect your phone</h2>
             {computerName ? <p>Pair your phone with {computerName}. Voice settings are saved on this computer.</p> : null}
           </div>

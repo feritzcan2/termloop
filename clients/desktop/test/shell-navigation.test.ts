@@ -23,6 +23,8 @@ describe("Shell navigation from the changes editor", () => {
     expect(stagePageAfterProjectChange({ kind: "contextFile", id: "context-a" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "workflow", id: "workflow-a" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "taskSettings" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "prompt", id: "runtime.steward.instructions" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "prompt", id: "runtime.routine.a.instructions" })).toBeUndefined();
     expect(stagePageAfterProjectChange({ kind: "mcpTool", id: "tool-a" }))
       .toEqual({ kind: "mcpTool", id: "tool-a" });
     expect(stagePageAfterProjectChange({ kind: "prompt", id: "prompt-a" }))
