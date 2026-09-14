@@ -475,10 +475,11 @@
     "sourceFps": 20,
     "stepsAt": [
       0,
-      1.2,
-      3.8
+      1.5,
+      2.05
     ],
-    "posterAt": 2.4
+    "posterAt": 1.4,
+    "sourceStart": 1.75
   },
   "changes": {
     "archiveSource": "assets/videos/changes-review.mp4",
@@ -490,5 +491,23 @@
       10
     ],
     "posterAt": 6
+  },
+  "tasks": {
+    "segments": [
+      {
+        "source": "assets/videos/tour/task-briefs.mp4",
+        "sourceSha256": "75b2d2dc03a03edb6f1ef9d4d4078fef594bfa0ed37c00fcfd7c22a1a014e2ff"
+      },
+      {
+        "source": "assets/videos/tour/task-worktrees.mp4",
+        "sourceSha256": "ed03e4ae3a49ef3d7ff8b5aaaf29e39d561f610efaf5974d1555275bca07054d"
+      }
+    ],
+    "stepsAt": [
+      0,
+      7,
+      13.7
+    ],
+    "posterAt": 22
   }
 }
