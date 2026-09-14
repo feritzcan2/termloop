@@ -45,9 +45,9 @@
     "title": "Explore another direction in a real terminal.",
     "description": "Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.",
     "steps": [
-      "Choose a conversation to explore in a new direction.",
-      "Fork it from the Session menu.",
-      "Continue in a separate Session with visible parentage."
+      "Choose a Session.",
+      "Fork the conversation.",
+      "Continue separately."
     ],
     "provenance": "Launchpad Demo"
   },
