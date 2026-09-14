@@ -240,6 +240,7 @@ export class TerminalPool {
     entry.mountToken = undefined;
     entry.readRevision++;
     entry.mounted = false;
+    entry.surfaceReady = false;
     entry.surface.unmount();
   }
 
@@ -283,6 +284,9 @@ export class TerminalPool {
     }
     if (!entry.surface || !entry.mounted) {
       throw new Error("target Session is not mounted");
+    }
+    if (!entry.surfaceReady) {
+      throw new Error("target Session is still mounting");
     }
     const runtimeEpoch = entry.session.runtime_epoch;
     await this.#ensureAttachment(entry);

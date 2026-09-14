@@ -145,68 +145,56 @@
     "sourceSha256": "e00dd6eabd47377b1d2461e5c19e8c0d36ad264e1807f98822b36c8c333628f5"
   },
   "fork": {
-    "source": "fork.mp4",
+    "source": "fork.mkv",
     "runs": [
       [
-        2.4,
-        3
-      ],
-      [
-        3.7,
-        1
-      ],
-      [
-        14.5,
+        5.4,
         7
       ],
       [
-        16.8,
+        6.2,
         1
       ],
       [
-        24,
-        4.5
+        10.6,
+        12
       ],
       [
-        27,
+        11.2,
         1
       ],
       [
-        31,
-        2
-      ],
-      [
-        36,
-        1
+        13.1,
+        5
       ],
       [
         null,
-        5
+        1.008691674291
       ]
     ],
     "clicks": [
       {
-        "sourceTime": 2.73,
+        "sourceTime": 5.8,
         "x": 230,
-        "y": 334,
+        "y": 263,
         "label": "Open Session menu"
       },
       {
-        "sourceTime": 14.8,
-        "x": 322,
-        "y": 513,
+        "sourceTime": 11,
+        "x": 339,
+        "y": 444,
         "label": "Fork conversation"
       }
     ],
     "stepsAt": [
       0,
-      14.5,
-      24
+      5.8,
+      13.1
     ],
-    "posterAt": 32,
-    "recordedAt": "2026-09-09",
-    "recoveredFrom": "landing/assets/videos/tour/fork.mp4 (previous published delivery; only its added caption band removed)",
-    "sourceSha256": "36c93ad4c0eba442cd5bdb295f7bb7792091e9c305cb8d7888d748f32151ef97"
+    "posterAt": 14.6,
+    "recordedAt": "2026-09-14",
+    "sourceSha256": "8dd45015661eff4b40f5fdebbbfd9d9f6f625626f13835a7fc77f5f9f36b9450",
+    "sourceEnd": 15.2
   },
   "task-briefs": {
     "source": "task-briefs.mp4",
