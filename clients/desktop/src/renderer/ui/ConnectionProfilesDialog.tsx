@@ -1,5 +1,7 @@
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { SshSetupWizard } from "./SshSetupWizard.js";
+import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
+import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -20,7 +22,7 @@ type Message = {
   text: string;
   placement?: MessagePlacement;
 };
-type View = "connect" | "agents" | "share";
+type View = "connect" | "agents" | "share" | "power";
 type Tone = "ok" | "warn" | "danger" | "idle";
 
 const DISCOVERY_REFRESH_MS = 10_000;
@@ -28,7 +30,9 @@ const DISCOVERY_REFRESH_MS = 10_000;
 export type ConnectionProfilesDialogProps = {
   sshSetup?: SshSetupActions;
   agentConnections?: AgentConnectionActions | undefined;
-  initialProfileId?: string;
+  initialProfileId?: string | undefined;
+  keepAwake?: KeepAwakeActions | undefined;
+  pairPhone?: (() => void) | undefined;
   close(): void;
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   disableHost(): Promise<RemoteHostStatus>;
@@ -46,6 +50,8 @@ export type ConnectionProfilesDialogProps = {
 export function ConnectionProfilesDialog({
   sshSetup,
   agentConnections,
+  keepAwake,
+  pairPhone,
   initialProfileId = "local",
   close,
   connect,
@@ -329,6 +335,8 @@ export function ConnectionProfilesDialog({
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
           {agentConnections ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("agents"); }}>Manage agents</button> : null}
+          {keepAwake ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("power"); }}>Keep Awake</button> : null}
+          {isLocal && pairPhone ? <button type="button" className="conn-manage" onClick={pairPhone}>Pair phone</button> : null}
           {isLocal ? <span className="conn-always">Always on</span> : (
             <>
               <button
@@ -525,15 +533,18 @@ export function ConnectionProfilesDialog({
       <div className="conn-toggle" role="group" aria-label="Connection settings">
         <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Computers</button>
         {agentConnections ? <button type="button" aria-pressed={view === "agents"} className={view === "agents" ? "active" : ""} onClick={() => setView("agents")}>Agent accounts</button> : null}
+        {keepAwake ? <button type="button" aria-pressed={view === "power"} className={view === "power" ? "active" : ""} onClick={() => setView("power")}>Keep Awake</button> : null}
         <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>
       </div>
 
       <div className="server-profiles-body">
         {view === "connect" ? renderConnect() : view === "share" ? renderShare() : <>
-          <label className="conn-field agent-server-select"><span>Server</span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
+          <label className="conn-field agent-server-select"><span>Computer</span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
             {profiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.transport === "local" ? "" : ` · ${transportLabel(profile.transport)}`}{profile.state === "offline" ? " · Offline" : ""}</option>)}
           </select></label>
-          {profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
+          {view === "power" && keepAwake && profiles?.find((profile) => profile.id === selectedProfileId)
+            ? <ComputerPowerSettings key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={keepAwake} showScope={hasRemoteComputers(profiles)} />
+            : profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
             ? <AgentConnectionsPanel key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={agentConnections} />
             : <p className="conn-note">Choose an available server from Computers.</p>}
         </>}
@@ -556,6 +567,25 @@ export function ConnectionProfilesDialog({
       </section>
     </div>
   );
+}
+
+function ComputerPowerSettings({ profile, actions, showScope }: {
+  profile: ConnectionProfileSummary;
+  actions: KeepAwakeActions;
+  showScope: boolean;
+}) {
+  const load = useCallback(() => actions.load(profile.id), [actions.load, profile.id]);
+  const save = useCallback((params: Parameters<KeepAwakeActions["save"]>[1]) => actions.save(profile.id, params), [actions.save, profile.id]);
+  const scoped = showScope || profile.transport !== "local";
+  return <KeepAwakePanel
+    embedded
+    computerName={scoped ? profile.name : undefined}
+    scopeLabel={scoped ? computerScopeName(profile.name, profile.transport === "local") : undefined}
+    disabled={!profile.enabled || profile.state !== "connected" || profile.scope === "readOnly"}
+    load={load}
+    save={save}
+    refreshToken={actions.refreshToken}
+  />;
 }
 
 export function mergeConnectionProfileStatuses(

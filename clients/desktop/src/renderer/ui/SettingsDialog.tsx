@@ -10,8 +10,9 @@ import {
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
 import type { AppearancePreference } from "../appearance-theme.js";
+import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
 
-export type SettingsPage = "appearance" | "notifications" | "servers";
+export type SettingsPage = "appearance" | "notifications" | "servers" | "mobile";
 
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
   close(): void;
@@ -20,6 +21,9 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   changeAppearancePreference(preference: AppearancePreference): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
+  showScope?: boolean;
+  localComputerName?: string | undefined;
+  mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
 };
 
 export function SettingsDialog({
@@ -29,6 +33,9 @@ export function SettingsDialog({
   changeAppearancePreference,
   loadNotificationPreferences,
   saveNotificationPreferences,
+  showScope = false,
+  localComputerName,
+  mobile,
   ...connectionProps
 }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage);
@@ -36,6 +43,7 @@ export function SettingsDialog({
   const [loadingError, setLoadingError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [initialProfileId] = useState(connectionProps.initialProfileId);
 
   useEffect(() => {
     let active = true;
@@ -110,11 +118,15 @@ export function SettingsDialog({
         </header>
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="Settings sections">
+            {showScope ? <span className="settings-nav-group">This app</span> : null}
             <button type="button" className={page === "appearance" ? "active" : ""} aria-current={page === "appearance" ? "page" : undefined} onClick={() => setPage("appearance")}>Appearance</button>
             <button type="button" className={page === "notifications" ? "active" : ""} aria-current={page === "notifications" ? "page" : undefined} onClick={() => setPage("notifications")}>Notifications</button>
-            <button type="button" className={page === "servers" ? "active" : ""} aria-current={page === "servers" ? "page" : undefined} onClick={() => setPage("servers")}>Servers</button>
+            {showScope ? <span className="settings-nav-group">Computers</span> : null}
+            <button type="button" className={page === "servers" ? "active" : ""} aria-current={page === "servers" ? "page" : undefined} onClick={() => setPage("servers")}>Computers</button>
+            {mobile ? <button type="button" className={page === "mobile" ? "active" : ""} aria-current={page === "mobile" ? "page" : undefined} onClick={() => setPage("mobile")}>Pair phone{showScope ? <small>This computer</small> : null}</button> : null}
           </nav>
           <main className="settings-content">
+            {showScope && (page === "appearance" || page === "notifications") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
             {page === "appearance" ? (
               <AppearanceSettings preference={appearancePreference} change={changeAppearancePreference} />
             ) : page === "notifications" ? (
@@ -126,13 +138,15 @@ export function SettingsDialog({
                 updateDesktop={updateDesktopPreference}
                 updateRemote={updateRemotePreference}
               />
+            ) : page === "mobile" && mobile ? (
+              <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
             ) : (
               <>
                 <div className="settings-page-header">
-                  <h3>Servers</h3>
+                  <h3>Computers</h3>
                   <p>Manage your computers, agent accounts and remote access.</p>
                 </div>
-                <ConnectionProfilesDialog {...connectionProps} embedded close={close} />
+                <ConnectionProfilesDialog {...connectionProps} initialProfileId={initialProfileId} embedded close={close} pairPhone={mobile ? () => setPage("mobile") : undefined} />
               </>
             )}
           </main>

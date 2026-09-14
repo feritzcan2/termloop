@@ -1,3 +1,5 @@
+import type { SettingsScopeContext } from "../settings-scope.js";
+import { SettingsScopeLabel } from "./SettingsScopeLabel.js";
 import { useCallback, useEffect, useState } from "react";
 
 import { promptBodyError, promptKind, PROMPT_MAX_CHARACTERS, type PromptAsset } from "../prompt-settings.js";
@@ -7,7 +9,8 @@ import { ConfigurationVersions, useConfigurationVersions, type ConfigurationVers
 /// Stage page for one catalog prompt. Built-in edits are stored in this app
 /// profile; runtime projections returned by Core are shown read only, because
 /// nothing here owns them.
-export function PromptPanel({ prompt, update, reset, apply, versions, reload, close }: {
+export function PromptPanel({ scopeContext, prompt, update, reset, apply, versions, reload, close }: {
+  scopeContext?: SettingsScopeContext | undefined;
   prompt: PromptAsset;
   update(id: string, body: string): Promise<PromptAsset[]>;
   reset(id: string): Promise<PromptAsset[]>;
@@ -60,6 +63,7 @@ export function PromptPanel({ prompt, update, reset, apply, versions, reload, cl
     <section className="stage-editor" aria-label={`${prompt.title} prompt`}>
       <header className="stage-editor-head">
         <div className="stage-editor-title">
+          <SettingsScopeLabel context={scopeContext} scope={prompt.source === "builtIn" ? "app" : "project"} />
           <span>{prompt.category}{prompt.version ? ` · v${prompt.version}` : ""}</span>
           <h2>{prompt.title}</h2>
           <code>{prompt.id}</code>

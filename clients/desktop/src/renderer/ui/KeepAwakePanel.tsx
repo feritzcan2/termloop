@@ -20,10 +20,20 @@ import {
  * "keep this computer awake" has more than one honest answer: only while
  * agents run, always, and whether the screen should stay lit too.
  */
-export function KeepAwakePanel({ load, save, refreshToken }: {
+export type KeepAwakeActions = {
+  load(profileId: string): Promise<KeepAwakeStatusResult>;
+  save(profileId: string, params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
+  refreshToken: number;
+};
+
+export function KeepAwakePanel({ load, save, refreshToken, computerName, scopeLabel, embedded = false, disabled = false }: {
   load(): Promise<KeepAwakeStatusResult>;
   save(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
   refreshToken: number;
+  computerName?: string | undefined;
+  scopeLabel?: string | undefined;
+  embedded?: boolean;
+  disabled?: boolean;
 }) {
   type DurationSelection = "none" | "active" | number;
   const [open, setOpen] = useState(false);
@@ -36,11 +46,12 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
 
   const refresh = useCallback(() => {
     let cancelled = false;
+    if (disabled) { setStatus(undefined); return () => { cancelled = true; }; }
     load()
-      .then((value) => { if (!cancelled) setStatus(value); })
-      .catch(() => { if (!cancelled) setFailure("Could not read the keep-awake setting."); });
+      .then((value) => { if (!cancelled) { setStatus(value); setFailure(undefined); } })
+      .catch(() => { if (!cancelled) { setStatus(undefined); setFailure("Could not read the keep-awake setting."); } });
     return () => { cancelled = true; };
-  }, [load]);
+  }, [disabled, load]);
 
   // The daemon flips the hold on its own as agents start and exit, so the
   // panel follows the projection instead of only its own writes.
@@ -68,7 +79,7 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
   }, [status?.expiresAtEpochMs]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || embedded) return;
     const closeFromOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
     };
@@ -81,9 +92,10 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
       document.removeEventListener("pointerdown", closeFromOutside);
       document.removeEventListener("keydown", closeFromKeyboard);
     };
-  }, [open]);
+  }, [embedded, open]);
 
   const submit = (mode: KeepAwakeMode, keepDisplayAwake: boolean, durationSeconds: number | null) => {
+    if (disabled || saving || !status) return;
     setSaving(true);
     setFailure(undefined);
     save({ mode, keepDisplayAwake, durationSeconds })
@@ -101,28 +113,28 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
 
   return (
     <div ref={rootRef} className="keep-awake-control">
-      <button
+      {!embedded ? <button
         type="button"
         className={`keep-awake-trigger${engaged ? " is-engaged" : ""}${blocked ? " is-blocked" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={status ? keepAwakeSummary(status) : "Keep awake"}
+        title={status ? keepAwakeSummary(status, computerName) : "Keep awake"}
         onClick={() => setOpen((current) => !current)}
       >
         <span className="keep-awake-trigger-dot" aria-hidden="true" />
-        <span>Keep Awake</span>
+        <span className="keep-awake-trigger-label">Keep Awake{scopeLabel ? ` · ${scopeLabel}` : ""}</span>
         {countdown ? <span className="keep-awake-trigger-countdown">{countdown}</span> : null}
-      </button>
-      {open ? <section className="keep-awake-panel" role="dialog" aria-label="Keep awake">
+      </button> : null}
+      {open || embedded ? <section className={`keep-awake-panel${embedded ? " embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Keep awake">
         <header>
-          <span>Power</span>
-          <h2>Keep this computer awake</h2>
+          <span>{scopeLabel ? `Power · ${scopeLabel}` : "Power"}</span>
+          <h2>Keep {computerName ?? "this computer"} awake</h2>
         </header>
         <div className="keep-awake-body">
           <p className={`keep-awake-status${blocked ? " is-blocked" : ""}`}>
-            {status ? keepAwakeSummary(status) : "Reading the current setting…"}
+            {disabled ? "Connect to this computer with write access to change its power settings." : status ? keepAwakeSummary(status, computerName) : "Reading the current setting…"}
           </p>
-          <fieldset disabled={saving || status === undefined}>
+          <fieldset disabled={disabled || saving || status === undefined}>
             <legend>When</legend>
             {KEEP_AWAKE_MODES.map((mode) => <label key={mode} className="keep-awake-option">
               <input
@@ -137,7 +149,7 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
               />
               <span>
                 <strong>{keepAwakeModeLabel(mode)}</strong>
-                <small>{keepAwakeModeHint(mode)}</small>
+                <small>{keepAwakeModeHint(mode, computerName)}</small>
               </span>
             </label>)}
           </fieldset>
@@ -148,7 +160,7 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
             </span>
             <select
               value={durationSelection === "active" ? "active" : durationSelection === "none" ? "none" : String(durationSelection)}
-              disabled={saving || status === undefined}
+              disabled={disabled || saving || status === undefined}
               onChange={(event) => {
                 const value = event.target.value;
                 if (value === "active") return;
@@ -166,7 +178,7 @@ export function KeepAwakePanel({ load, save, refreshToken }: {
             <input
               type="checkbox"
               checked={status?.keepDisplayAwake ?? false}
-              disabled={saving || status === undefined || status.mode === "off"}
+              disabled={disabled || saving || status === undefined || status.mode === "off"}
               onChange={(event) => submit(status?.mode ?? "off", event.target.checked, typeof durationSelection === "number" ? durationSelection : null)}
             />
             <span>
