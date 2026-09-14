@@ -13,7 +13,7 @@
   <a href="docs/development.md">Build from source</a>
 </p>
 
-Eight short loops from real Projects. Click a preview for the 1080p video, playback controls and written steps.
+Seven short loops from real Projects. Click a preview for the 1080p video, playback controls and written steps.
 
 ### Ask To — Get a second opinion without copy-paste.
 
@@ -25,7 +25,7 @@ Ask one agent to consult another agent. TermLoop creates a visible helper Sessio
 
 Open Quick Actions, write the request and launch an agent with the right context.
 
-<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
+<a href="https://termloop.ai/#quick-actions"><img src="artifacts/marketing/readme/quick-actions.gif?v=f38d77cc0170" alt="Quick Actions: Launch the Session and follow its work in the terminal." width="960"></a>
 
 ### Handoff — Move context to the agent already in the work.
 
@@ -39,17 +39,11 @@ Fork a Session from the sidebar, see the parent-child relationship, and continue
 
 <a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
 
-### Tasks — Keep the goal beside the work.
+### Tasks — Define the work. Add a worktree when needed.
 
-Keep a clear brief, acceptance criteria and a small checklist attached to each Task.
+Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.
 
-<a href="https://termloop.ai/#task-briefs"><img src="artifacts/marketing/readme/task-briefs.gif" alt="Tasks: Mark completed checks without losing the Task context." width="960"></a>
-
-### Task Worktrees — Give each change its own workspace.
-
-Create a branch and managed worktree directly from a Task. Keep parallel changes in separate checkouts.
-
-<a href="https://termloop.ai/#task-worktrees"><img src="artifacts/marketing/readme/task-worktrees.gif" alt="Task Worktrees: The Task now has its own branch and worktree." width="960"></a>
+<a href="https://termloop.ai/#tasks"><img src="artifacts/marketing/readme/tasks.gif?v=1c8cb4e8c9b1" alt="Tasks: define the work, complete checks, then create an optional worktree from the same Task." width="960"></a>
 
 ### Changes — Turn review notes into the next change.
 
@@ -78,7 +72,7 @@ Small controls that stay close to the work.
 
 Also included: multiple live agents, mobile terminal access, Project Steward, reusable workflows, Context Bank, skills, MCP tools and notifications. Explore the [complete feature guide](docs/features.md).
 
-The GIFs follow the same timing as the website videos. Quick Actions and Changes keep their original edits; the six September edits use visible clicks and smoothly accelerated waits. Website demos loop silently when visible and respect reduced-motion preferences.
+The GIFs follow the same timing as the website videos. Quick Actions begins on the prompt composer, and Tasks includes optional worktree creation in the same loop. The September footage uses visible clicks and smoothly accelerated waits; Changes keeps its earlier edit. Website demos loop silently when visible and respect reduced-motion preferences.
 
 ## Start using TermLoop
 

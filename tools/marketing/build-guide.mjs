@@ -40,7 +40,7 @@ const tour = `    <section class="tour" id="features"><div class="shell">
       <div class="section-heading"><div><p class="prompt-line">${catalog.length} essential workflows</p><h2>See the work stay connected.</h2></div><p>Launch an agent, get a second opinion, and turn review notes into the next change. Follow real work in populated Projects.</p></div>
       <nav class="demo-nav" aria-label="Demo navigation">${catalog.map(f => `<a href="#${f.id}">${escape(f.label)}</a>`).join('')}<a href="#everyday">Everyday tools ↓</a></nav>
       <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
-      ${features.map(f => `<article class="feature-story" id="${f.id}" data-demo data-demo-label="${escape(f.label)}"><div class="feature-copy"><span class="feature-kicker">${escape(f.label)}</span><h3>${escape(f.title)}</h3></div>${media(f)}</article>`).join('\n')}
+      ${features.map(f => `<article class="feature-story" id="${f.id}" data-demo data-demo-label="${escape(f.label)}">${(f.aliases || []).map(id => `<span id="${id}" aria-hidden="true"></span>`).join('')}<div class="feature-copy"><span class="feature-kicker">${escape(f.label)}</span><h3>${escape(f.title)}</h3></div>${media(f)}</article>`).join('\n')}
       ${everyday}
     </div></section>\n\n`;
 const file = path.join(root, 'landing/index.html');
@@ -64,9 +64,9 @@ page = page.replace(assetPattern, (_, prefix, asset, suffix) => `${prefix}${asse
 await writeFile(file, page);
 const docs = `# TermLoop feature videos
 
-The homepage and GitHub README feature **${catalog.length} essential workflows**, followed by ${extras.length} compact everyday tools. Website videos are silent 1920 × 1080 H.264, with a JPEG poster, optional English captions and three written steps. Six edited recordings run at 30 FPS; the restored Quick Actions and Changes clips retain their original 20 and 15 FPS. README GIFs follow the same complete edits at 960 × 540, up to 25 FPS.
+The homepage and GitHub README feature **${catalog.length} essential workflows**, followed by ${extras.length} compact everyday tools. Website videos are silent 1920 × 1080 H.264, with a JPEG poster, optional English captions and three written steps. Five demos run at 30 FPS; Quick Actions and Changes retain their original 20 and 15 FPS. README GIFs follow the same complete edits at 960 × 540, up to 25 FPS.
 
-The six September edits use continuous intervals with smooth wait acceleration and soft click ripples. Quick Actions and Changes preserve the previously published clips byte-for-byte, including their timing and earlier interface. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
+The September footage uses continuous intervals with smooth wait acceleration and soft click ripples. The Tasks demo joins the complete Task brief and worktree edits without re-encoding, showing worktree creation as an optional step within the same Task. Quick Actions skips its first 1.75 seconds to open on the prompt composer, preserving the remaining timing. Changes keeps its earlier edit byte-for-byte. These two archive demos show an earlier interface. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
 
 ${catalog.map(f => `- [${f.label}](../../landing/assets/videos/tour/${f.id}.mp4): ${f.description}`).join('\n')}
 
@@ -74,7 +74,7 @@ Everyday tools use compact illustrated cards with links to their written guides,
 
 ## Recording provenance
 
-Ask To, Tasks, Task Worktrees and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
+Ask To, both Tasks chapters and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
 
 The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. A stationary recorder coordinate overlay in an empty corner of the three new feature takes is removed. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
 
@@ -93,7 +93,7 @@ python3 tools/marketing/render_test.py
 node tools/marketing/verify.mjs
 \`\`\`
 
-\`catalog.json\` owns the eight video features and written steps; \`extras.json\` owns the six everyday tools. \`edits.json\` pins source checksums, archive paths, dates, speed ramps, click positions and caption anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these eight MP4s. Restore just the two original clips with \`python3 tools/marketing/render.py --only quick-actions changes\`.
+\`catalog.json\` owns the seven video features and written steps; \`extras.json\` owns the six everyday tools. \`edits.json\` pins source checksums, archive paths, dates, speed ramps, click positions and caption anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these seven MP4s. Rebuild the trimmed Quick Actions, joined Tasks and original Changes demos with \`python3 tools/marketing/render.py --only quick-actions tasks changes\`.
 
 These demonstrations are not comprehensive integration tests. Cross-provider routing, mobile pairing and notification delivery were not retested during this media update.
 `;

@@ -1,6 +1,7 @@
 import json
 import hashlib
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -75,6 +76,34 @@ class TimingTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_trim_starts_at_the_requested_frame_and_preserves_the_remaining_sequence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'landing').mkdir()
+            source = root/'landing/approved.mp4'
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                'nullsrc=s=1920x1080:r=20:d=0.5,geq=lum=16+N*10:cb=128:cr=128',
+                '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(source)], check=True)
+            edit = {'archiveSource': 'approved.mp4', 'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                'sourceFps': 20, 'sourceStart': .2, 'stepsAt': [0, .1, .2], 'posterAt': .1}
+            with patch.object(render, 'ROOT', root):
+                render.render({'id': 'quick-actions', 'steps': ['Write', 'Confirm', 'Launch']}, edit, None, root/'out')
+            target = root/'out/quick-actions.mp4'
+            def luma_frames(file):
+                return subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(file),
+                    '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'])
+            expected, actual = luma_frames(source)[4:], luma_frames(target)
+            self.assertEqual(len(actual), 6)
+            self.assertTrue(all(abs(a-b) <= 2 for a, b in zip(expected, actual)))
+            report = json.loads((root/'out/quick-actions.json').read_text())
+            self.assertEqual(report['sourceCoverage'], [.2, .5])
+            self.assertEqual(report['frames'], 6)
+            with patch.object(render, 'ROOT', root):
+                for start in [-1, .01, .5]:
+                    with self.subTest(start=start), self.assertRaisesRegex(ValueError, 'frame boundary'):
+                        render.render({'id': 'quick-actions', 'steps': ['Write', 'Confirm', 'Launch']},
+                            {**edit, 'sourceStart': start}, None, root/'out')
+
     def test_restore_preserves_the_approved_bytes_and_original_frame_rate(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

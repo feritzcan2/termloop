@@ -10,7 +10,7 @@ test('published assets change URL with their contents so returning visitors rece
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
   const assets = [...page.matchAll(/(?:src|poster|href)="(assets\/[^"?#]+)([^"#]*)"/g)];
   assert(assets.some(([, asset]) => asset.endsWith('feature-guide.css')));
-  assert.equal(assets.filter(([, asset]) => asset.endsWith('.mp4')).length, 24);
+  assert.equal(assets.filter(([, asset]) => asset.endsWith('.mp4')).length, 21);
   for (const [, asset, query] of assets) {
     const content = readFileSync(new URL(`../../landing/${asset}`, import.meta.url));
     assert.equal(query, `?v=${createHash('sha256').update(content).digest('hex').slice(0, 12)}`, asset);
@@ -32,14 +32,28 @@ test('all published feature demos loop silently and autoplay is enabled by defau
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
   assert.match(page, /id="demo-autoplay" checked/);
   const demos = [...page.matchAll(/<video[^>]+aria-label="[^"]+ demonstration"[^>]*>/g)];
-  assert.equal(demos.length, 8);
-  assert.equal([...page.matchAll(/data-demo-label=/g)].length, 8);
+  assert.equal(demos.length, 7);
+  assert.equal([...page.matchAll(/data-demo-label=/g)].length, 7);
   assert.doesNotMatch(page, /source src="[^"]+\.webm/);
   for (const [tag] of demos) {
     assert.match(tag, / muted /);
     assert.match(tag, / loop /);
     assert.match(tag, / playsinline /);
   }
+});
+test('Tasks presents its optional worktree within one video and keeps old deep links working', () => {
+  const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
+  const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+  const tasks = page.match(/<article[^>]+id="tasks"[\s\S]*?<\/article>/)?.[0];
+  assert(tasks);
+  assert.equal([...tasks.matchAll(/<video /g)].length, 1);
+  for (const id of ['task-briefs', 'task-worktrees']) {
+    assert(tasks.includes(`id="${id}"`));
+    assert(!page.includes(`href="#${id}"`));
+    assert(!readme.includes(`readme/${id}.gif`));
+  }
+  assert(tasks.includes('from that same Task'));
+  assert(readme.includes('readme/tasks.gif'));
 });
 test('Quick Actions and Changes remain primary demos; everyday tools use linked cards', () => {
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
