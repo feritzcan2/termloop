@@ -785,7 +785,7 @@ impl ImproverTarget<'_> {
         let template = self.template()?;
         match *self {
             Self::WorkflowCreator { context } => {
-                bounded_binding(context, 256 * 1024)?;
+                bounded_embedded_document(context, false, 256 * 1024)?;
                 bind_ordered(template.authored_body, &[("context", context)])
             }
             Self::AgentCreator { project_name } => {

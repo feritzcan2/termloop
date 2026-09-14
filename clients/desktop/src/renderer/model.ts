@@ -61,7 +61,8 @@ export function sessionIsImprover(session: Session): boolean {
   return (templateRef?.startsWith("builtin.improver.") ?? false)
     || templateRef === "builtin.builder.playbook"
     || templateRef === "builtin.builder.routine"
-    || templateRef === "builtin.builder.agent";
+    || templateRef === "builtin.builder.agent"
+    || templateRef === "builtin.builder.workflow";
 }
 
 /// Every current, non-archived Session keeps its terminal surface until an

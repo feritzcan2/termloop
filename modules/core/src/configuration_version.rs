@@ -345,6 +345,9 @@ impl CoreRuntime {
         if session.improver_target.as_ref() != Some(target) {
             return Err(CoreError::CapabilityDenied);
         }
+        if target.target_kind == ImproverSessionTargetKind::WorkflowDraft {
+            self.require_workflow_creator_session(session_id, target)?;
+        }
         let active = self
             .store
             .active_configuration_version(&session.project_id, target);
@@ -381,6 +384,10 @@ impl CoreRuntime {
             .ok_or(CoreError::NotFound)?;
         if session.improver_target.as_ref() != Some(target) {
             return Err(CoreError::CapabilityDenied);
+        }
+        if target.target_kind == ImproverSessionTargetKind::WorkflowDraft {
+            self.require_workflow_creator_session(session_id, target)?;
+            self.validate_workflow_proposal_source(&session.project_id, target, &content)?;
         }
         let active = self
             .store
@@ -512,6 +519,10 @@ impl CoreRuntime {
             // A creator writes only its separate proposal. Explicit manual
             // workflow create/update commands remain the only save path.
             ImproverSessionTargetKind::WorkflowDraft => {
+                if let Some(session_id) = &plan.source_session_id {
+                    self.require_workflow_creator_session(session_id, &plan.target)?;
+                    self.validate_workflow_proposal_source(&plan.project_id, &plan.target, &plan.content)?;
+                }
                 let result = self.finish_configuration_application(
                     plan.clone(), plan.target.clone(), plan.content.clone(), created_at_epoch_ms,
                 );

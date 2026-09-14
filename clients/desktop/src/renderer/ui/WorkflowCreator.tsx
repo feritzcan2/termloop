@@ -22,7 +22,6 @@ export function WorkflowCreator(props: {
   generation: number | undefined;
   actions: WorkflowCreatorActions;
   session: SessionDto | undefined;
-  refreshKey: number;
   busy: boolean;
   unavailableReason: string | undefined;
   dirty: boolean;
@@ -56,7 +55,7 @@ export function WorkflowCreator(props: {
     document.addEventListener("visibilitychange", refresh);
     return () => { disposed = true; if (interval !== undefined) window.clearInterval(interval);
       window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
-  }, [props.projectId, props.workflowId, props.session?.id, props.refreshKey]);
+  }, [props.projectId, props.workflowId, props.session?.id]);
 
   const proposal = result?.proposal;
   const stale = proposal && proposal.sourceGeneration !== (props.generation ?? null);
