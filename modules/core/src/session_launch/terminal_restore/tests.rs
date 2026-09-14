@@ -431,8 +431,13 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
         std::fs::write(
             &script,
             format!(
-                "$ErrorActionPreference = 'Stop'\n{POWERSHELL_DIRECTORY_PROMPT}\n\
-                 Set-Location -LiteralPath 'changed'\n$null = prompt\n\
+                "$ErrorActionPreference = 'Stop'\n\
+                 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'progress'), 'started')\n\
+                 {POWERSHELL_DIRECTORY_PROMPT}\n\
+                 Set-Location -LiteralPath 'changed'\n\
+                 [IO.File]::AppendAllText((Join-Path $PSScriptRoot 'progress'), ';directory changed')\n\
+                 $null = prompt\n\
+                 [IO.File]::AppendAllText((Join-Path $PSScriptRoot 'progress'), ';prompt reported')\n\
                  Write-Output ('TL_SHELL_HISTORY_' + 'EXECUTED')\nStart-Sleep -Seconds 60\n"
             ),
         )
@@ -521,8 +526,9 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "the shell did not produce its execution marker; received {:?}",
-            String::from_utf8_lossy(&bytes)
+            "the shell did not produce its execution marker; progress {:?}; received {:?}",
+            std::fs::read_to_string(fixture.root.join("progress")),
+            String::from_utf8_lossy(&bytes),
         )
     });
     // No periodic checkpoint happened yet. Graceful shutdown must capture the
