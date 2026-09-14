@@ -1,14 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { matchesFeature, autoplayCandidate, validPlaybackRate, visibleVideoFraction } from '../../landing/assets/feature-guide.mjs';
+import { autoplayCandidate, validPlaybackRate, visibleVideoFraction } from '../../landing/assets/feature-guide.mjs';
 
-test('feature search ignores case and whitespace and requires every word', () => {
-  assert.equal(matchesFeature('Review a saved Workflow template', '  WORKFLOW review  '), true);
-  assert.equal(matchesFeature('Review a saved Workflow template', 'workflow mobile'), false);
-  assert.equal(matchesFeature('Context Bank', '   '), true);
-  assert.equal(matchesFeature('Context Bank', '<script>'), false);
-});
 const options = { enabled: true, reducedMotion: false, pageHidden: false };
 const visible = { video: 'visible', ratio: .9, hidden: false, manuallyPaused: false };
 test('autoplay respects motion preference, hidden pages, and opting out', () => {
@@ -27,7 +21,9 @@ test('all published feature demos loop silently and autoplay is enabled by defau
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
   assert.match(page, /id="demo-autoplay" checked/);
   const demos = [...page.matchAll(/<video[^>]+aria-label="[^"]+ demonstration"[^>]*>/g)];
-  assert.equal(demos.length, 32);
+  assert.equal(demos.length, 6);
+  assert.equal([...page.matchAll(/data-demo-label=/g)].length, 6);
+  assert.doesNotMatch(page, /source src="[^"]+\.webm/);
   for (const [tag] of demos) {
     assert.match(tag, / muted /);
     assert.match(tag, / loop /);

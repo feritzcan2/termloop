@@ -13,122 +13,47 @@
   <a href="docs/development.md">Build from source</a>
 </p>
 
-### Ask To — a second opinion, right in the conversation
+Six short loops from a populated demo Project. Click a preview for the 1080p video, playback controls and written steps.
 
-Your agent composes the question. A visible helper receives the context, does the work, and returns the answer automatically.
+### Ask To — Get a second opinion without copy-paste.
 
-<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif" alt="Ask To: zoom into the provider menu, follow the helper Session, and read its returned answer" width="800"></a>
+Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
 
-[How Ask To works →](https://termloop.ai/#ask-to)
+<a href="https://termloop.ai/#ask-to"><img src="artifacts/marketing/readme/ask-to.gif" alt="Ask To: The answer returns to the requesting agent." width="960"></a>
 
-## See it in action
+### Handoff — Move context to the agent already in the work.
 
-Eight short, looping previews from a populated demo Project. Each zooms into the action; select a demo for the full video and instructions.
+Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.
 
-<table>
-<tr>
-<td width="35%" valign="middle">
+<a href="https://termloop.ai/#handoff"><img src="artifacts/marketing/readme/handoff.gif" alt="Handoff: The destination receives the handoff in its own terminal." width="960"></a>
 
-### Handoff
+### Session Fork — Explore another direction in a real terminal.
 
-Pass the work to an agent already running. Send the request, findings, and next action straight into its Session.
+Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.
 
-[Demo & guide →](https://termloop.ai/#handoff)
+<a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif" alt="Session Fork: Continue in a separate Session with visible parentage." width="960"></a>
 
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#handoff"><img src="artifacts/marketing/readme/handoff.gif" alt="Choose a handoff destination, send the brief, and continue in the receiving Session" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
+### Tasks — Keep the goal beside the work.
 
-### Conversation forks
+Keep a clear brief, acceptance criteria and a small checklist attached to each Task.
 
-Explore another direction in a separate Session with the conversation carried over and its parent still visible.
+<a href="https://termloop.ai/#task-briefs"><img src="artifacts/marketing/readme/task-briefs.gif" alt="Tasks: Mark completed checks without losing the Task context." width="960"></a>
 
-[Demo & guide →](https://termloop.ai/#fork)
+### Task Worktrees — Give each change its own workspace.
 
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#fork"><img src="artifacts/marketing/readme/fork.gif" alt="Fork a conversation, see its parent relationship, and ask the new Session to explore another direction" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
+Create a branch and managed worktree directly from a Task. Keep parallel changes in separate checkouts.
 
-### Tasks with a clear goal
+<a href="https://termloop.ai/#task-worktrees"><img src="artifacts/marketing/readme/task-worktrees.gif" alt="Task Worktrees: The Task now has its own branch and worktree." width="960"></a>
 
-Keep the brief, acceptance criteria, and developer notes with the work. Add an isolated Git worktree when the Task needs one.
+### Code review — Review changes where they happened.
 
-[Demo & guide →](https://termloop.ai/#task-briefs)
+Read the diff, compare versions side by side and keep track of the files you have checked.
 
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#task-briefs"><img src="artifacts/marketing/readme/task-briefs.gif" alt="Open the Task brief and read its acceptance criteria beside the populated workspace" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
+<a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif" alt="Code review: Mark files reviewed and revisit them from the reviewed list." width="960"></a>
 
-### Reusable agent workflows
+Also included: multiple live agents, mobile terminal access, Project Steward, reusable workflows, Context Bank, skills, MCP tools and notifications. Explore the [complete feature guide](docs/features.md).
 
-Save ordered agent steps for discussion, implementation, and review. Inspect the template before running it on a Task.
-
-[Demo & guide →](https://termloop.ai/#workflow-templates)
-
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#workflow-templates"><img src="artifacts/marketing/readme/workflow-templates.gif" alt="Open a workflow template and inspect its ordered agent steps" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
-
-### Review code in context
-
-Move from a focused diff to the full file, then compare old and new code side by side.
-
-[Demo & guide →](https://termloop.ai/#full-file-review)
-
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#full-file-review"><img src="artifacts/marketing/readme/full-file-review.gif" alt="Switch between the changed file, full-file review, and a split comparison" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
-
-### Context Bank
-
-Read the instructions attached to your Project and its folders, so you can see the context guiding the work.
-
-[Demo & guide →](https://termloop.ai/#context-bank)
-
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#context-bank"><img src="artifacts/marketing/readme/context-bank.gif" alt="Open Context Bank and inspect repository and folder instructions" width="640"></a>
-</td>
-</tr>
-<tr>
-<td width="35%" valign="middle">
-
-### Discover and inspect skills
-
-Find a skill, read its instructions, and inspect its source and installation details before using it.
-
-[Demo & guide →](https://termloop.ai/#skill-library)
-
-</td>
-<td width="65%">
-<a href="https://termloop.ai/#skill-library"><img src="artifacts/marketing/readme/skill-library.gif" alt="Search the skill library, read a skill, and inspect its source" width="640"></a>
-</td>
-</tr>
-</table>
-
-Also included: multiple live agents, managed Task worktrees, mobile terminal access, Project Steward, developer checklists, review tracking, MCP tools, notifications, and light or dark appearance. Explore the [complete feature guide](docs/features.md).
-
-The previews above are 15-second GIF edits with camera zooms. The website has full recordings with playback controls and captions. Its automatic playback respects reduced-motion preferences.
+The GIFs follow the same timing as the website videos, with visible clicks and smoothly accelerated waits. Website demos loop silently when visible and respect reduced-motion preferences.
 
 ## Start using TermLoop
 
