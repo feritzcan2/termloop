@@ -20,6 +20,7 @@ import {
   writeConnectionProfileFile,
 } from "../platform/connection-profile-storage.js";
 import { localDeviceName } from "../platform/device-name.js";
+import { managedIdentityPaths } from "../platform/ssh-setup-connection.js";
 import { secureCredentialStorageAvailable } from "../platform/secure-storage.js";
 import { accessEndpoint, tailscaleAccessBaseUrl } from "./transports/tailscale.js";
 import { SshTransportManager } from "./transports/ssh.js";
@@ -301,6 +302,8 @@ export class ConnectionProfileStore {
       host: transport.host,
       ...(transport.user ? { user: transport.user } : {}),
       remotePort: transport.remotePort,
+      ...(transport.sshPort !== undefined ? { sshPort: transport.sshPort } : {}),
+      ...(transport.managedIdentity ? managedIdentityPaths(app.getPath("userData"), transport.managedIdentity) : {}),
     });
   }
 
@@ -456,7 +459,16 @@ function normalizedTransport(transport: ConnectionTransportInput): ConnectionTra
   if (!Number.isSafeInteger(transport.remotePort) || transport.remotePort < 1024 || transport.remotePort > 65535) {
     throw new Error("SSH remote port must be between 1024 and 65535");
   }
-  return { kind: "ssh", host, ...(user ? { user } : {}), remotePort: transport.remotePort };
+  if (transport.sshPort !== undefined && (!Number.isInteger(transport.sshPort) || transport.sshPort < 1 || transport.sshPort > 65535)) {
+    throw new Error("SSH port must be between 1 and 65535");
+  }
+  if (transport.managedIdentity !== undefined && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(transport.managedIdentity)) {
+    throw new Error("SSH identity is invalid");
+  }
+  return { kind: "ssh", host, ...(user ? { user } : {}), remotePort: transport.remotePort,
+    ...(transport.sshPort !== undefined ? { sshPort: transport.sshPort } : {}),
+    ...(transport.managedIdentity ? { managedIdentity: transport.managedIdentity } : {}),
+  };
 }
 
 function validateConnectInput(input: ConnectionProfileConnectInput): void {
