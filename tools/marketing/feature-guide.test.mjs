@@ -21,13 +21,33 @@ test('all published feature demos loop silently and autoplay is enabled by defau
   const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
   assert.match(page, /id="demo-autoplay" checked/);
   const demos = [...page.matchAll(/<video[^>]+aria-label="[^"]+ demonstration"[^>]*>/g)];
-  assert.equal(demos.length, 6);
-  assert.equal([...page.matchAll(/data-demo-label=/g)].length, 6);
+  assert.equal(demos.length, 8);
+  assert.equal([...page.matchAll(/data-demo-label=/g)].length, 8);
   assert.doesNotMatch(page, /source src="[^"]+\.webm/);
   for (const [tag] of demos) {
     assert.match(tag, / muted /);
     assert.match(tag, / loop /);
     assert.match(tag, / playsinline /);
+  }
+});
+test('Quick Actions and Changes remain primary demos; everyday tools use linked cards', () => {
+  const page = readFileSync(new URL('../../landing/index.html', import.meta.url), 'utf8');
+  const catalog = JSON.parse(readFileSync(new URL('./catalog.json', import.meta.url)));
+  const extras = JSON.parse(readFileSync(new URL('./extras.json', import.meta.url)));
+  const docs = readFileSync(new URL('../../docs/features.md', import.meta.url), 'utf8');
+  for (const id of ['quick-actions', 'changes']) {
+    assert(catalog.some(f => f.id === id));
+    assert(page.includes(`id="${id}" data-demo`));
+  }
+  assert.equal(new Set([...catalog, ...extras].map(f => f.id)).size, catalog.length + extras.length);
+  const compactSection = page.slice(page.indexOf('<section class="everyday-tools"'), page.indexOf('<section class="section principles"'));
+  assert.equal([...compactSection.matchAll(/class="everyday-card"/g)].length, 6);
+  assert.doesNotMatch(compactSection, /<video|<button|<input/);
+  const anchors = [...docs.matchAll(/^### (.+)$/gm)].map(([, title]) => title.toLowerCase().replaceAll(' ', '-'));
+  for (const extra of extras) {
+    assert(anchors.includes(extra.docAnchor), `Broken guide anchor: ${extra.docAnchor}`);
+    assert(compactSection.includes(`docs/features.md#${extra.docAnchor}`));
+    assert(compactSection.includes(`aria-labelledby="${extra.id}-title"`));
   }
 });
 test('autoplay never resumes a manually paused, filtered, or mostly offscreen demo', () => {
