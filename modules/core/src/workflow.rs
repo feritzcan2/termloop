@@ -47,15 +47,29 @@ struct WorkflowStepInput {
     kind: WorkflowStepKind,
     title: String,
     instructions: String,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     agent_id: Option<String>,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     reuse_step_id: Option<String>,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     profile_ref: Option<String>,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     model: Option<String>,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     permission: Option<String>,
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     reasoning: Option<String>,
 }
 
 impl CoreRuntime {
+    pub(crate) fn validate_workflow_proposal_source(&self, project_id: &str, target: &termloop_domain::ImproverSessionTarget, content: &str) -> Result<(), CoreError> {
+        let proposal: WorkflowProposal = serde_json::from_str(content).map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
+        let expected = target.target_id.as_deref().map(|id| self.workflow_configuration(id)).transpose()?;
+        if expected.as_ref().is_some_and(|workflow| workflow.project_id != project_id) { return Err(CoreError::NotFound); }
+        if proposal.source_generation != expected.map(|workflow| workflow.generation) { return Err(CoreError::RevisionConflict); }
+        Ok(())
+    }
+
     pub(crate) fn canonicalize_workflow_proposal(&self, project_id: &str, target: &termloop_domain::ImproverSessionTarget, content: &str) -> Result<String, CoreError> {
         let proposal: WorkflowProposal = serde_json::from_str(content).map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
         if let Some(id) = &target.target_id {

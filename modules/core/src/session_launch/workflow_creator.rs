@@ -12,6 +12,16 @@ pub(super) struct WorkflowCreatorLaunch {
 }
 
 impl CoreRuntime {
+    pub(crate) fn require_workflow_creator_session(&self, session_id: &str, target: &ImproverSessionTarget) -> Result<(), CoreError> {
+        if self.store.sessions().iter().any(|session| session.id == session_id
+            && session.runtime_epoch == self.runtime_epoch && session.lifecycle_state == "running"
+            && session.kind == termloop_domain::SessionKind::Agent
+            && session.process.template_ref.as_deref() == Some(TEMPLATE)
+            && session.improver_target.as_ref() == Some(target)) {
+            Ok(())
+        } else { Err(CoreError::CapabilityDenied) }
+    }
+
     pub fn get_workflow_creator_draft(&self, params: Value) -> Result<Value, CoreError> {
         let project_id = required_string(&params, "projectId")?;
         if !self.project_exists(&project_id) { return Err(CoreError::NotFound); }
@@ -124,3 +134,7 @@ fn nullable_id<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, Cor
         _ => Err(CoreError::InvalidParams(name.into())),
     }
 }
+
+#[cfg(test)]
+#[path = "workflow_creator_tests.rs"]
+mod tests;

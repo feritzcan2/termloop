@@ -358,7 +358,7 @@ export type DesktopApi = {
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
   agentCreatorPreview(params: AgentCreatorParams): Promise<QuickActionPreviewResult>;
   workflowCreatorPreview(params: WorkflowCreatorParams): Promise<QuickActionPreviewResult>;
-  workflowCreatorLaunch(params: WorkflowCreatorLaunchParams): Promise<SessionDto>;
+  workflowCreatorLaunch(params: WorkflowCreatorLaunchParams): Promise<Session>;
   workflowCreatorDraftGet(params: WorkflowCreatorDraftGetParams): Promise<WorkflowCreatorDraftGetResult>;
   agentCreatorLaunch(params: AgentCreatorLaunchParams): Promise<Session>;
   agentLibraryGet(): Promise<AgentLibraryResult>;

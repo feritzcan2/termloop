@@ -22,6 +22,8 @@ import type { AgentCapabilityDto, AgentLibraryEntry, AssistantPermission, Stewar
 import { Icon } from "./Icon.js";
 import { WorkflowAgentTemplateSelect } from "./WorkflowAgentTemplateSelect.js";
 import { WorkflowTemplateStarter, type WorkflowStartingPoint } from "./WorkflowTemplateStarter.js";
+import { WorkflowCreator, type WorkflowCreatorActions } from "./WorkflowCreator.js";
+import type { SessionDto } from "@termloop/contract/current";
 import { isHelperStep, nextStepId, stepKindLabel, agentLabel, stepOwnerSummary, workflowLaunchSummary, workflowModelLabel, workflowPermissionLabel, workflowReasoningLabel, selectionOptions, type WorkflowLaunchSelection, type WorkflowReasoning } from "./workflow-presentation.js";
 
 type WorkflowDraft = {
@@ -50,6 +52,8 @@ export function WorkflowEditorPanel(props: {
   agentProfiles: readonly AgentLibraryEntry[];
   initialDraft?: WorkflowEditorDraft | undefined;
   draftChanged?(draft: WorkflowEditorDraft | undefined): void;
+  creator?: { actions: WorkflowCreatorActions; session: SessionDto | undefined; unavailableReason: string | undefined;
+    setup(draft: WorkflowDraft | null): void; continue(): Promise<string | undefined> } | undefined;
   close(): void;
   save(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   remove(workflowId: string): Promise<string | undefined>;
@@ -264,6 +268,18 @@ export function WorkflowEditorPanel(props: {
           <button className="icon-button quiet" aria-label="Close workflow editor" disabled={busy} onClick={close}><Icon name="close" /></button>
         </div>
       </header>
+      {props.creator ? <WorkflowCreator
+        projectId={props.projectId} workflowId={props.configuration?.id ?? null} generation={generation}
+        actions={props.creator.actions} session={props.creator.session}
+        busy={busy} dirty={dirty} unavailableReason={props.creator.unavailableReason}
+        start={() => props.creator?.setup(draft.steps.length ? { ...draft, name: draft.name.trim() || "Untitled workflow" } : null)}
+        continue={() => { if (busy) return; setBusy(true); setError(undefined);
+          void props.creator?.continue().then((failure) => { if (failure) setError(failure); })
+            .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+            .finally(() => setBusy(false)); }}
+        useDraft={(proposal) => { setDraft(proposal.workflow); setSelection({ kind: "lead" });
+          setError(undefined); setConfirmingClose(false); setConfirmingDelete(false); setConfirmingRestart(false); }}
+      /> : null}
       {error ? <p className="workflow-editor-error form-error" role="alert">{error}</p> : null}
       {confirmingClose ? <div className="workflow-draft-notice" role="alert">
         <span>Discard your unsaved changes?</span>
