@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
-import { act, createElement } from "react";
+import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DirectoryBrowseResult } from "@termloop/contract/current";
-import type { ConnectionProfileSummary } from "../src/connection-profile-types.js";
+import type { ConnectionProfileSummary, ConnectionSourceSummary } from "../src/connection-profile-types.js";
 import { collapseFolderTrail, folderQuickJumps, folderTrail } from "../src/renderer/ui/project-dialogs/folder-path.js";
 import { ProjectDetailsDialog, ProjectDialog } from "../src/renderer/ui/project-dialogs/project-dialogs.js";
+import { FolderPicker } from "../src/renderer/ui/project-dialogs/folder-picker.js";
+
+const remoteProfile: ConnectionSourceSummary = {
+  id: "netcup", name: "Netcup", transport: "ssh", scope: "full", endpoint: "ssh://netcup",
+  enabled: true, persistence: "encrypted", state: "offline",
+};
 
 const tree: Record<string, DirectoryBrowseResult> = {
   "/Users/dev": {
@@ -123,7 +129,11 @@ describe("Add Project dialog", () => {
 
   const render = async (
     createProject = vi.fn(async () => undefined),
-    extra: { pickLocalFolder?: (defaultPath?: string) => Promise<string | null>; profiles?: ConnectionProfileSummary[] } = {},
+    extra: {
+      pickLocalFolder?: (defaultPath?: string) => Promise<string | null>;
+      profiles?: ConnectionProfileSummary[];
+      overrides?: Partial<ComponentProps<typeof ProjectDialog>>;
+    } = {},
   ) => {
     await act(async () => root.render(createElement(ProjectDialog, {
       open: true,
@@ -134,6 +144,7 @@ describe("Add Project dialog", () => {
       browseDirectory: async (_profileId: string, path: string) => browse(path),
       createProject,
       ...(extra.pickLocalFolder ? { pickLocalFolder: extra.pickLocalFolder } : {}),
+      ...extra.overrides,
     })));
     await act(async () => undefined);
     return createProject;
@@ -273,6 +284,108 @@ describe("Add Project dialog", () => {
     // The connection picker rides along with the Folder label instead of owning
     // a third labelled field above the name.
     expect(container.querySelector(".project-field-aside #project-computer")).not.toBeNull();
+  });
+
+  it.each(["manual retry", "connection recovery"])("recovers the remote root after %s without losing the typed Project name", async (mode) => {
+    let available = false;
+    let status!: (summary: ConnectionSourceSummary) => void;
+    const createProject = await render(vi.fn(), {
+      profiles: [remoteProfile],
+      overrides: {
+        defaultProjectsRoot: async (profileId) => {
+          if (profileId === remoteProfile.id && !available) {
+            throw new Error("Error invoking remote method 'termloop:default-projects-root': Error: SSH tunnel is reconnecting");
+          }
+          return { path: "/Users/dev" };
+        },
+        subscribeConnectionStatus: (listener) => { status = listener; return () => undefined; },
+      },
+    });
+    await act(async () => type(input(container, "#project-name"), "NucleusNetcup"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("The server is reconnecting");
+    expect(container.textContent).not.toContain("Error invoking remote method");
+    expect(rowNames(container)).toEqual([]);
+
+    if (mode === "connection recovery") {
+      await act(async () => status({ ...remoteProfile, id: "another-server", state: "connected" }));
+      expect(rowNames(container)).toEqual([]);
+    }
+    available = true;
+    await act(async () => {
+      if (mode === "connection recovery") status({ ...remoteProfile, state: "connected" });
+      else container.querySelector<HTMLButtonElement>(".folder-picker-error button")!.click();
+    });
+    expect(rowNames(container)).toEqual(["Downloads", "Projects"]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(input(container, "#project-name").value).toBe("NucleusNetcup");
+    expect(selectionTitle(container)).toBe("No folder chosen yet");
+    expect(container.querySelector<HTMLButtonElement>(".primary-button")?.disabled).toBe(true);
+    expect(createProject).not.toHaveBeenCalled();
+  });
+
+  it("retries the failed navigation on recovery and does not loop on repeated connected events", async () => {
+    let status!: (summary: ConnectionSourceSummary) => void;
+    let available = false;
+    const browseDirectory = vi.fn(async (_profile: string, path: string) => {
+      if (path === "/Users/dev/Projects" && !available) throw new Error("Connection lost");
+      return browse(path);
+    });
+    await render(vi.fn(), {
+      profiles: [remoteProfile],
+      overrides: {
+        browseDirectory,
+        subscribeConnectionStatus: (listener) => { status = listener; return () => undefined; },
+      },
+    });
+    await act(async () => rows(container)[1]?.querySelector<HTMLButtonElement>(".folder-row-open")?.click());
+    expect(rowNames(container)).toEqual(["Downloads", "Projects"]);
+    const beforeRecovery = browseDirectory.mock.calls.length;
+    await act(async () => status({ ...remoteProfile, state: "connected" }));
+    expect(browseDirectory).toHaveBeenCalledTimes(beforeRecovery + 1);
+    await act(async () => status({ ...remoteProfile, state: "connected" }));
+    expect(browseDirectory).toHaveBeenCalledTimes(beforeRecovery + 1);
+
+    available = true;
+    await act(async () => status({ ...remoteProfile, state: "offline" }));
+    await act(async () => status({ ...remoteProfile, state: "connected" }));
+    expect(rowNames(container)).toEqual(["nucleus", "termloop-next"]);
+    expect(selectedPath(container)).toBe("/Users/dev/Projects");
+  });
+
+  it("handles recovery arriving before the old root request reports its failure", async () => {
+    let rejectRoot!: (error: Error) => void;
+    let status!: (summary: ConnectionSourceSummary) => void;
+    const defaultRoot = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRoot = reject; }))
+      .mockResolvedValue({ path: "/Users/dev" });
+    await act(async () => root.render(createElement(FolderPicker, {
+      actions: { defaultRoot, browse, subscribeStatus: (listener) => { status = listener; return () => undefined; } },
+      sourceKey: remoteProfile.id, selected: "", onSelect: vi.fn(), idPrefix: "race",
+    })));
+    await act(async () => status({ ...remoteProfile, state: "connected" }));
+    await act(async () => rejectRoot(new Error("SSH tunnel is reconnecting")));
+    expect(defaultRoot).toHaveBeenCalledTimes(2);
+    expect(rowNames(container)).toEqual(["Downloads", "Projects"]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("discards the old source's pending root without browsing it on the new server", async () => {
+    let finishOldRoot!: (root: { path: string }) => void;
+    const oldBrowse = vi.fn(browse);
+    const newBrowse = vi.fn(browse);
+    const pickerProps = { selected: "", onSelect: vi.fn(), idPrefix: "switch" };
+    await act(async () => root.render(createElement(FolderPicker, {
+      ...pickerProps, sourceKey: "old",
+      actions: { defaultRoot: () => new Promise<{ path: string }>((resolve) => { finishOldRoot = resolve; }), browse: oldBrowse },
+    })));
+    await act(async () => root.render(createElement(FolderPicker, {
+      ...pickerProps, sourceKey: "new",
+      actions: { defaultRoot: async () => ({ path: "/Users/dev/Projects" }), browse: newBrowse },
+    })));
+    await act(async () => finishOldRoot({ path: "/Users/dev" }));
+    expect(oldBrowse).not.toHaveBeenCalled();
+    expect(newBrowse).toHaveBeenCalledExactlyOnceWith("/Users/dev/Projects");
+    expect(rowNames(container)).toEqual(["nucleus", "termloop-next"]);
   });
 });
 
