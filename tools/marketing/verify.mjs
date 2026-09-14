@@ -9,13 +9,20 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const landing = path.join(root, 'landing');
 const catalog = JSON.parse(readFileSync(path.join(root, 'tools/marketing/catalog.json')));
 const edits = JSON.parse(readFileSync(path.join(root, 'tools/marketing/edits.json')));
+const extras = JSON.parse(readFileSync(path.join(root, 'tools/marketing/extras.json')));
 const page = readFileSync(path.join(landing, 'index.html'), 'utf8');
 const readme = readFileSync(path.join(root, 'README.md'), 'utf8');
-assert.equal(catalog.length, 6);
-assert.equal(new Set(catalog.map(feature => feature.id)).size, 6);
-assert.equal([...page.matchAll(/data-demo-label=/g)].length, 6);
-assert.equal([...page.matchAll(/<track kind="captions"/g)].length, 6);
-assert.equal([...readme.matchAll(/<img src="artifacts\/marketing\/readme\//g)].length, 6);
+assert.equal(catalog.length, 8);
+assert.equal(new Set(catalog.map(feature => feature.id)).size, 8);
+assert.equal([...page.matchAll(/data-demo-label=/g)].length, 8);
+assert.equal([...page.matchAll(/<track kind="captions"/g)].length, 8);
+assert.equal([...readme.matchAll(/<img src="artifacts\/marketing\/readme\//g)].length, 8);
+assert.equal([...page.matchAll(/class="everyday-card"/g)].length, 6);
+for (const feature of extras) {
+  assert(page.includes(`id="${feature.id}"`));
+  assert(page.includes(`docs/features.md#${feature.docAnchor}`));
+  assert(readme.includes(`docs/features.md#${feature.docAnchor}`));
+}
 assert.doesNotMatch(page, /<source[^>]+\.webm/);
 for (const [, asset] of page.matchAll(/(?:src|poster|href)="(assets\/[^"#]+)"/g)) {
   assert(statSync(path.join(landing, asset)).isFile(), `Missing asset: ${asset}`);
@@ -27,9 +34,15 @@ for (const feature of catalog) {
   const base = path.join(landing, 'assets/videos/tour', feature.id);
   assert.equal(feature.steps.length, 3);
   const report = JSON.parse(readFileSync(`${base}.json`));
-  assert.equal(report.captureKind, 'continuous-video');
-  assert(report.sourceFps >= 29.9 && report.sourceFps <= 30.1);
-  assert.equal(report.sourceSha256, edits[feature.id].sourceSha256);
+  const edit = edits[feature.id];
+  const archived = Boolean(edit.archiveSource);
+  assert.equal(report.captureKind, archived ? 'archive-video' : 'continuous-video');
+  if (archived) {
+    assert(['quick-actions', 'changes'].includes(feature.id));
+    assert.equal(report.sourceFps, edit.sourceFps);
+    assert.equal(report.sha256, createHash('sha256').update(readFileSync(path.join(landing, edit.archiveSource))).digest('hex'), 'Restore the exact earlier clip');
+  } else assert(report.sourceFps >= 29.9 && report.sourceFps <= 30.1);
+  assert.equal(report.sourceSha256, edit.sourceSha256);
   assert.equal(report.sourceCoverage[0], 0);
   assert(report.sourceCoverage[1] <= report.sourceSeconds);
   assert(page.includes(`id="${feature.id}"`));
@@ -45,13 +58,15 @@ for (const feature of catalog) {
   assert.equal(video.codec_name, 'h264');
   assert.equal(video.width, 1920);
   assert.equal(video.height, 1080);
-  assert.equal(video.avg_frame_rate, '30/1');
+  assert.equal(video.avg_frame_rate, `${archived ? edit.sourceFps : 30}/1`);
   const duration = Number(media.format.duration);
-  assert(duration >= 10 && duration <= 30, `${feature.id}: unexpected duration ${duration}`);
+  assert(duration >= 5 && duration <= 30, `${feature.id}: unexpected duration ${duration}`);
   assert(Math.abs(duration - report.duration) < .04);
   assert.equal(Number(video.nb_frames), report.frames);
-  assert(report.clicks[0].outputTime >= .9 && report.clicks[0].outputTime <= 1.6, 'Brief orientation before the first click');
-  for (const click of report.clicks) assert(click.outputTime < duration);
+  if (!archived) {
+    assert(report.clicks[0].outputTime >= .9 && report.clicks[0].outputTime <= 1.6, 'Brief orientation before the first click');
+    for (const click of report.clicks) assert(click.outputTime < duration);
+  }
   const gif = path.join(root, `artifacts/marketing/readme/${feature.id}.gif`);
   const preview = probe(gif);
   assert.equal(preview.streams[0].width, 960);
@@ -70,4 +85,4 @@ const docs = readFileSync(docsPath, 'utf8');
 execFileSync(process.execPath, ['tools/marketing/build-guide.mjs'], { cwd: root });
 assert.equal(readFileSync(path.join(landing, 'index.html'), 'utf8'), page, 'Guide generation must be idempotent');
 assert.equal(readFileSync(docsPath, 'utf8'), docs, 'Documentation generation must be idempotent');
-console.log(`PASS: 6 guides, 6 decoded 1080p/30 videos, 6 complete GIF loops, captions, checksums, assets and repeatable generation. ${Math.min(...durations).toFixed(1)}–${Math.max(...durations).toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB combined.`);
+console.log(`PASS: 8 guides, 8 decoded 1080p videos (6 at 30 FPS; 2 exact archive restores), 8 complete GIF loops, 6 everyday tools, captions, checksums, assets and repeatable generation. ${Math.min(...durations).toFixed(1)}–${Math.max(...durations).toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB combined.`);
