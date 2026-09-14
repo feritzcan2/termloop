@@ -425,13 +425,30 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
     // Exercise real OS shell output and cwd changes without emulating an
     // interactive line editor. Restart below still resolves the default shell.
     let (program, args) = if cfg!(windows) {
-        let (program, mut args) = shell_program();
         // Use the production PowerShell directory hook. Its filesystem
         // location is reported through OSC, not the OS process cwd API.
-        args.last_mut().unwrap().push_str(
-            "\nSet-Location -LiteralPath 'changed'\n$null = prompt\nWrite-Output ('TL_SHELL_HISTORY_' + 'EXECUTED')\n",
-        );
-        (program, args)
+        let script = fixture.root.join("history-fixture.ps1");
+        std::fs::write(
+            &script,
+            format!(
+                "$ErrorActionPreference = 'Stop'\n{POWERSHELL_DIRECTORY_PROMPT}\n\
+                 Set-Location -LiteralPath 'changed'\n$null = prompt\n\
+                 Write-Output ('TL_SHELL_HISTORY_' + 'EXECUTED')\nStart-Sleep -Seconds 60\n"
+            ),
+        )
+        .unwrap();
+        (
+            shell_program().0,
+            vec![
+                "-NoLogo".into(),
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-ExecutionPolicy".into(),
+                "Bypass".into(),
+                "-File".into(),
+                script.display().to_string(),
+            ],
+        )
     } else {
         (
             "/bin/sh".into(),
