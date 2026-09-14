@@ -19,8 +19,8 @@
     "title": "From a prompt to a running agent.",
     "description": "Open Quick Actions, write the request and launch an agent with the right context.",
     "steps": [
-      "Open Quick Actions with Shift Shift.",
-      "Write a prompt and choose the agent settings.",
+      "Write a request in Quick Actions.",
+      "Confirm the agent and launch settings.",
       "Launch the Session and follow its work in the terminal."
     ],
     "provenance": "Original desktop recording"
@@ -52,30 +52,21 @@
     "provenance": "Launchpad Demo"
   },
   {
-    "id": "task-briefs",
+    "id": "tasks",
     "group": "run",
     "label": "Tasks",
-    "title": "Keep the goal beside the work.",
-    "description": "Keep a clear brief, acceptance criteria and a small checklist attached to each Task.",
+    "title": "Define the work. Add a worktree when needed.",
+    "description": "Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.",
     "steps": [
-      "Open the Task beside the real project tests.",
-      "Read the goal and acceptance criteria.",
-      "Mark completed checks without losing the Task context."
+      "Read the Task goal and acceptance criteria.",
+      "Complete the checks beside the Task.",
+      "Create an optional branch and worktree from that same Task."
     ],
-    "provenance": "Launchpad Demo"
-  },
-  {
-    "id": "task-worktrees",
-    "group": "run",
-    "label": "Task Worktrees",
-    "title": "Give each change its own workspace.",
-    "description": "Create a branch and managed worktree directly from a Task. Keep parallel changes in separate checkouts.",
-    "steps": [
-      "Choose Create worktree on the Task.",
-      "Name a new branch and choose its base.",
-      "The Task now has its own branch and worktree."
-    ],
-    "provenance": "Launchpad Demo"
+    "provenance": "Launchpad Demo",
+    "aliases": [
+      "task-briefs",
+      "task-worktrees"
+    ]
   },
   {
     "id": "changes",

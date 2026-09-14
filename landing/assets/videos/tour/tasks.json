@@ -1,0 +1,28 @@
+{
+  "id": "tasks",
+  "duration": 30.933008,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 928,
+  "audio": false,
+  "captureKind": "joined-video",
+  "chapters": [
+    {
+      "source": "assets/videos/tour/task-briefs.mp4",
+      "sourceSha256": "75b2d2dc03a03edb6f1ef9d4d4078fef594bfa0ed37c00fcfd7c22a1a014e2ff",
+      "outputStart": 0,
+      "duration": 13.7,
+      "fps": 30.0
+    },
+    {
+      "source": "assets/videos/tour/task-worktrees.mp4",
+      "sourceSha256": "ed03e4ae3a49ef3d7ff8b5aaaf29e39d561f610efaf5974d1555275bca07054d",
+      "outputStart": 13.7,
+      "duration": 17.233333,
+      "fps": 30.0
+    }
+  ],
+  "sha256": "c0e9dba935ebde8fb82b07feffab3507b3b768e985d8ccf17f885b3ea9278305",
+  "editing": "Complete Task brief and worktree chapters joined without re-encoding. Their existing timing and click effects are preserved."
+}
