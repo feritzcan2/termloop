@@ -224,6 +224,7 @@ export type DesktopApi = {
   notificationPreferencesSet(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
+  remoteMobileAccessPairing(profileId: string): Promise<MobileAccessPairingResult>;
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
   connectionProfileReconnect(profileId: string): Promise<ConnectionProfileSummary[]>;
   connectionProfileConnect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
