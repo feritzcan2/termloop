@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,6 +72,26 @@ class TimingTests(unittest.TestCase):
         for click in ({'sourceTime': 11, 'x': 10, 'y': 10}, {'sourceTime': 1, 'x': 2000, 'y': 10}):
             with self.assertRaisesRegex(ValueError, 'outside'):
                 render.filters_for(timing, [click], 10)
+
+
+class ArchiveTests(unittest.TestCase):
+    def test_restore_preserves_the_approved_bytes_and_original_frame_rate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'landing').mkdir()
+            source = root/'landing/approved.mp4'
+            source.write_bytes(b'approved earlier edit')
+            edit = {'archiveSource': 'approved.mp4', 'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                'sourceFps': 15, 'stepsAt': [0, 4, 10], 'posterAt': 6}
+            info = {'format': {'duration': '15'}, 'streams': [{'codec_type': 'video',
+                'width': 1920, 'height': 1080, 'avg_frame_rate': '15/1', 'nb_frames': '225'}]}
+            with patch.object(render, 'ROOT', root), patch.object(render, 'probe', return_value=info), patch.object(render.subprocess, 'run'):
+                render.render({'id': 'changes', 'steps': ['Open', 'Annotate', 'Send']}, edit, None, root/'out')
+                self.assertEqual((root/'out/changes.mp4').read_bytes(), source.read_bytes())
+                self.assertEqual(json.loads((root/'out/changes.json').read_text())['fps'], 15)
+                source.write_bytes(b'different take')
+                with self.assertRaisesRegex(ValueError, 'checksum differs'):
+                    render.render({'id': 'changes', 'steps': ['Open', 'Annotate', 'Send']}, edit, None, root/'out')
 
 
 if __name__ == '__main__':

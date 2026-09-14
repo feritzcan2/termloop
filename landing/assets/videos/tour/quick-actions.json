@@ -1,15 +1,20 @@
 {
   "id": "quick-actions",
-  "duration": 9.0,
-  "sourceSeconds": 5.65,
-  "sourceFps": 20.0,
-  "motionSpeed": 1,
-  "size": 1091412,
-  "sha256": "0c22cd9e0b827b5a692c260f86e0113b4482b0fe078b9006b0268a1251a0c282",
+  "duration": 5.65,
   "width": 1920,
-  "height": 1248,
-  "fps": 30,
-  "captionSteps": 3,
-  "legacy": true,
-  "captureKind": "continuous-video"
+  "height": 1080,
+  "fps": 20.0,
+  "frames": 113,
+  "audio": false,
+  "captureKind": "archive-video",
+  "source": "assets/videos/quick-action.mp4",
+  "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
+  "sourceFps": 20.0,
+  "sourceSeconds": 5.65,
+  "sourceCoverage": [
+    0,
+    5.65
+  ],
+  "sha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
+  "editing": "Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects."
 }
