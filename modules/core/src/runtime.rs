@@ -1,6 +1,7 @@
 //! Private serialized command/transaction runtime.
 
 mod agent_accounts;
+mod codex_thread_name;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod preview_tickets;
 pub(crate) mod provider_observation_ingress;
