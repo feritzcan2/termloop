@@ -349,14 +349,10 @@ fn a_failed_snapshot_write_keeps_the_previous_file_and_retries() {
         .plan_shell_history_checkpoint()
         .checkpoint(&mut fixture.history);
     assert!(checkpoint.errors.is_empty());
-    assert!(
-        fixture
-            .history
-            .read(&before)
-            .unwrap()
-            .1
-            .contains("New shell after application restart")
-    );
+    let (metadata, saved) = fixture.history.read(&before).unwrap();
+    assert_eq!(metadata.runtime_epoch, before.runtime_epoch);
+    assert!(saved.starts_with("previous committed output\n"));
+    assert!(!saved.contains("New shell after application restart"));
 }
 
 #[test]

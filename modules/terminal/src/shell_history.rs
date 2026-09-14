@@ -11,6 +11,8 @@ const MAX_LINES: usize = 10_000;
 const MAX_LINE_CHARS: usize = 8_192;
 pub const MAX_SHELL_HISTORIES: usize = 64;
 const NEW_SHELL: &str = "--- New shell after application restart ---";
+const PREVIOUS_OUTPUT: &str = "--- Previous terminal output ---";
+const NO_SAVED_OUTPUT: &str = "[No saved terminal output is available]";
 
 #[derive(Clone)]
 pub struct ShellHistory(Arc<Mutex<Recorder>>, Arc<(Mutex<bool>, Condvar)>);
@@ -53,29 +55,29 @@ impl ShellHistory {
             let mut recorder = history.0.lock().expect("shell history poisoned");
             // Even a modified history file cannot inject a terminal reply,
             // clipboard write, mode change, or other escape into the new PTY.
-            if let Some(previous) = previous.filter(|text| !text.is_empty()) {
-                for c in previous.chars() {
-                    if c == '\n' {
-                        recorder.text.finish_line();
-                    } else if !c.is_control() {
+            for line in previous.unwrap_or_default().lines() {
+                // Older snapshots included our restart notices in the saved
+                // transcript. Keep them out of subsequent restores as well.
+                if [NEW_SHELL, PREVIOUS_OUTPUT, NO_SAVED_OUTPUT].contains(&line) {
+                    continue;
+                }
+                for c in line.chars() {
+                    if !c.is_control() {
                         recorder.text.print_char(c);
                     }
                 }
-                if !recorder.text.line.is_empty() {
-                    recorder.text.finish_line();
-                }
-            } else {
-                recorder
-                    .text
-                    .append_line("[No saved terminal output is available]");
+                recorder.text.finish_line();
             }
-            recorder.text.append_line(NEW_SHELL);
             let text = recorder.text.snapshot();
-            let prefix = format!(
-                "--- Previous terminal output ---\r\n{}",
-                text.replace('\n', "\r\n")
-            );
-            recorder.prefix = Some(prefix.into_bytes());
+            if !text.trim().is_empty() {
+                // Notices belong only to this replay, never to the text that
+                // the next checkpoint will persist.
+                let prefix = format!(
+                    "{PREVIOUS_OUTPUT}\r\n{}{NEW_SHELL}\r\n",
+                    text.replace('\n', "\r\n")
+                );
+                recorder.prefix = Some(prefix.into_bytes());
+            }
         }
         history
     }
@@ -445,6 +447,46 @@ mod tests {
         assert!(!prefix.contains(&27));
         assert!(!prefix.contains(&7));
         assert!(!String::from_utf8(prefix).unwrap().contains('\u{009b}'));
+    }
+
+    #[test]
+    fn restart_notices_do_not_accumulate_in_saved_history() {
+        let mut saved = "original output\n".to_owned();
+        for restart in 0..4 {
+            let history = ShellHistory::restored(Some(&saved));
+            let replay = String::from_utf8(history.replay_prefix()).unwrap();
+            assert_eq!(replay.matches(NEW_SHELL).count(), 1);
+            assert!(replay.ends_with(&format!("{NEW_SHELL}\r\n")));
+            assert_eq!(text(&history), saved);
+            let output = format!("output after restart {restart}\n");
+            history.record(output.as_bytes());
+            saved.push_str(&output);
+            assert_eq!(text(&history), saved);
+        }
+    }
+
+    #[test]
+    fn legacy_restart_notices_are_removed_without_losing_shell_output() {
+        let saved = format!(
+            "{PREVIOUS_OUTPUT}\r\n{NO_SAVED_OUTPUT}\r\n{NEW_SHELL}\r\nfirst output\r\n\
+             {NEW_SHELL}\r\nsecond output\r\n{NEW_SHELL}\r\necho '{NEW_SHELL}'\r\n"
+        );
+        let history = ShellHistory::restored(Some(&saved));
+        let expected = format!("first output\nsecond output\necho '{NEW_SHELL}'\n");
+        assert_eq!(text(&history), expected);
+        let replay = String::from_utf8(history.replay_prefix()).unwrap();
+        assert_eq!(replay.lines().filter(|line| *line == NEW_SHELL).count(), 1);
+        assert!(!replay.contains(NO_SAVED_OUTPUT));
+    }
+
+    #[test]
+    fn empty_or_notice_only_history_starts_without_banners() {
+        let legacy = format!("{NO_SAVED_OUTPUT}\n{NEW_SHELL}\n{NEW_SHELL}\n");
+        for saved in [None, Some(""), Some(" \r\n"), Some(legacy.as_str())] {
+            let history = ShellHistory::restored(saved);
+            assert!(history.replay_prefix().is_empty());
+            assert!(text(&history).trim().is_empty());
+        }
     }
 
     #[test]
