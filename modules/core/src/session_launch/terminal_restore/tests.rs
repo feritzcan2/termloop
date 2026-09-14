@@ -424,33 +424,23 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
     std::fs::create_dir(&changed_directory).unwrap();
     // Exercise real OS shell output and cwd changes without emulating an
     // interactive line editor. Restart below still resolves the default shell.
-    let (program, args) = if cfg!(windows) {
-        // Use the production PowerShell directory hook. Its filesystem
-        // location is reported through OSC, not the OS process cwd API.
-        let script = fixture.root.join("history-fixture.ps1");
+    let (program, args): (String, Vec<String>) = if cfg!(windows) {
+        // A batch file avoids PowerShell's interactive console startup. Report
+        // the shell's actual cwd using the same OSC contract as our prompt hook:
+        // Windows has no process_working_directory implementation.
+        let script = fixture.root.join("history-fixture.cmd");
         std::fs::write(
             &script,
-            format!(
-                "$ErrorActionPreference = 'Stop'\n\
-                 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'progress'), 'started')\n\
-                 {POWERSHELL_DIRECTORY_PROMPT}\n\
-                 Set-Location -LiteralPath 'changed'\n\
-                 [IO.File]::AppendAllText((Join-Path $PSScriptRoot 'progress'), ';directory changed')\n\
-                 $null = prompt\n\
-                 [IO.File]::AppendAllText((Join-Path $PSScriptRoot 'progress'), ';prompt reported')\n\
-                 Write-Output ('TL_SHELL_HISTORY_' + 'EXECUTED')\nStart-Sleep -Seconds 60\n"
-            ),
+            "@echo off\r\ncd /d \"%~dp0changed\"\r\nif errorlevel 1 exit /b 1\r\n\
+             echo \x1b]9;9;%CD%\x07\r\necho TL_SHELL_HISTORY_EXECUTED\r\n",
         )
         .unwrap();
         (
-            shell_program().0,
+            "cmd.exe".into(),
             vec![
-                "-NoLogo".into(),
-                "-NoProfile".into(),
-                "-NonInteractive".into(),
-                "-ExecutionPolicy".into(),
-                "Bypass".into(),
-                "-File".into(),
+                "/D".into(),
+                "/Q".into(),
+                "/K".into(),
                 script.display().to_string(),
             ],
         )
@@ -526,8 +516,7 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() 
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "the shell did not produce its execution marker; progress {:?}; received {:?}",
-            std::fs::read_to_string(fixture.root.join("progress")),
+            "the shell did not produce its execution marker; received {:?}",
             String::from_utf8_lossy(&bytes),
         )
     });
