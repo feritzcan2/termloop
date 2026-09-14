@@ -12,7 +12,7 @@ impl Fixture {
         let root =
             std::env::temp_dir().join(format!("termloop-shell-restore-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let root = std::fs::canonicalize(root).unwrap();
+        let root = termloop_platform::canonical_existing_directory_path(&root).unwrap();
         let mut store = Store::open(root.join("state.json")).unwrap();
         let authority = issue_core_write_authority_for_composition();
         for session in &mut sessions {
@@ -429,10 +429,13 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
             .is_empty()
     );
     let mut output = fixture.core.terminal.subscribe("shell", 20).unwrap();
-    let command = format!(
-        "cd '{}'\recho 'TL_SHELL_HISTORY_EXECUTED'\r",
-        changed_directory.display()
-    );
+    // Assemble the marker in the shell so echoed input cannot prove execution.
+    let output_command = if cfg!(windows) {
+        "echo ('TL_SHELL_HISTORY_' + 'EXECUTED')"
+    } else {
+        "printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED"
+    };
+    let command = format!("cd '{}'; {output_command}\r", changed_directory.display());
     fixture
         .core
         .terminal
@@ -456,9 +459,7 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
                         .unwrap();
                     answered += 1;
                 }
-                // Prompts and bracketed-paste escapes may precede the result.
-                // The quoted input echo cannot match this unquoted line ending.
-                if String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED\r\n") {
+                if String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED") {
                     break;
                 }
             }
