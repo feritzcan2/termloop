@@ -2,9 +2,9 @@
 
 [Overview](../README.md) · [Development](development.md) · [Interactive video tour](https://termloop.ai/#features)
 
-Explore **32 features** with written usage steps. The [homepage tour](https://termloop.ai/#features) focuses on **eight essential workflows**: Ask To, Quick Actions, Handoff, Fork, Tasks, Task Worktrees, Changes and Code review. A compact [everyday tools section](https://termloop.ai/#everyday) covers Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications and Appearance. The tour includes populated demo Projects with source files, Git changes and release tests. Development and released interfaces may differ.
+Explore **31 feature guides** with written usage steps. The [homepage tour](https://termloop.ai/#features) focuses on **seven essential workflows**: Ask To, Quick Actions, Handoff, Fork, Tasks (including optional worktrees), Changes and Code review. A compact [everyday tools section](https://termloop.ai/#everyday) covers Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications and Appearance. The tour includes populated demo Projects with source files, Git changes and release tests. Development and released interfaces may differ.
 
-Website videos are 1920 × 1080 with optional captions. Six September edits run at 30 FPS with visible clicks and smooth wait acceleration. Quick Actions and Changes preserve their original 20 and 15 FPS edits. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, Tasks, Task Worktrees and Code review were captured on September 14; Handoff and Fork reuse September 9 OBS footage with updated timing.
+Website videos are 1920 × 1080 with optional captions. Five demos run at 30 FPS with visible clicks and smooth wait acceleration. Quick Actions starts directly on the prompt composer and retains its original 20 FPS; Changes preserves its original 15 FPS edit. Tasks combines the brief, checklist and optional worktree creation in one demo. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, both Tasks chapters and Code review were captured on September 14; Handoff and Fork reuse September 9 OBS footage with updated timing.
 
 ## Choose the right action
 
@@ -20,7 +20,7 @@ Website videos are 1920 × 1080 with optional captions. Six September edits run 
 
 ### Quick Actions
 
-Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.
+Compose a free prompt in Quick Actions, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.
 
 1. Open Quick Action with Shift Shift.
 2. Describe the change and choose the agent settings.
@@ -28,15 +28,17 @@ Open the command palette, compose a free prompt, choose the agent, model, permis
 
 [Watch the guided demo](https://termloop.ai/#quick-actions) · [MP4 video](https://termloop.ai/assets/videos/tour/quick-actions.mp4)
 
-### Task Worktrees
+<a id="task-worktrees"></a><a id="task-briefs"></a>
 
-Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.
+### Tasks
 
-1. Create a Task for one focused change.
-2. Give the Task its own branch and managed worktree.
-3. Keep parallel changes in separate checkouts.
+Keep one focused change in a Task, with its brief, acceptance criteria and checklist. A worktree is an optional part of that same Task: add one managed branch and checkout when the implementation needs isolation. The Task remains useful without a worktree.
 
-[Watch the guided demo](https://termloop.ai/#task-worktrees) · [MP4 video](https://termloop.ai/assets/videos/tour/task-worktrees.mp4)
+1. Write the Task goal and acceptance criteria.
+2. Track and complete the checks beside the Task.
+3. If the change needs its own checkout, create a branch and worktree from that Task.
+
+[Watch the complete Tasks demo](https://termloop.ai/#tasks) · [MP4 video](https://termloop.ai/assets/videos/tour/tasks.mp4)
 
 ### Dev Server
 
@@ -45,16 +47,6 @@ Save a Project dev-server command and fallback URL, then launch the real process
 1. Save a preview command for the Project.
 2. Start the command in the checkout you are using.
 3. Follow the process output and discovered preview URL.
-
-### Task briefs
-
-Give each Task a title, a focused brief, and acceptance criteria. Open its detail view to keep the goal beside Sessions and checkout state.
-
-1. Open the onboarding Task from the sidebar.
-2. Read its brief and concrete acceptance criteria.
-3. Keep the goal attached to the work as the Task evolves.
-
-[Watch the guided demo](https://termloop.ai/#task-briefs) · [MP4 video](https://termloop.ai/assets/videos/tour/task-briefs.mp4)
 
 ### Run configurations
 
