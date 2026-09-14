@@ -1,9 +1,3 @@
-export function matchesFeature(text, query) {
-  const words = query.toLocaleLowerCase('en-US').trim().split(/\s+/).filter(Boolean);
-  const haystack = text.toLocaleLowerCase('en-US');
-  return words.every(word => haystack.includes(word));
-}
-
 // A tall demo can fill the viewport without 55% of the entire video fitting on screen.
 export function visibleVideoFraction(entry) {
   if (!entry.isIntersecting) return 0;
@@ -25,14 +19,11 @@ export function validPlaybackRate(value) {
 }
 
 export function initializeGuide(document, window) {
-  const stories = [...document.querySelectorAll('.feature-story')];
+  const stories = [...document.querySelectorAll('[data-demo]')];
   if (!stories.length) return;
   const videos = stories.map(story => story.querySelector('video'));
-  const search = document.querySelector('#feature-search');
   const speed = document.querySelector('#video-speed');
   const autoplay = document.querySelector('#demo-autoplay');
-  const clear = document.querySelector('#clear-feature-search');
-  const count = document.querySelector('#feature-count');
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const rows = stories.map((story, index) => ({ story, video: videos[index], ratio: 0, hidden: false, manuallyPaused: false }));
   const policyPauses = new WeakSet();
@@ -69,10 +60,12 @@ export function initializeGuide(document, window) {
     const { story, video } = row;
     const play = story.querySelector('[data-play-demo]');
     const expanded = story.querySelector('[data-expand-demo]');
-    const label = story.querySelector('.feature-kicker').textContent;
+    const label = story.dataset.demoLabel;
     // Keep the native seek controls in fullscreen; inline playback stays unobstructed.
     video.controls = false;
     video.muted = true;
+    play.setAttribute('aria-label', `Play ${label} demo`);
+    expanded.setAttribute('aria-label', `Fullscreen ${label} demo`);
     play.hidden = false;
     expanded.hidden = false;
     play.addEventListener('click', () => {
@@ -118,53 +111,6 @@ export function initializeGuide(document, window) {
     }, { threshold: Array.from({ length: 21 }, (_, i) => i / 20) });
     videos.forEach(video => observer.observe(video));
   }
-  const navigation = [...document.querySelectorAll('.feature-nav a')];
-  const applyFilter = () => {
-    for (const row of rows) {
-      row.hidden = !matchesFeature(row.story.textContent, search.value);
-      row.story.hidden = row.hidden;
-      if (row.hidden) pauseForPolicy(row.video);
-    }
-    navigation.forEach(link => { link.hidden = document.querySelector(link.getAttribute('href')).hidden; });
-    document.querySelectorAll('.feature-group').forEach(group => { group.hidden = ![...group.querySelectorAll('.feature-story')].some(story => !story.hidden); });
-    document.querySelectorAll('[data-nav-group]').forEach(group => { group.hidden = ![...group.querySelectorAll('a')].some(link => !link.hidden); });
-    const visible = rows.filter(row => !row.hidden).length;
-    count.textContent = `${visible} ${visible === 1 ? 'feature' : 'features'}${search.value.trim() ? ` matching “${search.value.trim()}”` : ''}`;
-    document.querySelector('#feature-empty').hidden = visible !== 0;
-    clear.hidden = search.value.length === 0;
-    updateAutoplay();
-    updateNavigation();
-  };
-  const updateNavigation = () => {
-    const visible = stories.filter(story => !story.hidden);
-    const focusLine = Math.min(window.innerHeight * .35, 320);
-    let active = visible[0];
-    for (const story of visible) {
-      if (story.getBoundingClientRect().top > focusLine) break;
-      active = story;
-    }
-    navigation.forEach(link => {
-      const selected = link.getAttribute('href') === `#${active?.id}`;
-      link.classList.toggle('active', selected);
-      if (selected) link.setAttribute('aria-current', 'location');
-      else link.removeAttribute('aria-current');
-    });
-  };
-  search.addEventListener('input', applyFilter);
-  clear.addEventListener('click', () => { search.value = ''; applyFilter(); search.focus(); });
-  let frame;
-  window.addEventListener('scroll', () => {
-    if (frame) return;
-    frame = window.requestAnimationFrame(() => { frame = undefined; updateNavigation(); });
-  }, { passive: true });
-  window.addEventListener('resize', updateNavigation);
-  window.addEventListener('hashchange', () => {
-    let id;
-    try { id = decodeURIComponent(window.location.hash.slice(1)); } catch { return; }
-    const target = stories.find(story => story.id === id);
-    if (target?.hidden) { search.value = ''; applyFilter(); target.scrollIntoView(); }
-    updateNavigation();
-  });
   document.addEventListener('fullscreenchange', () => {
     videos.forEach(video => { video.controls = document.fullscreenElement === video; });
   });
@@ -174,7 +120,7 @@ export function initializeGuide(document, window) {
     updateAutoplay();
   });
   applySpeed();
-  applyFilter();
+  updateAutoplay();
 }
 
 if (typeof document !== 'undefined') initializeGuide(document, window);

@@ -3,43 +3,71 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const catalog = JSON.parse(await readFile(path.join(root, 'tools/marketing/catalog.json'), 'utf8'));
-const currentRecordings = catalog.filter(feature => !feature.legacy).length;
-const originalRecordings = catalog.length - currentRecordings;
 const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const groups = [['run', 'Run', 'Launch and isolate work'], ['coordinate', 'Coordinate', 'Agents working together'], ['review', 'Review', 'Understand and retain the work'], ['operate', 'Operate', 'Keep the workspace running'], ['customize', 'Customize', 'Give agents the right instructions']];
-const navigation = groups.map(([id, name]) => `<section data-nav-group="${id}"><h3>${name}</h3>${catalog.filter(f => f.group === id).map(f => `<a href="#${f.id}">${escape(f.label)}</a>`).join('')}</section>`).join('\n');
-const stories = groups.map(([group, title, subtitle], i) => `<section class="feature-group" id="${group}"><header class="group-head"><h2>${title}</h2><span>0${i+1} — ${subtitle}</span></header>
-${catalog.filter(f => f.group === group).map(f => {
-  const media = `assets/videos/tour/${f.id}`;
-  return `<article class="feature-story" id="${f.id}" data-feature-group="${group}">
-  <div class="feature-copy"><span class="feature-kicker">${escape(f.label.toLowerCase())}</span><h3>${escape(f.title)}</h3><p>${escape(f.description)}</p>
-    <details class="feature-instructions"><summary>How to use ${escape(f.label)}</summary><ol>${f.steps.map(step => `<li>${escape(step)}</li>`).join('')}</ol></details>
-    <div class="feature-meta"><span>${f.legacy ? 'Original demo · re-edited' : 'New demo'}</span><span>3 explained steps</span></div>
-  </div>
-  <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>${escape(f.label)} · Launchpad</code></div>
-    <video controls muted loop playsinline preload="none" poster="${media}.jpg" width="1920" height="1248" aria-label="${escape(f.label)} demonstration" aria-describedby="${f.id}-caption"><source src="${media}.webm" type="video/webm"><source src="${media}.mp4" type="video/mp4"><track kind="captions" src="${media}.vtt" srclang="en" label="English"><a href="${media}.mp4">Watch the ${escape(f.label)} video</a></video>
-    </div><div class="demo-actions"><button type="button" data-play-demo hidden aria-label="Play ${escape(f.label)} demo">Play demo</button><button type="button" data-expand-demo hidden aria-label="Expand ${escape(f.label)} demo">Expand</button><a href="${media}.mp4" download>MP4 ↓</a><span data-duration></span></div><p class="demo-caption" id="${f.id}-caption">${escape(f.provenance)}. Explanations are included in the video.</p></div>
-</article>`;
-}).join('\n')}</section>`).join('\n');
+const media = f => {
+  const base = `assets/videos/tour/${f.id}`;
+  return `<div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="${f.id === 'ask-to' ? 'metadata' : 'none'}" poster="${base}.jpg" width="1920" height="1080" aria-label="${escape(f.label)} demonstration" aria-describedby="${f.id}-caption"><source src="${base}.mp4" type="video/mp4"><track kind="captions" src="${base}.vtt" srclang="en" label="English"><a href="${base}.mp4">Watch ${escape(f.label)}</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="${base}.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="${f.id}-caption">${escape(f.description)}</p>
+    <details class="feature-instructions"><summary>How to use ${escape(f.label)}</summary><ol>${f.steps.map(step => `<li>${escape(step)}</li>`).join('')}</ol></details></div>`;
+};
+const [hero, ...features] = catalog;
+const heroMarkup = `        <!-- DEMO HERO START -->
+        <div class="hero-demo" id="${hero.id}" data-demo data-demo-label="${escape(hero.label)}">
+          <p class="feature-kicker">${escape(hero.label)}</p><h2>${escape(hero.title)}</h2>
+          ${media(hero)}
+        </div>
+        <!-- DEMO HERO END -->`;
 const tour = `    <section class="tour" id="features"><div class="shell">
-      <div class="section-heading"><div><p class="prompt-line">feature guide · 32 demos</p><h2>Find your next better workflow.</h2></div><p>Explore 32 explained desktop demos, including ${currentRecordings} current desktop recordings. Launchpad is a working demo Project with source files, release tests, Tasks, and real Git changes. Open a guide for the steps, or expand a video to see the details.</p></div>
-      <div class="tour-controls"><label class="tour-search">Find a feature<input id="feature-search" type="search" placeholder="Try workflow, context, review…" autocomplete="off"></label><label>Video speed<select id="video-speed" disabled><option value="0.75">0.75× · slower</option><option value="1" selected>1× · guided</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><button type="button" id="clear-feature-search" hidden>Clear search</button><p id="feature-count" role="status" aria-live="polite">32 features</p></div>
-      <div class="tour-layout"><aside class="feature-nav" aria-label="Feature navigation"><p class="nav-title">On this page</p><nav>${navigation}</nav></aside><div class="feature-groups">${stories}<p id="feature-empty" hidden>No matching features. Try a broader search or clear the filter.</p></div></div>
+      <div class="section-heading"><div><p class="prompt-line">${catalog.length} essential workflows</p><h2>See the work stay connected.</h2></div><p>A second opinion, a handoff, a fresh direction, and the tools to finish the change. Recorded in a working Launchpad demo Project.</p></div>
+      <nav class="demo-nav" aria-label="Demo navigation">${catalog.map(f => `<a href="#${f.id}">${escape(f.label)}</a>`).join('')}</nav>
+      <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
+      ${features.map(f => `<article class="feature-story" id="${f.id}" data-demo data-demo-label="${escape(f.label)}"><div class="feature-copy"><span class="feature-kicker">${escape(f.label)}</span><h3>${escape(f.title)}</h3></div>${media(f)}</article>`).join('\n')}
     </div></section>\n\n`;
 const file = path.join(root, 'landing/index.html');
 let page = await readFile(file, 'utf8');
+const heroStart = page.indexOf('        <!-- DEMO HERO START -->');
+const heroEnd = page.indexOf('        <!-- DEMO HERO END -->', heroStart);
+if (heroStart < 0 || heroEnd < 0) throw new Error('Hero boundaries missing');
+page = page.slice(0, heroStart) + heroMarkup + page.slice(heroEnd + '        <!-- DEMO HERO END -->'.length);
 const start = page.indexOf('    <section class="tour" id="features">');
 const end = page.indexOf('    <section class="section principles"', start);
 if (start < 0 || end < 0) throw new Error('Feature guide boundaries missing');
-page = page.slice(0, start)+tour+page.slice(end);
-if (!page.includes('src="assets/feature-guide.mjs"')) {
-  const scriptStart = page.lastIndexOf('  <script>');
-  if (scriptStart < end) throw new Error('Footer script boundary missing');
-  page = page.slice(0, scriptStart)+'  <script type="module" src="assets/feature-guide.mjs"></script>\n</body>\n</html>\n';
-}
-if (!page.includes('assets/feature-guide.css')) page = page.replace('</head>', '  <link rel="stylesheet" href="assets/feature-guide.css">\n</head>');
-page = page.replace('<video autoplay muted loop playsinline', '<video controls muted loop playsinline');
+page = page.slice(0, start) + tour + page.slice(end);
 await writeFile(file, page);
-const documentation = `# TermLoop feature video guide\n\nThe website now includes **32 feature demos**, up from 13. The pre-existing marketing archive contained 16 recording folders, including alternate cuts. There are **19 added features** and **${currentRecordings} current OBS recordings** from the working Launchpad Demo Project. Ask To, Handoff, and Session Fork have been re-recorded in the current interface; ${originalRecordings} original clips retain the same three-step caption treatment.\n\nEach published demo has MP4, WebM, a JPEG poster, English WebVTT captions, and three written usage steps. Continuous recordings retain the original action speed; long inactive waits can be cut before rendering. Brief orientation and result holds give the explanations room. The output is 1920 × 1248 at 30 FPS; older source recordings retain their original 15–20 FPS motion. Videos use a responsive layout capped to the recording and viewport and default to silent looping playback when visible, with pause and 0.75×–1.5× speed controls. Reduced-motion preferences suppress automatic playback.\n\n## Feature list\n\n${groups.map(([group,title]) => `### ${title}\n\n${catalog.filter(f=>f.group===group).map(f=>`- [${f.label}](../../landing/assets/videos/tour/${f.id}.mp4): ${f.description}\n  ${f.steps.map((s,i)=>`${i+1}. ${s}`).join(' ')}`).join('\n')}\n`).join('\n')}\n## Demo Project\n\nThe template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). It contains a local release dashboard, sample data, source-level agent instructions, and five real release tests. The seed command creates an exclusive new Git checkout, a local tracking base, three Tasks with briefs, developer notes, preview/test commands, a workflow template, a terminal, and reviewable changes. It never overwrites an existing destination.\n\n\`node tools/marketing/seed-demo.mjs <runtime.json> <absolute-new-demo-folder>\`\n\nUse a launcher-owned feature profile for a repeat capture. The September recording was made through the existing desktop's Launchpad Demo Project because native automation selected that window. Other Projects and existing Sessions were preserved.\n\n## Reproduce the assets\n\n1. In OBS Studio, add a macOS Screen Capture source in Window Capture mode and select only the TermLoop demo window. Use a 1920px-wide window, a 1920 × 1080 canvas and output, 30 FPS, high-quality recording, and muted audio. Enable the password-protected WebSocket server for the capture session. Keep raw recordings outside the repository.\n2. Set \`TERMLOOP_MARKETING_RECORDINGS\` to a temporary directory. Run \`node tools/marketing/capture.mjs start\`, perform the feature's real UI actions, then \`node tools/marketing/capture.mjs stop <feature-id>\`. The helper confirms that recording started, waits for the file to finish writing, checks for skipped encoding frames, and remuxes the continuous source without resampling. Disable the OBS WebSocket server after capture. Install Pillow in a temporary Python environment and have \`ffmpeg\` / \`ffprobe\` on PATH, then run \`python tools/marketing/render.py\`. The font can be supplied with \`TERMLOOP_MARKETING_FONT\` on other hosts. Only caption panels and render QA use still images; they stay outside the repository.\n3. Run \`node tools/marketing/build-guide.mjs\`, then \`node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs\`, \`python tools/marketing/render_test.py\`, and \`node tools/marketing/verify.mjs\`.\n\n\`catalog.json\` owns the labels, copy, source mapping, and three explanation steps. The website HTML is generated statically so the guide and direct video links remain available without JavaScript. Original source videos stay unchanged; captioned deliveries live in \`landing/assets/videos/tour/\`.\n\n## Capture limits\n\nThese videos demonstrate real UI operations, not comprehensive integration tests. The refreshed collaboration demos exercised a real Codex helper reply, a handoff to the existing Codex Session, and a fork continued with a new prompt. Notification delivery, phone pairing, and cross-provider routing were not re-tested in this editing session. The original recordings retain their prior UI version. A new Playbook template recording was excluded after the running app reported a schema mismatch; no success claim or failed footage was added to the guide.\n`;
-await writeFile(path.join(root, 'artifacts/marketing/README.md'), documentation);
-console.log(`Generated ${catalog.length} feature guides and the marketing index.`);
+const docs = `# TermLoop feature videos
+
+The homepage and GitHub README feature **${catalog.length} essential workflows**. Each website video is silent 1920 × 1080 H.264 at 30 FPS, with a JPEG poster, optional English captions and three written steps. The README uses 960 × 540, 25 FPS looping GIFs of the same complete edits.
+
+The selected recording intervals stay continuous: waits accelerate with smooth speed ramps, menus and results remain readable, and soft click ripples identify the actions. There are no new interior cuts, camera zooms, terminal highlights or baked caption panels. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
+
+${catalog.map(f => `- [${f.label}](../../landing/assets/videos/tour/${f.id}.mp4): ${f.description}`).join('\n')}
+
+## Recording provenance
+
+Ask To, Tasks, Task Worktrees and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
+
+The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. A stationary recorder coordinate overlay in an empty corner of the three new feature takes is removed. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
+
+## Reproduce
+
+Keep raw recordings outside the repository. Capture only the demo window in OBS at native 1920 × 1080, 30 FPS, with audio muted. Enable the password-protected OBS WebSocket server only for capture, using \`node tools/marketing/capture.mjs start\` and \`stop <feature-id>\`.
+
+With Python 3, Node, ffmpeg and ffprobe installed:
+
+\`\`\`sh
+python3 tools/marketing/render.py --recordings /absolute/path/to/recordings
+python3 tools/marketing/readme-gifs.py
+node tools/marketing/build-guide.mjs
+node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs
+python3 tools/marketing/render_test.py
+node tools/marketing/verify.mjs
+\`\`\`
+
+\`catalog.json\` owns the six features and written steps. \`edits.json\` pins source checksums, dates, speed ramps, click positions and caption anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these six MP4s.
+
+These demonstrations are not comprehensive integration tests. Cross-provider routing, mobile pairing and notification delivery were not retested during this media update.
+`;
+await writeFile(path.join(root, 'artifacts/marketing/README.md'), docs);
+console.log(`Generated ${catalog.length} homepage demos and the recording guide.`);
