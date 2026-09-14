@@ -48,6 +48,7 @@ import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
+import { LibraryScopeHeader } from "./LibraryScopeHeader.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
 import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
@@ -1454,6 +1455,7 @@ export function Shell(props: ShellProps) {
               ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
+          <LibraryScopeHeader section={railMode} context={settingsScope} />
           <div className="sidebar-scroll">
           {railMode === "skills" ? <SkillsRail
             key={props.selectedProject?.id ?? "global"}
