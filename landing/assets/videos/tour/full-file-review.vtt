@@ -1,13 +1,14 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:09.155
-Open the actual changes in src/releases.mjs.
+00:00:00.000 --> 00:00:04.405
+Open the changed files in the Project.
 
 2
-00:00:09.155 --> 00:00:18.311
-Switch from Change focus to Full file.
+00:00:04.405 --> 00:00:10.965
+Use Full file and Split to compare code with its context.
 
 3
-00:00:18.311 --> 00:00:27.466
-Choose Split to compare the old and new versions side by side.
+00:00:10.965 --> 00:00:24.200
+Mark files reviewed and revisit them from the reviewed list.
+

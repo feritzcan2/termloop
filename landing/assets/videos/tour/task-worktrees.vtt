@@ -1,13 +1,14 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:03.889
-Create a Task for one focused change.
+00:00:00.000 --> 00:00:04.446
+Choose Create worktree on the Task.
 
 2
-00:00:03.889 --> 00:00:07.778
-Give the Task its own branch and managed worktree.
+00:00:04.446 --> 00:00:13.827
+Name a new branch and choose its base.
 
 3
-00:00:07.778 --> 00:00:11.667
-Keep parallel changes in separate checkouts.
+00:00:13.827 --> 00:00:17.233
+The Task now has its own branch and worktree.
+
