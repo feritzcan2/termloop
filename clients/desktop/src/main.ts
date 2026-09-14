@@ -309,7 +309,10 @@ async function publishClientMobileNotificationPreferences(
   preferences: NotificationPreferences,
 ): Promise<void> {
   try {
-    await publishMobileNotificationPreferences(preferences);
+    await publishMobileNotificationPreferences(preferences, undefined, {
+      developmentProfileTag: process.env.TERMLOOP_DEV_PROFILE_TAG,
+      smoke: smokeRun,
+    });
   } catch (cause: unknown) {
     console.warn("Mobile notification preferences could not be published.", cause instanceof Error ? cause.name : "unknown");
   }
