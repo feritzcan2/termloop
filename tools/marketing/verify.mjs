@@ -25,7 +25,7 @@ for (const feature of extras) {
 }
 assert.doesNotMatch(page, /<source[^>]+\.webm/);
 for (const [, asset] of page.matchAll(/(?:src|poster|href)="(assets\/[^"#]+)"/g)) {
-  assert(statSync(path.join(landing, asset)).isFile(), `Missing asset: ${asset}`);
+  assert(statSync(path.join(landing, asset.split('?')[0])).isFile(), `Missing asset: ${asset}`);
 }
 const probe = file => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file]));
 let totalBytes = 0;

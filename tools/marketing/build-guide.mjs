@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -52,6 +53,14 @@ const start = page.indexOf('    <section class="tour" id="features">');
 const end = page.indexOf('    <section class="section principles"', start);
 if (start < 0 || end < 0) throw new Error('Feature guide boundaries missing');
 page = page.slice(0, start) + tour + page.slice(end);
+// Returning visitors must receive matching styles and media after a new edit.
+const assetPattern = /((?:src|poster|href)=")(assets\/[^"?#]+)(?:\?v=[a-f0-9]+)?(")/g;
+const assetVersions = new Map(await Promise.all(
+  [...new Set([...page.matchAll(assetPattern)].map(([, , asset]) => asset))].map(async asset => [
+    asset, createHash('sha256').update(await readFile(path.join(root, 'landing', asset))).digest('hex').slice(0, 12),
+  ]),
+));
+page = page.replace(assetPattern, (_, prefix, asset, suffix) => `${prefix}${asset}?v=${assetVersions.get(asset)}${suffix}`);
 await writeFile(file, page);
 const docs = `# TermLoop feature videos
 
