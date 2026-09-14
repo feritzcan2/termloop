@@ -39,8 +39,23 @@ for (const feature of catalog) {
   const edit = edits[feature.id];
   const archived = Boolean(edit.archiveSource);
   const joined = Boolean(edit.segments);
-  assert.equal(report.captureKind, joined ? 'joined-video' : archived ? 'archive-video' : 'continuous-video');
-  if (archived) {
+  const cut = Boolean(edit.shots);
+  assert.equal(report.captureKind, cut ? 'edited-video' : joined ? 'joined-video' : archived ? 'archive-video' : 'continuous-video');
+  if (cut) {
+    assert.deepEqual(report.shots, edit.shots);
+    assert.equal(report.sources.length, edit.sources.length);
+    for (const [i, source] of edit.sources.entries()) {
+      assert.equal(report.sources[i].sourceSha256, source.sourceSha256);
+      assert(Math.abs(report.sources[i].fps - edit.fps) < .1);
+      if (source.root === 'landing') assert.equal(createHash('sha256').update(readFileSync(path.join(landing, source.source))).digest('hex'), source.sourceSha256);
+    }
+    for (const shot of edit.shots) {
+      assert(shot.start >= 0 && shot.end > shot.start && shot.end <= report.sources[shot.source].duration + .001);
+      const [x, y, w, h] = shot.crop;
+      assert(x >= 0 && y >= 0 && x+w <= 1920 && y+h <= 1080 && w*9 === h*16);
+    }
+    assert(Math.abs(report.duration - edit.shots.reduce((sum, shot) => sum + shot.duration, 0)) < .001);
+  } else if (archived) {
     assert(['quick-actions', 'changes'].includes(feature.id));
     assert.equal(report.sourceFps, edit.sourceFps);
     const originalHash = createHash('sha256').update(readFileSync(path.join(landing, edit.archiveSource))).digest('hex');
@@ -65,7 +80,7 @@ for (const feature of catalog) {
     assert.equal(joinedFrames.length, frames.length, 'Preserve every chapter frame');
     assert(frames.every((hash, i) => hash === joinedFrames[i]), 'Join complete chapters in order without changing decoded pixels');
   } else assert(report.sourceFps >= 29.9 && report.sourceFps <= 30.1);
-  if (!joined) {
+  if (!joined && !cut) {
     assert.equal(report.sourceSha256, edit.sourceSha256);
     assert.equal(report.sourceCoverage[0], edit.sourceStart || 0);
     assert(report.sourceCoverage[1] <= report.sourceSeconds);
@@ -83,13 +98,13 @@ for (const feature of catalog) {
   assert.equal(video.codec_name, 'h264');
   assert.equal(video.width, 1920);
   assert.equal(video.height, 1080);
-  assert.equal(video.avg_frame_rate, `${archived ? edit.sourceFps : 30}/1`);
+  assert.equal(video.avg_frame_rate, `${cut ? edit.fps : archived ? edit.sourceFps : 30}/1`);
   const duration = Number(media.format.duration);
-  assert(duration >= (edit.sourceStart ? 3 : 5) && duration <= (joined ? 32 : 30), `${feature.id}: unexpected duration ${duration}`);
+  assert(duration >= 3 && duration <= 6, `${feature.id}: keep marketing loops between three and six seconds`);
   if (feature.id === 'fork') assert(duration <= 5, 'Session Fork must stay within five seconds');
   assert(Math.abs(duration - report.duration) < .04);
   assert.equal(Number(video.nb_frames), report.frames);
-  if (!archived && !joined) {
+  if (!archived && !joined && !cut) {
     assert(report.clicks[0].outputTime >= .9 && report.clicks[0].outputTime <= 1.6, 'Brief orientation before the first click');
     for (const click of report.clicks) assert(click.outputTime < duration);
   }
@@ -111,4 +126,4 @@ const docs = readFileSync(docsPath, 'utf8');
 execFileSync(process.execPath, ['tools/marketing/build-guide.mjs'], { cwd: root });
 assert.equal(readFileSync(path.join(landing, 'index.html'), 'utf8'), page, 'Guide generation must be idempotent');
 assert.equal(readFileSync(docsPath, 'utf8'), docs, 'Documentation generation must be idempotent');
-console.log(`PASS: 7 guides, 7 decoded 1080p videos (5 at 30 FPS, 2 archive sources), 7 complete GIF loops, 6 everyday tools, exact Task chapter frames, captions, checksums, assets and repeatable generation. ${Math.min(...durations).toFixed(1)}–${Math.max(...durations).toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB combined.`);
+console.log(`PASS: 7 guides, 7 decoded 1080p videos, 7 complete GIF loops, 6 everyday tools, selected source intervals, captions, checksums, assets and repeatable generation. ${Math.min(...durations).toFixed(1)}–${Math.max(...durations).toFixed(1)} sec; ${(totalBytes / 1024 / 1024).toFixed(1)} MiB combined.`);
