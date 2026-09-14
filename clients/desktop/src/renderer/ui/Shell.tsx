@@ -70,6 +70,7 @@ import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
 import { WorkflowEditorPanel, type WorkflowEditorDraft } from "./WorkflowEditorPanel.js";
+import { workflowCreatorSession, type WorkflowCreatorActions, type WorkflowCreatorTarget } from "./WorkflowCreator.js";
 import { WorkflowLaunchers } from "./TaskWorkflows.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
 import type { ErrorLogEntry } from "../state/projection-store.js";
@@ -119,12 +120,14 @@ type AssistantActions = Pick<StewardPanelProps,
 };
 
 type ImproverSetup =
+  | { kind: "workflowCreator"; projectId: string; target: WorkflowCreatorTarget }
   | { kind: "agentCreator"; projectId: string }
   | { kind: "prompt"; projectId: string; target: AssistantPromptImproverTarget }
   | { kind: "run"; projectId: string; target: RunConfigurationImproverTarget }
   | { kind: "settings"; projectId: string; target: SettingsImproverTarget; subject: string };
 
 function improverSetupTitle(setup: ImproverSetup): string {
+  if (setup.kind === "workflowCreator") return "Workflow Creator settings";
   if (setup.kind === "agentCreator") return "Agent Creator settings";
   if (setup.kind === "run") return "Improve run with agent";
   if (setup.kind === "settings") return `Improve ${setup.subject} with agent`;
@@ -162,6 +165,7 @@ export type ShellProps = {
   agentProfiles: readonly AgentProfileDto[];
   agentLibrary?: AgentLibraryController;
   startAgentCreator?(selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
+  workflowCreator?: WorkflowCreatorActions;
   connection: ConnectionState;
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
@@ -399,7 +403,7 @@ export type StagePage =
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
   | { kind: "taskSettings" }
-  | { kind: "workflow"; id: string | null };
+  | { kind: "workflow"; id: string | null; taskId?: string };
 
 export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
   return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSettings" || page?.kind === "workflow" || (page?.kind === "prompt" && page.id.startsWith("runtime."))
@@ -1553,7 +1557,7 @@ export function Shell(props: ShellProps) {
             launchTaskTerminal={props.launchTaskTerminal}
             launchTaskAgent={props.launchTaskAgent}
             launchTaskWorkflow={props.launchTaskWorkflow}
-            openWorkflowEditor={(workflowId) => openStagePage({ kind: "workflow", id: workflowId ?? null })}
+            openWorkflowEditor={(workflowId, taskId) => openStagePage({ kind: "workflow", id: workflowId ?? null, ...(taskId ? { taskId } : {}) })}
             runImprovement={props.runImprovement}
             setupRunImprovement={openRunImproverSetup}
             saveRunConfiguration={props.saveRunConfiguration}
@@ -1802,7 +1806,9 @@ export function Shell(props: ShellProps) {
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
-            /> : stagePage?.kind === "workflow" && props.selectedProject ? <WorkflowEditorPanel
+            /> : stagePage?.kind === "workflow" && props.selectedProject ? (stagePage.id && !props.workflowConfigurations.some((configuration) => configuration.id === stagePage.id)
+              ? <StageEditorPlaceholder label="Workflow template" error="This template is no longer available. Your draft has been kept; it cannot overwrite another template." loaded={false} close={() => setStagePage(undefined)} />
+              : <WorkflowEditorPanel
               key={workflowDraftKey}
               projectId={props.selectedProject.id}
               configuration={stagePage.id
@@ -1812,6 +1818,20 @@ export function Shell(props: ShellProps) {
               agentCapabilities={props.agentCapabilities}
               agentProfiles={props.agentLibrary?.value?.profiles ?? []}
               initialDraft={workflowDrafts.current.get(workflowDraftKey)}
+              creator={props.workflowCreator ? {
+                actions: props.workflowCreator,
+                session: workflowCreatorSession(props.projectSessions, props.selectedProject.id, stagePage.id),
+                unavailableReason: props.connection !== "connected" ? "Reconnect to use Workflow Creator. Your editor draft stays here."
+                  : !props.agentCapabilities.some((agent) => agent.available && agent.tracked_helpers_supported && ["claude", "codex"].includes(agent.agent_id)) ? "Connect Claude or Codex to use Workflow Creator." : undefined,
+                setup: (draft) => setImproverSetup({ kind: "workflowCreator", projectId: props.selectedProject!.id,
+                  target: { workflowId: stagePage.id, taskId: stagePage.taskId ?? null, draft } }),
+                continue: async () => {
+                  const failure = await props.workflowCreator!.start(props.selectedProject!.id,
+                    { workflowId: stagePage.id, taskId: stagePage.taskId ?? null, draft: null });
+                  if (!failure) dismissStagePages();
+                  return failure;
+                },
+              } : undefined}
               draftChanged={(draft) => {
                 if (draft) workflowDrafts.current.set(workflowDraftKey, draft);
                 else workflowDrafts.current.delete(workflowDraftKey);
@@ -1819,7 +1839,7 @@ export function Shell(props: ShellProps) {
               close={() => setStagePage(undefined)}
               save={props.saveWorkflowConfiguration}
               remove={props.deleteWorkflowConfiguration}
-            /> : stagePage?.kind === "agent" && props.agentLibrary ? (
+            />) : stagePage?.kind === "agent" && props.agentLibrary ? (
               props.agentLibrary.value && (!stagePage.id || props.agentLibrary.value.profiles.some((profile) => profile.id === stagePage.id)) ? <AgentProfilePanel
                 scopeContext={settingsScope}
                 key={`${props.selectedProject?.connectionProfileId}:${stagePage.id ?? "new"}:${Boolean(stagePage.duplicate)}`}
@@ -1893,6 +1913,11 @@ export function Shell(props: ShellProps) {
               loaded={Boolean(promptLibrary.value)}
               close={() => setStagePage(undefined)}
             />) : <>
+            {props.selectedSession?.improver_target?.targetKind === "workflowDraft"
+              && props.selectedSession.project_id === props.selectedProject?.id ? <div className="workflow-creator-return">
+              <span><Icon name="sparkles" /><strong>Workflow Creator</strong><small>Proposals stay separate until you save them.</small></span>
+              <button type="button" className="secondary-button" onClick={() => openStagePage({ kind: "workflow", id: props.selectedSession!.improver_target!.targetId })}>Review AI draft</button>
+            </div> : null}
             {props.layout ? (
               <PaneTree
                 node={props.layout.root}
@@ -2055,7 +2080,9 @@ export function Shell(props: ShellProps) {
         title={improverSetupTitle(improverSetup)}
         capabilities={props.agentCapabilities}
         start={async (selection, options) => {
-          const failure = improverSetup.kind === "agentCreator"
+          const failure = improverSetup.kind === "workflowCreator"
+            ? await (props.workflowCreator?.start(improverSetup.projectId, improverSetup.target, selection, options) ?? Promise.resolve("Workflow Creator is unavailable."))
+            : improverSetup.kind === "agentCreator"
             ? await (props.startAgentCreator?.(selection, options) ?? Promise.resolve("Agent Creator is unavailable."))
             : improverSetup.kind === "prompt"
             ? await (props.assistantActions.promptImprovement?.start(improverSetup.target, selection, options)
@@ -2063,7 +2090,7 @@ export function Shell(props: ShellProps) {
             : improverSetup.kind === "settings"
               ? await props.settingsImprovement.start(improverSetup.target, selection, options)
               : await props.runImprovement.start(improverSetup.projectId, improverSetup.target, selection, options);
-          if (!failure && improverSetup.kind === "agentCreator") dismissStagePages();
+          if (!failure && (improverSetup.kind === "agentCreator" || improverSetup.kind === "workflowCreator")) dismissStagePages();
           if (!failure && improverSetup.kind === "prompt" && improverSetup.target.surface === "playbook") {
             openPlaybookBuilder();
           }

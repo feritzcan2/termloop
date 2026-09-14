@@ -83,6 +83,12 @@ impl Store {
             .ok_or(StoreError::NotFound)?;
         let previous = self.state.clone();
         let deleted = self.state.workflow_configurations.remove(index);
+        let is_draft = |target: &termloop_domain::ImproverSessionTarget| {
+            target.target_kind == termloop_domain::ImproverSessionTargetKind::WorkflowDraft
+                && target.target_id.as_deref() == Some(configuration_id)
+        };
+        self.state.configuration_versions.retain(|version| !(version.project_id == deleted.project_id && is_draft(&version.target)));
+        self.state.configuration_version_selections.retain(|selection| !(selection.project_id == deleted.project_id && is_draft(&selection.target)));
         self.commit_or_restore(previous)?;
         Ok(deleted)
     }

@@ -1,5 +1,7 @@
 import type { AgentConnectionActions } from "../ui/AgentConnectionsPanel.js";
 import { openAgentCreator } from "./agent-creator.js";
+import { openWorkflowCreator } from "./workflow-creator.js";
+import type { WorkflowCreatorActions } from "../ui/WorkflowCreator.js";
 import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
@@ -1167,6 +1169,22 @@ export function DesktopApp() {
       const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
     }
   }, []);
+
+  const workflowCreator = useMemo<WorkflowCreatorActions>(() => ({
+    async start(projectId, target, requested, options) {
+      const activation = captureSessionActivation();
+      try {
+        const api = sourceApiForProject(projectId);
+        const session = await openWorkflowCreator(api, projectionStore.getSnapshot().sessions, projectId,
+          target, requested ?? { ...readLastQuickActionAgentSelection(), permission: "default" }, retireImproverSession, options);
+        await activateSession(activation, session);
+        return undefined;
+      } catch (error) {
+        const message = controlErrorMessage(error); projectionStore.setMessage(message); return message;
+      }
+    },
+    read: (projectId, workflowId) => sourceApiForProject(projectId).workflowCreatorDraftGet({ projectId, workflowId }),
+  }), []);
 
   /// Improve-with-agent launch and immutable version history for settings.
   /// The Agent activates a new version only after the user tells it to apply.
@@ -2388,6 +2406,7 @@ export function DesktopApp() {
       agentProfiles={agentProfiles}
       agentLibrary={agentLibrary}
       startAgentCreator={startAgentCreator}
+      workflowCreator={workflowCreator}
       connection={projection.connection}
       connectionMessage={projection.message}
       reconnectSource={async (profileId) => {

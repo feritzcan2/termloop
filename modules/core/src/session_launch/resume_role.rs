@@ -284,6 +284,8 @@ mod tests {
     #[test]
     fn resumed_improvers_keep_only_their_exact_target_bound_role() {
         for (template, target_kind, target_id) in [
+            ("builtin.builder.workflow", ImproverSessionTargetKind::WorkflowDraft, None),
+            ("builtin.builder.workflow", ImproverSessionTargetKind::WorkflowDraft, Some("workflow-1".into())),
             (
                 "builtin.builder.agent",
                 ImproverSessionTargetKind::AgentCreator,
