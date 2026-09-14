@@ -418,32 +418,65 @@ fn a_failed_directory_commit_is_retried_without_new_terminal_output() {
 }
 
 #[tokio::test]
-async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_restart() {
+async fn real_shell_output_and_changed_directory_survive_shutdown_and_restart() {
     let mut fixture = Fixture::new(vec![shell("shell", "running")]);
     let changed_directory = fixture.root.join("changed");
     std::fs::create_dir(&changed_directory).unwrap();
-    assert!(
-        fixture
-            .core
-            .restore_terminal_sessions(None, &[], false)
-            .is_empty()
-    );
-    let mut output = fixture.core.terminal.subscribe("shell", 20).unwrap();
-    // Assemble the marker in the shell so echoed input cannot prove execution.
-    let output_command = if cfg!(windows) {
-        "echo ('TL_SHELL_HISTORY_' + 'EXECUTED')"
+    // Exercise real OS shell output and cwd changes without emulating an
+    // interactive line editor. Restart below still resolves the default shell.
+    let (program, args) = if cfg!(windows) {
+        let (program, mut args) = shell_program();
+        // Use the production PowerShell directory hook. Its filesystem
+        // location is reported through OSC, not the OS process cwd API.
+        args.last_mut().unwrap().push_str(
+            "\nSet-Location -LiteralPath 'changed'\n$null = prompt\nWrite-Output ('TL_SHELL_HISTORY_' + 'EXECUTED')\n",
+        );
+        (program, args)
     } else {
-        "printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED"
+        (
+            "/bin/sh".into(),
+            vec![
+                "-c".into(),
+                "cd changed && printf 'TL_SHELL_HISTORY_%s\\n' EXECUTED && read -r reply".into(),
+            ],
+        )
     };
-    let command = format!("cd '{}'; {output_command}\r", changed_directory.display());
-    let mut submitted = !cfg!(windows);
-    if submitted {
-        fixture
-            .core
-            .terminal
-            .input_user("shell", 20, command.as_bytes())
-            .unwrap();
-    }
+    let process = ProcessDescriptor {
+        program: program.clone(),
+        args: args.clone(),
+        cwd: fixture.root.display().to_string(),
+        agent_id: None,
+        template_ref: None,
+        template_version: None,
+    };
+    fixture
+        .core
+        .terminal
+        .spawn_shell(
+            PtySpawnSpec {
+                session_id: "shell".into(),
+                runtime_epoch: 20,
+                program,
+                args,
+                cwd: fixture.root.display().to_string(),
+                environment: termloop_platform::LaunchEnvironment::os_baseline(),
+                recent_output_replay: true,
+            },
+            ShellHistory::default(),
+        )
+        .unwrap();
+    let previous = fixture.core.store.sessions()[0].clone();
+    fixture
+        .core
+        .store
+        .restore_terminal_session(
+            &issue_core_write_authority_for_composition(),
+            &previous,
+            process,
+            20,
+        )
+        .unwrap();
+    let mut output = fixture.core.terminal.subscribe("shell", 20).unwrap();
     let mut bytes = Vec::new();
     let mut answered = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -462,19 +495,6 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
                         .unwrap();
                     answered += 1;
                 }
-                // ConPTY asks for the cursor before PowerShell is ready. Do
-                // not interleave that terminal reply with the submitted line.
-                if !submitted
-                    && String::from_utf8_lossy(&bytes)
-                        .contains(&format!("PS {}> ", fixture.root.display()))
-                {
-                    fixture
-                        .core
-                        .terminal
-                        .input_user("shell", 20, command.as_bytes())
-                        .unwrap();
-                    submitted = true;
-                }
                 if String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED") {
                     break;
                 }
@@ -484,7 +504,7 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "the fresh shell did not execute new user input; received {:?}",
+            "the shell did not produce its execution marker; received {:?}",
             String::from_utf8_lossy(&bytes)
         )
     });
@@ -527,4 +547,8 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
     };
     assert!(String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED"));
     assert!(fixture.core.terminal.contains_session("shell").unwrap());
+    let restored = &fixture.core.store.sessions()[0].process;
+    let (program, args) = shell_program();
+    assert_eq!(restored.program, program);
+    assert_eq!(restored.args, args);
 }
