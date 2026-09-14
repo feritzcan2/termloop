@@ -5,6 +5,7 @@ import { signAccessChallenge } from "../access-auth.js";
 import type { DesktopConnectionConfig, RemoteConnectionConfig } from "./connection-profiles.js";
 
 const MAX_CONTROL_MESSAGE_BYTES = 8 * 1024 * 1024;
+const CONTROL_OPEN_TIMEOUT_MS = 10_000;
 
 let latestRemoteConnectionFailure: { profileId: string; message: string } | undefined;
 
@@ -25,7 +26,7 @@ export interface DesktopControlSocket {
 
 export function createControlSocket(config: DesktopConnectionConfig): DesktopControlSocket {
   return config.kind === "local"
-    ? new WebSocket(config.controlUrl) as unknown as DesktopControlSocket
+    ? new WebSocket(config.controlUrl, { handshakeTimeout: CONTROL_OPEN_TIMEOUT_MS }) as unknown as DesktopControlSocket
     : new AccessControlSocket(config);
 }
 
@@ -42,7 +43,10 @@ class AccessControlSocket extends EventEmitter implements DesktopControlSocket {
       latestRemoteConnectionFailure = undefined;
     }
     this.#config = config;
-    this.#socket = new WebSocket(config.controlUrl, { maxPayload: MAX_CONTROL_MESSAGE_BYTES });
+    this.#socket = new WebSocket(config.controlUrl, {
+      maxPayload: MAX_CONTROL_MESSAGE_BYTES,
+      handshakeTimeout: CONTROL_OPEN_TIMEOUT_MS,
+    });
     this.#socket.once("open", () => { void this.#authenticate(); });
     this.#socket.once("error", (error) => this.#fail(error instanceof Error ? error : new Error("remote connection failed")));
     this.#socket.once("close", () => this.#finishClose());
@@ -134,6 +138,9 @@ class AccessControlSocket extends EventEmitter implements DesktopControlSocket {
 
   #fail(error: Error): void {
     if (this.#closed) return;
+    if (error.message === "Opening handshake has timed out") {
+      error = new Error("TermLoop server did not respond before the connection timed out");
+    }
     latestRemoteConnectionFailure = {
       profileId: this.#config.profileId,
       message: error.message,
