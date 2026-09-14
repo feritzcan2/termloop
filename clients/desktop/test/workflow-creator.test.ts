@@ -71,6 +71,7 @@ describe("workflow creator orchestration", () => {
 let root: Root | undefined;
 let host: HTMLDivElement;
 async function mount(node: ReturnType<typeof createElement>) {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root!.render(node));
 }
@@ -79,7 +80,7 @@ function button(label: string) {
   expect(result, label).toBeTruthy(); return result!;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
-afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; host?.remove(); vi.useRealTimers(); });
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; host?.remove(); vi.useRealTimers(); delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT; });
 function controls(overrides: Partial<ComponentProps<typeof WorkflowCreator>> = {}): ComponentProps<typeof WorkflowCreator> {
   return { projectId, workflowId: null, generation: undefined, actions: { read: vi.fn().mockResolvedValue(proposal), start: vi.fn() },
     session: undefined, busy: false, unavailableReason: undefined, dirty: false, start: vi.fn(), continue: vi.fn(), useDraft: vi.fn(), ...overrides };
