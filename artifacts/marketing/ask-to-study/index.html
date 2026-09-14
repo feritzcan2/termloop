@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask To — kesintisiz önizleme</title>
+<style>
+:root{font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e9eff8;background:#090d14;color-scheme:dark}*{box-sizing:border-box}body{margin:0;padding:26px 24px}main{max-width:min(1280px,calc((100vh - 210px)*16/9));margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:20px}.eyebrow{color:#8cc6bd;font-size:11px;letter-spacing:.13em;text-transform:uppercase}h1{font-size:26px;letter-spacing:-.025em;margin:6px 0 0}.meta{color:#8d9db2;font-size:13px}.frame{border:1px solid #293447;border-radius:13px;overflow:hidden;background:#20252e}video{width:100%;display:block;aspect-ratio:16/9}.bar{display:flex;align-items:center;gap:9px;padding-top:15px;flex-wrap:wrap}button,a{font:inherit;font-size:14px;color:inherit;cursor:pointer;background:#121b29;border:1px solid #2d3b51;padding:10px 15px;border-radius:8px;text-decoration:none}button:hover,a:hover{border-color:#7ecabe}button:focus-visible,a:focus-visible{outline:3px solid #85daca;outline-offset:3px}#toggle{background:#17372f;border-color:#457a6d;color:#c7efe4}.note{margin-left:auto;font-size:13px;color:#91a3ba}.progress{color:#708097;font-variant-numeric:tabular-nums;font-size:12px;margin-top:12px;display:block}@media(max-width:760px){main{max-width:100%}body{padding:20px 12px}header{display:block}.meta{margin-top:10px}.note{margin:8px 0 0;width:100%}}
+</style>
+<main><header><div><span class="eyebrow">TermLoop · Ask To · Taslak 04</span><h1>Kesintisiz akış</h1></div><div class="meta">1920 × 1080 · 30 fps</div></header>
+<div class="frame"><video id="demo" src="ask-to-preview.mp4?v=5" autoplay muted loop playsinline preload="auto" aria-label="Kesintisiz Ask To gösterimi"></video></div>
+<div class="bar"><button id="toggle">Duraklat</button><button id="restart">Baştan</button><button id="fullscreen">Tam ekran</button><a href="ask-to-preview.mp4" download>MP4 indir</a><span class="note">Görünür tıklamalar · Dengeli tempo</span></div>
+<output class="progress" id="measurement" aria-live="off">Video hazırlanıyor…</output>
+</main>
+<script>
+const video=document.querySelector('#demo'),toggle=document.querySelector('#toggle'),measurement=document.querySelector('#measurement');
+function state(){toggle.textContent=video.paused?'Oynat':'Duraklat'}
+video.addEventListener('play',state);video.addEventListener('pause',state);
+toggle.onclick=()=>video.paused?video.play():video.pause();
+document.querySelector('#restart').onclick=()=>{video.currentTime=0;video.play()};
+document.querySelector('#fullscreen').onclick=()=>video.requestFullscreen?.();
+video.play().catch(state);
+setInterval(()=>{const q=video.getVideoPlaybackQuality?.();measurement.textContent=`${video.paused?'Duraklatıldı':'Oynatılıyor'} · ${video.currentTime.toFixed(1)} / ${Number.isFinite(video.duration)?video.duration.toFixed(1):'…'} sn${q?` · ${q.totalVideoFrames} kare / ${q.droppedVideoFrames} düşen kare`:''}`},500);
+</script>
+</html>

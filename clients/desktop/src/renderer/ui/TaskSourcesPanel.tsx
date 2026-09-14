@@ -83,6 +83,7 @@ import {
   type TaskImportChoice,
 } from "../project-task-automation.js";
 import { controlErrorMessage } from "../control-error.js";
+import { readTaskImportChoice, rememberTaskImportChoice } from "../task-import-memory.js";
 import { Icon } from "./Icon.js";
 import { WorktreeAgentChoice, type ProjectTaskAutomationActions } from "./ProjectTaskAutomation.js";
 import { sortRemoteBranches } from "./worktree-path-suggestion.js";
@@ -391,6 +392,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       // The confirmation showed a resolved choice, so the command carries that
       // exact selection rather than `inherit`: a Project default that moved
       // between the prompt and the confirm must not change this import.
+      rememberTaskImportChoice(props.projectId, choice);
       const result = await props.actions.importCandidate({
         ...candidateParams(candidate, source),
         ...taskCreationIntent(choice),
@@ -692,7 +694,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                             setNotice(undefined);
                             setImportChoice({
                               externalId: candidate.externalId,
-                              choice: automation
+                              choice: readTaskImportChoice(props.projectId) ?? (automation
                                 ? projectTaskAutomationDraftFrom(automation.configuration, baseBranches[0]?.exact_ref)
                                 : {
                                   createWorktree: false,
@@ -704,7 +706,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                                   reasoning: null,
                                   kickoffMessage: null,
                                   workflowId: null,
-                                },
+                                }),
                             });
                           }}
                         >{busy === `import:${candidate.externalId}` ? "Importing…" : "Import as Task"}</button> : null}
@@ -718,12 +720,14 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                         choice={confirming}
                         busy={disabled}
                         importing={busy === `import:${candidate.externalId}`}
-                        defaultsLoaded={automation !== undefined}
                         agentCapabilities={props.agentCapabilities}
                         baseBranches={baseBranches}
                         branchesLoading={branchesLoading}
                         branchesError={branchesError}
-                        change={(choice) => setImportChoice({ externalId: candidate.externalId, choice })}
+                        change={(choice) => {
+                          rememberTaskImportChoice(props.projectId, choice);
+                          setImportChoice({ externalId: candidate.externalId, choice });
+                        }}
                         confirm={() => void importCandidate(candidate, selectedSource, confirming)}
                         cancel={() => setImportChoice(undefined)}
                       /> : null}
@@ -1174,15 +1178,14 @@ function IntakeFields({ idPrefix, value, activeTaskLimit, busy, change, changeAc
 }
 
 /// Importing is an explicit act, so the worktree and agent it will produce are
-/// confirmed before the command runs. The options start at the Project default
-/// and are sent as a resolved one-shot selection.
-function CandidateImportOptions({ candidateKey, choice, busy, importing, defaultsLoaded, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
+/// confirmed before the command runs. Options restore the last local selection,
+/// fall back to Project defaults, and are sent as a resolved one-shot selection.
+function CandidateImportOptions({ candidateKey, choice, busy, importing, agentCapabilities, workflows, baseBranches, branchesLoading, branchesError, change, confirm, cancel }: {
   candidateKey: string;
   workflows: readonly WorkflowConfigurationDto[];
   choice: TaskImportChoice;
   busy: boolean;
   importing: boolean;
-  defaultsLoaded: boolean;
   agentCapabilities: readonly AgentCapabilityDto[];
   baseBranches: readonly RemoteBranchDto[];
   branchesLoading: boolean;
@@ -1197,9 +1200,7 @@ function CandidateImportOptions({ candidateKey, choice, busy, importing, default
   return <div className="task-candidate-import-line">
     <div className="task-candidate-import-options" role="group" aria-label={`Import ${candidateKey} as Task`}>
     <p className="field-help">
-      {defaultsLoaded
-        ? `Prefilled from Task settings. This choice applies to ${candidateKey} only.`
-        : `Task settings could not be read, so nothing is preselected. This choice applies to ${candidateKey} only.`}
+      Your selections will be reused the next time you import a Task in this Project.
     </p>
     <WorktreeAgentChoice
       idPrefix="task-candidate-import"

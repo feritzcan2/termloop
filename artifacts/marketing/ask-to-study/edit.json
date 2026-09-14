@@ -1,0 +1,121 @@
+{
+  "draft": true,
+  "source": "/Users/felixzcan/Movies/TermLoop Demos/Ask To 2026-09-14/source-1080p.mkv",
+  "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836",
+  "sourceResolution": [
+    1920,
+    1080
+  ],
+  "sourceDurationSeconds": 151.933,
+  "output": "ask-to-preview.mp4",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 516,
+  "durationSeconds": 17.2,
+  "audio": false,
+  "editing": "Full source, chronological and uncut. Continuous speed ramps, with brief click ripples and soft glows on menu actions. No crops, zooms, captions or terminal highlighting.",
+  "sourceCoverage": [
+    0,
+    151.933
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 16,
+      "speed": 64
+    },
+    {
+      "start": 16,
+      "end": 20,
+      "speed": 5
+    },
+    {
+      "start": 20,
+      "end": 23,
+      "speed": 24
+    },
+    {
+      "start": 23,
+      "end": 28,
+      "speed": 3
+    },
+    {
+      "start": 28,
+      "end": 29.8,
+      "speed": 1
+    },
+    {
+      "start": 29.8,
+      "end": 64.2,
+      "speed": 56
+    },
+    {
+      "start": 64.2,
+      "end": 65.4,
+      "speed": 1
+    },
+    {
+      "start": 65.4,
+      "end": 111,
+      "speed": 36
+    },
+    {
+      "start": 111,
+      "end": 114,
+      "speed": 10
+    },
+    {
+      "start": 114,
+      "end": 117,
+      "speed": 1
+    },
+    {
+      "start": 117,
+      "end": 140,
+      "speed": 24
+    },
+    {
+      "start": 140,
+      "end": 145,
+      "speed": 1
+    },
+    {
+      "start": 145,
+      "end": 151.933,
+      "speed": 32
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 23.3,
+      "x": 230,
+      "y": 263,
+      "label": "Open Session menu",
+      "outputTime": 1.279785
+    },
+    {
+      "sourceTime": 28.25,
+      "x": 320,
+      "y": 478,
+      "label": "Agents menu",
+      "outputTime": 3.097519
+    },
+    {
+      "sourceTime": 64.4,
+      "x": 500,
+      "y": 533,
+      "label": "Ask To / Codex",
+      "outputTime": 5.458453
+    }
+  ],
+  "firstClickSeconds": 1.2797851562500002,
+  "menuDismissalToActionSeconds": 1.4017857142857117,
+  "actionToVisibleHelperSeconds": 2.0679166666666715,
+  "chapters": {
+    "question": 0.27074218749999995,
+    "askTo": 1.2078125,
+    "helper": 8.123869047619051,
+    "answer": 12.088764880952382
+  }
+}
