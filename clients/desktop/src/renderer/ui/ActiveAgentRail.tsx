@@ -438,15 +438,42 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
             >
               {cluster.groups.flatMap(({ source, helpers }) =>
                 workflowAgentSegments([source, ...helpers], props.workflowGroupsBySessionId).map((segment) => {
-                  const rows = segment.sessions.map((session) => <ActiveAgentRow
-                    key={session.id}
-                    session={session}
-                    source={session.id === source.id ? undefined : source}
+                  const members = segment.sessions.map((session) => {
+                    const rowSource = session.id === source.id ? undefined : source;
+                    const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
+                    const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined
+                      : rowSource ?? (sourceId ? sessionsById.get(sourceId) : undefined);
+                    return {
+                      session, source: rowSource, projectedSource,
+                      worktreeChanges: props.worktreeChangesBySessionId.get(session.id)
+                        ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined),
+                    };
+                  });
+                  const first = members[0]!;
+                  // Share only exact checkout identities, never matching basenames.
+                  const checkout = segment.workflow && first.session.process.cwd && members.every(({ session }) =>
+                    session.project_id === first.session.project_id && session.process.cwd === first.session.process.cwd)
+                    ? first.session.process.cwd : undefined;
+                  const changes = checkout && first.worktreeChanges && members.every(({ worktreeChanges }) =>
+                    worktreeChanges?.taskId === first.worktreeChanges!.taskId
+                    && worktreeChanges.taskTitle === first.worktreeChanges!.taskTitle
+                    && worktreeChanges.changeCount === first.worktreeChanges!.changeCount)
+                    ? first.worktreeChanges : undefined;
+                  const rows = members.map((member) => <ActiveAgentRow
+                    key={member.session.id}
+                    {...member}
+                    sharedCheckout={Boolean(checkout)}
+                    sharedChanges={Boolean(changes)}
                     props={props}
-                    sessionsById={sessionsById}
                   />);
                   return segment.workflow
-                    ? <WorkflowAgentGroupFrame key={segment.sessions[0]!.id} workflow={segment.workflow}>{rows}</WorkflowAgentGroupFrame>
+                    ? <WorkflowAgentGroupFrame key={first.session.id} workflow={segment.workflow} metadata={checkout ? <div className="workflow-agent-group-meta">
+                      <span className="workflow-agent-group-checkout" title={checkout}><Icon name="folder" /><span>{checkout === props.projectFolder ? "Project checkout" : basename(checkout)}</span></span>
+                      {changes ? <button type="button" className="workflow-agent-group-changes"
+                        aria-label={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
+                        title={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
+                        onClick={() => props.openTaskChanges(changes.taskId)}>{taskChangeLabel(changes.changeCount)}</button> : null}
+                    </div> : undefined}>{rows}</WorkflowAgentGroupFrame>
                     : <Fragment key={segment.sessions[0]!.id}>{rows}</Fragment>;
                 }))}
             </AgentGroupFrame>
@@ -457,11 +484,14 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
   );
 }
 
-function ActiveAgentRow({ session, source, props, sessionsById }: {
+function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, sharedCheckout, sharedChanges, props }: {
   session: Session;
   source?: Session | undefined;
+  projectedSource: Session | undefined;
+  worktreeChanges: ActiveAgentWorktreeChanges | undefined;
+  sharedCheckout: boolean;
+  sharedChanges: boolean;
   props: ActiveAgentRailProps;
-  sessionsById: ReadonlyMap<string, Session>;
 }) {
   const draggable = useDraggable({
     id: `active-agent:${session.id}`,
@@ -481,18 +511,12 @@ function ActiveAgentRow({ session, source, props, sessionsById }: {
     && sidebarDnd?.sessionDropTarget?.sessionId === session.id
     ? sidebarDnd.sessionDropTarget.placement
     : undefined;
-  const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined : source
-    ?? (() => {
-      const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
-      return sourceId ? sessionsById.get(sourceId) : undefined;
-    })();
   const favorite = props.favoriteSessionIds.has(session.id);
   const agentStatus = props.statusesById.get(session.id);
   const reviewReady = props.reviewReadySessionIds.has(session.id);
   const workflows = props.workflowsBySessionId?.get(session.id) ?? [];
   const workflowAction = activeAgentWorkflowAction(session);
-  const worktreeChanges = props.worktreeChangesBySessionId.get(session.id)
-    ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined);
+  const rowChanges = sharedChanges ? undefined : worktreeChanges;
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
       {workflows.map((workflow) => <button
@@ -507,13 +531,13 @@ function ActiveAgentRow({ session, source, props, sessionsById }: {
           else props.selectSession(session.id);
         }}
       ><span className="active-agent-workflow-action">{workflowAction.label}</span><span className="active-agent-workflow-step">{workflow.stepLabel}</span></button>)}
-      <div className={`session-row active-agent-row${worktreeChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
+      <div className={`session-row active-agent-row${rowChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
         displayName={props.workflowAgentLabelsBySessionId?.get(session.id)}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
-        subtitle={session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
+        subtitle={sharedCheckout || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
         {...(projectedSource?.kind === "Agent"
           ? { relationshipLabel: source ? sessionRelationshipLabel(source, session) : sessionRelationshipLabel(projectedSource, session) }
           : {})}
@@ -539,13 +563,13 @@ function ActiveAgentRow({ session, source, props, sessionsById }: {
         title={favorite ? "Remove from Favs" : "Add to Favs"}
         onClick={() => props.toggleFavoriteSession(session.id)}
         ><Icon name="star" /></button>
-        {worktreeChanges ? <button
+        {rowChanges ? <button
         type="button"
         className="active-agent-worktree-changes"
-        aria-label={`Review ${taskChangeLabel(worktreeChanges.changeCount)} in ${worktreeChanges.taskTitle}`}
-        title={`Review ${taskChangeLabel(worktreeChanges.changeCount)} in ${worktreeChanges.taskTitle}`}
-        onClick={(event) => { event.stopPropagation(); props.openTaskChanges(worktreeChanges.taskId); }}
-        >{taskChangeLabel(worktreeChanges.changeCount)}</button> : null}
+        aria-label={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+        title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+        onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
+        >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
       </div>
     </div>
   );
