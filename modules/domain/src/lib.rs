@@ -1038,6 +1038,7 @@ pub enum ImproverSessionTargetKind {
     SettingsPrompt,
     SettingsMcpTool,
     AgentCreator,
+    WorkflowDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1049,6 +1050,7 @@ pub struct ImproverSessionTarget {
 impl ImproverSessionTarget {
     pub fn is_well_formed(&self) -> bool {
         match (&self.target_kind, self.target_id.as_deref()) {
+            (ImproverSessionTargetKind::WorkflowDraft, None) => true,
             (
                 ImproverSessionTargetKind::StewardInstructions
                 | ImproverSessionTargetKind::RoutineBuilder

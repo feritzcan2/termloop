@@ -346,6 +346,19 @@ pub(in crate::app::control) async fn preview_agent_creator(
     state.core.lock().await.preview_agent_creator(params)
 }
 
+pub(in crate::app::control) async fn preview_workflow_creator(
+    params: serde_json::Value, state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    state.core.lock().await.preview_workflow_creator(params)
+}
+
+pub(in crate::app::control) async fn launch_workflow_creator(
+    params: serde_json::Value, state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let plan = state.core.lock().await.take_workflow_creator_launch(params)?;
+    execute_agent_launch(state, plan).await
+}
+
 pub(in crate::app::control) async fn launch_agent_creator(
     params: serde_json::Value,
     state: &AppState,

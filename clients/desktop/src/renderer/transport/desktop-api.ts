@@ -1,4 +1,5 @@
 import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
+import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams, WorkflowCreatorDraftGetResult } from "@termloop/contract/current";
 import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
 import type { AgentStatus, Project, Session, Task } from "../model.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
@@ -356,6 +357,9 @@ export type DesktopApi = {
   agentAuthOpen(params: AgentAuthOperationParams): Promise<void>;
   agentCapabilityList(): Promise<AgentCapabilityDto[]>;
   agentCreatorPreview(params: AgentCreatorParams): Promise<QuickActionPreviewResult>;
+  workflowCreatorPreview(params: WorkflowCreatorParams): Promise<QuickActionPreviewResult>;
+  workflowCreatorLaunch(params: WorkflowCreatorLaunchParams): Promise<SessionDto>;
+  workflowCreatorDraftGet(params: WorkflowCreatorDraftGetParams): Promise<WorkflowCreatorDraftGetResult>;
   agentCreatorLaunch(params: AgentCreatorLaunchParams): Promise<Session>;
   agentLibraryGet(): Promise<AgentLibraryResult>;
   agentProfileCreate(params: AgentProfileCreateParams): Promise<AgentLibraryResult>;

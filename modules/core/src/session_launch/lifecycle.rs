@@ -744,6 +744,7 @@ pub(super) fn session_projection(
                 termloop_domain::ImproverSessionTargetKind::SettingsPrompt => "settingsPrompt",
                 termloop_domain::ImproverSessionTargetKind::SettingsMcpTool => "settingsMcpTool",
                 termloop_domain::ImproverSessionTargetKind::AgentCreator => "agentCreator",
+                termloop_domain::ImproverSessionTargetKind::WorkflowDraft => "workflowDraft",
             },
             "targetId": target.target_id,
         })),
