@@ -430,7 +430,7 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
     );
     let mut output = fixture.core.terminal.subscribe("shell", 20).unwrap();
     let command = format!(
-        "cd '{}'\recho TL_SHELL_HISTORY_EXECUTED\r",
+        "cd '{}'\recho 'TL_SHELL_HISTORY_EXECUTED'\r",
         changed_directory.display()
     );
     fixture
@@ -456,7 +456,9 @@ async fn real_shell_output_and_changed_directory_survive_shutdown_and_a_second_r
                         .unwrap();
                     answered += 1;
                 }
-                if String::from_utf8_lossy(&bytes).contains("\r\nTL_SHELL_HISTORY_EXECUTED\r\n") {
+                // Prompts and bracketed-paste escapes may precede the result.
+                // The quoted input echo cannot match this unquoted line ending.
+                if String::from_utf8_lossy(&bytes).contains("TL_SHELL_HISTORY_EXECUTED\r\n") {
                     break;
                 }
             }
