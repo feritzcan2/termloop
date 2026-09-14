@@ -1,0 +1,86 @@
+{
+  "id": "fork",
+  "duration": 18.033333,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 541,
+  "audio": false,
+  "captureKind": "continuous-video",
+  "source": "fork.mp4",
+  "recordedAt": "2026-09-09",
+  "recoveredFrom": "landing/assets/videos/tour/fork.mp4 (previous published delivery; only its added caption band removed)",
+  "captureCursorRemoved": false,
+  "sourceSha256": "36c93ad4c0eba442cd5bdb295f7bb7792091e9c305cb8d7888d748f32151ef97",
+  "sourceSeconds": 38.5,
+  "sourceFps": 30.0,
+  "sourceCoverage": [
+    0,
+    38.5
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 2.4,
+      "speed": 3
+    },
+    {
+      "start": 2.4,
+      "end": 3.7,
+      "speed": 1
+    },
+    {
+      "start": 3.7,
+      "end": 14.5,
+      "speed": 7
+    },
+    {
+      "start": 14.5,
+      "end": 16.8,
+      "speed": 1
+    },
+    {
+      "start": 16.8,
+      "end": 24.0,
+      "speed": 4.5
+    },
+    {
+      "start": 24.0,
+      "end": 27.0,
+      "speed": 1
+    },
+    {
+      "start": 27.0,
+      "end": 31.0,
+      "speed": 2
+    },
+    {
+      "start": 31.0,
+      "end": 36.0,
+      "speed": 1
+    },
+    {
+      "start": 36.0,
+      "end": 38.5,
+      "speed": 5
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 2.73,
+      "x": 230,
+      "y": 334,
+      "label": "Open Session menu",
+      "outputTime": 1.13
+    },
+    {
+      "sourceTime": 14.8,
+      "x": 322,
+      "y": 513,
+      "label": "Fork conversation",
+      "outputTime": 3.954724
+    }
+  ],
+  "sha256": "cf42c901ecebfaacaa2b7bb5d8cf95bd4c08ddfb4adf3393b2b132d1e1dd1456",
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+}

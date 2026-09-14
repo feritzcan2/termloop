@@ -1,0 +1,73 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const catalog = JSON.parse(await readFile(path.join(root, 'tools/marketing/catalog.json'), 'utf8'));
+const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+const media = f => {
+  const base = `assets/videos/tour/${f.id}`;
+  return `<div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="${f.id === 'ask-to' ? 'metadata' : 'none'}" poster="${base}.jpg" width="1920" height="1080" aria-label="${escape(f.label)} demonstration" aria-describedby="${f.id}-caption"><source src="${base}.mp4" type="video/mp4"><track kind="captions" src="${base}.vtt" srclang="en" label="English"><a href="${base}.mp4">Watch ${escape(f.label)}</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="${base}.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="${f.id}-caption">${escape(f.description)}</p>
+    <details class="feature-instructions"><summary>How to use ${escape(f.label)}</summary><ol>${f.steps.map(step => `<li>${escape(step)}</li>`).join('')}</ol></details></div>`;
+};
+const [hero, ...features] = catalog;
+const heroMarkup = `        <!-- DEMO HERO START -->
+        <div class="hero-demo" id="${hero.id}" data-demo data-demo-label="${escape(hero.label)}">
+          <p class="feature-kicker">${escape(hero.label)}</p><h2>${escape(hero.title)}</h2>
+          ${media(hero)}
+        </div>
+        <!-- DEMO HERO END -->`;
+const tour = `    <section class="tour" id="features"><div class="shell">
+      <div class="section-heading"><div><p class="prompt-line">${catalog.length} essential workflows</p><h2>See the work stay connected.</h2></div><p>A second opinion, a handoff, a fresh direction, and the tools to finish the change. Recorded in a working Launchpad demo Project.</p></div>
+      <nav class="demo-nav" aria-label="Demo navigation">${catalog.map(f => `<a href="#${f.id}">${escape(f.label)}</a>`).join('')}</nav>
+      <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
+      ${features.map(f => `<article class="feature-story" id="${f.id}" data-demo data-demo-label="${escape(f.label)}"><div class="feature-copy"><span class="feature-kicker">${escape(f.label)}</span><h3>${escape(f.title)}</h3></div>${media(f)}</article>`).join('\n')}
+    </div></section>\n\n`;
+const file = path.join(root, 'landing/index.html');
+let page = await readFile(file, 'utf8');
+const heroStart = page.indexOf('        <!-- DEMO HERO START -->');
+const heroEnd = page.indexOf('        <!-- DEMO HERO END -->', heroStart);
+if (heroStart < 0 || heroEnd < 0) throw new Error('Hero boundaries missing');
+page = page.slice(0, heroStart) + heroMarkup + page.slice(heroEnd + '        <!-- DEMO HERO END -->'.length);
+const start = page.indexOf('    <section class="tour" id="features">');
+const end = page.indexOf('    <section class="section principles"', start);
+if (start < 0 || end < 0) throw new Error('Feature guide boundaries missing');
+page = page.slice(0, start) + tour + page.slice(end);
+await writeFile(file, page);
+const docs = `# TermLoop feature videos
+
+The homepage and GitHub README feature **${catalog.length} essential workflows**. Each website video is silent 1920 × 1080 H.264 at 30 FPS, with a JPEG poster, optional English captions and three written steps. The README uses 960 × 540, 25 FPS looping GIFs of the same complete edits.
+
+The selected recording intervals stay continuous: waits accelerate with smooth speed ramps, menus and results remain readable, and soft click ripples identify the actions. There are no new interior cuts, camera zooms, terminal highlights or baked caption panels. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
+
+${catalog.map(f => `- [${f.label}](../../landing/assets/videos/tour/${f.id}.mp4): ${f.description}`).join('\n')}
+
+## Recording provenance
+
+Ask To, Tasks, Task Worktrees and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
+
+The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. A stationary recorder coordinate overlay in an empty corner of the three new feature takes is removed. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
+
+## Reproduce
+
+Keep raw recordings outside the repository. Capture only the demo window in OBS at native 1920 × 1080, 30 FPS, with audio muted. Enable the password-protected OBS WebSocket server only for capture, using \`node tools/marketing/capture.mjs start\` and \`stop <feature-id>\`.
+
+With Python 3, Node, ffmpeg and ffprobe installed:
+
+\`\`\`sh
+python3 tools/marketing/render.py --recordings /absolute/path/to/recordings
+python3 tools/marketing/readme-gifs.py
+node tools/marketing/build-guide.mjs
+node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs
+python3 tools/marketing/render_test.py
+node tools/marketing/verify.mjs
+\`\`\`
+
+\`catalog.json\` owns the six features and written steps. \`edits.json\` pins source checksums, dates, speed ramps, click positions and caption anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these six MP4s.
+
+These demonstrations are not comprehensive integration tests. Cross-provider routing, mobile pairing and notification delivery were not retested during this media update.
+`;
+await writeFile(path.join(root, 'artifacts/marketing/README.md'), docs);
+console.log(`Generated ${catalog.length} homepage demos and the recording guide.`);

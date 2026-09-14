@@ -1,0 +1,81 @@
+{
+  "id": "handoff",
+  "duration": 17.366667,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 521,
+  "audio": false,
+  "captureKind": "continuous-video",
+  "source": "handoff.mp4",
+  "recordedAt": "2026-09-09",
+  "recoveredFrom": "landing/assets/videos/tour/handoff.mp4 (previous published delivery; only its added caption band removed)",
+  "captureCursorRemoved": false,
+  "sourceSha256": "e00dd6eabd47377b1d2461e5c19e8c0d36ad264e1807f98822b36c8c333628f5",
+  "sourceSeconds": 38.5,
+  "sourceFps": 30.0,
+  "sourceCoverage": [
+    0,
+    38.5
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 8.3,
+      "speed": 7
+    },
+    {
+      "start": 8.3,
+      "end": 9.8,
+      "speed": 1
+    },
+    {
+      "start": 9.8,
+      "end": 14.0,
+      "speed": 4
+    },
+    {
+      "start": 14.0,
+      "end": 18.0,
+      "speed": 1.5
+    },
+    {
+      "start": 18.0,
+      "end": 24.5,
+      "speed": 5
+    },
+    {
+      "start": 24.5,
+      "end": 28.5,
+      "speed": 1.4
+    },
+    {
+      "start": 28.5,
+      "end": 34.5,
+      "speed": 1
+    },
+    {
+      "start": 34.5,
+      "end": 38.5,
+      "speed": 5
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 8.63,
+      "x": 548,
+      "y": 667,
+      "label": "Choose destination",
+      "outputTime": 1.515849
+    },
+    {
+      "sourceTime": 28.53,
+      "x": 160,
+      "y": 363,
+      "label": "Open destination",
+      "outputTime": 10.617542
+    }
+  ],
+  "sha256": "daddd3cd065a5dd2c6e8962b0add1a46c84e510ce5107ba30dd745e334bf86c9",
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+}

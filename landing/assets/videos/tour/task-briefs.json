@@ -1,0 +1,83 @@
+{
+  "id": "task-briefs",
+  "duration": 13.7,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "frames": 411,
+  "audio": false,
+  "captureKind": "continuous-video",
+  "source": "task-briefs.mp4",
+  "recordedAt": "2026-09-14",
+  "recoveredFrom": null,
+  "captureCursorRemoved": true,
+  "sourceSha256": "4b2f9a62e8dab574e7f5d8b8aedfe31881a3f3647565387183d133bd95fa9840",
+  "sourceSeconds": 45.267,
+  "sourceFps": 29.99977908851923,
+  "sourceCoverage": [
+    0,
+    45.267
+  ],
+  "speedMap": [
+    {
+      "start": 0.0,
+      "end": 16.4,
+      "speed": 18
+    },
+    {
+      "start": 16.4,
+      "end": 20.0,
+      "speed": 1
+    },
+    {
+      "start": 20.0,
+      "end": 30.8,
+      "speed": 5.5
+    },
+    {
+      "start": 30.8,
+      "end": 33.1,
+      "speed": 1
+    },
+    {
+      "start": 33.1,
+      "end": 35.4,
+      "speed": 2
+    },
+    {
+      "start": 35.4,
+      "end": 38.5,
+      "speed": 1
+    },
+    {
+      "start": 38.5,
+      "end": 45.267,
+      "speed": 10
+    }
+  ],
+  "clicks": [
+    {
+      "sourceTime": 16.7,
+      "x": 430,
+      "y": 280,
+      "label": "Open Task details",
+      "outputTime": 1.226606
+    },
+    {
+      "sourceTime": 31.13,
+      "x": 50,
+      "y": 429,
+      "label": "Complete keyboard check",
+      "outputTime": 6.812876
+    },
+    {
+      "sourceTime": 35.7,
+      "x": 50,
+      "y": 452,
+      "label": "Complete release tests",
+      "outputTime": 10.23167
+    }
+  ],
+  "sha256": "75b2d2dc03a03edb6f1ef9d4d4078fef594bfa0ed37c00fcfd7c22a1a014e2ff",
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+}

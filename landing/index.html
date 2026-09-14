@@ -336,6 +336,7 @@
       .will-reveal { opacity:1; transform:none; }
     }
   </style>
+  <link rel="stylesheet" href="assets/feature-guide.css">
 </head>
 <body>
   <header class="topbar">
@@ -356,19 +357,16 @@
           <div class="hero-actions"><a class="button primary" href="/download">Download for macOS ↓</a><a class="button" href="#features">Watch it work →</a></div>
           <div class="availability"><span><i class="status-dot"></i>available now</span><span>open source</span><span>your subscriptions</span><span>no telemetry</span></div>
         </div>
-        <div class="hero-demo">
-          <div class="term">
-            <div class="term-bar"><i></i><i></i><i></i><code>termloop — launchpad</code><span class="term-right">live capture · 17s</span></div>
-            <video autoplay muted loop playsinline preload="metadata" poster="assets/product-tour-poster.jpg" aria-label="A real TermLoop workflow showing tasks, agents, changes, dev server, mobile, and MCP settings"><source src="assets/videos/product-tour.webm" type="video/webm"><source src="assets/videos/product-tour.mp4" type="video/mp4"></video>
-          </div>
-          <div class="statusbar" role="group" aria-label="TermLoop fundamentals">
-            <span class="session-tag">real app · real state</span>
-            <div class="cell"><b>bring your agents</b><span>claude code · codex <i class="ok">✓</i></span></div>
-            <div class="cell"><b>keep real git</b><span>branches · worktrees · diffs</span></div>
-            <div class="cell"><b>see every terminal</b><span>ghostty-powered ptys</span></div>
-            <div class="cell"><b>work from anywhere</b><span>desktop · mobile companion</span></div>
-          </div>
+        <!-- DEMO HERO START -->
+        <div class="hero-demo" id="ask-to" data-demo data-demo-label="Ask To">
+          <p class="feature-kicker">Ask To</p><h2>Get a second opinion without copy-paste.</h2>
+          <div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="metadata" poster="assets/videos/tour/ask-to.jpg" width="1920" height="1080" aria-label="Ask To demonstration" aria-describedby="ask-to-caption"><source src="assets/videos/tour/ask-to.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/ask-to.vtt" srclang="en" label="English"><a href="assets/videos/tour/ask-to.mp4">Watch Ask To</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/ask-to.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="ask-to-caption">Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p>
+    <details class="feature-instructions"><summary>How to use Ask To</summary><ol><li>Open Agents &gt; Ask to and choose a provider for the second opinion.</li><li>A visible helper Session receives the question and context.</li><li>The answer returns to the requesting agent.</li></ol></details></div>
         </div>
+        <!-- DEMO HERO END -->
       </div>
     </section>
 
@@ -385,83 +383,34 @@
     </div></section>
 
     <section class="tour" id="features"><div class="shell">
-      <div class="section-heading"><div><p class="prompt-line">product tour</p><h2>From prompt to reviewed change.</h2></div><p>Every demo below was recorded in the real desktop app with real TermLoop Sessions. Use the index like documentation, or scroll through the workflow end to end.</p></div>
-      <div class="tour-layout">
-        <aside class="feature-nav" aria-label="Feature navigation">
-          <p class="nav-title">On this page</p>
-          <nav>
-            <section><h3>Run</h3><a href="#quick-actions">Quick Actions</a><a href="#task-worktrees">Task worktrees</a><a href="#dev-server">Dev server</a></section>
-            <section><h3>Coordinate</h3><a href="#multi-agent">Multi-agent</a><a href="#ask-to">Ask another agent</a><a href="#handoff">Handoff</a><a href="#fork">Fork sessions</a></section>
-            <section><h3>Review</h3><a href="#changes">Changes & notes</a><a href="#task-lifecycle">Task lifecycle</a><a href="#session-refresh">Session refresh</a></section>
-            <section><h3>Operate</h3><a href="#steward">Steward</a><a href="#mobile">Mobile</a><a href="#mcp-prompts">MCP & prompts</a></section>
-          </nav>
-        </aside>
-        <div class="feature-groups">
-          <section class="feature-group" id="run"><header class="group-head"><h2>Run</h2><span>01 — launch and isolate work</span></header>
-            <article class="feature-story" id="quick-actions">
-              <div class="feature-copy"><span class="feature-kicker">quick actions</span><h3>Start the right agent with the right context.</h3><p>Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.</p><div class="feature-meta"><span>shift shift</span><span>versioned prompt</span><span>claude / codex</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>quick action · inspected launch</code></div><video muted loop playsinline preload="metadata" aria-label="TermLoop Quick Action launching a real agent Session"><source src="assets/videos/quick-action.webm" type="video/webm"><source src="assets/videos/quick-action.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="task-worktrees">
-              <div class="feature-copy"><span class="feature-kicker">task worktrees</span><h3>Isolation when the task needs it.</h3><p>Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.</p><div class="feature-meta"><span>real git</span><span>optional worktree</span><span>safe cleanup</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · managed worktree</code></div><video muted loop playsinline preload="metadata" aria-label="Creating and using a managed Task worktree in TermLoop"><source src="assets/videos/task-worktree.webm" type="video/webm"><source src="assets/videos/task-worktree.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="dev-server">
-              <div class="feature-copy"><span class="feature-kicker">dev server</span><h3>Define it once. Start it where you work.</h3><p>Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.</p><div class="feature-meta"><span>live process</span><span>project config</span><span>preview urls</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>launchpad preview · :4173</code></div><video muted loop playsinline preload="metadata" aria-label="Configuring and starting a real dev server in TermLoop"><source src="assets/videos/dev-server.webm" type="video/webm"><source src="assets/videos/dev-server.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="coordinate"><header class="group-head"><h2>Coordinate</h2><span>02 — agents working together</span></header>
-            <article class="feature-story" id="multi-agent">
-              <div class="feature-copy"><span class="feature-kicker">multi-agent</span><h3>One workspace. Several live agents.</h3><p>Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.</p><div class="feature-meta"><span>parallel sessions</span><span>live status</span><span>shared project</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>active agents · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Several real coding agents running together in TermLoop"><source src="assets/videos/multi-agent.webm" type="video/webm"><source src="assets/videos/multi-agent.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="ask-to">
-              <div class="feature-copy"><span class="feature-kicker">ask to</span><h3>Get a second opinion without copy-paste.</h3><p>Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p><div class="feature-meta"><span>mcp</span><span>claude ↔ codex</span><span>follow-up ready</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>ask_to · release review</code></div><video muted loop playsinline preload="metadata" aria-label="A TermLoop agent consulting a second real agent"><source src="assets/videos/ask-to-v2.webm" type="video/webm"><source src="assets/videos/ask-to-v2.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="handoff">
-              <div class="feature-copy"><span class="feature-kicker">handoff</span><h3>Move context to the agent already in the work.</h3><p>Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p><div class="feature-meta"><span>visible message</span><span>running session</span><span>no clipboard</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>handoff · activity feed</code></div><video muted loop playsinline preload="metadata" aria-label="A real handoff between two running TermLoop agents"><source src="assets/videos/handoff.webm" type="video/webm"><source src="assets/videos/handoff.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="fork">
-              <div class="feature-copy"><span class="feature-kicker">session fork</span><h3>Explore another direction in a real terminal.</h3><p>Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p><div class="feature-meta"><span>real terminal</span><span>visible lineage</span><span>independent context</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session fork · onboarding</code></div><video muted loop playsinline preload="metadata" aria-label="Forking a real agent Session from the TermLoop sidebar"><source src="assets/videos/sidebar-fork.webm" type="video/webm"><source src="assets/videos/sidebar-fork.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="review"><header class="group-head"><h2>Review</h2><span>03 — understand and control state</span></header>
-            <article class="feature-story" id="changes">
-              <div class="feature-copy"><span class="feature-kicker">changes</span><h3>Review the diff where the work happened.</h3><p>Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.</p><div class="feature-meta"><span>git diff</span><span>task counts</span><span>agent notes</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>changes · onboarding checklist</code></div><video muted loop playsinline preload="metadata" aria-label="Reviewing Git changes and leaving a note for an agent in TermLoop"><source src="assets/videos/changes-review.webm" type="video/webm"><source src="assets/videos/changes-review.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="task-lifecycle">
-              <div class="feature-copy"><span class="feature-kicker">task lifecycle</span><h3>Close the work without erasing it.</h3><p>Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.</p><div class="feature-meta"><span>open / closed</span><span>reopen</span><span>state preserved</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · close and retain</code></div><video muted loop playsinline preload="metadata" aria-label="Closing a Task and seeing it move to the Closed section"><source src="assets/videos/task-lifecycle.webm" type="video/webm"><source src="assets/videos/task-lifecycle.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="session-refresh">
-              <div class="feature-copy"><span class="feature-kicker">session refresh</span><h3>Refresh the display, not the identity.</h3><p>Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.</p><div class="feature-meta"><span>stable session</span><span>display recovery</span><span>explicit lifecycle</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session · refresh display</code></div><video muted loop playsinline preload="metadata" aria-label="Refreshing a real agent display from the Session context menu"><source src="assets/videos/session-refresh.webm" type="video/webm"><source src="assets/videos/session-refresh.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-
-          <section class="feature-group" id="operate"><header class="group-head"><h2>Operate</h2><span>04 — supervise beyond one terminal</span></header>
-            <article class="feature-story" id="steward">
-              <div class="feature-copy"><span class="feature-kicker">steward</span><h3>A Project-scoped operator that stays present.</h3><p>Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.</p><div class="feature-meta"><span>persistent</span><span>project-scoped</span><span>capability-limited</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>steward · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Using the Project Steward in TermLoop"><source src="assets/videos/steward.webm" type="video/webm"><source src="assets/videos/steward.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="mobile">
-              <div class="feature-copy"><span class="feature-kicker">mobile companion</span><h3>Check the loop when you leave the desk.</h3><p>Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.</p><div class="feature-meta"><span>qr pairing</span><span>tailscale ready</span><span>live terminal</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>mobile · secure pairing</code></div><video muted loop playsinline preload="metadata" aria-label="Pairing TermLoop Mobile with the desktop app"><source src="assets/videos/mobile-connect.webm" type="video/webm"><source src="assets/videos/mobile-connect.mp4" type="video/mp4"></video></div></div>
-            </article>
-            <article class="feature-story" id="mcp-prompts">
-              <div class="feature-copy"><span class="feature-kicker">mcp &amp; prompts</span><h3>Inspect the tools and instructions agents receive.</h3><p>Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.</p><div class="feature-meta"><span>role profiles</span><span>prompt catalog</span><span>inspectable</span></div></div>
-              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>application settings · MCP</code></div><video muted loop playsinline preload="metadata" aria-label="Inspecting TermLoop MCP tools and built-in prompts"><source src="assets/videos/mcp-prompts.webm" type="video/webm"><source src="assets/videos/mcp-prompts.mp4" type="video/mp4"></video></div></div>
-            </article>
-          </section>
-        </div>
-      </div>
+      <div class="section-heading"><div><p class="prompt-line">6 essential workflows</p><h2>See the work stay connected.</h2></div><p>A second opinion, a handoff, a fresh direction, and the tools to finish the change. Recorded in a working Launchpad demo Project.</p></div>
+      <nav class="demo-nav" aria-label="Demo navigation"><a href="#ask-to">Ask To</a><a href="#handoff">Handoff</a><a href="#fork">Session Fork</a><a href="#task-briefs">Tasks</a><a href="#task-worktrees">Task Worktrees</a><a href="#full-file-review">Code review</a></nav>
+      <div class="tour-controls"><label class="autoplay-option"><input type="checkbox" id="demo-autoplay" checked disabled> Auto-play visible demos</label><label>Speed <select id="video-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label></div>
+      <article class="feature-story" id="handoff" data-demo data-demo-label="Handoff"><div class="feature-copy"><span class="feature-kicker">Handoff</span><h3>Move context to the agent already in the work.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/handoff.jpg" width="1920" height="1080" aria-label="Handoff demonstration" aria-describedby="handoff-caption"><source src="assets/videos/tour/handoff.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/handoff.vtt" srclang="en" label="English"><a href="assets/videos/tour/handoff.mp4">Watch Handoff</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/handoff.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="handoff-caption">Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p>
+    <details class="feature-instructions"><summary>How to use Handoff</summary><ol><li>Open Agents &gt; Handover to and choose an existing Session.</li><li>The current agent composes the request, findings, and next action.</li><li>The destination receives the handoff in its own terminal.</li></ol></details></div></article>
+<article class="feature-story" id="fork" data-demo data-demo-label="Session Fork"><div class="feature-copy"><span class="feature-kicker">Session Fork</span><h3>Explore another direction in a real terminal.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/fork.jpg" width="1920" height="1080" aria-label="Session Fork demonstration" aria-describedby="fork-caption"><source src="assets/videos/tour/fork.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/fork.vtt" srclang="en" label="English"><a href="assets/videos/tour/fork.mp4">Watch Session Fork</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/fork.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="fork-caption">Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p>
+    <details class="feature-instructions"><summary>How to use Session Fork</summary><ol><li>Choose a conversation to explore in a new direction.</li><li>Fork it from the Session menu.</li><li>Continue in a separate Session with visible parentage.</li></ol></details></div></article>
+<article class="feature-story" id="task-briefs" data-demo data-demo-label="Tasks"><div class="feature-copy"><span class="feature-kicker">Tasks</span><h3>Keep the goal beside the work.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/task-briefs.jpg" width="1920" height="1080" aria-label="Tasks demonstration" aria-describedby="task-briefs-caption"><source src="assets/videos/tour/task-briefs.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-briefs.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-briefs.mp4">Watch Tasks</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/task-briefs.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="task-briefs-caption">Keep a clear brief, acceptance criteria and a small checklist attached to each Task.</p>
+    <details class="feature-instructions"><summary>How to use Tasks</summary><ol><li>Open the Task beside the real project tests.</li><li>Read the goal and acceptance criteria.</li><li>Mark completed checks without losing the Task context.</li></ol></details></div></article>
+<article class="feature-story" id="task-worktrees" data-demo data-demo-label="Task Worktrees"><div class="feature-copy"><span class="feature-kicker">Task Worktrees</span><h3>Give each change its own workspace.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/task-worktrees.jpg" width="1920" height="1080" aria-label="Task Worktrees demonstration" aria-describedby="task-worktrees-caption"><source src="assets/videos/tour/task-worktrees.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/task-worktrees.vtt" srclang="en" label="English"><a href="assets/videos/tour/task-worktrees.mp4">Watch Task Worktrees</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/task-worktrees.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="task-worktrees-caption">Create a branch and managed worktree directly from a Task. Keep parallel changes in separate checkouts.</p>
+    <details class="feature-instructions"><summary>How to use Task Worktrees</summary><ol><li>Choose Create worktree on the Task.</li><li>Name a new branch and choose its base.</li><li>The Task now has its own branch and worktree.</li></ol></details></div></article>
+<article class="feature-story" id="full-file-review" data-demo data-demo-label="Code review"><div class="feature-copy"><span class="feature-kicker">Code review</span><h3>Review changes where they happened.</h3></div><div class="feature-media"><div class="demo-frame">
+    <video controls muted loop playsinline preload="none" poster="assets/videos/tour/full-file-review.jpg" width="1920" height="1080" aria-label="Code review demonstration" aria-describedby="full-file-review-caption"><source src="assets/videos/tour/full-file-review.mp4" type="video/mp4"><track kind="captions" src="assets/videos/tour/full-file-review.vtt" srclang="en" label="English"><a href="assets/videos/tour/full-file-review.mp4">Watch Code review</a></video>
+    </div><div class="demo-actions"><button type="button" data-play-demo hidden>Play demo</button><button type="button" data-expand-demo hidden>Fullscreen</button><a href="assets/videos/tour/full-file-review.mp4" download>MP4 ↓</a><span data-duration></span></div>
+    <p class="demo-caption" id="full-file-review-caption">Read the diff, compare versions side by side and keep track of the files you have checked.</p>
+    <details class="feature-instructions"><summary>How to use Code review</summary><ol><li>Open the changed files in the Project.</li><li>Use Full file and Split to compare code with its context.</li><li>Mark files reviewed and revisit them from the reviewed list.</li></ol></details></div></article>
     </div></section>
 
     <section class="section principles" id="principles"><div class="shell principles-grid">
@@ -499,48 +448,6 @@
     <span>© 2026</span>
   </div></footer>
 
-  <script>
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const featureStories = [...document.querySelectorAll('.feature-story')];
-    const featureVideos = [...document.querySelectorAll('.feature-story video')];
-    if (!reducedMotion && 'IntersectionObserver' in window) {
-      const videoObserver = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio > .35) entry.target.play().catch(() => {});
-          else entry.target.pause();
-        }
-      }, { threshold:[0,.35,.75] });
-      featureVideos.forEach((video) => videoObserver.observe(video));
-
-      featureStories.forEach((story) => story.classList.add('will-reveal'));
-      const revealObserver = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) { entry.target.classList.add('revealed'); revealObserver.unobserve(entry.target); }
-        }
-      }, { rootMargin:'0px 0px -8% 0px', threshold:.08 });
-      featureStories.forEach((story) => revealObserver.observe(story));
-    }
-    const navLinks = [...document.querySelectorAll('.feature-nav a')];
-    const sections = navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
-    let scrollSpyFrame;
-    const updateFeatureNav = () => {
-      scrollSpyFrame = undefined;
-      const focusLine = Math.min(window.innerHeight * .42, 420);
-      let activeSection = sections[0];
-      for (const section of sections) {
-        if (section.getBoundingClientRect().top > focusLine) break;
-        activeSection = section;
-      }
-      navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + activeSection?.id));
-    };
-    const scheduleFeatureNavUpdate = () => {
-      if (scrollSpyFrame) return;
-      scrollSpyFrame = requestAnimationFrame(updateFeatureNav);
-    };
-    window.addEventListener('scroll', scheduleFeatureNavUpdate, { passive:true });
-    window.addEventListener('resize', scheduleFeatureNavUpdate);
-    window.addEventListener('hashchange', scheduleFeatureNavUpdate);
-    updateFeatureNav();
-  </script>
+  <script type="module" src="assets/feature-guide.mjs"></script>
 </body>
 </html>
