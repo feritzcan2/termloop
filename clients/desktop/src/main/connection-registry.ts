@@ -49,6 +49,7 @@ export type ConnectionRegistryEvents = {
  */
 export class ConnectionRegistry {
   readonly #entries = new Map<string, RegistryEntry>();
+  readonly #connectionProbes = new WeakMap<RegistryControlClient, Promise<boolean>>();
   #syncTail: Promise<void> = Promise.resolve();
   #started = false;
 
@@ -95,20 +96,57 @@ export class ConnectionRegistry {
     ...args: CallArgs<M>
   ): Promise<ResultFor<M>> {
     const entry = await this.#entry(profileId);
-    let config: DesktopConnectionConfig | undefined;
-    try {
-      config = await this.#connectionConfig(profileId);
-      if (!config) throw new Error("daemonUnavailable");
-      const result = await this.#client(entry, config).call(method, ...args);
-      this.#setState(profileId, "connected");
-      return result;
-    } catch (error) {
-      if (error instanceof TermLoopControlError) this.#setState(profileId, "connected");
-      else if (entry.state !== "connected") {
-        this.#setState(profileId, "offline", error instanceof Error ? error.message : String(error));
+    for (let attempt = 0; ; attempt += 1) {
+      let config: DesktopConnectionConfig | undefined;
+      let client: RegistryControlClient | undefined;
+      try {
+        config = await this.#connectionConfig(profileId);
+        if (!config) throw new Error("daemonUnavailable");
+        client = this.#client(entry, config);
+        const result = await client.call(method, ...args);
+        this.#setState(profileId, "connected");
+        return result;
+      } catch (error) {
+        if (client && isControlTransportFailure(error)) {
+          // Subscription and command sockets are independent. A live subscription
+          // must not keep an unresponsive command socket cached indefinitely.
+          // An older in-flight failure must never retire its replacement.
+          const responsive = error instanceof Error && error.message === "request timeout"
+            && entry.client === client && await this.#connectionResponds(client);
+          if (!responsive && entry.client === client) {
+            delete entry.client;
+            delete entry.clientIdentity;
+            client.close();
+          }
+          // Account metadata is safe to read again. Never replay a launch or
+          // other mutation: the server may already have applied it.
+          if (attempt === 0 && config?.kind === "remote" && method === "agent.accountList"
+            && this.#entries.get(profileId) === entry) continue;
+        }
+        if (error instanceof TermLoopControlError) this.#setState(profileId, "connected");
+        else if (entry.state !== "connected") {
+          this.#setState(profileId, "offline", error instanceof Error ? error.message : String(error));
+        }
+        throw error;
       }
-      throw error;
     }
+  }
+
+  #connectionResponds(client: RegistryControlClient): Promise<boolean> {
+    const existing = this.#connectionProbes.get(client);
+    if (existing) return existing;
+    // A slow operation alone must not interrupt unrelated in-flight commands.
+    // Ping takes no provider work; bound this probe independently of RPC timeouts.
+    const probe = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 2_000);
+      void client.call("system.ping").then(
+        () => { clearTimeout(timer); resolve(true); },
+        () => { clearTimeout(timer); resolve(false); },
+      );
+    });
+    this.#connectionProbes.set(client, probe);
+    void probe.then(() => this.#connectionProbes.delete(client));
+    return probe;
   }
 
   setSelectedProjectDemand(profileId: string, projectId: string): void {
@@ -239,6 +277,11 @@ export class ConnectionRegistry {
     else entry.message = message;
     if (changed) this.events.statusChanged(sourceSummary(entry));
   }
+}
+
+function isControlTransportFailure(error: unknown): boolean {
+  return error instanceof Error && !(error instanceof TermLoopControlError)
+    && ["request timeout", "connection timeout", "connection failed", "connection closed"].includes(error.message);
 }
 
 function defaultControlClient(config: DesktopConnectionConfig): TermLoopControlClient {
