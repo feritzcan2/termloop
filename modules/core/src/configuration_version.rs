@@ -521,10 +521,17 @@ impl CoreRuntime {
             ImproverSessionTargetKind::WorkflowDraft => {
                 if let Some(session_id) = &plan.source_session_id {
                     self.require_workflow_creator_session(session_id, &plan.target)?;
-                    self.validate_workflow_proposal_source(&plan.project_id, &plan.target, &plan.content)?;
+                    self.validate_workflow_proposal_source(
+                        &plan.project_id,
+                        &plan.target,
+                        &plan.content,
+                    )?;
                 }
                 let result = self.finish_configuration_application(
-                    plan.clone(), plan.target.clone(), plan.content.clone(), created_at_epoch_ms,
+                    plan.clone(),
+                    plan.target.clone(),
+                    plan.content.clone(),
+                    created_at_epoch_ms,
                 );
                 return Ok(ConfigurationApplicationCommit { result, effects });
             }
@@ -762,7 +769,9 @@ impl CoreRuntime {
     ) -> Result<String, CoreError> {
         let invalid = || CoreError::InvalidParams("content".into());
         match target.target_kind {
-            ImproverSessionTargetKind::WorkflowDraft => self.canonicalize_workflow_proposal(project_id, target, content),
+            ImproverSessionTargetKind::WorkflowDraft => {
+                self.canonicalize_workflow_proposal(project_id, target, content)
+            }
             ImproverSessionTargetKind::AgentCreator => Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot =

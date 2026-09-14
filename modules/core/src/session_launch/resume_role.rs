@@ -71,8 +71,10 @@ pub(super) fn derive_resumed_mcp_role(
                 .as_ref()
                 .filter(|target| {
                     target.is_well_formed()
-                        && (session.process.template_ref.as_deref() == Some("builtin.builder.workflow"))
-                            == (target.target_kind == termloop_domain::ImproverSessionTargetKind::WorkflowDraft)
+                        && (session.process.template_ref.as_deref()
+                            == Some("builtin.builder.workflow"))
+                            == (target.target_kind
+                                == termloop_domain::ImproverSessionTargetKind::WorkflowDraft)
                         && (session.process.template_ref.as_deref()
                             == Some("builtin.builder.agent"))
                             == (target.target_kind
@@ -284,8 +286,16 @@ mod tests {
     #[test]
     fn resumed_improvers_keep_only_their_exact_target_bound_role() {
         for (template, target_kind, target_id) in [
-            ("builtin.builder.workflow", ImproverSessionTargetKind::WorkflowDraft, None),
-            ("builtin.builder.workflow", ImproverSessionTargetKind::WorkflowDraft, Some("workflow-1".into())),
+            (
+                "builtin.builder.workflow",
+                ImproverSessionTargetKind::WorkflowDraft,
+                None,
+            ),
+            (
+                "builtin.builder.workflow",
+                ImproverSessionTargetKind::WorkflowDraft,
+                Some("workflow-1".into()),
+            ),
             (
                 "builtin.builder.agent",
                 ImproverSessionTargetKind::AgentCreator,

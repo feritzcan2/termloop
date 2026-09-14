@@ -543,7 +543,7 @@
       }
     },
     "configuration_version_write": {
-      "description": "Create and immediately activate a new immutable version for this authenticated Improve Agent Session's exact target. Call only after the user says to apply, save, use, or an equivalent confirmation. Pass the exact expectedActiveVersionId returned by configuration_version_read, the complete next configuration snapshot, and a short user-facing summary. Preserve every unaffected field.",
+      "description": "Create and activate a new immutable version for this authenticated Improve Agent Session's exact target. For a Workflow Creator target, this updates only its separate proposal: it does not save or start a workflow, and proposals may be refined while discussing. For every other target, call only after the user says to apply, save, use, or an equivalent confirmation. Pass the exact expectedActiveVersionId returned by configuration_version_read, the complete next snapshot, and a short user-facing summary. Preserve every unaffected field.",
       "role": "improver",
       "params": {
         "$ref": "#/$defs/configurationVersionWriteParams"
