@@ -1,4 +1,5 @@
 import { registerAgentConnectionIpc } from "./main/agent-connections.js";
+import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams } from "@termloop/contract/current";
 import { registerSshSetupIpc } from "./main/ssh-setup.js";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } from "electron";
 import { fileURLToPath } from "node:url";
@@ -918,6 +919,9 @@ handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));
 handleIpc("termloop:agent-capability-list", () => controlCall("agent.capabilityList"));
 handleIpc("termloop:agent-creator-preview", (_event, params: AgentCreatorParams) => controlCall("agent.creatorPreview", params));
+handleIpc("termloop:workflow-creator-preview", (_event, params: WorkflowCreatorParams) => controlCall("workflow.creatorPreview", params));
+handleIpc("termloop:workflow-creator-launch", (_event, params: WorkflowCreatorLaunchParams) => controlCall("workflow.creatorLaunch", params));
+handleIpc("termloop:workflow-creator-draft-get", (_event, params: WorkflowCreatorDraftGetParams) => controlCall("workflow.creatorDraftGet", params));
 handleIpc("termloop:agent-creator-launch", (_event, params: AgentCreatorLaunchParams) => controlCall("agent.creatorLaunch", params));
 handleIpc("termloop:agent-library-get", () => controlCall("agent.libraryGet"));
 handleIpc("termloop:agent-profile-create", (_event, params: AgentProfileCreateParams) => controlCall("agent.profileCreate", params));
