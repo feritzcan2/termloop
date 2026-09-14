@@ -32,6 +32,7 @@ export function ProjectDialog({
   listProfiles,
   defaultProjectsRoot,
   browseDirectory,
+  subscribeConnectionStatus,
   createProject,
   pickLocalFolder,
 }: {
@@ -41,6 +42,7 @@ export function ProjectDialog({
   listProfiles(): Promise<readonly ConnectionProfileSummary[]>;
   defaultProjectsRoot(profileId: string): Promise<{ path: string }>;
   browseDirectory(profileId: string, path: string): ReturnType<FolderPickerActions["browse"]>;
+  subscribeConnectionStatus?: FolderPickerActions["subscribeStatus"];
   createProject(profileId: string, name: string, folderPath: string): Promise<void>;
   /// The OS folder panel. Offered only while the browsed filesystem is this
   /// computer, because it cannot see a remote connection's disks.
@@ -104,6 +106,7 @@ export function ProjectDialog({
   const actions: FolderPickerActions = {
     defaultRoot: () => defaultProjectsRoot(profileId),
     browse: (path) => browseDirectory(profileId, path),
+    ...(subscribeConnectionStatus ? { subscribeStatus: subscribeConnectionStatus } : {}),
   };
   const quickJumps = folderQuickJumps(defaultRoot, projectParentFolders(projects, profileId), undefined);
   const ready = name.trim().length > 0 && folder.trim().length > 0;
