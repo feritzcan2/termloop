@@ -6,6 +6,7 @@ import path from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { newerVersion, parseVersion, resolveRelease, stageRelease, stageSourceArchive } from './server-release.mjs';
+import { serverMobileAccess } from './server-mobile-access.mjs';
 
 const execute = promisify(execFile);
 const serverUnit = 'termloop-next.service';
@@ -140,7 +141,11 @@ async function restoreState(paths, snapshot) {
 }
 
 // The complete stopped-state transaction is independently exercised with fake services.
-export async function activateRelease(paths, next, previous, service = { stop: () => systemd(['stop', serverUnit]), start: () => systemd(['start', serverUnit]), healthy: (version, protocol) => waitHealthy(paths, version, protocol) }) {
+export async function activateRelease(paths, next, previous, service = {
+  stop: () => systemd(['stop', serverUnit]), start: () => systemd(['start', serverUnit]),
+  healthy: (version, protocol) => waitHealthy(paths, version, protocol),
+  reconcileMobile: () => reconcileReleaseMobileAccess(paths.current),
+}) {
   await service.stop();
   let snapshot;
   let switched = false;
@@ -150,6 +155,7 @@ export async function activateRelease(paths, next, previous, service = { stop: (
     switched = true;
     await service.start();
     await service.healthy(next.version, next.protocolVersion);
+    await service.reconcileMobile?.();
   } catch (error) {
     if (switched) await service.stop();
     if (previous) {
@@ -164,6 +170,12 @@ export async function activateRelease(paths, next, previous, service = { stop: (
     if (switched) await rm(paths.current);
     throw error;
   }
+}
+
+export async function reconcileReleaseMobileAccess(directory) {
+  const manifest = JSON.parse(await readFile(path.join(directory, 'server-package.json'), 'utf8'));
+  if (manifest.mobileAccess !== 1) return;
+  await execute(process.execPath, [path.join(directory, 'termloop-server-manager.mjs'), 'mobile-reconcile', '--locked'], { timeout: 70_000, maxBuffer: 32 * 1024 });
 }
 
 export async function pruneReleases(paths, keep) {
@@ -267,7 +279,7 @@ async function main() {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Managed server installation currently supports Linux x64');
   if (process.getuid?.() === 0) throw new Error('Run the server installer as the user who will own the server, without sudo');
   const [action = 'install', ...args] = process.argv.slice(2);
-  if (!['install', 'update', 'status'].includes(action)) throw new Error('Usage: install.sh [install|update|status] [--version=X.Y.Z | --source-archive=/path/package.tar.gz]');
+  if (!['install', 'update', 'status', 'mobile-pair', 'mobile-reconcile'].includes(action)) throw new Error('Usage: install.sh [install|update|status|mobile-pair|mobile-reconcile] [--version=X.Y.Z | --source-archive=/path/package.tar.gz]');
   const versionArg = args.find((arg) => arg.startsWith('--version='));
   const sourceArg = args.find((arg) => arg.startsWith('--source-archive='));
   const protocolArg = args.find((arg) => arg.startsWith('--expected-protocol='));
@@ -278,6 +290,7 @@ async function main() {
   const sourceArchive = sourceArg === undefined ? undefined : path.resolve(sourceArg.slice('--source-archive='.length));
   const version = versionArg?.slice('--version='.length);
   if (version !== undefined) parseVersion(version);
+  if (action.startsWith('mobile-') && (versionArg || sourceArg || protocolArg)) throw new Error('Mobile Access does not accept installation options');
   const paths = installationPaths();
   await mkdir(paths.root, { recursive: true, mode: 0o700 });
   if (action !== 'status' && !args.includes('--locked')) {
@@ -287,7 +300,9 @@ async function main() {
     } catch (error) { throw new Error(error.stderr?.trim() || 'Another server update is running or the update failed'); }
     return;
   }
-  console.log(JSON.stringify(await runManager(action, version, paths, sourceArchive, expectedProtocol)));
+  console.log(JSON.stringify(action.startsWith('mobile-')
+    ? await serverMobileAccess(action === 'mobile-pair' ? 'pair' : 'reconcile', paths)
+    : await runManager(action, version, paths, sourceArchive, expectedProtocol)));
 }
 
 if (process.argv[1] && await realpath(process.argv[1]).catch(() => '') === fileURLToPath(import.meta.url)) {
