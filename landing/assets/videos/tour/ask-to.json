@@ -1,113 +1,59 @@
 {
   "id": "ask-to",
-  "duration": 17.2,
+  "duration": 5.0,
   "width": 1920,
   "height": 1080,
   "fps": 30,
-  "frames": 516,
+  "frames": 150,
   "audio": false,
-  "captureKind": "continuous-video",
-  "source": "ask-to.mkv",
-  "recordedAt": "2026-09-14",
-  "recoveredFrom": null,
-  "captureCursorRemoved": false,
-  "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836",
-  "sourceSeconds": 151.933,
-  "sourceFps": 30.0,
-  "sourceCoverage": [
-    0,
-    151.933
-  ],
-  "speedMap": [
+  "captureKind": "edited-video",
+  "sources": [
     {
-      "start": 0.0,
-      "end": 16.0,
-      "speed": 64
-    },
-    {
-      "start": 16.0,
-      "end": 20.0,
-      "speed": 5
-    },
-    {
-      "start": 20.0,
-      "end": 23.0,
-      "speed": 24
-    },
-    {
-      "start": 23.0,
-      "end": 28.0,
-      "speed": 3
-    },
-    {
-      "start": 28.0,
-      "end": 29.8,
-      "speed": 1
-    },
-    {
-      "start": 29.8,
-      "end": 64.2,
-      "speed": 56
-    },
-    {
-      "start": 64.2,
-      "end": 65.4,
-      "speed": 1
-    },
-    {
-      "start": 65.4,
-      "end": 111.0,
-      "speed": 36
-    },
-    {
-      "start": 111.0,
-      "end": 114.0,
-      "speed": 10
-    },
-    {
-      "start": 114.0,
-      "end": 117.0,
-      "speed": 1
-    },
-    {
-      "start": 117.0,
-      "end": 140.0,
-      "speed": 24
-    },
-    {
-      "start": 140.0,
-      "end": 145.0,
-      "speed": 1
-    },
-    {
-      "start": 145.0,
-      "end": 151.933,
-      "speed": 32
+      "source": "ask-to.mkv",
+      "root": "recordings",
+      "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836",
+      "duration": 151.933,
+      "fps": 30.0
     }
   ],
-  "clicks": [
+  "shots": [
     {
-      "sourceTime": 23.3,
-      "x": 230,
-      "y": 263,
-      "label": "Open Session menu",
-      "outputTime": 1.279785
+      "source": 0,
+      "start": 28.2,
+      "end": 29.7,
+      "duration": 1.5,
+      "crop": [
+        0,
+        160,
+        960,
+        540
+      ]
     },
     {
-      "sourceTime": 28.25,
-      "x": 320,
-      "y": 478,
-      "label": "Agents menu",
-      "outputTime": 3.097519
+      "source": 0,
+      "start": 115,
+      "end": 116.5,
+      "duration": 1.5,
+      "crop": [
+        0,
+        80,
+        800,
+        450
+      ]
     },
     {
-      "sourceTime": 64.4,
-      "x": 500,
-      "y": 533,
-      "label": "Ask To / Codex",
-      "outputTime": 5.458453
+      "source": 0,
+      "start": 149,
+      "end": 151,
+      "duration": 2,
+      "crop": [
+        440,
+        550,
+        896,
+        504
+      ]
     }
   ],
-  "sha256": "e2958d3e7ef975adc2af900679b55689982ee93389c1a67519aae519787748cd",
-  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+  "sha256": "061dd7fc7cbe92506fc125fc43f3929d2925e2b83975a8d1aa840343cdca4868",
+  "editing": "Selected moments from real recordings. Hard cuts omit waits; fixed close-ups enlarge the action. Source frame rate retained; no invented UI or terminal content."
 }

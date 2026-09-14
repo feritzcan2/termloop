@@ -1,14 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:02.086
-Open Agents > Handover to and choose an existing Session.
+00:00:00.000 --> 00:00:01.500 line:5%
+Choose a Session.
 
 2
-00:00:02.086 --> 00:00:10.679
-The current agent composes the request, findings, and next action.
+00:00:01.500 --> 00:00:03.000 line:5%
+Send the context.
 
 3
-00:00:10.679 --> 00:00:17.367
-The destination receives the handoff in its own terminal.
-
+00:00:03.000 --> 00:00:05.000 line:5%
+Continue there.
