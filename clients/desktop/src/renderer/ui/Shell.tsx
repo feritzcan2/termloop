@@ -120,7 +120,7 @@ type AssistantActions = Pick<StewardPanelProps,
 };
 
 type ImproverSetup =
-  | { kind: "workflowCreator"; projectId: string; target: WorkflowCreatorTarget }
+  | { kind: "workflowCreator"; projectId: string; scopeKey: string; target: WorkflowCreatorTarget }
   | { kind: "agentCreator"; projectId: string }
   | { kind: "prompt"; projectId: string; target: AssistantPromptImproverTarget }
   | { kind: "run"; projectId: string; target: RunConfigurationImproverTarget }
@@ -472,6 +472,8 @@ export function Shell(props: ShellProps) {
   const [stagePage, setStagePage] = useState<StagePage>();
   const workflowDrafts = useRef(new Map<string, WorkflowEditorDraft>());
   const workflowDraftKey = `${props.selectedProject?.connectionProfileId}:${props.selectedProject?.id}:${stagePage?.kind === "workflow" ? stagePage.id ?? "new" : ""}`;
+  const workflowEditorContext = useRef({ key: workflowDraftKey, page: stagePage });
+  workflowEditorContext.current = { key: workflowDraftKey, page: stagePage };
   useEffect(() => {
     setStagePage(stagePageAfterProjectChange);
   }, [props.selectedProject?.id]);
@@ -1823,12 +1825,13 @@ export function Shell(props: ShellProps) {
                 session: workflowCreatorSession(props.projectSessions, props.selectedProject.id, stagePage.id),
                 unavailableReason: props.connection !== "connected" ? "Reconnect to use Workflow Creator. Your editor draft stays here."
                   : !props.agentCapabilities.some((agent) => agent.available && agent.tracked_helpers_supported && ["claude", "codex"].includes(agent.agent_id)) ? "Connect Claude or Codex to use Workflow Creator." : undefined,
-                setup: (draft) => setImproverSetup({ kind: "workflowCreator", projectId: props.selectedProject!.id,
+                setup: (draft) => setImproverSetup({ kind: "workflowCreator", projectId: props.selectedProject!.id, scopeKey: workflowDraftKey,
                   target: { workflowId: stagePage.id, taskId: stagePage.taskId ?? null, draft } }),
                 continue: async () => {
+                  const context = workflowEditorContext.current;
                   const failure = await props.workflowCreator!.start(props.selectedProject!.id,
                     { workflowId: stagePage.id, taskId: stagePage.taskId ?? null, draft: null });
-                  if (!failure) dismissStagePages();
+                  if (!failure && workflowEditorContext.current.key === context.key && workflowEditorContext.current.page === context.page) dismissStagePages();
                   return failure;
                 },
               } : undefined}
@@ -2075,11 +2078,12 @@ export function Shell(props: ShellProps) {
         launch={props.launchQuickAction}
         close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}
       /> : null}
-      {improverSetup && props.selectedProject ? <AgentSetupDialog
+      {improverSetup && props.selectedProject && (improverSetup.kind !== "workflowCreator" || improverSetup.scopeKey === workflowDraftKey) ? <AgentSetupDialog
         project={props.selectedProject}
         title={improverSetupTitle(improverSetup)}
         capabilities={props.agentCapabilities}
         start={async (selection, options) => {
+          const context = workflowEditorContext.current;
           const failure = improverSetup.kind === "workflowCreator"
             ? await (props.workflowCreator?.start(improverSetup.projectId, improverSetup.target, selection, options) ?? Promise.resolve("Workflow Creator is unavailable."))
             : improverSetup.kind === "agentCreator"
@@ -2090,13 +2094,14 @@ export function Shell(props: ShellProps) {
             : improverSetup.kind === "settings"
               ? await props.settingsImprovement.start(improverSetup.target, selection, options)
               : await props.runImprovement.start(improverSetup.projectId, improverSetup.target, selection, options);
-          if (!failure && (improverSetup.kind === "agentCreator" || improverSetup.kind === "workflowCreator")) dismissStagePages();
+          if (!failure && (improverSetup.kind === "agentCreator" || (improverSetup.kind === "workflowCreator"
+            && workflowEditorContext.current.key === context.key && workflowEditorContext.current.page === context.page))) dismissStagePages();
           if (!failure && improverSetup.kind === "prompt" && improverSetup.target.surface === "playbook") {
             openPlaybookBuilder();
           }
           return failure;
         }}
-        close={() => setImproverSetup(undefined)}
+        close={() => setImproverSetup((current) => current === improverSetup ? undefined : current)}
       /> : null}
       {shortcutSettingsOpen ? <KeyboardShortcutsDialog platform={platform} close={() => setShortcutSettingsOpen(false)} /> : null}
       {runEditor && props.selectedProject ? <RunEditorDialog

@@ -47,68 +47,138 @@ struct WorkflowStepInput {
     kind: WorkflowStepKind,
     title: String,
     instructions: String,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     agent_id: Option<String>,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     reuse_step_id: Option<String>,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     profile_ref: Option<String>,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     model: Option<String>,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     permission: Option<String>,
-    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
     reasoning: Option<String>,
 }
 
 impl CoreRuntime {
-    pub(crate) fn validate_workflow_proposal_source(&self, project_id: &str, target: &termloop_domain::ImproverSessionTarget, content: &str) -> Result<(), CoreError> {
-        let proposal: WorkflowProposal = serde_json::from_str(content).map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
-        let expected = target.target_id.as_deref().map(|id| self.workflow_configuration(id)).transpose()?;
-        if expected.as_ref().is_some_and(|workflow| workflow.project_id != project_id) { return Err(CoreError::NotFound); }
-        if proposal.source_generation != expected.map(|workflow| workflow.generation) { return Err(CoreError::RevisionConflict); }
+    pub(crate) fn validate_workflow_proposal_source(
+        &self,
+        project_id: &str,
+        target: &termloop_domain::ImproverSessionTarget,
+        content: &str,
+    ) -> Result<(), CoreError> {
+        let proposal: WorkflowProposal = serde_json::from_str(content)
+            .map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
+        let expected = target
+            .target_id
+            .as_deref()
+            .map(|id| self.workflow_configuration(id))
+            .transpose()?;
+        if expected
+            .as_ref()
+            .is_some_and(|workflow| workflow.project_id != project_id)
+        {
+            return Err(CoreError::NotFound);
+        }
+        if proposal.source_generation != expected.map(|workflow| workflow.generation) {
+            return Err(CoreError::RevisionConflict);
+        }
         Ok(())
     }
 
-    pub(crate) fn canonicalize_workflow_proposal(&self, project_id: &str, target: &termloop_domain::ImproverSessionTarget, content: &str) -> Result<String, CoreError> {
-        let proposal: WorkflowProposal = serde_json::from_str(content).map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
+    pub(crate) fn canonicalize_workflow_proposal(
+        &self,
+        project_id: &str,
+        target: &termloop_domain::ImproverSessionTarget,
+        content: &str,
+    ) -> Result<String, CoreError> {
+        let proposal: WorkflowProposal = serde_json::from_str(content)
+            .map_err(|_| CoreError::InvalidParams("workflow proposal".into()))?;
         if let Some(id) = &target.target_id {
             let current = self.workflow_configuration(id)?;
-            if current.project_id != project_id { return Err(CoreError::NotFound); }
-            if proposal.source_generation.is_none_or(|generation| generation == 0) {
+            if current.project_id != project_id {
+                return Err(CoreError::NotFound);
+            }
+            if proposal
+                .source_generation
+                .is_none_or(|generation| generation == 0)
+            {
                 return Err(CoreError::InvalidParams("sourceGeneration".into()));
             }
         } else if proposal.source_generation.is_some() {
             return Err(CoreError::InvalidParams("sourceGeneration".into()));
         }
         self.validate_workflow_draft(&proposal.workflow)?;
-        serde_json::to_string(&proposal).map_err(|_| CoreError::InvalidParams("workflow proposal".into()))
+        serde_json::to_string(&proposal)
+            .map_err(|_| CoreError::InvalidParams("workflow proposal".into()))
     }
 
     /// Validates a proposal with the same workflow invariants as a saved template,
     /// without creating a template, execution, or Session.
     pub(crate) fn validate_workflow_draft(&self, draft: &Value) -> Result<(), CoreError> {
+        // MCP content is JSON text, not already validated control params. Keep
+        // proposals complete without changing the existing manual command parser.
+        if draft
+            .get("steps")
+            .and_then(Value::as_array)
+            .is_none_or(|steps| {
+                steps.iter().any(|step| {
+                    [
+                        "agentId",
+                        "reuseStepId",
+                        "profileRef",
+                        "model",
+                        "permission",
+                        "reasoning",
+                    ]
+                    .iter()
+                    .any(|key| step.get(key).is_none())
+                })
+            })
+        {
+            return Err(CoreError::InvalidParams("workflow step fields".into()));
+        }
         let mut params = draft.clone();
-        let object = params.as_object_mut().ok_or_else(|| CoreError::InvalidParams("workflow draft".into()))?;
-        if object.contains_key("projectId") || object.contains_key("workflowId") || object.contains_key("expectedRevision") {
+        let object = params
+            .as_object_mut()
+            .ok_or_else(|| CoreError::InvalidParams("workflow draft".into()))?;
+        if object.contains_key("projectId")
+            || object.contains_key("workflowId")
+            || object.contains_key("expectedRevision")
+        {
             return Err(CoreError::InvalidParams("workflow draft".into()));
         }
         object.insert("expectedRevision".into(), json!(0));
         let input = parse_workflow_input(params)?;
         let candidate = WorkflowConfiguration {
-            id: "draft".into(), project_id: "draft".into(), name: input.name,
+            id: "draft".into(),
+            project_id: "draft".into(),
+            name: input.name,
             coordinator_agent_id: input.coordinator_agent_id,
-            launch_selection: AgentLaunchSelection::new(&input.model, &input.permission, &input.reasoning),
-            max_review_cycles: input.max_review_cycles, steps: input.steps,
-            generation: 1, updated_at_epoch_ms: 1,
+            launch_selection: AgentLaunchSelection::new(
+                &input.model,
+                &input.permission,
+                &input.reasoning,
+            ),
+            max_review_cycles: input.max_review_cycles,
+            steps: input.steps,
+            generation: 1,
+            updated_at_epoch_ms: 1,
         };
-        if !candidate.is_valid() { return Err(CoreError::InvalidParams("workflow draft".into())); }
-        termloop_invocation::validate_agent_configuration(&candidate.coordinator_agent_id, &input.model, &input.permission, &input.reasoning)
-            .map_err(|_| CoreError::InvalidParams("workflow lead settings".into()))?;
+        if !candidate.is_valid() {
+            return Err(CoreError::InvalidParams("workflow draft".into()));
+        }
+        termloop_invocation::validate_agent_configuration(
+            &candidate.coordinator_agent_id,
+            &input.model,
+            &input.permission,
+            &input.reasoning,
+        )
+        .map_err(|_| CoreError::InvalidParams("workflow lead settings".into()))?;
         for step in &candidate.steps {
             if let (Some(agent), Some(selection)) = (&step.agent_id, &step.launch_selection) {
-                termloop_invocation::validate_agent_configuration(agent, &selection.model, &selection.permission, &selection.reasoning)
-                    .map_err(|_| CoreError::InvalidParams("workflow step settings".into()))?;
+                termloop_invocation::validate_agent_configuration(
+                    agent,
+                    &selection.model,
+                    &selection.permission,
+                    &selection.reasoning,
+                )
+                .map_err(|_| CoreError::InvalidParams("workflow step settings".into()))?;
             }
         }
         self.validate_workflow_agent_profiles(&candidate.steps)

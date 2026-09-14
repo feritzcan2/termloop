@@ -79,7 +79,9 @@ export function WorkflowCreator(props: {
     {expanded && proposal ? <section className="workflow-creator-preview" aria-label="AI draft preview">
       <div><strong>{proposal.workflow.name}</strong><p>{result?.summary || "Proposed workflow — not saved"}</p>
         <small>Lead · {agentLabel(proposal.workflow.coordinatorAgentId)} · {workflowLaunchSummary(proposal.workflow)}</small></div>
-      <ol>{proposal.workflow.steps.map((step) => <li key={step.id}><strong>{step.title}</strong><small>{stepKindLabel(step.kind)} · {step.agentId ? agentLabel(step.agentId) : "Lead agent"}{step.reuseStepId ? " · Reused conversation" : ""}</small></li>)}</ol>
+      <ol>{proposal.workflow.steps.map((step) => <li key={step.id}><strong>{step.title}</strong><small>{stepKindLabel(step.kind)} · {step.agentId ? agentLabel(step.agentId) : "Lead agent"}{step.reuseStepId ? " · Reused conversation" : step.model && step.permission && step.reasoning ? ` · ${workflowLaunchSummary({ model: step.model, permission: step.permission, reasoning: step.reasoning })}` : ""}</small></li>)}</ol>
+      {proposal.workflow.permission === "bypassPermissions" || proposal.workflow.steps.some((step) => step.permission === "bypassPermissions")
+        ? <p className="form-error">This proposal includes bypass permissions. Review those agent settings before saving.</p> : null}
       <p className="workflow-creator-note">Using this draft updates only the editor. Review instructions and permissions, then save explicitly. Nothing starts automatically.</p>
       {stale ? <p role="alert" className="form-error">This proposal is based on another saved version. Keep your current edits and start a fresh creator from the current template.</p> : null}
       {confirmVersion === result?.versionId ? <p role="alert">Replace your unsaved editor changes with this AI draft?</p> : null}
