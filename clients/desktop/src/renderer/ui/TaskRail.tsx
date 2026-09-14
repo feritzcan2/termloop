@@ -261,7 +261,7 @@ export type TaskRailProps = {
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
-  openWorkflowEditor(workflowId?: string): void;
+  openWorkflowEditor(workflowId?: string, taskId?: string): void;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
@@ -813,7 +813,7 @@ type TaskGroupProps = {
   launchTerminal(taskId: string): Promise<string | undefined>;
   launchAgent(taskId: string, agentId: string): Promise<string | undefined>;
   launchWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
-  openWorkflowEditor(workflowId?: string): void;
+  openWorkflowEditor(workflowId?: string, taskId?: string): void;
   cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
@@ -1037,7 +1037,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         </div>}
         overlayContainer={props.overlayContainer}
         overlayVisibilityChanged={props.overlayVisibilityChanged}
-        edit={(configuration) => props.openWorkflowEditor(configuration?.id)}
+        edit={(configuration) => props.openWorkflowEditor(configuration?.id, task.id)}
         launch={props.launchWorkflow}
         cancel={props.cancelWorkflowExecution}
         openSession={props.selectSession}
