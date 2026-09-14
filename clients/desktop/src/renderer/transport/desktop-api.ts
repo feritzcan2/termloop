@@ -1,3 +1,4 @@
+import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
 import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
 import type { AgentStatus, Project, Session, Task } from "../model.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
@@ -225,6 +226,14 @@ export type DesktopApi = {
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
   connectionProfileReconnect(profileId: string): Promise<ConnectionProfileSummary[]>;
   connectionProfileConnect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
+  sshSetupCurrent(): Promise<SshSetupState | null>;
+  sshSetupStart(input: SshSetupInput): Promise<SshSetupState>;
+  sshSetupLogin(input: SshSetupLogin): Promise<SshSetupState>;
+  sshSetupInstall(id: string): Promise<SshSetupState>;
+  sshSetupStatus(id: string): Promise<SshSetupState>;
+  sshSetupConnect(id: string): Promise<ConnectionProfileConnectResult>;
+  sshSetupCancel(id: string): Promise<void>;
+  sshSetupPackage(id: string): Promise<SshSetupState>;
   connectionProfileSetEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   connectionProfileRemove(profileId: string): Promise<ConnectionProfileSummary[]>;
   tailscaleServerDiscover(): Promise<TailscaleServerDiscovery>;

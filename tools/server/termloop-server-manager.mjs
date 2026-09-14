@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, statfs, symlink, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
@@ -66,10 +66,10 @@ export async function currentRelease(paths) {
   parseVersion(version);
   if (directoryName.startsWith('source-')) {
     if (manifest.schema !== 1 || !/^[a-f0-9]{40}$/.test(manifest.commit) || directoryName !== `source-${manifest.commit}`) throw new Error('Invalid installed source identity');
-    return { version, directory, sourceCommit: manifest.commit };
+    return { version, directory, sourceCommit: manifest.commit, ...(manifest.protocolVersion ? { protocolVersion: manifest.protocolVersion } : {}) };
   }
   if (manifest.schema !== 1 || directoryName !== version) throw new Error('Invalid installed release identity');
-  return { version, directory };
+  return { version, directory, ...(manifest.protocolVersion ? { protocolVersion: manifest.protocolVersion } : {}) };
 }
 
 function systemd(args) {
@@ -80,7 +80,7 @@ async function isActive(unit) {
   try { return (await systemd(['is-active', unit])).stdout.trim() === 'active'; } catch { return false; }
 }
 
-async function waitHealthy(paths, version) {
+async function waitHealthy(paths, version, expectedProtocol) {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     try {
@@ -90,7 +90,8 @@ async function waitHealthy(paths, version) {
         const result = await execute(process.execPath, [path.join(paths.current, 'termloopctl'), 'version', '--json', '--runtime', paths.runtime], {
           timeout: 5000, maxBuffer: 32 * 1024,
         });
-        if (JSON.parse(result.stdout).version === version) return;
+        const running = JSON.parse(result.stdout);
+        if (running.version === version && (!expectedProtocol || running.protocolVersion === expectedProtocol)) return;
       }
     } catch { /* The server may still be publishing fresh discovery. */ }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -139,7 +140,7 @@ async function restoreState(paths, snapshot) {
 }
 
 // The complete stopped-state transaction is independently exercised with fake services.
-export async function activateRelease(paths, next, previous, service = { stop: () => systemd(['stop', serverUnit]), start: () => systemd(['start', serverUnit]), healthy: (version) => waitHealthy(paths, version) }) {
+export async function activateRelease(paths, next, previous, service = { stop: () => systemd(['stop', serverUnit]), start: () => systemd(['start', serverUnit]), healthy: (version, protocol) => waitHealthy(paths, version, protocol) }) {
   await service.stop();
   let snapshot;
   let switched = false;
@@ -148,7 +149,7 @@ export async function activateRelease(paths, next, previous, service = { stop: (
     await switchRelease(paths, next.directory);
     switched = true;
     await service.start();
-    await service.healthy(next.version);
+    await service.healthy(next.version, next.protocolVersion);
   } catch (error) {
     if (switched) await service.stop();
     if (previous) {
@@ -157,7 +158,7 @@ export async function activateRelease(paths, next, previous, service = { stop: (
         await switchRelease(paths, previous.directory);
       }
       await service.start();
-      await service.healthy(previous.version);
+      await service.healthy(previous.version, previous.protocolVersion);
       throw new Error(`Update failed; restored TermLoop ${previous.version} and its state: ${error.message}`, { cause: error });
     }
     if (switched) await rm(paths.current);
@@ -174,7 +175,27 @@ export async function pruneReleases(paths, keep) {
   }
 }
 
-export async function runManager(action, version, paths = installationPaths(), sourceArchive) {
+export async function assertPackageProtocol(directory, expectedProtocol) {
+  if (expectedProtocol === undefined) return undefined;
+  if (!/^sha256:[a-f0-9]{64}$/.test(expectedProtocol)) throw new Error('Invalid expected desktop protocol');
+  const manifest = JSON.parse(await readFile(path.join(directory, 'server-package.json'), 'utf8'));
+  let protocol = manifest.protocolVersion;
+  // Older official packages carry the same generated identity in their bundled
+  // CLI. Read it without executing any package code or touching the live service.
+  if (protocol === undefined) {
+    const cli = path.join(directory, 'termloopctl');
+    if ((await stat(cli)).size <= 16 * 1024 * 1024) {
+      const matches = [...(await readFile(cli, 'utf8')).matchAll(/^(?:var|const) CONTRACT_IDENTITY = "(sha256:[a-f0-9]{64})";/gm)];
+      if (matches.length === 1) protocol = matches[0][1];
+    }
+  }
+  if (protocol === undefined) throw new Error('Server package has no compatibility information; choose a package from a current TermLoop release');
+  if (protocol !== expectedProtocol) throw new Error('Server package is not compatible with this desktop; the existing server has not been changed');
+  return expectedProtocol;
+}
+
+export async function runManager(action, version, paths = installationPaths(), sourceArchive, expectedProtocol) {
+  if (expectedProtocol !== undefined && !/^sha256:[a-f0-9]{64}$/.test(expectedProtocol)) throw new Error('Invalid expected desktop protocol');
   if (sourceArchive !== undefined && (action !== 'install' || version !== undefined)) throw new Error('A source archive is supported only by install, without --version');
   const previous = await currentRelease(paths);
   if (action === 'status') {
@@ -186,7 +207,10 @@ export async function runManager(action, version, paths = installationPaths(), s
   if (action === 'update' && !await isActive(serverUnit)) return { updated: false, reason: 'Server is stopped; automatic updates preserve that choice', version: previous.version };
   if (!previous && await exists(path.join(paths.units, serverUnit))) throw new Error('An unmanaged TermLoop service already exists; refusing to replace it');
   let release = sourceArchive === undefined ? await resolveRelease(version) : undefined;
-  if (release && previous && !newerVersion(release.version, previous.version)) return { updated: false, version: previous.version, sourceCommit: previous.sourceCommit, reason: 'Already up to date; downgrades are not automatic' };
+  if (release && previous && !newerVersion(release.version, previous.version)) {
+    await assertPackageProtocol(previous.directory, expectedProtocol);
+    return { updated: false, version: previous.version, sourceCommit: previous.sourceCommit, reason: 'Already up to date; downgrades are not automatic' };
+  }
   await mkdir(paths.releases, { recursive: true, mode: 0o700 });
   await mkdir(paths.units, { recursive: true, mode: 0o700 });
   // The process lock excludes live downloads and snapshots from another update.
@@ -210,6 +234,7 @@ export async function runManager(action, version, paths = installationPaths(), s
       directoryName = release.version;
     }
     const directory = path.join(paths.releases, directoryName);
+    await assertPackageProtocol(payload, expectedProtocol);
     if (await exists(directory)) {
       const recorded = (await readFile(path.join(directory, '.archive-sha256'), 'utf8')).trim();
       if (recorded !== release.sha256) throw new Error('An existing version directory has a different archive identity');
@@ -222,7 +247,7 @@ export async function runManager(action, version, paths = installationPaths(), s
       await systemd(['daemon-reload']);
     }
     try {
-      await activateRelease(paths, { directory, version: release.version }, previous);
+      await activateRelease(paths, { directory, version: release.version, protocolVersion: expectedProtocol }, previous);
     } catch (error) {
       if (!previous) {
         for (const unit of [serverUnit, updateUnit, timerUnit]) await rm(path.join(paths.units, unit), { force: true });
@@ -245,7 +270,10 @@ async function main() {
   if (!['install', 'update', 'status'].includes(action)) throw new Error('Usage: install.sh [install|update|status] [--version=X.Y.Z | --source-archive=/path/package.tar.gz]');
   const versionArg = args.find((arg) => arg.startsWith('--version='));
   const sourceArg = args.find((arg) => arg.startsWith('--source-archive='));
-  if (args.some((arg) => arg !== '--locked' && arg !== versionArg && arg !== sourceArg)) throw new Error('Unknown server installer option');
+  const protocolArg = args.find((arg) => arg.startsWith('--expected-protocol='));
+  const expectedProtocol = protocolArg?.slice('--expected-protocol='.length);
+  if (expectedProtocol !== undefined && !/^sha256:[a-f0-9]{64}$/.test(expectedProtocol)) throw new Error('Invalid expected desktop protocol');
+  if (args.some((arg) => arg !== '--locked' && arg !== versionArg && arg !== sourceArg && arg !== protocolArg)) throw new Error('Unknown server installer option');
   if (sourceArg !== undefined && (action !== 'install' || versionArg !== undefined || !sourceArg.slice('--source-archive='.length))) throw new Error('Use install --source-archive=/path/package.tar.gz without --version');
   const sourceArchive = sourceArg === undefined ? undefined : path.resolve(sourceArg.slice('--source-archive='.length));
   const version = versionArg?.slice('--version='.length);
@@ -259,7 +287,7 @@ async function main() {
     } catch (error) { throw new Error(error.stderr?.trim() || 'Another server update is running or the update failed'); }
     return;
   }
-  console.log(JSON.stringify(await runManager(action, version, paths, sourceArchive)));
+  console.log(JSON.stringify(await runManager(action, version, paths, sourceArchive, expectedProtocol)));
 }
 
 if (process.argv[1] && await realpath(process.argv[1]).catch(() => '') === fileURLToPath(import.meta.url)) {

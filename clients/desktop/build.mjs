@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createRequire } from "node:module";
 
 const execFile = promisify(execFileCallback);
 
@@ -14,6 +15,7 @@ const checkout = await realpath(path.resolve(packageDirectory, "../.."));
 const gitMarker = await stat(path.join(checkout, ".git")).catch(() => undefined);
 const compiledDevelopmentProfile = gitMarker?.isFile() ? developmentProfileId(checkout) : undefined;
 const mainDefines = {
+  TERMLOOP_SERVER_RELEASE_VERSION: JSON.stringify(packageManifest.version),
   TERMLOOP_COMPILED_DEV_PROFILE: JSON.stringify(compiledDevelopmentProfile ?? null),
 };
 const esmRequireBanner = `import { createRequire as __termloopCreateRequire } from "node:module";
@@ -21,17 +23,37 @@ const require = __termloopCreateRequire(import.meta.url);`;
 
 await mkdir("dist", { recursive: true });
 await Promise.all([
-  build({ entryPoints: ["src/main.ts"], outfile: "dist/main.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws"], define: mainDefines, banner: { js: esmRequireBanner } }),
+  build({ entryPoints: ["src/main.ts"], outfile: "dist/main.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws", "ssh2"], define: mainDefines, banner: { js: esmRequireBanner } }),
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),
   build({ entryPoints: ["src/utility/terminal-gateway.ts"], outfile: "dist/terminal-gateway.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws"] }),
   build({ entryPoints: ["src/renderer/index.tsx"], outfile: "dist/renderer.js", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file" }, assetNames: "[name]" }),
   cp("src/index.html", "dist/index.html"),
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
+  cp(path.join(checkout, "tools/server"), "dist/server-setup", { recursive: true, filter: (source) => !source.endsWith(".test.mjs") }),
   cp("src/assets/termloop-main-icon.png", "dist/termloop-main-icon.png"),
   cp("src/assets/ghostty-embedded.conf", "dist/ghostty-embedded.conf"),
   cp("src/assets/ghostty-light.conf", "dist/ghostty-light.conf"),
   cp("src/assets/fonts/OFL.txt", "dist/JetBrainsMono-OFL.txt")
 ]);
+
+// SSH setup needs ssh2's adjacent runtime assets (including its Windows agent
+// helper). Keep its pure-JS dependency closure in dist so packaged applications
+// and immutable development launch bundles resolve the same files.
+const copiedSshPackages = new Set();
+async function copySshRuntime(name, from) {
+  if (copiedSshPackages.has(name)) return;
+  copiedSshPackages.add(name);
+  const manifestPath = createRequire(from).resolve(`${name}/package.json`);
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  await cp(path.dirname(manifestPath), path.join(packageDirectory, "dist/node_modules", name), {
+    recursive: true,
+    filter: (source) => !source.endsWith(".node"),
+  });
+  for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+    if (!(dependency in (manifest.optionalDependencies ?? {}))) await copySshRuntime(dependency, manifestPath);
+  }
+}
+await copySshRuntime("ssh2", path.join(packageDirectory, "package.json"));
 
 const mobileAccessDirectory = path.join(packageDirectory, "dist/mobile-access");
 const mobileScriptsDirectory = path.join(checkout, "clients/mobile/scripts");

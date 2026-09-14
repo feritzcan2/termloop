@@ -1,3 +1,4 @@
+import type { SshSetupInput, SshSetupLogin } from "./ssh-setup-types.js";
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { LayoutDocument } from "./layout/model.js";
@@ -73,6 +74,14 @@ contextBridge.exposeInMainWorld("termloop", {
     ipcRenderer.invoke("termloop:connection-profile-reconnect", profileId),
   connectionProfileConnect: (input: ConnectionProfileConnectInput) =>
     ipcRenderer.invoke("termloop:connection-profile-connect", input),
+  sshSetupCurrent: () => ipcRenderer.invoke("termloop:ssh-setup-current"),
+  sshSetupStart: (input: SshSetupInput) => ipcRenderer.invoke("termloop:ssh-setup-start", input),
+  sshSetupLogin: (input: SshSetupLogin) => ipcRenderer.invoke("termloop:ssh-setup-login", input),
+  sshSetupInstall: (id: string) => ipcRenderer.invoke("termloop:ssh-setup-install", id),
+  sshSetupStatus: (id: string) => ipcRenderer.invoke("termloop:ssh-setup-status", id),
+  sshSetupConnect: (id: string) => ipcRenderer.invoke("termloop:ssh-setup-connect", id),
+  sshSetupCancel: (id: string) => ipcRenderer.invoke("termloop:ssh-setup-cancel", id),
+  sshSetupPackage: (id: string) => ipcRenderer.invoke("termloop:ssh-setup-package", id),
   connectionProfileSetEnabled: (profileId: string, enabled: boolean) =>
     ipcRenderer.invoke("termloop:connection-profile-set-enabled", profileId, enabled),
   connectionProfileRemove: (profileId: string) =>
