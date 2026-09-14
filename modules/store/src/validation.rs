@@ -197,6 +197,7 @@ fn configuration_versions_are_invalid(state: &CurrentState) -> bool {
         }
         match target.target_kind {
             ImproverSessionTargetKind::AgentCreator => false,
+            ImproverSessionTargetKind::WorkflowDraft => true,
             ImproverSessionTargetKind::StewardInstructions => state
                 .steward_configurations
                 .iter()
@@ -715,6 +716,7 @@ fn sessions_are_invalid(state: &CurrentState) -> bool {
             use termloop_domain::ImproverSessionTargetKind;
             let expected_template = match target.target_kind {
                 ImproverSessionTargetKind::AgentCreator => "builtin.builder.agent",
+                ImproverSessionTargetKind::WorkflowDraft => "builtin.builder.workflow",
                 ImproverSessionTargetKind::StewardInstructions => {
                     "builtin.improver.steward-instructions"
                 }

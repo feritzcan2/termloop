@@ -1476,6 +1476,18 @@
         "$ref": "#/$defs/agentLibraryResult"
       }
     },
+    "workflow.creatorPreview": {
+      "params": { "$ref": "#/$defs/workflowCreatorParams" },
+      "result": { "$ref": "#/$defs/quickActionPreviewResult" }
+    },
+    "workflow.creatorLaunch": {
+      "params": { "$ref": "#/$defs/workflowCreatorLaunchParams" },
+      "result": { "$ref": "#/$defs/sessionDto" }
+    },
+    "workflow.creatorDraftGet": {
+      "params": { "$ref": "#/$defs/workflowCreatorDraftGetParams" },
+      "result": { "$ref": "#/$defs/workflowCreatorDraftGetResult" }
+    },
     "agent.creatorPreview": {
       "params": {
         "$ref": "#/$defs/agentCreatorParams"
@@ -1773,6 +1785,9 @@
         "agent.profileUpdate",
         "agent.profileDelete",
         "agent.profileFavorite",
+        "workflow.creatorPreview",
+        "workflow.creatorLaunch",
+        "workflow.creatorDraftGet",
         "agent.creatorPreview",
         "agent.creatorLaunch",
         "agent.authStatusList",
@@ -5336,7 +5351,8 @@
         "settingsSkill",
         "settingsPrompt",
         "settingsMcpTool",
-        "agentCreator"
+        "agentCreator",
+        "workflowDraft"
       ]
     },
     "improverSessionTargetDto": {
@@ -12881,7 +12897,8 @@
         "newRunConfiguration",
         "settingsSkill",
         "settingsPrompt",
-        "settingsMcpTool"
+        "settingsMcpTool",
+        "workflowDraft"
       ]
     },
     "versionedConfigurationTarget": {
@@ -16000,6 +16017,291 @@
         "expectedRevision": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "workflowCreatorDraftGetParams": {
+      "x-codegen": true, "type": "object", "additionalProperties": false,
+      "required": ["projectId", "workflowId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "workflowId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "workflowCreatorDraftGetResult": {
+      "x-codegen": true, "type": "object", "additionalProperties": false,
+      "required": ["proposal", "versionId", "summary"],
+      "properties": {
+        "proposal": { "anyOf": [{ "$ref": "#/$defs/workflowProposal" }, { "type": "null" }] },
+        "versionId": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+        "summary": { "type": "string", "maxLength": 2048, "x-utf8-max-bytes": 2048 }
+      }
+    },
+    "workflowTemplateDraft": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowTemplateDraft",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "coordinatorAgentId",
+        "model",
+        "permission",
+        "reasoning",
+        "maxReviewCycles",
+        "steps"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "x-utf8-max-bytes": 80,
+          "pattern": "\\S"
+        },
+        "coordinatorAgentId": {
+          "$ref": "#/$defs/stewardAgentId"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "permission": {
+          "$ref": "#/$defs/assistantPermission"
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "maxReviewCycles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workflowStepDto"
+          },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      }
+    },
+    "workflowProposal": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowProposal",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceGeneration",
+        "workflow"
+      ],
+      "properties": {
+        "sourceGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowTemplateDraft"
+        }
+      }
+    },
+    "workflowCreatorParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowCreatorParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "agentId",
+        "model",
+        "permission",
+        "reasoning",
+        "templateRef",
+        "workflowId",
+        "taskId",
+        "draft"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "templateRef": {
+          "type": "string",
+          "enum": [
+            "builtin.builder.workflow"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+        },
+        "workflowId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/workflowTemplateDraft"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "workflowCreatorLaunchParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkflowCreatorLaunchParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "agentId",
+        "model",
+        "permission",
+        "reasoning",
+        "templateRef",
+        "launchTicket",
+        "workflowId",
+        "taskId",
+        "draft"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "bypassPermissions"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "templateRef": {
+          "type": "string",
+          "enum": [
+            "builtin.builder.workflow"
+          ]
+        },
+        "launchTicket": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+        },
+        "workflowId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/workflowTemplateDraft"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

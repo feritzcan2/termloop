@@ -1,6 +1,7 @@
 //! Session/agent launch and resume ownership boundary.
 
 mod agent_creator;
+mod workflow_creator;
 mod agent_library;
 
 mod agent_message;
@@ -119,6 +120,7 @@ pub struct AgentLaunchPlan {
     /// The rail name for an Improve-with-agent launch, stating the job and its
     /// target rather than leaving another unnamed provider row.
     improver_session_name: Option<String>,
+    workflow_creator: Option<workflow_creator::WorkflowCreatorLaunch>,
     prepared_launch: Option<termloop_invocation::LaunchPayload>,
     mcp_authorizer: McpAuthorizer,
     mcp_role: AgentMcpRole,
@@ -623,6 +625,7 @@ impl CoreRuntime {
             settings_entry_id: None,
             improver_prompt_owner_id: None,
             improver_session_name: None,
+            workflow_creator: None,
             prepared_launch: None,
             mcp_authorizer: self.mcp_authorizer.clone(),
             mcp_token,
@@ -1710,6 +1713,7 @@ impl CoreRuntime {
             return Err(CoreError::NotFound);
         }
         self.revalidate_workflow_launch(plan)?;
+        self.revalidate_workflow_creator(plan)?;
         self.validate_history_launch_plan(plan)?;
         if plan.history_source_ref.is_some()
             && (!plan.history_source_validated
@@ -2238,6 +2242,11 @@ fn resolve_quick_action_launch(
 }
 
 fn improver_session_target(plan: &AgentLaunchPlan) -> Option<ImproverSessionTarget> {
+    if plan.workflow_creator.is_some() {
+        if let AgentMcpRole::Improver { target } = &plan.mcp_role {
+            return Some(target.clone());
+        }
+    }
     if plan.mcp_role.is_agent_creator() {
         return Some(ImproverSessionTarget {
             target_kind: ImproverSessionTargetKind::AgentCreator,
