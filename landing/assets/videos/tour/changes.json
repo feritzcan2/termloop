@@ -1,0 +1,20 @@
+{
+  "id": "changes",
+  "duration": 15.0,
+  "width": 1920,
+  "height": 1080,
+  "fps": 15.0,
+  "frames": 225,
+  "audio": false,
+  "captureKind": "archive-video",
+  "source": "assets/videos/changes-review.mp4",
+  "sourceSha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
+  "sourceFps": 15.0,
+  "sourceSeconds": 15.0,
+  "sourceCoverage": [
+    0,
+    15.0
+  ],
+  "sha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
+  "editing": "Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects."
+}

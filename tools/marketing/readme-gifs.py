@@ -3,6 +3,7 @@
 import argparse
 import json
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,9 +13,12 @@ OUTPUT = ROOT / 'artifacts/marketing/readme'
 def render(feature):
     source = ROOT / f'landing/assets/videos/tour/{feature}.mp4'
     target = OUTPUT / f'{feature}.gif'
-    # GIF delays use centiseconds: 25 fps is exact and keeps click motion smooth.
+    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=avg_frame_rate', '-of', 'json', str(source)]))
+    # Keep archive motion at its recorded rate; cap newer recordings at 25 FPS.
+    rate = min(25, float(Fraction(info['streams'][0]['avg_frame_rate'])))
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(source),
-        '-filter_complex', 'fps=25,scale=960:540:flags=lanczos,split[a][b];'
+        '-filter_complex', f'fps={rate:g},scale=960:540:flags=lanczos,split[a][b];'
         '[a]palettegen=max_colors=256:stats_mode=diff[p];'
         '[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
         '-an', '-loop', '0', str(target)], check=True)
