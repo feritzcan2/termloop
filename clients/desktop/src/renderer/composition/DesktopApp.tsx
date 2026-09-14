@@ -2404,6 +2404,20 @@ export function DesktopApp() {
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
       agentConnections={agentConnections}
       listConnectionProfiles={desktopApi.connectionProfileList}
+      sshSetup={{
+        current: desktopApi.sshSetupCurrent,
+        start: desktopApi.sshSetupStart,
+        login: desktopApi.sshSetupLogin,
+        install: desktopApi.sshSetupInstall,
+        status: desktopApi.sshSetupStatus,
+        cancel: desktopApi.sshSetupCancel,
+        choosePackage: desktopApi.sshSetupPackage,
+        connect: async (id) => {
+          const result = await desktopApi.sshSetupConnect(id);
+          await refreshProjection();
+          return result;
+        },
+      }}
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);
         await refreshProjection();

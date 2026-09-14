@@ -8,6 +8,8 @@ export type SshTransportInput = {
   host: string;
   user?: string;
   remotePort: number;
+  sshPort?: number;
+  managedIdentity?: string;
 };
 
 export type ConnectionTransportInput = TailscaleTransportInput | SshTransportInput;
