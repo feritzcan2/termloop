@@ -114,7 +114,47 @@ def stamp(seconds):
     return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02}.{ms%1000:03}'
 
 
+def restore_archive(feature, edit, output):
+    """Keep an explicitly selected earlier edit byte-for-byte, including its FPS."""
+    source = ROOT / 'landing' / edit['archiveSource']
+    data = source.read_bytes()
+    if hashlib.sha256(data).hexdigest() != edit['sourceSha256']:
+        raise ValueError('Archive checksum differs from the selected clip')
+    info = probe(source)
+    video = info['streams'][0]
+    rate = float(Fraction(video['avg_frame_rate']))
+    if len(info['streams']) != 1 or video['codec_type'] != 'video':
+        raise ValueError('Archive must contain only a silent video')
+    if (video['width'], video['height']) != (1920, 1080) or rate != edit['sourceFps']:
+        raise ValueError('Archive dimensions or frame rate changed')
+    duration = float(info['format']['duration'])
+    anchors = edit['stepsAt']
+    if len(anchors) != len(feature['steps']) or anchors[0] != 0 or any(
+            not a < b for a, b in zip(anchors, anchors[1:] + [duration])):
+        raise ValueError('Archive captions must follow the recording')
+    output.mkdir(parents=True, exist_ok=True)
+    target = output / feature['id']
+    target.with_suffix('.mp4').write_bytes(data)
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', str(edit['posterAt']),
+        '-i', str(source), '-frames:v', '1', '-q:v', '2', '-update', '1',
+        str(target.with_suffix('.jpg'))], check=True)
+    target.with_suffix('.vtt').write_text(('WEBVTT\n\n' + ''.join(
+        f'{i+1}\n{stamp(a)} --> {stamp(b)}\n{text}\n\n'
+        for i, (a, b, text) in enumerate(zip(anchors, anchors[1:] + [duration], feature['steps'])))).rstrip()+'\n')
+    report = {'id': feature['id'], 'duration': duration, 'width': 1920, 'height': 1080,
+        'fps': rate, 'frames': int(video['nb_frames']), 'audio': False,
+        'captureKind': 'archive-video', 'source': edit['archiveSource'],
+        'sourceSha256': edit['sourceSha256'], 'sourceFps': rate,
+        'sourceSeconds': duration, 'sourceCoverage': [0, duration],
+        'sha256': edit['sourceSha256'],
+        'editing': 'Earlier published edit restored byte-for-byte. Original timing and frame rate retained; no new cuts, retiming or effects.'}
+    target.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n')
+    print(f'{feature["id"]}: restored original {duration:.2f}s, {rate:g} fps', flush=True)
+
+
 def render(feature, edit, recordings, output=OUTPUT):
+    if edit.get('archiveSource'):
+        return restore_archive(feature, edit, output)
     source = recordings / edit['source']
     source_duration, source_fps = validate_source(source, edit['sourceSha256'])
     end = edit.get('sourceEnd', source_duration)
@@ -167,13 +207,13 @@ def main():
     parser.add_argument('--recordings', type=Path, default=os.environ.get('TERMLOOP_MARKETING_RECORDINGS'))
     parser.add_argument('--only', nargs='+')
     args = parser.parse_args()
-    if args.recordings is None:
-        parser.error('Pass --recordings or set TERMLOOP_MARKETING_RECORDINGS')
     catalog = json.loads((ROOT/'tools/marketing/catalog.json').read_text())
     edits = json.loads((ROOT/'tools/marketing/edits.json').read_text())
-    for feature in catalog:
-        if not args.only or feature['id'] in args.only:
-            render(feature, edits[feature['id']], Path(args.recordings))
+    selected = [f for f in catalog if not args.only or f['id'] in args.only]
+    if args.recordings is None and any(not edits[f['id']].get('archiveSource') for f in selected):
+        parser.error('Pass --recordings or set TERMLOOP_MARKETING_RECORDINGS')
+    for feature in selected:
+        render(feature, edits[feature['id']], Path(args.recordings) if args.recordings else None)
 
 
 if __name__ == '__main__':

@@ -2,9 +2,9 @@
 
 [Overview](../README.md) · [Development](development.md) · [Interactive video tour](https://termloop.ai/#features)
 
-Explore **32 features** with written usage steps. The [homepage tour](https://termloop.ai/#features) focuses on **six essential workflows**: Ask To, Handoff, Fork, Tasks, Task Worktrees and Code review. Recordings use a populated Launchpad demo with source files, Git changes and release tests. Development and released interfaces may differ.
+Explore **32 features** with written usage steps. The [homepage tour](https://termloop.ai/#features) focuses on **eight essential workflows**: Ask To, Quick Actions, Handoff, Fork, Tasks, Task Worktrees, Changes and Code review. A compact [everyday tools section](https://termloop.ai/#everyday) covers Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications and Appearance. The tour includes populated demo Projects with source files, Git changes and release tests. Development and released interfaces may differ.
 
-Website videos are 1920 × 1080 at 30 FPS, with visible clicks, smooth wait acceleration and optional captions. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, Tasks, Task Worktrees and Code review were captured on September 14; Handoff and Fork reuse September 9 OBS footage with updated timing.
+Website videos are 1920 × 1080 with optional captions. Six September edits run at 30 FPS with visible clicks and smooth wait acceleration. Quick Actions and Changes preserve their original 20 and 15 FPS edits. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, Tasks, Task Worktrees and Code review were captured on September 14; Handoff and Fork reuse September 9 OBS footage with updated timing.
 
 ## Choose the right action
 
@@ -25,6 +25,8 @@ Open the command palette, compose a free prompt, choose the agent, model, permis
 1. Open Quick Action with Shift Shift.
 2. Describe the change and choose the agent settings.
 3. Launch a Session with the context attached.
+
+[Watch the guided demo](https://termloop.ai/#quick-actions) · [MP4 video](https://termloop.ai/assets/videos/tour/quick-actions.mp4)
 
 ### Task Worktrees
 
@@ -143,6 +145,8 @@ Changed-file counts appear on Tasks and active Agents. Open the Git changes view
 1. Open the changed files for the checkout.
 2. Read the diff and attach a note to a relevant line.
 3. Send review notes to the selected active agent.
+
+[Watch the guided demo](https://termloop.ai/#changes) · [MP4 video](https://termloop.ai/assets/videos/tour/changes.mp4)
 
 ### Task Lifecycle
 
