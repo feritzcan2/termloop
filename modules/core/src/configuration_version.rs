@@ -509,6 +509,14 @@ impl CoreRuntime {
         }
         let mut effects = ConfigurationApplicationEffects::default();
         let activated_target = match plan.target.target_kind {
+            // A creator writes only its separate proposal. Explicit manual
+            // workflow create/update commands remain the only save path.
+            ImproverSessionTargetKind::WorkflowDraft => {
+                let result = self.finish_configuration_application(
+                    plan.clone(), plan.target.clone(), plan.content.clone(), created_at_epoch_ms,
+                );
+                return Ok(ConfigurationApplicationCommit { result, effects });
+            }
             ImproverSessionTargetKind::AgentCreator => return Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot = parse_snapshot(&plan.content)?;
@@ -743,6 +751,7 @@ impl CoreRuntime {
     ) -> Result<String, CoreError> {
         let invalid = || CoreError::InvalidParams("content".into());
         match target.target_kind {
+            ImproverSessionTargetKind::WorkflowDraft => self.canonicalize_workflow_proposal(project_id, target, content),
             ImproverSessionTargetKind::AgentCreator => Err(CoreError::CapabilityDenied),
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot =
@@ -1017,6 +1026,7 @@ pub fn target_kind_wire(kind: ImproverSessionTargetKind) -> &'static str {
         ImproverSessionTargetKind::SettingsPrompt => "settingsPrompt",
         ImproverSessionTargetKind::SettingsMcpTool => "settingsMcpTool",
         ImproverSessionTargetKind::AgentCreator => "agentCreator",
+        ImproverSessionTargetKind::WorkflowDraft => "workflowDraft",
     }
 }
 
@@ -1031,6 +1041,7 @@ fn target_kind_from_wire(value: &str) -> Option<ImproverSessionTargetKind> {
         "settingsSkill" => ImproverSessionTargetKind::SettingsSkill,
         "settingsPrompt" => ImproverSessionTargetKind::SettingsPrompt,
         "settingsMcpTool" => ImproverSessionTargetKind::SettingsMcpTool,
+        "workflowDraft" => ImproverSessionTargetKind::WorkflowDraft,
         _ => return None,
     })
 }

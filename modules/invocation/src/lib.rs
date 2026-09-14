@@ -118,6 +118,12 @@ const AGENT_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
     authored_body: include_str!("../../../resources/prompts/builtin.builder.agent.md"),
 };
 
+const WORKFLOW_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.builder.workflow",
+    version: 1,
+    authored_body: include_str!("../../../resources/prompts/builtin.builder.workflow.md"),
+};
+
 const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.routine",
     version: 11,
@@ -264,6 +270,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE,
         ROUTINE_BUILDER_TEMPLATE,
         AGENT_CREATOR_TEMPLATE,
+        WORKFLOW_CREATOR_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
         TASK_EVIDENCE_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
@@ -663,6 +670,9 @@ impl SettingsEntryKind {
 }
 
 pub enum ImproverTarget<'a> {
+    WorkflowCreator {
+        context: &'a str,
+    },
     AgentCreator {
         project_name: &'a str,
     },
@@ -729,6 +739,7 @@ pub enum ImproverTarget<'a> {
 impl ImproverTarget<'_> {
     pub fn template_ref(&self) -> &'static str {
         match self {
+            Self::WorkflowCreator { .. } => "builtin.builder.workflow",
             Self::AgentCreator { .. } => "builtin.builder.agent",
             Self::SettingsEntry {
                 kind: SettingsEntryKind::Skill,
@@ -773,6 +784,10 @@ impl ImproverTarget<'_> {
     fn delivered_prompt(&self) -> Result<String, InvocationError> {
         let template = self.template()?;
         match *self {
+            Self::WorkflowCreator { context } => {
+                bounded_binding(context, 256 * 1024)?;
+                bind_ordered(template.authored_body, &[("context", context)])
+            }
             Self::AgentCreator { project_name } => {
                 bounded_binding(project_name, 200)?;
                 bind_ordered(template.authored_body, &[("project_name", project_name)])

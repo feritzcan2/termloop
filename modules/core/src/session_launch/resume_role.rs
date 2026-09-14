@@ -57,6 +57,7 @@ pub(super) fn derive_resumed_mcp_role(
             | "builtin.improver.routine-instructions"
             | "builtin.builder.routine"
             | "builtin.builder.agent"
+            | "builtin.builder.workflow"
             | "builtin.improver.run-configuration"
             | "builtin.improver.run-configuration-new"
             | "builtin.improver.skill-definition"
@@ -70,6 +71,8 @@ pub(super) fn derive_resumed_mcp_role(
                 .as_ref()
                 .filter(|target| {
                     target.is_well_formed()
+                        && (session.process.template_ref.as_deref() == Some("builtin.builder.workflow"))
+                            == (target.target_kind == termloop_domain::ImproverSessionTargetKind::WorkflowDraft)
                         && (session.process.template_ref.as_deref()
                             == Some("builtin.builder.agent"))
                             == (target.target_kind

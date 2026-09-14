@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:83e99608bbc8ab1d4bf0069fda6deb2c660f7656baccfa6980369917acf06934";
+    "sha256:5cdf3cdd75d2074453430904b186e6e3f9a765c6b224d0bbc8c1a2c301b1313e";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -399,6 +399,9 @@ pub const METHODS: &[&str] = &[
     "agent.profileUpdate",
     "agent.profileDelete",
     "agent.profileFavorite",
+    "workflow.creatorPreview",
+    "workflow.creatorLaunch",
+    "workflow.creatorDraftGet",
     "agent.creatorPreview",
     "agent.creatorLaunch",
     "agent.authStatusList",
@@ -2548,6 +2551,8 @@ pub enum ImproverSessionTargetKind {
     SettingsMcpTool,
     #[serde(rename = "agentCreator")]
     AgentCreator,
+    #[serde(rename = "workflowDraft")]
+    WorkflowDraft,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -5780,6 +5785,8 @@ pub enum VersionedConfigurationKind {
     SettingsPrompt,
     #[serde(rename = "settingsMcpTool")]
     SettingsMcpTool,
+    #[serde(rename = "workflowDraft")]
+    WorkflowDraft,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7262,6 +7269,108 @@ pub struct AgentProfileFavoriteParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct WorkflowCreatorDraftGetParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(
+        rename = "workflowId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub workflow_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowCreatorDraftGetResult {
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub proposal: Option<WorkflowProposal>,
+    #[serde(
+        rename = "versionId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub version_id: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowTemplateDraft {
+    pub name: String,
+    #[serde(rename = "coordinatorAgentId")]
+    pub coordinator_agent_id: StewardAgentId,
+    pub model: String,
+    pub permission: AssistantPermission,
+    pub reasoning: String,
+    #[serde(rename = "maxReviewCycles")]
+    pub max_review_cycles: u64,
+    pub steps: Vec<WorkflowStepDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowProposal {
+    #[serde(
+        rename = "sourceGeneration",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub source_generation: Option<u64>,
+    pub workflow: WorkflowTemplateDraft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowCreatorParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    pub model: String,
+    pub permission: String,
+    pub reasoning: String,
+    #[serde(rename = "templateRef")]
+    pub template_ref: String,
+    #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(
+        rename = "workflowId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub workflow_id: Option<String>,
+    #[serde(rename = "taskId", deserialize_with = "deserialize_required_nullable")]
+    pub task_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub draft: Option<WorkflowTemplateDraft>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowCreatorLaunchParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    pub model: String,
+    pub permission: String,
+    pub reasoning: String,
+    #[serde(rename = "templateRef")]
+    pub template_ref: String,
+    #[serde(rename = "launchTicket")]
+    pub launch_ticket: String,
+    #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(
+        rename = "workflowId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub workflow_id: Option<String>,
+    #[serde(rename = "taskId", deserialize_with = "deserialize_required_nullable")]
+    pub task_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub draft: Option<WorkflowTemplateDraft>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AgentCreatorParams {
     #[serde(rename = "projectId")]
     pub project_id: String,
@@ -8351,6 +8460,9 @@ pub type AgentProfileCreateResult = AgentLibraryResult;
 pub type AgentProfileUpdateResult = AgentLibraryResult;
 pub type AgentProfileDeleteResult = AgentLibraryResult;
 pub type AgentProfileFavoriteResult = AgentLibraryResult;
+pub type WorkflowCreatorPreviewParams = WorkflowCreatorParams;
+pub type WorkflowCreatorPreviewResult = QuickActionPreviewResult;
+pub type WorkflowCreatorLaunchResult = SessionDto;
 pub type AgentCreatorPreviewParams = AgentCreatorParams;
 pub type AgentCreatorPreviewResult = QuickActionPreviewResult;
 pub type AgentCreatorLaunchResult = SessionDto;
@@ -8566,6 +8678,9 @@ fn validate_method(value: &Value) -> bool {
             "agent.profileUpdate",
             "agent.profileDelete",
             "agent.profileFavorite",
+            "workflow.creatorPreview",
+            "workflow.creatorLaunch",
+            "workflow.creatorDraftGet",
             "agent.creatorPreview",
             "agent.creatorLaunch",
             "agent.authStatusList",
@@ -13369,6 +13484,7 @@ fn validate_improver_session_target_kind(value: &Value) -> bool {
             "settingsPrompt",
             "settingsMcpTool",
             "agentCreator",
+            "workflowDraft",
         ]
         .contains(&text)
     })
@@ -22320,6 +22436,7 @@ fn validate_versioned_configuration_kind(value: &Value) -> bool {
             "settingsSkill",
             "settingsPrompt",
             "settingsMcpTool",
+            "workflowDraft",
         ]
         .contains(&text)
     })
@@ -26975,6 +27092,317 @@ fn validate_agent_profile_favorite_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_workflow_creator_draft_get_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("workflowId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                    || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "workflowId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workflow_creator_draft_get_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("proposal")
+            .is_some_and(|field| (validate_workflow_proposal(field) || field.is_null()))
+            && object.get("versionId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object.get("summary").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 2048 && text.len() <= 2048)
+            })
+            && object
+                .keys()
+                .all(|key| ["proposal", "versionId", "summary"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workflow_template_draft(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 80
+                    && text.len() <= 80
+                    && contract_pattern_matches("\\S", text)
+            })
+        }) && object
+            .get("coordinatorAgentId")
+            .is_some_and(|field| validate_steward_agent_id(field))
+            && object.get("model").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+            })
+            && object
+                .get("permission")
+                .is_some_and(|field| validate_assistant_permission(field))
+            && object.get("reasoning").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+                })
+            })
+            && object.get("maxReviewCycles").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                        && (number.as_u64().is_some_and(|number| number <= 3_u64))
+                })
+            })
+            && object.get("steps").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 8
+                        && items.iter().all(|item| validate_workflow_step_dto(item))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "name",
+                    "coordinatorAgentId",
+                    "model",
+                    "permission",
+                    "reasoning",
+                    "maxReviewCycles",
+                    "steps",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workflow_proposal(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("sourceGeneration").is_some_and(|field| {
+            (field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            }) || field.is_null())
+        }) && object
+            .get("workflow")
+            .is_some_and(|field| validate_workflow_template_draft(field))
+            && object
+                .keys()
+                .all(|key| ["sourceGeneration", "workflow"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workflow_creator_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("agentId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["claude", "codex"].contains(&text))
+            })
+            && object.get("model").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+            })
+            && object.get("permission").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                })
+            })
+            && object.get("reasoning").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+                })
+            })
+            && object.get("templateRef").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["builtin.builder.workflow"].contains(&text))
+            })
+            && object.get("accountId").is_none_or(|field| {
+                field.as_str().is_some_and(|text| {
+                    contract_pattern_matches(
+                        "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+                        text,
+                    )
+                })
+            })
+            && object.get("workflowId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                    || field.is_null())
+            })
+            && object.get("taskId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object
+                .get("draft")
+                .is_some_and(|field| (validate_workflow_template_draft(field) || field.is_null()))
+            && object.keys().all(|key| {
+                [
+                    "projectId",
+                    "agentId",
+                    "model",
+                    "permission",
+                    "reasoning",
+                    "templateRef",
+                    "accountId",
+                    "workflowId",
+                    "taskId",
+                    "draft",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workflow_creator_launch_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("agentId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["claude", "codex"].contains(&text))
+            })
+            && object.get("model").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+            })
+            && object.get("permission").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                })
+            })
+            && object.get("reasoning").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
+                })
+            })
+            && object.get("templateRef").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| ["builtin.builder.workflow"].contains(&text))
+            })
+            && object.get("launchTicket").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+            })
+            && object.get("accountId").is_none_or(|field| {
+                field.as_str().is_some_and(|text| {
+                    contract_pattern_matches(
+                        "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+                        text,
+                    )
+                })
+            })
+            && object.get("workflowId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                    || field.is_null())
+            })
+            && object.get("taskId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                    || field.is_null())
+            })
+            && object
+                .get("draft")
+                .is_some_and(|field| (validate_workflow_template_draft(field) || field.is_null()))
+            && object.keys().all(|key| {
+                [
+                    "projectId",
+                    "agentId",
+                    "model",
+                    "permission",
+                    "reasoning",
+                    "templateRef",
+                    "launchTicket",
+                    "accountId",
+                    "workflowId",
+                    "taskId",
+                    "draft",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_creator_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -30416,6 +30844,18 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<AgentProfileFavoriteParams>(params.clone()).is_ok()
                 && validate_agent_profile_favorite_params(params)
         }
+        "workflow.creatorPreview" => {
+            serde_json::from_value::<WorkflowCreatorPreviewParams>(params.clone()).is_ok()
+                && validate_workflow_creator_params(params)
+        }
+        "workflow.creatorLaunch" => {
+            serde_json::from_value::<WorkflowCreatorLaunchParams>(params.clone()).is_ok()
+                && validate_workflow_creator_launch_params(params)
+        }
+        "workflow.creatorDraftGet" => {
+            serde_json::from_value::<WorkflowCreatorDraftGetParams>(params.clone()).is_ok()
+                && validate_workflow_creator_draft_get_params(params)
+        }
         "agent.creatorPreview" => {
             serde_json::from_value::<AgentCreatorPreviewParams>(params.clone()).is_ok()
                 && validate_agent_creator_params(params)
@@ -31241,6 +31681,18 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "agent.profileFavorite" => {
             serde_json::from_value::<AgentProfileFavoriteResult>(result.clone()).is_ok()
                 && validate_agent_library_result(result)
+        }
+        "workflow.creatorPreview" => {
+            serde_json::from_value::<WorkflowCreatorPreviewResult>(result.clone()).is_ok()
+                && validate_quick_action_preview_result(result)
+        }
+        "workflow.creatorLaunch" => {
+            serde_json::from_value::<WorkflowCreatorLaunchResult>(result.clone()).is_ok()
+                && validate_session_dto(result)
+        }
+        "workflow.creatorDraftGet" => {
+            serde_json::from_value::<WorkflowCreatorDraftGetResult>(result.clone()).is_ok()
+                && validate_workflow_creator_draft_get_result(result)
         }
         "agent.creatorPreview" => {
             serde_json::from_value::<AgentCreatorPreviewResult>(result.clone()).is_ok()
