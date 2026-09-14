@@ -666,7 +666,6 @@ export function DesktopApp() {
   const [deletingTaskIds, setDeletingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [shellTerminalOccluded, setShellTerminalOccluded] = useState(false);
   const [shellNativeOverlayOpen, setShellNativeOverlayOpen] = useState(false);
-  const [shellNativeOverlaySuppressed, setShellNativeOverlaySuppressed] = useState(false);
   const assistantReads = useMemo(() => new AssistantReadCoordinator(), []);
   const [launchInspection, setLaunchInspection] = useState<{
     title: string;
@@ -697,15 +696,14 @@ export function DesktopApp() {
       }
     }
   }, [projection.runRuntimes]);
-  const nativeOverlayActive = !shellNativeOverlaySuppressed
-    && (shellNativeOverlayOpen || Boolean(launchInspection));
+  const nativeOverlayActive = shellNativeOverlayOpen || Boolean(launchInspection);
   const nativeOverlayWasActive = useRef(false);
   const nativeOverlayContainer = useNativeOverlayWindow(
     terminalRendererKind() === "ghostty",
     nativeOverlayActive,
     nativeOverlayPassiveVisible(
       Boolean(presentation.selectedProjectId),
-      shellNativeOverlaySuppressed,
+      false,
     ),
     desktopApi.nativeOverlaySetVisible,
     desktopApi.nativeOverlaySetPassiveVisible,
@@ -2429,6 +2427,7 @@ export function DesktopApp() {
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);
         await refreshProjection();
+        await settingsComputers.list();
         return result;
       }}
       setConnectionProfileEnabled={async (profileId, enabled) => {

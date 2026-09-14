@@ -544,7 +544,7 @@ export function ConnectionProfilesDialog({
           </select></label>
           {view === "power" && keepAwake && profiles?.find((profile) => profile.id === selectedProfileId)
             ? <ComputerPowerSettings key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={keepAwake} showScope={hasRemoteComputers(profiles)} />
-            : profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
+            : view === "agents" && profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
             ? <AgentConnectionsPanel key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={agentConnections} />
             : <p className="conn-note">Choose an available server from Computers.</p>}
         </>}

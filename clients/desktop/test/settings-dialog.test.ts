@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultNotificationPreferences } from "../src/notification-preferences.js";
 import type { ConnectionProfileSummary, ConnectionSourceSummary } from "../src/connection-profile-types.js";
 import { SettingsDialog } from "../src/renderer/ui/SettingsDialog.js";
+import type { KeepAwakeStatusResult } from "@termloop/contract/current";
 
 type SettingsDialogProps = ComponentProps<typeof SettingsDialog>;
 
@@ -20,6 +21,15 @@ const netcup: ConnectionProfileSummary = {
   persistence: "encrypted",
   state: "offline",
   message: "Version mismatch: server old, desktop new",
+};
+
+const local: ConnectionProfileSummary = {
+  id: "local", name: "MacBook Pro", transport: "local", scope: "local",
+  endpoint: "", enabled: true, persistence: "local", state: "connected",
+};
+const awake: KeepAwakeStatusResult = {
+  mode: "off", keepDisplayAwake: false, state: "inactive", eligibleAgentCount: 0,
+  reason: "modeOff", expiresAtEpochMs: null, limitations: [],
 };
 
 function props(overrides: Partial<SettingsDialogProps> = {}): SettingsDialogProps {
@@ -143,6 +153,75 @@ describe("SettingsDialog", () => {
 
     await act(async () => light?.click());
     expect(changeAppearancePreference).toHaveBeenCalledWith("light");
+  });
+
+  it("shows scope only when there is a remote computer", async () => {
+    const settings = props({ initialPage: "appearance", localComputerName: "MacBook Pro" });
+    await act(async () => root.render(createElement(SettingsDialog, settings)));
+    expect(container.querySelector(".settings-scope-label")).toBeNull();
+    expect(container.querySelector(".settings-nav-group")).toBeNull();
+    await act(async () => root.render(createElement(SettingsDialog, { ...settings, showScope: true })));
+    expect(container.querySelector(".settings-scope-label")?.textContent).toBe("This app · MacBook Pro");
+    expect(container.querySelector(".settings-nav-group")?.textContent).toBe("This app");
+  });
+
+  it("pairs the local computer inside Settings while a remote project is selected", async () => {
+    const prepare = vi.fn(async () => ({ ok: true as const, qrSvg: '<svg data-test="local-qr"></svg>' }));
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "servers", initialProfileId: "netcup", list: async () => [local, netcup],
+      showScope: true, localComputerName: local.name,
+      mobile: {
+        prepare, loadVoiceSettings: async () => ({ configured: false, transcriptionKeywords: "" }),
+        saveVoiceCredentials: vi.fn(),
+      },
+    }))));
+    const cards = [...container.querySelectorAll(".conn-card")];
+    expect(cards[1]?.textContent).not.toContain("Pair phone");
+    const pair = [...cards[0]!.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Pair phone")!;
+    await act(async () => pair.click());
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(container.querySelector(".mobile-connect-settings")?.textContent).toContain("Pair your phone with MacBook Pro");
+    expect(container.querySelector('[data-test="local-qr"]')).not.toBeNull();
+  });
+
+  it("pins power settings to the chosen computer when the active project changes", async () => {
+    const load = vi.fn(async () => awake);
+    const save = vi.fn(async () => awake);
+    const settings = props({
+      initialPage: "servers", initialProfileId: "netcup", list: async () => [local, { ...netcup, state: "connected" }],
+      keepAwake: { load, save, refreshToken: 0 },
+    });
+    await act(async () => root.render(createElement(SettingsDialog, settings)));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conn-toggle button")].find((button) => button.textContent === "Keep Awake")!.click());
+    expect(load).toHaveBeenCalledWith("netcup");
+    expect(container.querySelector(".keep-awake-panel h2")?.textContent).toBe("Keep Netcup awake");
+    await act(async () => root.render(createElement(SettingsDialog, { ...settings, initialProfileId: "local" })));
+    const mode = container.querySelector<HTMLInputElement>('input[value="always"]')!;
+    await act(async () => mode.click());
+    expect(save).toHaveBeenCalledWith("netcup", { mode: "always", keepDisplayAwake: false, durationSeconds: null });
+  });
+
+  it("discards a late power read when explicitly switching computers", async () => {
+    let finishRemote!: (value: KeepAwakeStatusResult) => void;
+    let finishLocal!: (value: KeepAwakeStatusResult) => void;
+    const save = vi.fn(async () => awake);
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "servers", initialProfileId: "netcup", list: async () => [local, { ...netcup, state: "connected" }],
+      keepAwake: {
+        load: (id) => new Promise((resolve) => { if (id === "netcup") finishRemote = resolve; else finishLocal = resolve; }),
+        save, refreshToken: 0,
+      },
+    }))));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conn-toggle button")].find((button) => button.textContent === "Keep Awake")!.click());
+    const select = container.querySelector<HTMLSelectElement>(".agent-server-select select")!;
+    await act(async () => { select.value = "local"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => finishRemote({ ...awake, mode: "always", keepDisplayAwake: true }));
+    expect(container.querySelector<HTMLFieldSetElement>(".keep-awake-body fieldset")?.disabled).toBe(true);
+    await act(async () => finishLocal(awake));
+    expect(container.querySelector<HTMLInputElement>('input[value="off"]')?.checked).toBe(true);
+    await act(async () => container.querySelector<HTMLInputElement>('input[value="always"]')!.click());
+    expect(save).toHaveBeenCalledWith("local", { mode: "always", keepDisplayAwake: false, durationSeconds: null });
   });
 
   it("refreshes only the selected enabled server and preserves live status over a delayed snapshot", async () => {
