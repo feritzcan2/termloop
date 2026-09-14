@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { KeepAwakeStatusResult } from "@termloop/contract/current";
 import {
   KEEP_AWAKE_MODES,
+  keepAwakeModeHint,
   keepAwakeCountdown,
   keepAwakeDurationLabel,
   keepAwakeIsBlocked,
@@ -65,6 +66,14 @@ describe("keep-awake presentation", () => {
     const waiting = status();
     expect(keepAwakeSummary(waiting)).toBe("Waiting for an agent to start.");
     expect(keepAwakeIsEngaged(waiting)).toBe(false);
+  });
+
+  it("names the remote computer in status and mode copy", () => {
+    expect(keepAwakeSummary(status({ mode: "off", reason: "modeOff" }), "Netcup"))
+      .toBe("Not holding Netcup awake.");
+    expect(keepAwakeSummary(status({ mode: "always", state: "active" }), "Netcup"))
+      .toBe("Holding Netcup awake.");
+    expect(keepAwakeModeHint("off", "Netcup")).toBe("Netcup sleeps on its usual schedule.");
   });
 
   it("counts the agents a live hold is being kept for", () => {

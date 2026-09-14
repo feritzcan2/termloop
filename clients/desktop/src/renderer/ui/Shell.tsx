@@ -1821,7 +1821,7 @@ export function Shell(props: ShellProps) {
               remove={props.deleteWorkflowConfiguration}
             /> : stagePage?.kind === "agent" && props.agentLibrary ? (
               props.agentLibrary.value && (!stagePage.id || props.agentLibrary.value.profiles.some((profile) => profile.id === stagePage.id)) ? <AgentProfilePanel
-              scopeContext={settingsScope}
+                scopeContext={settingsScope}
                 key={`${props.selectedProject?.connectionProfileId}:${stagePage.id ?? "new"}:${Boolean(stagePage.duplicate)}`}
                 profile={props.agentLibrary.value.profiles.find((profile) => profile.id === stagePage.id)}
                 duplicate={Boolean(stagePage.duplicate)}
