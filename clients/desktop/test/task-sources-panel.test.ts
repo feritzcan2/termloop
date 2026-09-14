@@ -173,6 +173,7 @@ describe("Task Sources panel", () => {
   let root: Root;
 
   beforeEach(() => {
+    window.localStorage.clear();
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -181,6 +182,7 @@ describe("Task Sources panel", () => {
 
   afterEach(async () => {
     await act(async () => root.unmount());
+    window.localStorage.clear();
     host.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
@@ -491,6 +493,107 @@ describe("Task Sources panel", () => {
     expect(host.querySelector('[aria-label="Import ACME-1 as Task"]')).toBeNull();
   });
 
+  it("restores every import option after cancel, panel remount, and a successful import without changing Project defaults", async () => {
+    const api = actions({
+      sources: [source()],
+      candidates: [candidate(), candidate({ externalId: "2", key: "ACME-2" })],
+    });
+    const capabilities = { agentCapabilities: [fullAgentCapability("claude"), fullAgentCapability("codex")] };
+    const open = (key = "ACME-1") => act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>(`[data-candidate-key="${key}"] button`)]
+        .find((button) => button.textContent === "Import as Task")!.click();
+    });
+    const clickOption = (id: string) => act(async () => { host.querySelector<HTMLInputElement>(`#task-candidate-import-${id}`)!.click(); });
+    const assertRestored = () => {
+      expect(host.querySelector<HTMLInputElement>("#task-candidate-import-worktree")!.checked).toBe(true);
+      expect(host.querySelector<HTMLInputElement>("#task-candidate-import-start-agent")!.checked).toBe(true);
+      expect(host.querySelector<HTMLInputElement>("#task-candidate-import-start-workflow")!.checked).toBe(false);
+      expect(host.querySelector<HTMLInputElement>("#task-candidate-import-kickoff-enabled")!.checked).toBe(true);
+      for (const [field, expected] of Object.entries({
+        "base-ref": "refs/remotes/origin/main",
+        "worktree-prefix": "feature",
+        agent: "codex",
+        model: "gpt-6-astra",
+        permission: "plan",
+        reasoning: "xhigh",
+        "kickoff-message": "Implement this Task and run focused tests.",
+      })) {
+        expect(host.querySelector<HTMLInputElement>(`#task-candidate-import-${field}`)!.value).toBe(expected);
+      }
+    };
+
+    await render(api, capabilities);
+    await flush();
+    await open();
+    await clickOption("start-agent");
+    await setInput("task-candidate-import-base-ref", "refs/remotes/origin/main");
+    await setInput("task-candidate-import-worktree-prefix", "feature");
+    await setInput("task-candidate-import-agent", "codex");
+    await setInput("task-candidate-import-model", "gpt-6-astra");
+    await setInput("task-candidate-import-permission", "plan");
+    await setInput("task-candidate-import-reasoning", "xhigh");
+    await clickOption("kickoff-enabled");
+    await setInput("task-candidate-import-kickoff-message", "Implement this Task and run focused tests.");
+    await act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>(".task-candidate-import-options button")]
+        .find((button) => button.textContent === "Cancel")!.click();
+    });
+    await open();
+    assertRestored();
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render(api, capabilities);
+    await flush();
+    await open();
+    assertRestored();
+    expect(api.calls.some((call) => call.startsWith("import:") || call.startsWith("automationSet:"))).toBe(false);
+    await act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>(".task-candidate-import-options button")]
+        .find((button) => button.textContent === "Create Task")!.click();
+    });
+    await flush();
+    await open("ACME-2");
+    assertRestored();
+    expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual([
+      "import:10001:3:7:10:provision:feature:refs/remotes/origin/main:codex:gpt-6-astra:plan:xhigh:message",
+    ]);
+    expect(api.calls.some((call) => call.startsWith("automationSet:"))).toBe(false);
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render(actions({ sources: [source()], candidates: [candidate()] }), { ...capabilities, projectId: "project-2" });
+    await flush();
+    await open();
+    expect(host.querySelector<HTMLInputElement>("#task-candidate-import-worktree")!.checked).toBe(false);
+    expect(host.querySelector<HTMLInputElement>("#task-candidate-import-start-agent")!.checked).toBe(false);
+  });
+
+  it("restores a workflow after remount and keeps an unavailable remembered template blocked", async () => {
+    const api = actions({ sources: [source()], candidates: [candidate()] });
+    const workflowConfigurations = [workflowConfiguration(), workflowConfiguration({ id: "workflow-2", name: "Review only" })];
+    const open = () => act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Import as Task")!.click();
+    });
+    await render(api, { workflowConfigurations });
+    await flush();
+    await open();
+    await act(async () => { host.querySelector<HTMLInputElement>("#task-candidate-import-start-workflow")!.click(); });
+    await setInput("task-candidate-import-workflow", "workflow-2");
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render(api, { workflowConfigurations });
+    await flush();
+    await open();
+    expect(host.querySelector<HTMLSelectElement>("#task-candidate-import-workflow")!.value).toBe("workflow-2");
+    expect(host.querySelector<HTMLInputElement>("#task-candidate-import-start-agent")!.checked).toBe(false);
+
+    await render(api, { workflowConfigurations: [workflowConfigurations[0]!] });
+    expect(host.querySelector<HTMLSelectElement>("#task-candidate-import-workflow")!.value).toBe("workflow-2");
+    expect([...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Create Task")!.disabled).toBe(true);
+    expect(api.calls.some((call) => call.startsWith("import:") || call.startsWith("automationSet:"))).toBe(false);
+  });
+
   it("sends an explicit none when the confirmation clears the worktree, and sends nothing when it is cancelled", async () => {
     const api = actions({
       sources: [source()],
@@ -529,6 +632,8 @@ describe("Task Sources panel", () => {
     // Cancel closes the confirmation without a second command.
     api.calls.length = 0;
     await openConfirmation("ACME-2");
+    expect(host.querySelector<HTMLInputElement>("#task-candidate-import-worktree")!.checked).toBe(false);
+    expect(host.querySelector<HTMLInputElement>("#task-candidate-import-start-agent")!.checked).toBe(false);
     await act(async () => {
       ([...host.querySelectorAll(".task-candidate-import-options button")].find((button) => button.textContent === "Cancel") as HTMLButtonElement).click();
     });
