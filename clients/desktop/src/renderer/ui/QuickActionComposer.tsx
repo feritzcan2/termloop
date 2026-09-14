@@ -98,16 +98,19 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   const [accountChoices, setAccountChoices] = useState<{ projectId: string; accounts: AgentAccountDto[] }>();
   const [selectedAccount, setSelectedAccount] = useState<{ projectId: string; agentId: string; accountId: string }>();
   const [accountError, setAccountError] = useState<string>();
+  const [accountReload, setAccountReload] = useState(0);
   const accounts = accountChoices?.projectId === projectId ? accountChoices.accounts.filter((account) => account.agentId === agentId) : [];
-  const accountId = (selectedAccount?.projectId === projectId && selectedAccount.agentId === agentId ? accounts.find((account) => account.accountId === selectedAccount.accountId)?.accountId : undefined) ?? accounts.find((account) => account.isDefault)?.accountId;
-  const accountsReady = !loadAccounts || (accountChoices?.projectId === projectId && (!['codex', 'claude'].includes(agentId) || Boolean(accountId)));
+  // The daemon resolves its configured default unless the user selects an account.
+  // An unavailable metadata read must never become a launch prerequisite.
+  const accountId = selectedAccount?.projectId === projectId && selectedAccount.agentId === agentId
+    ? selectedAccount.accountId : undefined;
   useEffect(() => {
     if (!loadAccounts || !projectId) return;
     let live = true;
     setAccountError(undefined);
     void loadAccounts(projectId).then((accounts) => { if (live) setAccountChoices({ projectId, accounts }); }).catch((cause) => { if (live) setAccountError(cause instanceof Error ? cause.message : "Could not load server accounts"); });
     return () => { live = false; };
-  }, [loadAccounts, projectId]);
+  }, [accountReload, loadAccounts, projectId]);
   const [model, setModel] = useState(() => initialPreset?.model && initialCapability?.models.includes(initialPreset.model)
     ? initialPreset.model : "default");
   const [permission, setPermission] = useState<Permission>(initialPreset?.permission
@@ -175,7 +178,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     setPreviewResult(undefined);
   }, [agentId, capabilityByAgent, memory.presets, selectedProfile]);
   useEffect(() => {
-    if (!projectId || !prompt || !attachmentReady || !accountsReady || profileUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
+    if (!projectId || !prompt || !attachmentReady || profileUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
     let live = true;
     const timer = window.setTimeout(() => {
       void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)
@@ -186,11 +189,11 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
         .catch((cause) => { if (live) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [accountId, accountsReady, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, templateRef]);
+  }, [accountId, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, templateRef]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectId || !prompt || !attachmentReady || !accountsReady || running || profileUnavailable) return;
+    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable) return;
     setRunning(true);
     try {
       const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId));
@@ -304,10 +307,11 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
         </div>
         {loadAccounts && ['codex', 'claude'].includes(agentId) ? <div className="quick-action-account">
           <label htmlFor="quick-action-account">Account</label>
-          <select id="quick-action-account" value={accountId ?? ""} disabled={!accountsReady || running} onChange={(event) => setSelectedAccount({ projectId, agentId, accountId: event.target.value })}>
-            {!accountsReady ? <option value="">Loading server accounts…</option> : accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}{account.isDefault ? " · Server default" : ""}</option>)}
+          <select id="quick-action-account" value={accountId ?? ""} disabled={running} onChange={(event) => setSelectedAccount(event.target.value ? { projectId, agentId, accountId: event.target.value } : undefined)}>
+            <option value="">Server default</option>
+            {accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}{account.isDefault ? " · Server default" : ""}</option>)}
           </select><small>Manage accounts in Settings → Servers</small>
-          {accountError ? <p role="alert">{accountError}</p> : null}
+          {accountError ? <p role="status">Accounts could not be loaded. You can still run with {accountId ? "the selected account" : "the server default"}. <button type="button" aria-label="Retry loading accounts" onClick={() => setAccountReload((value) => value + 1)}>Retry</button></p> : null}
         </div> : null}
         <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachment ? 1 : 0}</strong><small>· project</small><i /> <em>{attachment ? "1 image attachment ·" : "No project rules ·"}</em><b>Advanced</b></button>
         {advancedOpen || error || profileUnavailable ? <section className="quick-action-preview">
