@@ -1103,6 +1103,15 @@ async fn reconcile_agent_runtime_signals(
                     .map_err(|error| (error, "failed to record current Codex thread settings")),
                     ProjectionTopic::Session,
                 ),
+                termloop_core::AgentRuntimeEvent::ThreadNameObserved(observation) => (
+                    core.record_codex_thread_name(
+                        &event.session_id,
+                        event.runtime_epoch,
+                        observation,
+                    )
+                    .map_err(|error| (error, "failed to record current Codex thread name")),
+                    ProjectionTopic::Session,
+                ),
                 termloop_core::AgentRuntimeEvent::PlanUpdated(plan) => (
                     core.record_app_server_plan(
                         &event.session_id,

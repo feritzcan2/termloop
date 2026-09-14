@@ -6,6 +6,7 @@ pub use account_context::AgentAccountContext;
 mod catalog;
 mod claude_transcript;
 mod codex_history;
+mod codex_name;
 mod codex_settings;
 mod provider_hooks;
 mod provider_observation;
@@ -25,6 +26,8 @@ pub use codex_history::{
     CodexThreadHistoryRepairError, inspect_codex_thread_history, probe_codex_thread_history,
     repair_codex_thread_history,
 };
+pub use codex_name::CodexThreadNameObservation;
+use codex_name::normalize_codex_thread_name;
 pub use codex_settings::{
     CodexPermissionMode, CodexThreadSettingsObservation, normalize_codex_thread_settings,
 };
@@ -128,6 +131,7 @@ pub enum AgentRuntimeEvent {
     Observation(AgentSignal),
     ResumeRefObserved(ResumeRef),
     ThreadSettingsObserved(CodexThreadSettingsObservation),
+    ThreadNameObserved(CodexThreadNameObservation),
     PlanUpdated(AgentPlan),
 }
 
@@ -1085,14 +1089,11 @@ impl CodexAppServerThreadScope {
         self.native_thread_id = Some(resume_ref.native_session_id.clone());
     }
 
-    fn admits_notification(&mut self, raw: &str) -> bool {
-        let Ok(message) = serde_json::from_str::<serde_json::Value>(raw) else {
-            return true;
-        };
+    fn admits_notification(&mut self, message: &serde_json::Value) -> bool {
         let Some(method) = message.get("method").and_then(serde_json::Value::as_str) else {
             return true;
         };
-        let Some(native_thread_id) = codex_app_server_message_thread_id(&message) else {
+        let Some(native_thread_id) = codex_app_server_message_thread_id(message) else {
             // Older App Server notifications do not always carry a thread ID.
             // Preserve their existing behavior because they cannot be scoped.
             return true;
@@ -1232,7 +1233,14 @@ async fn proxy_codex_connection(
                 Some(Ok(message)) => {
                     if let Message::Text(text) = &message {
                         thread_scope.observe_upstream_response(text);
-                        let notification_is_in_scope = thread_scope.admits_notification(text);
+                        let (notification_is_in_scope, thread_name) = match serde_json::from_str::<serde_json::Value>(text) {
+                            Ok(notification) => {
+                                let in_scope = thread_scope.admits_notification(&notification);
+                                let name = in_scope.then(|| normalize_codex_thread_name(&notification)).flatten();
+                                (in_scope, name)
+                            }
+                            Err(_) => (true, None),
+                        };
                         if let Some(resume_ref) = normalize_codex_thread_resume_response(
                             text,
                             &mut pending_thread_resumes,
@@ -1272,6 +1280,13 @@ async fn proxy_codex_connection(
                                     session_id: session_id.clone(),
                                     runtime_epoch,
                                     event: AgentRuntimeEvent::ThreadSettingsObserved(settings),
+                                });
+                            }
+                            if let Some(name) = thread_name {
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::ThreadNameObserved(name),
                                 });
                             }
                         }
@@ -2456,6 +2471,7 @@ mod tests {
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let upstream_endpoint = format!("ws://{}", listener.local_addr().unwrap());
+        let renamed = r#"{"method":"thread/name/updated","params":{"threadId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","threadName":"steward için 🦀"}}"#;
         let upstream = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             let mut socket = accept(stream).unwrap();
@@ -2475,6 +2491,7 @@ mod tests {
                     r#"{"method":"thread/settings/updated","params":{"threadId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","threadSettings":{"approvalPolicy":"never","approvalsReviewer":"user","sandboxPolicy":{"type":"dangerFullAccess"},"activePermissionProfile":{"id":":danger-full-access","extends":null},"model":"gpt-5.6-terra","effort":"xhigh"}}}"#.into(),
                 ))
                 .unwrap();
+            socket.send(Message::Text(renamed.into())).unwrap();
             let _ = socket.close(None);
         });
         let (signals, received) = std::sync::mpsc::channel();
@@ -2486,6 +2503,7 @@ mod tests {
         assert!(matches!(client.read().unwrap(), Message::Text(_)));
         assert!(matches!(client.read().unwrap(), Message::Text(_)));
         assert!(matches!(client.read().unwrap(), Message::Text(_)));
+        assert_eq!(client.read().unwrap(), Message::Text(renamed.into()));
         assert_eq!(
             received.recv_timeout(Duration::from_secs(2)).unwrap(),
             AgentRuntimeSignal {
@@ -2529,6 +2547,17 @@ mod tests {
                 },),
             }
         );
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(2)).unwrap(),
+            AgentRuntimeSignal {
+                session_id: "session-codex".into(),
+                runtime_epoch: 77,
+                event: AgentRuntimeEvent::ThreadNameObserved(CodexThreadNameObservation {
+                    native_thread_id: "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035".into(),
+                    name: Some("steward için 🦀".into()),
+                }),
+            }
+        );
         drop(client);
         bridge.shutdown().unwrap();
         upstream.join().unwrap();
@@ -2544,6 +2573,7 @@ mod tests {
             r#"{"id":42,"method":"thread/resume","params":{"threadId":"thread-main"}}"#;
         let resume_response = r#"{"id":42,"result":{"thread":{"id":"thread-main"}}}"#;
         let history_probe_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-history-probe","status":{"type":"notLoaded"}}}"#;
+        let unrelated_name = r#"{"method":"thread/name/updated","params":{"threadId":"thread-history-probe","threadName":"Unrelated name"}}"#;
         let main_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-main","status":{"type":"idle"}}}"#;
         let upstream = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
@@ -2553,6 +2583,7 @@ mod tests {
             socket
                 .send(Message::Text(history_probe_status.into()))
                 .unwrap();
+            socket.send(Message::Text(unrelated_name.into())).unwrap();
             socket.send(Message::Text(main_status.into())).unwrap();
             let _ = socket.close(None);
         });
@@ -2570,6 +2601,7 @@ mod tests {
             client.read().unwrap(),
             Message::Text(history_probe_status.into())
         );
+        assert_eq!(client.read().unwrap(), Message::Text(unrelated_name.into()));
         assert_eq!(client.read().unwrap(), Message::Text(main_status.into()));
 
         assert_eq!(
