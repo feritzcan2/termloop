@@ -1,0 +1,44 @@
+.changes-overlay.files-overlay { grid-template-rows: auto minmax(0, 1fr); }
+.files-eyebrow { color: var(--text-muted); font-size: 9px; font-weight: 650; letter-spacing: .1em; }
+.files-subject { color: var(--text-secondary); font-weight: 450; }
+.files-rail { padding-bottom: 12px; }
+.files-search-toolbar { display: flex; align-items: center; gap: 5px; }
+.files-search-toolbar .rail-search { flex: 1; }
+.files-search-status { margin: 0 5px 5px; color: var(--text-muted); font-size: 10px; }
+.files-search-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; margin: 5px 0; color: var(--text-muted); font-size: 10px; }
+.files-search-tree .files-tree-entry { height: auto; min-height: 40px; }
+.files-search-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.files-search-tree .files-search-label small { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-root-picker { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.files-root-picker > svg { width: 14px; height: 14px; flex: none; color: var(--text-muted); }
+.files-root-picker select { width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-raised); color: var(--text-secondary); font: 11px var(--font-ui); text-overflow: ellipsis; }
+.files-tree-entry { display: flex; align-items: center; gap: 6px; width: 100%; height: 29px; border: 0; border-radius: 0; padding-right: 10px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 11px; }
+.files-tree-entry:hover { background: var(--hover); }
+.files-tree-entry.selected { background: var(--accent-wash); color: var(--accent-strong); }
+.files-tree-entry:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+.files-tree-entry > svg { width: 14px; height: 14px; flex: none; }
+.files-tree-chevron { display: flex; width: 10px; flex: none; transform: rotate(-90deg); }
+.files-tree-chevron.expanded { transform: none; }
+.files-tree-chevron svg { width: 10px; height: 10px; }
+.files-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-tree-entry small { margin-left: auto; color: var(--text-muted); font-size: 9px; }
+.files-tree-message { margin: 5px 10px; color: var(--text-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.files-tree-message.error { color: var(--danger); }
+.files-preview { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.files-preview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; padding: 8px 16px; border-bottom: 1px solid var(--border); font: 11px var(--font-mono); }
+.files-preview > header > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-preview > header small { flex: none; color: var(--text-muted); font: 10px var(--font-ui); }
+.files-preview-path { display: flex; align-items: center; gap: 8px; }
+.files-preview-path > svg { width: 16px; height: 16px; flex: none; }
+.files-code-preview { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; min-width: 0; }
+.files-color-note { margin: 0; padding: 6px 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 10px; }
+.files-preview-message { margin: 28px; color: var(--text-secondary); line-height: 1.6; }
+.files-preview-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; padding: 24px; color: var(--text-muted); text-align: center; }
+.files-preview-empty > svg { width: 30px; height: 30px; margin-bottom: 8px; opacity: .6; }
+.files-preview-empty h2 { margin: 0; font-size: 15px; color: var(--text-secondary); }
+.files-preview-empty p { margin: 0; font-size: 12px; }
+.files-source { margin: 0; padding: 12px 0; overflow: auto; min-width: 0; min-height: 0; font: 12px/1.65 var(--font-mono); tab-size: 4; }
+.files-source-line { display: flex; min-height: 1.65em; }
+.files-source-line > span:last-child { padding-right: 20px; }
+.files-line-number { flex: none; width: 60px; padding-right: 18px; color: var(--text-muted); opacity: .7; text-align: right; user-select: none; }
+@media (max-width: 850px) { .files-preview > header small { display: none; } }
