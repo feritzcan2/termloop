@@ -2423,6 +2423,7 @@ export function DesktopApp() {
       errorLog={projection.errorLog}
       clearErrorLog={() => projectionStore.clearErrorLog()}
       prepareMobileAccess={desktopApi.mobileAccessPairing}
+      prepareRemoteMobileAccess={desktopApi.remoteMobileAccessPairing}
       loadVoiceSettings={localSourceApi.voiceSettingsGet}
       saveVoiceCredentials={localSourceApi.voiceCredentialsSet}
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}

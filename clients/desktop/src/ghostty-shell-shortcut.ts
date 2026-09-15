@@ -3,6 +3,7 @@ export type GhosttyShellShortcut =
   | "quickAction"
   | "commandPalette"
   | "newTerminal"
+  | "renameSession"
   | "focusPreviousPane"
   | "focusNextPane"
   | "project.1"
@@ -20,6 +21,7 @@ const GHOSTTY_SHELL_SHORTCUTS: ReadonlySet<string> = new Set([
   "quickAction",
   "commandPalette",
   "newTerminal",
+  "renameSession",
   "focusPreviousPane",
   "focusNextPane",
   ...Array.from({ length: 9 }, (_, index) => `project.${index + 1}`),

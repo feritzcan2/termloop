@@ -1,14 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:04.405
-Open the changed files in the Project.
+00:00:00.000 --> 00:00:01.700 line:5%
+See the full file.
 
 2
-00:00:04.405 --> 00:00:10.965
-Use Full file and Split to compare code with its context.
+00:00:01.700 --> 00:00:03.400 line:5%
+Compare side by side.
 
 3
-00:00:10.965 --> 00:00:24.200
-Mark files reviewed and revisit them from the reviewed list.
-
+00:00:03.400 --> 00:00:05.000 line:5%
+Mark it reviewed.

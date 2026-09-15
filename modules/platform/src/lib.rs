@@ -221,6 +221,26 @@ pub mod test_support {
         }
     }
 
+    /// Runs a fixture script under a real shell that stays alive for PTY tests.
+    /// Unix bodies must keep the process alive themselves (for example, read).
+    pub fn persistent_shell_fixture(
+        directory: &Path,
+        name: &str,
+        unix_body: &str,
+        windows_body: &str,
+    ) -> Result<(String, Vec<String>), PlatformError> {
+        let script = write_cli_fixture(directory, name, unix_body, windows_body)?;
+        let path = script.display().to_string();
+        if cfg!(windows) {
+            Ok((
+                "cmd.exe".into(),
+                vec!["/D".into(), "/Q".into(), "/K".into(), path],
+            ))
+        } else {
+            Ok(("/bin/sh".into(), vec![path]))
+        }
+    }
+
     /// Creates an executable-looking but unusable CLI where the host has a
     /// POSIX execute-bit model. Windows has no equivalent fixture here.
     pub fn write_unusable_cli_fixture(directory: &Path, name: &str) -> bool {

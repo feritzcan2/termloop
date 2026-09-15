@@ -82,7 +82,16 @@ class TimeMap:
         return '+'.join(terms)
 
 
-def filters_for(timing, clicks, source_end, remove_capture_cursor=False):
+def crop_filter(crop):
+    if not isinstance(crop, list) or len(crop) != 4 or any(type(n) is not int for n in crop):
+        raise ValueError('Crop must contain integer x, y, width, height')
+    x, y, w, h = crop
+    if min(x, y) < 0 or min(w, h) <= 0 or x+w > 1920 or y+h > 1080 or w*9 != h*16:
+        raise ValueError('Crop must stay within the source at 16:9')
+    return f'crop={w}:{h}:{x}:{y},scale=1920:1080:flags=lanczos,setsar=1'
+
+
+def filters_for(timing, clicks, source_end, remove_capture_cursor=False, crop=None):
     # Remove the recorder's stationary coordinate cursor from an empty corner.
     cleanup = 'delogo=x=1558:y=940:w=66:h=47:show=0,' if remove_capture_cursor else ''
     filters = [f"[0:v]{cleanup}trim=end={source_end},setpts=PTS-STARTPTS,setpts='({timing.expression()})/TB',fps={FPS},format=yuv420p[retimed]"]
@@ -105,7 +114,8 @@ def filters_for(timing, clicks, source_end, remove_capture_cursor=False):
             f"setpts=PTS-STARTPTS+{max(0,time-.04):.9f}/TB[click{i}]")
         filters.append(f'[{previous}][click{i}]overlay={click["x"]-64}:{click["y"]-64}:eof_action=pass:repeatlast=0[v{i}]')
         previous = f'v{i}'
-    filters.append(f'[{previous}]format=yuv420p[final]')
+    framing = crop_filter(crop) + ',' if crop else ''
+    filters.append(f'[{previous}]{framing}format=yuv420p[final]')
     return ';\n'.join(filters)+'\n'
 
 
@@ -215,6 +225,9 @@ def join_edits(feature, edit, output):
 
 
 def render(feature, edit, recordings, output=OUTPUT):
+    if edit.get('shots'):
+        from render_shots import render_shots
+        return render_shots(feature, edit, recordings, output, ROOT, probe, stamp, crop_filter)
     if edit.get('segments'):
         return join_edits(feature, edit, output)
     if edit.get('archiveSource'):
@@ -235,7 +248,7 @@ def render(feature, edit, recordings, output=OUTPUT):
     target = output / feature['id']
     with tempfile.TemporaryDirectory(prefix='termloop-retime-') as temporary:
         graph = Path(temporary)/'retime.ffmpeg'
-        graph.write_text(filters_for(timing, clicks, end, edit.get('removeCaptureCursor', False)))
+        graph.write_text(filters_for(timing, clicks, end, edit.get('removeCaptureCursor', False), edit.get('crop')))
         staged = Path(temporary)/'demo.mp4'
         subprocess.run(['ffmpeg','-v','error','-y','-i',str(source),
             '-filter_complex_script',str(graph),'-map','[final]','-an',
@@ -261,7 +274,10 @@ def render(feature, edit, recordings, output=OUTPUT):
         'sourceSha256':edit['sourceSha256'], 'sourceSeconds':source_duration,
         'sourceFps':source_fps, 'sourceCoverage':[0,end], 'speedMap':timing.spans,
         'clicks':clicks, 'sha256':hashlib.sha256(target.with_suffix('.mp4').read_bytes()).hexdigest(),
-        'editing':'Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights.'}
+        'crop': edit.get('crop'),
+        'editing':'Continuous source interval; smooth speed ramps; click ripples. '+
+            ('Fixed close-up of the sidebar; ' if edit.get('crop') else 'Full window; ')+
+            'no interior cuts, added caption panels or terminal highlights.'}
     target.with_suffix('.json').write_text(json.dumps(report,indent=2)+'\n')
     print(f'{feature["id"]}: {duration:.2f}s, 1920×1080, {FPS} fps, {len(clicks)} clicks', flush=True)
 
@@ -274,7 +290,9 @@ def main():
     catalog = json.loads((ROOT/'tools/marketing/catalog.json').read_text())
     edits = json.loads((ROOT/'tools/marketing/edits.json').read_text())
     selected = [f for f in catalog if not args.only or f['id'] in args.only]
-    if args.recordings is None and any(not (edits[f['id']].get('archiveSource') or edits[f['id']].get('segments')) for f in selected):
+    if args.recordings is None and any(
+            any(s['root'] == 'recordings' for s in edits[f['id']]['sources']) if edits[f['id']].get('shots')
+            else not (edits[f['id']].get('archiveSource') or edits[f['id']].get('segments')) for f in selected):
         parser.error('Pass --recordings or set TERMLOOP_MARKETING_RECORDINGS')
     for feature in selected:
         render(feature, edits[feature['id']], Path(args.recordings) if args.recordings else None)

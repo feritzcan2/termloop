@@ -51,6 +51,22 @@ describe("keyboard command surface", () => {
     expect(showsWindowDragRegion("linux")).toBe(false);
   });
 
+  it("renames with Cmd+R on macOS and rejects conflicting modifiers", () => {
+    expect(shortcutLabel("renameSession", "mac")).toBe("⌘R");
+    expect(matchesShellShortcut(key("mac", "KeyR"), "renameSession", "mac")).toBe(true);
+    for (const modifiers of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true }, { metaKey: false }]) {
+      expect(matchesShellShortcut(key("mac", "KeyR", modifiers), "renameSession", "mac")).toBe(false);
+    }
+    expect(nativeShellCommandId("renameSession")).toBe("renameSession");
+  });
+
+  it.each(["windows", "linux"] as const)("preserves Ctrl+R terminal history search on %s", (platform) => {
+    expect(shortcutLabel("renameSession", platform)).toBe("Ctrl+Shift+R");
+    expect(matchesShellShortcut(key(platform, "KeyR"), "renameSession", platform)).toBe(false);
+    expect(matchesShellShortcut(key(platform, "KeyR", { shiftKey: true }), "renameSession", platform)).toBe(true);
+    expect(matchesShellShortcut(key(platform, "KeyR", { shiftKey: true, altKey: true }), "renameSession", platform)).toBe(false);
+  });
+
   it("rejects partial and extra-modifier conflicts so terminal input is not captured", () => {
     expect(matchesShellShortcut(key("mac", "KeyT"), "newTerminal", "mac")).toBe(true);
     expect(matchesShellShortcut(key("mac", "KeyT", { shiftKey: true }), "newTerminal", "mac")).toBe(false);

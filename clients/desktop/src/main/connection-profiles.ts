@@ -21,6 +21,7 @@ import {
 } from "../platform/connection-profile-storage.js";
 import { localDeviceName } from "../platform/device-name.js";
 import { managedIdentityPaths } from "../platform/ssh-setup-connection.js";
+import type { SshTunnelRequest } from "../platform/ssh-runtime.js";
 import { secureCredentialStorageAvailable } from "../platform/secure-storage.js";
 import { accessEndpoint, tailscaleAccessBaseUrl } from "./transports/tailscale.js";
 import { SshTransportManager } from "./transports/ssh.js";
@@ -269,6 +270,15 @@ export class ConnectionProfileStore {
     };
   }
 
+  async mobileAccessSshConnection(profileId: string): Promise<SshTunnelRequest> {
+    await this.#load();
+    if (!this.#isEnabled(profileId)) throw new Error("Enable this server before connecting your phone.");
+    const profile = this.#sessionProfiles.get(profileId) ?? this.#stored.profiles.find((item) => item.id === profileId);
+    if (!profile || profile.transport.kind !== "ssh") throw new Error("Mobile setup requires a saved SSH server connection.");
+    if (profile.scope !== "full") throw new Error("Mobile setup requires full access to this server.");
+    return this.#sshRequest(profile.transport);
+  }
+
   async enabledSourceIds(): Promise<string[]> {
     await this.#load();
     return ["local", ...this.#stored.enabledProfileIds, ...this.#enabledSessionProfileIds];
@@ -298,13 +308,17 @@ export class ConnectionProfileStore {
 
   async #transportBaseUrl(profileId: string, transport: ConnectionTransportInput): Promise<string> {
     if (transport.kind === "tailscale") return tailscaleAccessBaseUrl(transport.baseUrl);
-    return this.#ssh.baseUrl(profileId, {
+    return this.#ssh.baseUrl(profileId, this.#sshRequest(transport));
+  }
+
+  #sshRequest(transport: Extract<ConnectionTransportInput, { kind: "ssh" }>): SshTunnelRequest {
+    return {
       host: transport.host,
       ...(transport.user ? { user: transport.user } : {}),
       remotePort: transport.remotePort,
       ...(transport.sshPort !== undefined ? { sshPort: transport.sshPort } : {}),
       ...(transport.managedIdentity ? managedIdentityPaths(app.getPath("userData"), transport.managedIdentity) : {}),
-    });
+    };
   }
 
   async #load(): Promise<void> {

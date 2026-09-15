@@ -69,6 +69,10 @@ export async function prepareMobileAccessQr(
   if (!code || code.length > 8 * 1024) {
     throw new Error("Mobile Access did not produce a valid pairing code.");
   }
+  return mobilePairingQr(code);
+}
+
+export async function mobilePairingQr(code: string): Promise<string> {
   const svg = await QRCode.toString(code, {
     type: "svg",
     errorCorrectionLevel: "L",
@@ -132,7 +136,11 @@ export async function publishMobileAgentGroups(
 export async function publishMobileNotificationPreferences(
   preferences: Pick<NotificationPreferences, "mobile" | "watch">,
   stateRoot = mobileAccessStateRoot(),
+  context: { developmentProfileTag?: string | undefined; smoke?: boolean } = {},
 ): Promise<number> {
+  // Isolated desktops share this host's enrolled gateway, but their private
+  // defaults must never replace the primary desktop's notification choices.
+  if (context.developmentProfileTag || context.smoke) return 0;
   const source = `${JSON.stringify({
     version: 1,
     mobile: preferences.mobile,

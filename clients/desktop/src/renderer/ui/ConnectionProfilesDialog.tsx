@@ -1,5 +1,7 @@
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { SshSetupWizard } from "./SshSetupWizard.js";
+import { MobilePairingPanel } from "./MobilePairingPanel.js";
+import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
@@ -22,7 +24,7 @@ type Message = {
   text: string;
   placement?: MessagePlacement;
 };
-type View = "connect" | "agents" | "share" | "power";
+type View = "connect" | "agents" | "share" | "power" | "mobile";
 type Tone = "ok" | "warn" | "danger" | "idle";
 
 const DISCOVERY_REFRESH_MS = 10_000;
@@ -33,6 +35,7 @@ export type ConnectionProfilesDialogProps = {
   initialProfileId?: string | undefined;
   keepAwake?: KeepAwakeActions | undefined;
   pairPhone?: (() => void) | undefined;
+  prepareRemoteMobileAccess?: ((profileId: string) => Promise<MobileAccessPairingResult>) | undefined;
   close(): void;
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   disableHost(): Promise<RemoteHostStatus>;
@@ -52,6 +55,7 @@ export function ConnectionProfilesDialog({
   agentConnections,
   keepAwake,
   pairPhone,
+  prepareRemoteMobileAccess,
   initialProfileId = "local",
   close,
   connect,
@@ -337,6 +341,11 @@ export function ConnectionProfilesDialog({
           {agentConnections ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("agents"); }}>Manage agents</button> : null}
           {keepAwake ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("power"); }}>Keep Awake</button> : null}
           {isLocal && pairPhone ? <button type="button" className="conn-manage" onClick={pairPhone}>Pair phone</button> : null}
+          {profile.transport === "ssh" && prepareRemoteMobileAccess ? <button
+            type="button" className="conn-manage"
+            disabled={!profile.enabled || profile.scope === "readOnly"}
+            onClick={() => { setSelectedProfileId(profile.id); setView("mobile"); }}
+          >Connect Mobile</button> : null}
           {isLocal ? <span className="conn-always">Always on</span> : (
             <>
               <button
@@ -534,6 +543,7 @@ export function ConnectionProfilesDialog({
         <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Computers</button>
         {agentConnections ? <button type="button" aria-pressed={view === "agents"} className={view === "agents" ? "active" : ""} onClick={() => setView("agents")}>Agent accounts</button> : null}
         {keepAwake ? <button type="button" aria-pressed={view === "power"} className={view === "power" ? "active" : ""} onClick={() => setView("power")}>Keep Awake</button> : null}
+        {view === "mobile" ? <button type="button" aria-pressed="true" className="active">Connect Mobile</button> : null}
         <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>
       </div>
 
@@ -542,7 +552,9 @@ export function ConnectionProfilesDialog({
           <label className="conn-field agent-server-select"><span>Computer</span><select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
             {profiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.transport === "local" ? "" : ` · ${transportLabel(profile.transport)}`}{profile.state === "offline" ? " · Offline" : ""}</option>)}
           </select></label>
-          {view === "power" && keepAwake && profiles?.find((profile) => profile.id === selectedProfileId)
+          {view === "mobile" && prepareRemoteMobileAccess && profiles?.find((profile) => profile.id === selectedProfileId)
+            ? <ComputerMobileSettings key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} prepare={prepareRemoteMobileAccess} />
+            : view === "power" && keepAwake && profiles?.find((profile) => profile.id === selectedProfileId)
             ? <ComputerPowerSettings key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={keepAwake} showScope={hasRemoteComputers(profiles)} />
             : view === "agents" && profiles?.find((profile) => profile.id === selectedProfileId) && agentConnections
             ? <AgentConnectionsPanel key={selectedProfileId} profile={profiles.find((profile) => profile.id === selectedProfileId)!} actions={agentConnections} />
@@ -567,6 +579,23 @@ export function ConnectionProfilesDialog({
       </section>
     </div>
   );
+}
+
+function ComputerMobileSettings({ profile, prepare }: {
+  profile: ConnectionProfileSummary;
+  prepare(profileId: string): Promise<MobileAccessPairingResult>;
+}) {
+  const prepareSelected = useCallback(() => prepare(profile.id), [prepare, profile.id]);
+  return <section className="mobile-connect-settings" aria-label={`Connect Mobile to ${profile.name}`}>
+    <header className="settings-page-header"><div><h2>Connect your phone to {profile.name}</h2>
+      <p>Mobile Access runs on this server. Connect the server and your phone to the same Tailscale network.</p>
+    </div></header>
+    <div className="mobile-connect-body">
+      {profile.transport !== "ssh" ? <p className="conn-note">Use a saved SSH connection for Linux mobile setup. For a Mac, open Connect Mobile in that computer’s TermLoop app.</p>
+        : !profile.enabled || profile.scope === "readOnly" ? <p className="conn-note">Enable a connection with full server access before pairing your phone.</p>
+        : <MobilePairingPanel prepare={prepareSelected} computerName={profile.name} remote />}
+    </div>
+  </section>;
 }
 
 function ComputerPowerSettings({ profile, actions, showScope }: {

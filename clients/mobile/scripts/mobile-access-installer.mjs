@@ -284,15 +284,17 @@ async function systemdPlan(input) {
   const file = path.join(directory, unit);
   const desired = systemdUserUnit(input);
   const installed = await readFile(file, "utf8").catch(() => undefined);
+  const running = installed === desired && await execFile(input.systemctlBin, ["--user", "is-active", "--quiet", unit])
+    .then(() => true, () => false);
   return {
-    changed: installed !== desired,
+    changed: installed !== desired || !running,
     async apply({ restartRequired }) {
       if (installed !== desired) {
         await atomicWrite(file, desired, 0o644);
         await execFile(input.systemctlBin, ["--user", "daemon-reload"]);
         await execFile(input.systemctlBin, ["--user", "enable", unit]);
       }
-      if (restartRequired || installed !== desired) {
+      if (restartRequired || installed !== desired || !running) {
         await execFile(input.systemctlBin, ["--user", "restart", unit]);
       }
     },
@@ -531,7 +533,7 @@ After=network-online.target
 [Service]
 Type=simple
 ${electronRunAsNode ? "Environment=ELECTRON_RUN_AS_NODE=1\n" : ""}ExecStart=${systemdQuote(nodeExecutable)} ${systemdQuote(gatewayScript)} ${systemdQuote(configFile)}
-WorkingDirectory=${systemdQuote(stateDirectory)}
+WorkingDirectory=${systemdPath(stateDirectory)}
 Restart=always
 RestartSec=2
 UMask=0077
@@ -613,8 +615,14 @@ function xml(value) {
 }
 
 function systemdQuote(value) {
+  return `"${systemdPath(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+// WorkingDirectory is a single path, not an ExecStart argument list: quotes
+// would become part of the path. Both settings still expand unit specifiers.
+function systemdPath(value) {
   if (/[\r\n]/.test(value)) throw new Error("systemd service paths cannot contain newlines.");
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
+  return value.replaceAll("%", "%%");
 }
 
 function delay(ms) {

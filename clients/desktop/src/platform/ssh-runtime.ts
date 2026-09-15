@@ -1,6 +1,9 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import { devNull } from "node:os";
+import { promisify } from "node:util";
+
+const execute = promisify(execFile);
 
 const MAX_LOCAL_PORT_ATTEMPTS = 3;
 let foregroundOptionSupport: Promise<boolean> | undefined;
@@ -29,6 +32,26 @@ export class SshRuntimeError extends Error {
   ) {
     super(message);
     this.name = "SshRuntimeError";
+  }
+}
+
+export function sshCommandArgs(request: SshTunnelRequest, command: string, supportsForegroundOption = false): string[] {
+  const args = sshTunnelArgs(request, 1, supportsForegroundOption);
+  args.splice(args.indexOf("-N"), 1);
+  args.splice(args.indexOf("-L"), 2);
+  args.splice(args.length - 1, 0, "-o", "ClearAllForwardings=yes", "-o", "RemoteCommand=none");
+  return [...args, command];
+}
+
+export async function runSshCommand(request: SshTunnelRequest, command: string): Promise<string> {
+  const args = sshCommandArgs(request, command, await supportsForkAfterAuthentication());
+  try {
+    const { stdout } = await execute("ssh", args, { windowsHide: true, timeout: 75_000, maxBuffer: 32 * 1024 });
+    return stdout;
+  } catch (error) {
+    const stderr = String((error as { stderr?: string }).stderr ?? "");
+    throw classifySshFailure(error, stderr)
+      ?? new Error("Mobile Access could not be prepared over SSH. Check the connection and try again.");
   }
 }
 

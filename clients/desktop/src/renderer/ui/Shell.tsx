@@ -52,6 +52,7 @@ import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
+import { LibraryScopeHeader } from "./LibraryScopeHeader.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
 import { StewardPanel, type StewardPanelProps } from "./StewardPanel.js";
@@ -179,6 +180,7 @@ export type ShellProps = {
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
+  prepareRemoteMobileAccess?(profileId: string): Promise<MobileAccessPairingResult>;
   loadVoiceSettings(): Promise<VoiceSettingsResult>;
   saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
@@ -1168,6 +1170,16 @@ export function Shell(props: ShellProps) {
       perform: () => selectSession(session.id),
     })),
     {
+      id: "session.rename",
+      title: "Rename Selected Session",
+      detail: props.selectedSession ? sessionLabel(props.selectedSession) : "Select a Session first.",
+      group: "Session",
+      keywords: ["name", "title", "agent", "terminal"],
+      shortcutId: "renameSession",
+      disabled: disabled || !props.selectedSession,
+      perform: () => { if (props.selectedSession) setRenameSessionId(props.selectedSession.id); },
+    },
+    {
       id: "session.dismiss",
       title: props.selectedSession && sessionDismissCommand(props.selectedSession) === "close" ? "Remove Selected Session" : "Close Selected Session",
       detail: props.selectedSession ? `${sessionLabel(props.selectedSession)} · ${sessionDismissCommand(props.selectedSession) === "close" ? "Remove its stopped descriptor." : "End its process and remove the Session."}` : "Select a Session first.",
@@ -1207,7 +1219,7 @@ export function Shell(props: ShellProps) {
   selectProjectRef.current = selectProject;
 
   useEffect(() => {
-    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "focusPreviousPane", "focusNextPane"];
+    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "focusPreviousPane", "focusNextPane"];
     const keyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (matchesShellShortcut(event, "commandPalette", platform)) {
@@ -1483,6 +1495,7 @@ export function Shell(props: ShellProps) {
               ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
+          <LibraryScopeHeader section={railMode} context={settingsScope} />
           <div className="sidebar-scroll">
           {railMode === "skills" ? <SkillsRail
             key={props.selectedProject?.id ?? "global"}
@@ -2167,6 +2180,7 @@ export function Shell(props: ShellProps) {
         localComputerName={localComputerName}
         keepAwake={props.computerKeepAwake}
         mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
+        prepareRemoteMobileAccess={props.prepareRemoteMobileAccess}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}
         loadNotificationPreferences={props.loadNotificationPreferences}
