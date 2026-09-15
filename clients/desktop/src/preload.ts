@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld("termloop", {
     ipcRenderer.invoke("termloop:notification-preferences-set", preferences),
   pickLocalFolder: (defaultPath?: string) => ipcRenderer.invoke("termloop:pick-local-folder", defaultPath),
   mobileAccessPairing: () => ipcRenderer.invoke("termloop:mobile-access-pairing"),
+  remoteMobileAccessPairing: (profileId: string) => ipcRenderer.invoke("termloop:remote-mobile-access-pairing", profileId),
   connectionProfileList: () => ipcRenderer.invoke("termloop:connection-profile-list"),
   connectionProfileReconnect: (profileId: string) =>
     ipcRenderer.invoke("termloop:connection-profile-reconnect", profileId),

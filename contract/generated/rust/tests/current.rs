@@ -15,6 +15,7 @@ mod current_steward;
 mod current_steward_authority;
 mod current_task_source;
 mod current_tracker;
+mod current_workflow;
 mod current_worktree;
 
 use termloop_contract::current::{

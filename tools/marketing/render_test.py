@@ -61,13 +61,6 @@ class TimingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 render.TimeMap(30, runs)
 
-    def test_accepted_ask_to_pacing(self):
-        edit = json.loads((render.ROOT/'tools/marketing/edits.json').read_text())['ask-to']
-        timing = render.TimeMap(151.933, edit['runs'])
-        self.assertAlmostEqual(timing.mapped(23.3), 1.28, delta=.03)
-        self.assertAlmostEqual(timing.mapped(65)-timing.mapped(30.5), 1.40, delta=.08)
-        self.assertAlmostEqual(timing.mapped(151.933), 17.2, delta=.04)
-
     def test_clicks_must_be_inside_the_selected_window_and_interval(self):
         timing = render.TimeMap(10, [[10, 1]])
         for click in ({'sourceTime': 11, 'x': 10, 'y': 10}, {'sourceTime': 1, 'x': 2000, 'y': 10}):
@@ -121,6 +114,48 @@ class ArchiveTests(unittest.TestCase):
                 source.write_bytes(b'different take')
                 with self.assertRaisesRegex(ValueError, 'checksum differs'):
                     render.render({'id': 'changes', 'steps': ['Open', 'Annotate', 'Send']}, edit, None, root/'out')
+
+
+class CloseupTests(unittest.TestCase):
+    def test_invalid_crops_and_source_intervals_are_rejected(self):
+        from render_shots import validate_shots
+        edit = {'fps': 30, 'stepsAt': [0, 1, 2], 'posterAt': 2.5,
+                'shots': [{'source': 0, 'start': 0, 'end': 3, 'duration': 3, 'crop': [0, 0, 960, 540]}]}
+        validate_shots(edit, [4], render.crop_filter)
+        for crop in ([0, 0, 960, 500], [-1, 0, 960, 540], [1500, 0, 960, 540], [0, 0, 0, 0]):
+            with self.subTest(crop=crop), self.assertRaises(ValueError):
+                render.crop_filter(crop)
+        for changes in ({'source': 1}, {'start': -1}, {'end': 5}, {'duration': .01}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_shots({**edit, 'shots': [{**edit['shots'][0], **changes}]}, [4], render.crop_filter)
+
+    def test_real_render_selects_only_the_requested_frames_in_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'landing').mkdir()
+            source = root/'landing/source.mp4'
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                'nullsrc=s=1920x1080:r=20:d=1,geq=lum=16+N*8:cb=128:cr=128',
+                '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(source)], check=True)
+            edit = {'fps': 20, 'sources': [{'root': 'landing', 'source': 'source.mp4',
+                    'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest()}],
+                'shots': [dict(source=0, start=.1, end=.3, duration=.2, crop=[0, 0, 960, 540]),
+                          dict(source=0, start=.6, end=.8, duration=.2, crop=[960, 540, 960, 540])],
+                'stepsAt': [0, .1, .2], 'posterAt': .3}
+            with patch.object(render, 'ROOT', root):
+                render.render({'id': 'demo', 'steps': ['One', 'Two', 'Three']}, edit, None, root/'out')
+            def luma(file):
+                return subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(file),
+                    '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'])
+            original = luma(source)
+            expected = original[2:6] + original[12:16]
+            actual = luma(root/'out/demo.mp4')
+            self.assertEqual(len(actual), len(expected))
+            self.assertTrue(all(abs(a-b) <= 2 for a, b in zip(actual, expected)))
+            report = json.loads((root/'out/demo.json').read_text())
+            self.assertAlmostEqual(report['duration'], .4)
+            self.assertEqual(report['shots'], edit['shots'])
+            self.assertEqual(report['frames'], 8)
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 
 The homepage and GitHub README feature **7 essential workflows**, followed by 6 compact everyday tools. Website videos are silent 1920 × 1080 H.264, with a JPEG poster, optional English captions and three written steps. Five demos run at 30 FPS; Quick Actions and Changes retain their original 20 and 15 FPS. README GIFs follow the same complete edits at 960 × 540, up to 25 FPS.
 
-The September footage uses continuous intervals with smooth wait acceleration and soft click ripples. The Tasks demo joins the complete Task brief and worktree edits without re-encoding, showing worktree creation as an optional step within the same Task. Quick Actions skips its first 1.75 seconds to open on the prompt composer, preserving the remaining timing. Changes keeps its earlier edit byte-for-byte. These two archive demos show an earlier interface. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
+The demos focus on the action in five seconds; Tasks takes six seconds to include its optional worktree. Fixed close-ups enlarge menus, forms and changed lines. Explicit cuts omit waiting and repeated navigation. Fork retains its continuous sequence with smooth wait acceleration and click ripples. Tasks selects moments from the brief and worktree chapters. Quick Actions and Changes retain their recorded 20 and 15 FPS. Only the most visible video plays automatically; manual pause and reduced-motion preferences are respected.
 
 - [Ask To](../../landing/assets/videos/tour/ask-to.mp4): Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.
 - [Quick Actions](../../landing/assets/videos/tour/quick-actions.mp4): Open Quick Actions, write the request and launch an agent with the right context.
@@ -14,11 +14,13 @@ The September footage uses continuous intervals with smooth wait acceleration an
 
 Everyday tools use compact illustrated cards with links to their written guides, without adding more video players: Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications, Appearance. Their decorative previews are not live app controls.
 
+The social sharing poster is a still from the Tasks close-up, replacing the earlier empty terminal. All 31 written feature guides were considered for presentation. The six everyday cards remain static: their controls are explained without an extra loop. The other 18 features retain their existing written guides: Dev Server, Run configurations, Multi-Agent, Agent library, Custom agents, Workflow templates, Review cycles, Task Lifecycle, Session Refresh, Review progress, Task archive, Restore archived work, Steward, Mobile Companion, MCP & Prompts, Context Bank, Instruction consistency and Skill library. No extra video players are needed to repeat those guides or the actions already shown in the seven main demos.
+
 ## Recording provenance
 
-Ask To, both Tasks chapters and Code review were captured on September 14, 2026. Handoff and Fork reuse the September 9 OBS deliveries with their added caption band removed, then receive the same new timing and click treatment. Their earlier interface remains visible; these two are not new September 14 takes. The renderer preserves the entire selected source interval, but does not establish whether earlier edits of those two recovered deliveries contained cuts.
+Ask To, Fork, both Tasks chapters and Code review were captured on September 14. These are edits of real footage, not new recordings. Fork shows the Session menu action and the resulting child Session with visible parentage in five seconds. Handoff uses the September 9 recording; Quick Actions and Changes use earlier archived recordings. Cropping improves focus but does not modernize those older interfaces.
 
-The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. A stationary recorder coordinate overlay in an empty corner of the three new feature takes is removed. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
+The populated Launchpad demo includes source files, Git changes, Tasks and five release tests. Its reusable template is in [tools/marketing/demo-project](../../tools/marketing/demo-project). Worktree footage ends after successful creation. The close-ups exclude the stationary recorder coordinate overlay. A workflow-editor take was excluded after an unsupported lead-agent error; it is not presented as a successful demo.
 
 ## Reproduce
 
@@ -31,10 +33,10 @@ python3 tools/marketing/render.py --recordings /absolute/path/to/recordings
 python3 tools/marketing/readme-gifs.py
 node tools/marketing/build-guide.mjs
 node --test tools/marketing/*.test.mjs tools/marketing/demo-project/test/*.test.mjs
-python3 tools/marketing/render_test.py
+python3 -B tools/marketing/render_test.py
 node tools/marketing/verify.mjs
 ```
 
-`catalog.json` owns the seven video features and written steps; `extras.json` owns the six everyday tools. `edits.json` pins source checksums, archive paths, dates, speed ramps, click positions and caption anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these seven MP4s. Rebuild the trimmed Quick Actions, joined Tasks and original Changes demos with `python3 tools/marketing/render.py --only quick-actions tasks changes`.
+`catalog.json` owns the seven video features and written steps; `extras.json` owns the six everyday tools. `edits.json` pins source checksums, source roots, selected intervals, close-up crops, output durations and caption anchors. Shot-based captions and posters use output time; Fork retains source-time anchors. Each delivered MP4 has a JSON report with its checksum, frame count and source coverage. Older assets remain in the archive; the homepage references only these seven MP4s. Rebuild the repo-backed Quick Actions, Tasks and Changes edits with `python3 tools/marketing/render.py --only quick-actions tasks changes`.
 
 These demonstrations are not comprehensive integration tests. Cross-provider routing, mobile pairing and notification delivery were not retested during this media update.

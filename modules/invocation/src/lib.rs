@@ -120,7 +120,7 @@ const AGENT_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKFLOW_CREATOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.workflow",
-    version: 1,
+    version: 2,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.workflow.md"),
 };
 

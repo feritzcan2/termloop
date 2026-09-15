@@ -1,86 +1,77 @@
 {
   "id": "fork",
-  "duration": 18.033333,
+  "duration": 5.0,
   "width": 1920,
   "height": 1080,
   "fps": 30,
-  "frames": 541,
+  "frames": 150,
   "audio": false,
   "captureKind": "continuous-video",
-  "source": "fork.mp4",
-  "recordedAt": "2026-09-09",
-  "recoveredFrom": "landing/assets/videos/tour/fork.mp4 (previous published delivery; only its added caption band removed)",
+  "source": "fork.mkv",
+  "recordedAt": "2026-09-14",
+  "recoveredFrom": null,
   "captureCursorRemoved": false,
-  "sourceSha256": "36c93ad4c0eba442cd5bdb295f7bb7792091e9c305cb8d7888d748f32151ef97",
-  "sourceSeconds": 38.5,
+  "sourceSha256": "8dd45015661eff4b40f5fdebbbfd9d9f6f625626f13835a7fc77f5f9f36b9450",
+  "sourceSeconds": 51.5,
   "sourceFps": 30.0,
   "sourceCoverage": [
     0,
-    38.5
+    15.2
   ],
   "speedMap": [
     {
       "start": 0.0,
-      "end": 2.4,
-      "speed": 3
-    },
-    {
-      "start": 2.4,
-      "end": 3.7,
-      "speed": 1
-    },
-    {
-      "start": 3.7,
-      "end": 14.5,
+      "end": 5.4,
       "speed": 7
     },
     {
-      "start": 14.5,
-      "end": 16.8,
+      "start": 5.4,
+      "end": 6.2,
       "speed": 1
     },
     {
-      "start": 16.8,
-      "end": 24.0,
-      "speed": 4.5
+      "start": 6.2,
+      "end": 10.6,
+      "speed": 12
     },
     {
-      "start": 24.0,
-      "end": 27.0,
+      "start": 10.6,
+      "end": 11.2,
       "speed": 1
     },
     {
-      "start": 27.0,
-      "end": 31.0,
-      "speed": 2
-    },
-    {
-      "start": 31.0,
-      "end": 36.0,
-      "speed": 1
-    },
-    {
-      "start": 36.0,
-      "end": 38.5,
+      "start": 11.2,
+      "end": 13.1,
       "speed": 5
+    },
+    {
+      "start": 13.1,
+      "end": 15.2,
+      "speed": 1.008691674291
     }
   ],
   "clicks": [
     {
-      "sourceTime": 2.73,
+      "sourceTime": 5.8,
       "x": 230,
-      "y": 334,
+      "y": 263,
       "label": "Open Session menu",
-      "outputTime": 1.13
+      "outputTime": 1.171429
     },
     {
-      "sourceTime": 14.8,
-      "x": 322,
-      "y": 513,
+      "sourceTime": 11,
+      "x": 339,
+      "y": 444,
       "label": "Fork conversation",
-      "outputTime": 3.954724
+      "outputTime": 2.338095
     }
   ],
-  "sha256": "cf42c901ecebfaacaa2b7bb5d8cf95bd4c08ddfb4adf3393b2b132d1e1dd1456",
-  "editing": "Continuous source interval; smooth speed ramps; click ripples. No interior cuts, camera zoom, added caption panels or terminal highlights."
+  "sha256": "81abe8a3f1402bcd2b6d37a1715ddc984bd35324b753bb3cb0b5ddd4f9b8662c",
+  "crop": [
+    0,
+    80,
+    1120,
+    630
+  ],
+  "editing": "Continuous source interval; smooth speed ramps; click ripples. Fixed close-up of the sidebar; no interior cuts, added caption panels or terminal highlights."
 }

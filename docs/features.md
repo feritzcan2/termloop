@@ -4,7 +4,7 @@
 
 Explore **31 feature guides** with written usage steps. The [homepage tour](https://termloop.ai/#features) focuses on **seven essential workflows**: Ask To, Quick Actions, Handoff, Fork, Tasks (including optional worktrees), Changes and Code review. A compact [everyday tools section](https://termloop.ai/#everyday) covers Keep Awake, Pause to Read, Task Favorites, Developer Notes, Notifications and Appearance. The tour includes populated demo Projects with source files, Git changes and release tests. Development and released interfaces may differ.
 
-Website videos are 1920 × 1080 with optional captions. Five demos run at 30 FPS with visible clicks and smooth wait acceleration. Quick Actions starts directly on the prompt composer and retains its original 20 FPS; Changes preserves its original 15 FPS edit. Tasks combines the brief, checklist and optional worktree creation in one demo. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, both Tasks chapters and Code review were captured on September 14; Handoff and Fork reuse September 9 OBS footage with updated timing.
+Website videos are 1920 × 1080 with optional captions. Close-ups show each action in five seconds; Tasks takes six seconds to include its optional worktree. Cuts skip waits and repeated navigation. Quick Actions and Changes retain their recorded 20 and 15 FPS; the other demos run at 30 FPS. They loop silently when visible, with pause, speed and fullscreen controls. Reduced-motion preferences suppress autoplay. Ask To, Fork, both Tasks chapters and Code review use September 14 footage; Handoff and the two archive edits show earlier interfaces.
 
 ## Choose the right action
 

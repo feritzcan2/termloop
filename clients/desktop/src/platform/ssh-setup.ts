@@ -167,7 +167,7 @@ export class SshSetupManager {
 mkdir -p "$HOME/${stage}"
 touch "$HOME/${stage}/.desktop-ssh-setup"
 find "$HOME/.local/share/termloop-server" -maxdepth 1 -type d -name '.setup-*' -mmin +1440 -exec sh -c 'test ! -f "$1/.desktop-ssh-setup" || rm -rf -- "$1"' sh {} ';'`));
-      for (const file of ["termloop-server-manager.mjs", "server-release.mjs"]) {
+      for (const file of ["termloop-server-manager.mjs", "server-release.mjs", "server-mobile-access.mjs"]) {
         const contents = await readFile(path.join(this.assets, file), "utf8");
         await remoteCommand(client, serverUserCommand(serverUser, admin, `umask 077; base64 -d > "$HOME/${stage}/${file}"`), { input: Buffer.from(contents).toString("base64") });
       }
