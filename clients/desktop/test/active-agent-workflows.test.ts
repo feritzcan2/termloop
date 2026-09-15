@@ -264,6 +264,26 @@ describe("workflow actions in the Agents rail", () => {
     expect(container.querySelectorAll("[data-session-id]")).toHaveLength(3);
   });
 
+  it("offers a visible whole-workflow close intent even from a detached group segment", async () => {
+    const closeWorkflow = vi.fn();
+    await render(sessions, execution(), { closeWorkflow, detachedRelationshipSessionIds: new Set(["helper-a"]) });
+    const group = container.querySelector('[data-session-id="helper-a"]')!.closest('[data-workflow-group]')!;
+    const action = group.querySelector<HTMLButtonElement>('.workflow-agent-group-close')!;
+    expect(action.textContent).toBe("Close all");
+    expect(action.getAttribute("aria-label")).toBe("Close all agents in workflow Build and verify");
+    await act(async () => action.click());
+    expect(closeWorkflow).toHaveBeenCalledExactlyOnceWith("execution-1");
+  });
+
+  it("disables the workflow close action while disconnected", async () => {
+    const closeWorkflow = vi.fn();
+    await render(sessions, execution(), { closeWorkflow, workflowActionsDisabled: true });
+    const action = container.querySelector<HTMLButtonElement>('.workflow-agent-group-close')!;
+    expect(action.disabled).toBe(true);
+    await act(async () => action.click());
+    expect(closeWorkflow).not.toHaveBeenCalled();
+  });
+
   it.each([0, 12])("shows a shared checkout and %i changes only once with a working group-level action", async (changeCount) => {
     const values = sessions.map((session) => ({ ...session, process: { ...session.process, cwd: "/repo/worktrees/feature-payments" } }));
     // Helpers already inherit their exact source's checkout change projection.
