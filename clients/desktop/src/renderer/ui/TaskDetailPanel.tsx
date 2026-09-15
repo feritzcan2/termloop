@@ -182,6 +182,7 @@ export type TaskDetailPanelProps = {
   nowEpochMs?: number | undefined;
   close(): void;
   selectSession(sessionId: string): void;
+  openFiles?(): void;
   openChanges(source: ChangesOpenSource): void;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   openPlaybook(): void;
@@ -479,6 +480,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
               <Icon name="edit" />
               <span>{changeCount ? taskChangedFileLabel(changeCount) : "No uncommitted changes"}</span>
             </button>
+            {props.openFiles ? <button type="button" className="td-fact-action" disabled={!task.worktree} onClick={props.openFiles} title="Browse all files in this Task worktree"><Icon name="folder" /><span>Browse files</span></button> : null}
             {commitCount ? (
               <button
                 type="button"

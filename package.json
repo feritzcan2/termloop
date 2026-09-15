@@ -41,6 +41,7 @@
     "acceptance:f2-stale-worktree-disposal": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/stale-worktree-disposal.mjs",
     "acceptance:f2-task-launch-repair": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/task-launch-repair.mjs",
     "acceptance:f2-full-file-view": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/full-file-view.mjs",
+    "acceptance:f2-files": "cargo build -p termloop-server && node tests/e2e/f2/workspace-files.mjs",
     "acceptance:f3-github-pr": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/github-pr.mjs",
     "acceptance:f3-azure-devops-pr": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/azure-devops-pr.mjs",
     "acceptance:f3-pull-request-changes": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/pull-request-changes.mjs",

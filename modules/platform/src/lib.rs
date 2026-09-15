@@ -27,6 +27,13 @@ mod staged_attachment;
 mod stale_disposal;
 mod terminal_input;
 mod watch;
+mod workspace_files;
+
+pub use workspace_files::{
+    WorkspaceContentState, WorkspaceDirectory, WorkspaceFileContent, WorkspaceFileEntry,
+    WorkspaceFileKind, list_workspace_directory, list_workspace_directory_page,
+    read_workspace_file, validate_workspace_relative_path,
+};
 
 pub use access_crypto::{
     access_public_key_valid, access_server_fingerprint, generate_access_nonce,
