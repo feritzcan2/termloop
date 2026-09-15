@@ -78,6 +78,15 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             title="Project Steward and Playbook"
             onClick={() => select("steward")}
           ><span className="workspace-view-glyph" aria-hidden="true">✦</span><span className="workspace-view-label">Steward</span></button>
+          <button
+            type="button"
+            role="tab"
+            aria-label="Project files view"
+            aria-selected={selected("files")}
+            className={selected("files") ? "selected" : undefined}
+            title="Browse Project and Task files"
+            onClick={() => select("files")}
+          ><Icon name="folder" /><span className="workspace-view-label">Files</span></button>
       </div>
       {viewAction ? (
         <button
@@ -102,7 +111,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
         ><Icon name={settingsAction.icon} /><span className="workspace-view-settings-label">{settingsAction.label}</span></button>
       ) : null}
       </div>
-      {view === "steward" ? null : <div className="workspace-launch-actions" aria-label="Launch Session">
+      {view === "steward" || view === "files" ? null : <div className="workspace-launch-actions" aria-label="Launch Session">
         {setupDevServer ? (
           <button
             type="button"

@@ -2,11 +2,11 @@
 /// user chose; Core owns none of this presentation preference.
 const WORKSPACE_VIEW_KEY = "termloop.workspaceView.v1";
 
-export type WorkspaceView = "overview" | "agents" | "history" | "steward";
+export type WorkspaceView = "overview" | "agents" | "history" | "steward" | "files";
 export type WorkspaceViewMemory = Readonly<Record<string, WorkspaceView>>;
 
 function isWorkspaceView(value: unknown): value is WorkspaceView {
-  return value === "overview" || value === "agents" || value === "history" || value === "steward";
+  return value === "overview" || value === "agents" || value === "history" || value === "steward" || value === "files";
 }
 
 export function readWorkspaceViewMemory(
