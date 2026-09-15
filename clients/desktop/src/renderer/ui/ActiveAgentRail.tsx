@@ -265,6 +265,8 @@ export type ActiveAgentRailProps = {
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
   workflowGroupsBySessionId?: ReadonlyMap<string, WorkflowAgentGroup> | undefined;
+  closeWorkflow?: ((executionId: string) => void) | undefined;
+  workflowActionsDisabled?: boolean | undefined;
   agentGroups?: readonly AgentGroupLayout[] | undefined;
   detachedRelationshipSessionIds?: ReadonlySet<string> | undefined;
   detachRelationship?: ((sessionId: string) => void) | undefined;
@@ -467,7 +469,9 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
                     props={props}
                   />);
                   return segment.workflow
-                    ? <WorkflowAgentGroupFrame key={first.session.id} workflow={segment.workflow} metadata={checkout ? <div className="workflow-agent-group-meta">
+                    ? <WorkflowAgentGroupFrame key={first.session.id} workflow={segment.workflow}
+                      close={props.closeWorkflow ? () => props.closeWorkflow!(segment.workflow!.executionId) : undefined}
+                      disabled={props.workflowActionsDisabled} metadata={checkout ? <div className="workflow-agent-group-meta">
                       <span className="workflow-agent-group-checkout" title={checkout}><Icon name="folder" /><span>{checkout === props.projectFolder ? "Project checkout" : basename(checkout)}</span></span>
                       {changes ? <button type="button" className="workflow-agent-group-changes"
                         aria-label={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
