@@ -8,6 +8,7 @@ import path from "node:path";
 import {
   TermLoopControlError,
   type CallArgs,
+  type WorkspaceFilesParams,
   type ContextBankCatalogGetParams,
   type ContextBankFileGetParams,
   type ContextBankFileSaveParams,
@@ -413,6 +414,12 @@ handleIpc("termloop:project-list", async () => prioritizeDevelopmentProject(
   await controlCall("project.list"),
   process.env.TERMLOOP_DEV_PROJECT_DIR,
 ));
+handleIpc("termloop:workspace-directory-list", (_event, params: WorkspaceFilesParams) =>
+  controlCall("workspace.directoryList", params),
+);
+handleIpc("termloop:workspace-file-read", (_event, params: WorkspaceFilesParams) =>
+  controlCall("workspace.fileRead", params),
+);
 handleIpc("termloop:project-worktree-summary", (_event, projectId: string) =>
   controlCall("project.worktreeSummary", { projectId }),
 );
