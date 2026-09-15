@@ -2594,7 +2594,8 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
    of a 270px rail. */
 .workspace-view-bar { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; margin: -4px 10px 5px; padding-left: 2px; }
 .workspace-view-row, .workspace-view-switch, .workspace-launch-actions { display: flex; min-height: 22px; align-items: center; gap: 2px; }
-.workspace-view-row { gap: 6px; }
+.workspace-view-row { gap: 6px; flex-wrap: wrap; }
+.workspace-view-switch { flex-wrap: wrap; }
 /* RUN holds the left of the launch row; the Session launchers gather on the
    right with Session History, so the row reads start-here | new-Session. */
 .workspace-launch-actions { justify-content: flex-end; flex-wrap: wrap; row-gap: 4px; min-width: 0; }

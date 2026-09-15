@@ -642,6 +642,8 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "companion.wakeNext"
             | "voice.settingsGet"
             | "task.branchCommitSummaryList"
+            | "workspace.directoryList"
+            | "workspace.fileRead"
     )
 }
 
@@ -680,6 +682,18 @@ mod tests {
     use super::*;
     use serde_json::json;
     use termloop_contract::current::ControlResponse;
+
+    #[test]
+    fn workspace_file_observations_require_full_control_on_every_connection() {
+        for method in ["workspace.directoryList", "workspace.fileRead"] {
+            assert!(scope_allows_method(ClientScope::Full, method));
+            assert!(!scope_allows_method(ClientScope::ReadOnly, method));
+            assert!(!scope_allows_method(ClientScope::Companion, method));
+            assert!(!scope_allows_method(ClientScope::Hook, method));
+            assert!(origin_allows_method(ConnectionOrigin::RemoteDevice, method));
+            assert!(cancellation_safe_method(method));
+        }
+    }
 
     fn request_value(identity: serde_json::Value) -> serde_json::Value {
         json!({
@@ -825,6 +839,8 @@ mod tests {
                 .all(|method| {
                     read_only_method(method)
                         || [
+                            "workspace.directoryList",
+                            "workspace.fileRead",
                             "session.listArchived",
                             // Full-scope only because this read projects private
                             // provider transcripts from the daemon host.

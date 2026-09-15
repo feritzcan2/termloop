@@ -26,6 +26,7 @@ mod provisioning;
 mod recovery;
 mod relocation;
 mod stale_disposal;
+mod workspace_files;
 
 fn failed_observation<F>(fixture: &Fixture, task_id: &str, create_runner: F) -> CoreError
 where
