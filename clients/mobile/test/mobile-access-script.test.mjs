@@ -286,7 +286,7 @@ fi
     const systemctlCalls = path.join(directory, "systemctl-calls.txt");
     const tailscale = path.join(directory, "tailscale");
     const systemctl = path.join(directory, "systemctl");
-    const state = path.join(directory, "state");
+    const state = path.join(directory, "state with spaces %");
     const serviceDirectory = path.join(directory, "systemd/user");
     writeFileSync(runtime, JSON.stringify({
       protocolVersion: `sha256:${"b".repeat(64)}`,
@@ -359,7 +359,7 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
     );
     const unit = readFileSync(unitFile, "utf8");
     expect(unit).toContain(`ExecStart="${process.execPath}"`);
-    expect(unit).toContain(`WorkingDirectory="${state}"`);
+    expect(unit).toContain(`WorkingDirectory=${state.replaceAll("%", "%%")}\n`);
     expect(unit).toContain("Restart=always");
     expect(unit).toContain("NoNewPrivileges=true");
     expect(unit).not.toContain(config.controlToken);
@@ -369,6 +369,9 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
     expect(config.logFile).toBeUndefined();
     expect(unit).not.toContain("StandardOutput=");
     expect(statSync(unitFile).mode & 0o777).toBe(0o644);
+    if (process.platform === "linux") {
+      await execFile("systemd-analyze", ["--user", "verify", unitFile]);
+    }
   }, 15_000);
 
   it.skipIf(process.platform === "win32")("serializes reconciliation, preserves tokens, and refuses downgrades", async () => {

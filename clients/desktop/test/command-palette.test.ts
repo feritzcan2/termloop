@@ -42,6 +42,14 @@ describe("command palette presentation", () => {
     expect(markup).toContain("Keyboard shortcuts");
     expect(markup).toContain("Ctrl+Shift+P");
     expect(markup).toContain("Ctrl+Alt+←");
+    expect(markup).toContain("Rename selected Session");
+    expect(markup).toContain("Ctrl+Shift+R");
     expect(markup).toContain('aria-label="Close keyboard settings"');
+  });
+
+  it("shows Cmd+R for rename in macOS keyboard settings", () => {
+    const markup = renderToStaticMarkup(createElement(KeyboardShortcutsDialog, { platform: "mac", close: vi.fn() }));
+    expect(markup).toContain("Rename selected Session");
+    expect(markup).toContain("⌘R");
   });
 });

@@ -3,6 +3,7 @@ import type { VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/c
 
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { voiceCredentialErrorMessage } from "../control-error.js";
+import { MobilePairingPanel } from "./MobilePairingPanel.js";
 
 export type MobileConnectDialogProps = {
   close(): void;
@@ -14,8 +15,6 @@ export type MobileConnectDialogProps = {
 };
 
 export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoiceCredentials, embedded = false, computerName }: MobileConnectDialogProps) {
-  const [attempt, setAttempt] = useState(0);
-  const [result, setResult] = useState<MobileAccessPairingResult>();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean>();
   const [apiKey, setApiKey] = useState("");
   const [voiceSaving, setVoiceSaving] = useState(false);
@@ -23,22 +22,6 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
   const [savedTranscriptionKeywords, setSavedTranscriptionKeywords] = useState("");
   const [transcriptionSettingsSaving, setTranscriptionSettingsSaving] = useState(false);
   const [voiceError, setVoiceError] = useState<string>();
-
-  useEffect(() => {
-    let active = true;
-    setResult(undefined);
-    void Promise.resolve()
-      .then(prepare)
-      .then((value) => { if (active) setResult(value); })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        setResult({
-          ok: false,
-          error: cause instanceof Error ? cause.message : "Mobile Access could not be prepared.",
-        });
-      });
-    return () => { active = false; };
-  }, [attempt, prepare]);
 
   useEffect(() => {
     let active = true;
@@ -97,23 +80,7 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
           {!embedded ? <button type="button" aria-label="Close" onClick={close}>×</button> : null}
         </header>
         <div className="mobile-connect-body">
-          {result === undefined ? (
-            <div className="mobile-connect-loading" role="status"><span aria-hidden="true" />Preparing Mobile Access…</div>
-          ) : result.ok ? (
-            <>
-              <div className="mobile-connect-qr" aria-label="TermLoop Mobile pairing QR" dangerouslySetInnerHTML={{ __html: result.qrSvg }} />
-              <ol>
-                <li>Keep Tailscale connected on this computer and your iPhone.</li>
-                <li>On iPhone, open TermLoop and tap <strong>Pair a computer</strong>.</li>
-                <li>Scan this QR code. The app connects automatically.</li>
-              </ol>
-            </>
-          ) : (
-            <div className="mobile-connect-error" role="alert">
-              <p>{result.error}</p>
-              <button type="button" onClick={() => setAttempt((value) => value + 1)}>Try again</button>
-            </div>
-          )}
+          <MobilePairingPanel prepare={prepare} />
           <section className="mobile-connect-voice" aria-labelledby="mobile-connect-voice-title">
             <div>
               <span>Steward Voice</span>

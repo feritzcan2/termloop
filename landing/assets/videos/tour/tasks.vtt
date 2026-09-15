@@ -1,13 +1,13 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:07.000
-Read the Task goal and acceptance criteria.
+00:00:00.000 --> 00:00:01.600 line:5%
+Define the work.
 
 2
-00:00:07.000 --> 00:00:13.700
-Complete the checks beside the Task.
+00:00:01.600 --> 00:00:03.000 line:5%
+Complete the checks.
 
 3
-00:00:13.700 --> 00:00:30.933
-Create an optional branch and worktree from that same Task.
+00:00:03.000 --> 00:00:06.000 line:5%
+Add a worktree.

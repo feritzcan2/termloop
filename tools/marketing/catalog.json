@@ -6,9 +6,9 @@
     "title": "Get a second opinion without copy-paste.",
     "description": "Ask one agent to consult another agent. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.",
     "steps": [
-      "Open Agents > Ask to and choose a provider for the second opinion.",
-      "A visible helper Session receives the question and context.",
-      "The answer returns to the requesting agent."
+      "Ask another agent.",
+      "See the helper.",
+      "Get the answer."
     ],
     "provenance": "Launchpad Demo"
   },
@@ -19,9 +19,9 @@
     "title": "From a prompt to a running agent.",
     "description": "Open Quick Actions, write the request and launch an agent with the right context.",
     "steps": [
-      "Write a request in Quick Actions.",
-      "Confirm the agent and launch settings.",
-      "Launch the Session and follow its work in the terminal."
+      "Write a request.",
+      "Choose an agent.",
+      "Launch the Session."
     ],
     "provenance": "Original desktop recording"
   },
@@ -32,9 +32,9 @@
     "title": "Move context to the agent already in the work.",
     "description": "Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.",
     "steps": [
-      "Open Agents > Handover to and choose an existing Session.",
-      "The current agent composes the request, findings, and next action.",
-      "The destination receives the handoff in its own terminal."
+      "Choose a Session.",
+      "Send the context.",
+      "Continue there."
     ],
     "provenance": "Launchpad Demo"
   },
@@ -45,9 +45,9 @@
     "title": "Explore another direction in a real terminal.",
     "description": "Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.",
     "steps": [
-      "Choose a conversation to explore in a new direction.",
-      "Fork it from the Session menu.",
-      "Continue in a separate Session with visible parentage."
+      "Choose a Session.",
+      "Fork the conversation.",
+      "Continue separately."
     ],
     "provenance": "Launchpad Demo"
   },
@@ -58,9 +58,9 @@
     "title": "Define the work. Add a worktree when needed.",
     "description": "Keep the goal, acceptance criteria and checklist in one Task. When the change needs its own checkout, create a branch and worktree from that same Task.",
     "steps": [
-      "Read the Task goal and acceptance criteria.",
-      "Complete the checks beside the Task.",
-      "Create an optional branch and worktree from that same Task."
+      "Define the work.",
+      "Complete the checks.",
+      "Add a worktree."
     ],
     "provenance": "Launchpad Demo",
     "aliases": [
@@ -75,9 +75,9 @@
     "title": "Turn review notes into the next change.",
     "description": "Open the diff, leave a note on a line and send the review to a running agent.",
     "steps": [
-      "Open the changed files for the Task.",
-      "Attach a review note to the relevant line.",
-      "Send the notes to the active agent and follow the update."
+      "Leave a note.",
+      "Send it to the agent.",
+      "See the update."
     ],
     "provenance": "Original desktop recording"
   },
@@ -88,9 +88,9 @@
     "title": "Review changes where they happened.",
     "description": "Read the diff, compare versions side by side and keep track of the files you have checked.",
     "steps": [
-      "Open the changed files in the Project.",
-      "Use Full file and Split to compare code with its context.",
-      "Mark files reviewed and revisit them from the reviewed list."
+      "See the full file.",
+      "Compare side by side.",
+      "Mark it reviewed."
     ],
     "provenance": "Launchpad Demo"
   }

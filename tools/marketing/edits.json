@@ -1,212 +1,169 @@
 {
   "ask-to": {
-    "source": "ask-to.mkv",
+    "sources": [
+      {
+        "source": "ask-to.mkv",
+        "root": "recordings",
+        "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836"
+      }
+    ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 28.2,
+        "end": 29.7,
+        "duration": 1.5,
+        "crop": [
+          0,
+          160,
+          960,
+          540
+        ]
+      },
+      {
+        "source": 0,
+        "start": 115,
+        "end": 116.5,
+        "duration": 1.5,
+        "crop": [
+          0,
+          80,
+          800,
+          450
+        ]
+      },
+      {
+        "source": 0,
+        "start": 149,
+        "end": 151,
+        "duration": 2,
+        "crop": [
+          440,
+          550,
+          896,
+          504
+        ]
+      }
+    ],
+    "fps": 30,
+    "stepsAt": [
+      0,
+      1.5,
+      3
+    ],
+    "posterAt": 4
+  },
+  "handoff": {
+    "sources": [
+      {
+        "source": "handoff.mp4",
+        "root": "recordings",
+        "sourceSha256": "e00dd6eabd47377b1d2461e5c19e8c0d36ad264e1807f98822b36c8c333628f5"
+      }
+    ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 8,
+        "end": 9.3,
+        "duration": 1.5,
+        "crop": [
+          0,
+          240,
+          960,
+          540
+        ]
+      },
+      {
+        "source": 0,
+        "start": 24.8,
+        "end": 26.3,
+        "duration": 1.5,
+        "crop": [
+          464,
+          300,
+          1120,
+          630
+        ]
+      },
+      {
+        "source": 0,
+        "start": 28.3,
+        "end": 31.3,
+        "duration": 2,
+        "crop": [
+          0,
+          220,
+          1280,
+          720
+        ]
+      }
+    ],
+    "fps": 30,
+    "stepsAt": [
+      0,
+      1.5,
+      3
+    ],
+    "posterAt": 4
+  },
+  "fork": {
+    "source": "fork.mkv",
     "runs": [
       [
-        16,
-        64
+        5.4,
+        7
       ],
       [
-        20,
+        6.2,
+        1
+      ],
+      [
+        10.6,
+        12
+      ],
+      [
+        11.2,
+        1
+      ],
+      [
+        13.1,
         5
       ],
       [
-        23,
-        24
-      ],
-      [
-        28,
-        3
-      ],
-      [
-        29.8,
-        1
-      ],
-      [
-        64.2,
-        56
-      ],
-      [
-        65.4,
-        1
-      ],
-      [
-        111,
-        36
-      ],
-      [
-        114,
-        10
-      ],
-      [
-        117,
-        1
-      ],
-      [
-        140,
-        24
-      ],
-      [
-        145,
-        1
-      ],
-      [
-        151.933,
-        32
+        null,
+        1.008691674291
       ]
     ],
     "clicks": [
       {
-        "sourceTime": 23.3,
+        "sourceTime": 5.8,
         "x": 230,
         "y": 263,
         "label": "Open Session menu"
       },
       {
-        "sourceTime": 28.25,
-        "x": 320,
-        "y": 478,
-        "label": "Agents menu"
-      },
-      {
-        "sourceTime": 64.4,
-        "x": 500,
-        "y": 533,
-        "label": "Ask To / Codex"
-      }
-    ],
-    "stepsAt": [
-      0,
-      114,
-      140
-    ],
-    "posterAt": 142,
-    "recordedAt": "2026-09-14",
-    "sourceSha256": "f3a097c59111240fbfc3bcb16d4423c2a15323e20257c5a08232b7b7dbf07836"
-  },
-  "handoff": {
-    "source": "handoff.mp4",
-    "runs": [
-      [
-        8.3,
-        7
-      ],
-      [
-        9.8,
-        1
-      ],
-      [
-        14,
-        4
-      ],
-      [
-        18,
-        1.5
-      ],
-      [
-        24.5,
-        5
-      ],
-      [
-        28.5,
-        1.4
-      ],
-      [
-        34.5,
-        1
-      ],
-      [
-        null,
-        5
-      ]
-    ],
-    "clicks": [
-      {
-        "sourceTime": 8.63,
-        "x": 548,
-        "y": 667,
-        "label": "Choose destination"
-      },
-      {
-        "sourceTime": 28.53,
-        "x": 160,
-        "y": 363,
-        "label": "Open destination"
-      }
-    ],
-    "stepsAt": [
-      0,
-      9.2,
-      28.6
-    ],
-    "posterAt": 31,
-    "recordedAt": "2026-09-09",
-    "recoveredFrom": "landing/assets/videos/tour/handoff.mp4 (previous published delivery; only its added caption band removed)",
-    "sourceSha256": "e00dd6eabd47377b1d2461e5c19e8c0d36ad264e1807f98822b36c8c333628f5"
-  },
-  "fork": {
-    "source": "fork.mp4",
-    "runs": [
-      [
-        2.4,
-        3
-      ],
-      [
-        3.7,
-        1
-      ],
-      [
-        14.5,
-        7
-      ],
-      [
-        16.8,
-        1
-      ],
-      [
-        24,
-        4.5
-      ],
-      [
-        27,
-        1
-      ],
-      [
-        31,
-        2
-      ],
-      [
-        36,
-        1
-      ],
-      [
-        null,
-        5
-      ]
-    ],
-    "clicks": [
-      {
-        "sourceTime": 2.73,
-        "x": 230,
-        "y": 334,
-        "label": "Open Session menu"
-      },
-      {
-        "sourceTime": 14.8,
-        "x": 322,
-        "y": 513,
+        "sourceTime": 11,
+        "x": 339,
+        "y": 444,
         "label": "Fork conversation"
       }
     ],
     "stepsAt": [
       0,
-      14.5,
-      24
+      5.8,
+      13.1
     ],
-    "posterAt": 32,
-    "recordedAt": "2026-09-09",
-    "recoveredFrom": "landing/assets/videos/tour/fork.mp4 (previous published delivery; only its added caption band removed)",
-    "sourceSha256": "36c93ad4c0eba442cd5bdb295f7bb7792091e9c305cb8d7888d748f32151ef97"
+    "posterAt": 14.6,
+    "recordedAt": "2026-09-14",
+    "sourceSha256": "8dd45015661eff4b40f5fdebbbfd9d9f6f625626f13835a7fc77f5f9f36b9450",
+    "sourceEnd": 15.2,
+    "crop": [
+      0,
+      80,
+      1120,
+      630
+    ]
   },
   "task-briefs": {
     "source": "task-briefs.mp4",
@@ -352,162 +309,212 @@
     "sourceSha256": "a1d9574cce4ca56180ecd62c9aadb1782fe6031904e7444ece1056e1c324bf23"
   },
   "full-file-review": {
-    "source": "full-file-review.mp4",
-    "runs": [
-      [
-        6.95,
-        8
-      ],
-      [
-        8.8,
-        1
-      ],
-      [
-        14.2,
-        4
-      ],
-      [
-        16.4,
-        1
-      ],
-      [
-        20.1,
-        5
-      ],
-      [
-        22.7,
-        1
-      ],
-      [
-        27.8,
-        5
-      ],
-      [
-        30,
-        1
-      ],
-      [
-        50.2,
-        18
-      ],
-      [
-        52.5,
-        1
-      ],
-      [
-        58.6,
-        5
-      ],
-      [
-        60.4,
-        1
-      ],
-      [
-        64.3,
-        5
-      ],
-      [
-        68.2,
-        1
-      ],
-      [
-        null,
-        10
-      ]
-    ],
-    "clicks": [
+    "sources": [
       {
-        "sourceTime": 7.26,
-        "x": 440,
-        "y": 117,
-        "label": "Open changes"
-      },
-      {
-        "sourceTime": 14.5,
-        "x": 1744,
-        "y": 70,
-        "label": "Full file"
-      },
-      {
-        "sourceTime": 20.43,
-        "x": 1595,
-        "y": 70,
-        "label": "Split comparison"
-      },
-      {
-        "sourceTime": 28.1,
-        "x": 758,
-        "y": 275,
-        "label": "Mark file reviewed"
-      },
-      {
-        "sourceTime": 50.5,
-        "x": 758,
-        "y": 275,
-        "label": "Mark next file reviewed"
-      },
-      {
-        "sourceTime": 58.93,
-        "x": 559,
-        "y": 216,
-        "label": "Show reviewed files"
-      },
-      {
-        "sourceTime": 64.6,
-        "x": 610,
-        "y": 313,
-        "label": "Reopen reviewed code"
+        "source": "full-file-review.mp4",
+        "root": "recordings",
+        "sourceSha256": "218d06107ac696501c75c77ed90a57fa4bd734f5d0f86a534be84441dc046444"
       }
     ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 14.1,
+        "end": 16.1,
+        "duration": 1.7,
+        "crop": [
+          480,
+          30,
+          1440,
+          810
+        ]
+      },
+      {
+        "source": 0,
+        "start": 20,
+        "end": 22.3,
+        "duration": 1.7,
+        "crop": [
+          480,
+          30,
+          1440,
+          810
+        ]
+      },
+      {
+        "source": 0,
+        "start": 27.6,
+        "end": 29.2,
+        "duration": 1.6,
+        "crop": [
+          460,
+          120,
+          1120,
+          630
+        ]
+      }
+    ],
+    "fps": 30,
     "stepsAt": [
       0,
-      14.53,
-      28.13
+      1.7,
+      3.4
     ],
-    "posterAt": 67,
-    "recordedAt": "2026-09-14",
-    "removeCaptureCursor": true,
-    "sourceSha256": "218d06107ac696501c75c77ed90a57fa4bd734f5d0f86a534be84441dc046444"
+    "posterAt": 2.8
   },
   "quick-actions": {
-    "archiveSource": "assets/videos/quick-action.mp4",
-    "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b",
-    "sourceFps": 20,
+    "sources": [
+      {
+        "source": "assets/videos/quick-action.mp4",
+        "root": "landing",
+        "sourceSha256": "b3dba8d5369aa75118bb1f105981165633d6e6ac5c1cb6c70793fe2a61f5188b"
+      }
+    ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 1.75,
+        "end": 3.8,
+        "duration": 2.4,
+        "crop": [
+          360,
+          200,
+          1200,
+          675
+        ]
+      },
+      {
+        "source": 0,
+        "start": 3.8,
+        "end": 5.65,
+        "duration": 2.6,
+        "crop": [
+          0,
+          0,
+          1120,
+          630
+        ]
+      }
+    ],
+    "fps": 20,
     "stepsAt": [
       0,
-      1.5,
-      2.05
+      1.3,
+      2.4
     ],
-    "posterAt": 1.4,
-    "sourceStart": 1.75
+    "posterAt": 1.8
   },
   "changes": {
-    "archiveSource": "assets/videos/changes-review.mp4",
-    "sourceSha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042",
-    "sourceFps": 15,
+    "sources": [
+      {
+        "source": "assets/videos/changes-review.mp4",
+        "root": "landing",
+        "sourceSha256": "50ffbc10c5d0abd46c8936c7e9e00547d9a39ab8b019148d3e49f0e975c50042"
+      }
+    ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 7.3,
+        "end": 10.1,
+        "duration": 1.6,
+        "crop": [
+          960,
+          160,
+          960,
+          540
+        ]
+      },
+      {
+        "source": 0,
+        "start": 11.2,
+        "end": 12,
+        "duration": 1.4,
+        "crop": [
+          1040,
+          580,
+          880,
+          495
+        ]
+      },
+      {
+        "source": 0,
+        "start": 13.1,
+        "end": 14.8,
+        "duration": 2,
+        "crop": [
+          640,
+          180,
+          800,
+          450
+        ]
+      }
+    ],
+    "fps": 15,
     "stepsAt": [
       0,
-      4,
-      10
+      1.6,
+      3
     ],
-    "posterAt": 6
+    "posterAt": 3.8
   },
   "tasks": {
-    "segments": [
+    "sources": [
       {
         "source": "assets/videos/tour/task-briefs.mp4",
+        "root": "landing",
         "sourceSha256": "75b2d2dc03a03edb6f1ef9d4d4078fef594bfa0ed37c00fcfd7c22a1a014e2ff"
       },
       {
         "source": "assets/videos/tour/task-worktrees.mp4",
+        "root": "landing",
         "sourceSha256": "ed03e4ae3a49ef3d7ff8b5aaaf29e39d561f610efaf5974d1555275bca07054d"
       }
     ],
+    "shots": [
+      {
+        "source": 0,
+        "start": 2,
+        "end": 3.6,
+        "duration": 1.6,
+        "crop": [
+          0,
+          0,
+          1120,
+          630
+        ]
+      },
+      {
+        "source": 0,
+        "start": 6.9,
+        "end": 11.3,
+        "duration": 1.4,
+        "crop": [
+          0,
+          200,
+          960,
+          540
+        ]
+      },
+      {
+        "source": 1,
+        "start": 12.9,
+        "end": 16.2,
+        "duration": 3,
+        "crop": [
+          0,
+          100,
+          1440,
+          810
+        ]
+      }
+    ],
+    "fps": 30,
     "stepsAt": [
       0,
-      7,
-      13.7
+      1.6,
+      3
     ],
-    "posterAt": 22
+    "posterAt": 5.5
   }
 }
