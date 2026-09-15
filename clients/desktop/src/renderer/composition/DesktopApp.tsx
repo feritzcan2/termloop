@@ -41,6 +41,7 @@ import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlE
 import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionLabel, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
+import { closeWorkflowAgents as closeWorkflowAgentGroup } from "./workflow-close.js";
 import { retryAgentSession } from "./session-resume.js";
 import {
   createSessionActivation,
@@ -147,6 +148,7 @@ let taskPatchCount = 0;
 let statusBaselineReady = false;
 let previousAgentStatuses = new Map<string, string>();
 const dismissingSessions = new Set<string>();
+const closingWorkflows = new Map<string, Promise<string | undefined>>();
 const gitHostRefreshCoordinator = new GitHostRefreshCoordinator(
   (projectId, taskIds) => sourceApiForProject(projectId).gitHostPullRequestList(projectId, taskIds),
   (projectId, requestedTaskIds, projections) => {
@@ -1511,6 +1513,31 @@ export function DesktopApp() {
       if (failure) projectionStore.setMessage(failure);
     }
   }, []);
+  const closeWorkflowAgents = useCallback((projectId: string, executionId: string): Promise<string | undefined> => {
+    const key = JSON.stringify([projectId, executionId]);
+    const previous = closingWorkflows.get(key);
+    if (previous) return previous;
+    const operation = (async () => {
+      let failure: string | undefined;
+      try {
+        // Capture the source once: changing the selected Project must not
+        // redirect an in-flight group close to another computer.
+        const api = sourceApiForProject(projectId);
+        await closeWorkflowAgentGroup(api, projectId, executionId, async (session) => {
+          if (dismissingSessions.has(session.id)) throw new Error("This Agent is already closing. Retry once it finishes.");
+          dismissingSessions.add(session.id);
+          try { await dismissSessionDescriptor(api, session); }
+          finally { dismissingSessions.delete(session.id); }
+        });
+      } catch (error) { failure = controlErrorMessage(error); }
+      try { await refreshProjection(); }
+      catch (error) { projectionStore.setMessage(controlErrorMessage(error)); }
+      if (failure) projectionStore.setMessage(failure);
+      return failure;
+    })().finally(() => closingWorkflows.delete(key));
+    closingWorkflows.set(key, operation);
+    return operation;
+  }, []);
   const resumeSession = useCallback(async (sessionId: string) => {
     let failure: string | undefined;
     try {
@@ -2572,6 +2599,7 @@ export function DesktopApp() {
       saveWorkflowConfiguration={saveWorkflowConfiguration}
       deleteWorkflowConfiguration={deleteWorkflowConfiguration}
       cancelWorkflowExecution={cancelWorkflowExecution}
+      closeWorkflowAgents={closeWorkflowAgents}
       launchTaskRun={launchTaskRun}
       launchProjectRun={launchProjectRun}
       inspectTaskWorktreeRepair={inspectTaskWorktreeRepair}

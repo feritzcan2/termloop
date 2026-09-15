@@ -61,6 +61,7 @@ import { StewardPetHost } from "./StewardPetHost.js";
 import { SessionRelocationDialog } from "./SessionRelocationDialog.js";
 import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog.js";
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
+import { WorkflowCloseDialog, type WorkflowCloseTarget } from "./WorkflowCloseDialog.js";
 import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 import { ActiveAgentRail } from "./ActiveAgentRail.js";
 import { activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels } from "./active-agent-workflows.js";
@@ -318,6 +319,7 @@ export type ShellProps = {
   saveWorkflowConfiguration(params: WorkflowConfigurationCreateParams | WorkflowConfigurationUpdateParams): Promise<WorkflowConfigurationDto | string>;
   deleteWorkflowConfiguration(workflowId: string): Promise<string | undefined>;
   cancelWorkflowExecution(executionId: string): Promise<string | undefined>;
+  closeWorkflowAgents?: ((projectId: string, executionId: string) => Promise<string | undefined>) | undefined;
   launchTaskRun(taskId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   launchProjectRun(projectId: string, configurationId: string, restart: boolean, forceSetup?: boolean): Promise<string | undefined>;
   inspectTaskWorktreeRepair(taskId: string, candidatePath: string): Promise<TaskWorktreeRepairPreviewDto>;
@@ -456,6 +458,7 @@ export function shellNativeOverlayOpen(state: {
   providerHistoryRepair: boolean;
   taskRail: boolean;
   projectWorkflow?: boolean;
+  workflowClose?: boolean;
   archivedRail: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
@@ -505,6 +508,8 @@ export function Shell(props: ShellProps) {
   const [backgroundRelocations, setBackgroundRelocations] = useState<ReadonlyMap<string, BackgroundSessionRelocationIntent>>(new Map());
   const [projectRelocationSessionId, setProjectRelocationSessionId] = useState<string>();
   const [providerHistoryRepairSessionId, setProviderHistoryRepairSessionId] = useState<string>();
+  const [workflowCloseTarget, setWorkflowCloseTarget] = useState<WorkflowCloseTarget>();
+  useEffect(() => { setWorkflowCloseTarget(undefined); }, [props.selectedProject?.id, props.selectedProject?.connectionProfileId]);
   const [provisionRequestedTaskId, setProvisionRequestedTaskId] = useState<string>();
   const backgroundRelocationIntents = useMemo(() => [...backgroundRelocations.values()], [backgroundRelocations]);
   const backgroundProvisioningTaskIds = useMemo(() => new Set(
@@ -1034,7 +1039,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(settingsPage) || shellShortcutsBlocked({
+  const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(workflowCloseTarget) || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -1062,6 +1067,7 @@ export function Shell(props: ShellProps) {
     providerHistoryRepair: Boolean(providerHistoryRepairSession),
     taskRail: taskRailOverlayOpen,
     projectWorkflow: projectWorkflowOverlayOpen,
+    workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
   });
   useEffect(() => {
@@ -1656,6 +1662,12 @@ export function Shell(props: ShellProps) {
             workflowsBySessionId={workflowsBySessionId}
             workflowAgentLabelsBySessionId={workflowAgentLabelsBySessionId}
             workflowGroupsBySessionId={workflowGroupsBySessionId}
+            workflowActionsDisabled={projectActionDisabled}
+            closeWorkflow={props.closeWorkflowAgents ? (executionId) => {
+              const run = props.workflowExecutions.find((candidate) => candidate.id === executionId && candidate.projectId === props.selectedProject?.id);
+              if (run) setWorkflowCloseTarget({ projectId: run.projectId, executionId, name: run.workflowName,
+                agentCount: [...workflowGroupsBySessionId.values()].filter((group) => group.executionId === executionId).length });
+            } : undefined}
             menuSessionId={sessionMenu?.sessionId}
             selectSession={selectSession}
             navigateSession={navigateSession}
@@ -2115,6 +2127,12 @@ export function Shell(props: ShellProps) {
         session={providerHistoryRepairSession}
         repair={props.repairProviderHistory}
         close={() => setProviderHistoryRepairSessionId(undefined)}
+      /> : null}
+      {workflowCloseTarget && props.closeWorkflowAgents ? <WorkflowCloseDialog
+        key={`${workflowCloseTarget.projectId}:${workflowCloseTarget.executionId}`}
+        target={workflowCloseTarget}
+        submit={props.closeWorkflowAgents}
+        close={() => setWorkflowCloseTarget((current) => current === workflowCloseTarget ? undefined : current)}
       /> : null}
       {commandPaletteOpen ? <CommandPalette commands={commands} platform={platform} close={closeCommandPalette} /> : null}
       {quickActionOpen ? <QuickActionComposer

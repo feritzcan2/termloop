@@ -24,7 +24,13 @@ export function workflowAgentSegments(
   return segments;
 }
 
-export function WorkflowAgentGroupFrame({ workflow, metadata, children }: { workflow: WorkflowAgentGroup; metadata?: ReactNode; children: ReactNode }) {
+export function WorkflowAgentGroupFrame({ workflow, metadata, children, close, disabled }: {
+  workflow: WorkflowAgentGroup; metadata?: ReactNode; children: ReactNode;
+  close?: (() => void) | undefined; disabled?: boolean | undefined;
+}) {
+  const closeAction = close ? <button type="button" className="workflow-agent-group-close" disabled={disabled}
+    aria-label={`Close all agents in workflow ${workflow.name}`} title={disabled ? "Reconnect to close this workflow" : "Close this workflow and all its agents"}
+    onClick={(event) => { event.stopPropagation(); close(); }}><Icon name="close" />Close all</button> : null;
   return <div role="listitem">
     <section
       className={`workflow-agent-group status-${workflow.status}${workflow.needsAttention ? " needs-attention" : ""}`}
@@ -35,7 +41,7 @@ export function WorkflowAgentGroupFrame({ workflow, metadata, children }: { work
       <header className="workflow-agent-group-header" title={workflow.context}>
         <span className="workflow-agent-group-title"><Icon name="branch" /><small>Workflow</small><strong>{workflow.name}</strong></span>
         <span className="workflow-agent-group-status">{workflow.statusLabel}</span>
-        {metadata}
+        {closeAction ? <div className="workflow-agent-group-tools">{metadata}{closeAction}</div> : metadata}
       </header>
       <div className="workflow-agent-group-members" role="list">{children}</div>
     </section>
