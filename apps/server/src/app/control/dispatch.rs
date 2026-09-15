@@ -1583,6 +1583,12 @@ async fn dispatch_inner(
                 let core = state.core.lock().await;
                 core.list_tasks_current(request.params)
             }
+            "workspace.directoryList" => {
+                super::handlers::observe_workspace_files(request.params, false, state).await
+            }
+            "workspace.fileRead" => {
+                super::handlers::observe_workspace_files(request.params, true, state).await
+            }
             "project.listLocalBranches" => project_list_local_branches(request.params, state).await,
             "project.worktreeSummary" => project_worktree_summary(request.params, state).await,
             "project.worktreeChangeList" => {
