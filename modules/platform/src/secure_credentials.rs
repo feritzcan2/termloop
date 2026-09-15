@@ -1,6 +1,9 @@
 use std::fmt;
 use zeroize::Zeroize;
 
+#[cfg(target_os = "linux")]
+mod encrypted_file;
+
 const KEY_PART_MAX_BYTES: usize = 256;
 const SECRET_MAX_BYTES: usize = 16 * 1024;
 
@@ -64,7 +67,7 @@ impl Drop for SecureSecret {
 pub enum SecureCredentialError {
     #[error("secure credential was not found")]
     NotFound,
-    #[error("native secure credential storage is unavailable")]
+    #[error("secure credential storage is unavailable")]
     Unavailable,
 }
 
@@ -80,6 +83,62 @@ pub trait SecureCredentialStore: Send + Sync {
 
 #[derive(Debug, Default)]
 pub struct NativeSecureCredentialStore;
+
+/// Uses the OS keyring, with a durable encrypted store for Linux hosts where
+/// Secret Service cannot initialize. Once a host uses the file store, keep
+/// using it across restarts, including after a keyring is installed.
+///
+/// The file store and its encryption key are private to the daemon's OS user;
+/// they do not provide a separate login/unlock boundary like a desktop keyring.
+pub struct PersistentSecureCredentialStore {
+    #[cfg(target_os = "linux")]
+    files: encrypted_file::EncryptedFileCredentialStore,
+    #[cfg(target_os = "linux")]
+    use_files: std::sync::OnceLock<bool>,
+}
+
+impl PersistentSecureCredentialStore {
+    pub fn new(_state_directory: &std::path::Path) -> Self {
+        Self {
+            #[cfg(target_os = "linux")]
+            files: encrypted_file::EncryptedFileCredentialStore::new(
+                _state_directory.join("credentials"),
+            ),
+            #[cfg(target_os = "linux")]
+            use_files: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn store(&self) -> &dyn SecureCredentialStore {
+        #[cfg(target_os = "linux")]
+        if *self
+            .use_files
+            .get_or_init(|| self.files.selected() || keyring::Entry::store_status().is_err())
+        {
+            return &self.files;
+        }
+        // Operation failures (including a locked keyring) never switch stores.
+        &NativeSecureCredentialStore
+    }
+}
+
+impl SecureCredentialStore for PersistentSecureCredentialStore {
+    fn set(
+        &self,
+        key: &SecureCredentialKey,
+        secret: &SecureSecret,
+    ) -> Result<(), SecureCredentialError> {
+        self.store().set(key, secret)
+    }
+
+    fn get(&self, key: &SecureCredentialKey) -> Result<SecureSecret, SecureCredentialError> {
+        self.store().get(key)
+    }
+
+    fn delete(&self, key: &SecureCredentialKey) -> Result<(), SecureCredentialError> {
+        self.store().delete(key)
+    }
+}
 
 impl NativeSecureCredentialStore {
     fn entry(key: &SecureCredentialKey) -> Result<keyring::Entry, SecureCredentialError> {
