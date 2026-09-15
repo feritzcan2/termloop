@@ -184,6 +184,7 @@ static const char *termLoopShortcutForEvent(NSEvent *event) {
     return "commandPalette";
   }
   if (event.keyCode == 0x11 && chord == 0) return "newTerminal";
+  if (event.keyCode == 0x0F && chord == 0) return "renameSession";
   if (event.keyCode == 0x7B && chord == NSEventModifierFlagOption) {
     return "focusPreviousPane";
   }

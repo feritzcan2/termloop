@@ -184,7 +184,13 @@ impl MonotonicDeadline {
     }
 
     pub fn remaining(self) -> Option<Duration> {
-        self.deadline.checked_duration_since(Instant::now())
+        self.remaining_at(Instant::now())
+    }
+
+    fn remaining_at(self, now: Instant) -> Option<Duration> {
+        self.deadline
+            .checked_duration_since(now)
+            .filter(|remaining| !remaining.is_zero())
     }
 }
 
@@ -259,7 +265,21 @@ mod tests {
         let deadline = MonotonicDeadline::after(requested).unwrap();
         assert!(deadline.remaining().is_some_and(|value| value <= requested));
         let expired = MonotonicDeadline::after(Duration::ZERO).unwrap();
-        assert!(expired.remaining().is_none_or(|value| value.is_zero()));
+        assert!(expired.remaining().is_none());
+    }
+
+    #[test]
+    fn monotonic_deadline_expires_at_the_exact_deadline() {
+        let now = Instant::now();
+        let deadline = MonotonicDeadline {
+            deadline: now + Duration::from_secs(1),
+        };
+        assert_eq!(deadline.remaining_at(now), Some(Duration::from_secs(1)));
+        assert_eq!(deadline.remaining_at(deadline.deadline), None);
+        assert_eq!(
+            deadline.remaining_at(deadline.deadline + Duration::from_nanos(1)),
+            None
+        );
     }
 
     #[test]

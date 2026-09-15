@@ -11,6 +11,29 @@ vi.mock("electron", () => ({
 }));
 
 describe("ConnectionProfileStore", () => {
+  it("restricts remote mobile setup to enabled SSH profiles with full access", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-profile-"));
+    const file = path.join(directory, "profiles.json");
+    const id = "123e4567-e89b-42d3-a456-426614174000";
+    const identity = "123e4567-e89b-42d3-a456-426614174001";
+    const base = { id, name: "Netcup", transport: { kind: "ssh", host: "server.example", user: "termloop-admin", sshPort: 2222, remotePort: 43717, managedIdentity: identity }, deviceId: "a".repeat(32), scope: "full", serverFingerprint: `sha256:${"b".repeat(64)}`, encryptedPrivateKey: "ciphertext" };
+    try {
+      const { ConnectionProfileStore } = await import("../src/main/connection-profiles.js");
+      for (const variant of ["enabled", "disabled", "readOnly", "tailscale"]) {
+        await writeFile(file, JSON.stringify({ version: 2, enabledProfileIds: variant === "disabled" ? [] : [id], profiles: [{ ...base,
+          ...(variant === "readOnly" ? { scope: "readOnly" } : {}),
+          ...(variant === "tailscale" ? { transport: { kind: "tailscale", baseUrl: "wss://example.ts.net" } } : {}),
+        }] }));
+        const store = new ConnectionProfileStore(file);
+        if (variant !== "enabled") await expect(store.mobileAccessSshConnection(id)).rejects.toThrow();
+        else {
+          expect(await store.mobileAccessSshConnection(id)).toMatchObject({ host: "server.example", user: "termloop-admin", sshPort: 2222, remotePort: 43717, identityFile: expect.stringContaining(identity), knownHostsFile: expect.stringContaining(identity) });
+          await expect(store.mobileAccessSshConnection("missing")).rejects.toThrow();
+        }
+      }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   it("shares one initial disk load across concurrent readers", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "termloop-profile-load-"));
     const file = path.join(directory, "profiles.json");

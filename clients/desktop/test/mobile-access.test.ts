@@ -134,6 +134,25 @@ describe("mobile access QR preparation", () => {
       });
   });
 
+  it.each([
+    { developmentProfileTag: "files" },
+    { smoke: true },
+  ])("preserves primary gateway preferences when an isolated desktop publishes: %j", async (context) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-preferences-test-"));
+    temporaryDirectories.push(root);
+    const gatewayDirectory = path.join(root, "mac-0123456789abcdef");
+    await mkdir(gatewayDirectory);
+    await writeFile(path.join(gatewayDirectory, "gateway.json"), "{}");
+    const primary = {
+      mobile: { ...defaultNotificationPreferences.mobile, notifyWhenMacActive: true },
+      watch: { ...defaultNotificationPreferences.watch, notifyWhenMacActive: true },
+    };
+    expect(await publishMobileNotificationPreferences(primary, root)).toBe(1);
+    expect(await publishMobileNotificationPreferences(defaultNotificationPreferences, root, context)).toBe(0);
+    expect(JSON.parse(await readFile(path.join(gatewayDirectory, "notification-preferences.json"), "utf8")))
+      .toEqual({ version: 1, ...primary });
+  });
+
   it("publishes Mobile and Watch notification preferences to enrolled gateways", async () => {
     const stateRoot = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-notifications-"));
     temporaryDirectories.push(stateRoot);
