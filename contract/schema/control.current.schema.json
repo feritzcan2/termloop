@@ -1595,9 +1595,161 @@
       "result": {
         "$ref": "#/$defs/agentAccountListResult"
       }
+    },
+    "workspace.directoryList": {
+      "params": {
+        "$ref": "#/$defs/workspaceFilesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workspaceDirectoryResult"
+      }
+    },
+    "workspace.fileRead": {
+      "params": {
+        "$ref": "#/$defs/workspaceFilesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workspaceFileReadResult"
+      }
     }
   },
   "$defs": {
+    "workspaceFilesParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFilesParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId",
+        "path"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "afterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "workspaceFileEntryDto": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileEntryDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "directory",
+            "file",
+            "symlink",
+            "other"
+          ]
+        }
+      }
+    },
+    "workspaceDirectoryResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceDirectoryResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "entries",
+        "truncated"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "$ref": "#/$defs/workspaceFileEntryDto"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "next_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "omitted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "workspaceFileReadResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileReadResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "state",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "text",
+            "binary",
+            "tooLarge",
+            "symlink",
+            "unsupported"
+          ]
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 262144,
+          "x-utf8-max-bytes": 262144
+        }
+      }
+    },
     "method": {
       "x-codegen-name": "Method",
       "type": "string",
@@ -1800,7 +1952,9 @@
         "agent.accountCreate",
         "agent.accountList",
         "agent.accountRename",
-        "agent.accountSetDefault"
+        "agent.accountSetDefault",
+        "workspace.directoryList",
+        "workspace.fileRead"
       ]
     },
     "eventName": {

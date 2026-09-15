@@ -1,3 +1,7 @@
+import { FilesOverlay } from "./FilesOverlay.js";
+import { FilesRail } from "./FilesRail.js";
+import { useFileBrowser } from "./use-file-browser.js";
+import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
@@ -142,6 +146,8 @@ function matchesInteractiveAgentProvider(session: Session): boolean {
 }
 
 export type ShellProps = {
+  listWorkspaceDirectory(params: WorkspaceFilesParams): Promise<WorkspaceDirectoryResult>;
+  readWorkspaceFile(params: WorkspaceFilesParams): Promise<WorkspaceFileReadResult>;
   projects: readonly Project[];
   projectTasks: readonly Task[];
   gitHostProjections: readonly GitHostProjection[];
@@ -544,6 +550,7 @@ export function Shell(props: ShellProps) {
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(window.innerWidth));
   const [sidebarDragging, setSidebarDragging] = useState(false);
   const [sessionDragging, setSessionDragging] = useState(false);
+  const [filesPresentation, setFilesPresentation] = useState<{ projectId: string; taskId: string | null }>();
   const [changesPresentation, setChangesPresentation] = useState<
     | { kind: "task"; taskId: string; source: ChangesOpenSource }
     | { kind: "project" }
@@ -738,6 +745,22 @@ export function Shell(props: ShellProps) {
   }, [props.projects]);
   const showProjectSourceGroups = projectSourceGroups.length > 1
     || projectSourceGroups.some((group) => group.profileId !== "local");
+  const filesTask = filesPresentation?.projectId === props.selectedProject?.id && filesPresentation?.taskId
+    ? props.projectTasks.find((task) => task.id === filesPresentation.taskId && task.worktree) : undefined;
+  const filesSubject = railMode === "workspace" && workspaceView === "files" && props.selectedProject
+    && props.connection === "connected" && props.selectedProject.connectionState !== "offline"
+    ? { projectId: props.selectedProject.id, taskId: filesTask?.id ?? null, title: filesTask?.title ?? props.selectedProject.name } : undefined;
+  const files = useFileBrowser(filesSubject, `${props.selectedProject?.folder_path}:${filesTask?.worktree_generation ?? 0}`,
+    props.listWorkspaceDirectory, props.readWorkspaceFile);
+  const filesPreviewVisible = Boolean(filesSubject && files.snapshot.preview.status !== "empty" && !changesPresentation);
+  const openFiles = (taskId: string | null) => {
+    if (!props.selectedProject) return;
+    setRailMode("workspace");
+    setWorkspaceView("files");
+    setChangesPresentation(undefined);
+    setFilesPresentation({ projectId: props.selectedProject.id, taskId });
+  };
+  useEffect(() => { if (changesPresentation) files.browser.clearPreview(); }, [changesPresentation, files.browser]);
   const changesTask = changesPresentation?.kind === "task"
     ? props.projectTasks.find((task) => task.id === changesPresentation.taskId)
     : undefined;
@@ -768,7 +791,7 @@ export function Shell(props: ShellProps) {
         : [],
     [changesProject, changesTask, looseSessions, props.projectSessions],
   );
-  const dismissChanges = useCallback(() => setChangesPresentation(undefined), []);
+  const dismissChanges = useCallback(() => { setChangesPresentation(undefined); files.browser.clearPreview(); }, [files.browser]);
   const dismissStagePages = useCallback(() => {
     setAssistantSelection(undefined);
     setDetailTaskId(undefined);
@@ -933,12 +956,13 @@ export function Shell(props: ShellProps) {
   }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
+    if (view === "files") dismissChanges();
     if (view === "steward" && !assistantSelection && props.selectedProject) {
       openAssistant({ kind: "steward" });
       return;
     }
     setWorkspaceView(view);
-  }, [assistantSelection, openAssistant, props.selectedProject, setWorkspaceView]);
+  }, [assistantSelection, dismissChanges, openAssistant, props.selectedProject, setWorkspaceView]);
   const assistantStageVisible = shellAssistantStageVisible(railMode, workspaceView, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
@@ -986,6 +1010,7 @@ export function Shell(props: ShellProps) {
     setImproverSetup(undefined);
   }, [props.selectedProject?.id]);
   const selectedSourceOffline = props.selectedProject?.connectionState === "offline";
+  useEffect(() => { if (props.connection !== "connected" || selectedSourceOffline) setFilesPresentation(undefined); }, [props.connection, selectedSourceOffline]);
   const selectedConnectionProfileId = props.selectedProject?.connectionProfileId ?? "local";
   const showSettingsScope = hasRemoteComputers(props.connectionProfiles) || selectedConnectionProfileId !== "local";
   const selectedComputer = props.connectionProfiles.find((profile) => profile.id === selectedConnectionProfileId);
@@ -1018,7 +1043,7 @@ export function Shell(props: ShellProps) {
     shortcutSettingsOpen,
     quickActionOpen: quickActionOpen || Boolean(improverSetup),
     runEditorOpen,
-    changesEditorOpen: Boolean(changesSubject),
+    changesEditorOpen: Boolean(changesSubject) || filesPreviewVisible,
   });
   const nativeOverlayOpen = shellNativeOverlayOpen({
     projectDialog: props.projectDialogOpen,
@@ -1044,7 +1069,7 @@ export function Shell(props: ShellProps) {
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
   const terminalOccluded = shellTerminalOccluded(
-    Boolean(changesSubject),
+    Boolean(changesSubject) || filesPreviewVisible,
     sidebarDragging,
     sessionDragging,
   );
@@ -1273,12 +1298,16 @@ export function Shell(props: ShellProps) {
     setDeleteProjectOpen(false);
     setSessionMenu(undefined);
     setChangesPresentation(undefined);
+    setFilesPresentation(undefined);
     setBackgroundRelocations(new Map());
     setProvisionRequestedTaskId(undefined);
   }, [props.selectedProject?.id]);
   useEffect(() => {
     if (changesPresentation?.kind === "task" && !changesTask) setChangesPresentation(undefined);
   }, [changesPresentation, changesTask]);
+  useEffect(() => {
+    if (filesPresentation?.taskId && !filesTask) setFilesPresentation(undefined);
+  }, [filesPresentation, filesTask]);
   useEffect(() => { if (sessionMenu && !menuSession) setSessionMenu(undefined); }, [sessionMenu, menuSession]);
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -1525,7 +1554,16 @@ export function Shell(props: ShellProps) {
             openPrompt={openPromptPage}
             improvePrompt={props.selectedProject ? improvePrompt : undefined}
             reload={promptLibrary.reload}
-          /> : <><WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
+          /> : <>{workspaceView === "files" ? <FilesRail
+            subject={filesSubject}
+            projectName={props.selectedProject?.name}
+            tasks={props.projectTasks.filter((task) => task.worktree)}
+            browser={files.browser}
+            snapshot={files.snapshot}
+            selectRoot={openFiles}
+            openFile={(path) => { setChangesPresentation(undefined); void files.browser.select(path); }}
+            unavailable={Boolean(props.selectedProject) && disabled}
+          /> : null}<WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
@@ -1809,6 +1847,7 @@ export function Shell(props: ShellProps) {
               branchCommitSummary={props.branchCommitSummaries.find((summary) => summary.task_id === detailTask.id)}
               close={() => setDetailTaskId(undefined)}
               selectSession={selectSession}
+              openFiles={() => openFiles(detailTask.id)}
               openChanges={(source) => setChangesPresentation({ kind: "task", taskId: detailTask.id, source })}
               openExternal={props.openExternal}
               openPlaybook={revealStewardRail}
@@ -1957,6 +1996,12 @@ export function Shell(props: ShellProps) {
                 Task detail page covers that page and closes back onto it,
                 rather than throwing the reader out to the terminal. Opening the
                 Steward already dismisses it, so it never stacks on that panel. */}
+            {filesPreviewVisible && filesSubject ? <FilesOverlay
+              key={`${filesSubject.projectId}:${filesSubject.taskId ?? "project"}`}
+              subject={filesSubject}
+              preview={files.snapshot.preview}
+              close={files.browser.clearPreview}
+            /> : null}
             {changesSubject ? (
               <ChangesOverlay
                 key={`${changesSubject.kind}:${changesSubject.id}`}
