@@ -209,7 +209,7 @@ describe("Shell sidebar sizing", () => {
     })).toBe(true);
   });
 
-  it("makes the native overlay interactive for provider history repair", () => {
+  it.each(["providerHistoryRepair", "workflowClose"] as const)("makes the native overlay interactive for %s", (surface) => {
     expect(shellNativeOverlayOpen({
       projectDialog: false,
       projectMenu: false,
@@ -223,7 +223,8 @@ describe("Shell sidebar sizing", () => {
       sessionMenu: false,
       taskRelocation: false,
       projectRelocation: false,
-      providerHistoryRepair: true,
+      providerHistoryRepair: false,
+      [surface]: true,
       taskRail: false,
       archivedRail: false,
     })).toBe(true);
