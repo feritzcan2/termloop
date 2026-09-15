@@ -102,8 +102,8 @@ pub use runtime::{
     wait_for_daemon_shutdown_signal,
 };
 pub use secure_credentials::{
-    NativeSecureCredentialStore, SecureCredentialError, SecureCredentialKey, SecureCredentialStore,
-    SecureSecret,
+    NativeSecureCredentialStore, PersistentSecureCredentialStore, SecureCredentialError,
+    SecureCredentialKey, SecureCredentialStore, SecureSecret,
 };
 pub use skill_manager::{
     SkillAgent, SkillAgentState, SkillAvailability, SkillCatalog, SkillCatalogItem,

@@ -476,8 +476,9 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(Ok(observer)) => Arc::new(observer),
             Ok(Err(_)) | Err(_) => Arc::new(termloop_core::UnavailableTaskSourceRefreshObserver),
         };
-    let secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore> =
-        Arc::new(termloop_platform::NativeSecureCredentialStore);
+    let secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore> = Arc::new(
+        termloop_platform::PersistentSecureCredentialStore::new(&state_directory),
+    );
     let voice = termloop_core::VoiceService::new(secure_credentials.clone());
     let voice_settings = voice::VoiceSettingsStore::open(&state_directory);
     let state = AppState {

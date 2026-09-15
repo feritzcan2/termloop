@@ -2522,6 +2522,7 @@ dependencies = [
  "libc",
  "notify",
  "rand 0.9.5",
+ "ring",
  "serde",
  "serde_json",
  "sha2",
