@@ -160,6 +160,7 @@ mod mcp_settings;
 mod migration;
 mod playbook;
 mod project;
+mod project_branch_cleanup;
 mod provisioning;
 mod relocation;
 mod repair;

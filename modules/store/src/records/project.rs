@@ -129,6 +129,9 @@ impl Store {
             .tasks
             .retain(|task| task.project_id != project_id);
         self.state
+            .task_branch_sets
+            .retain(|set| !task_ids.contains(&set.task_id));
+        self.state
             .task_archive_operations
             .retain(|operation| !task_ids.contains(&operation.task_id));
         self.state.task_archive_suspensions.retain(|suspension| {
