@@ -25,6 +25,9 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
     if schema_version < 61 {
         remove_orphan_conversation_readiness(&mut value);
     }
+    if schema_version < 63 {
+        remove_orphan_task_branch_sets(&mut value);
+    }
     match schema_version {
         1 => {
             add_legacy_generation_fields(&mut value)?;
@@ -560,7 +563,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        57..=61 => {
+        57..=62 => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             state.schema_version = CURRENT_SCHEMA_VERSION;
@@ -576,6 +579,29 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             Ok((state, sanitized))
         }
         unsupported => Err(StoreError::UnsupportedSchema(unsupported)),
+    }
+}
+
+fn remove_orphan_task_branch_sets(value: &mut serde_json::Value) {
+    let task_ids = value
+        .get("tasks")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|task| task.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(sets) = value
+        .get_mut("task_branch_sets")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        // Only remove evidence owned by deleted Tasks. Malformed records and
+        // invalid evidence for surviving Tasks must still fail validation.
+        sets.retain(|set| {
+            set.get("task_id")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|id| task_ids.contains(id))
+        });
     }
 }
 
