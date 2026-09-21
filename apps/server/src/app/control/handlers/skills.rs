@@ -130,6 +130,53 @@ pub(in crate::app) async fn create_skill_definition(
     })?
 }
 
+pub(in crate::app) async fn get_skill_package(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params = serde_json::from_value::<protocol::SkillDefinitionGetParams>(params)
+        .expect("validated skill package params");
+    let plan = {
+        let core = state.core.lock().await;
+        core.plan_skill_catalog(params.project_id.as_deref())?
+    };
+    let manager = state.skill_manager.clone();
+    tokio::task::spawn_blocking(move || {
+        let package = manager
+            .read_package(platform_scope(&plan), &params.skill_id)
+            .map_err(skill_error)?;
+        serde_json::to_value(package).map_err(|error| CoreError::Terminal(error.to_string()))
+    })
+    .await
+    .map_err(|_| CoreError::Terminal("skill package worker stopped unexpectedly".into()))?
+}
+
+pub(in crate::app) async fn create_skill_package(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params = serde_json::from_value::<protocol::SkillPackageCreateParams>(params)
+        .expect("validated skill package create params");
+    let manager = state.skill_manager.clone();
+    tokio::task::spawn_blocking(move || {
+        let files = params
+            .files
+            .into_iter()
+            .map(|file| termloop_platform::SkillPackageFile {
+                path: file.path,
+                content_base64: file.content_base64,
+                executable: file.executable,
+            })
+            .collect::<Vec<_>>();
+        let catalog = manager
+            .create_user_package(&params.directory_name, &files)
+            .map_err(skill_error)?;
+        serde_json::to_value(catalog).map_err(|error| CoreError::Terminal(error.to_string()))
+    })
+    .await
+    .map_err(|_| CoreError::Terminal("skill package create worker stopped unexpectedly".into()))?
+}
+
 fn skill_error(error: termloop_platform::SkillManagerError) -> CoreError {
     match error {
         termloop_platform::SkillManagerError::SkillNotFound => CoreError::NotFound,

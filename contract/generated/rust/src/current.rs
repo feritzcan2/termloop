@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:72fe4fe3583ae7efb9ea2b0d2a1349c6d94f76be237792eb63a85fe1ea6ce3ee";
+    "sha256:c3d9e0cabae78800144bc69fe80d35cf792a9f6cd2671e355972381555dab68b";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -241,6 +241,8 @@ pub const METHODS: &[&str] = &[
     "skill.definitionGet",
     "skill.definitionSave",
     "skill.definitionCreate",
+    "skill.packageGet",
+    "skill.packageCreate",
     "contextBank.catalogGet",
     "contextBank.fileGet",
     "contextBank.fileSave",
@@ -1086,6 +1088,30 @@ pub struct SkillDefinitionCreateParams {
     #[serde(rename = "directoryName")]
     pub directory_name: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SkillPackageFileDto {
+    pub path: String,
+    #[serde(rename = "contentBase64")]
+    pub content_base64: String,
+    pub executable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SkillPackageDto {
+    pub name: String,
+    pub files: Vec<SkillPackageFileDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SkillPackageCreateParams {
+    #[serde(rename = "directoryName")]
+    pub directory_name: String,
+    pub files: Vec<SkillPackageFileDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -8360,6 +8386,9 @@ pub type SkillDeploymentSetResult = SkillCatalogResult;
 pub type SkillDefinitionGetResult = SkillDefinitionDto;
 pub type SkillDefinitionSaveResult = SkillDefinitionDto;
 pub type SkillDefinitionCreateResult = SkillCatalogResult;
+pub type SkillPackageGetParams = SkillDefinitionGetParams;
+pub type SkillPackageGetResult = SkillPackageDto;
+pub type SkillPackageCreateResult = SkillCatalogResult;
 pub type ContextBankCatalogGetResult = ContextBankCatalogResult;
 pub type ContextBankFileGetResult = ContextBankFileDto;
 pub type ContextBankFileSaveResult = ContextBankFileDto;
@@ -8696,6 +8725,8 @@ fn validate_method(value: &Value) -> bool {
             "skill.definitionGet",
             "skill.definitionSave",
             "skill.definitionCreate",
+            "skill.packageGet",
+            "skill.packageCreate",
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",
@@ -10033,6 +10064,94 @@ fn validate_skill_definition_create_params(value: &Value) -> bool {
         }) && object
             .keys()
             .all(|key| ["directoryName", "content"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_skill_package_file_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("path").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 512)
+        }) && object.get("contentBase64").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 5592408)
+        }) && object
+            .get("executable")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["path", "contentBase64", "executable"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_skill_package_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+        }) && object.get("files").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 1024
+                    && items
+                        .iter()
+                        .all(|item| validate_skill_package_file_dto(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["name", "files"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_skill_package_create_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("directoryName").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 80
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$", text)
+            })
+        }) && object.get("files").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 1024
+                    && items
+                        .iter()
+                        .all(|item| validate_skill_package_file_dto(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["directoryName", "files"].contains(&key.as_str()))
     })
 }
 
@@ -30385,6 +30504,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<SkillDefinitionCreateParams>(params.clone()).is_ok()
                 && validate_skill_definition_create_params(params)
         }
+        "skill.packageGet" => {
+            serde_json::from_value::<SkillPackageGetParams>(params.clone()).is_ok()
+                && validate_skill_definition_get_params(params)
+        }
+        "skill.packageCreate" => {
+            serde_json::from_value::<SkillPackageCreateParams>(params.clone()).is_ok()
+                && validate_skill_package_create_params(params)
+        }
         "contextBank.catalogGet" => {
             serde_json::from_value::<ContextBankCatalogGetParams>(params.clone()).is_ok()
                 && validate_context_bank_catalog_get_params(params)
@@ -31205,6 +31332,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "skill.definitionCreate" => {
             serde_json::from_value::<SkillDefinitionCreateResult>(result.clone()).is_ok()
+                && validate_skill_catalog_result(result)
+        }
+        "skill.packageGet" => {
+            serde_json::from_value::<SkillPackageGetResult>(result.clone()).is_ok()
+                && validate_skill_package_dto(result)
+        }
+        "skill.packageCreate" => {
+            serde_json::from_value::<SkillPackageCreateResult>(result.clone()).is_ok()
                 && validate_skill_catalog_result(result)
         }
         "contextBank.catalogGet" => {

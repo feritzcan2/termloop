@@ -2,6 +2,9 @@
 
 mod cli;
 mod discovery;
+mod package;
+
+pub use package::{SkillPackage, SkillPackageFile};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -168,6 +171,10 @@ pub enum SkillManagerError {
     InvalidDirectoryName,
     #[error("a skill folder with this name already exists")]
     SkillAlreadyExists,
+    #[error("the skill package is invalid or contains unsupported paths or file types")]
+    InvalidPackage,
+    #[error("the skill package exceeds 4 MiB, 1024 files, or the directory/path limits")]
+    PackageTooLarge,
     #[error("skills-manager command failed: {0}")]
     CommandFailed(String),
     #[error(transparent)]
@@ -502,7 +509,7 @@ mod tests {
         }
     }
 
-    fn temporary_directory(label: &str) -> PathBuf {
+    pub(super) fn temporary_directory(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "termloop-platform-{label}-{}-{}",
             std::process::id(),
@@ -512,7 +519,7 @@ mod tests {
         path
     }
 
-    fn write_skill(directory: &Path, name: &str, description: &str) {
+    pub(super) fn write_skill(directory: &Path, name: &str, description: &str) {
         fs::create_dir_all(directory).unwrap();
         fs::write(
             directory.join("SKILL.md"),
