@@ -23,6 +23,7 @@ mod changes;
 mod cleanup;
 mod health_presence;
 mod provisioning;
+mod provisioning_revalidation;
 mod recovery;
 mod relocation;
 mod stale_disposal;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { CONTRACT_IDENTITY } from "@termloop/contract/current";
 import { SshSetupManager } from "../src/platform/ssh-setup.js";
 import * as connection from "../src/platform/ssh-setup-connection.js";
+import { ConnectionProfileLifecycle } from "../src/main/connection-profile-lifecycle.js";
 
 vi.mock("../src/platform/ssh-setup-connection.js", () => ({
   resolveSetupTarget: vi.fn(), discoverHostIdentity: vi.fn(), authenticateSetup: vi.fn(), createManagedIdentity: vi.fn(), remoteCommand: vi.fn(),
@@ -141,6 +142,26 @@ describe("SSH setup orchestration", () => {
     await expect(manager.connect(1, reviewed.id, save, verify)).resolves.toEqual(result);
     expect(save).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledTimes(2);
+    expect(manager.current(1)).toBeNull();
+  });
+
+  it("retains a saved profile across registry refresh failure and repeated connection retries", async () => {
+    const reviewed = await readyForInstall();
+    manager.install(1, reviewed.id);
+    await vi.waitFor(() => expect(manager.status(1, reviewed.id).phase).toBe("ready"));
+    let enrolled = 0;
+    const profiles = {
+      connect: vi.fn(async () => ({ profile: { id: `profile-${++enrolled}`, name: "SSH", transport: "ssh" as const, scope: "full" as const, endpoint: "fixture", enabled: true, persistence: "encrypted" as const } })),
+      setEnabled: vi.fn(), remove: vi.fn(),
+    };
+    const resources = { stopProfile: vi.fn() };
+    const lifecycle = new ConnectionProfileLifecycle(profiles, { ...resources, summaries: vi.fn().mockRejectedValue(new Error("Refresh failed")) }, resources, resources);
+    const save = lifecycle.connect.bind(lifecycle);
+    const verify = vi.fn().mockRejectedValueOnce(new Error("Offline")).mockRejectedValueOnce(new Error("Offline")).mockResolvedValue(undefined);
+    for (let attempt = 0; attempt < 2; attempt++) await expect(manager.connect(1, reviewed.id, save, verify)).rejects.toThrow("Offline");
+    await expect(manager.connect(1, reviewed.id, save, verify)).resolves.toMatchObject({ profile: { id: "profile-1" } });
+    expect(profiles.connect).toHaveBeenCalledOnce();
+    expect(verify.mock.calls).toEqual([["profile-1"], ["profile-1"], ["profile-1"]]);
     expect(manager.current(1)).toBeNull();
   });
 });

@@ -49,6 +49,7 @@ beforeEach(() => {
   mocks.spawn.mockImplementation(() => {
     const child = new SshChild();
     children.push(child);
+    queueMicrotask(() => child.stderr.write("TERMLOOP_SSH_FORWARD_READY\n"));
     return child;
   });
 });
@@ -66,6 +67,58 @@ async function launch() {
 }
 
 describe("SSH runtime failures and ownership", () => {
+  it("waits for OpenSSH forwarding setup before probing a possibly unrelated listener", async () => {
+    mocks.spawn.mockImplementation(() => {
+      const child = new SshChild();
+      children.push(child);
+      return child;
+    });
+    mocks.connect.mockImplementation(() => {
+      const socket = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+      queueMicrotask(() => socket.emit("connect"));
+      return socket;
+    });
+    const { outcome } = await launch();
+    expect(mocks.connect).not.toHaveBeenCalled();
+    children[0]!.stderr.write("bind [127.0.0.1]:50000: Address already in use\nchannel_setup_fwd_listener_tcpip: cannot listen to port: 50000\nTERMLOOP_SSH_FORWARD_");
+    expect(mocks.connect).not.toHaveBeenCalled();
+    children[0]!.stderr.write("READY\r\n");
+    const tunnel = await outcome as { localPort: number; stop(): void };
+    expect(tunnel.localPort).toBe(40001);
+    expect(mocks.spawn).toHaveBeenCalledOnce();
+    tunnel.stop();
+  });
+
+  it("retries a failure of its own port even when OpenSSH stays running", async () => {
+    mocks.spawn.mockImplementation(() => {
+      const child = new SshChild();
+      children.push(child);
+      child.kill.mockImplementation(() => { child.exit(""); return true; });
+      return child;
+    });
+    const { outcome } = await launch();
+    children[0]!.stderr.write(`channel_setup_fwd_listener_tcpip: cannot listen to port: 40001\n${"other diagnostic\n".repeat(1000)}TERMLOOP_SSH_FORWARD_READY\n`);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.spawn).toHaveBeenCalledTimes(2);
+    children[1]!.exit("Permission denied (publickey).");
+    await expect(outcome).resolves.toMatchObject({ code: "sshAuthenticationFailed" });
+  });
+
+  it("bounds the wait when OpenSSH never signals forwarding readiness", async () => {
+    mocks.spawn.mockImplementation(() => {
+      const child = new SshChild();
+      children.push(child);
+      return child;
+    });
+    const { outcome } = await launch();
+    await vi.advanceTimersByTimeAsync(10_250);
+    await expect(outcome).resolves.toMatchObject({ code: "sshReadinessTimedOut" });
+    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(children[0]!.kill).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each([
     ["Permission denied (publickey).", "sshAuthenticationFailed"],
     ["Too many authentication failures", "sshAuthenticationFailed"],

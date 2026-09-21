@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
-import { dismissibleFailedProvisioningOperationId, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
+import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
 import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
@@ -1769,13 +1769,11 @@ export function DesktopApp() {
   const provisionTaskWorktree = useCallback(async (params: TaskProvisionWorktreeParams) => {
     try {
       const currentTask = projectionStore.getSnapshot().tasks.find((task) => task.id === params.taskId);
-      const failedOperationId = dismissibleFailedProvisioningOperationId(
+      const result = await submitTaskWorktreeProvisioning(
+        sourceApiForTask(params.taskId),
+        params,
         currentTask?.worktree_provisioning,
       );
-      if (failedOperationId) {
-        await sourceApiForTask(params.taskId).taskDismissWorktreeProvisioning(params.taskId, failedOperationId);
-      }
-      const result = await sourceApiForTask(params.taskId).taskProvisionWorktree(params);
       const message = taskProvisionWorktreeFailureMessage(result);
       if (message) {
         await refreshProjection();

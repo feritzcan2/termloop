@@ -43,6 +43,27 @@ function fixture() {
 }
 
 describe("ConnectionProfileLifecycle", () => {
+  it("returns the saved profile and both warnings when refreshing fails", async () => {
+    const f = fixture();
+    f.connections.summaries.mockRejectedValueOnce(new Error("private refresh diagnostic"));
+    const result = await f.lifecycle.connect({ name: "SSH server", transport: { kind: "ssh", host: "fixture", remotePort: 43717 } });
+    expect(result.profile.id).toBe("new");
+    expect(f.stored.has(result.profile.id)).toBe(true);
+    expect(result.warning).toContain("Available for this app session only.");
+    expect(result.warning).toContain("saved");
+    expect(result.warning).toContain("refreshed");
+    expect(result.warning).not.toContain("private refresh diagnostic");
+    await expect(f.lifecycle.setEnabled("new", false)).resolves.toContainEqual(expect.objectContaining({ id: "new", enabled: false }));
+  });
+
+  it("still rejects enrollment failures before a profile is saved", async () => {
+    const f = fixture();
+    f.profiles.connect.mockRejectedValueOnce(new Error("Enrollment failed"));
+    await expect(f.lifecycle.connect({ name: "SSH server", transport: { kind: "ssh", host: "fixture", remotePort: 43717 } })).rejects.toThrow("Enrollment failed");
+    expect(f.connections.summaries).not.toHaveBeenCalled();
+    expect(f.stored.has("new")).toBe(false);
+  });
+
   it("finishes a disable and its refresh before a queued enable can change the profile", async () => {
     const f = fixture();
     const refreshing = deferred();

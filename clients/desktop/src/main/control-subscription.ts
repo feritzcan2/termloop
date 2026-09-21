@@ -81,6 +81,7 @@ export class ControlSubscription {
     try {
       config = await this.resolveConnectionConfig();
     } catch (error) {
+      if (this.#stopped || generation !== this.#generation) return;
       // SSH transport setup rejects during its bounded reconnect backoff.
       // Treat that exactly like temporarily missing discovery.
       this.onState?.("offline", error instanceof Error ? error.message : String(error));

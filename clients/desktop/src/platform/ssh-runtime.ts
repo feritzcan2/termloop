@@ -2,10 +2,14 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import { devNull } from "node:os";
 import { promisify } from "node:util";
+import { isSshHost } from "../ssh-setup-types.js";
 
 const execute = promisify(execFile);
 
 const MAX_LOCAL_PORT_ATTEMPTS = 3;
+const FORWARD_READY = "TERMLOOP_SSH_FORWARD_READY";
+const FORWARD_READY_COMMAND = `LocalCommand=echo ${FORWARD_READY} 1>&2`;
+const FORWARD_READY_PATTERN = new RegExp(`(?:^|\\n)${FORWARD_READY}[ \\t]*\\r?\\n`);
 let foregroundOptionSupport: Promise<boolean> | undefined;
 
 export type SshTunnelRequest = {
@@ -39,7 +43,10 @@ export function sshCommandArgs(request: SshTunnelRequest, command: string, suppo
   const args = sshTunnelArgs(request, 1, supportsForegroundOption);
   args.splice(args.indexOf("-N"), 1);
   args.splice(args.indexOf("-L"), 2);
-  args.splice(args.length - 1, 0, "-o", "ClearAllForwardings=yes", "-o", "RemoteCommand=none");
+  args.splice(args.indexOf(FORWARD_READY_COMMAND) - 1, 2);
+  args.splice(args.indexOf("PermitLocalCommand=yes") - 1, 2);
+  args[args.indexOf("ClearAllForwardings=no")] = "ClearAllForwardings=yes";
+  args.splice(args.length - 1, 0, "-o", "RemoteCommand=none");
   return [...args, command];
 }
 
@@ -67,22 +74,27 @@ export async function spawnSshTunnel(request: SshTunnelRequest): Promise<SshTunn
     });
     child.stdout.resume();
     let stderr = "";
+    const forward = { ready: false, failed: false };
+    const bindFailure = new RegExp(`cannot listen to port: ${localPort}\\r?\\n`);
     child.stderr.on("data", (chunk) => {
-      stderr = `${stderr}${String(chunk)}`.slice(-8_192);
+      const diagnostic = `${stderr}${String(chunk)}`;
+      forward.failed ||= bindFailure.test(diagnostic);
+      forward.ready ||= FORWARD_READY_PATTERN.test(diagnostic);
+      stderr = diagnostic.slice(-8_192);
     });
     // Register before exit: Node may deliver the final stderr bytes after exit.
     let closed = false;
     const onClose = () => { closed = true; };
     child.once("close", onClose);
     try {
-      await waitForTunnel(child, localPort);
+      await waitForTunnel(child, localPort, forward);
       return runningTunnel(child, localPort);
     } catch (error) {
       child.kill();
       if (!closed) await waitForProcessClose(child);
       const classified = classifySshFailure(error, stderr);
       if (classified) throw classified;
-      if (attempt < MAX_LOCAL_PORT_ATTEMPTS && isSshLocalForwardBindFailure(stderr)) continue;
+      if (attempt < MAX_LOCAL_PORT_ATTEMPTS && (forward.failed || isSshLocalForwardBindFailure(stderr))) continue;
       throw new SshRuntimeError("sshForwardFailed", "SSH port forwarding could not be established");
     } finally {
       child.off("close", onClose);
@@ -183,21 +195,27 @@ export function sshTunnelArgs(request: SshTunnelRequest, localPort: number, supp
   if (!Number.isSafeInteger(request.remotePort) || request.remotePort < 1_024 || request.remotePort > 65_535) {
     throw new Error("SSH remote port is invalid");
   }
-  if (request.host.length > 255
-    || !/^(?:[A-Za-z0-9][A-Za-z0-9._:-]*|\[[0-9A-Fa-f:]+\])$/.test(request.host)) {
+  const host = request.host.replace(/^\[([0-9a-fA-F:]+)\]$/, "$1");
+  if (!isSshHost(host)) {
     throw new Error("SSH host contains unsupported characters");
   }
   if (request.user
     && (request.user.length > 255 || !/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(request.user))) {
     throw new Error("SSH user contains unsupported characters");
   }
-  const target = request.user ? `${request.user}@${request.host}` : request.host;
+  const target = request.user ? `${request.user}@${host}` : host;
   if (request.sshPort !== undefined && (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65535)) throw new Error("SSH port is invalid");
   return [
     "-N",
     "-T",
     "-o", "BatchMode=yes",
-    "-o", "ExitOnForwardFailure=yes",
+    // A configured forward may belong to another session. Its failure must not
+    // kill this tunnel; readiness below checks the requested local port instead.
+    "-o", "ExitOnForwardFailure=no",
+    "-o", "ClearAllForwardings=no",
+    "-o", "LogLevel=ERROR",
+    "-o", "PermitLocalCommand=yes",
+    "-o", FORWARD_READY_COMMAND,
     "-o", "StrictHostKeyChecking=yes",
     ...(request.sshPort !== undefined ? ["-p", String(request.sshPort)] : []),
     ...(request.identityFile ? ["-F", devNull, "-i", request.identityFile, "-o", "IdentitiesOnly=yes"] : []),
@@ -230,7 +248,7 @@ async function reserveLoopbackPort(): Promise<number> {
   });
 }
 
-async function waitForTunnel(child: ChildProcess, localPort: number): Promise<void> {
+async function waitForTunnel(child: ChildProcess, localPort: number, forward: { ready: boolean; failed: boolean }): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let socket: net.Socket | undefined;
@@ -243,6 +261,7 @@ async function waitForTunnel(child: ChildProcess, localPort: number): Promise<vo
       socket?.destroy();
       child.off("error", fail);
       child.off("exit", exited);
+      child.stderr?.off("data", forwarding);
       error ? reject(error) : resolve();
     };
     const fail = (error: Error) => finish(error);
@@ -261,8 +280,17 @@ async function waitForTunnel(child: ChildProcess, localPort: number): Promise<vo
         timer = setTimeout(probe, 100);
       });
     };
+    // OpenSSH runs LocalCommand after setting up local forwards. Its marker is
+    // on stderr, after any bind errors on that same stream, so an unrelated
+    // listener winning our reserved port cannot pass the readiness probe.
+    const forwarding = () => {
+      if (settled) return;
+      if (forward.failed) { finish(new Error("SSH local forward could not bind")); return; }
+      if (forward.ready && !socket) probe();
+    };
     child.once("error", fail);
     child.once("exit", exited);
-    probe();
+    child.stderr?.on("data", forwarding);
+    forwarding();
   });
 }
