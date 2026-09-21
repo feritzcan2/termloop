@@ -21,6 +21,7 @@ import {
   type SkillCatalogGetParams,
   type SkillDefinitionGetParams,
   type SkillDefinitionCreateParams,
+  type SkillPackageCreateParams,
   type SkillDefinitionSaveParams,
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
@@ -474,6 +475,12 @@ handleIpc("termloop:skill-definition-save", (_event, params: SkillDefinitionSave
 );
 handleIpc("termloop:skill-definition-create", (_event, params: SkillDefinitionCreateParams) =>
   controlCall("skill.definitionCreate", params),
+);
+handleIpc("termloop:skill-package-get", (_event, params: SkillDefinitionGetParams) =>
+  controlCall("skill.packageGet", params),
+);
+handleIpc("termloop:skill-package-create", (_event, params: SkillPackageCreateParams) =>
+  controlCall("skill.packageCreate", params),
 );
 handleIpc("termloop:context-bank-catalog-get", (_event, params: ContextBankCatalogGetParams) =>
   controlCall("contextBank.catalogGet", params),

@@ -245,6 +245,14 @@
         "$ref": "#/$defs/skillCatalogResult"
       }
     },
+    "skill.packageGet": {
+      "params": { "$ref": "#/$defs/skillDefinitionGetParams" },
+      "result": { "$ref": "#/$defs/skillPackageDto" }
+    },
+    "skill.packageCreate": {
+      "params": { "$ref": "#/$defs/skillPackageCreateParams" },
+      "result": { "$ref": "#/$defs/skillCatalogResult" }
+    },
     "contextBank.catalogGet": {
       "params": {
         "$ref": "#/$defs/contextBankCatalogGetParams"
@@ -1779,6 +1787,8 @@
         "skill.definitionGet",
         "skill.definitionSave",
         "skill.definitionCreate",
+        "skill.packageGet",
+        "skill.packageCreate",
         "contextBank.catalogGet",
         "contextBank.fileGet",
         "contextBank.fileSave",
@@ -2558,6 +2568,49 @@
           "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$"
         },
         "content": { "type": "string", "minLength": 1, "maxLength": 262144 }
+      }
+    },
+    "skillPackageFileDto": {
+      "x-codegen": true,
+      "x-codegen-name": "SkillPackageFileDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "contentBase64", "executable"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "contentBase64": { "type": "string", "maxLength": 5592408 },
+        "executable": { "type": "boolean" }
+      }
+    },
+    "skillPackageDto": {
+      "x-codegen": true,
+      "x-codegen-name": "SkillPackageDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "files"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "files": {
+          "type": "array", "minItems": 1, "maxItems": 1024,
+          "items": { "$ref": "#/$defs/skillPackageFileDto" }
+        }
+      }
+    },
+    "skillPackageCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SkillPackageCreateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directoryName", "files"],
+      "properties": {
+        "directoryName": {
+          "type": "string", "minLength": 1, "maxLength": 80,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$"
+        },
+        "files": {
+          "type": "array", "minItems": 1, "maxItems": 1024,
+          "items": { "$ref": "#/$defs/skillPackageFileDto" }
+        }
       }
     },
     "skillDefinitionDto": {
