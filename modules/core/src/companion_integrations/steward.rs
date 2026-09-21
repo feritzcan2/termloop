@@ -47,6 +47,7 @@ pub struct StewardTaskAgentStartPlan {
     existing_branch_name: Option<String>,
     checked_out_branch_name: Option<String>,
     existing_worktree_path: Option<String>,
+    provisioning_retry: Option<termloop_domain::WorktreeProvisioningOperation>,
     agent_id: String,
     launch_selection: AgentLaunchSelection,
 }
@@ -97,6 +98,23 @@ impl StewardTaskAgentStartPlan {
 
     pub fn existing_branch_name(&self) -> Option<&str> {
         self.existing_branch_name.as_deref()
+    }
+
+    pub fn worktree_provisioning_retry_params(&self) -> Option<Value> {
+        let operation = self.provisioning_retry.as_ref()?;
+        let spec = &operation.spec;
+        let mut params = json!({
+            "operationId": operation.operation_id,
+            "taskId": operation.task_id,
+            "repositoryPath": spec.repository_root,
+            "destinationPath": spec.destination_path,
+            "branchName": spec.branch_name,
+            "branchMode": spec.branch_mode,
+        });
+        if let Some(base_ref) = &spec.base_ref {
+            params["baseRef"] = json!(base_ref);
+        }
+        Some(params)
     }
 
     pub fn agent_id(&self) -> &str {
@@ -569,6 +587,14 @@ impl CoreRuntime {
                 .cached_task_worktree_health(&task.id)
                 .and_then(|health| health.checked_out_branch.clone()),
             existing_worktree_path: task.worktree.as_ref().map(|worktree| worktree.path.clone()),
+            provisioning_retry: self
+                .store
+                .provisioning_operations()
+                .iter()
+                .find(|operation| {
+                    operation.task_id == task.id && operation.project_id == task.project_id
+                })
+                .cloned(),
             agent_id,
             launch_selection,
         })

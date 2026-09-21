@@ -207,6 +207,21 @@ impl CoreRuntime {
         }
         let name = project_name(&params)?;
         let folder_path = canonical_project_folder(&params)?;
+        if self
+            .store
+            .projects()
+            .iter()
+            .any(|project| project.id == project_id && project.folder_path != folder_path)
+            && let Some(operation) = self
+                .store
+                .provisioning_operations()
+                .iter()
+                .find(|operation| operation.project_id == project_id && operation.failure.is_none())
+        {
+            return Err(CoreError::ProvisioningAlreadyInProgress {
+                operation_id: operation.operation_id.clone(),
+            });
+        }
         let project = self
             .store
             .update_project_details(&self.write_authority, &project_id, name, folder_path)

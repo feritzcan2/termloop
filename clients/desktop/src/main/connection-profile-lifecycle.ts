@@ -22,7 +22,16 @@ export class ConnectionProfileLifecycle {
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult> {
     return this.#serialize(async () => {
       const result = await this.profiles.connect(input);
-      await this.#finish();
+      try {
+        await this.#finish();
+      } catch {
+        // Enrollment has committed. Keep its identity available to connection
+        // retries instead of making callers enroll the same server again.
+        return {
+          ...result,
+          warning: [result.warning, "The server was saved, but connections could not be refreshed. Retry the connection."].filter(Boolean).join(" "),
+        };
+      }
       return result;
     });
   }
