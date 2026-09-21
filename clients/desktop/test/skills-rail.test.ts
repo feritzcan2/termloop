@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SkillCatalogResult } from "@termloop/contract/current";
+import type { ConnectionProfileSummary } from "../src/connection-profile-types.js";
+import { remoteSkillComputers } from "../src/renderer/composition/remote-skills.js";
 import { SkillsRail } from "../src/renderer/ui/SkillsRail.js";
 
 const catalog: SkillCatalogResult = {
@@ -389,6 +391,92 @@ describe("Skills rail", () => {
     await act(async () => undefined);
 
     expect(container.querySelector('[aria-label="Show remote computers"]')).toBeNull();
+  });
+
+  it("tracks newly connected computers and preserves the toggle across disconnection", async () => {
+    const computer = (id: string, state: "connected" | "offline"): ConnectionProfileSummary => ({
+      id, name: id, state, transport: "ssh", scope: "full", endpoint: id,
+      enabled: true, persistence: "encrypted",
+    });
+    let profiles = [computer("Studio", "connected"), computer("Build", "offline")];
+    const props = {
+      listRemoteComputers: vi.fn(async () => remoteSkillComputers(profiles, "local")),
+      loadRemoteCatalog: vi.fn(async () => ({ ...catalog, skills: [] })),
+      createRemoteSkill: vi.fn(),
+    };
+    const show = () => container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]');
+    await render({ ...props, connectionProfiles: profiles });
+    await act(async () => show()?.click());
+    expect(container.querySelector('[aria-label="Create release on Studio"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Create release on Build"]')).toBeNull();
+
+    profiles = [computer("Studio", "connected"), computer("Build", "connected")];
+    await render({ ...props, connectionProfiles: profiles });
+    expect(container.querySelector(".skills-remote-control")?.textContent).toContain("2 connected");
+    expect(container.querySelector('[aria-label="Create release on Build"]')).not.toBeNull();
+    expect(props.loadRemoteCatalog).toHaveBeenCalledWith("Build");
+
+    profiles = [computer("Studio", "offline"), computer("Build", "connected")];
+    await render({ ...props, connectionProfiles: profiles });
+    expect(container.querySelector('[aria-label="Create release on Studio"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Create release on Build"]')).not.toBeNull();
+
+    profiles = [computer("Studio", "offline"), computer("Build", "offline")];
+    await render({ ...props, connectionProfiles: profiles });
+    expect(show()).toBeNull();
+    expect(container.querySelector('[aria-label="Remote computers"]')).toBeNull();
+
+    profiles = [computer("Studio", "offline"), computer("Build", "connected")];
+    await render({ ...props, connectionProfiles: profiles });
+    expect(show()?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector('[aria-label="Create release on Build"]')).not.toBeNull();
+  });
+
+  it("keeps different computer catalogs and copy results independent when reads finish out of order", async () => {
+    const empty = { ...catalog, skills: [] };
+    const onlyReview = { ...catalog, skills: [catalog.skills[0]!] };
+    const onlyRelease = { ...catalog, skills: [catalog.skills[1]!] };
+    let resolveStudio!: (value: SkillCatalogResult) => void;
+    const studioRead = new Promise<SkillCatalogResult>((resolve) => { resolveStudio = resolve; });
+    const createRemoteSkill = vi.fn().mockResolvedValue(onlyRelease);
+    await render({
+      listRemoteComputers: async () => [
+        { profileId: "studio", name: "Studio", writable: true },
+        { profileId: "build", name: "Build", writable: true },
+      ],
+      loadRemoteCatalog: (id) => id === "studio" ? studioRead : Promise.resolve(onlyReview),
+      createRemoteSkill,
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]')?.click());
+    const createOnStudio = () => container.querySelector<HTMLButtonElement>('[aria-label="Create release on Studio"]');
+    expect(createOnStudio()?.disabled).toBe(true);
+    expect(container.querySelector('[title="shared-review is available on Build"]')).not.toBeNull();
+    await act(async () => resolveStudio(empty));
+    expect(createOnStudio()?.disabled).toBe(false);
+    await act(async () => createOnStudio()?.click());
+    expect(createRemoteSkill).toHaveBeenCalledWith("studio", "b".repeat(64));
+    expect(container.querySelector('[title="release is available on Studio"]')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Create release on Build"]')?.disabled).toBe(false);
+    expect(container.querySelector('[title="shared-review is available on Build"]')).not.toBeNull();
+  });
+
+  it("keeps another computer usable when one catalog fails", async () => {
+    await render({
+      listRemoteComputers: async () => [
+        { profileId: "studio", name: "Studio", writable: true },
+        { profileId: "build", name: "Build", writable: true },
+      ],
+      loadRemoteCatalog: async (id) => {
+        if (id === "studio") throw new Error("Connection lost");
+        return { ...catalog, skills: [] };
+      },
+      createRemoteSkill: vi.fn(),
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]')?.click());
+    const failed = container.querySelector<HTMLButtonElement>('[aria-label="Create release on Studio"]');
+    expect(failed?.disabled).toBe(true);
+    expect(failed?.title).toContain("Connection lost");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Create release on Build"]')?.disabled).toBe(false);
   });
 
   it("remounts cleanly when the selected Project changes", async () => {

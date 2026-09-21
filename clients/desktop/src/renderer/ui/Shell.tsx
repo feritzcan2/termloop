@@ -1507,6 +1507,7 @@ export function Shell(props: ShellProps) {
             key={props.selectedProject?.id ?? "global"}
             load={props.loadSkillCatalog}
             setDeployment={props.setSkillDeployment}
+            connectionProfiles={props.connectionProfiles}
             listRemoteComputers={props.listRemoteSkillComputers}
             loadRemoteCatalog={props.loadRemoteSkillCatalog}
             createRemoteSkill={props.createRemoteSkill}
