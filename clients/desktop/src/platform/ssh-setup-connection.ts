@@ -1,7 +1,7 @@
 import ssh2, { type Client, type ConnectConfig, type PasswordAuthMethod, type PublicKeyAuthMethod, type AgentAuthMethod, type BaseAgent, type KnownPublicKeys, type KeyboardInteractiveAuthMethod, type ServerHostKeyAlgorithm } from "ssh2";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, mkdir, writeFile, chmod, open, stat } from "node:fs/promises";
+import { mkdir, writeFile, chmod, open, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -138,9 +138,11 @@ export async function authenticateSetup(target: SetupTarget, identity: HostIdent
           configuredKeys.push(key.getPublicSSH());
           if (key.isPrivateKey()) attempts.push({ type: "publickey", username: target.user, key });
         }
-        const publicKey = utils.parseKey(await readPrivateKey(`${file}.pub`).catch(() => Buffer.alloc(0)));
+      } catch { /* Missing or locked keys fall back to the agent or supplied login. */ }
+      try {
+        const publicKey = utils.parseKey(await readPrivateKey(`${file}.pub`));
         if (!(publicKey instanceof Error) && !Array.isArray(publicKey)) configuredKeys.push(publicKey.getPublicSSH());
-      } catch { /* Missing or locked keys fall back to the supplied login. */ }
+      } catch { /* An agent can hold the private key when only the public file exists. */ }
     }
     if (target.agent) attempts.push({ type: "agent", username: target.user, agent: configuredAgent(ssh2.createAgent(target.agent), configuredKeys, !!target.identitiesOnly) });
     if (credentials.password) attempts.unshift({ type: "password", username: target.user, password: credentials.password });
@@ -249,15 +251,21 @@ export async function createManagedIdentity(root: string, id: string, target: Se
   const paths = managedIdentityPaths(root, id);
   await mkdir(path.dirname(paths.identityFile), { recursive: true, mode: 0o700 });
   await chmod(path.dirname(paths.identityFile), 0o700);
-  let publicKey: string;
+  let privateKey: Buffer;
   try {
-    publicKey = await readFile(`${paths.identityFile}.pub`, "utf8");
-  } catch {
+    privateKey = await readPrivateKey(paths.identityFile);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     const keys = utils.generateKeyPairSync("ed25519", { comment: "TermLoop" });
     await writeFile(paths.identityFile, keys.private, { mode: 0o600, flag: "wx" });
-    publicKey = keys.public;
-    await writeFile(`${paths.identityFile}.pub`, publicKey, { mode: 0o600, flag: "wx" });
+    privateKey = Buffer.from(keys.private);
   }
+  const key = utils.parseKey(privateKey);
+  if (key instanceof Error || Array.isArray(key) || !key.isPrivateKey()) throw new Error("The managed SSH key is invalid. Start a new setup.");
+  // The private key is authoritative: recover a missing or partially written .pub
+  // without replacing an identity that may already be installed on the server.
+  const publicKey = `${key.type} ${key.getPublicSSH().toString("base64")} TermLoop`;
+  await writeFile(`${paths.identityFile}.pub`, publicKey, { mode: 0o600 });
   const parsed = utils.parseKey(identity.key);
   if (parsed instanceof Error || Array.isArray(parsed)) throw new Error("Unsupported SSH server identity.");
   const host = target.port === 22 ? target.host : `[${target.host}]:${target.port}`;

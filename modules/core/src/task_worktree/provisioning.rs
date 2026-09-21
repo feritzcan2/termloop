@@ -51,6 +51,7 @@ pub struct TaskWorktreeProvisioningPlan {
 pub struct ObservedTaskWorktreeProvisioning {
     pub(crate) operation_id: String,
     pub(crate) task: termloop_domain::TaskRecord,
+    pub(crate) project_folder: PathBuf,
     pub(crate) observed: ObservedProvisioningSpec,
     pub(crate) runner: termloop_gitio::GitRunner,
 }
@@ -93,6 +94,7 @@ impl TaskWorktreeProvisioningPlan {
         Ok(ObservedTaskWorktreeProvisioning {
             operation_id: self.operation_id,
             task: self.task,
+            project_folder: self.project_folder,
             observed,
             runner,
         })
@@ -199,6 +201,18 @@ impl CoreRuntime {
     ) -> Result<TaskWorktreeProvisioningProgress, CoreError> {
         let task_id = observed.task.id.clone();
         let operation_id = observed.operation_id;
+        self.ensure_task_active(&task_id)?;
+        if let Some(operation) = self
+            .store
+            .task_archive_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            return Err(CoreError::ArchiveInProgress {
+                task_id,
+                operation_id: operation.operation_id.clone(),
+            });
+        }
         let task = self
             .store
             .tasks()
@@ -206,8 +220,14 @@ impl CoreRuntime {
             .find(|task| task.id == task_id)
             .cloned()
             .ok_or(CoreError::NotFound)?;
-        if !self.project_exists(&task.project_id) {
-            return Err(CoreError::NotFound);
+        let project = self
+            .store
+            .projects()
+            .iter()
+            .find(|project| project.id == task.project_id)
+            .ok_or(CoreError::NotFound)?;
+        if Path::new(&project.folder_path) != observed.project_folder {
+            return Err(CoreError::InvalidParams("repositoryPath".into()));
         }
         if task.project_id != observed.task.project_id
             || operation_id_is_owned_by_another_task(&self.store, &operation_id, &task_id)

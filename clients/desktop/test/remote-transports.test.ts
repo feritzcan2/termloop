@@ -36,7 +36,11 @@ describe("remote desktop transports", () => {
     expect(args).toEqual([
       "-N", "-T",
       "-o", "BatchMode=yes",
-      "-o", "ExitOnForwardFailure=yes",
+      "-o", "ExitOnForwardFailure=no",
+      "-o", "ClearAllForwardings=no",
+      "-o", "LogLevel=ERROR",
+      "-o", "PermitLocalCommand=yes",
+      "-o", "LocalCommand=echo TERMLOOP_SSH_FORWARD_READY 1>&2",
       "-o", "StrictHostKeyChecking=yes",
       "-o", "ControlMaster=no",
       "-o", "ControlPath=none",

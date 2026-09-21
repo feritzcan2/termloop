@@ -1,5 +1,24 @@
-import type { TaskWorktreeProvisioningDto } from "@termloop/contract/current";
-import type { TaskProvisionWorktreeDesktopResult } from "./desktop-api.js";
+import type { TaskProvisionWorktreeParams, TaskWorktreeProvisioningDto } from "@termloop/contract/current";
+import type { DesktopApi, TaskProvisionWorktreeDesktopResult } from "./desktop-api.js";
+
+export async function provisionTaskWorktree(
+  api: Pick<DesktopApi, "taskProvisionWorktree" | "taskDismissWorktreeProvisioning">,
+  params: TaskProvisionWorktreeParams,
+  provisioning: TaskWorktreeProvisioningDto | undefined,
+): Promise<TaskProvisionWorktreeDesktopResult> {
+  // Same-spec retries must keep the journal: a worktree may already exist and
+  // only need verification. Let Core distinguish a changed request first.
+  const result = await api.taskProvisionWorktree(params);
+  const failedOperationId = dismissibleFailedProvisioningOperationId(provisioning);
+  if (!result.ok
+    && failedOperationId
+    && result.details?.kind === "provisioningAlreadyInProgress"
+    && result.details.operationId === failedOperationId) {
+    await api.taskDismissWorktreeProvisioning(params.taskId, failedOperationId);
+    return api.taskProvisionWorktree(params);
+  }
+  return result;
+}
 
 export function dismissibleFailedProvisioningOperationId(
   provisioning: TaskWorktreeProvisioningDto | undefined,
