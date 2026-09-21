@@ -949,6 +949,8 @@ mod tests {
             "skill.definitionGet",
             "skill.definitionSave",
             "skill.definitionCreate",
+            "skill.packageGet",
+            "skill.packageCreate",
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",

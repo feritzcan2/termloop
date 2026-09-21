@@ -108,7 +108,7 @@ pub use secure_credentials::{
 pub use skill_manager::{
     SkillAgent, SkillAgentState, SkillAvailability, SkillCatalog, SkillCatalogItem,
     SkillCatalogLocation, SkillCatalogScope, SkillDefinition, SkillManager, SkillManagerError,
-    SkillOrigin, SkillScope,
+    SkillOrigin, SkillPackage, SkillPackageFile, SkillScope,
 };
 pub use staged_attachment::{
     ResolvedStagedImageAttachment, StagedImageAttachment, prune_staged_image_attachments,

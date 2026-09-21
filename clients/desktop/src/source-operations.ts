@@ -17,6 +17,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   skillDefinitionGet: "termloop:skill-definition-get",
   skillDefinitionSave: "termloop:skill-definition-save",
   skillDefinitionCreate: "termloop:skill-definition-create",
+  skillPackageGet: "termloop:skill-package-get",
+  skillPackageCreate: "termloop:skill-package-create",
   contextBankCatalogGet: "termloop:context-bank-catalog-get",
   contextBankFileGet: "termloop:context-bank-file-get",
   contextBankFileSave: "termloop:context-bank-file-save",
