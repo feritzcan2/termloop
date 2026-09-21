@@ -66,7 +66,7 @@ import { requireQuickActionSession } from "../quick-action-result.js";
 import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
-import { portableSkillDirectoryName, remoteSkillComputers } from "./remote-skills.js";
+import { copyRemoteSkill, remoteSkillComputers } from "./remote-skills.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
 import {
@@ -2369,16 +2369,12 @@ export function DesktopApp() {
     (profileId: string) => desktopApi.source(profileId).skillCatalogGet({ projectId: null }),
     [],
   );
-  const createRemoteSkill = useCallback(async (profileId: string, sourceSkillId: string) => {
-    const definition = await selectedSourceApi.skillDefinitionGet({
-      projectId: skillProjectId,
-      skillId: sourceSkillId,
-    });
-    return desktopApi.source(profileId).skillDefinitionCreate({
-      directoryName: portableSkillDirectoryName(definition.name, sourceSkillId),
-      content: definition.content,
-    });
-  }, [selectedSourceApi, skillProjectId]);
+  const createRemoteSkill = useCallback(
+    (profileId: string, sourceSkillId: string) => copyRemoteSkill(
+      selectedSourceApi, desktopApi.source(profileId), skillProjectId, sourceSkillId,
+    ),
+    [selectedSourceApi, skillProjectId],
+  );
   const loadContextBankCatalog = useCallback(() => {
     if (!skillProjectId) return Promise.reject(new Error("Open a Project to view its Context Bank."));
     return selectedSourceApi.contextBankCatalogGet({ projectId: skillProjectId });

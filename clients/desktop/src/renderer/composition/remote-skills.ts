@@ -1,3 +1,4 @@
+import type { DesktopApi } from "../transport/desktop-api.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 
 export function portableSkillDirectoryName(name: string, skillId: string): string {
@@ -28,4 +29,19 @@ export function remoteSkillComputers(
       name: profile.name,
       writable: profile.scope !== "readOnly",
     }));
+}
+
+/** Read and transfer the package in one operation; definition reads belong to
+ * the editor and intentionally contain only SKILL.md. */
+export async function copyRemoteSkill(
+  source: Pick<DesktopApi, "skillPackageGet">,
+  target: Pick<DesktopApi, "skillPackageCreate">,
+  projectId: string | null,
+  skillId: string,
+) {
+  const skillPackage = await source.skillPackageGet({ projectId, skillId });
+  return target.skillPackageCreate({
+    directoryName: portableSkillDirectoryName(skillPackage.name, skillId),
+    files: skillPackage.files,
+  });
 }

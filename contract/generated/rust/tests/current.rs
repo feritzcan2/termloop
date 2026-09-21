@@ -17,6 +17,7 @@ mod current_task_source;
 mod current_tracker;
 mod current_workflow;
 mod current_worktree;
+mod skill_packages;
 
 use termloop_contract::current::{
     COMPANION_METHODS, CONTRACT_IDENTITY, ControlRequest, METHODS, READ_ONLY_METHODS,
