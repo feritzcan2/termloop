@@ -29,6 +29,10 @@ export type SshSetupActions = {
   choosePackage(id: string): Promise<SshSetupState>;
 };
 
+export function isSshHost(host: string): boolean {
+  return host.length <= 255 && /^(?:[A-Za-z0-9][A-Za-z0-9._-]*|[0-9a-fA-F]*:[0-9a-fA-F:]+)$/.test(host);
+}
+
 // Deliberately accepts addresses and the small, familiar SSH command form only.
 // SSH flags, shell syntax and URLs containing passwords never become commands.
 export function parseSshSetupAddress(input: SshSetupInput): { host: string; user?: string; port?: number; name: string } {
@@ -55,7 +59,7 @@ export function parseSshSetupAddress(input: SshSetupInput): { host: string; user
     address = parts[1]!;
   }
   const host = address.replace(/^\[([0-9a-fA-F:]+)\]$/, "$1");
-  if (host.length > 255 || !/^(?:[A-Za-z0-9][A-Za-z0-9._-]*|[0-9a-fA-F]*:[0-9a-fA-F:]+)$/.test(host)) throw new Error("Enter a valid hostname or IP address.");
+  if (!isSshHost(host)) throw new Error("Enter a valid hostname or IP address.");
   if (user && (user.length > 64 || !/^[A-Za-z_][A-Za-z0-9._-]*$/.test(user))) throw new Error("Enter a valid SSH username.");
   if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) throw new Error("SSH port must be between 1 and 65535.");
   const name = input.name?.trim() || host;

@@ -56,29 +56,36 @@ pub(super) async fn start(
             )
             .map_err(|error| stage_error(error, TaskAgentStartStage::Planning, false, false))?;
         if plan.existing_worktree_path().is_none() {
-            let destination =
-                termloop_platform::sibling_directory_path(repository_path, plan.worktree_leaf())
-                    .map_err(|_| start_error(TaskAgentStartStage::Planning, false, false))?;
-            let destination = destination
-                .to_str()
-                .ok_or_else(|| start_error(TaskAgentStartStage::Planning, false, false))?;
-            let branch = select_provisioning_branch(
-                plan.existing_branch_name(),
-                plan.planned_branch_name(),
-                &branch_projection,
-                params.base_branch.as_deref(),
-            )?;
-            let mut provision_params = json!({
-                "operationId": plan.operation_id(),
-                "taskId": plan.task_id(),
-                "repositoryPath": repository_path,
-                "destinationPath": destination,
-                "branchName": branch.name,
-                "branchMode": branch.mode_name(),
-            });
-            if let Some(base_ref) = branch.base_ref {
-                provision_params["baseRef"] = json!(base_ref);
-            }
+            let provision_params = if let Some(params) = plan.worktree_provisioning_retry_params() {
+                params
+            } else {
+                let destination = termloop_platform::sibling_directory_path(
+                    repository_path,
+                    plan.worktree_leaf(),
+                )
+                .map_err(|_| start_error(TaskAgentStartStage::Planning, false, false))?;
+                let destination = destination
+                    .to_str()
+                    .ok_or_else(|| start_error(TaskAgentStartStage::Planning, false, false))?;
+                let branch = select_provisioning_branch(
+                    plan.existing_branch_name(),
+                    plan.planned_branch_name(),
+                    &branch_projection,
+                    params.base_branch.as_deref(),
+                )?;
+                let mut provision_params = json!({
+                    "operationId": plan.operation_id(),
+                    "taskId": plan.task_id(),
+                    "repositoryPath": repository_path,
+                    "destinationPath": destination,
+                    "branchName": branch.name,
+                    "branchMode": branch.mode_name(),
+                });
+                if let Some(base_ref) = branch.base_ref {
+                    provision_params["baseRef"] = json!(base_ref);
+                }
+                provision_params
+            };
             super::control::provision_task_worktree(provision_params, state)
                 .await
                 .map_err(|error| {
