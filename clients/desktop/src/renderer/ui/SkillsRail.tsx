@@ -6,6 +6,7 @@ import type {
   SkillCatalogItemDto,
   SkillCatalogResult,
 } from "@termloop/contract/current";
+import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 import { Icon } from "./Icon.js";
 import { RailGroup } from "./RailGroup.js";
 import { useRailGroups } from "./rail-groups.js";
@@ -99,6 +100,7 @@ export function SkillsRail({
   setDeployment,
   openEditor,
   improveSkill,
+  connectionProfiles,
   listRemoteComputers,
   loadRemoteCatalog,
   createRemoteSkill,
@@ -109,6 +111,7 @@ export function SkillsRail({
   openEditor(skillId: string, scope: "project" | "computer"): void;
   /// Absent while no Project is open: the improver runs in a checkout.
   improveSkill?: ((skillId: string, name: string) => void) | undefined;
+  connectionProfiles?: readonly ConnectionProfileSummary[] | undefined;
   listRemoteComputers?: (() => Promise<RemoteSkillComputer[]>) | undefined;
   loadRemoteCatalog?: ((profileId: string) => Promise<SkillCatalogResult>) | undefined;
   createRemoteSkill?: ((profileId: string, sourceSkillId: string) => Promise<SkillCatalogResult>) | undefined;
@@ -154,15 +157,13 @@ export function SkillsRail({
     void listRemoteComputers().then((computers) => {
       if (!active) return;
       setRemoteComputers(computers);
-      if (computers.length === 0) setShowRemoteComputers(false);
     }).catch((reason) => {
       if (!active) return;
       setRemoteComputers([]);
-      setShowRemoteComputers(false);
       setRemoteListError(errorMessage(reason));
     });
     return () => { active = false; };
-  }, [listRemoteComputers, reloadToken]);
+  }, [listRemoteComputers, reloadToken, connectionProfiles]);
 
   useEffect(() => {
     if (!showRemoteComputers || !loadRemoteCatalog || remoteComputers.length === 0) return;
@@ -438,7 +439,7 @@ export function SkillsRail({
           onClick={() => setShowRemoteComputers((current) => !current)}
         ><span /></button>
       </div> : null}
-      {showRemoteComputers ? <div className="skills-remote-legend" aria-label="Remote computers">
+      {showRemoteComputers && remoteComputers.length > 0 ? <div className="skills-remote-legend" aria-label="Remote computers">
         {remoteComputers.map((computer) => <span key={computer.profileId} title={computer.writable ? "Full access" : "Read-only access"}>
           <i className={computer.writable ? "writable" : "readonly"} />{computer.name}<em>{computer.writable ? "Enabled" : "Read only"}</em>
         </span>)}
