@@ -337,12 +337,17 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
     if ((event.target as HTMLElement).closest(".active-agent-search")) return;
     if (!(event.key === "ArrowDown" || event.key === "ArrowUp") || ordered.length === 0) return;
     event.preventDefault();
-    const selectedIndex = ordered.findIndex((session) => session.id === props.selectedSession?.id);
+    const visibleIds = new Set([...event.currentTarget.querySelectorAll<HTMLElement>("[data-session-id]")]
+      .filter((row) => !row.closest("[hidden]"))
+      .map((row) => row.dataset.sessionId));
+    const navigable = ordered.filter((session) => visibleIds.has(session.id));
+    if (!navigable.length) return;
+    const selectedIndex = navigable.findIndex((session) => session.id === props.selectedSession?.id);
     const direction = event.key === "ArrowDown" ? 1 : -1;
     const nextIndex = selectedIndex < 0
-      ? (direction > 0 ? 0 : ordered.length - 1)
-      : (selectedIndex + direction + ordered.length) % ordered.length;
-    const next = ordered[nextIndex];
+      ? (direction > 0 ? 0 : navigable.length - 1)
+      : (selectedIndex + direction + navigable.length) % navigable.length;
+    const next = navigable[nextIndex];
     if (!next) return;
     props.navigateSession(next.id);
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-session-id="${next.id}"]`)?.focus());
@@ -464,6 +469,7 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
                   const rows = members.map((member) => <ActiveAgentRow
                     key={member.session.id}
                     {...member}
+                    compactWorkflow={Boolean(segment.workflow)}
                     sharedCheckout={Boolean(checkout)}
                     sharedChanges={Boolean(changes)}
                     props={props}
@@ -471,7 +477,7 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
                   return segment.workflow
                     ? <WorkflowAgentGroupFrame key={first.session.id} workflow={segment.workflow}
                       close={props.closeWorkflow ? () => props.closeWorkflow!(segment.workflow!.executionId) : undefined}
-                      disabled={props.workflowActionsDisabled} metadata={checkout ? <div className="workflow-agent-group-meta">
+                      disabled={props.workflowActionsDisabled} revealMembers={props.searchOpen} metadata={checkout ? <div className="workflow-agent-group-meta">
                       <span className="workflow-agent-group-checkout" title={checkout}><Icon name="folder" /><span>{checkout === props.projectFolder ? "Project checkout" : basename(checkout)}</span></span>
                       {changes ? <button type="button" className="workflow-agent-group-changes"
                         aria-label={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
@@ -488,11 +494,12 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
   );
 }
 
-function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, sharedCheckout, sharedChanges, props }: {
+function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, compactWorkflow, sharedCheckout, sharedChanges, props }: {
   session: Session;
   source?: Session | undefined;
   projectedSource: Session | undefined;
   worktreeChanges: ActiveAgentWorktreeChanges | undefined;
+  compactWorkflow: boolean;
   sharedCheckout: boolean;
   sharedChanges: boolean;
   props: ActiveAgentRailProps;
@@ -521,20 +528,21 @@ function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, sha
   const workflows = props.workflowsBySessionId?.get(session.id) ?? [];
   const workflowAction = activeAgentWorkflowAction(session);
   const rowChanges = sharedChanges ? undefined : worktreeChanges;
+  const workflowActions = workflows.map((workflow) => <button
+    key={workflow.executionId}
+    type="button"
+    className={`active-agent-workflow${compactWorkflow ? " compact" : ""}${workflowAction.resume ? " needs-resume" : ""}`}
+    aria-label={`${workflowAction.label}: ${workflow.context}, ${sessionLabel(session)}`}
+    title={`${workflow.context}\n${workflowAction.resume ? "Resume this agent’s existing conversation; no new workflow is started." : "Open this agent’s conversation to follow or continue the current step."}`}
+    onClick={(event) => {
+      event.stopPropagation();
+      if (workflowAction.resume) props.resumeSession(session.id);
+      else props.selectSession(session.id);
+    }}
+  >{compactWorkflow ? <Icon name={workflowAction.resume ? "play" : "arrowRight"} /> : <><span className="active-agent-workflow-action">{workflowAction.label}</span><span className="active-agent-workflow-step">{workflow.stepLabel}</span></>}</button>);
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
-      {workflows.map((workflow) => <button
-        key={workflow.executionId}
-        type="button"
-        className={`active-agent-workflow${workflowAction.resume ? " needs-resume" : ""}`}
-        aria-label={`${workflowAction.label}: ${workflow.context}, ${sessionLabel(session)}`}
-        title={`${workflow.context}\n${workflowAction.resume ? "Resume this agent’s existing conversation; no new workflow is started." : "Open this agent’s conversation to follow or continue the current step."}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (workflowAction.resume) props.resumeSession(session.id);
-          else props.selectSession(session.id);
-        }}
-      ><span className="active-agent-workflow-action">{workflowAction.label}</span><span className="active-agent-workflow-step">{workflow.stepLabel}</span></button>)}
+      {!compactWorkflow ? workflowActions : null}
       <div className={`session-row active-agent-row${rowChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
@@ -567,6 +575,7 @@ function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, sha
         title={favorite ? "Remove from Favs" : "Add to Favs"}
         onClick={() => props.toggleFavoriteSession(session.id)}
         ><Icon name="star" /></button>
+        {compactWorkflow ? workflowActions : null}
         {rowChanges ? <button
         type="button"
         className="active-agent-worktree-changes"
