@@ -13,6 +13,8 @@ export type FileSearchSnapshot = {
 };
 
 const SEARCH_LIMITS = { cacheBytes: 32 * 1024 * 1024, results: 200, milliseconds: 8_000, debounce: 180 };
+// Match the daemon's bounded file observation capacity without flooding its queue.
+const CONCURRENT_DIRECTORIES = 2;
 const normalize = (value: string) => value.replaceAll("\\", "/").toLocaleLowerCase("en-US");
 type IndexedFile = { entry: WorkspaceFileEntryDto; path: string };
 
@@ -59,7 +61,10 @@ export class FileSearch {
   setQuery(query: string): void {
     if (!this.active || query === this.snapshot.query) return;
     this.publish({ query, page: 0 });
-    if (!query.trim() || !this.cacheComplete) { this.refresh(); return; }
+    if (!this.cacheComplete) { this.refresh(); return; }
+    // Clearing the input hides results, but keeps the index and any ongoing
+    // crawl. Typing the next filename must not start again at the root.
+    if (!query.trim()) { this.matches = []; this.publishMatches(); return; }
     const terms = this.terms();
     this.matches = this.index.filter((item) => terms.every((term) => item.path.includes(term))).map((item) => item.entry);
     this.publishMatches();
@@ -86,8 +91,9 @@ export class FileSearch {
     let incomplete = false;
     let unreadable = false;
     let publishedAt = 0;
-    while (queue.length && current()) {
-      const path = queue.shift()!;
+    const pending = new Set<Promise<void>>();
+    let pump: () => void;
+    const scanDirectory = async (path: string): Promise<void> => {
       let afterName: string | undefined;
       do {
         let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -113,7 +119,7 @@ export class FileSearch {
         for (const entry of listing.entries) {
           if (entry.kind === "directory") { queue.push(entry.path); continue; }
           const normalizedPath = normalize(entry.path);
-          if (terms.every((term) => normalizedPath.includes(term))) this.matches.push(entry);
+          if (this.snapshot.query.trim() && terms.every((term) => normalizedPath.includes(term))) this.matches.push(entry);
           if (this.cacheComplete) {
             bytes += encoder.encode(entry.path).length * 2 + encoder.encode(entry.name).length;
             if (bytes > this.limits.cacheBytes) {
@@ -128,9 +134,21 @@ export class FileSearch {
         }
         if (listing.next_name && listing.next_name === afterName) { incomplete = true; break; }
         afterName = listing.next_name;
+        pump();
       } while (afterName && current());
       directories++;
-    }
+    };
+    await new Promise<void>((resolve) => {
+      pump = () => {
+        if (!current()) { resolve(); return; }
+        while (queue.length && pending.size < CONCURRENT_DIRECTORIES) {
+          const work = scanDirectory(queue.shift()!).finally(() => { pending.delete(work); pump(); });
+          pending.add(work);
+        }
+        if (!pending.size) resolve();
+      };
+      pump();
+    });
     if (current()) this.publishMatches({ status: "ready", directories, incomplete, unreadable });
   }
 }
