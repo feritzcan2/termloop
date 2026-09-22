@@ -234,7 +234,9 @@ describe("workflow actions in the Agents rail", () => {
     const values = [sessions[0]!, agent("helper-a", { lifecycle_state: "stale", retryable: true, ask_to_source_session_id: "lead" })];
     const props = await render(values, execution({ phase: "awaitingHelper" }));
     const action = container.querySelector<HTMLButtonElement>(".active-agent-workflow")!;
-    expect(action.textContent).toBe("Resume workflow1/5 Discuss");
+    expect(action.getAttribute("aria-label")).toContain("Resume workflow:");
+    expect(action.classList.contains("compact")).toBe(true);
+    expect(action.closest(".active-agent-row")).not.toBeNull();
     expect(action.closest("[data-session-drop-target]")?.getAttribute("data-session-drop-target")).toBe("helper-a");
     expect(action.getAttribute("aria-label")).toContain("Payments · Build and verify");
     await act(async () => action.click());
@@ -249,11 +251,44 @@ describe("workflow actions in the Agents rail", () => {
     expect(groups).toHaveLength(1);
     const group = groups[0]!;
     expect(group.getAttribute("aria-label")).toBe("Workflow · Payments · Build and verify · Review limit reached");
-    expect(group.querySelector(".workflow-agent-group-title")?.textContent).toBe("WorkflowBuild and verify");
+    expect(group.querySelector(".workflow-agent-group-title")?.textContent).toBe("Build and verify");
     expect(group.querySelector(".workflow-agent-group-status")?.textContent).toBe("Review limit reached");
     expect(group.classList.contains("needs-attention")).toBe(true);
     expect([...group.querySelectorAll("[data-session-id]")].map((row) => row.getAttribute("data-session-id"))).toEqual(["lead", "helper-a", "helper-b"]);
     expect(container.querySelector('[data-session-id="ordinary"]')?.closest("[data-workflow-group]")).toBeNull();
+  });
+
+  it("folds workflow members without affecting other agents or firing session actions", async () => {
+    const closeWorkflow = vi.fn();
+    const props = await render([...sessions, agent("ordinary")], execution(), { closeWorkflow });
+    const group = container.querySelector('[data-workflow-group="execution-1"]')!;
+    const toggle = group.querySelector<HTMLButtonElement>(".workflow-agent-group-toggle")!;
+    const members = group.querySelector<HTMLElement>(".workflow-agent-group-members")!;
+    expect(toggle.getAttribute("aria-controls")).toBe(members.id);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(members.hidden).toBe(true);
+    expect(container.querySelector('[data-session-id="ordinary"]')?.closest("[hidden]")).toBeNull();
+    expect(props.selectSession).not.toHaveBeenCalled();
+    expect(props.resumeSession).not.toHaveBeenCalled();
+    expect(closeWorkflow).not.toHaveBeenCalled();
+    await act(async () => toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(props.navigateSession).toHaveBeenCalledExactlyOnceWith("ordinary");
+    await act(async () => toggle.click());
+    expect(members.hidden).toBe(false);
+    await act(async () => members.querySelector<HTMLButtonElement>('[data-session-id="helper-a"]')!.click());
+    expect(props.selectSession).toHaveBeenCalledExactlyOnceWith("helper-a");
+    await act(async () => members.querySelector<HTMLButtonElement>('.active-agent-favorite')!.click());
+    expect(props.toggleFavoriteSession).toHaveBeenCalledExactlyOnceWith("lead");
+  });
+
+  it("reveals a folded workflow when agent search opens", async () => {
+    await render(sessions, execution());
+    await act(async () => container.querySelector<HTMLButtonElement>(".workflow-agent-group-toggle")!.click());
+    expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(true);
+    await render(sessions, execution(), { searchOpen: true });
+    expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(false);
   });
 
   it("retains an explicitly detached helper as a separate root without losing workflow identification", async () => {
@@ -269,7 +304,7 @@ describe("workflow actions in the Agents rail", () => {
     await render(sessions, execution(), { closeWorkflow, detachedRelationshipSessionIds: new Set(["helper-a"]) });
     const group = container.querySelector('[data-session-id="helper-a"]')!.closest('[data-workflow-group]')!;
     const action = group.querySelector<HTMLButtonElement>('.workflow-agent-group-close')!;
-    expect(action.textContent).toBe("Close all");
+    expect(action.querySelector("svg")).not.toBeNull();
     expect(action.getAttribute("aria-label")).toBe("Close all agents in workflow Build and verify");
     await act(async () => action.click());
     expect(closeWorkflow).toHaveBeenCalledExactlyOnceWith("execution-1");
@@ -355,7 +390,8 @@ describe("workflow actions in the Agents rail", () => {
   it("opens the running agent without resuming or interrupting it", async () => {
     const props = await render(sessions, execution({ currentStepIndex: 1 }));
     const action = container.querySelector<HTMLButtonElement>(".active-agent-workflow")!;
-    expect(action.textContent).toBe("Open workflow2/5 Implement");
+    expect(action.getAttribute("aria-label")).toContain("Open workflow:");
+    expect(action.getAttribute("title")).toContain("Implement");
     await act(async () => action.click());
     expect(props.selectSession).toHaveBeenCalledExactlyOnceWith("lead");
     expect(props.resumeSession).not.toHaveBeenCalled();
@@ -396,10 +432,10 @@ describe("workflow actions in the Agents rail", () => {
 
   it("updates a stopped cue after resume without offering another retry", async () => {
     await render([agent("lead", { lifecycle_state: "stale", retryable: true })], execution({ status: "paused" }));
-    expect(container.querySelector(".active-agent-workflow")?.textContent).toContain("Resume workflow");
+    expect(container.querySelector(".active-agent-workflow")?.getAttribute("aria-label")).toContain("Resume workflow");
     const props = await render([agent("lead", { lifecycle_state: "resuming", retryable: true })], execution());
     const action = container.querySelector<HTMLButtonElement>(".active-agent-workflow")!;
-    expect(action.textContent).toContain("Open workflow");
+    expect(action.getAttribute("aria-label")).toContain("Open workflow");
     await act(async () => action.click());
     expect(props.resumeSession).not.toHaveBeenCalled();
   });
