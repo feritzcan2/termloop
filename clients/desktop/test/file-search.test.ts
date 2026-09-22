@@ -46,18 +46,45 @@ describe("File name search", () => {
     expect(search.getSnapshot().entries).toEqual([entry("new.ts")]);
   });
 
-  it("cancels on clear or disposal and rejects old root responses", async () => {
+  it("reuses a completed index immediately after clearing the search", async () => {
+    const list = vi.fn(async () => directory("", [entry("old.ts"), entry("new.ts")]));
+    const search = new FileSearch(list);
+    search.start(); search.setQuery("old"); await finishDebounce();
+    search.setQuery("");
+    expect(search.getSnapshot()).toMatchObject({ total: 0, entries: [] });
+    search.setQuery("new");
+    expect(search.getSnapshot()).toMatchObject({ status: "ready", entries: [entry("new.ts")] });
+    await finishDebounce();
+    expect(list).toHaveBeenCalledOnce();
+  });
+
+  it("finishes indexing while the input is empty without showing every file", async () => {
+    const pending = deferred<WorkspaceDirectoryResult>();
+    const list = vi.fn().mockResolvedValueOnce(directory("", [entry("src", "directory"), entry("first.ts")]))
+      .mockReturnValueOnce(pending.promise);
+    const search = new FileSearch(list);
+    search.start(); search.setQuery("first"); await finishDebounce();
+    search.setQuery("   ");
+    pending.resolve(directory("src", [entry("src/next.ts")]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(search.getSnapshot()).toMatchObject({ status: "ready", total: 0, entries: [] });
+    search.setQuery("next");
+    expect(search.getSnapshot().entries).toEqual([entry("src/next.ts")]);
+    expect(list.mock.calls).toEqual([[""], ["src"]]);
+  });
+
+  it("cancels on refresh or disposal and rejects old root responses", async () => {
     const old = deferred<WorkspaceDirectoryResult>();
     const next = deferred<WorkspaceDirectoryResult>();
     const list = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
     const search = new FileSearch(list);
     search.start(); search.setQuery("file"); await finishDebounce();
-    search.setQuery("");
+    search.refresh();
     old.resolve(directory("", [entry("dir", "directory"), entry("file-old")]));
     await vi.advanceTimersByTimeAsync(0);
     expect(list).toHaveBeenCalledOnce();
-    expect(search.getSnapshot()).toMatchObject({ status: "idle", total: 0, entries: [] });
-    search.setQuery("file"); await finishDebounce();
+    expect(search.getSnapshot()).toMatchObject({ status: "searching", total: 0, entries: [] });
+    await finishDebounce();
     search.dispose();
     const before = search.getSnapshot();
     next.resolve(directory("", [entry("file-late")]));
@@ -117,6 +144,59 @@ describe("File name search", () => {
     search.start(); search.setQuery("subscription"); await finishDebounce();
     await vi.advanceTimersByTimeAsync(100);
     expect(search.getSnapshot()).toMatchObject({ status: "ready", total: 2, unreadable: false, incomplete: false });
+  });
+
+  it("pipelines directory reads within a fixed bound and keeps moving past a slow sibling", async () => {
+    const blocked = deferred<WorkspaceDirectoryResult>();
+    let active = 0;
+    let maximum = 0;
+    const list = vi.fn(async (path: string) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      try {
+        if (!path) return directory("", [entry("blocked", "directory"), ...Array.from({ length: 20 }, (_, i) => entry(`dir-${i}`, "directory"))]);
+        if (path === "blocked") return await blocked.promise;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return directory(path, [entry(`${path}/file.ts`)]);
+      } finally { active--; }
+    });
+    const search = new FileSearch(list);
+    search.start(); search.setQuery("file"); await finishDebounce();
+    await vi.advanceTimersByTimeAsync(210);
+    expect(maximum).toBe(2);
+    expect(list).toHaveBeenCalledTimes(22);
+    expect(search.getSnapshot()).toMatchObject({ status: "searching", total: 20, unreadable: false });
+    search.setQuery("dir-19");
+    blocked.resolve(directory("blocked", [entry("blocked/file.ts")]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(search.getSnapshot()).toMatchObject({ status: "ready", total: 1, entries: [entry("dir-19/file.ts")] });
+  });
+
+  it("still scans ignored dependency and build directories", async () => {
+    const folders = ["node_modules", "bin", "obj", ".hidden"];
+    const list = vi.fn(async (path: string) => path ? directory(path, [entry(`${path}/file.ts`)])
+      : directory("", folders.map((name) => entry(name, "directory"))));
+    const search = new FileSearch(list);
+    search.start(); search.setQuery("file"); await finishDebounce();
+    expect(search.getSnapshot()).toMatchObject({ status: "ready", total: 4, incomplete: false });
+    expect(search.getSnapshot().entries.map((file) => file.path).sort()).toEqual(folders.map((folder) => `${folder}/file.ts`).sort());
+  });
+
+  it("discards both in-flight directory reads and queued children after refresh", async () => {
+    const first = deferred<WorkspaceDirectoryResult>();
+    const second = deferred<WorkspaceDirectoryResult>();
+    const list = vi.fn().mockResolvedValueOnce(directory("", [entry("a", "directory"), entry("b", "directory"), entry("queued", "directory")]))
+      .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      .mockResolvedValue(directory("", [entry("fresh.ts")]));
+    const search = new FileSearch(list);
+    search.start(); search.setQuery(".ts"); await finishDebounce();
+    expect(list.mock.calls).toEqual([[""], ["a"], ["b"]]);
+    search.refresh(); await finishDebounce();
+    first.resolve(directory("a", [entry("a/late.ts"), entry("a/child", "directory")]));
+    second.resolve(directory("b", [entry("b/late.ts")]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(list.mock.calls).toEqual([[""], ["a"], ["b"], [""]]);
+    expect(search.getSnapshot()).toMatchObject({ status: "ready", total: 1, entries: [entry("fresh.ts")] });
   });
 
   it("caps rendered results without losing the total count", async () => {
