@@ -91,34 +91,36 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
       className={`workflow-execution-row status-${execution.status}${executionNeedsAttention ? " needs-attention" : ""}`}
       aria-label={`${execution.workflowName} workflow`}
     >
-      <button
-        type="button"
-        className="workflow-execution-toggle"
-        title={`${workflowExecutionSummary(execution)}\n${workflowPhaseLabel(execution, currentStep)}`}
-        aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
-        aria-describedby={`${executionSummaryId}-state ${executionSummaryId}-detail`}
-        aria-expanded={progressExpanded}
-        onClick={() => setProgressPreference({ executionId: execution.id, expanded: !progressExpanded })}
-      >
-        <span className="workflow-execution-symbol" aria-hidden="true">
-          {executionActive ? <Icon name="branch" /> : executionNeedsAttention ? "!" : "✓"}
-        </span>
-        <span className="workflow-execution-name">{execution.workflowName}</span>
-        <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{workflowStatusLabel(execution)}</span>
-        <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
-        <span id={`${executionSummaryId}-detail`} className="workflow-execution-detail">
-          {executionActive
-            ? currentStep ? `Step ${execution.currentStepIndex + 1} of ${execution.steps.length} · ${currentStep.title}` : "Waiting for the next step"
-            : executionNeedsAttention ? "Automation finished · review still needs attention"
-              : execution.completionOutcome === "approved" ? "All reviewers approved" : "No final review approval recorded"}
-        </span>
-      </button>
+      <div className="workflow-execution-header">
+        <button
+          type="button"
+          className="workflow-execution-toggle"
+          title={`${workflowExecutionSummary(execution)}\n${workflowPhaseLabel(execution, currentStep)}`}
+          aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
+          aria-describedby={`${executionSummaryId}-state ${executionSummaryId}-detail`}
+          aria-expanded={progressExpanded}
+          onClick={() => setProgressPreference({ executionId: execution.id, expanded: !progressExpanded })}
+        >
+          <span className="workflow-execution-symbol" aria-hidden="true">
+            {executionActive ? <Icon name="branch" /> : executionNeedsAttention ? "!" : "✓"}
+          </span>
+          <span className="workflow-execution-name">{execution.workflowName}</span>
+          <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{workflowStatusLabel(execution)}</span>
+          <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
+          <span id={`${executionSummaryId}-detail`} className="workflow-execution-detail" hidden>
+            {executionActive
+              ? currentStep ? `Step ${execution.currentStepIndex + 1} of ${execution.steps.length} · ${currentStep.title}` : "Waiting for the next step"
+              : executionNeedsAttention ? "Automation finished · review still needs attention"
+                : execution.completionOutcome === "approved" ? "All reviewers approved" : "No final review approval recorded"}
+          </span>
+        </button>
+        <button type="button" className="workflow-tree-action" aria-label="Workflow details" title="Workflow details" onClick={() => setInspectingExecution(true)}><Icon name="more" /></button>
+      </div>
       {progressExpanded ? <WorkflowSidebarProgress
         execution={execution}
         agentProfiles={props.agentProfiles}
         openSession={props.openSession}
         sessionPresentation={props.sessionPresentation}
-        showDetails={() => setInspectingExecution(true)}
         showResult={(step, result) => setInspectingResult({ stepId: step.id, reviewCycle: result.reviewCycle })}
       /> : null}
     </section> : null}
@@ -176,61 +178,77 @@ function WorkflowSidebarProgress(props: {
   agentProfiles: readonly AgentLibraryEntry[];
   openSession(sessionId: string): void;
   sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
-  showDetails(): void;
   showResult(step: WorkflowStepDto, result: WorkflowStepResultDto): void;
 }) {
-  const currentStep = props.execution.steps[props.execution.currentStepIndex];
-  const coordinatorPresentation = props.sessionPresentation(props.execution.coordinatorSessionId);
   return <section className="workflow-sidebar-progress" aria-label={`${props.execution.workflowName} workflow progress`}>
-    <header>
-      <span>{workflowPhaseLabel(props.execution, currentStep)}</span>
-      <button type="button" onClick={props.showDetails}>Details</button>
-      <span className="workflow-coordinator-summary">
-        <strong>Coordinator</strong>
-        <WorkflowSessionButton
+    <ol>
+      <li className="workflow-tree-coordinator">
+        <WorkflowTreeSession
+          label="Coordinator"
           sessionId={props.execution.coordinatorSessionId}
-          presentation={coordinatorPresentation}
-          fallbackLabel="Coordinator"
+          presentation={props.sessionPresentation(props.execution.coordinatorSessionId)}
+          participant="Coordinator"
+          marker={<Icon name="agent" />}
           openSession={props.openSession}
         />
-      </span>
-    </header>
-    <ol>
+      </li>
       {props.execution.steps.map((step, index) => {
         const result = workflowStepResult(props.execution, step.id);
         const state = workflowStepState(props.execution, index, result);
-        const participantSessionId = workflowStepSessionId(props.execution, step);
+        const sessionId = workflowStepSessionId(props.execution, step);
+        const participant = workflowStepParticipant(step, props.execution.steps, props.agentProfiles);
+        const stateLabel = result ? workflowStepResultLabel(step.kind, result.outcome)
+          : state === "current" ? workflowPhaseLabel(props.execution, step) : state === "skipped" ? "Skipped" : "Upcoming";
         return <li key={step.id} className={`kind-${step.kind} ${state}`} aria-current={state === "current" ? "step" : undefined}>
-          <span className="workflow-sidebar-marker" aria-hidden="true">{state === "complete" ? "✓" : state === "skipped" ? "–" : index + 1}</span>
-          <span className="workflow-sidebar-step-copy">
-            <span className="workflow-sidebar-step-head">
-              <b>{step.title}</b>
-            </span>
-            <WorkflowParticipantSession
-              step={step}
-              steps={props.execution.steps}
-              agentProfiles={props.agentProfiles}
-              sessionId={participantSessionId}
-              presentation={participantSessionId ? props.sessionPresentation(participantSessionId) : undefined}
-              coordinatorSessionId={props.execution.coordinatorSessionId}
-              openSession={props.openSession}
-            />
-            {result ? <button
-              type="button"
-              className={`workflow-result-file outcome-${result.outcome}`}
-              aria-label={`Open ${workflowStepResultFileName(step, props.execution.steps)}`}
-              title={`Open ${workflowStepResultFileName(step, props.execution.steps)}`}
-              onClick={() => props.showResult(step, result)}
-            >
-              <Icon name="fileText" />
-              <span>{workflowStepResultFileName(step, props.execution.steps)}</span>
-              <small>{workflowStepResultLabel(step.kind, result.outcome)}</small>
-            </button> : state === "current" ? <small className="workflow-step-waiting">{workflowPhaseLabel(props.execution, step)}</small> : null}
-          </span>
+          <WorkflowTreeSession
+            label={step.title}
+            sessionId={sessionId}
+            presentation={sessionId ? props.sessionPresentation(sessionId) : undefined}
+            participant={participant}
+            detail={stateLabel}
+            marker={state === "complete" ? "✓" : state === "skipped" ? "–" : <Icon name={state === "current" ? "play" : "circle"} />}
+            openSession={props.openSession}
+          />
+          {result ? <button
+            type="button"
+            className={`workflow-tree-action outcome-${result.outcome}`}
+            aria-label={`Open ${workflowStepResultFileName(step, props.execution.steps)}`}
+            title={`${workflowStepResultFileName(step, props.execution.steps)} · ${stateLabel}`}
+            onClick={() => props.showResult(step, result)}
+          ><Icon name="fileText" /></button> : null}
         </li>;
       })}
     </ol>
   </section>;
+}
+
+function WorkflowTreeSession(props: {
+  label: string;
+  sessionId: string | undefined;
+  presentation: WorkflowSessionPresentation | undefined;
+  participant: string;
+  detail?: string;
+  marker: ReactNode;
+  openSession(sessionId: string): void;
+}) {
+  const participant = props.presentation?.agentLabel ?? props.participant;
+  const description = [props.label, participant, props.presentation?.stateLabel, props.detail].filter(Boolean).join(" · ");
+  const content = <>
+    <span className="workflow-tree-marker" aria-hidden="true">{props.marker}</span>
+    <span className="workflow-tree-label">{props.label}</span>
+    <small>{participant}</small>
+    {props.presentation ? <i className="workflow-tree-activity" aria-hidden="true" /> : null}
+  </>;
+  const sessionId = props.sessionId;
+  return sessionId ? <button
+    type="button"
+    className="workflow-tree-session"
+    data-workflow-session-id={props.sessionId}
+    data-tone={props.presentation?.tone}
+    title={description}
+    aria-label={`Open ${description}`}
+    onClick={() => props.openSession(sessionId)}
+  >{content}</button> : <span className="workflow-tree-session" title={description} aria-label={description}>{content}</span>;
 }
 
 function WorkflowStepResultDialog(props: {

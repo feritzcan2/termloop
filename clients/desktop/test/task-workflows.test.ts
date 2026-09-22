@@ -372,12 +372,12 @@ describe("Task workflow editor", () => {
     expect(markup).not.toContain("Implemented the workflow state machine and verified focused tests.");
     expect(markup).toContain('data-workflow-session-id="coordinator-1"');
     expect(markup).toContain('data-workflow-session-id="claude-session-1"');
-    expect(markup).toContain('aria-label="Open Codex — Working"');
-    expect(markup).toContain('aria-label="Open Claude — Idle"');
+    expect(markup).toContain('aria-label="Open Coordinator · Codex · Working"');
+    expect(markup).toContain('aria-label="Open Review · Claude · Idle · Waiting for 1 of 1 reviewer"');
     expect(markup.match(/data-workflow-session-id="coordinator-1"/gu)).toHaveLength(2);
-    expect(markup).toContain(">same coordinator</em>");
-    expect(markup).toContain(">same session</em>");
-    expect(markup).toContain(">Details</button>");
+    expect(markup).not.toContain("workflow-participant-session");
+    expect(markup).not.toContain("workflow-result-file");
+    expect(markup).toContain('aria-label="Workflow details"');
     expect(markup).toContain('aria-label="Workflow"');
     expect(markup).not.toContain("workflow-saved-templates");
     expect(markup).not.toContain('aria-label="Run workflow');
@@ -604,6 +604,35 @@ describe("Agents Project workflow launcher", () => {
 });
 
 describe("Compact workflow menu", () => {
+  it("opens exact participant sessions from compact rows and keeps details available while collapsed", async () => {
+    const openSession = vi.fn();
+    const f = await launcherFixture({ executions: [execution], openSession });
+    try {
+      const rows = [...f.container.querySelectorAll<HTMLElement>(".workflow-sidebar-progress li")];
+      expect(rows).toHaveLength(4);
+      expect(rows.map((row) => row.querySelector(".workflow-tree-label")?.textContent)).toEqual(["Coordinator", "Discuss", "Implement", "Review"]);
+      expect(rows[3]?.getAttribute("aria-current")).toBe("step");
+      for (const row of rows) await act(async () => row.querySelector<HTMLButtonElement>("button.workflow-tree-session")!.click());
+      expect(openSession.mock.calls.map(([id]) => id)).toEqual(["coordinator-1", "claude-session-1", "coordinator-1", "claude-session-1"]);
+      await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!.click());
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Workflow details"]')!.click());
+      expect(f.container.querySelector(".workflow-progress-dialog")).not.toBeNull();
+      expect(openSession).toHaveBeenCalledTimes(4);
+    } finally { await f.dispose(); }
+  });
+
+  it("renders planned steps without a session as noninteractive rows", async () => {
+    const f = await launcherFixture({ executions: [{ ...execution, currentStepIndex: 0, participants: [], stepResults: [], activeReviewStepIds: [], pendingReviewStepIds: [] }] });
+    try {
+      const rows = [...f.container.querySelectorAll<HTMLElement>(".workflow-sidebar-progress li")];
+      expect(rows[1]?.querySelector("button")).toBeNull();
+      expect(rows[1]?.querySelector(".workflow-tree-session")?.getAttribute("aria-label")).toContain("Discuss");
+      expect(rows[2]?.querySelector("button")?.getAttribute("data-workflow-session-id")).toBe("coordinator-1");
+      expect(rows[3]?.classList.contains("upcoming")).toBe(true);
+      expect(f.props.openSession).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
   it("places execution status in its own row after all Start controls", async () => {
     const f = await launcherFixture({
       executions: [execution],
