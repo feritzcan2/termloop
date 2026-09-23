@@ -21,6 +21,7 @@ import { ProjectSelector } from "@/components/project-selector";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { TerminalView } from "@/components/terminal-view";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import {
   connectionRouteParams,
   missingSessionRouteState,
@@ -155,12 +156,7 @@ export default function SessionRoute() {
   const stream = terminal.buffer.connectionIssue === "gatewayUnreachable"
     ? { label: "Unreachable", tone: "interrupted" as const }
     : streamPresentation[terminal.buffer.stream];
-  useEffect(() => {
-    if (resolvedRouteConnectionId !== undefined
-      && connections.selectedId !== resolvedRouteConnectionId) {
-      connections.select(resolvedRouteConnectionId);
-    }
-  }, [resolvedRouteConnectionId, connections.select, connections.selectedId]);
+  useRouteConnection(resolvedRouteConnectionId, connections.select);
   useEffect(() => {
     if (sessionId) store.dismissReview(sessionId);
   }, [sessionId, store.dismissReview]);

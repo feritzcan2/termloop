@@ -20,6 +20,7 @@ import { Banner, UnavailableNote } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
 import { relativeAge } from "@/presentation/relative-time";
 import { stewardLocalSpeech } from "@/platform/steward-local-speech";
@@ -65,11 +66,7 @@ export default function StewardRoute() {
   const playerStatus = useAudioPlayerStatus(player);
   const nowMs = store.readAtEpochMs ?? 0;
 
-  useEffect(() => {
-    if (routeConnectionId !== undefined && connections.selectedId !== routeConnectionId) {
-      connections.select(routeConnectionId);
-    }
-  }, [connections.select, connections.selectedId, routeConnectionId]);
+  useRouteConnection(routeConnectionId, connections.select);
 
   const read = useCallback(async () => {
     if (connectionId === undefined || projectId === undefined) return;

@@ -127,6 +127,57 @@ describe("secure connection repository", () => {
 });
 
 describe("production control adapter", () => {
+  it.each(["background", "disposed", "repositoryFailure"] as const)(
+    "observes invalidation setup rejection after %s",
+    async (reason) => {
+      const lines: string[] = [];
+      let finishRead: ((connection: SavedConnection | undefined) => void) | undefined;
+      let failRead: ((cause: Error) => void) | undefined;
+      const socketFactory = vi.fn((): DataSocket => { throw new Error("Unexpected socket"); });
+      const runtime = createProductionRuntime({
+        repository: {
+          ...fixedRepository(saved),
+          get: () => new Promise<SavedConnection | undefined>((resolve, reject) => {
+            finishRead = resolve;
+            failRead = reject;
+          }),
+        },
+        diagnostics: createMobileDiagnosticReporter((line) => lines.push(line)),
+        multiplexSocketFactory: socketFactory,
+      });
+      const listener = vi.fn();
+      const dispose = runtime.control.subscribeInvalidations!(saved.id, listener);
+      if (reason === "background") runtime.connections.resetTransports(false);
+      if (reason === "disposed") dispose();
+      if (reason === "background") finishRead!(saved);
+      else failRead!(new Error("Secure store unavailable"));
+      // Let rejected subscription setup cross the unhandled-rejection boundary.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(socketFactory).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      const failures = lines.filter((line) => line.includes('"event":"invalidation_subscription_failed"'));
+      expect(failures).toHaveLength(reason === "repositoryFailure" ? 1 : 0);
+      dispose();
+    },
+  );
+
+  it("does not install a disposed invalidation subscription after its credentials arrive", async () => {
+    let finishRead: ((connection: SavedConnection) => void) | undefined;
+    const socketFactory = vi.fn((): DataSocket => { throw new Error("Unexpected socket"); });
+    const runtime = createProductionRuntime({
+      repository: {
+        ...fixedRepository(saved),
+        get: () => new Promise<SavedConnection>((resolve) => { finishRead = resolve; }),
+      },
+      multiplexSocketFactory: socketFactory,
+    });
+    const dispose = runtime.control.subscribeInvalidations!(saved.id, vi.fn());
+    dispose();
+    finishRead!(saved);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(socketFactory).not.toHaveBeenCalled();
+  });
+
   it("uses one authenticated mobile socket for control and logical terminal subscriptions", async () => {
     const terminalKinds: number[] = [];
     const controlMethods: string[] = [];

@@ -16,6 +16,7 @@ import { Screen, ScreenHeader } from "@/components/screen";
 import { WorktreeDiff } from "@/components/worktree-diff";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
 import { useChangeReview, type ChangeReview } from "@/features/changes/use-change-review";
 import { reviewLineKey } from "@/presentation/change-review-notes";
@@ -43,9 +44,7 @@ export default function TaskChangesRoute() {
   const connection = selectingConnection ? undefined : connections.selected;
   const overview = useOverview();
   const task = overview.overview?.tasks.find((candidate) => candidate.id === taskId);
-  useEffect(() => {
-    if (connectionId !== undefined && connections.selectedId !== connectionId) connections.select(connectionId);
-  }, [connectionId, connections.select, connections.selectedId]);
+  useRouteConnection(connectionId, connections.select);
   if (selectingConnection) return <Screen><ScreenHeader back="Task" title="Changes" /><ActivityIndicator color={color.accentStrong} /></Screen>;
   if (!connection) return <UnavailableChanges title="No Mac selected" body="Select a paired Mac before reading this Task's worktree." />;
   if (!task) return <UnavailableChanges title="Task unavailable" body="This Task is no longer in the selected Mac's current projection." />;
