@@ -1833,7 +1833,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}
             <div className="sidebar-footer-actions">
-              <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              <button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
