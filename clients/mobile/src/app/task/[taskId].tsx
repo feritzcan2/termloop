@@ -15,6 +15,7 @@ import {
 } from "@/components/primitives";
 import { TaskPipeline } from "@/components/task-pipeline";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { SwipeableSessionRow } from "@/features/session-actions/swipeable-session-row";
@@ -62,11 +63,7 @@ export default function TaskRoute() {
 
   useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [tab, taskId]);
 
-  useEffect(() => {
-    if (connectionId !== undefined && connections.selectedId !== connectionId) {
-      connections.select(connectionId);
-    }
-  }, [connectionId, connections.select, connections.selectedId]);
+  useRouteConnection(connectionId, connections.select);
 
   const task = store.overview?.tasks.find((candidate) => candidate.id === taskId);
   const summaries = useMemo(
