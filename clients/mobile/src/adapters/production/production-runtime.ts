@@ -762,6 +762,14 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         void resolve(connectionId).then((connection) => {
           if (disposed) return;
           unsubscribe = connectionCoordinator(connection)?.subscribeInvalidations(listener);
+        }).catch((cause: unknown) => {
+          // Secure-store reads can finish after backgrounding or route disposal.
+          // This optional subscription has no caller to observe a rejection.
+          if (disposed || transportsSuspended) return;
+          diagnostics.report("connection", "invalidation_subscription_failed", {
+            connectionId,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+          });
         });
         return () => {
           disposed = true;

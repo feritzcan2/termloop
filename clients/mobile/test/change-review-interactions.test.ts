@@ -78,7 +78,7 @@ it("gives the Changes modal its own safe-area root and a compact file subtitle",
   const connection = (await runtime.connections.list())[0]!;
   const route = await load<typeof import("../src/app/task/[taskId]/changes")>("../src/app/task/[taskId]/changes.tsx", {
     react: hooks.react,
-    "expo-router": { useLocalSearchParams: () => ({ taskId: task.id, connectionId: connection.id }) },
+    "expo-router": { useFocusEffect: () => {}, useLocalSearchParams: () => ({ taskId: task.id, connectionId: connection.id }) },
     "react-native-safe-area-context": { SafeAreaProvider: "SafeAreaProvider" },
     "@/components/screen": { Screen: "Screen", ScreenHeader: "ScreenHeader" },
     "@/components/worktree-diff": { WorktreeDiff: "WorktreeDiff" },

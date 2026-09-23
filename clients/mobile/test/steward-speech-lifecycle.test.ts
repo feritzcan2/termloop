@@ -141,6 +141,7 @@ async function harness() {
     if (name === "expo-file-system") return { File: function () { return file; }, Paths: { cache: "cache" } };
     if (name === "expo-router") return { useRouter: () => ({}), useLocalSearchParams: () => ({ projectId: "project" }) };
     if (name === "@/composition/runtime-context") return { useMobileRuntime: () => runtime };
+    if (name === "@/features/connection/use-route-connection") return { useRouteConnection: () => {} };
     if (name === "@/features/connection/connection-store") return { useConnections: () => ({ selected: { id: "mac" } }) };
     if (name === "@/features/overview/overview-store") return { useOverview: () => ({}) };
     if (name === "@/components/primitives") return { Banner: "Banner", UnavailableNote: "UnavailableNote" };
