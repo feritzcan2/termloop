@@ -100,6 +100,7 @@ async function harness() {
     if (name === "react") return { ...require("react"), useMemo: (create: () => unknown) => create(), useEffect: () => {}, useState: (initial: unknown) => { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], (value: unknown) => { slots[index] = value; }]; } };
     if (name === "react-native") return { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", RefreshControl: "RefreshControl", ScrollView: "ScrollView", Text: "Text", View: "View", StyleSheet: { create: (value: unknown) => value, hairlineWidth: 0.5 } };
     if (name === "expo-router") return { useLocalSearchParams: () => params, useRouter: () => router };
+    if (name === "@/features/connection/use-route-connection") return { useRouteConnection: () => {} };
     if (name === "@/features/connection/connection-store") return { useConnections: () => connections };
     if (name === "@/features/overview/overview-store") return { useOverview: () => store };
     if (name === "@/composition/runtime-context") return { useMobileRuntime: () => ({ workflowTemplates: {}, control: {} }) };

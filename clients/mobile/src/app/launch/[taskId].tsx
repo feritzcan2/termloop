@@ -26,6 +26,7 @@ import { Banner, Card, CardDivider, PrimaryButton, SectionHeader } from "@/compo
 import { Screen, ScreenHeader } from "@/components/screen";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
 import {
   coerceModel,
@@ -77,11 +78,7 @@ export default function LaunchRoute() {
   const [launchElapsedSeconds, setLaunchElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    if (routeConnectionId !== undefined && connections.selectedId !== routeConnectionId) {
-      connections.select(routeConnectionId);
-    }
-  }, [connections.select, connections.selectedId, routeConnectionId]);
+  useRouteConnection(routeConnectionId, connections.select);
 
   const connectionId = selected?.id;
 

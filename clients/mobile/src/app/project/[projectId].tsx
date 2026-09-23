@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
@@ -14,6 +14,7 @@ import { TaskBrowser } from "@/features/tasks/task-browser";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { SwipeableSessionRow } from "@/features/session-actions/swipeable-session-row";
 import { useConnections } from "@/features/connection/connection-store";
+import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import { useMobileRuntime } from "@/composition/runtime-context";
@@ -49,11 +50,7 @@ export default function ProjectRoute() {
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string>();
 
-  useEffect(() => {
-    if (connectionId !== undefined && connections.selectedId !== connectionId) {
-      connections.select(connectionId);
-    }
-  }, [connectionId, connections.selectedId, connections.select]);
+  useRouteConnection(connectionId, connections.select);
 
   const selectedBlock = connections.selected
     ? connectionPresentation(connections.selected.availability).block

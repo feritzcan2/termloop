@@ -171,6 +171,7 @@ async function harness(project = false) {
     if (name === "@/components/primitives") return { Banner: "Banner", Card: "Card", CardDivider: "CardDivider", PrimaryButton: "PrimaryButton", SectionHeader: "SectionHeader" };
     if (name === "@/components/screen") return { Screen: "Screen", ScreenHeader: "ScreenHeader" };
     if (name === "@/composition/runtime-context") return { useMobileRuntime: () => runtime };
+    if (name === "@/features/connection/use-route-connection") return { useRouteConnection: () => {} };
     if (name === "@/features/connection/connection-store") return { useConnections: () => connections };
     if (name === "@/features/overview/overview-store") return { useOverview: () => overview };
     if (name === "@/presentation/agent-launch-presentation") return presentation;
