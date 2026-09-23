@@ -348,7 +348,7 @@ impl CoreRuntime {
                     .into(),
             ));
         }
-        let selection = termloop_domain::AgentLaunchSelection::new(
+        let mut selection = termloop_domain::AgentLaunchSelection::new(
             params.model.as_deref().unwrap_or("default"),
             "default",
             params.reasoning.as_deref().unwrap_or("default"),
@@ -424,6 +424,7 @@ impl CoreRuntime {
         }
 
         let target = params.target;
+        selection.permission = source.launch_selection.permission.clone();
         let launch_selection = params.launch_selection.clone().unwrap_or(selection);
         termloop_invocation::validate_agent_configuration(
             &target,
@@ -1166,6 +1167,13 @@ mod tests {
     }
 
     fn runtime_with_asker() -> (CoreRuntime, String, std::path::PathBuf) {
+        runtime_with_asker_selection("claude", AgentLaunchSelection::default())
+    }
+
+    fn runtime_with_asker_selection(
+        agent_id: &str,
+        launch_selection: AgentLaunchSelection,
+    ) -> (CoreRuntime, String, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "termloop-core-ask-to-{}-{}",
             std::process::id(),
@@ -1188,16 +1196,16 @@ mod tests {
             .insert_session(
                 &runtime.write_authority,
                 SessionRecord {
-                    launch_selection: Default::default(),
+                    launch_selection,
                     id: "asker".into(),
                     project_id,
                     name: None,
                     kind: SessionKind::Agent,
                     process: ProcessDescriptor {
-                        program: "claude".into(),
+                        program: agent_id.into(),
                         args: vec![],
                         cwd: root.display().to_string(),
-                        agent_id: Some("claude".into()),
+                        agent_id: Some(agent_id.into()),
                         template_ref: Some("builtin.agent.interactive".into()),
                         template_version: Some(1),
                     },
@@ -1434,6 +1442,42 @@ mod tests {
         .unwrap();
         assert_eq!(principal.session_id(), "asker");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fresh_helper_inherits_its_callers_permission_across_providers_and_roles() {
+        for source_agent in ["claude", "codex"] {
+            for target in ["claude", "codex"] {
+                for permission in ["default", "plan", "acceptEdits", "bypassPermissions"] {
+                    for role in [
+                        AgentMcpRole::Interactive,
+                        AgentMcpRole::Helper { request_id: None },
+                    ] {
+                        let (mut runtime, token, root) = runtime_with_asker_selection(
+                            source_agent,
+                            AgentLaunchSelection::new("default", permission, "high"),
+                        );
+                        runtime
+                            .mcp_authorizer
+                            .register("asker".into(), 7, role, token.clone());
+                        let mut params = input(None);
+                        params.target = target.into();
+                        let AskToPlanOutcome::Launch(plan) =
+                            runtime.plan_ask_to(&token, params).unwrap()
+                        else {
+                            panic!("fresh helper must produce a launch plan");
+                        };
+                        assert_eq!(
+                            plan.interactive_options,
+                            Some(AgentLaunchSelection::new("default", permission, "default")),
+                            "{source_agent} -> {target}",
+                        );
+                        assert!(matches!(plan.mcp_role, AgentMcpRole::Helper { .. }));
+                        let _ = std::fs::remove_dir_all(root);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
