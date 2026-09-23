@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeepAwakeMode, KeepAwakeSetParams, KeepAwakeStatusResult } from "@termloop/contract/current";
+import { Icon } from "./Icon.js";
 import {
   KEEP_AWAKE_MODES,
   KEEP_AWAKE_DURATIONS,
@@ -115,14 +116,15 @@ export function KeepAwakePanel({ load, save, refreshToken, computerName, scopeLa
     <div ref={rootRef} className="keep-awake-control">
       {!embedded ? <button
         type="button"
-        className={`keep-awake-trigger${engaged ? " is-engaged" : ""}${blocked ? " is-blocked" : ""}`}
+        className={`sidebar-footer-button keep-awake-trigger${engaged ? " is-engaged" : ""}${blocked ? " is-blocked" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={status ? keepAwakeSummary(status, computerName) : "Keep awake"}
         onClick={() => setOpen((current) => !current)}
       >
+        <Icon name="power" />
         <span className="keep-awake-trigger-dot" aria-hidden="true" />
-        <span className="keep-awake-trigger-label">Keep Awake{scopeLabel ? ` · ${scopeLabel}` : ""}</span>
+        <span className="visually-hidden">Keep Awake{scopeLabel ? ` · ${scopeLabel}` : ""}</span>
         {countdown ? <span className="keep-awake-trigger-countdown">{countdown}</span> : null}
       </button> : null}
       {open || embedded ? <section className={`keep-awake-panel${embedded ? " embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Keep awake">
