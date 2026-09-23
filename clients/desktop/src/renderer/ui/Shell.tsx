@@ -71,6 +71,8 @@ import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
 import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
+import { moveProject, moveProjectBy, orderProjects, readProjectOrder, writeProjectOrder, type ProjectOrder } from "../project-order-memory.js";
+import { ProjectMenuList } from "./ProjectMenuList.js";
 import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeActiveAgentActivityMemory } from "../active-agent-activity-memory.js";
 import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
 import { SessionTabStrip } from "./SessionTabStrip.js";
@@ -597,6 +599,21 @@ export function Shell(props: ShellProps) {
   }, [props.selectedProject?.id]);
   const [activeAgentFavorites, setActiveAgentFavorites] = useState(readActiveAgentFavorites);
   const [activeAgentActivityMemory, setActiveAgentActivityMemory] = useState(readActiveAgentActivityMemory);
+  /// User-arranged Project order. Cmd+1…Cmd+9, the Project menu, and the
+  /// command palette all follow it; the daemon's list order is only the
+  /// fallback for Projects the user never arranged.
+  const [projectOrder, setProjectOrder] = useState<ProjectOrder>(readProjectOrder);
+  const orderedProjects = useMemo(() => orderProjects(props.projects, projectOrder), [props.projects, projectOrder]);
+  const applyProjectOrder = useCallback((next: ProjectOrder) => {
+    setProjectOrder((current) => {
+      if (next === current) return current;
+      writeProjectOrder(next);
+      return next;
+    });
+  }, []);
+  const reorderProject = useCallback((projectId: string, targetId: string) => {
+    applyProjectOrder(moveProject(orderedProjects, projectOrder, projectId, targetId));
+  }, [applyProjectOrder, orderedProjects, projectOrder]);
   const [assistantSelection, setAssistantSelection] = useState<AssistantSelection>();
   /// The Task whose detail page has the stage. Held by ID rather than by value
   /// so the page follows the live projection instead of a snapshot taken at the
@@ -737,7 +754,7 @@ export function Shell(props: ShellProps) {
     : undefined;
   const projectSourceGroups = useMemo(() => {
     const groups = new Map<string, { name: string; projects: Project[] }>();
-    for (const project of props.projects) {
+    for (const project of orderedProjects) {
       const profileId = project.connectionProfileId ?? "local";
       const group = groups.get(profileId) ?? {
         name: project.connectionProfileName ?? "This computer",
@@ -747,7 +764,7 @@ export function Shell(props: ShellProps) {
       groups.set(profileId, group);
     }
     return [...groups.entries()].map(([profileId, group]) => ({ profileId, ...group }));
-  }, [props.projects]);
+  }, [orderedProjects]);
   const showProjectSourceGroups = projectSourceGroups.length > 1
     || projectSourceGroups.some((group) => group.profileId !== "local");
   const filesTask = filesPresentation?.projectId === props.selectedProject?.id && filesPresentation?.taskId
@@ -1133,7 +1150,7 @@ export function Shell(props: ShellProps) {
       id: "project.add", title: "Add Project", detail: "Add a local folder to TermLoop.", group: "Project", keywords: ["new", "folder"],
       perform: props.openProjectDialog,
     },
-    ...props.projects.map((project, index): ShellCommand => {
+    ...orderedProjects.map((project, index): ShellCommand => {
       const hint = projectShortcutLabel(index, platform);
       return {
         id: `project.switch.${project.id}`,
@@ -1221,7 +1238,7 @@ export function Shell(props: ShellProps) {
     },
   ];
   commandsRef.current = commands;
-  projectsRef.current = props.projects;
+  projectsRef.current = orderedProjects;
   selectProjectRef.current = selectProject;
 
   useEffect(() => {
@@ -1338,6 +1355,15 @@ export function Shell(props: ShellProps) {
       closeProjectMenu(true);
       return;
     }
+    if (event.altKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      const focused = event.currentTarget.ownerDocument.activeElement as HTMLElement | null;
+      const projectId = focused?.dataset.projectOptionId;
+      if (!projectId) return;
+      event.preventDefault();
+      applyProjectOrder(moveProjectBy(orderedProjects, projectOrder, projectId, event.key === "ArrowDown" ? 1 : -1));
+      requestAnimationFrame(() => projectMenuRef.current?.querySelector<HTMLButtonElement>(`[data-project-option-id="${projectId}"]`)?.focus());
+      return;
+    }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')];
     if (items.length === 0) return;
@@ -1411,7 +1437,7 @@ export function Shell(props: ShellProps) {
                 aria-haspopup="menu"
                 aria-expanded={projectMenuOpen}
                 data-selected-project-id={props.selectedProject?.id ?? ""}
-                disabled={props.projects.length === 0}
+                disabled={orderedProjects.length === 0}
                 onClick={() => setProjectMenuOpen((open) => !open)}
                 onKeyDown={(event) => {
                   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -2043,37 +2069,15 @@ export function Shell(props: ShellProps) {
         <>
           <button className="project-menu-backdrop" type="button" tabIndex={-1} aria-hidden="true" onClick={() => closeProjectMenu()} />
           <div ref={projectMenuRef} className="project-menu" style={projectMenuStyle} role="menu" aria-label="Project menu" onKeyDown={handleProjectMenuKeyDown}>
-            <div className="project-menu-list">
-              {projectSourceGroups.map((group) => (
-                <div className="project-source-group" key={group.profileId}>
-                  {showProjectSourceGroups ? <div className="project-source-heading">{group.name}</div> : null}
-                  {group.projects.map((project) => {
-                    const selected = project.id === props.selectedProject?.id;
-                    return (
-                  <button
-                    key={project.id}
-                    type="button"
-                    role="menuitem"
-                    aria-current={selected ? "true" : undefined}
-                    data-connection-state={project.connectionState ?? "connected"}
-                    data-project-option-id={project.id}
-                    data-project-selected={selected ? "true" : undefined}
-                    onClick={() => { selectProject(project.id); closeProjectMenu(true); }}
-                  >
-                    <span className="project-avatar" aria-hidden="true">{project.name.slice(0, 1).toUpperCase()}</span>
-                    <span className="project-menu-project-copy">
-                      <strong>{project.name}</strong>
-                      {props.projects.some((candidate) => candidate.connectionProfileId !== "local")
-                        ? <small>{project.connectionProfileName ?? "This computer"}{project.connectionState === "offline" ? " · Offline" : ""}</small>
-                        : null}
-                    </span>
-                    <span className="project-selected-mark" aria-hidden="true">{selected ? "✓" : ""}</span>
-                  </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+            <ProjectMenuList
+              projects={orderedProjects}
+              groups={projectSourceGroups}
+              showGroups={showProjectSourceGroups}
+              selectedProjectId={props.selectedProject?.id}
+              platform={platform}
+              select={(projectId) => { selectProject(projectId); closeProjectMenu(true); }}
+              reorder={reorderProject}
+            />
             <div className="project-menu-divider" role="separator" />
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSettings" }); }}><Icon name="settings" /><span className="project-menu-label">Task Settings</span></button>
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setEditProjectOpen(true); }}><Icon name="edit" /><span className="project-menu-label">Edit Project</span></button>
@@ -2084,7 +2088,7 @@ export function Shell(props: ShellProps) {
       <ProjectDialog
         open={props.projectDialogOpen}
         close={props.closeProjectDialog}
-        projects={props.projects}
+        projects={orderedProjects}
         listProfiles={props.listConnectionProfiles}
         subscribeConnectionStatus={props.subscribeConnectionStatus}
         defaultProjectsRoot={props.defaultProjectsRoot}
@@ -2095,7 +2099,7 @@ export function Shell(props: ShellProps) {
       {editProjectOpen && props.selectedProject ? <ProjectDetailsDialog
         key={props.selectedProject.id}
         project={props.selectedProject}
-        projects={props.projects}
+        projects={orderedProjects}
         close={() => setEditProjectOpen(false)}
         defaultProjectsRoot={() => props.defaultProjectsRoot(props.selectedProject?.connectionProfileId ?? "local")}
         actions={{
@@ -2137,7 +2141,7 @@ export function Shell(props: ShellProps) {
       /> : null}
       {commandPaletteOpen ? <CommandPalette commands={commands} platform={platform} close={closeCommandPalette} /> : null}
       {quickActionOpen ? <QuickActionComposer
-        projects={props.projects.filter((project) => (
+        projects={orderedProjects.filter((project) => (
           project.connectionProfileId === props.selectedProject?.connectionProfileId
         ))}
         selectedProject={props.selectedProject}
