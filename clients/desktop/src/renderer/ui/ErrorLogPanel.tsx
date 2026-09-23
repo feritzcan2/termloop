@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ErrorLogEntry } from "../state/projection-store.js";
+import { Icon } from "./Icon.js";
 
 export function ErrorLogPanel({ entries, clear }: {
   entries: readonly ErrorLogEntry[];
@@ -28,14 +29,15 @@ export function ErrorLogPanel({ entries, clear }: {
     <div ref={rootRef} className="error-log-control">
       <button
         type="button"
-        className={`error-log-trigger${entries.length > 0 ? " has-errors" : ""}`}
+        className={`sidebar-footer-button error-log-trigger${entries.length > 0 ? " has-errors" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
+        title={entries.length === 0 ? "Errors" : `Errors · ${entries.length}`}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="error-log-trigger-dot" aria-hidden="true" />
-        <span>Errors</span>
-        <strong>{entries.length}</strong>
+        <Icon name="alert" />
+        <span className="visually-hidden">Errors</span>
+        {entries.length > 0 ? <strong>{entries.length}</strong> : null}
       </button>
       {open ? <section className="error-log-panel" role="dialog" aria-label="Error log">
         <header>
