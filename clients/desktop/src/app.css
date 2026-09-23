@@ -3461,3 +3461,8 @@ button.history-row-main { cursor: pointer; }
 .terminal-stage:has(> .workflow-creator-return) { flex-direction: column; }
 .workflow-creator .secondary-button:focus-visible, .workflow-creator .primary-button:focus-visible,
 .workflow-creator-return button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Project menu ordering: Cmd+1…9 hints and drag-to-reorder rows. */
+.project-menu button[role="menuitem"][data-project-option-id] { grid-template-columns: 20px minmax(0,1fr) auto 14px; touch-action: none; }
+.project-menu button[role="menuitem"][data-project-option-id].dragging { position: relative; z-index: 1; background: var(--accent-wash); box-shadow: var(--shadow-menu); cursor: grabbing; }
+.project-menu .project-shortcut-hint { color: light-dark(#6b7074, #899195); font-size: 9px; white-space: nowrap; }
