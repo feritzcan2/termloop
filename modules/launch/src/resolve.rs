@@ -63,14 +63,6 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             return Err(InvocationError::InvalidResumeReference);
         }
     };
-    let inherits_codex_permissions = agent_id == "codex"
-        && conversation_kind == "resume"
-        && observation.as_ref().is_some_and(|observation| {
-            matches!(
-                observation.transport,
-                AgentObservationLaunchTransport::DaemonOwnedBridge { .. }
-            )
-        });
     let interactive_template = mcp.as_ref().and_then(|mcp| mcp.instructions);
     let interactive_provider_instructions =
         interactive_template.map(|template| template.authored_body);
@@ -119,17 +111,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 .into_iter()
                 .map(|argument| ResolvedArgument::exact(argument, "reasoning selection")),
         );
-        // Codex remote resume restores the conversation's saved permissions and
-        // rejects CLI permission overrides. Still validate the saved selection;
-        // fresh/forked and uninstrumented launches retain their explicit mapping.
-        let permission_arguments = permission_args(agent_id, permission)?;
-        if !inherits_codex_permissions {
-            arguments.extend(
-                permission_arguments
-                    .into_iter()
-                    .map(|argument| ResolvedArgument::exact(argument, "permission selection")),
-            );
-        }
+        // Remote Codex resume forwards the TUI's effective permissions to the
+        // App Server. Omitting the saved selection silently reapplies defaults.
+        arguments.extend(
+            permission_args(agent_id, permission)?
+                .into_iter()
+                .map(|argument| ResolvedArgument::exact(argument, "permission selection")),
+        );
     }
     if let Some(observation) = observation.as_ref() {
         arguments.extend(observation_manifest_args(agent_id, observation));
@@ -398,7 +386,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 AgentObservationLaunchTransport::DaemonOwnedBridge { .. } => None,
             })
             .unwrap_or_default(),
-        limitations: provider_limitations(agent_id, inherits_codex_permissions),
+        limitations: provider_limitations(agent_id),
     };
     finalize_digest(&mut inspectable);
     Ok(ResolvedLaunchManifest {
