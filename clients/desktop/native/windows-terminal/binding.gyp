@@ -12,6 +12,6 @@
     "include_dirs": ["<!@(node -p \"require('node-addon-api').include\")"],
     "defines": ["NAPI_CPP_EXCEPTIONS", "NOMINMAX", "UNICODE", "_UNICODE"],
     "msvs_settings": {"VCCLCompilerTool": {"ExceptionHandling": 1, "AdditionalOptions": ["/std:c++20", "/utf-8"]}},
-    "libraries": ["user32.lib"]
+    "libraries": ["user32.lib", "comctl32.lib"]
   }]
 }
