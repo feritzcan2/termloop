@@ -39,7 +39,7 @@ fn provider_args(launch: &LaunchPayload) -> &[String] {
 }
 
 #[test]
-fn remote_resume_reapplies_permissions_and_keeps_preview_and_payload_in_sync() {
+fn remote_resume_inherits_permissions_and_keeps_preview_and_payload_in_sync() {
     let resume_ref = ResumeRef::for_provider(ResumeProvider::Codex, THREAD_ID.into()).unwrap();
     let account = AgentAccountContext {
         agent_id: "codex".into(),
@@ -48,7 +48,7 @@ fn remote_resume_reapplies_permissions_and_keeps_preview_and_payload_in_sync() {
         config_directory: Some(std::env::temp_dir().join("codex-resume-private-account")),
     };
     for account in [None, Some(&account)] {
-        for (permission, expected) in PERMISSION_ARGUMENTS.iter().rev() {
+        for (permission, _) in PERMISSION_ARGUMENTS.iter().rev() {
             let launch = configured_interactive_agent_for_conversation(
                 "codex",
                 "/tmp/project",
@@ -75,11 +75,13 @@ fn remote_resume_reapplies_permissions_and_keeps_preview_and_payload_in_sync() {
                 args.windows(2)
                     .any(|pair| pair == ["-c", "model_reasoning_effort=\"xhigh\""])
             );
-            for argument in *expected {
-                assert!(
-                    args.iter().any(|arg| arg == argument),
-                    "{permission}: {argument}"
-                );
+            for (_, rejected) in PERMISSION_ARGUMENTS {
+                for argument in *rejected {
+                    assert!(
+                        !args.iter().any(|arg| arg == argument),
+                        "{permission}: {argument}"
+                    );
+                }
             }
 
             let manifest = launch.inspectable_manifest();
@@ -89,7 +91,7 @@ fn remote_resume_reapplies_permissions_and_keeps_preview_and_payload_in_sync() {
                 .filter(|argument| argument.purpose == "permission selection")
                 .map(|argument| argument.display.as_str())
                 .collect::<Vec<_>>();
-            assert_eq!(actual, *expected);
+            assert!(actual.is_empty());
             assert_eq!(manifest.target.permission, *permission);
             assert_eq!(manifest.target.model, "gpt-6-astra");
             assert_eq!(manifest.target.reasoning, "xhigh");
@@ -99,10 +101,12 @@ fn remote_resume_reapplies_permissions_and_keeps_preview_and_payload_in_sync() {
                     assert_eq!(argument.display, args[argument.position]);
                 }
             }
-            assert!(!manifest.limitations.iter().any(|limitation| {
-                limitation
-                    .description
-                    .contains("conversation's saved permissions")
+            assert!(manifest.limitations.iter().any(|limitation| {
+                limitation.kind == "providerManaged"
+                    && limitation
+                        .description
+                        .contains("conversation's saved permissions")
+                    && limitation.description.contains("last saved selection")
             }));
             assert_eq!(launch.initial_input(), None);
             let preview = serde_json::to_string(manifest).unwrap();
