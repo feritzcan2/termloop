@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
+import { buildWindowsTerminal } from "./native/windows-terminal/build.mjs";
 
 const execFile = promisify(execFileCallback);
 
@@ -22,6 +23,7 @@ const esmRequireBanner = `import { createRequire as __termloopCreateRequire } fr
 const require = __termloopCreateRequire(import.meta.url);`;
 
 await mkdir("dist", { recursive: true });
+await buildWindowsTerminal();
 await Promise.all([
   build({ entryPoints: ["src/main.ts"], outfile: "dist/main.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws", "ssh2"], define: mainDefines, banner: { js: esmRequireBanner } }),
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),

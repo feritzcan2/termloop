@@ -245,7 +245,7 @@ export type DesktopApi = {
   remoteHostStatus(): Promise<RemoteHostStatus>;
   remoteHostEnable(transport: RemoteHostTransport): Promise<RemoteHostStatus>;
   remoteHostDisable(): Promise<RemoteHostStatus>;
-  terminalRendererKind(): Promise<"xterm" | "ghostty">;
+  terminalRendererKind(): Promise<"xterm" | "ghostty" | "windows-terminal">;
   nativeOverlaySetVisible(visible: boolean): Promise<void>;
   nativeOverlaySetPassiveVisible(visible: boolean): Promise<void>;
   nativeOverlaySetPointerInteractive(interactive: boolean): Promise<void>;

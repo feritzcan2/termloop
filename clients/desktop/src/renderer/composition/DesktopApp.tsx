@@ -133,7 +133,7 @@ declare global {
 
 const diagnosticsEnabled = new URLSearchParams(window.location.search).get("diagnostics") === "1";
 const terminalPool = new TerminalPool(
-  (onInput, onResize, onImagePaste) => terminalRendererKind() === "ghostty"
+  (onInput, onResize, onImagePaste) => terminalRendererKind() !== "xterm"
     ? new GhosttySurface(onInput, onResize, ghosttyBridge)
     : new XtermSurface(onInput, onResize, onImagePaste),
   attachTerminal,
@@ -703,7 +703,7 @@ export function DesktopApp() {
   const nativeOverlayActive = shellNativeOverlayOpen || Boolean(launchInspection);
   const nativeOverlayWasActive = useRef(false);
   const nativeOverlayContainer = useNativeOverlayWindow(
-    terminalRendererKind() === "ghostty",
+    terminalRendererKind() !== "xterm",
     nativeOverlayActive,
     nativeOverlayPassiveVisible(
       Boolean(presentation.selectedProjectId),

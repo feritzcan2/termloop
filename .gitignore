@@ -9,6 +9,7 @@
 /clients/mobile/ios/
 /clients/mobile/android/
 /clients/desktop/native/ghostty-host/build/
+/clients/desktop/native/windows-terminal/build/
 /clients/ghostty-host/native/build/
 /spikes/ghostty-macos/build/
 **/.termloop-runtime/

@@ -8,11 +8,13 @@
     "build": "pnpm --filter @termloop/ghostty-host build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build && pnpm --filter @termloop/contract build && node build.mjs",
     "start": "pnpm build && electron .",
     "check": "pnpm --filter @termloop/ghostty-host build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build && tsc --noEmit",
-    "test": "pnpm --filter @termloop/ghostty-host test && pnpm build && vitest run && electron . --smoke",
+    "test": "pnpm --filter @termloop/ghostty-host test && pnpm build && vitest run && node native/windows-terminal/test.mjs && electron . --smoke",
     "smoke": "pnpm build && electron . --smoke",
     "native:ghostty": "pnpm --filter @termloop/ghostty-host native:dev",
     "native:ghostty:dev": "pnpm --filter @termloop/ghostty-host native:dev",
     "native:ghostty:universal": "pnpm --filter @termloop/ghostty-host native:universal",
+    "native:windows-terminal": "node native/windows-terminal/build.mjs",
+    "test:windows-terminal": "node native/windows-terminal/test.mjs",
     "package:dir": "node ../../tools/skills-manager/fetch-cli.mjs --output ../../target/release/skills-manager-cli && pnpm build && electron-builder --dir --config electron-builder.yml",
     "package": "node ../../tools/skills-manager/fetch-cli.mjs --output ../../target/release/skills-manager-cli && pnpm build && electron-builder --config electron-builder.yml"
   },
@@ -44,6 +46,8 @@
     "electron": "43.3.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.1",
+    "node-addon-api": "8.9.2",
+    "node-gyp": "12.4.0",
     "ssh2": "1.17.0",
     "typescript": "7.0.2",
     "vitest": "3.2.4"
