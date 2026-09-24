@@ -36,12 +36,29 @@ describe("appearance theme", () => {
     initializeAppearanceTheme(controllableSystemAppearance(true).query);
   });
 
-  it("defaults invalid, missing, or legacy stored values to system", () => {
-    expect(readAppearancePreference()).toBe("system");
+  it("defaults invalid, missing, or legacy stored values to dark", () => {
+    expect(readAppearancePreference()).toBe("dark");
     window.localStorage.setItem("termloop.appearance-theme", "dark");
-    expect(readAppearancePreference()).toBe("system");
+    expect(readAppearancePreference()).toBe("dark");
     window.localStorage.setItem("termloop.appearance-preference", "purple");
-    expect(readAppearancePreference()).toBe("system");
+    expect(readAppearancePreference()).toBe("dark");
+  });
+
+  it("defaults to dark when storage cannot be read", () => {
+    expect(readAppearancePreference({ getItem: () => { throw new Error("Storage unavailable"); } })).toBe("dark");
+  });
+
+  it("defaults to dark even when the system uses light appearance", () => {
+    const system = controllableSystemAppearance(false);
+
+    expect(initializeAppearanceTheme(system.query)).toBe("dark");
+    expect(appearancePreference()).toBe("dark");
+    expect(document.documentElement.dataset.appearance).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    system.change(true);
+    system.change(false);
+    expect(appearanceTheme()).toBe("dark");
   });
 
   it("restores, applies, publishes, and persists an explicit theme", () => {
@@ -69,6 +86,7 @@ describe("appearance theme", () => {
   });
 
   it("follows system appearance changes live without reinitializing", () => {
+    window.localStorage.setItem("termloop.appearance-preference", "system");
     const system = controllableSystemAppearance(true);
     const changed = vi.fn();
     const unsubscribe = subscribeAppearanceTheme(changed);

@@ -13,6 +13,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { secureWindowsGatewayDirectory, windowsTaskPlan } from "./mobile-access-windows.mjs";
 
 const execFile = promisify(execFileCallback);
 const ARTIFACT_FILE = "gateway-artifact.json";
@@ -114,6 +116,7 @@ export async function reconcileGatewayInstall({
   hostPlatform,
   launchctlBin = "launchctl",
   systemctlBin = "systemctl",
+  powershellBin,
   launchAgentDirectory,
   serviceDirectory,
   nodeExecutable = process.execPath,
@@ -126,6 +129,7 @@ export async function reconcileGatewayInstall({
 }) {
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
   await chmod(stateDirectory, 0o700);
+  if (hostPlatform === "win32") await secureWindowsGatewayDirectory(stateDirectory, powershellBin);
   return await withInstallLock(stateDirectory, async () => {
     const configFile = path.join(stateDirectory, "gateway.json");
     const enrolledConfig = await readGatewayConfig(configFile);
@@ -151,7 +155,7 @@ export async function reconcileGatewayInstall({
       || hash(installedBytes) !== desired.artifact.artifactSha256
       || installed?.buildId !== desired.artifact.buildId;
     const label = `ai.termloop.mobile-access.${requiredConnectionId(config, stateDirectory).slice(4)}`;
-    const logFile = hostPlatform === "darwin"
+    const logFile = hostPlatform === "darwin" || hostPlatform === "win32"
       ? config.logFile ?? path.join(stateDirectory, "gateway.log")
       : undefined;
     const service = hostPlatform === "darwin"
@@ -166,16 +170,21 @@ export async function reconcileGatewayInstall({
         launchctlBin,
         testPlatform,
       })
-      : await systemdPlan({
-        label,
-        nodeExecutable,
-        gatewayScript,
-        configFile,
-        stateDirectory,
-        electronRunAsNode,
-        directory: serviceDirectory,
-        systemctlBin,
-      });
+      : hostPlatform === "win32"
+        ? await windowsTaskPlan({
+          label, nodeExecutable, electronRunAsNode, gatewayScript, configFile,
+          logFile, stateDirectory, powershellBin, port: config.port,
+        })
+        : await systemdPlan({
+          label,
+          nodeExecutable,
+          gatewayScript,
+          configFile,
+          stateDirectory,
+          electronRunAsNode,
+          directory: serviceDirectory,
+          systemctlBin,
+        });
 
     if (!artifactChanged && !configChanged && !service.changed) {
       return { stateDirectory, status: "current", buildId: desired.artifact.buildId };
@@ -583,7 +592,7 @@ function requiredConnectionId(config, stateDirectory) {
 
 function defaultInstallerOwner(channel) {
   if (channel !== "development") return "ai.termloop.desktop";
-  const sourceRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+  const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
   return `termloop.dev.${hash(Buffer.from(sourceRoot)).slice(0, 16)}`;
 }
 

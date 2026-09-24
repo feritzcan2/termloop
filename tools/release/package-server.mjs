@@ -37,7 +37,7 @@ try {
       releaseVersion: version, channel: 'production', owner: 'ai.termloop.server',
       sequence: major * 1_000_000 + minor * 1_000 + patch,
     }) });
-    for (const name of ['mobile-access.mjs', 'mobile-access-installer.mjs']) {
+    for (const name of ['mobile-access.mjs', 'mobile-access-installer.mjs', 'mobile-access-windows.mjs']) {
       await copyFile(path.join(scriptsDirectory, name), path.join(mobileStage, name));
     }
     const assets = Object.fromEntries(await Promise.all(mobileAssetFiles.map(async (name) => [name, await readFile(path.join(mobileStage, name), 'utf8')])));

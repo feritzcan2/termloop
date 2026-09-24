@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { mobileAssetFiles, mobileFailureCode, serverMobileAccess } from './server-mobile-access.mjs';
 import { activateRelease, installationPaths, reconcileReleaseMobileAccess } from './termloop-server-manager.mjs';
@@ -15,6 +16,19 @@ async function fixture(t) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   return { directory, paths: installationPaths({}, directory, 1000) };
 }
+
+test('staged installer retains its complete module dependency closure on every host', async (t) => {
+  const { paths } = await fixture(t);
+  const assets = Object.fromEntries(await Promise.all(mobileAssetFiles.map(async (name) => [
+    name, ['mobile-access.mjs', 'mobile-access-installer.mjs', 'mobile-access-windows.mjs'].includes(name)
+      ? await readFile(new URL(`../../clients/mobile/scripts/${name}`, import.meta.url), 'utf8') : 'fixture',
+  ])));
+  await serverMobileAccess('reconcile', paths, assets, async (_node, args) => {
+    const installer = await import(pathToFileURL(path.join(path.dirname(args[0]), 'mobile-access-installer.mjs')).href);
+    assert.equal(typeof installer.reconcileGatewayInstall, 'function');
+    return { stdout: '{"status":"notInstalled"}' };
+  });
+});
 
 test('enrollment uses packaged files, the server runtime and private temporary storage', async (t) => {
   const { paths } = await fixture(t);

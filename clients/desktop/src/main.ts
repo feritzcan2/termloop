@@ -100,9 +100,7 @@ import { ForwardManager } from "./main/forwarding.js";
 import { cursorScreenPoint } from "./platform/cursor-position.js";
 import { PromptAssetStore } from "./platform/prompt-assets.js";
 import {
-  mobileAccessNodeExecutable,
-  mobileAccessScriptPath,
-  prepareMobileAccessQr,
+  prepareLocalMobileAccessQr,
   publishMobileAgentGroups,
   publishMobileNotificationPreferences,
   reconcilePackagedMobileAccess,
@@ -388,15 +386,13 @@ handleIpc("termloop:remote-mobile-access-pairing", async (event, profileId: stri
 
 handleIpc("termloop:mobile-access-pairing", async (event) => {
   requireMainRenderer(event);
-  if (app.isPackaged) {
-    return { ok: false, error: "Mobile Access is not included in this packaged preview yet." } as const;
-  }
   try {
-    const script = mobileAccessScriptPath(directory, process.env.TERMLOOP_DEV_CHECKOUT);
-    const qrSvg = await prepareMobileAccessQr(
-      script,
-      mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
-    );
+    const qrSvg = await prepareLocalMobileAccessQr({
+      isPackaged: app.isPackaged,
+      bundleDirectory: directory,
+      checkout: process.env.TERMLOOP_DEV_CHECKOUT,
+      nodeExecutable: process.env.TERMLOOP_DEV_NODE_BINARY,
+    });
     await publishClientMobileAgentGroups(await clientLayoutStore().load());
     await publishClientMobileNotificationPreferences(await currentNotificationPreferences());
     return {

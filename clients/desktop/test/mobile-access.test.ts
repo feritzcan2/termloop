@@ -8,6 +8,7 @@ import {
   mobileAccessScriptPath,
   packagedMobileAccessScriptPath,
   prepareMobileAccessQr,
+  prepareLocalMobileAccessQr,
   publishMobileAgentGroups,
   publishMobileNotificationPreferences,
   reconcilePackagedMobileAccess,
@@ -71,11 +72,36 @@ describe("mobile access QR preparation", () => {
     ]));
   });
 
-  it("auto-reconciles only packaged macOS and Linux applications", () => {
+  it("auto-reconciles packaged macOS, Linux and Windows applications", () => {
     expect(shouldReconcilePackagedMobileAccess(true, "darwin")).toBe(true);
     expect(shouldReconcilePackagedMobileAccess(true, "linux")).toBe(true);
-    expect(shouldReconcilePackagedMobileAccess(true, "win32")).toBe(false);
+    expect(shouldReconcilePackagedMobileAccess(true, "win32")).toBe(true);
     expect(shouldReconcilePackagedMobileAccess(false, "darwin")).toBe(false);
+    expect(shouldReconcilePackagedMobileAccess(true, "freebsd")).toBe(false);
+  });
+
+  it("runs packaged pairing from unpacked assets with the bundled Node runtime", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "termloop packaged mobile-"));
+    temporaryDirectories.push(root);
+    const bundle = path.join(root, "app.asar", "dist");
+    const pairingScript = packagedMobileAccessScriptPath(bundle);
+    expect(pairingScript).toBe(path.join(root, "app.asar.unpacked", "dist", "mobile-access", "mobile-access.mjs"));
+    await mkdir(path.dirname(pairingScript), { recursive: true });
+    const calls = path.join(root, "calls.json");
+    await writeFile(pairingScript, `
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(${JSON.stringify(calls)}, JSON.stringify({ args: process.argv.slice(2), node: process.env.ELECTRON_RUN_AS_NODE }));
+      console.log('TLMP1:{"fixture":true}');
+    `);
+    const svg = await prepareLocalMobileAccessQr({ isPackaged: true, bundleDirectory: bundle, nodeExecutable: "missing-node" });
+    expect(svg).toMatch(/^<svg/);
+    expect(svg).not.toContain("fixture");
+    const invocation = JSON.parse(await readFile(calls, "utf8"));
+    expect(invocation.node).toBe("1");
+    expect(invocation.args).toEqual(expect.arrayContaining([
+      "--print", "--artifact-dir", path.dirname(pairingScript), "--node-executable", process.execPath,
+      "--electron-run-as-node", "--runtime",
+    ]));
   });
 
   it("turns a versioned pairing payload into QR geometry without returning the payload", async () => {
@@ -94,6 +120,20 @@ describe("mobile access QR preparation", () => {
 
     await expect(prepareMobileAccessQr(pairingScript, process.execPath)).rejects.toThrow(
       "Mobile Access did not produce a valid pairing code.",
+    );
+  });
+
+  it("redacts pairing credentials from failed bootstrap output", async () => {
+    const pairingScript = await script(`console.log('TLMP1:private-pairing-credential'); console.error('private-error-credential'); process.exit(1);`);
+    await expect(prepareMobileAccessQr(pairingScript, process.execPath)).rejects.toThrow(
+      "Mobile Access could not start. Check Tailscale and the computer's background service, then try again.",
+    );
+  });
+
+  it("explains a missing Tailscale installation without exposing child errors", async () => {
+    const pairingScript = await script(`throw new Error('Tailscale CLI was not found.');`);
+    await expect(prepareMobileAccessQr(pairingScript, process.execPath)).rejects.toThrow(
+      "Install and connect Tailscale on this computer, then try Mobile Access again.",
     );
   });
 

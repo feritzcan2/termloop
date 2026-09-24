@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { TerminalRendererKind } from "../terminal/renderer-kind.js";
 
 const FRAME_NAME = "termloop-native-overlay";
 const MASK_LAYER_ID = "native-overlay-terminal-masks";
@@ -48,8 +49,14 @@ function updateTerminalMasks(container: HTMLElement, visible: boolean): void {
   if (!unchanged) layer.replaceChildren(...masks);
 }
 
-export function nativeTerminalSurfaceVisible(terminalOccluded: boolean, nativeOverlayActive: boolean): boolean {
-  return !terminalOccluded && !nativeOverlayActive;
+export function terminalSurfaceVisible(
+  rendererKind: TerminalRendererKind,
+  terminalOccluded: boolean,
+  overlayActive: boolean,
+): boolean {
+  // Ghostty replaces its native view with a snapshot below the overlay. xterm
+  // already renders below DOM dialogs and must stay visible behind them.
+  return !terminalOccluded && (rendererKind !== "ghostty" || !overlayActive);
 }
 
 export function nativeOverlayPassiveVisible(hasSelectedProject: boolean, suppressed: boolean): boolean {
