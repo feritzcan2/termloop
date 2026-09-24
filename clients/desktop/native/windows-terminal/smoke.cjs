@@ -30,6 +30,14 @@ app.whenReady().then(async () => {
     addon.setVisible(second.surfaceId, true);
     window.showInactive();
     await new Promise(resolve => setTimeout(resolve, 200));
+    for (const child of children) {
+      assert.deepEqual(driver.cursor(child.handle, true), { handled: true, cursor: "text", parentRequests: 0 },
+        "Terminal inherited the sidebar resize cursor from Chromium");
+      assert.equal(driver.cursor(child.handle, false).cursor, "resize",
+        "Terminal intercepted a non-client resize cursor");
+      assert.deepEqual(driver.cursor(child.handle, true), { handled: true, cursor: "text", parentRequests: 0 },
+        "Terminal did not restore its cursor on re-entry");
+    }
     const bitmap = addon.snapshot(first.surfaceId);
     assert(bitmap && bitmap.width > 0 && bitmap.height > 0);
     const colors = new Set();
@@ -120,7 +128,7 @@ app.whenReady().then(async () => {
     addon.setVisible(first.surfaceId, true);
     addon.scrollToBottom(first.surfaceId);
     assert((await addon.readText(first.surfaceId)).includes("NULAFTER-NUL"));
-    console.log("PASS Windows Terminal native: pane geometry/isolation, Unicode, ANSI pixels, live output under a focused menu, resize, focus, keyboard/shortcuts, bracketed paste, theme, NUL, VT replies, visibility, readback");
+    console.log("PASS Windows Terminal native: pane geometry/isolation, cursor reset after sidebar resize, Unicode, ANSI pixels, live output under a focused menu, resize, focus, keyboard/shortcuts, bracketed paste, theme, NUL, VT replies, visibility, readback");
   } finally {
     clipboard.write(savedClipboard);
     for (const id of ids) addon.destroy(id);

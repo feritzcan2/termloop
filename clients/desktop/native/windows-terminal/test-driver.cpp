@@ -1,6 +1,16 @@
 #include <napi.h>
 #include <windows.h>
+#include <commctrl.h>
 #include "paste-mode.hpp"
+
+LRESULT CALLBACK ResizeCursorProc(HWND window, UINT message, WPARAM key, LPARAM flags, UINT_PTR, DWORD_PTR reference) {
+  if (message == WM_SETCURSOR) {
+    ++*reinterpret_cast<unsigned*>(reference);
+    SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    return TRUE;
+  }
+  return DefSubclassProc(window, message, key, flags);
+}
 
 HWND Handle(const Napi::Value& value) {
   auto bytes = value.As<Napi::Buffer<uint8_t>>();
@@ -10,6 +20,27 @@ HWND Handle(const Napi::Value& value) {
   return window;
 }
 Napi::Object Module(Napi::Env env, Napi::Object exports) {
+  exports.Set("cursor", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    HWND window = Handle(info[0]), parent = GetParent(window);
+    const bool clientArea = info[1].As<Napi::Boolean>();
+    unsigned parentRequests = 0;
+    // Reproduce Chromium retaining the sidebar's resize cursor when the mouse
+    // enters a native child HWND without another DOM mouse move.
+    if (!SetWindowSubclass(parent, ResizeCursorProc, 1, reinterpret_cast<DWORD_PTR>(&parentRequests)))
+      throw Napi::Error::New(info.Env(), "cursor test parent subclass failed");
+    const auto saved = SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+    const auto handled = SendMessageW(window, WM_SETCURSOR, reinterpret_cast<WPARAM>(window),
+      MAKELPARAM(clientArea ? HTCLIENT : HTLEFT, WM_MOUSEMOVE));
+    const auto cursor = GetCursor();
+    SetCursor(saved);
+    RemoveWindowSubclass(parent, ResizeCursorProc, 1);
+    auto result = Napi::Object::New(info.Env());
+    result.Set("handled", handled != 0);
+    result.Set("cursor", cursor == LoadCursorW(nullptr, IDC_IBEAM) ? "text"
+      : cursor == LoadCursorW(nullptr, IDC_SIZEWE) ? "resize" : "other");
+    result.Set("parentRequests", parentRequests);
+    return result;
+  }));
   exports.Set("children", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
     auto result = Napi::Array::New(info.Env());
     HWND parent = Handle(info[0]), child = nullptr;
