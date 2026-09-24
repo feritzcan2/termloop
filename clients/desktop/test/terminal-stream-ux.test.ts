@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TerminalWriteBatcher } from "../src/renderer/terminal/output-batcher.js";
-import { TerminalOutputTail, continueReplay } from "../src/renderer/terminal/replay-continuity.js";
+import { TerminalWriteBatcher } from "@termloop/terminal-surface/output-batcher";
+import { TerminalOutputTail, continueReplay } from "@termloop/terminal-surface/replay-continuity";
 import { TerminalReplayBuffer } from "../src/renderer/terminal/replay-buffer.js";
 import { InputReceiptLedger } from "../src/utility/input-receipts.js";
 const encode = (text: string) => new TextEncoder().encode(text);

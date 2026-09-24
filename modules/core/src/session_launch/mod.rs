@@ -1898,8 +1898,6 @@ impl CoreRuntime {
         }
         .map_err(invocation_error)?;
         let program = launch.program().to_owned();
-        let args = launch.args().to_vec();
-        let environment = launch.environment().clone();
         let initial_input_submission = launch.initial_input_submission();
         let generated_input_observable =
             plan.observation_token.is_some() || plan.provider_runtime.codex().is_some();
@@ -1958,15 +1956,13 @@ impl CoreRuntime {
                 },
             );
         }
-        if let Err(error) = self.terminal.spawn(PtySpawnSpec {
-            session_id: session.id.clone(),
-            runtime_epoch: self.runtime_epoch,
-            program,
-            args,
-            cwd: plan.cwd.clone(),
-            environment,
-            recent_output_replay: true,
-        }) {
+        if let Err(error) = termloop_agent_runtime::spawn_agent_terminal(
+            &self.terminal,
+            &session.id,
+            self.runtime_epoch,
+            &plan.cwd,
+            &launch,
+        ) {
             self.agent_observations.remove(&session.id);
             self.mcp_authorizer.remove(&session.id);
             return Err(terminal_error(error));

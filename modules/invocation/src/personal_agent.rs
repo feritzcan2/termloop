@@ -88,23 +88,22 @@ pub fn personal_agent_for_conversation(
         Some(&instructions),
         attachments,
         if managed_worktree {
-            crate::CodexProjectTrust::TermLoopManagedWorktree
+            crate::CodexProjectTrust::ManagedWorkspace
         } else {
             crate::CodexProjectTrust::Inherit
         },
     )?;
-    resolved.bindings = vec![
+    resolved.set_bindings(vec![
         ("profileRef".into(), profile.id.clone()),
         ("profileVersion".into(), profile.version.to_string()),
         ("instructions".into(), profile.instructions.clone()),
-    ];
+    ]);
     if let Some(prompt) = prompt {
-        resolved.bindings.push(("prompt".into(), prompt.into()));
+        resolved.add_binding("prompt", prompt);
     }
-    resolved.inspectable.provenance.delivered_digest = crate::content_digest(&format!(
+    resolved.set_provenance_content(&format!(
         "{instructions}\n\n{}",
-        resolved.delivered_prompt.as_deref().unwrap_or_default()
+        resolved.delivered_prompt().unwrap_or_default()
     ));
-    crate::finalize_digest(&mut resolved.inspectable);
     Ok(resolved.into_payload())
 }

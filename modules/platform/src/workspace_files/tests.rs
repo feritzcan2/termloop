@@ -238,3 +238,57 @@ fn special_files_are_not_opened() {
     );
     drop(socket);
 }
+
+#[test]
+fn retained_reader_bounds_text_and_rejects_nonfiles_and_traversal() {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("page.html"), "x".repeat(512 * 1024)).unwrap();
+    std::fs::write(fixture.0.join("binary"), [0, 1, 2]).unwrap();
+    std::fs::create_dir(fixture.0.join("directory")).unwrap();
+    let reader = WorkspaceFileReader::open(&fixture.0).unwrap();
+    assert_eq!(
+        reader.read_text("page.html", 512 * 1024).unwrap().len(),
+        512 * 1024
+    );
+    assert!(reader.read_text("page.html", 512 * 1024 - 1).is_err());
+    for name in ["binary", "directory", "../outside", "/etc/passwd", ""] {
+        assert!(reader.read_text(name, 1024).is_err());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn retained_reader_rejects_links_and_does_not_follow_replaced_root_paths() {
+    use std::os::unix::fs::symlink;
+    let fixture = Fixture::new();
+    let inside = fixture.0.join("inside");
+    let moved = fixture.0.join("moved");
+    let outside = fixture.0.join("outside");
+    std::fs::create_dir(&inside).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(inside.join("value"), "inside").unwrap();
+    std::fs::write(outside.join("value"), "outside").unwrap();
+    symlink(outside.join("value"), inside.join("link")).unwrap();
+    symlink(&outside, inside.join("escape")).unwrap();
+    let reader = WorkspaceFileReader::open(&inside).unwrap();
+    assert!(reader.read_text("link", 100).is_err());
+    assert!(reader.read_text("escape/value", 100).is_err());
+    std::fs::rename(&inside, &moved).unwrap();
+    symlink(&outside, &inside).unwrap();
+    assert_eq!(reader.read_text("value", 100).unwrap(), "inside");
+}
+
+#[test]
+fn retained_binary_workspace_capability_is_bounded_and_cannot_overwrite() {
+    let f = Fixture::new();
+    let reader = WorkspaceFileReader::open(&f.0).unwrap();
+    let bytes = [0, 255, 37, 80, 68, 70];
+    reader.create_file("document.pdf", &bytes).unwrap();
+    assert_eq!(reader.read_bytes("document.pdf", 6).unwrap(), bytes);
+    assert!(reader.read_bytes("document.pdf", 5).is_err());
+    assert!(reader.read_text("document.pdf", 6).is_err());
+    assert!(reader.create_file("document.pdf", b"overwrite").is_err());
+    for path in ["../escape", "/absolute", "nested/file", ""] {
+        assert!(reader.create_file(path, b"x").is_err());
+    }
+}

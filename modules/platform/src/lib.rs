@@ -31,8 +31,8 @@ mod workspace_files;
 
 pub use workspace_files::{
     WorkspaceContentState, WorkspaceDirectory, WorkspaceFileContent, WorkspaceFileEntry,
-    WorkspaceFileKind, list_workspace_directory, list_workspace_directory_page,
-    read_workspace_file, validate_workspace_relative_path,
+    WorkspaceFileKind, WorkspaceFileReader, list_workspace_directory,
+    list_workspace_directory_page, read_workspace_file, validate_workspace_relative_path,
 };
 
 pub use access_crypto::{
@@ -70,9 +70,10 @@ pub use keep_awake::{
 pub use launch_target::{LaunchTargetKind, ResolvedLaunchTarget, resolve_launch_target};
 pub use managed_process::{
     DaemonInstanceLease, ManagedProcess, ManagedProcessRecovery, ProcessTreeSignal,
-    TrackedProcessLease, acquire_daemon_instance_lease, reap_tracked_managed_processes,
-    recover_tracked_managed_process, register_existing_tracked_process, signal_process_tree,
-    spawn_managed_process, spawn_resolved_tracked_managed_process, spawn_tracked_managed_process,
+    TrackedProcessLease, acquire_daemon_instance_lease, process_start_identity,
+    reap_tracked_managed_processes, recover_tracked_managed_process,
+    register_existing_tracked_process, signal_process_tree, spawn_managed_process,
+    spawn_resolved_tracked_managed_process, spawn_tracked_managed_process,
     spawn_tracked_managed_process_with_environment, wait_for_process_tree_exit,
 };
 pub use path::{

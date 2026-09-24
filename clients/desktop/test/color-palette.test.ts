@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -6,7 +8,7 @@ import { describe, expect, it } from "vitest";
 const paletteSources = [
   "../src/app.css",
   "../src/skills.css",
-  "../src/assets/ghostty-light.conf",
+  pathToFileURL(createRequire(import.meta.url).resolve("@termloop/ghostty-host/light-config")).href,
 ];
 
 describe("desktop color palette", () => {

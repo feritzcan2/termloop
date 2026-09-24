@@ -32,10 +32,21 @@ await Promise.all([
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
   cp(path.join(checkout, "tools/server"), "dist/server-setup", { recursive: true, filter: (source) => !source.endsWith(".test.mjs") }),
   cp("src/assets/termloop-main-icon.png", "dist/termloop-main-icon.png"),
-  cp("src/assets/ghostty-embedded.conf", "dist/ghostty-embedded.conf"),
-  cp("src/assets/ghostty-light.conf", "dist/ghostty-light.conf"),
-  cp("src/assets/fonts/OFL.txt", "dist/JetBrainsMono-OFL.txt")
+  cp(fileURLToPath(import.meta.resolve("@termloop/ghostty-host/embedded-config")), "dist/ghostty-embedded.conf"),
+  cp(fileURLToPath(import.meta.resolve("@termloop/ghostty-host/light-config")), "dist/ghostty-light.conf"),
+  cp(createRequire(import.meta.url).resolve("@termloop/terminal-surface/font-license"), "dist/JetBrainsMono-OFL.txt")
 ]);
+
+// Stage the reusable native package into this product's immutable app layout.
+const nativeRequire = createRequire(import.meta.url);
+try {
+  const addonPath = nativeRequire.resolve("@termloop/ghostty-host/addon");
+  await mkdir("native/ghostty-host/build/Release", { recursive: true });
+  await cp(addonPath, "native/ghostty-host/build/Release/ghostty_host.node");
+  await cp(nativeRequire.resolve("@termloop/ghostty-host/library"), "native/ghostty-host/build/Release/libghostty.dylib");
+} catch (error) {
+  if (process.platform === "darwin" && error?.code !== "MODULE_NOT_FOUND") throw error;
+}
 
 // SSH setup needs ssh2's adjacent runtime assets (including its Windows agent
 // helper). Keep its pure-JS dependency closure in dist so packaged applications

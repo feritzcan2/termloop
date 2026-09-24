@@ -296,7 +296,7 @@ impl AssistantWakeReason {
 pub struct AssistantWakeMessage {
     provenance: Provenance,
     delivered: String,
-    terminal_input_sequence: Vec<Vec<u8>>,
+    submission: GeneratedTerminalSubmission,
 }
 
 impl AssistantWakeMessage {
@@ -313,10 +313,7 @@ impl AssistantWakeMessage {
     }
 
     pub fn terminal_submission(&self) -> GeneratedTerminalSubmission {
-        GeneratedTerminalSubmission::from_sequence(
-            self.provenance.clone(),
-            &self.terminal_input_sequence,
-        )
+        self.submission.clone()
     }
 }
 
@@ -417,12 +414,11 @@ pub fn assistant_wake_message(
         template_ref: ASSISTANT_WAKE_TEMPLATE.id.into(),
         template_version: ASSISTANT_WAKE_TEMPLATE.version,
     };
-    let terminal_input_sequence =
-        termloop_platform::generated_terminal_paste_submission_sequence(delivered.as_bytes())
-            .map_err(|_| InvocationError::InvalidAssistantConfiguration)?;
+    let submission = termloop_launch::generated_submission(&ASSISTANT_WAKE_TEMPLATE, &delivered)
+        .map_err(|_| InvocationError::InvalidAssistantConfiguration)?;
     Ok(AssistantWakeMessage {
         provenance,
         delivered,
-        terminal_input_sequence,
+        submission,
     })
 }

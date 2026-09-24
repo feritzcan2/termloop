@@ -32,3 +32,21 @@ export function parseGhosttyShellShortcut(value: unknown): GhosttyShellShortcut 
     ? value as GhosttyShellShortcut
     : undefined;
 }
+
+// Product policy. Native surfaces and the renderer use the same double-tap budget.
+export const DOUBLE_SHIFT_WINDOW_MS = 500;
+export const TERMLOOP_NATIVE_INPUT_POLICY = {
+  bindings: [
+    { keyCode: 0x23, modifiers: 9, action: "commandPalette" },
+    { keyCode: 0x11, modifiers: 8, action: "newTerminal" },
+    { keyCode: 0x0f, modifiers: 8, action: "renameSession" },
+    { keyCode: 0x7b, modifiers: 12, action: "focusPreviousPane" },
+    { keyCode: 0x7c, modifiers: 12, action: "focusNextPane" },
+    ...[0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1a, 0x1c, 0x19].map((keyCode, index) => ({
+      keyCode, modifiers: 8, action: `project.${index + 1}`,
+    })),
+  ],
+  imagePasteAction: "pasteImage",
+  doubleShiftAction: "quickAction",
+  doubleShiftWindowMs: DOUBLE_SHIFT_WINDOW_MS,
+};

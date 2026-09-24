@@ -106,27 +106,9 @@ pub enum AgentResumePlanOutcome {
     Prepare(Box<AgentResumePlan>),
 }
 
-#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
-pub enum AgentResumePreparationError {
-    #[error("an existing runtime ownership record conflicts with resume")]
-    RuntimeConflict,
-    #[error("the resume PTY could not be started")]
-    PtySpawnFailed,
-    #[error("the original resume target is no longer available")]
-    TargetUnavailable,
-    #[error("the provider rejected runtime preparation")]
-    ProviderRejected,
-    #[error("the provider history is damaged and requires explicit repair")]
-    ProviderHistoryDamaged,
-    #[error("daemon shutdown interrupted resume preparation")]
-    DaemonInterrupted,
-    #[error("exact runtime absence could not be proven")]
-    RuntimeOwnershipUncertain,
-}
-
-#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
-#[error("exact runtime absence could not be proven")]
-pub struct AgentResumeReapError;
+pub use termloop_agent_runtime::{
+    PreparationError as AgentResumePreparationError, ReapError as AgentResumeReapError,
+};
 
 #[derive(Clone)]
 pub struct AgentResumeTargetValidation {
@@ -439,23 +421,20 @@ impl AgentResumePlan {
             self.compose_resume_launch(observation)?
         };
         self.pending_generated_input = launch.initial_input_submission();
-        self.terminal
-            .spawn(termloop_terminal::PtySpawnSpec {
-                session_id: self.session_id.clone(),
-                runtime_epoch: self.runtime_epoch,
-                program: launch.program().to_owned(),
-                args: launch.args().to_vec(),
-                cwd: self.cwd.clone(),
-                environment: launch.environment().clone(),
-                recent_output_replay: true,
-            })
-            .map_err(|error| match error {
-                termloop_terminal::TerminalError::SessionExists
-                | termloop_terminal::TerminalError::OwnershipConflict => {
-                    AgentResumePreparationError::RuntimeConflict
-                }
-                _ => AgentResumePreparationError::PtySpawnFailed,
-            })?;
+        termloop_agent_runtime::spawn_agent_terminal(
+            &self.terminal,
+            &self.session_id,
+            self.runtime_epoch,
+            &self.cwd,
+            &launch,
+        )
+        .map_err(|error| match error {
+            termloop_terminal::TerminalError::SessionExists
+            | termloop_terminal::TerminalError::OwnershipConflict => {
+                AgentResumePreparationError::RuntimeConflict
+            }
+            _ => AgentResumePreparationError::PtySpawnFailed,
+        })?;
         self.pty_spawned = true;
         if self.shutdown.load(std::sync::atomic::Ordering::Acquire)
             || self.cancellation.load(std::sync::atomic::Ordering::Acquire)

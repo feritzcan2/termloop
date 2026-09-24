@@ -3,11 +3,11 @@ use std::path::Path;
 use std::sync::mpsc::Sender;
 use termloop_domain::{ResumeProvider, ResumeRef, SessionKind};
 
-use crate::runtime::provider_runtime::start_codex_runtime;
 use crate::{
     AgentRuntimeSignal, CoreError, CoreRuntime, ProviderHistoryRepairUnavailableReason,
     required_string, store_error, terminal_error,
 };
+use termloop_agent_runtime::start_codex_runtime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderHistoryRepairOutcome {

@@ -12,7 +12,8 @@
 
 ## Dependencies
 
-- Internal dependency: generated `contract` client only.
+- Internal dependencies: generated `contract` client and the renderer-only
+  `terminal-surface` package. Transport, model, and IPC stay in this client.
 - No Rust domain/core/store modules, direct database/Git/filesystem/process access,
   daemon PTY ownership, provider secrets, or hidden prompts.
 - Node filesystem/network/process APIs and OS branching live only in
