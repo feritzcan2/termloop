@@ -216,9 +216,9 @@ try {
   await assertVisibleStartupOutput(page, codex.id, "TERMLOOP_CODEX_RESUME_SCREEN");
   evidence.checks.electronReceivesInitialTuiOutput = true;
   const firstRestartTrace = await readFile(tracePath, "utf8");
-  evidence.checks.electronRestartReappliesBypassPermission =
+  evidence.checks.electronRestartUsesProviderResumePermissions =
     firstRestartTrace.includes("claude-resume-bypass")
-    && firstRestartTrace.includes("codex-resume-bypass");
+    && firstRestartTrace.includes("codex-resume-inherited-permissions");
   const resumeLog = await readFile(resumeLogPath, "utf8");
   evidence.checks.restoreCyclesAreLoggedWithoutProviderReferences =
     [claude.id, codex.id].every((sessionId) => resumeLog.includes(sessionId))
@@ -749,8 +749,13 @@ if (args[0] === "app-server") {
   return;
 }
 fs.appendFileSync(${JSON.stringify(tracePath)}, (args[0] === "resume" ? "codex-resume" : "codex-fresh") + "\\n");
-if (args[0] === "resume" && args.includes("--dangerously-bypass-approvals-and-sandbox")) {
-  fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-resume-bypass\\n");
+if (args[0] === "resume" && args.includes("--remote")) {
+  const permissionFlags = ["--dangerously-bypass-approvals-and-sandbox", "--approve-for-me", "--sandbox", "--ask-for-approval"];
+  if (args.some((arg) => permissionFlags.includes(arg))) {
+    console.error("Permission overrides are not supported when resuming a remote task.");
+    process.exit(1);
+  }
+  fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-resume-inherited-permissions\\n");
 }
 if (args[0] === "resume") process.stdout.write("\\u001b[2J\\u001b[HTERMLOOP_CODEX_RESUME_SCREEN\\r\\n");
 const endpoint = args[args.indexOf("--remote") + 1];
