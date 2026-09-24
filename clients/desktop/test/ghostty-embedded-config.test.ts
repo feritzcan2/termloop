@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import config from "../src/assets/ghostty-embedded.conf?raw";
-import lightConfig from "../src/assets/ghostty-light.conf?raw";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const config = await readFile(require.resolve("@termloop/ghostty-host/embedded-config"), "utf8");
+const lightConfig = await readFile(require.resolve("@termloop/ghostty-host/light-config"), "utf8");
 
 describe("embedded Ghostty configuration", () => {
   it("does not allocate a standalone display link for embedded surfaces", () => {

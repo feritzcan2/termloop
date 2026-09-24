@@ -54,7 +54,9 @@
     "acceptance:mcp-ask-to": "node tests/e2e/mcp/acceptance.mjs",
     "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs",
     "check:server-management": "node --check tools/server/termloop-server-manager.mjs && node --check tools/server/server-release.mjs && node --check tools/release/package-server.mjs && bash -n tools/server/install.sh .github/runner/cleanup.sh",
-    "test:server-management": "node --test tools/server/*.test.mjs"
+    "test:server-management": "node --test tools/server/*.test.mjs",
+    "engine:pack": "node tools/engine/package.mjs",
+    "engine:test-external": "node tools/engine/test-external.mjs"
   },
   "devDependencies": {
     "playwright": "1.55.0",

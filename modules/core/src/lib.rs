@@ -92,6 +92,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{Receiver, Sender};
 pub mod agent_connections;
 
+use termloop_agent_runtime::readiness::{
+    generated_input_composer_may_accept, generated_input_settlement, unavailable_composer_cause,
+};
 use termloop_agents::{AgentObservation, AgentSignalSource, AgentState};
 use termloop_store::{CoreWriteAuthority, Store};
 use termloop_terminal::TerminalService;
@@ -109,13 +112,7 @@ pub type ProviderHookSettings = termloop_agents::ProviderHookSettings;
 pub type ProviderHookSettingsDelivery = termloop_agents::ProviderHookSettingsDelivery;
 pub type ResumeFailureReason = termloop_domain::ResumeFailureReason;
 
-const MAX_QUEUED_GENERATED_INPUTS_PER_SESSION: usize = 16;
-const MAX_QUEUED_GENERATED_INPUTS: usize = 256;
-
-struct PendingGeneratedInputQueue {
-    runtime_epoch: u64,
-    submissions: VecDeque<termloop_invocation::GeneratedTerminalSubmission>,
-}
+use termloop_agent_runtime::queue::PendingGeneratedInputQueue;
 
 pub fn normalize_claude_hook_plan(payload: &Value) -> Option<AgentPlanUpdate> {
     termloop_agents::normalize_claude_plan_update(payload)
@@ -503,18 +500,7 @@ pub(crate) fn test_agent_observation_transport_with_claude_settings(
     }
 }
 
-pub(crate) struct AgentObservationCapability {
-    pub token: Option<String>,
-    pub runtime_epoch: u64,
-    pub observation: Option<AgentObservation>,
-    pub last_signal: Option<termloop_agents::AgentSignal>,
-    // Agent TUIs may flush PTY input while entering interactive mode. Keep the
-    // exact invocation-owned bytes runtime-only until authenticated structured
-    // provider state proves that the composer is idle, then consume them once.
-    pub pending_generated_input: Option<termloop_invocation::GeneratedTerminalSubmission>,
-    pub defer_generated_input_until_hook_response: bool,
-    pub last_notification_type: Option<String>,
-}
+pub(crate) use termloop_agent_runtime::SessionObservation as AgentObservationCapability;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredAgentCapabilities {
@@ -1356,29 +1342,16 @@ impl CoreRuntime {
                             && session.lifecycle_state == "running"
                     })
             });
-        let total_queued = self
-            .pending_generated_input_queues
-            .values()
-            .map(|queue| queue.submissions.len())
-            .sum::<usize>();
-        let queue = self
-            .pending_generated_input_queues
-            .entry(session_id.to_owned())
-            .or_insert_with(|| PendingGeneratedInputQueue {
-                runtime_epoch,
-                submissions: VecDeque::new(),
-            });
-        if queue.runtime_epoch != runtime_epoch {
-            queue.runtime_epoch = runtime_epoch;
-            queue.submissions.clear();
+        if termloop_agent_runtime::queue::enqueue(
+            &mut self.pending_generated_input_queues,
+            session_id,
+            runtime_epoch,
+            submission,
+        ) {
+            Ok(())
+        } else {
+            Err(CoreError::ConversationBusy)
         }
-        if queue.submissions.len() >= MAX_QUEUED_GENERATED_INPUTS_PER_SESSION
-            || total_queued >= MAX_QUEUED_GENERATED_INPUTS
-        {
-            return Err(CoreError::ConversationBusy);
-        }
-        queue.submissions.push_back(submission);
-        Ok(())
     }
 
     fn promote_queued_generated_terminal_input(
@@ -1386,20 +1359,11 @@ impl CoreRuntime {
         session_id: &str,
         runtime_epoch: u64,
     ) -> bool {
-        let submission = self
-            .pending_generated_input_queues
-            .get_mut(session_id)
-            .filter(|queue| queue.runtime_epoch == runtime_epoch)
-            .and_then(|queue| queue.submissions.pop_front());
-        let remove_queue = self
-            .pending_generated_input_queues
-            .get(session_id)
-            .is_some_and(|queue| {
-                queue.runtime_epoch != runtime_epoch || queue.submissions.is_empty()
-            });
-        if remove_queue {
-            self.pending_generated_input_queues.remove(session_id);
-        }
+        let submission = termloop_agent_runtime::queue::pop(
+            &mut self.pending_generated_input_queues,
+            session_id,
+            runtime_epoch,
+        );
         let Some(submission) = submission else {
             return false;
         };
@@ -1821,10 +1785,9 @@ impl CoreRuntime {
         self.agent_observations
             .get(session_id)
             .filter(|value| {
-                value
-                    .token
-                    .as_deref()
-                    .is_some_and(|expected| capability_equal(expected.as_bytes(), token.as_bytes()))
+                value.token.as_deref().is_some_and(|expected| {
+                    termloop_agent_runtime::observation_token_matches(expected, token)
+                })
             })
             .ok_or(CoreError::CapabilityDenied)
     }
@@ -2482,16 +2445,6 @@ fn persist_agent_plan(
     }
 }
 
-fn capability_equal(left: &[u8], right: &[u8]) -> bool {
-    let mut difference = left.len() ^ right.len();
-    for index in 0..64 {
-        difference |= usize::from(
-            left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0),
-        );
-    }
-    difference == 0
-}
-
 fn observation_projection_changed(
     previous: Option<AgentObservation>,
     next: AgentObservation,
@@ -2568,74 +2521,22 @@ fn bounded_hook_label(value: &str) -> String {
     value.chars().take(64).collect()
 }
 
-fn generated_input_composer_may_accept(agent_id: &str, provider_state: Option<AgentState>) -> bool {
-    provider_state == Some(AgentState::Idle)
-        // `turn/completed: interrupted` ends the Codex turn and returns the
-        // TUI to its composer, but App Server does not follow it with a second
-        // `thread/status: idle` notification. Keep the interruption visible as
-        // the turn outcome while allowing the Codex-only structural readiness
-        // gate to prove that a new prompt can actually be pasted.
-        || (agent_id == "codex" && provider_state == Some(AgentState::Interrupted))
-}
-
 fn generated_input_may_enter_provider_queue(
     template_ref: &str,
     provider_state: Option<AgentState>,
 ) -> bool {
-    matches!(
-        provider_state,
-        Some(AgentState::Working | AgentState::Compacting)
-    ) && matches!(
-        template_ref,
-        "builtin.agent.ask-to-reply"
-            | "builtin.agent.ask-to-followup"
-            | "builtin.agent.handoff"
-            | "builtin.steward.agent-message"
-            | "builtin.agent.menu-ask-to"
-            | "builtin.agent.menu-handover-to"
-    )
-}
-
-fn generated_input_settlement(
-    agent_id: &str,
-    provider_source: Option<AgentSignalSource>,
-    provider_queue_ready: bool,
-) -> runtime::generated_input_delivery::GeneratedInputSettlement {
-    use runtime::generated_input_delivery::GeneratedInputSettlement;
-
-    if provider_queue_ready {
-        GeneratedInputSettlement::ProviderQueue
-    } else if agent_id == "codex" && provider_source != Some(AgentSignalSource::DaemonBridge) {
-        // Without App Server's structured idle observation, the terminal must
-        // prove that Codex's current composer prompt is on screen.
-        GeneratedInputSettlement::CodexComposerRender
-    } else if matches!(agent_id, "codex" | "claude") {
-        // App Server idle already proves Codex is accepting a new turn. Keep
-        // the terminal's bracketed-paste handshake as the transport gate, but
-        // do not depend on a TUI glyph that may have rendered before tracking
-        // began or may change independently of the structured protocol.
-        GeneratedInputSettlement::ComposerRender
-    } else {
-        GeneratedInputSettlement::OutputActivity
+    termloop_agent_runtime::readiness::QueueAdmission {
+        while_working: matches!(
+            template_ref,
+            "builtin.agent.ask-to-reply"
+                | "builtin.agent.ask-to-followup"
+                | "builtin.agent.handoff"
+                | "builtin.steward.agent-message"
+                | "builtin.agent.menu-ask-to"
+                | "builtin.agent.menu-handover-to"
+        ),
     }
-}
-
-fn unavailable_composer_cause(
-    provider_state: Option<AgentState>,
-    provider_signal: Option<termloop_agents::AgentSignal>,
-) -> GeneratedInputDeliveryCancelCause {
-    match provider_signal {
-        Some(termloop_agents::AgentSignal::PermissionRequested) => {
-            GeneratedInputDeliveryCancelCause::PermissionRequested
-        }
-        Some(termloop_agents::AgentSignal::Notification) => {
-            GeneratedInputDeliveryCancelCause::Notification
-        }
-        _ if provider_state == Some(AgentState::AwaitingInput) => {
-            GeneratedInputDeliveryCancelCause::ProviderAwaitingInput
-        }
-        _ => GeneratedInputDeliveryCancelCause::ProviderBusy,
-    }
+    .permits(provider_state)
 }
 
 fn generated_input_delivery_state_name(value: GeneratedInputDeliveryState) -> &'static str {

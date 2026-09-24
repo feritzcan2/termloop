@@ -329,9 +329,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.20.3"
+version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "byteorder"
@@ -2411,6 +2411,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "termloop-agent-runtime"
+version = "2.0.6"
+dependencies = [
+ "serde",
+ "serde_json",
+ "termloop-agents",
+ "termloop-launch",
+ "termloop-platform",
+ "termloop-terminal",
+ "thiserror 2.0.19",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "termloop-agents"
 version = "2.0.6"
 dependencies = [
@@ -2453,6 +2468,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "termloop-agent-runtime",
  "termloop-agents",
  "termloop-domain",
  "termloop-gitio",
@@ -2485,6 +2501,20 @@ dependencies = [
 
 [[package]]
 name = "termloop-invocation"
+version = "2.0.6"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "termloop-agents",
+ "termloop-domain",
+ "termloop-launch",
+ "termloop-platform",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "termloop-launch"
 version = "2.0.6"
 dependencies = [
  "serde",
@@ -2572,10 +2602,12 @@ dependencies = [
  "rand 0.9.5",
  "serde",
  "serde_json",
+ "termloop-agent-runtime",
  "termloop-contract",
  "termloop-core",
  "termloop-platform",
  "termloop-terminal",
+ "termloop-terminal-wire",
  "tokio",
  "tokio-tungstenite 0.28.0",
  "tracing",
@@ -2601,9 +2633,17 @@ version = "2.0.6"
 dependencies = [
  "portable-pty",
  "termloop-platform",
+ "termloop-terminal-wire",
  "thiserror 2.0.19",
  "tokio",
  "vte",
+]
+
+[[package]]
+name = "termloop-terminal-wire"
+version = "2.0.6"
+dependencies = [
+ "uuid",
 ]
 
 [[package]]

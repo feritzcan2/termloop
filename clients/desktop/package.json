@@ -5,14 +5,14 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "pnpm --filter @termloop/contract build && node build.mjs",
+    "build": "pnpm --filter @termloop/ghostty-host build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build && pnpm --filter @termloop/contract build && node build.mjs",
     "start": "pnpm build && electron .",
-    "check": "tsc --noEmit",
-    "test": "node --test native/ghostty-host/*.test.mjs && pnpm build && vitest run && electron . --smoke",
+    "check": "pnpm --filter @termloop/ghostty-host build && pnpm --filter @termloop/terminal-wire build && pnpm --filter @termloop/terminal-surface build && tsc --noEmit",
+    "test": "pnpm --filter @termloop/ghostty-host test && pnpm build && vitest run && electron . --smoke",
     "smoke": "pnpm build && electron . --smoke",
-    "native:ghostty": "node-gyp rebuild --directory native/ghostty-host --target=43.3.0 --dist-url=https://electronjs.org/headers",
-    "native:ghostty:dev": "node native/ghostty-host/build-dev.mjs",
-    "native:ghostty:universal": "node native/ghostty-host/build-universal.mjs",
+    "native:ghostty": "pnpm --filter @termloop/ghostty-host native:dev",
+    "native:ghostty:dev": "pnpm --filter @termloop/ghostty-host native:dev",
+    "native:ghostty:universal": "pnpm --filter @termloop/ghostty-host native:universal",
     "package:dir": "node ../../tools/skills-manager/fetch-cli.mjs --output ../../target/release/skills-manager-cli && pnpm build && electron-builder --dir --config electron-builder.yml",
     "package": "node ../../tools/skills-manager/fetch-cli.mjs --output ../../target/release/skills-manager-cli && pnpm build && electron-builder --config electron-builder.yml"
   },
@@ -22,9 +22,7 @@
     "@dnd-kit/utilities": "3.2.2",
     "@react-symbols/icons": "1.4.1",
     "@termloop/contract": "workspace:*",
-    "@xterm/addon-fit": "0.11.0",
-    "@xterm/addon-webgl": "0.19.0",
-    "@xterm/xterm": "6.0.0",
+    "@termloop/terminal-surface": "workspace:*",
     "electron-updater": "6.8.9",
     "qrcode": "^1.5.4",
     "react": "19.1.1",
@@ -32,7 +30,9 @@
     "react-dom": "19.1.1",
     "shiki": "4.4.3",
     "ws": "8.21.2",
-    "zustand": "5.0.8"
+    "zustand": "5.0.8",
+    "@termloop/terminal-wire": "workspace:*",
+    "@termloop/ghostty-host": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.1.2",
@@ -44,13 +44,11 @@
     "electron": "43.3.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.1",
-    "node-addon-api": "8.9.2",
-    "node-gyp": "12.4.0",
     "ssh2": "1.17.0",
     "typescript": "7.0.2",
     "vitest": "3.2.4"
   },
   "description": "TermLoop Next desktop client",
   "homepage": "https://github.com/feritzcan2/termloop",
-  "author": "Ferit özcan"
+  "author": "Ferit \u00f6zcan"
 }
