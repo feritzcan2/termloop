@@ -36,20 +36,29 @@
 - macOS, Linux, and Windows are release gates. Local builds and cross-compiles
   are preflight evidence only; PTY, path, process, packaging, and other native
   changes need runtime evidence on every affected host.
-- Preserve `.github/workflows/ci.yml`'s cost gate: self-hosted macOS preflight
-  runs static validation plus Linux and Windows cross-target clippy. Hosted
-  native jobs depend on preflight and must not duplicate its static checks.
+- Use the dedicated self-hosted runners for all three platforms: macOS with
+  `termloop-macos`, Linux with `netcup`, and Windows with `termloop-windows`.
+  The Mac with no `termloop-macos` label is not the CI or release host.
+- Start the full three-platform CI matrix directly when preparing a release or
+  validating cross-platform changes. Native jobs may run alongside preflight;
+  do not wait for a single-platform diagnostic before starting the other hosts.
+  macOS preflight still runs static validation plus Linux and Windows
+  cross-target clippy, and remains required for a successful full CI run.
+  Native jobs must not duplicate those static checks.
 - Keep the native matrix `fail-fast: false` so one failure does not discard
-  already-paid sibling evidence.
+  the other platforms' evidence.
 - Before dispatching manual release CI after a code change, exhaust the required
   local checks and installed affected Rust cross-target clippy checks. A code
   fix requires a new immutable commit and a new exact-SHA run; never rewrite
   `main` to reuse old CI evidence.
-- Use `.github/workflows/native-diagnostic.yml` for iteration on native-only
-  failures. Select only the affected OS and use the default `tests` scope unless
-  diagnosing acceptance, smoke, packaging, or bundle assembly.
-- A partial diagnostic success is not release evidence. After affected native
-  diagnostics pass, dispatch one full `ci.yml` gate for the exact candidate SHA.
+- `.github/workflows/native-diagnostic.yml` is optional for focused iteration on
+  native-only failures. Select the useful platforms, including all three when
+  parallel feedback is faster, and default to `tests` scope unless diagnosing
+  acceptance, smoke, packaging, or bundle assembly. A diagnostic is never a
+  prerequisite for dispatching full CI on the self-hosted runners.
+- A partial diagnostic success is not release evidence. Publishing still
+  requires one successful full `ci.yml` run for the exact candidate SHA,
+  including preflight and all three native platforms.
 - Fix and exhaust local verification before starting another exact-SHA run.
 - Use `gh run rerun --failed` only for a transient failure when the candidate SHA
   and code are unchanged.
