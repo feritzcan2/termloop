@@ -45,6 +45,47 @@ app.whenReady().then(async () => {
     const secondText = await addon.readText(second.surfaceId);
     assert(secondText.includes("ISOLATED-PANE"));
     assert(!secondText.includes("NATIVE-WINDOWS"));
+    // An owned transparent menu window must allow both native panes to keep
+    // painting without reclaiming keyboard focus from the menu.
+    const overlay = new BrowserWindow({ parent: window, show: false, frame: false,
+      transparent: true, resizable: false, skipTaskbar: true, hasShadow: false,
+      backgroundColor: "#00000000",
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    try {
+      overlay.setBounds(window.getContentBounds());
+      await overlay.loadURL("data:text/html," + encodeURIComponent(
+        "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'\">" +
+        "<style>html,body{margin:0;background:transparent}button{width:150px;height:60px;background:white}</style>" +
+        "<button autofocus>Project menu</button>"));
+      overlay.show();
+      overlay.focus();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert(overlay.isFocused(), "Menu did not acquire focus before live output");
+      for (const [rgb, channel] of [["255;0;0", 2], ["0;255;0", 1], ["0;0;255", 0]]) {
+        for (const id of ids) addon.write(id, `\x1b[48;2;${rgb}m\x1b[2J\x1b[HOVERLAY-LIVE-${channel}`);
+        for (const id of ids) {
+          let painted = false;
+          for (let attempt = 0; attempt < 40 && !painted; ++attempt) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+            const frame = addon.snapshot(id);
+            assert(frame, "Menu hid the live native terminal");
+            let pixels = 0;
+            for (let i = 0; i < frame.data.length; i += 4) {
+              if (frame.data[i + channel] > frame.data[i + (channel + 1) % 3] * 1.5 &&
+                  frame.data[i + channel] > frame.data[i + (channel + 2) % 3] * 1.5) ++pixels;
+            }
+            painted = pixels > frame.width * frame.height / 2;
+          }
+          assert(painted, `Pane ${id} stopped painting under the menu (${rgb})`);
+          assert((await addon.readText(id)).includes(`OVERLAY-LIVE-${channel}`));
+        }
+        assert(overlay.isVisible(), "Live output closed the menu");
+        assert(overlay.isFocused(), "Live output stole menu focus");
+      }
+    } finally {
+      overlay.destroy();
+      for (const id of ids) addon.write(id, "\x1b[0m\x1b[2J\x1b[H");
+    }
     addon.focus(second.surfaceId);
     addon.setFrame(first.surfaceId, 0, 0, 400, 300);
     assert(driver.children(window.getNativeWindowHandle()).find(child => child.x > 0).focused, "layout stole another pane's focus");
@@ -79,7 +120,7 @@ app.whenReady().then(async () => {
     addon.setVisible(first.surfaceId, true);
     addon.scrollToBottom(first.surfaceId);
     assert((await addon.readText(first.surfaceId)).includes("NULAFTER-NUL"));
-    console.log("PASS Windows Terminal native: pane geometry/isolation, Unicode, ANSI pixels, resize, focus, keyboard/shortcuts, bracketed paste, theme, NUL, VT replies, visibility, readback");
+    console.log("PASS Windows Terminal native: pane geometry/isolation, Unicode, ANSI pixels, live output under a focused menu, resize, focus, keyboard/shortcuts, bracketed paste, theme, NUL, VT replies, visibility, readback");
   } finally {
     clipboard.write(savedClipboard);
     for (const id of ids) addon.destroy(id);
