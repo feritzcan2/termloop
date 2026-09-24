@@ -219,6 +219,13 @@ try {
     targetServer = net.createServer((socket) => {
       targetSockets.add(socket);
       socket.once("close", () => targetSockets.delete(socket));
+      // Revoking a forwarding connection can reset its echo target while a
+      // write is pending on Windows. The protocol assertions below still
+      // require complete delivery before the intentional disconnect.
+      socket.on("error", (error) => {
+        if (error.code !== "ECONNRESET") throw error;
+        socket.destroy();
+      });
       socket.pipe(socket);
     });
     targetServer.once("error", reject);
