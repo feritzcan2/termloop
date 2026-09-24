@@ -92,6 +92,8 @@ import { applicationMenuTemplate, shouldRemoveApplicationMenu } from "./platform
 import { windowFrameOptions } from "./platform/window-frame.js";
 import { requestedTerminalRenderer, type TerminalRendererKind } from "./platform/terminal-renderer.js";
 import { loadGhosttyHostAddon } from "./platform/ghostty-host.js";
+import { loadWindowsTerminalAddon } from "./platform/windows-terminal.js";
+import { WindowsTerminalSurfaceManager } from "./main/windows-terminal-surfaces.js";
 import { GhosttySurfaceManager, type SurfaceFrame } from "./main/ghostty-surfaces.js";
 import { NativeOverlayWindowManager, type NativeOverlayPassiveRegion } from "./main/native-overlay-window.js";
 import { QuickActionImageStore } from "./platform/quick-action-image-store.js";
@@ -150,7 +152,7 @@ const tailscaleDiscovery = new TailscaleServerDiscoveryManager();
 let layoutStore: LayoutFileStore | undefined;
 let daemonSupervisor: BundledDaemonSupervisor | undefined;
 let mainWindow: BrowserWindow | undefined;
-let ghosttySurfaces: GhosttySurfaceManager | undefined;
+let ghosttySurfaces: GhosttySurfaceManager | WindowsTerminalSurfaceManager | undefined;
 let nativeOverlayWindow: NativeOverlayWindowManager | undefined;
 let effectiveTerminalRenderer: TerminalRendererKind = "xterm";
 let quickActionImageStore: QuickActionImageStore | undefined;
@@ -641,7 +643,7 @@ function surfaceFrameOrUndefined(frame: unknown): SurfaceFrame | undefined {
   return { x: candidate.x as number, y: candidate.y as number, width, height };
 }
 
-function requireGhosttyManager(event: Electron.IpcMainInvokeEvent): GhosttySurfaceManager {
+function requireGhosttyManager(event: Electron.IpcMainInvokeEvent): GhosttySurfaceManager | WindowsTerminalSurfaceManager {
   requireMainRenderer(event);
   if (!ghosttySurfaces) throw new Error("ghosttyUnavailable");
   return ghosttySurfaces;
@@ -721,8 +723,8 @@ handleIpc("termloop:ghostty-surface-set-color-scheme", (event, surfaceId: unknow
   if (theme !== "dark" && theme !== "light") throw new Error("invalidGhosttyColorScheme");
   requireGhosttyManager(event).setColorScheme(requireSurfaceId(surfaceId), theme);
 });
-handleIpc("termloop:ghostty-surface-snapshot-text", (event, surfaceId: unknown) => {
-  const text = requireGhosttyManager(event).probeText(requireSurfaceId(surfaceId));
+handleIpc("termloop:ghostty-surface-snapshot-text", async (event, surfaceId: unknown) => {
+  const text = await requireGhosttyManager(event).probeText(requireSurfaceId(surfaceId));
   return text?.slice(0, 262_144);
 });
 handleIpc("termloop:ghostty-surface-snapshot-image", (event, surfaceId: unknown) => {
@@ -1548,7 +1550,18 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
       effectiveTerminalRenderer = "ghostty";
     }
   }
-  const nativeOverlayManager = effectiveTerminalRenderer === "ghostty"
+  if (requestedTerminalRenderer() === "windows-terminal") {
+    const addon = loadWindowsTerminalAddon(app.getAppPath());
+    if (addon) {
+      ghosttySurfaces = new WindowsTerminalSurfaceManager(addon, window, {
+        input: (surfaceId, data) => window.webContents.send("termloop:ghostty-input", { surfaceId, data }),
+        closed: (surfaceId) => window.webContents.send("termloop:ghostty-closed", { surfaceId }),
+        shortcut: (shortcut) => window.webContents.send("termloop:ghostty-shell-shortcut", { shortcut }),
+      }, ({ data, width, height }) => nativeImage.createFromBitmap(data, { width, height, scaleFactor: 1 }).toPNG());
+      effectiveTerminalRenderer = "windows-terminal";
+    }
+  }
+  const nativeOverlayManager = effectiveTerminalRenderer !== "xterm"
     ? new NativeOverlayWindowManager(window, () => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
         window.webContents.send("termloop:native-overlay-closed");
@@ -1605,19 +1618,23 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
     }).start();
   }
   if (process.argv.includes("--smoke")) {
+    if (requestedTerminalRenderer() === "windows-terminal" && effectiveTerminalRenderer !== "windows-terminal") {
+      throw new Error("Windows Terminal smoke must exercise the native renderer, not its fallback");
+    }
+    console.log(`TERMLOOP_TERMINAL_RENDERER_READY: ${effectiveTerminalRenderer}`);
     const applicationUrl = window.webContents.getURL();
-    if (effectiveTerminalRenderer === "ghostty") {
+    if (effectiveTerminalRenderer !== "xterm") {
       for (let attempt = 0; attempt < 40 && BrowserWindow.getAllWindows().length < 2; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
     const initialWindowCount = BrowserWindow.getAllWindows().length;
-    const expectedWindowCount = effectiveTerminalRenderer === "ghostty" ? 2 : 1;
+    const expectedWindowCount = effectiveTerminalRenderer !== "xterm" ? 2 : 1;
     if (initialWindowCount !== expectedWindowCount) throw new Error("unexpected initial window count");
     await window.webContents.executeJavaScript(`window.open("https://github.com/evil/repo/pull/1")`);
     await new Promise((resolve) => setTimeout(resolve, 25));
     if (BrowserWindow.getAllWindows().length !== initialWindowCount) throw new Error("new-window navigation was not denied");
-    if (effectiveTerminalRenderer === "ghostty") {
+    if (effectiveTerminalRenderer !== "xterm") {
       const manager = ghosttySurfaces;
       if (!manager) throw new Error("Ghostty surface manager was not created");
       const capturedSurface = manager.create();
@@ -1627,7 +1644,12 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         // pixel snapshot. Keep it outside the content view while Ghostty
         // renders it: an in-window test surface can otherwise be caught by a
         // concurrent visual smoke capture as "GHOSTTY-PIXEL-SNAPSHOT".
-        manager.setFrame(capturedSurface.surfaceId, -320, -180, 320, 180);
+        if (effectiveTerminalRenderer === "windows-terminal") {
+          window.showInactive();
+          manager.setFrame(capturedSurface.surfaceId, 0, 0, 320, 180);
+        } else {
+          manager.setFrame(capturedSurface.surfaceId, -320, -180, 320, 180);
+        }
         manager.setVisible(capturedSurface.surfaceId, true);
         await manager.write(capturedSurface.surfaceId, new TextEncoder().encode("\u001b[31mGHOSTTY-PIXEL-SNAPSHOT\u001b[0m"));
         await new Promise((resolve) => setTimeout(resolve, 50));

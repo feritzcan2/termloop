@@ -147,6 +147,12 @@ importers:
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
+      node-addon-api:
+        specifier: 8.9.2
+        version: 8.9.2
+      node-gyp:
+        specifier: 12.4.0
+        version: 12.4.0
       ssh2:
         specifier: 1.17.0
         version: 1.17.0(patch_hash=821c7382b0ce86c59be3da31a07e740e4f01b09fa09bce1b03c1d8ee05915aa0)

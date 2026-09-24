@@ -1,6 +1,6 @@
 import { desktopApi } from "../transport/desktop-api.js";
 
-export type TerminalRendererKind = "xterm" | "ghostty";
+export type TerminalRendererKind = "xterm" | "ghostty" | "windows-terminal";
 
 let kind: TerminalRendererKind = "xterm";
 
