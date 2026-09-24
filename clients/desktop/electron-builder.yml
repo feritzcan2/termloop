@@ -49,6 +49,14 @@ win:
     - nsis
   icon: src/assets/termloop-main-icon.png
   extraResources:
+    - from: native/windows-terminal/build/Release
+      to: native/windows-terminal
+      filter:
+        - windows_terminal.node
+        - Microsoft.Terminal.Control.dll
+        - CascadiaMono.ttf
+        - Windows-Terminal-NOTICE.html
+        - engine.json
     - from: ../../target/release
       to: daemon
       filter:

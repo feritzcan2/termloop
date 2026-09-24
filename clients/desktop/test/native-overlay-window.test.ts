@@ -25,6 +25,9 @@ describe("native overlay window request", () => {
     expect(terminalSurfaceVisible("ghostty", false, true)).toBe(false);
     expect(terminalSurfaceVisible("ghostty", true, false)).toBe(false);
     expect(terminalSurfaceVisible("ghostty", true, true)).toBe(false);
+    expect(terminalSurfaceVisible("windows-terminal", false, false)).toBe(true);
+    expect(terminalSurfaceVisible("windows-terminal", false, true)).toBe(false);
+    expect(terminalSurfaceVisible("windows-terminal", true, false)).toBe(false);
   });
 
   it("keeps xterm visible behind Quick Action and other DOM dialogs", () => {
