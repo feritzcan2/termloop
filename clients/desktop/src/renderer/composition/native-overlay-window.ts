@@ -53,10 +53,14 @@ export function terminalSurfaceVisible(
   rendererKind: TerminalRendererKind,
   terminalOccluded: boolean,
   overlayActive: boolean,
+  overlayWindowReady = false,
 ): boolean {
-  // Native engines replace their view with a snapshot below the overlay. xterm
-  // already renders below DOM dialogs and must stay visible behind them.
-  return !terminalOccluded && (rendererKind === "xterm" || !overlayActive);
+  // The Windows overlay is an owned top-level window above the native terminal
+  // HWNDs, so those panes can keep painting. During portal setup/recovery the
+  // menu falls back to the main document and still needs the snapshot path.
+  // Ghostty retains its AppKit snapshot behavior; xterm renders below DOM UI.
+  return !terminalOccluded && (!overlayActive || rendererKind === "xterm"
+    || (rendererKind === "windows-terminal" && overlayWindowReady));
 }
 
 export function nativeOverlayPassiveVisible(hasSelectedProject: boolean, suppressed: boolean): boolean {

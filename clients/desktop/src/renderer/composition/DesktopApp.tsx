@@ -715,8 +715,10 @@ export function DesktopApp() {
     desktopApi.nativeOverlaySetPassiveRegion,
   );
   useEffect(() => {
-    terminalPool.setVisible(terminalSurfaceVisible(terminalRendererKind(), shellTerminalOccluded, nativeOverlayActive));
-  }, [nativeOverlayActive, shellTerminalOccluded]);
+    terminalPool.setVisible(terminalSurfaceVisible(
+      terminalRendererKind(), shellTerminalOccluded, nativeOverlayActive, Boolean(nativeOverlayContainer),
+    ));
+  }, [nativeOverlayActive, nativeOverlayContainer, shellTerminalOccluded]);
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
   const settingsComputers = useSettingsComputers();
   const computerKeepAwake = useMemo(() => ({
