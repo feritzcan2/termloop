@@ -20,14 +20,29 @@ describe("native overlay window request", () => {
     expect(isNativeOverlayWindowRequest({ url: "about:blank", frameName: "termloop-native-overlay-1-extra" })).toBe(false);
   });
 
-  it("hides native terminal surfaces whenever shell content must render above them", () => {
+  it("preserves Ghostty snapshots behind shell overlays", () => {
     expect(terminalSurfaceVisible("ghostty", false, false)).toBe(true);
     expect(terminalSurfaceVisible("ghostty", false, true)).toBe(false);
     expect(terminalSurfaceVisible("ghostty", true, false)).toBe(false);
     expect(terminalSurfaceVisible("ghostty", true, true)).toBe(false);
+    expect(terminalSurfaceVisible("ghostty", false, true, true)).toBe(false);
+  });
+
+  it("keeps Windows Terminal live beneath the separate overlay window", () => {
     expect(terminalSurfaceVisible("windows-terminal", false, false)).toBe(true);
+    expect(terminalSurfaceVisible("windows-terminal", false, true, true)).toBe(true);
+    expect(terminalSurfaceVisible("windows-terminal", false, false, true)).toBe(true);
+  });
+
+  it("hides Windows Terminal while overlays fall back to the main document", () => {
     expect(terminalSurfaceVisible("windows-terminal", false, true)).toBe(false);
+    expect(terminalSurfaceVisible("windows-terminal", false, true, false)).toBe(false);
+  });
+
+  it("still hides Windows Terminal for stage content and drag targets", () => {
     expect(terminalSurfaceVisible("windows-terminal", true, false)).toBe(false);
+    expect(terminalSurfaceVisible("windows-terminal", true, true, true)).toBe(false);
+    expect(terminalSurfaceVisible("windows-terminal", true, false, true)).toBe(false);
   });
 
   it("keeps xterm visible behind Quick Action and other DOM dialogs", () => {
