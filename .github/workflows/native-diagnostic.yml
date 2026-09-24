@@ -87,12 +87,9 @@ jobs:
           done
           keychain_path="$RUNNER_TEMP/termloop-diagnostic-signing.keychain-db"
           certificate_path="$RUNNER_TEMP/termloop-diagnostic-signing.p12"
-          original_default_path="$RUNNER_TEMP/termloop-diagnostic-default-keychain.txt"
           original_keychains_path="$RUNNER_TEMP/termloop-diagnostic-keychains.txt"
           keychain_password="$(uuidgen)"
           security delete-keychain "$keychain_path" >/dev/null 2>&1 || true
-          security default-keychain -d user |
-            sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$original_default_path"
           security list-keychains -d user |
             sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$original_keychains_path"
           printf '%s' "$MACOS_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
@@ -104,8 +101,7 @@ jobs:
           while IFS= read -r existing_keychain; do
             test -n "$existing_keychain" && original_keychains+=("$existing_keychain")
           done < "$original_keychains_path"
-          security list-keychains -d user -s "$keychain_path" "${original_keychains[@]}"
-          security default-keychain -d user -s "$keychain_path"
+          security list-keychains -d user -s "${original_keychains[@]}" "$keychain_path"
           security import "$certificate_path" \
             -P "$MACOS_CERTIFICATE_PASSWORD" \
             -t cert -f pkcs12 -k "$keychain_path" \
@@ -117,6 +113,7 @@ jobs:
           security find-identity -v -p codesigning "$keychain_path" |
             grep -Fq -- "$MACOS_SIGNING_IDENTITY"
           echo "TERMLOOP_DEV_CODE_SIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "CSC_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
       - uses: ./.github/actions/native-verify
         with:
           artifact-prefix: diagnostic-
@@ -127,11 +124,7 @@ jobs:
         if: always()
         run: |
           keychain_path="$RUNNER_TEMP/termloop-diagnostic-signing.keychain-db"
-          original_default_path="$RUNNER_TEMP/termloop-diagnostic-default-keychain.txt"
           original_keychains_path="$RUNNER_TEMP/termloop-diagnostic-keychains.txt"
-          if [ -s "$original_default_path" ]; then
-            security default-keychain -d user -s "$(sed -n '1p' "$original_default_path")" >/dev/null 2>&1 || true
-          fi
           if [ -s "$original_keychains_path" ]; then
             original_keychains=()
             while IFS= read -r existing_keychain; do
@@ -140,4 +133,4 @@ jobs:
             security list-keychains -d user -s "${original_keychains[@]}" >/dev/null 2>&1 || true
           fi
           security delete-keychain "$keychain_path" >/dev/null 2>&1 || true
-          rm -f "$RUNNER_TEMP/termloop-diagnostic-signing.p12" "$original_default_path" "$original_keychains_path"
+          rm -f "$RUNNER_TEMP/termloop-diagnostic-signing.p12" "$original_keychains_path"
