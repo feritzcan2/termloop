@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use cap_std::fs::{Dir, OpenOptions};
@@ -254,4 +254,88 @@ pub fn read_workspace_file(root: &Path, path: &str) -> io::Result<WorkspaceFileC
         return Ok(result(WorkspaceContentState::TooLarge, None));
     }
     Ok(result(WorkspaceContentState::Text, Some(content)))
+}
+
+/// A retained directory capability for reading an explicitly selected set of
+/// editable text files. Renaming/replacing the original path never changes the
+/// directory granted to this reader. Reads reject links and non-regular files.
+pub struct WorkspaceFileReader(Dir);
+
+impl WorkspaceFileReader {
+    pub fn open(root: &Path) -> io::Result<Self> {
+        Ok(Self(open_root(root)?))
+    }
+
+    pub fn read_text(&self, path: &str, max_bytes: usize) -> io::Result<String> {
+        if !(1..=4 * 1024 * 1024).contains(&max_bytes) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid text bound",
+            ));
+        }
+        let bytes = self.read_bytes(path, max_bytes)?;
+        if bytes.contains(&0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "NUL in text file",
+            ));
+        }
+        String::from_utf8(bytes)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid UTF-8 file"))
+    }
+
+    pub fn create_file(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        validate_workspace_relative_path(name)?;
+        if name.is_empty() || name.contains(['/', '\\']) || bytes.len() > 20 * 1024 * 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid workspace output",
+            ));
+        }
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let mut file = self.0.open_with(name, &options)?;
+        file.write_all(bytes)?;
+        file.sync_all()
+    }
+
+    pub fn read_bytes(&self, path: &str, max_bytes: usize) -> io::Result<Vec<u8>> {
+        validate_workspace_relative_path(path)?;
+        let invalid = || {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Expected a bounded regular UTF-8 workspace file",
+            )
+        };
+        if path.is_empty()
+            || !(1..=20 * 1024 * 1024).contains(&max_bytes)
+            || contains_symlink(&self.0, path)?
+            || !self.0.symlink_metadata(path)?.is_file()
+        {
+            return Err(invalid());
+        }
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+        }
+        let file = self.0.open_with(path, &options)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.len() > max_bytes as u64 {
+            return Err(invalid());
+        }
+        let mut bytes = Vec::new();
+        file.take((max_bytes + 1) as u64).read_to_end(&mut bytes)?;
+        if bytes.len() > max_bytes {
+            return Err(invalid());
+        }
+        Ok(bytes)
+    }
 }

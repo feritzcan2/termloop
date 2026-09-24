@@ -31,7 +31,7 @@ pub use output_settlement::{
     OutputSettlementFailure, OutputSettlementReceipt,
 };
 
-pub const TERMINAL_FRAME_MAGIC: &[u8; 4] = b"TL01";
+pub use termloop_terminal_wire::{FrameKind, TERMINAL_FRAME_MAGIC};
 pub const MAX_IO_CHUNK_BYTES: usize = 16 * 1024;
 pub const MAX_ATOMIC_INPUT_BYTES: usize = 192 * 1024;
 pub const MAX_RECENT_REPLAY_BYTES: usize = 1024 * 1024;
@@ -49,24 +49,6 @@ const MAX_GRID_COLS: u16 = 4096;
 /// Bounded so a long-lived daemon that has shown thousands of Sessions keeps a
 /// fixed-size memory; the oldest remembered Session falls back to `latest`.
 const MAX_REMEMBERED_GRIDS: usize = 512;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FrameKind {
-    Input = 1,
-    Output = 2,
-    Resize = 3,
-    Gap = 4,
-    Eof = 5,
-    ReplayOutput = 6,
-    Attach = 10,
-    Ack = 11,
-    Error = 12,
-    Focus = 13,
-    ResizeOwnership = 14,
-    Detach = 15,
-    InputAck = 16,
-    EnableInputAck = 17,
-}
 
 #[derive(Clone)]
 pub struct PtySpawnSpec {

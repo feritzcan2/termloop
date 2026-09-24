@@ -14,6 +14,9 @@ if (!next || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(next)) {
 const jsonFiles = [
   "package.json",
   "clients/desktop/package.json",
+  "clients/terminal-wire/package.json",
+  "clients/terminal-surface/package.json",
+  "clients/ghostty-host/package.json",
   "clients/cli/package.json",
   "contract/generated/typescript/package.json",
 ];

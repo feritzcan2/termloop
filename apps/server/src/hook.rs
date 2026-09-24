@@ -1,325 +1,34 @@
-use serde_json::json;
-use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
+pub(crate) use hook_forwarder::claude_transcript_tail;
+use termloop_agent_runtime::hook_forwarder::{self, HookProtocol};
 use termloop_contract::current::{CONTRACT_IDENTITY, ControlRequest, ControlResponse, ErrorCode};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use uuid::Uuid;
 
-const MAX_HOOK_INPUT_BYTES: usize = 1024 * 1024;
-const MAX_HOOK_REQUEST_BYTES: usize = 2 * 1024 * 1024;
-const MAX_HOOK_RESPONSE_BYTES: usize = 64 * 1024;
-const MAX_HOOK_RESPONSE_HEADERS_BYTES: usize = 8 * 1024;
-const MAX_HOOK_ENDPOINT_BYTES: usize = 128;
-const MAX_HOOK_TOKEN_BYTES: usize = 256;
-const HOOK_TOTAL_TIMEOUT: Duration = Duration::from_secs(2);
-const HOOK_INPUT_TIMEOUT: Duration = Duration::from_millis(500);
-const HOOK_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
-const HOOK_WRITE_TIMEOUT: Duration = Duration::from_millis(500);
-const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_millis(750);
-
-#[derive(Debug)]
-struct HookClientConfig {
-    address: SocketAddr,
-    token: String,
-    session_id: String,
-    agent_id: String,
-}
-
-impl HookClientConfig {
-    fn from_environment() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new(
-            std::env::var("TERMLOOP_HOOK_ENDPOINT")?,
-            std::env::var("TERMLOOP_HOOK_TOKEN")?,
-            std::env::var("TERMLOOP_SESSION_ID")?,
-            std::env::var("TERMLOOP_AGENT_ID")?,
-        )
+struct TermLoopHookProtocol;
+impl HookProtocol for TermLoopHookProtocol {
+    fn encode(
+        &self,
+        id: &str,
+        token: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        Ok(serde_json::to_value(ControlRequest {
+            id: id.into(),
+            token: token.into(),
+            protocol_version: CONTRACT_IDENTITY.into(),
+            method: "agent.observe".into(),
+            params,
+        })?)
     }
-
-    fn new(
-        endpoint: String,
-        token: String,
-        session_id: String,
-        agent_id: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let address = validate_hook_endpoint(&endpoint)?;
-        if token.is_empty()
-            || token.len() > MAX_HOOK_TOKEN_BYTES
-            || !token.bytes().all(|byte| byte.is_ascii_graphic())
-        {
-            return Err("hook credential has an invalid shape".into());
-        }
-        let session_id = Uuid::parse_str(&session_id)
-            .map_err(|_| "hook Session ID is invalid")?
-            .to_string();
-        if !termloop_core::supports_provider_hook_observation(&agent_id) {
-            return Err("hook provider is unsupported".into());
-        }
-        Ok(Self {
-            address,
-            token,
-            session_id,
-            agent_id,
-        })
+    fn accept(
+        &self,
+        id: &str,
+        response: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        accept_hook_response(id, serde_json::from_value(response)?)
     }
 }
 
-/// Provider hook failures must never delay or change the provider's own turn.
-/// The runner is therefore silent and fail-open; the daemon remains the only
-/// authority that decides whether a successfully received observation counts.
 pub(crate) async fn run_hook_client() -> Result<(), Box<dyn std::error::Error>> {
-    run_hook_best_effort(HOOK_TOTAL_TIMEOUT, async {
-        let config = HookClientConfig::from_environment()?;
-        forward_hook(tokio::io::stdin(), config).await
-    })
-    .await;
-    Ok(())
-}
-
-async fn run_hook_best_effort<F>(deadline: Duration, operation: F)
-where
-    F: Future<Output = Result<(), Box<dyn std::error::Error>>>,
-{
-    let _ = tokio::time::timeout(deadline, operation).await;
-}
-
-async fn forward_hook<R>(
-    input: R,
-    config: HookClientConfig,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    R: AsyncRead + Unpin,
-{
-    let input = read_bounded_hook_input(input, HOOK_INPUT_TIMEOUT).await?;
-    let payload: serde_json::Value = serde_json::from_slice(&input)?;
-    let signal = payload
-        .get("hook_event_name")
-        .or_else(|| payload.get("hookEventName"))
-        .and_then(serde_json::Value::as_str)
-        .ok_or("hook payload has no event name")?;
-    // Claude routes every desktop notice through one Notification event, so the
-    // type is the only thing separating "blocked on you" from "idle nudge".
-    let notification_type = field_str(&payload, "notification_type", "notificationType")
-        .filter(|value| !value.is_empty() && value.chars().count() <= 64);
-    let native_session_id = field_str(&payload, "session_id", "sessionId")
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|value| value.to_string());
-    let is_claude = config.agent_id == "claude";
-    let plan = is_claude
-        .then(|| termloop_core::normalize_claude_hook_plan(&payload))
-        .flatten();
-    // Every hook payload carries the mode the Session is on right now, so an
-    // in-TUI `Shift+Tab` is observable without reading the transcript.
-    let permission_mode = is_claude
-        .then(|| field_str(&payload, "permission_mode", "permissionMode"))
-        .flatten()
-        .filter(|value| !value.is_empty() && value.chars().count() <= 64);
-    // Tool and turn boundaries additionally report the effort level as
-    // `effort: { level }`; a prompt-submission payload carries none.
-    let effort_level = is_claude
-        .then(|| {
-            payload
-                .get("effort")
-                .and_then(|effort| field_str(effort, "level", "level"))
-        })
-        .flatten()
-        .filter(|value| !value.is_empty() && value.chars().count() <= 64);
-    let provider_model_id = is_claude
-        .then(|| {
-            native_session_id
-                .as_deref()
-                .and_then(|native_session_id| observed_model(signal, &payload, native_session_id))
-        })
-        .flatten();
-    // Claude reports the user's `Esc` through no hook at all, so a starting turn
-    // hands the daemon the exact transcript and prompt identity it will need to
-    // ask that question later.
-    let (transcript_path, prompt_id) = if is_claude && signal == "UserPromptSubmit" {
-        (
-            transcript_path(&payload).map(|path| path.display().to_string()),
-            field_str(&payload, "prompt_id", "promptId")
-                .filter(|value| !value.is_empty() && value.chars().count() <= 128)
-                .map(str::to_owned),
-        )
-    } else {
-        (None, None)
-    };
-    let mut params = json!({
-        "sessionId": config.session_id,
-        "observationProtocolVersion": 1,
-        "transport": "launchScopedHook",
-        "eventName": signal,
-        "notificationType": notification_type,
-        "nativeSessionId": native_session_id,
-        "providerModelId": provider_model_id,
-        "permissionMode": permission_mode,
-        "effortLevel": effort_level,
-        "transcriptPath": transcript_path,
-        "promptId": prompt_id,
-    });
-    if let Some(plan) = plan {
-        params["plan"] = match plan {
-            termloop_core::AgentPlanUpdate::Replace(plan) => json!({
-                "kind": "replace",
-                "explanation": plan.explanation,
-                "steps": plan.steps,
-            }),
-            termloop_core::AgentPlanUpdate::UpsertTask {
-                task_id,
-                text,
-                status,
-            } => json!({
-                "kind": "upsertTask",
-                "taskId": task_id,
-                "text": text,
-                "status": status,
-            }),
-            termloop_core::AgentPlanUpdate::SetTaskStatus { task_id, status } => json!({
-                "kind": "setTaskStatus",
-                "taskId": task_id,
-                "status": status,
-            }),
-            termloop_core::AgentPlanUpdate::RemoveTask { task_id } => json!({
-                "kind": "removeTask",
-                "taskId": task_id,
-            }),
-        };
-    }
-    let request = ControlRequest {
-        id: Uuid::new_v4().to_string(),
-        protocol_version: CONTRACT_IDENTITY.to_owned(),
-        token: config.token,
-        method: "agent.observe".into(),
-        params,
-    };
-    let response = post_hook_observation(config.address, &request).await?;
-    accept_hook_response(&request.id, response)
-}
-
-async fn post_hook_observation(
-    address: SocketAddr,
-    request: &ControlRequest,
-) -> Result<ControlResponse, Box<dyn std::error::Error>> {
-    let body = serde_json::to_vec(request)?;
-    if body.len() > MAX_HOOK_REQUEST_BYTES {
-        return Err("hook observation request exceeded its fixed bound".into());
-    }
-    let headers = format!(
-        "POST /agent-observation HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        address.port(),
-        body.len()
-    );
-    let mut stream = tokio::time::timeout(HOOK_CONNECT_TIMEOUT, TcpStream::connect(address))
-        .await
-        .map_err(|_| "hook endpoint connection timed out")?
-        .map_err(|_| "hook endpoint connection failed")?;
-    stream
-        .set_nodelay(true)
-        .map_err(|_| "hook endpoint socket configuration failed")?;
-    tokio::time::timeout(HOOK_WRITE_TIMEOUT, async {
-        stream.write_all(headers.as_bytes()).await?;
-        stream.write_all(&body).await?;
-        stream.flush().await
-    })
-    .await
-    .map_err(|_| "hook observation write timed out")?
-    .map_err(|_| "hook observation write failed")?;
-
-    let mut response = Vec::new();
-    let response_bound = MAX_HOOK_RESPONSE_HEADERS_BYTES + MAX_HOOK_RESPONSE_BYTES + 1;
-    let mut bounded = (&mut stream).take(response_bound as u64);
-    tokio::time::timeout(HOOK_RESPONSE_TIMEOUT, bounded.read_to_end(&mut response))
-        .await
-        .map_err(|_| "hook endpoint response timed out")?
-        .map_err(|_| "hook endpoint response failed")?;
-    if response.len() >= response_bound {
-        return Err("hook endpoint response exceeded its fixed bound".into());
-    }
-    decode_hook_http_response(&response)
-}
-
-fn decode_hook_http_response(
-    response: &[u8],
-) -> Result<ControlResponse, Box<dyn std::error::Error>> {
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|position| position + 4)
-        .ok_or("hook endpoint returned an invalid HTTP response")?;
-    if header_end > MAX_HOOK_RESPONSE_HEADERS_BYTES {
-        return Err("hook endpoint response headers exceeded their fixed bound".into());
-    }
-    let headers = std::str::from_utf8(&response[..header_end])?;
-    let mut lines = headers.split("\r\n");
-    let status = lines.next().unwrap_or_default();
-    if !matches!(status, "HTTP/1.1 200 OK" | "HTTP/1.0 200 OK") {
-        return Err("hook endpoint returned a non-success HTTP status".into());
-    }
-    let content_length = lines
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse::<usize>().ok())
-                .flatten()
-        })
-        .ok_or("hook endpoint response omitted its content length")?;
-    if content_length > MAX_HOOK_RESPONSE_BYTES {
-        return Err("hook endpoint response exceeded its fixed bound".into());
-    }
-    let body = &response[header_end..];
-    if body.len() != content_length {
-        return Err("hook endpoint returned an incomplete HTTP response".into());
-    }
-    Ok(serde_json::from_slice(body)?)
-}
-
-async fn read_bounded_hook_input<R>(
-    input: R,
-    deadline: Duration,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>>
-where
-    R: AsyncRead + Unpin,
-{
-    let mut bytes = Vec::new();
-    let mut bounded = input.take((MAX_HOOK_INPUT_BYTES + 1) as u64);
-    tokio::time::timeout(deadline, bounded.read_to_end(&mut bytes))
-        .await
-        .map_err(|_| "hook input timed out")??;
-    if bytes.len() > MAX_HOOK_INPUT_BYTES {
-        return Err("hook input exceeded its fixed bound".into());
-    }
-    Ok(bytes)
-}
-
-fn validate_hook_endpoint(endpoint: &str) -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    if endpoint.len() > MAX_HOOK_ENDPOINT_BYTES {
-        return Err("hook endpoint exceeded its fixed bound".into());
-    }
-    let uri: axum::http::Uri = endpoint.parse().map_err(|_| "hook endpoint is invalid")?;
-    let port = uri.port_u16().ok_or("hook endpoint has no explicit port")?;
-    let authority = uri.authority().ok_or("hook endpoint has no authority")?;
-    if uri.scheme_str() != Some("http")
-        || authority.as_str() != format!("127.0.0.1:{port}")
-        || uri.path_and_query().map(|value| value.as_str()) != Some("/agent-observation")
-    {
-        return Err("hook endpoint is not the TermLoop loopback observation endpoint".into());
-    }
-    Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
-}
-
-/// A provider transcript grows without bound, so only its tail is ever read —
-/// both here at a turn or Session boundary and later by the daemon's interrupt
-/// poll, which is why the bound and the read live in one place.
-const MAX_TRANSCRIPT_TAIL_BYTES: usize = 256 * 1024;
-
-/// Reads the bounded tail of a Claude transcript as text. A missing,
-/// unreadable, or empty transcript is simply no evidence.
-pub(crate) fn claude_transcript_tail(path: &std::path::Path) -> Option<String> {
-    let tail = termloop_platform::read_file_tail_if_present(path, MAX_TRANSCRIPT_TAIL_BYTES)
-        .ok()
-        .flatten()?;
-    Some(String::from_utf8_lossy(&tail).into_owned())
+    hook_forwarder::run_hook_client(TermLoopHookProtocol).await
 }
 
 /// Answers one planned interrupt check. This lives beside the hook client
@@ -333,35 +42,6 @@ pub(crate) fn claude_turn_was_interrupted(check: &termloop_core::ClaudeInterrupt
     claude_transcript_tail(&check.transcript_path).is_some_and(|tail| {
         termloop_core::claude_turn_interrupted(&tail, &check.native_session_id, &check.prompt_id)
     })
-}
-
-fn observed_model(
-    signal: &str,
-    payload: &serde_json::Value,
-    native_session_id: &str,
-) -> Option<String> {
-    if !matches!(signal, "Stop" | "StopFailure" | "SessionEnd") {
-        return None;
-    }
-    let tail = claude_transcript_tail(transcript_path(payload)?)?;
-    termloop_core::normalize_claude_transcript_model(&tail, native_session_id)
-}
-
-/// The provider names its own transcript. Only an absolute JSONL path is
-/// accepted, and it never leaves the daemon.
-fn transcript_path(payload: &serde_json::Value) -> Option<&std::path::Path> {
-    field_str(payload, "transcript_path", "transcriptPath")
-        .map(std::path::Path::new)
-        .filter(|path| path.is_absolute() && path.extension().is_some_and(|value| value == "jsonl"))
-}
-
-/// Claude has emitted both snake_case and camelCase hook payloads, so every
-/// field is read under both spellings.
-fn field_str<'a>(payload: &'a serde_json::Value, snake: &str, camel: &str) -> Option<&'a str> {
-    payload
-        .get(snake)
-        .or_else(|| payload.get(camel))
-        .and_then(serde_json::Value::as_str)
 }
 
 fn accept_hook_response(
@@ -389,6 +69,30 @@ fn accept_hook_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hook_forwarder::{
+        HookClientConfig, MAX_HOOK_INPUT_BYTES, read_bounded_hook_input, run_hook_best_effort,
+    };
+    use serde_json::json;
+    use std::net::SocketAddr;
+    use std::time::Duration;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use uuid::Uuid;
+
+    async fn forward_hook<R: AsyncRead + Unpin>(
+        input: R,
+        config: HookClientConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        hook_forwarder::forward_hook(input, config, &TermLoopHookProtocol).await
+    }
+    async fn post_hook_observation(
+        address: SocketAddr,
+        request: &ControlRequest,
+    ) -> Result<ControlResponse, Box<dyn std::error::Error>> {
+        Ok(serde_json::from_value(
+            hook_forwarder::post_hook_observation(address, &serde_json::to_value(request)?).await?,
+        )?)
+    }
+
     use termloop_contract::current::ProtocolError;
 
     fn valid_config() -> HookClientConfig {

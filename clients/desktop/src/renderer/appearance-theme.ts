@@ -1,4 +1,5 @@
-export type AppearanceTheme = "dark" | "light";
+import type { AppearanceTheme } from "@termloop/terminal-surface/surface";
+export type { AppearanceTheme } from "@termloop/terminal-surface/surface";
 export type AppearancePreference = "system" | AppearanceTheme;
 
 export type SystemAppearanceQuery = {

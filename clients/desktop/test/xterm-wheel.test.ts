@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sgrWheelReports, wheelToArrowLines } from "../src/renderer/terminal/xterm/wheel.js";
+import { sgrWheelReports, wheelToArrowLines } from "@termloop/terminal-surface/wheel";
 
 describe("alternate-screen wheel conversion", () => {
   it("converts a full mouse notch to its pixel-proportional line count", () => {

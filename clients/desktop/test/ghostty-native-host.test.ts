@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import source from "../native/ghostty-host/src/ghostty_host.mm?raw";
-import { DOUBLE_SHIFT_WINDOW_MS } from "../src/renderer/command-surface.js";
+import source from "@termloop/ghostty-host/native-source.mm?raw";
+import { DOUBLE_SHIFT_WINDOW_MS, TERMLOOP_NATIVE_INPUT_POLICY } from "../src/ghostty-shell-shortcut.js";
 
 describe("Ghostty native host visibility", () => {
   it("forwards visibility using Ghostty's visible-boolean semantics", () => {
@@ -89,7 +89,7 @@ describe("Ghostty native host visibility", () => {
       source.indexOf("- (BOOL)performKeyEquivalent"),
       source.indexOf("- (void)flagsChanged"),
     );
-    const termLoopRoute = handler.indexOf("termLoopShortcutForEvent(event)");
+    const termLoopRoute = handler.indexOf("embedderShortcutForEvent(event)");
     const lifecycleGuard = handler.indexOf("embedderOwnsLifecycleKeyEquivalent(event)");
     const ghosttyLookup = handler.indexOf("ghostty_surface_key_is_binding");
 
@@ -109,7 +109,7 @@ describe("Ghostty native host visibility", () => {
     const ghosttyLookup = handler.indexOf("ghostty_surface_key_is_binding");
 
     expect(source).toContain("[NSImage canInitWithPasteboard:pasteboard]");
-    expect(handler).toContain('notifyShellShortcut("pasteImage")');
+    expect(handler).toContain('notifyShellShortcut(g_inputPolicy->imagePasteAction.c_str())');
     expect(imagePaste).toBeGreaterThanOrEqual(0);
     expect(imagePaste).toBeLessThan(ghosttyLookup);
   });
@@ -131,15 +131,13 @@ describe("Ghostty native host visibility", () => {
       source.indexOf("- (BOOL)hasMarkedText"),
     );
 
-    expect(handler).toContain("event.timestamp - self.firstShiftDownAt <= kTermLoopDoubleShiftWindow");
-    expect(handler).toContain('notifyShellShortcut("quickAction")');
+    expect(handler).toContain("event.timestamp - self.firstShiftDownAt <= g_inputPolicy->doubleShiftWindow");
+    expect(handler).toContain('notifyShellShortcut(g_inputPolicy->doubleShiftAction.c_str())');
     // Focus decides which detector sees the taps, so a window that drifts from
     // the renderer's would open Quick Action from only some surfaces.
-    expect(source).toContain(
-      `static const NSTimeInterval kTermLoopDoubleShiftWindow = ${DOUBLE_SHIFT_WINDOW_MS / 1000};`,
-    );
+    expect(TERMLOOP_NATIVE_INPUT_POLICY.doubleShiftWindowMs).toBe(DOUBLE_SHIFT_WINDOW_MS);
     expect(handler.indexOf("[self dispatchKeyEvent:event")).toBeLessThan(
-      handler.indexOf('notifyShellShortcut("quickAction")'),
+      handler.indexOf('notifyShellShortcut(g_inputPolicy->doubleShiftAction.c_str())'),
     );
   });
 

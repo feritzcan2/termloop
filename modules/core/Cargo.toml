@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+termloop-agent-runtime = { path = "../agent-runtime" }
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true

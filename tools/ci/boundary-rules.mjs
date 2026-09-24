@@ -37,15 +37,15 @@ export const rules = [
   },
   {
     id: "LAUNCH_PROVENANCE",
-    applies: (file) => /\.(rs|ts)$/.test(file) && !file.startsWith("modules/invocation/") && !file.startsWith("spikes/"),
-    pattern: /LaunchPayload\s*(?:\{|::\s*from_template\s*\()/,
-    message: "LaunchPayload constructed outside invocation"
+    applies: (file) => /\.(rs|ts)$/.test(file) && !file.startsWith("modules/launch/") && !file.startsWith("spikes/"),
+    pattern: /(?<!->\s*)\bLaunchPayload\s*(?:\{|::\s*from_template\s*\()/,
+    message: "LaunchPayload constructed outside launch"
   },
   {
     id: "DIRECT_AGENT_PROCESS_SPAWN",
     applies: (file) => file.endsWith(".rs")
       && !file.startsWith("modules/platform/")
-      && file !== "modules/core/src/session_launch/mod.rs"
+      && file !== "modules/agent-runtime/src/session.rs"
       && !file.startsWith("spikes/")
       && !file.includes("/tests/"),
     pattern: /spawn_(?:tracked_)?managed_process\s*\(\s*["'](?:claude|codex)["']/,
@@ -64,6 +64,8 @@ export const rules = [
     id: "GENERATED_AGENT_SETTINGS_OWNER",
     applies: (file) => file.endsWith(".rs")
       && !file.startsWith("modules/invocation/")
+      && !file.startsWith("modules/launch/")
+      && !file.startsWith("modules/agent-runtime/")
       && !file.startsWith("spikes/")
       && !file.includes("/tests/"),
     pattern: /write_private_file\s*\([^)]*(?:agent-hooks\.json|claude[^)]*settings|settings[^)]*claude)/i,
@@ -73,6 +75,8 @@ export const rules = [
     id: "LITERAL_AGENT_STARTUP_INPUT",
     applies: (file) => file.endsWith(".rs")
       && !file.startsWith("modules/invocation/")
+      && !file.startsWith("modules/launch/")
+      && !file.startsWith("modules/agent-runtime/")
       && !file.startsWith("modules/terminal/")
       && !file.startsWith("spikes/")
       && !file.includes("/tests/"),
@@ -82,8 +86,7 @@ export const rules = [
   {
     id: "DIRECT_CORE_INPUT_SEQUENCE",
     applies: (file) => file.startsWith("modules/core/")
-      && file.endsWith(".rs")
-      && file !== "modules/core/src/runtime/generated_input_delivery.rs",
+      && file.endsWith(".rs"),
     pattern: /\.(?:input_sequence(?:_receipted)?|input_atomic_receipted(?:_if_user_sequence)?)\s*\(/,
     message: "core feature bypasses the generated input delivery coordinator"
   },
@@ -91,7 +94,7 @@ export const rules = [
     id: "STORE_WRITE_OWNER",
     applies: (file) => /\.rs$/.test(file) && !file.startsWith("modules/core/") && !file.startsWith("modules/store/") && !file.startsWith("spikes/"),
     pattern: /\.commit\s*\(|CoreWriteAuthority|issue_core_write_authority|\.(?:insert_project|insert_session|mark_session_exited|reconcile_restart|establish_session_resume_ref|mark_session_resuming|complete_session_resume|mark_session_resume_failed|mark_sessions_resume_failed|mark_startup_resume_overflow|delete_session_descriptor)\s*\(/,
-    message: "durable store write outside core"
+    message: "durable store write outside its core/store owners"
   },
   {
     id: "RESUME_REF_PRIVACY",
@@ -100,6 +103,8 @@ export const rules = [
       && !file.startsWith("modules/store/")
       && !file.startsWith("modules/agents/")
       && !file.startsWith("modules/invocation/")
+      && !file.startsWith("modules/launch/")
+      && !file.startsWith("modules/agent-runtime/")
       && !file.startsWith("modules/core/")
       && !file.startsWith("contract/generated/")
       && file !== "apps/server/src/hook.rs"
@@ -177,7 +182,7 @@ export const rules = [
   },
   {
     id: "AGENT_TRUST_BYPASS",
-    applies: (file) => file.startsWith("modules/invocation/src/") && /\.rs$/.test(file),
+    applies: (file) => (file.startsWith("modules/invocation/src/") || file.startsWith("modules/launch/src/")) && /\.rs$/.test(file),
     pattern: /--dangerously-bypass-hook-trust/,
     message: "agent hook trust bypass must never enter a production launch"
   }

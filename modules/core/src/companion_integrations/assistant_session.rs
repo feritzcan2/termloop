@@ -7,10 +7,10 @@
 use std::path::Path;
 
 use serde_json::{Value, json, to_value};
+use termloop_agent_runtime::PreparedAgentTerminal;
 use termloop_domain::{
     ProcessDescriptor, ResumeProvider, ResumeRef, SessionKind, SessionRecord, StewardAgentId,
 };
-use termloop_terminal::PtySpawnSpec;
 
 use crate::{CoreError, CoreRuntime, store_error};
 
@@ -271,7 +271,7 @@ pub fn compose_steward_assignment_wake(
 pub struct AdmittedPersistentAssistantLaunch {
     session_id: String,
     terminal: termloop_terminal::TerminalService,
-    spawn: PtySpawnSpec,
+    spawn: PreparedAgentTerminal,
     result: Value,
     mcp_authorizer: crate::McpAuthorizer,
 }
@@ -282,7 +282,7 @@ impl AdmittedPersistentAssistantLaunch {
     }
 
     pub fn execute(self) -> Result<Value, CoreError> {
-        if let Err(error) = self.terminal.spawn(self.spawn) {
+        if let Err(error) = self.spawn.spawn(&self.terminal) {
             self.mcp_authorizer.remove(&self.session_id);
             return Err(crate::terminal_error(error));
         }
@@ -577,15 +577,12 @@ impl CoreRuntime {
                 return Err(store_error(error));
             }
         };
-        let spawn = PtySpawnSpec {
-            session_id: session_id.clone(),
-            runtime_epoch: self.runtime_epoch,
-            program: launch.program().to_owned(),
-            args: launch.args().to_vec(),
-            cwd: target.cwd.clone(),
-            environment: launch.environment().clone(),
-            recent_output_replay: true,
-        };
+        let spawn = PreparedAgentTerminal::new(
+            session_id.clone(),
+            self.runtime_epoch,
+            target.cwd.clone(),
+            launch.clone(),
+        );
         if generated_input_observable {
             self.agent_observations.insert(
                 session_id.clone(),

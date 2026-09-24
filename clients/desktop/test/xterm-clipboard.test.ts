@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipboardKeyDecision } from "../src/renderer/terminal/xterm/clipboard.js";
+import { clipboardKeyDecision } from "@termloop/terminal-surface/clipboard";
 
 function chord(overrides: Partial<{
   type: string;

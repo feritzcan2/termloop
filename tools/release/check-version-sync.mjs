@@ -33,6 +33,7 @@ if (!canonical) {
 }
 
 const checks = [
+  ...await Promise.all(["terminal-wire", "terminal-surface", "ghostty-host"].map(async name => { const file = `clients/${name}/package.json`; return [file, await readJsonVersion(file)]; })),
   ["Cargo.toml", await readCargoWorkspaceVersion("Cargo.toml")],
   ["clients/desktop/package.json", await readJsonVersion("clients/desktop/package.json")],
   ["clients/cli/package.json", await readJsonVersion("clients/cli/package.json")],

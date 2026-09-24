@@ -16,14 +16,15 @@ use uuid::Uuid;
 use super::AppState;
 use super::control::constant_time_equal;
 
-const TERMINAL_HEADER_LEN: usize = 41;
+use termloop_terminal_wire::{TerminalFrame, decode_terminal_frame, encode_terminal_frame};
+#[cfg(test)]
 const MAX_TERMINAL_PAYLOAD: usize = termloop_terminal::MAX_IO_CHUNK_BYTES;
 const MAX_ATTACHMENT_FRAMES: usize = 256;
 const TERMINAL_INPUT_RECEIPT_TIMEOUT: Duration = Duration::from_secs(4);
 const REPLAY_REQUEST_MAGIC: &[u8; 4] = b"TLRQ";
+#[cfg(test)]
 const REPLAY_ACK_MAGIC: &[u8; 4] = b"TLRA";
 const REPLAY_REQUEST_BYTES: usize = 12;
-const REPLAY_ACK_BYTES: usize = 12;
 const MAX_REPLAY_WIRE_CHUNK_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,15 +161,6 @@ impl TerminalResizeRegistry {
             });
         }
     }
-}
-
-#[derive(Clone)]
-struct TerminalFrame {
-    session_id: Uuid,
-    epoch: u64,
-    sequence: u64,
-    kind: u8,
-    payload: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -668,48 +660,7 @@ fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
 }
 
 fn replay_ack_payload(event_count: usize, output_bytes: usize) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(REPLAY_ACK_BYTES);
-    payload.extend_from_slice(REPLAY_ACK_MAGIC);
-    payload.extend_from_slice(&u32::try_from(event_count).unwrap_or(u32::MAX).to_be_bytes());
-    payload.extend_from_slice(
-        &u32::try_from(output_bytes)
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
-    payload
-}
-
-fn encode_terminal_frame(frame: &TerminalFrame) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(TERMINAL_HEADER_LEN + frame.payload.len());
-    bytes.extend_from_slice(b"TL01");
-    bytes.extend_from_slice(frame.session_id.as_bytes());
-    bytes.extend_from_slice(&frame.epoch.to_be_bytes());
-    bytes.extend_from_slice(&frame.sequence.to_be_bytes());
-    bytes.push(frame.kind);
-    bytes.extend_from_slice(&(frame.payload.len() as u32).to_be_bytes());
-    bytes.extend_from_slice(&frame.payload);
-    bytes
-}
-
-fn decode_terminal_frame(bytes: &[u8]) -> Result<TerminalFrame, ()> {
-    if bytes.len() < TERMINAL_HEADER_LEN || &bytes[..4] != b"TL01" {
-        return Err(());
-    }
-    let session_id = Uuid::from_slice(&bytes[4..20]).map_err(|_| ())?;
-    let epoch = u64::from_be_bytes(bytes[20..28].try_into().map_err(|_| ())?);
-    let sequence = u64::from_be_bytes(bytes[28..36].try_into().map_err(|_| ())?);
-    let kind = bytes[36];
-    let length = u32::from_be_bytes(bytes[37..41].try_into().map_err(|_| ())?) as usize;
-    if length > MAX_TERMINAL_PAYLOAD || bytes.len() != TERMINAL_HEADER_LEN + length {
-        return Err(());
-    }
-    Ok(TerminalFrame {
-        session_id,
-        epoch,
-        sequence,
-        kind,
-        payload: bytes[41..].to_vec(),
-    })
+    termloop_terminal_wire::replay_ack_payload(event_count, output_bytes)
 }
 
 #[cfg(test)]

@@ -1,0 +1,10 @@
+import { GhosttySurface } from '@termloop/terminal-surface/ghostty';
+import {XtermSurface} from '@termloop/terminal-surface/xterm';
+import {encodeFrame,decodeFrame} from '@termloop/terminal-wire';
+const frame=encodeFrame('11111111-1111-4111-8111-111111111111',7,1n,2,new TextEncoder().encode('wire proof'));
+if(new TextDecoder().decode(decodeFrame(new Uint8Array(frame)).payload)!=='wire proof')throw Error('codec mismatch');
+if(typeof XtermSurface!=='function')throw Error('fallback missing');
+const surface=new GhosttySurface(()=>{},()=>{},window.proof.bridge);
+await surface.mount(document.querySelector('#terminal'),false);
+await new Promise(resolve=>surface.write(new TextEncoder().encode('\x1b[32mEXTERNAL_GHOSTTY_ENGINE_READY\x1b[0m\r\nUnicode: üöş İstanbul\r\n'),resolve));
+await window.proof.done(await surface.readText());

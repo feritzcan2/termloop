@@ -7,14 +7,8 @@ const PORT_TIMEOUT_MS = 5_000;
 const MAX_INPUT_CHUNK_BYTES = 16 * 1024;
 const MAX_QUEUED_INPUT_BYTES = 1024 * 1024;
 
-export type AttachmentState = "connecting" | "connected" | "connectionLost" | "gatewayProcessLost";
-export type AttachmentEvent =
-  | { type: "inputDelivery"; state: "sending" | "confirmed" | "uncertain" }
-  | { type: "frame"; kind: number; data: ArrayBuffer }
-  | { type: "gap" }
-  | { type: "inputRejected"; message: string }
-  | { type: "resizeOwnership"; active: boolean }
-  | { type: "state"; state: AttachmentState };
+import type { AttachmentState, AttachmentEvent } from "@termloop/terminal-surface/attachment";
+export type { AttachmentState, AttachmentEvent } from "@termloop/terminal-surface/attachment";
 
 type PortIncoming = AttachmentEvent | { type: "inputCredit"; bytes: number };
 

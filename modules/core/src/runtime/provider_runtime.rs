@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::mpsc::Sender;
 
 use crate::session_launch::{AgentMcpRole, AgentResumePreparationError, AgentResumeReapError};
@@ -127,21 +126,22 @@ impl PreparedProviderRuntime {
             }
             Runtime(AgentResumePreparationError::ProviderRejected)
         })?;
-        let runtime = start_codex_runtime(
+        let runtime = termloop_agent_runtime::start_codex_runtime(
             request.session_id,
             request.runtime_epoch,
             request.cwd,
             request.managed_worktree,
             request.account,
             &transport.provider_process_directory,
-            request
-                .mcp
-                .map(|(token, role)| termloop_invocation::AgentMcpLaunch {
+            request.mcp.map(|(token, role)| {
+                termloop_invocation::AgentMcpLaunch {
                     endpoint: &transport.mcp_endpoint,
                     token,
                     claude_config_path: &transport.claude_mcp_config_path,
                     profile: role.invocation_profile(),
-                }),
+                }
+                .connection()
+            }),
             request
                 .launch
                 .as_ref()
@@ -215,119 +215,4 @@ impl Drop for PreparedProviderRuntime {
     }
 }
 
-pub struct CodexRuntime {
-    process: termloop_platform::ManagedProcess,
-    bridge: termloop_agents::CodexAppServerBridge,
-    upstream_endpoint: String,
-}
-
-impl CodexRuntime {
-    pub(crate) fn endpoint(&self) -> &str {
-        self.bridge.endpoint()
-    }
-
-    pub(crate) fn warm_thread_history(
-        &self,
-        native_thread_id: &str,
-    ) -> Result<(), termloop_agents::CodexThreadHistoryProbeError> {
-        termloop_agents::probe_codex_thread_history(&self.upstream_endpoint, native_thread_id)
-    }
-
-    pub(crate) fn inspect_thread_history(
-        &self,
-        native_thread_id: &str,
-    ) -> Result<
-        termloop_agents::CodexThreadHistoryInspection,
-        termloop_agents::CodexThreadHistoryProbeError,
-    > {
-        termloop_agents::inspect_codex_thread_history(&self.upstream_endpoint, native_thread_id)
-    }
-
-    pub fn reap(self) -> Result<(), AgentResumeReapError> {
-        let Self {
-            mut process,
-            bridge,
-            upstream_endpoint: _,
-        } = self;
-        let bridge_reaped = bridge.shutdown().is_ok();
-        let process_reaped = process.terminate().is_ok();
-        if bridge_reaped && process_reaped {
-            Ok(())
-        } else {
-            Err(AgentResumeReapError)
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn start_codex_runtime(
-    session_id: &str,
-    runtime_epoch: u64,
-    cwd: &str,
-    managed_worktree: bool,
-    account: Option<&termloop_agents::AgentAccountContext>,
-    provider_process_directory: &Path,
-    mcp: Option<termloop_invocation::AgentMcpLaunch<'_>>,
-    developer_instructions: Option<&str>,
-    signals: Sender<crate::AgentRuntimeSignal>,
-) -> Result<CodexRuntime, crate::AgentResumePreparationError> {
-    let port = termloop_platform::reserve_loopback_port()
-        .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
-    let upstream_endpoint = format!("ws://127.0.0.1:{port}");
-    let launch = if managed_worktree {
-        termloop_invocation::codex_app_server_for_managed_worktree(
-            &upstream_endpoint,
-            cwd,
-            session_id,
-            mcp,
-            developer_instructions,
-            account,
-        )
-    } else {
-        termloop_invocation::codex_app_server(
-            &upstream_endpoint,
-            cwd,
-            session_id,
-            mcp,
-            developer_instructions,
-            account,
-        )
-    }
-    .map_err(|_| crate::AgentResumePreparationError::ProviderRejected)?;
-    let mut process = termloop_platform::spawn_tracked_managed_process_with_environment(
-        launch.program(),
-        launch.args(),
-        Path::new(cwd),
-        provider_process_directory,
-        session_id,
-        launch.environment(),
-    )
-    .map_err(|error| match error {
-        termloop_platform::PlatformError::ProcessOwnershipUncertain => {
-            crate::AgentResumePreparationError::RuntimeOwnershipUncertain
-        }
-        termloop_platform::PlatformError::Io(error)
-            if error.kind() == std::io::ErrorKind::AlreadyExists =>
-        {
-            crate::AgentResumePreparationError::RuntimeConflict
-        }
-        _ => crate::AgentResumePreparationError::ProviderRejected,
-    })?;
-    let bridge = match termloop_agents::CodexAppServerBridge::start(
-        upstream_endpoint.clone(),
-        session_id.to_owned(),
-        runtime_epoch,
-        signals,
-    ) {
-        Ok(bridge) => bridge,
-        Err(_) if process.terminate().is_err() => {
-            return Err(crate::AgentResumePreparationError::RuntimeOwnershipUncertain);
-        }
-        Err(_) => return Err(crate::AgentResumePreparationError::ProviderRejected),
-    };
-    Ok(CodexRuntime {
-        process,
-        bridge,
-        upstream_endpoint,
-    })
-}
+pub use termloop_agent_runtime::CodexRuntime;

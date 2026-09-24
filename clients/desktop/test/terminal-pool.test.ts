@@ -8,7 +8,7 @@ import {
 import type {
   TerminalBufferProbe,
   TerminalSurface,
-} from "../src/renderer/terminal/surface.js";
+} from "@termloop/terminal-surface/surface";
 import { KIND_EOF, KIND_OUTPUT, KIND_REPLAY_OUTPUT } from "../src/utility/terminal-frame.js";
 
 class FakeSurface implements TerminalSurface {
