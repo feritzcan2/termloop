@@ -134,6 +134,14 @@ void PasteClipboard(Surface& surface) {
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM key, LPARAM flags, UINT_PTR, DWORD_PTR reference) {
   auto& surface = *reinterpret_cast<Surface*>(reference);
   switch (message) {
+    case WM_SETCURSOR:
+      // DefWindowProc asks Chromium first, which can retain the sidebar's
+      // resize cursor while the pointer is over this native child window.
+      if (LOWORD(flags) == HTCLIENT) {
+        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
+        return TRUE;
+      }
+      break;
     case WM_WINDOWPOSCHANGING:
       reinterpret_cast<WINDOWPOS*>(flags)->flags |= SWP_NOACTIVATE;
       break;
