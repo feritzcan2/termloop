@@ -1,0 +1,22 @@
+diff --git a/lib/keygen.js b/lib/keygen.js
+index 570c90eef1ef6f572863bcf147f82749da4c5beb..76edc7bfbf48888418be0145f6b2a398b9fa7ac2 100644
+--- a/lib/keygen.js
++++ b/lib/keygen.js
+@@ -287,14 +287,9 @@ function parseDERs(keyType, pub, priv) {
+         throw new Error('Bad ED25519 public OID');
+       // - Attributes (absent for ED25519)
+ 
+-      let pubBin = reader.readString(Ber.BitString, true);
+-      {
+-        // Remove leading zero bytes
+-        let i = 0;
+-        for (; i < pubBin.length && pubBin[i] === 0x00; ++i);
+-        if (i > 0)
+-          pubBin = pubBin.slice(i);
+-      }
++      // Strip only the DER BIT STRING unused-bits octet. Leading zero bytes
++      // in the fixed-width Ed25519 public key are part of the key itself.
++      const pubBin = reader.readString(Ber.BitString, true).slice(1);
+ 
+       // Parse private key
+       reader = new Ber.Reader(priv);

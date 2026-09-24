@@ -370,7 +370,9 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
     expect(unit).not.toContain("StandardOutput=");
     expect(statSync(unitFile).mode & 0o777).toBe(0o644);
     if (process.platform === "linux") {
-      await execFile("systemd-analyze", ["--user", "verify", unitFile]);
+      await execFile("systemd-analyze", ["--user", "verify", unitFile], {
+        env: { ...process.env, XDG_RUNTIME_DIR: directory },
+      });
     }
   }, 15_000);
 
