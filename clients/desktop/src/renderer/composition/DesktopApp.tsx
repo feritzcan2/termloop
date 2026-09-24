@@ -77,7 +77,7 @@ import {
 } from "./assistant-read-coordinator.js";
 import { createAssistantActions } from "./assistant-actions.js";
 import { presentedAgentStatus } from "../session-presentation.js";
-import { nativeOverlayPassiveVisible, nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
+import { nativeOverlayPassiveVisible, terminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
 import { selectProjectWithTerminalFocus } from "./project-navigation.js";
 import {
@@ -715,7 +715,7 @@ export function DesktopApp() {
     desktopApi.nativeOverlaySetPassiveRegion,
   );
   useEffect(() => {
-    terminalPool.setVisible(nativeTerminalSurfaceVisible(shellTerminalOccluded, nativeOverlayActive));
+    terminalPool.setVisible(terminalSurfaceVisible(terminalRendererKind(), shellTerminalOccluded, nativeOverlayActive));
   }, [nativeOverlayActive, shellTerminalOccluded]);
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
   const settingsComputers = useSettingsComputers();

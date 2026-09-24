@@ -7,6 +7,8 @@ export function TerminalStatus({ sessionId, port }: { sessionId: string; port?: 
   const state = useSyncExternalStore(port?.subscribe ?? subscribeEmpty, () => port?.snapshot(sessionId), () => port?.snapshot(sessionId));
   if (!state) return null;
   const reading = state.reading !== undefined;
+  const needsAttention = state.phase === "reconnecting" || state.phase === "failed" || state.input === "uncertain" || Boolean(state.notice);
+  if (!reading && !needsAttention) return null;
   const phase = ({ connecting: "Connecting", replaying: "Loading recent output", live: "Live", reconnecting: "Reconnecting · last output retained", exited: "Process exited", failed: "Terminal unavailable" })[state.phase];
   const label = reading ? `Reading paused · ${state.phase === "live" ? "session keeps running" : phase}` : phase;
   const input = state.input ? ({ sending: "Sending…", confirmed: "Input reached terminal", uncertain: "Delivery unconfirmed" })[state.input] : undefined;

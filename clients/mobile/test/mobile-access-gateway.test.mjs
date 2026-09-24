@@ -83,6 +83,7 @@ describe("persistent mobile access gateway", () => {
     const gatewayPort = await freePort();
     writeFileSync(gatewayConfig, JSON.stringify({
       version: 1,
+      hostPlatform: process.platform,
       runtimeFile,
       port: gatewayPort,
       controlToken: "c".repeat(64),

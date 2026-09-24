@@ -4,7 +4,7 @@ import {
   nativeOverlayPassiveVisible,
   nativeOverlayPassiveRegion,
   nativeOverlayPointerInteractiveAt,
-  nativeTerminalSurfaceVisible,
+  terminalSurfaceVisible,
 } from "../src/renderer/composition/native-overlay-window.js";
 
 describe("native overlay window request", () => {
@@ -21,10 +21,20 @@ describe("native overlay window request", () => {
   });
 
   it("hides native terminal surfaces whenever shell content must render above them", () => {
-    expect(nativeTerminalSurfaceVisible(false, false)).toBe(true);
-    expect(nativeTerminalSurfaceVisible(false, true)).toBe(false);
-    expect(nativeTerminalSurfaceVisible(true, false)).toBe(false);
-    expect(nativeTerminalSurfaceVisible(true, true)).toBe(false);
+    expect(terminalSurfaceVisible("ghostty", false, false)).toBe(true);
+    expect(terminalSurfaceVisible("ghostty", false, true)).toBe(false);
+    expect(terminalSurfaceVisible("ghostty", true, false)).toBe(false);
+    expect(terminalSurfaceVisible("ghostty", true, true)).toBe(false);
+  });
+
+  it("keeps xterm visible behind Quick Action and other DOM dialogs", () => {
+    expect(terminalSurfaceVisible("xterm", false, false)).toBe(true);
+    expect(terminalSurfaceVisible("xterm", false, true)).toBe(true);
+  });
+
+  it("still hides xterm when the terminal stage itself is occluded", () => {
+    expect(terminalSurfaceVisible("xterm", true, false)).toBe(false);
+    expect(terminalSurfaceVisible("xterm", true, true)).toBe(false);
   });
 
   it("hides the passive native overlay while a DOM-owned dialog is open", () => {

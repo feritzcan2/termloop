@@ -17,9 +17,9 @@ let unmountCalls = 0;
 const GHOSTTY_FONT_FAMILY = '"JetBrains Mono", "SFMono-Regular", Menlo, monospace';
 const ghosttyFontReady = "fonts" in document
   ? Promise.all([
-      document.fonts.load(`350 13px ${GHOSTTY_FONT_FAMILY}`),
+      document.fonts.load(`400 13px ${GHOSTTY_FONT_FAMILY}`),
       document.fonts.load(`600 13px ${GHOSTTY_FONT_FAMILY}`),
-      document.fonts.load(`italic 350 13px ${GHOSTTY_FONT_FAMILY}`),
+      document.fonts.load(`italic 400 13px ${GHOSTTY_FONT_FAMILY}`),
       document.fonts.load(`italic 600 13px ${GHOSTTY_FONT_FAMILY}`),
     ]).catch(() => [])
   : Promise.resolve([]);
@@ -95,18 +95,15 @@ export class XtermSurface implements TerminalSurface {
     // Ghostty's built-in defaults, read from the vendored source: background,
     // the sixteen named entries from `Name.default` in `src/terminal/color.zig`,
     // block cursor, and the unconfigured selection which Ghostty renders as
-    // foreground-on-background. Two deliberate deviations for readability:
-    // Chromium's canvas rasterises the glyph atlas with macOS stem darkening,
-    // so Ghostty's #ffffff foreground at Regular weight reads as glaring, thick
-    // text next to a native terminal. The foreground is softened below and the
-    // body weight sits under Regular on the variable font to compensate; bold
-    // drops to 600 for the same reason.
+    // foreground-on-background. Keep the softened foreground and semibold
+    // emphasis, but use Regular body text: the previous macOS-specific weight
+    // reduction also thinned glyphs in the Windows/Linux xterm renderer.
     this.#terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: "block",
       fontFamily: GHOSTTY_FONT_FAMILY,
       fontSize: 13,
-      fontWeight: 350,
+      fontWeight: 400,
       fontWeightBold: 600,
       lineHeight: 1,
       scrollback: 2_000,
@@ -118,9 +115,9 @@ export class XtermSurface implements TerminalSurface {
       // grey ramp (indices 232–255) stays at xterm defaults, and its low end
       // sits at or below this background's luminance. Claude Code paints most
       // secondary text from that ramp, so without a floor it renders
-      // near-invisible. 3:1 nudges only foregrounds that fall below it and
+      // near-invisible. 4.5:1 nudges only foregrounds that fall below it and
       // leaves compliant colors untouched.
-      minimumContrastRatio: 3,
+      minimumContrastRatio: 4.5,
       // No overviewRuler: any truthy width instantiates xterm's
       // OverviewRulerRenderer, which repaints its (stylesheet-hidden) canvas on
       // every normal-buffer scroll and forces a clientHeight layout read on
