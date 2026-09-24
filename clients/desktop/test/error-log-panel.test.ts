@@ -52,4 +52,26 @@ describe("sidebar error log", () => {
     expect(container.querySelector(".error-log-empty")?.textContent).toBe("No errors in this app run.");
     expect((container.querySelector(".error-log-panel header button") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("summarises the count and latest error in the footer hover card", async () => {
+    await act(async () => root.render(createElement(ErrorLogPanel, {
+      entries: [
+        { id: 1, message: "older failure", occurredAtEpochMs: Date.UTC(2026, 0, 1, 10, 0, 0) },
+        { id: 2, message: "newer failure", occurredAtEpochMs: Date.UTC(2026, 0, 1, 10, 1, 0) },
+      ],
+      clear: vi.fn(),
+    })));
+    const trigger = container.querySelector(".error-log-trigger")!;
+    const card = document.getElementById(trigger.getAttribute("aria-describedby")!)!;
+    expect(card.querySelector(".sidebar-footer-hover-status")?.textContent).toBe("2 errors in this app run.");
+    expect(card.querySelector(".sidebar-footer-hover-status")?.getAttribute("data-tone")).toBe("negative");
+    expect(card.querySelector("dt")?.textContent).toBe("Latest");
+    expect(card.querySelector(".sidebar-footer-hover-note")?.textContent).toBe("newer failure");
+
+    await act(async () => root.render(createElement(ErrorLogPanel, { entries: [], clear: vi.fn() })));
+    expect(container.querySelector(".sidebar-footer-hover-status")?.textContent).toBe("No errors in this app run.");
+    expect(container.querySelector(".sidebar-footer-hover-card dl")).toBeNull();
+    expect(container.querySelector(".error-log-trigger strong")).toBeNull();
+  });
 });
+
