@@ -1156,7 +1156,12 @@ button.workflow-tree-session:hover { background: var(--hover); }
    positioning here so the row is the card's containing block. */
 .sidebar-footer-actions { position: relative; }
 .sidebar-footer-actions > .sidebar-footer-control { position: static; min-width: 0; }
-.sidebar-footer-hover-card { position: absolute; z-index: 45; right: 0; bottom: calc(100% + 8px); display: grid; gap: 7px; width: max-content; min-width: 190px; max-width: min(260px, calc(var(--sidebar-width) - 24px)); padding: 9px 10px 8px; visibility: hidden; border: 1px solid light-dark(#c4ced9, #474c4f); border-radius: 9px; background: light-dark(rgba(255,255,255,.985), rgba(35,40,42,.985)); box-shadow: var(--shadow-menu); color: var(--text-secondary); opacity: 0; pointer-events: none; text-align: left; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s; white-space: normal; }
+/* Without the Steward pet the row is the footer's first, content-sized column
+   at the sidebar's left edge, so its cards and popovers open rightward from
+   there instead of past the window edge. Widths use the sidebar container. */
+.sidebar-footer-actions:first-child .sidebar-footer-hover-card,
+.sidebar-footer-actions:first-child .error-log-panel { right: auto; left: 0; }
+.sidebar-footer-hover-card { position: absolute; z-index: 45; right: 0; bottom: calc(100% + 8px); display: grid; gap: 7px; width: max-content; min-width: min(190px, calc(100cqw - 24px)); max-width: min(260px, calc(100cqw - 24px)); padding: 9px 10px 8px; visibility: hidden; border: 1px solid light-dark(#c4ced9, #474c4f); border-radius: 9px; background: light-dark(rgba(255,255,255,.985), rgba(35,40,42,.985)); box-shadow: var(--shadow-menu); color: var(--text-secondary); opacity: 0; pointer-events: none; text-align: left; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s; white-space: normal; }
 .sidebar-footer-control:has(> .sidebar-footer-button:hover) > .sidebar-footer-hover-card,
 .sidebar-footer-control:has(> .sidebar-footer-button:focus-visible) > .sidebar-footer-hover-card { visibility: visible; opacity: 1; transform: translateY(0); transition-delay: .25s, .25s, 0s; }
 .sidebar-footer-control:has(> .sidebar-footer-button[aria-expanded="true"]) > .sidebar-footer-hover-card { display: none; }
