@@ -71,12 +71,17 @@ jobs:
             arch: universal
             archive: tar.gz
           - runner: ubuntu-24.04
-            runs-on: '["ubuntu-24.04"]'
+            runs-on: '["self-hosted", "Linux", "X64", "netcup"]'
             os: linux
             arch: x64
             archive: tar.gz
+          - runner: windows-2025
+            runs-on: '["self-hosted", "Windows", "X64", "termloop-windows"]'
+            os: windows
+            arch: x64
+            archive: zip
     runs-on: ${{ fromJSON(matrix.runs-on) }}
-    timeout-minutes: ${{ matrix.os == 'macos' && 120 || 45 }}
+    timeout-minutes: ${{ matrix.os == 'macos' && 120 || 90 }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       TERMLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -254,14 +259,15 @@ jobs:
         run: |
           asset_dir="$RUNNER_TEMP/release-assets"
           server_dir="$RUNNER_TEMP/server-package"
+          rm -rf "$asset_dir" "$server_dir"
           mkdir -p "$asset_dir" "$server_dir"
-          cp tools/skills-manager/LICENSE "$server_dir/skills-manager-LICENSE"
-          cp target/release/termloop-server "$server_dir/termloop-server"
-          cp target/release/termloop-companion "$server_dir/termloop-companion"
-          cp target/release/skills-manager-cli "$server_dir/skills-manager-cli"
-          cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl"
-          chmod +x "$server_dir/termloop-server" "$server_dir/termloop-companion" "$server_dir/skills-manager-cli" "$server_dir/termloopctl"
           if [ "$RUNNER_OS" = "macOS" ]; then
+            cp tools/skills-manager/LICENSE "$server_dir/skills-manager-LICENSE"
+            cp target/release/termloop-server "$server_dir/termloop-server"
+            cp target/release/termloop-companion "$server_dir/termloop-companion"
+            cp target/release/skills-manager-cli "$server_dir/skills-manager-cli"
+            cp "$RUNNER_TEMP/server-stage/termloopctl.mjs" "$server_dir/termloopctl"
+            chmod +x "$server_dir/termloop-server" "$server_dir/termloop-companion" "$server_dir/skills-manager-cli" "$server_dir/termloopctl"
             tar -C "$server_dir" -czf "$asset_dir/termloop-server-${{ matrix.os }}-${{ matrix.arch }}-$TERMLOOP_VERSION.tar.gz" .
           fi
           find clients/desktop/out -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print0 |
@@ -347,8 +353,10 @@ jobs:
             "termloop-server-linux-x64-$version.tar.gz"
             "termloop-desktop-linux-x86_64-$version.AppImage"
             "termloop-desktop-linux-amd64-$version.deb"
+            "termloop-desktop-windows-x64-$version.exe"
             "latest-mac.yml"
             "latest-linux.yml"
+            "latest.yml"
           )
           for asset in "${expected[@]}"; do
             test -f "release-assets/$asset" || { echo "missing release asset: $asset" >&2; exit 1; }
@@ -383,6 +391,7 @@ jobs:
             "termloop-desktop-macos-universal-$version.zip"
             "termloop-desktop-linux-x86_64-$version.AppImage"
             "termloop-desktop-linux-amd64-$version.deb"
+            "termloop-desktop-windows-x64-$version.exe"
           )
           while IFS= read -r blockmap; do
             payloads+=("${blockmap##*/}")
@@ -393,7 +402,7 @@ jobs:
               --only-show-errors \
               --cache-control "public,max-age=31536000,immutable"
           done
-          for manifest in latest-mac.yml latest-linux.yml; do
+          for manifest in latest-mac.yml latest-linux.yml latest.yml; do
             aws s3 cp "release-assets/$manifest" "s3://$R2_BUCKET_NAME/stable/$manifest" \
               --endpoint-url "$endpoint" \
               --only-show-errors \
@@ -409,10 +418,12 @@ jobs:
             gh release upload "$TERMLOOP_RELEASE_TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
+            gh release edit "$TERMLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --latest
           else
             gh release create "$TERMLOOP_RELEASE_TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --title "$TERMLOOP_RELEASE_TAG" \
+              --latest \
               --generate-notes
           fi
