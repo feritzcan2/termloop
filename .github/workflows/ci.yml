@@ -73,7 +73,7 @@ jobs:
             runner: '["self-hosted", "Linux", "X64", "netcup"]'
             check-name: 'verify (ubuntu-24.04, ["ubuntu-24.04"])'
           - os: windows-2025
-            runner: '["windows-2025"]'
+            runner: '["self-hosted", "Windows", "X64", "termloop-windows"]'
             check-name: 'verify (windows-2025, ["windows-2025"])'
     runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: ${{ matrix.os == 'linux-netcup' && 90 || 40 }}
