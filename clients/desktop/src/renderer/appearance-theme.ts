@@ -10,7 +10,7 @@ export type SystemAppearanceQuery = {
 const STORAGE_KEY = "termloop.appearance-preference";
 const preferenceListeners = new Set<() => void>();
 const themeListeners = new Set<() => void>();
-let currentPreference: AppearancePreference = "system";
+let currentPreference: AppearancePreference = "dark";
 let currentTheme: AppearanceTheme = "dark";
 let systemAppearanceQuery: SystemAppearanceQuery | undefined;
 
@@ -40,9 +40,9 @@ export function readAppearancePreference(
 ): AppearancePreference {
   try {
     const stored = storage?.getItem(STORAGE_KEY);
-    return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+    return stored === "dark" || stored === "light" || stored === "system" ? stored : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 

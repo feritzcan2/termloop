@@ -8,7 +8,7 @@ const packagedAssets = typeof __TERMLOOP_SERVER_MOBILE_ASSETS__ === 'undefined'
   ? undefined : __TERMLOOP_SERVER_MOBILE_ASSETS__;
 
 export const mobileAssetFiles = [
-  'mobile-access.mjs', 'mobile-access-installer.mjs', 'mobile-access-gateway.mjs',
+  'mobile-access.mjs', 'mobile-access-installer.mjs', 'mobile-access-windows.mjs', 'mobile-access-gateway.mjs',
   'gateway-artifact.json', 'transcriber/Transcriber.swift',
 ];
 

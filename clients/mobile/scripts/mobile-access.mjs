@@ -40,8 +40,8 @@ async function main() {
     console.log(JSON.stringify({ status: "built", buildId: desired.artifact.buildId, artifactDirectory }));
     return;
   }
-  if (!["darwin", "linux"].includes(hostPlatform) && !has("--test-platform")) {
-    throw new Error("Persistent mobile access currently requires macOS or Linux.");
+  if (!["darwin", "linux", "win32"].includes(hostPlatform)) {
+    throw new Error("Persistent mobile access requires macOS, Linux, or Windows.");
   }
   const desired = artifactDirectory === undefined
     ? await buildGatewayArtifact({ scriptsDirectory, metadata })
@@ -77,7 +77,7 @@ async function enroll(desired) {
   const discovery = JSON.parse(await readFile(runtimeFile, "utf8"));
   validateDiscovery(discovery);
   const tailscaleBin = option("--tailscale-bin") ?? await findTailscale();
-  const status = JSON.parse((await execFile(tailscaleBin, ["status", "--json"])).stdout);
+  const status = JSON.parse((await execFile(tailscaleBin, ["status", "--json"], { windowsHide: true, timeout: 10_000, maxBuffer: 1024 * 1024 })).stdout);
   if (status.BackendState !== "Running" || status.Self?.Online !== true) {
     throw new Error("Tailscale is not connected on this computer.");
   }
@@ -93,7 +93,7 @@ async function enroll(desired) {
   if (!Number.isInteger(gatewayPort) || gatewayPort < 1024 || gatewayPort > 65535) {
     throw new Error("Mobile access gateway port is invalid.");
   }
-  const logFile = hostPlatform === "darwin" ? path.join(stateDirectory, "gateway.log") : undefined;
+  const logFile = hostPlatform === "darwin" || hostPlatform === "win32" ? path.join(stateDirectory, "gateway.log") : undefined;
   const config = {
     version: 2,
     connectionId,
@@ -109,9 +109,9 @@ async function enroll(desired) {
     ...pushRelayCredentials(existing),
     ...(logFile === undefined ? {} : { logFile }),
   };
-  if (logFile !== undefined && existing === undefined) await initializeGatewayLog(logFile);
+  if (hostPlatform === "darwin" && existing === undefined) await initializeGatewayLog(logFile);
   await installExisting(stateDirectory, hostPlatform, desired, config, "enrollment");
-  await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`], { timeout: 20_000, maxBuffer: 32 * 1024 });
+  await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`], { timeout: 20_000, maxBuffer: 32 * 1024, windowsHide: true });
 
   const payload = {
     version: 1,
@@ -178,6 +178,7 @@ async function installExisting(stateDirectory, platform, desired, nextConfig, in
     hostPlatform: platform,
     launchctlBin: option("--launchctl-bin") ?? "launchctl",
     systemctlBin: option("--systemctl-bin") ?? "systemctl",
+    powershellBin: option("--powershell-bin"),
     launchAgentDirectory: option("--launch-agent-dir"),
     serviceDirectory: option("--service-dir"),
     nodeExecutable: option("--node-executable") ?? process.execPath,
@@ -233,15 +234,18 @@ function validateDiscovery(value) {
 async function findTailscale() {
   const candidates = hostPlatform === "darwin"
     ? ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "tailscale"]
-    : ["tailscale", "/usr/bin/tailscale"];
+    : hostPlatform === "win32"
+      ? [path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Tailscale", "tailscale.exe"), "tailscale.exe"]
+      : ["tailscale", "/usr/bin/tailscale"];
   for (const candidate of candidates) {
-    try { await execFile(candidate, ["version"]); return candidate; } catch { /* Try next path. */ }
+    try { await execFile(candidate, ["version"], { windowsHide: true, timeout: 5_000 }); return candidate; } catch { /* Try next path. */ }
   }
   throw new Error("Tailscale CLI was not found. Install and connect Tailscale on this computer.");
 }
 
 function defaultRuntimeFile(platform) {
   if (process.env.TERMLOOP_RUNTIME_FILE) return process.env.TERMLOOP_RUNTIME_FILE;
+  if (platform === "win32") return path.join(windowsDataRoot(), "termloop-next", "runtime.json");
   if (platform === "darwin") return path.join(os.homedir(), "Library/Application Support/termloop-next/runtime.json");
   const uid = typeof process.getuid === "function" ? String(process.getuid()) : "unknown";
   const base = process.env.XDG_RUNTIME_DIR ?? path.join(os.tmpdir(), `termloop-next-${uid}`);
@@ -249,6 +253,7 @@ function defaultRuntimeFile(platform) {
 }
 
 function defaultStateRoot(platform) {
+  if (platform === "win32") return path.join(windowsDataRoot(), "termloop-next", "mobile-access");
   if (platform === "darwin") return path.join(os.homedir(), "Library/Application Support/TermLoop Mobile Access");
   const base = process.env.XDG_STATE_HOME ?? path.join(os.homedir(), ".local", "state");
   return path.join(base, "termloop-next", "mobile-access");
@@ -259,9 +264,14 @@ function defaultStateDirectory(platform, connectionId) {
 }
 
 function defaultApnsConfigFile(platform) {
+  if (platform === "win32") return path.join(windowsDataRoot(), "termloop-next", "apns", "config.json");
   if (platform === "darwin") return path.join(os.homedir(), "Library/Application Support/TermLoop/apns/config.json");
   const base = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
   return path.join(base, "termloop-next", "apns", "config.json");
+}
+
+function windowsDataRoot() {
+  return process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
 }
 
 function requiredString(value, name) {
@@ -272,16 +282,18 @@ function requiredString(value, name) {
 async function copyToClipboard(value, platform) {
   const candidates = platform === "darwin"
     ? [["pbcopy", []]]
-    : [["wl-copy", []], ["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]];
+    : platform === "win32" ? [["clip.exe", []]]
+      : [["wl-copy", []], ["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]];
   for (const [command, commandArgs] of candidates) {
-    if (await tryCopyToClipboard(command, commandArgs, value)) return true;
+    const clipboardValue = platform === "win32" ? Buffer.from(`\uFEFF${value}`, "utf16le") : value;
+    if (await tryCopyToClipboard(command, commandArgs, clipboardValue)) return true;
   }
   return false;
 }
 
 async function tryCopyToClipboard(command, commandArgs, value) {
   return new Promise((resolve) => {
-    const child = spawn(command, commandArgs, { stdio: ["pipe", "ignore", "ignore"] });
+    const child = spawn(command, commandArgs, { stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
     let settled = false;
     const finish = (result) => {
       if (settled) return;
