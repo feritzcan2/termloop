@@ -231,18 +231,10 @@ pub(crate) fn finalize_digest(manifest: &mut InspectableLaunchManifest) {
     manifest.digest = format!("sha256:{:x}", Sha256::digest(canonical));
 }
 
-pub(crate) fn provider_limitations(
-    agent_id: &str,
-    inherits_codex_permissions: bool,
-) -> Vec<InspectableLimitation> {
-    let mut provider_managed = format!(
+pub(crate) fn provider_limitations(agent_id: &str) -> Vec<InspectableLimitation> {
+    let provider_managed = format!(
         "{agent_id} may apply a provider-managed system prompt that TermLoop cannot observe."
     );
-    if inherits_codex_permissions {
-        provider_managed.push_str(
-            " Codex restores the conversation's saved permissions on resume; the permission shown is the Session's last saved selection and is not sent as a launch override.",
-        );
-    }
     vec![
         InspectableLimitation {
             kind: "providerManaged",
