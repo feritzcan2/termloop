@@ -605,8 +605,12 @@ fn pending_generated_input_fixture() {
         animation.join().unwrap();
     }
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
-        println!(
-            "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
+        // Keep the diagnostic marker away from the composer and finish with
+        // its cursor in the prompt. ConPTY emits the final screen state, so
+        // appending a marker/newline after the frame hides retry readiness.
+        print!(
+            "\x1b[?2026h\x1b[6;1HTERMLOOP_PROMPT_RETAINED\x1b[K\
+             \x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         read_headless_fixture_input(&mut input, b"\r");
