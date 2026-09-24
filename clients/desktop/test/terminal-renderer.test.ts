@@ -10,8 +10,12 @@ describe("requested terminal renderer", () => {
     ["darwin", "invalid", "ghostty"],
     ["linux", undefined, "xterm"],
     ["linux", "ghostty", "xterm"],
-    ["win32", undefined, "xterm"],
-    ["win32", "ghostty", "xterm"],
+    ["win32", undefined, "windows-terminal"],
+    ["win32", "ghostty", "windows-terminal"],
+    ["win32", "windows-terminal", "windows-terminal"],
+    ["win32", "xterm", "xterm"],
+    ["linux", "windows-terminal", "xterm"],
+    ["darwin", "windows-terminal", "ghostty"],
   ] as const)("uses %s + %s as %s", (platform, requested, expected) => {
     expect(terminalRendererFor(platform, requested)).toBe(expected);
   });

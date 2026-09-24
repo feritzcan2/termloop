@@ -54,9 +54,9 @@ export function terminalSurfaceVisible(
   terminalOccluded: boolean,
   overlayActive: boolean,
 ): boolean {
-  // Ghostty replaces its native view with a snapshot below the overlay. xterm
+  // Native engines replace their view with a snapshot below the overlay. xterm
   // already renders below DOM dialogs and must stay visible behind them.
-  return !terminalOccluded && (rendererKind !== "ghostty" || !overlayActive);
+  return !terminalOccluded && (rendererKind === "xterm" || !overlayActive);
 }
 
 export function nativeOverlayPassiveVisible(hasSelectedProject: boolean, suppressed: boolean): boolean {
