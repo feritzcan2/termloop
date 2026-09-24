@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ErrorLogEntry } from "../state/projection-store.js";
 import { Icon } from "./Icon.js";
+import { SidebarFooterHoverCard } from "./SidebarFooterHoverCard.js";
 
 export function ErrorLogPanel({ entries, clear }: {
   entries: readonly ErrorLogEntry[];
   clear(): void;
 }) {
   const [open, setOpen] = useState(false);
+  const hoverCardId = useId();
+  const latest = entries[entries.length - 1];
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,19 +29,31 @@ export function ErrorLogPanel({ entries, clear }: {
   }, [open]);
 
   return (
-    <div ref={rootRef} className="error-log-control">
+    <div ref={rootRef} className="error-log-control sidebar-footer-control">
       <button
         type="button"
         className={`sidebar-footer-button error-log-trigger${entries.length > 0 ? " has-errors" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={entries.length === 0 ? "Errors" : `Errors · ${entries.length}`}
+        aria-describedby={hoverCardId}
         onClick={() => setOpen((current) => !current)}
       >
         <Icon name="alert" />
         <span className="visually-hidden">Errors</span>
         {entries.length > 0 ? <strong>{entries.length}</strong> : null}
       </button>
+      <SidebarFooterHoverCard
+        id={hoverCardId}
+        eyebrow="Diagnostics"
+        title="Error log"
+        status={entries.length === 0
+          ? "No errors in this app run."
+          : `${entries.length} error${entries.length === 1 ? "" : "s"} in this app run.`}
+        statusTone={entries.length > 0 ? "negative" : undefined}
+        rows={latest ? [{ label: "Latest", value: formatLogTime(latest.occurredAtEpochMs) }] : []}
+        note={latest?.message}
+        hint={entries.length > 0 ? "Click to review" : "Click to open"}
+      />
       {open ? <section className="error-log-panel" role="dialog" aria-label="Error log">
         <header>
           <div><span>Diagnostics</span><h2>Error log</h2></div>
