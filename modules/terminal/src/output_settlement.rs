@@ -605,7 +605,7 @@ impl OutputActivitySnapshot {
         &self,
         quiet_window: Duration,
         timeout: Duration,
-        allow_unmarked_output_quiescence: bool,
+        normalized_screen_diff: bool,
     ) -> Result<OutputSettlementReceipt, OutputSettlementFailure> {
         if quiet_window.is_zero() || timeout < quiet_window {
             return Err(OutputSettlementFailure::InvalidWindow);
@@ -625,7 +625,11 @@ impl OutputActivitySnapshot {
             if state.closed {
                 return Err(OutputSettlementFailure::TerminalClosed);
             }
-            if state.completed_composer_frame_sequence > self.completed_composer_frame_sequence
+            // ConPTY can expose a moved cursor while an unframed paste is
+            // still being consumed. That intermediate render must settle
+            // through surface stability or output quiescence before submit.
+            if !normalized_screen_diff
+                && state.completed_composer_frame_sequence > self.completed_composer_frame_sequence
                 && self
                     .completed_composer_frame_cursor_position
                     .zip(state.completed_composer_frame_cursor_position)
@@ -687,7 +691,7 @@ impl OutputActivitySnapshot {
                 continue;
             }
             if state.composer_render_sequence <= self.composer_render_sequence
-                && (!allow_unmarked_output_quiescence || state.sequence <= self.sequence)
+                && (!normalized_screen_diff || state.sequence <= self.sequence)
             {
                 let remaining = deadline
                     .remaining()
@@ -704,7 +708,7 @@ impl OutputActivitySnapshot {
                 continue;
             }
 
-            if allow_unmarked_output_quiescence
+            if normalized_screen_diff
                 && state.composer_render_sequence <= self.composer_render_sequence
             {
                 let settled_sequence = state.sequence;
@@ -1101,6 +1105,64 @@ mod tests {
 
         assert_eq!(receipt.settled_sequence, 2);
         assert_eq!(receipt.evidence, OutputSettlementEvidence::Quiescence);
+    }
+
+    #[test]
+    fn normalized_composer_cursor_movement_waits_for_settlement() {
+        for (frame, evidence) in [
+            (
+                b"\x1b[?25l\x1b[20;3Hpartial paste\x1b[?25h".as_slice(),
+                OutputSettlementEvidence::ComposerRenderQuiescence,
+            ),
+            (
+                b"\x1b[?2026h\x1b[20;3Hpartial paste\x1b[20;16H\x1b[?25h\x1b[?2026l".as_slice(),
+                OutputSettlementEvidence::ComposerRenderQuiescence,
+            ),
+            (
+                b"\x1b[?25l\x1b[20;1H\x1b[K> partial paste\x1b[?25h".as_slice(),
+                OutputSettlementEvidence::ComposerSurfaceStability,
+            ),
+        ] {
+            let tracker = OutputActivityTracker {
+                accepts_normalized_screen_diff: true,
+                ..OutputActivityTracker::default()
+            };
+            // An image attachment can leave a visible composer before the
+            // unframed text arrives. ConPTY then renders intermediate cursor
+            // positions while the child is still consuming that text.
+            tracker.record(b"\x1b[?25l\x1b[20;3H\x1b[?25h");
+            let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+            tracker.record(frame);
+            assert!(snapshot.diagnostics_since().unwrap().composer_cursor_moved);
+
+            let receipt = snapshot
+                .wait_for_normalized_composer_render_settlement(
+                    Duration::from_millis(20),
+                    Duration::from_secs(1),
+                )
+                .unwrap();
+
+            assert_eq!(receipt.evidence, evidence);
+        }
+    }
+
+    #[test]
+    fn normalized_cursor_movement_does_not_settle_an_active_paste() {
+        let tracker = OutputActivityTracker {
+            accepts_normalized_screen_diff: true,
+            ..OutputActivityTracker::default()
+        };
+        tracker.record(b"\x1b[?25l\x1b[20;3H\x1b[?25h");
+        let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+        tracker.record(b"\x1b[?25l\x1b[20;3Hpartial paste\x1b[?25h");
+        let result = with_periodic_redraws(&tracker, b"more paste output", || {
+            snapshot.wait_for_normalized_composer_render_settlement(
+                Duration::from_millis(50),
+                Duration::from_millis(50),
+            )
+        });
+
+        assert_eq!(result, Err(OutputSettlementFailure::TimedOut));
     }
 
     #[test]
