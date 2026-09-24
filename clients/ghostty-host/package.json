@@ -1,0 +1,35 @@
+{
+  "name": "@termloop/ghostty-host",
+  "version": "2.0.6",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./native-source.mm": "./dist/native/ghostty_host.mm",
+    "./addon": "./dist/native/ghostty_host.node",
+    "./library": "./dist/native/libghostty.dylib",
+    "./embedded-config": "./dist/ghostty-embedded.conf",
+    "./light-config": "./dist/ghostty-light.conf",
+    "./resource-manifest": "./dist/ghostty/engine-resources.json"
+  },
+  "scripts": {
+    "build": "node build-assets.mjs --clean && tsc && node build-assets.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test native/*.test.mjs",
+    "native:dev": "node native/build-dev.mjs",
+    "native:universal": "node native/build-universal.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "typescript": "7.0.2",
+    "node-addon-api": "8.9.2",
+    "node-gyp": "12.4.0",
+    "electron": "43.3.0"
+  }
+}

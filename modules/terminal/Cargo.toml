@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+termloop-terminal-wire = { path = "../terminal-wire" }
 portable-pty.workspace = true
 termloop-platform = { path = "../platform" }
 thiserror.workspace = true

@@ -9,10 +9,12 @@
 /clients/mobile/ios/
 /clients/mobile/android/
 /clients/desktop/native/ghostty-host/build/
+/clients/ghostty-host/native/build/
 /spikes/ghostty-macos/build/
 **/.termloop-runtime/
 /.termloop-worktrees/
 /artifacts/evidence/
+/work/evidence/
 /.agents/
 /.superpowers/
 /.termloop/
@@ -20,3 +22,5 @@
 /terminal-app/
 /termloop/
 .DS_Store
+
+/work/engine-packages/

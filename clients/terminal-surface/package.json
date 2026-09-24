@@ -1,0 +1,76 @@
+{
+  "name": "@termloop/terminal-surface",
+  "version": "2.0.6",
+  "type": "module",
+  "exports": {
+    "./surface": {
+      "types": "./dist/renderer/terminal/surface.d.ts",
+      "default": "./dist/renderer/terminal/surface.js"
+    },
+    "./output-batcher": {
+      "types": "./dist/renderer/terminal/output-batcher.d.ts",
+      "default": "./dist/renderer/terminal/output-batcher.js"
+    },
+    "./replay-continuity": {
+      "types": "./dist/renderer/terminal/replay-continuity.d.ts",
+      "default": "./dist/renderer/terminal/replay-continuity.js"
+    },
+    "./xterm": {
+      "types": "./dist/renderer/terminal/xterm/xterm-surface.d.ts",
+      "default": "./dist/renderer/terminal/xterm/xterm-surface.js"
+    },
+    "./clipboard": {
+      "types": "./dist/renderer/terminal/xterm/clipboard.d.ts",
+      "default": "./dist/renderer/terminal/xterm/clipboard.js"
+    },
+    "./wheel": {
+      "types": "./dist/renderer/terminal/xterm/wheel.d.ts",
+      "default": "./dist/renderer/terminal/xterm/wheel.js"
+    },
+    "./font-license": "./dist/assets/fonts/OFL.txt",
+    "./ghostty": {
+      "types": "./dist/renderer/terminal/ghostty/ghostty-surface.d.ts",
+      "default": "./dist/renderer/terminal/ghostty/ghostty-surface.js"
+    },
+    "./ghostty-bridge": {
+      "types": "./dist/renderer/terminal/ghostty/bridge.d.ts",
+      "default": "./dist/renderer/terminal/ghostty/bridge.js"
+    },
+    "./presentation": {
+      "types": "./dist/renderer/terminal/presentation.d.ts",
+      "default": "./dist/renderer/terminal/presentation.js"
+    },
+    "./replay-buffer": {
+      "types": "./dist/renderer/terminal/replay-buffer.d.ts",
+      "default": "./dist/renderer/terminal/replay-buffer.js"
+    },
+    "./attachment": {
+      "types": "./dist/renderer/terminal/attachment.d.ts",
+      "default": "./dist/renderer/terminal/attachment.js"
+    },
+    "./pool": {
+      "types": "./dist/renderer/terminal/pool.d.ts",
+      "default": "./dist/renderer/terminal/pool.js"
+    },
+    "./styles": "./dist/renderer/terminal/xterm/ghostty-font.css"
+  },
+  "scripts": {
+    "check": "pnpm --filter @termloop/terminal-wire build && tsc --noEmit",
+    "build": "node build-assets.mjs --clean && tsc && node build-assets.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0",
+    "@termloop/terminal-wire": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vitest": "3.2.4"
+  },
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ]
+}

@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn public_process_start_identity_matches_the_current_live_process() {
+    let first = process_start_identity(std::process::id()).unwrap().unwrap();
+    assert!(!first.is_empty());
+    assert_eq!(
+        process_start_identity(std::process::id()).unwrap(),
+        Some(first)
+    );
+}
+
+#[test]
 fn daemon_lease_refuses_a_second_live_owner_and_releases_cleanly() {
     let root = std::env::temp_dir().join(format!(
         "termloop-daemon-lease-{}-{}",

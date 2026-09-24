@@ -138,7 +138,7 @@ impl McpAuthorizer {
             .values()
             .find(|entry| {
                 (!require_command_authority || entry.command_authorized)
-                    && crate::capability_equal(entry.token.as_bytes(), token.as_bytes())
+                    && termloop_agent_runtime::observation_token_matches(&entry.token, token)
             })
             .map(|entry| entry.principal.clone())
             .ok_or(CoreError::CapabilityDenied)
@@ -193,7 +193,7 @@ impl McpAuthorizer {
             && entries.get(session_id).is_some_and(|entry| {
                 !entry.command_authorized
                     && entry.principal.runtime_epoch == runtime_epoch
-                    && crate::capability_equal(entry.token.as_bytes(), token.as_bytes())
+                    && termloop_agent_runtime::observation_token_matches(&entry.token, token)
             })
         {
             entries.remove(session_id);

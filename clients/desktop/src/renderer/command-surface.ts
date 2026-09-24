@@ -186,7 +186,8 @@ function normalize(value: string): string {
 // to the native Ghostty host's own detector in
 // native/ghostty-host/src/ghostty_host.mm, which sees the keys instead
 // whenever a native terminal surface holds focus.
-export const DOUBLE_SHIFT_WINDOW_MS = 500;
+export { DOUBLE_SHIFT_WINDOW_MS } from "../ghostty-shell-shortcut.js";
+import { DOUBLE_SHIFT_WINDOW_MS } from "../ghostty-shell-shortcut.js";
 
 export class DoubleShiftDetector {
   private firstDownAt: number | undefined;

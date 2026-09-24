@@ -34,6 +34,12 @@ pub struct DaemonInstanceLease {
     _record: TrackedProcessLease,
 }
 
+/// Opaque OS start identity for comparison with a private ownership record.
+/// A PID alone is never sufficient authority to signal or reuse a process.
+pub fn process_start_identity(process_id: u32) -> Result<Option<String>, PlatformError> {
+    process_identity(process_id)
+}
+
 impl ManagedProcess {
     pub fn id(&self) -> u32 {
         self.child.id()
