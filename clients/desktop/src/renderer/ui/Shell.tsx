@@ -1,6 +1,7 @@
 import { FilesOverlay } from "./FilesOverlay.js";
 import { FilesRail } from "./FilesRail.js";
 import { useFileBrowser } from "./use-file-browser.js";
+import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
@@ -2322,22 +2323,15 @@ export function Shell(props: ShellProps) {
   );
 }
 
-function SidebarResizeHandle({ width, resize, reset, draggingChanged }: {
+export function SidebarResizeHandle({ width, resize, reset, draggingChanged }: {
   width: number;
   resize(width: number): void;
   reset(): void;
   draggingChanged(dragging: boolean): void;
 }) {
-  const [dragging, setDragging] = useState(false);
+  const { dragging, startDrag } = useSidebarResizeDrag(resize, draggingChanged);
   const displayedWidth = width;
   const maximum = sidebarMaximumWidth(window.innerWidth);
-  const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    setDragging(false);
-    draggingChanged(false);
-  };
   return (
     <div
       className={`sidebar-resize-handle${dragging ? " dragging" : ""}`}
@@ -2350,17 +2344,7 @@ function SidebarResizeHandle({ width, resize, reset, draggingChanged }: {
       tabIndex={0}
       title="Drag to resize sidebar · Double-click to reset"
       onDoubleClick={reset}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        setDragging(true);
-        draggingChanged(true);
-      }}
-      onPointerMove={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(event.clientX);
-      }}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
+      onPointerDown={startDrag}
       onKeyDown={(event) => {
         const step = event.shiftKey ? 40 : 10;
         const next = event.key === "ArrowLeft" ? displayedWidth - step
