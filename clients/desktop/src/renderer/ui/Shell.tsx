@@ -18,6 +18,7 @@ import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImp
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
+import { SidebarFooterHoverCard } from "./SidebarFooterHoverCard.js";
 import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
 import { ProjectSourceRefreshButton } from "./ProjectSourceRefreshButton.js";
 import { SessionRail } from "./SessionRail.js";
@@ -1833,7 +1834,14 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}
             <div className="sidebar-footer-actions">
-              <button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              <div className="sidebar-footer-control"><button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" aria-describedby="sidebar-footer-settings-card" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><SidebarFooterHoverCard
+                id="sidebar-footer-settings-card"
+                eyebrow={showSettingsScope ? `Preferences · ${scopeName}` : "Preferences"}
+                title="Settings"
+                status="Appearance, notifications, servers and mobile access."
+                rows={showSettingsScope ? [{ label: "Computer", value: computerName }] : []}
+                hint="Click to open"
+              /></div><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>

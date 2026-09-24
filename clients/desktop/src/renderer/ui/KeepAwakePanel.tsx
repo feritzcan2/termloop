@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { KeepAwakeMode, KeepAwakeSetParams, KeepAwakeStatusResult } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
+import { SidebarFooterHoverCard, type SidebarFooterHoverRow } from "./SidebarFooterHoverCard.js";
 import {
   KEEP_AWAKE_MODES,
   KEEP_AWAKE_DURATIONS,
@@ -44,6 +45,7 @@ export function KeepAwakePanel({ load, save, refreshToken, computerName, scopeLa
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string>();
   const rootRef = useRef<HTMLDivElement>(null);
+  const hoverCardId = useId();
 
   const refresh = useCallback(() => {
     let cancelled = false;
@@ -112,14 +114,21 @@ export function KeepAwakePanel({ load, save, refreshToken, computerName, scopeLa
     ? keepAwakeCountdown(status.expiresAtEpochMs, nowEpochMs)
     : undefined;
 
+  const hoverRows: SidebarFooterHoverRow[] = status ? [
+    { label: "Mode", value: keepAwakeModeLabel(status.mode) },
+    ...(status.mode !== "off" ? [{ label: "Screen", value: status.keepDisplayAwake ? "Stays on" : "May turn off" }] : []),
+    ...(countdown ? [{ label: "Timer", value: `${countdown} left` }] : []),
+    ...(status.mode === "whileAgentsRun" ? [{ label: "Agents", value: String(status.eligibleAgentCount) }] : []),
+  ] : [];
+
   return (
-    <div ref={rootRef} className="keep-awake-control">
+    <div ref={rootRef} className={`keep-awake-control${embedded ? "" : " sidebar-footer-control"}`}>
       {!embedded ? <button
         type="button"
         className={`sidebar-footer-button keep-awake-trigger${engaged ? " is-engaged" : ""}${blocked ? " is-blocked" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={status ? keepAwakeSummary(status, computerName) : "Keep awake"}
+        aria-describedby={hoverCardId}
         onClick={() => setOpen((current) => !current)}
       >
         <Icon name="power" />
@@ -127,6 +136,18 @@ export function KeepAwakePanel({ load, save, refreshToken, computerName, scopeLa
         <span className="visually-hidden">Keep Awake{scopeLabel ? ` · ${scopeLabel}` : ""}</span>
         {countdown ? <span className="keep-awake-trigger-countdown">{countdown}</span> : null}
       </button> : null}
+      {!embedded ? <SidebarFooterHoverCard
+        id={hoverCardId}
+        eyebrow={scopeLabel ? `Power · ${scopeLabel}` : "Power"}
+        title="Keep Awake"
+        status={disabled
+          ? "Needs a connected computer with write access."
+          : status ? keepAwakeSummary(status, computerName) : failure ?? "Reading the current setting…"}
+        statusTone={engaged ? "positive" : blocked ? "negative" : undefined}
+        rows={hoverRows}
+        note={limitations}
+        hint={disabled ? "Click to view" : "Click to change"}
+      /> : null}
       {open || embedded ? <section className={`keep-awake-panel${embedded ? " embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Keep awake">
         <header>
           <span>{scopeLabel ? `Power · ${scopeLabel}` : "Power"}</span>

@@ -156,4 +156,36 @@ describe("keep-awake presentation", () => {
       delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
     }
   });
+
+  it("describes the live hold in the footer hover card", async () => {
+    const load = vi.fn(async () => status({
+      mode: "always",
+      keepDisplayAwake: true,
+      state: "active",
+      reason: null,
+      expiresAtEpochMs: Date.now() + 25 * 60_000,
+      limitations: ["lidClose"],
+    }));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    try {
+      await act(async () => root.render(createElement(KeepAwakePanel, { load, save: load, refreshToken: 0, scopeLabel: "Studio" })));
+      const trigger = container.querySelector<HTMLButtonElement>(".keep-awake-trigger")!;
+      const card = document.getElementById(trigger.getAttribute("aria-describedby")!)!;
+      expect(card.getAttribute("role")).toBe("tooltip");
+      expect(card.querySelector("header")?.textContent).toBe("Power · StudioKeep Awake");
+      expect(card.querySelector(".sidebar-footer-hover-status")?.getAttribute("data-tone")).toBe("positive");
+      const rows = [...card.querySelectorAll("dl > div")].map((row) => row.textContent);
+      expect(rows).toEqual(["ModeAlways", "ScreenStays on", "Timer25 min left"]);
+      expect(card.querySelector(".sidebar-footer-hover-note")?.textContent).toBe("It can still sleep from closing the lid.");
+      expect(card.querySelector("footer")?.textContent).toBe("Click to change");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
 });

@@ -1149,6 +1149,30 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .sidebar-footer-button { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 4px; height: 26px; min-width: 26px; padding: 0 6px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(255,255,255,.07)); border-radius: 7px; background: light-dark(rgba(15,23,42,.045), rgba(255,255,255,.055)); color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); white-space: nowrap; }
 .sidebar-footer-button > svg { flex: none; width: 13px; height: 13px; stroke-width: 1.6; }
 .sidebar-footer-button:hover, .sidebar-footer-button[aria-expanded="true"] { border-color: light-dark(rgba(15,23,42,.14), rgba(255,255,255,.14)); background: light-dark(rgba(15,23,42,.08), rgba(255,255,255,.09)); color: var(--sidebar-text); }
+/* Hover card for the glyph-only footer tiles. It opens upward, aligned to the
+   action row's right edge so every card stays inside the sidebar, after a
+   short delay so passing the pointer across the row stays quiet, and it steps
+   aside while the tile's own popover is open. The controls drop their own
+   positioning here so the row is the card's containing block. */
+.sidebar-footer-actions { position: relative; }
+.sidebar-footer-actions > .sidebar-footer-control { position: static; min-width: 0; }
+.sidebar-footer-hover-card { position: absolute; z-index: 45; right: 0; bottom: calc(100% + 8px); display: grid; gap: 7px; width: max-content; min-width: 190px; max-width: min(260px, calc(var(--sidebar-width) - 24px)); padding: 9px 10px 8px; visibility: hidden; border: 1px solid light-dark(#c4ced9, #474c4f); border-radius: 9px; background: light-dark(rgba(255,255,255,.985), rgba(35,40,42,.985)); box-shadow: var(--shadow-menu); color: var(--text-secondary); opacity: 0; pointer-events: none; text-align: left; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s; white-space: normal; }
+.sidebar-footer-control:has(> .sidebar-footer-button:hover) > .sidebar-footer-hover-card,
+.sidebar-footer-control:has(> .sidebar-footer-button:focus-visible) > .sidebar-footer-hover-card { visibility: visible; opacity: 1; transform: translateY(0); transition-delay: .25s, .25s, 0s; }
+.sidebar-footer-control:has(> .sidebar-footer-button[aria-expanded="true"]) > .sidebar-footer-hover-card { display: none; }
+.sidebar-footer-hover-card > header { display: grid; gap: 3px; }
+.sidebar-footer-hover-card > header span { color: var(--sidebar-dimmer); font: 700 8px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
+.sidebar-footer-hover-card > header strong { color: var(--sidebar-text); font-size: 12px; }
+.sidebar-footer-hover-status { margin: 0; font-size: 10px; line-height: 1.4; }
+.sidebar-footer-hover-status[data-tone="positive"], .sidebar-footer-hover-card dd[data-tone="positive"] { color: light-dark(#18794e, #8fd8b6); }
+.sidebar-footer-hover-status[data-tone="negative"], .sidebar-footer-hover-card dd[data-tone="negative"] { color: light-dark(#b42331, #d78e95); }
+.sidebar-footer-hover-card dl { display: grid; gap: 4px; margin: 0; padding: 6px 0 0; border-top: 1px solid var(--border); }
+.sidebar-footer-hover-card dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.sidebar-footer-hover-card dt { color: var(--sidebar-dimmer); font: 700 9px/1.4 var(--font-mono); }
+.sidebar-footer-hover-card dd { overflow: hidden; margin: 0; color: var(--sidebar-text); font: 9px/1.4 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sidebar-footer-hover-note { display: -webkit-box; margin: 0; overflow: hidden; color: var(--sidebar-dim); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.sidebar-footer-hover-card > footer { color: var(--sidebar-dimmer); font: 700 8px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+@media (prefers-reduced-motion: reduce) { .sidebar-footer-hover-card { transition: none; } }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .settings-trigger:hover { color: light-dark(#496f88, #83c9f4); }
 .server-connection-alert { position: fixed; z-index: 66; top: 12px; left: 50%; display: flex; align-items: center; gap: 14px; max-width: min(620px, calc(100vw - 32px)); padding: 9px 10px 9px 13px; border: 1px solid rgba(72,183,255,.34); border-radius: 8px; background: light-dark(rgba(255,255,255,.96), rgba(26,32,35,.96)); box-shadow: 0 12px 34px rgba(0,0,0,.42); transform: translateX(-50%); backdrop-filter: blur(10px); }
