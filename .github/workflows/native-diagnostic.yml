@@ -68,7 +68,7 @@ jobs:
 
   macos:
     if: inputs.macos
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64, termloop-macos]
     environment: production
     timeout-minutes: 60
     steps:
