@@ -61,7 +61,6 @@ jobs:
   verify:
     # Keep the required status-check identities stable when execution hosts change.
     name: ${{ matrix.check-name }}
-    needs: preflight
     strategy:
       fail-fast: false
       matrix:
