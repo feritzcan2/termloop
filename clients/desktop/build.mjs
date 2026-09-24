@@ -62,6 +62,7 @@ await mkdir(mobileAccessDirectory, { recursive: true });
 await Promise.all([
   cp(path.join(mobileScriptsDirectory, "mobile-access.mjs"), path.join(mobileAccessDirectory, "mobile-access.mjs")),
   cp(path.join(mobileScriptsDirectory, "mobile-access-installer.mjs"), path.join(mobileAccessDirectory, "mobile-access-installer.mjs")),
+  cp(path.join(mobileScriptsDirectory, "mobile-access-windows.mjs"), path.join(mobileAccessDirectory, "mobile-access-windows.mjs")),
 ]);
 await execFile(process.execPath, [
   path.join(mobileScriptsDirectory, "mobile-access.mjs"),

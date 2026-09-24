@@ -2426,7 +2426,7 @@ function validateConfig(value) {
   }
   const result = {
     port: value.port,
-    hostPlatform: value.hostPlatform === "linux" ? "linux" : "darwin",
+    hostPlatform: ["linux", "win32"].includes(value.hostPlatform) ? value.hostPlatform : "darwin",
     runtimeFile: requiredString(value.runtimeFile),
     controlToken: boundedToken(value.controlToken),
     terminalToken: boundedToken(value.terminalToken),

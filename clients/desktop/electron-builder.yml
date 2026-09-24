@@ -6,6 +6,8 @@ files:
   - dist/**
   - package.json
 asar: true
+asarUnpack:
+  - dist/mobile-access/**
 publish:
   provider: generic
   url: https://updates.termloop.ai/stable
