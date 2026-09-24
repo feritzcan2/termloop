@@ -67,7 +67,7 @@
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "3.2.4"
+    "vitest": "4.1.11"
   },
   "license": "GPL-3.0-or-later",
   "files": [
