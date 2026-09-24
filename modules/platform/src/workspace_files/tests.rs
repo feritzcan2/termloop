@@ -74,7 +74,7 @@ fn reads_empty_and_utf8_text_and_returns_no_content_for_unsupported_inputs() {
             "Merhaba dünya\n".as_bytes(),
             WorkspaceContentState::Text,
         ),
-        ("nul", b"a\0b", WorkspaceContentState::Binary),
+        ("nul-byte.bin", b"a\0b", WorkspaceContentState::Binary),
         ("invalid", b"\xff", WorkspaceContentState::Binary),
     ] {
         std::fs::write(f.0.join(name), bytes).unwrap();
