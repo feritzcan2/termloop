@@ -6,11 +6,25 @@ pub struct CodexRuntime {
     process: termloop_platform::ManagedProcess,
     bridge: termloop_agents::CodexAppServerBridge,
     upstream_endpoint: String,
+    resume_permissions: Option<termloop_agents::CodexResumeLease>,
 }
 
 impl CodexRuntime {
     pub fn endpoint(&self) -> &str {
         self.bridge.endpoint()
+    }
+
+    pub fn prepare_resume_permissions(
+        &mut self,
+        launch: &termloop_launch::LaunchPayload,
+    ) -> Result<(), PreparationError> {
+        if let Some(request) = launch.codex_resume_permissions() {
+            self.resume_permissions = Some(
+                termloop_agents::prepare_codex_resume_permissions(&self.upstream_endpoint, request)
+                    .map_err(|_| PreparationError::ProviderRejected)?,
+            );
+        }
+        Ok(())
     }
 
     pub fn warm_thread_history(
@@ -35,7 +49,9 @@ impl CodexRuntime {
             mut process,
             bridge,
             upstream_endpoint: _,
+            resume_permissions,
         } = self;
+        drop(resume_permissions);
         let bridge_reaped = bridge.shutdown().is_ok();
         let process_reaped = process.terminate().is_ok();
         if bridge_reaped && process_reaped {
@@ -141,5 +157,6 @@ pub fn start_codex_runtime_with_executable_directory(
         process,
         bridge,
         upstream_endpoint,
+        resume_permissions: None,
     })
 }

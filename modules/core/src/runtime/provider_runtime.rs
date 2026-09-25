@@ -179,6 +179,18 @@ impl PreparedProviderRuntime {
             }));
         }
         if let Some(launch) = request.launch {
+            if let Err(error) = self
+                .runtime
+                .as_mut()
+                .expect("prepared runtime")
+                .prepare_resume_permissions(launch)
+            {
+                return Err(Runtime(if self.abort().is_ok() {
+                    error
+                } else {
+                    AgentResumePreparationError::RuntimeOwnershipUncertain
+                }));
+            }
             launch
                 .bind_codex_app_server_endpoint(
                     self.runtime.as_ref().expect("prepared runtime").endpoint(),
