@@ -79,7 +79,7 @@ impl ObservedSession {
         executable_directory: Option<&std::path::Path>,
     ) -> Result<(), crate::PreparationError> {
         let (sender, receiver) = channel();
-        let runtime = crate::codex::start_codex_runtime_with_executable_directory(
+        let mut runtime = crate::codex::start_codex_runtime_with_executable_directory(
             &self.id,
             self.epoch,
             cwd,
@@ -92,14 +92,29 @@ impl ObservedSession {
             executable_directory,
             launch.codex_runtime_policy(),
         )?;
-        if launch
-            .bind_codex_app_server_endpoint(runtime.endpoint())
-            .is_err()
-        {
+        let preparation = (|| {
+            if let Some(request) = launch.codex_resume_permissions() {
+                runtime
+                    .warm_thread_history(request.native_thread_id())
+                    .map_err(|error| match error {
+                        termloop_agents::CodexThreadHistoryProbeError::Damaged => {
+                            crate::PreparationError::ProviderHistoryDamaged
+                        }
+                        termloop_agents::CodexThreadHistoryProbeError::Unavailable => {
+                            crate::PreparationError::ProviderRejected
+                        }
+                    })?;
+                runtime.prepare_resume_permissions(launch)?;
+            }
+            launch
+                .bind_codex_app_server_endpoint(runtime.endpoint())
+                .map_err(|_| crate::PreparationError::ProviderRejected)
+        })();
+        if let Err(error) = preparation {
             return Err(if runtime.reap().is_err() {
                 crate::PreparationError::RuntimeOwnershipUncertain
             } else {
-                crate::PreparationError::ProviderRejected
+                error
             });
         }
         self.codex = Some(runtime);
