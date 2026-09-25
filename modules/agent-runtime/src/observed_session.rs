@@ -78,12 +78,34 @@ impl ObservedSession {
         launch: &mut LaunchPayload,
         executable_directory: Option<&std::path::Path>,
     ) -> Result<(), crate::PreparationError> {
+        self.start_codex_with_project_trust(
+            cwd,
+            directory,
+            mcp,
+            launch,
+            executable_directory,
+            termloop_launch::CodexProjectTrust::Inherit,
+        )
+    }
+
+    /// Use managed trust only for workspaces whose contents are owned by the caller.
+    /// The app-server and terminal client must receive the same trust policy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_codex_with_project_trust(
+        &mut self,
+        cwd: &str,
+        directory: &std::path::Path,
+        mcp: Option<termloop_launch::McpConnection<'_>>,
+        launch: &mut LaunchPayload,
+        executable_directory: Option<&std::path::Path>,
+        trust: termloop_launch::CodexProjectTrust,
+    ) -> Result<(), crate::PreparationError> {
         let (sender, receiver) = channel();
         let mut runtime = crate::codex::start_codex_runtime_with_executable_directory(
             &self.id,
             self.epoch,
             cwd,
-            false,
+            trust == termloop_launch::CodexProjectTrust::ManagedWorkspace,
             None,
             directory,
             mcp,
