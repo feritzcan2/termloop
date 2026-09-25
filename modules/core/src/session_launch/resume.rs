@@ -372,6 +372,18 @@ impl AgentResumePlan {
             }
         }
         self.target_validation().validate()?;
+        // Automatic restart has no preview ticket. Compose its launch before
+        // provider preparation so Codex receives the saved permissions before
+        // the TUI attaches; preparation also binds the real bridge endpoint.
+        if self.prepared_launch.is_none() {
+            let observation = self.observation_transport.invocation_observation(
+                &self.agent_id,
+                &self.session_id,
+                self.observation_token.as_deref(),
+                Some(termloop_invocation::CODEX_APP_SERVER_RUNTIME_PLACEHOLDER),
+            );
+            self.prepared_launch = Some(self.compose_resume_launch(observation)?);
+        }
         use crate::runtime::provider_runtime::{
             ProviderRuntimeMode, ProviderRuntimePreparation, ProviderRuntimePreparationError,
         };
@@ -405,21 +417,10 @@ impl AgentResumePlan {
             return Err(AgentResumePreparationError::DaemonInterrupted);
         }
 
-        let codex_endpoint = self
-            .provider_runtime
-            .codex()
-            .map(|runtime| runtime.endpoint());
-        let observation = self.observation_transport.invocation_observation(
-            &self.agent_id,
-            &self.session_id,
-            self.observation_token.as_deref(),
-            codex_endpoint,
-        );
-        let launch = if let Some(launch) = self.prepared_launch.take() {
-            launch
-        } else {
-            self.compose_resume_launch(observation)?
-        };
+        let launch = self
+            .prepared_launch
+            .take()
+            .expect("resume launch composed before provider preparation");
         self.pending_generated_input = launch.initial_input_submission();
         termloop_agent_runtime::spawn_agent_terminal(
             &self.terminal,
