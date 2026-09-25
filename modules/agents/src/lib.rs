@@ -7,6 +7,7 @@ mod catalog;
 mod claude_transcript;
 mod codex_history;
 mod codex_name;
+mod codex_resume;
 mod codex_settings;
 mod provider_hooks;
 mod provider_observation;
@@ -28,6 +29,10 @@ pub use codex_history::{
 };
 pub use codex_name::CodexThreadNameObservation;
 use codex_name::normalize_codex_thread_name;
+pub use codex_resume::{
+    CodexResumeLease, CodexResumePermissions, CodexResumePermissionsError,
+    prepare_codex_resume_permissions,
+};
 pub use codex_settings::{
     CodexPermissionMode, CodexThreadSettingsObservation, normalize_codex_thread_settings,
 };

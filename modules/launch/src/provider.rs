@@ -263,6 +263,9 @@ impl LaunchPayload {
     pub fn codex_runtime_policy(&self) -> &CodexRuntimePolicy {
         &self.codex_runtime_policy
     }
+    pub fn codex_resume_permissions(&self) -> Option<&termloop_agents::CodexResumePermissions> {
+        self.codex_resume_permissions.as_ref()
+    }
     pub fn initial_input(&self) -> Option<&str> {
         self.initial_input
             .as_ref()

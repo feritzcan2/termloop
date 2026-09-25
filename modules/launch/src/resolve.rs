@@ -119,9 +119,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 .into_iter()
                 .map(|argument| ResolvedArgument::exact(argument, "reasoning selection")),
         );
-        // Codex remote resume rejects CLI permission overrides before resuming
-        // the thread. The provider restores its persisted permissions instead.
-        // Validate the selection even when this transport cannot override it.
+        // Remote resume rejects TUI permission overrides. Reapply the saved
+        // selection through the App Server preparation carried by this payload.
         let permission_arguments = permission_args(agent_id, permission)?;
         if !inherits_codex_permissions {
             arguments.extend(
@@ -417,6 +416,25 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         codex_runtime_policy: CodexRuntimePolicy {
             approved_tools: approved_tools.iter().map(|s| (*s).to_owned()).collect(),
             workspace_network,
+        },
+        codex_resume_permissions: if inherits_codex_permissions {
+            let AgentConversationLaunch::Resume { resume_ref } = conversation else {
+                unreachable!("remote resume was checked")
+            };
+            let mode = match permission {
+                "default" => termloop_agents::CodexPermissionMode::Default,
+                "acceptEdits" => termloop_agents::CodexPermissionMode::AcceptEdits,
+                "plan" => termloop_agents::CodexPermissionMode::Plan,
+                "bypassPermissions" => termloop_agents::CodexPermissionMode::BypassPermissions,
+                _ => return Err(InvocationError::UnsupportedPermission {
+                    agent_id: agent_id.into(), permission: permission.into(),
+                }),
+            };
+            Some(termloop_agents::CodexResumePermissions::new(
+                &resume_ref.native_session_id, cwd, mode,
+            ).ok_or(InvocationError::InvalidResumeReference)?)
+        } else {
+            None
         },
         initial_input: prompt
             .map(|_| InitialInputDelivery::submitted(&delivered))
