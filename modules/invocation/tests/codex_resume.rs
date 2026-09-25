@@ -39,7 +39,7 @@ fn provider_args(launch: &LaunchPayload) -> &[String] {
 }
 
 #[test]
-fn remote_resume_inherits_permissions_and_keeps_preview_and_payload_in_sync() {
+fn remote_resume_prepares_saved_permissions_without_rejected_tui_flags() {
     let resume_ref = ResumeRef::for_provider(ResumeProvider::Codex, THREAD_ID.into()).unwrap();
     let account = AgentAccountContext {
         agent_id: "codex".into(),
@@ -95,6 +95,9 @@ fn remote_resume_inherits_permissions_and_keeps_preview_and_payload_in_sync() {
             assert_eq!(manifest.target.permission, *permission);
             assert_eq!(manifest.target.model, "gpt-6-astra");
             assert_eq!(manifest.target.reasoning, "xhigh");
+            let preparation = launch.codex_resume_permissions().unwrap();
+            assert_eq!(preparation.native_thread_id(), THREAD_ID);
+            assert_eq!(preparation.permission().as_launch_selection(), *permission);
             assert_eq!(manifest.arguments.len(), args.len());
             for argument in &manifest.arguments {
                 if argument.visibility == "exact" {
@@ -103,16 +106,15 @@ fn remote_resume_inherits_permissions_and_keeps_preview_and_payload_in_sync() {
             }
             assert!(manifest.limitations.iter().any(|limitation| {
                 limitation.kind == "providerManaged"
-                    && limitation
-                        .description
-                        .contains("conversation's saved permissions")
-                    && limitation.description.contains("last saved selection")
+                    && limitation.description.contains("reapplies and verifies")
+                    && limitation.description.contains("Codex App Server")
             }));
             assert_eq!(launch.initial_input(), None);
             let preview = serde_json::to_string(manifest).unwrap();
             assert!(!preview.contains(THREAD_ID));
             assert!(!preview.contains(ENDPOINT));
             assert!(!preview.contains("codex-resume-private-account"));
+            assert!(!format!("{launch:?}").contains(THREAD_ID));
         }
     }
 }
@@ -151,6 +153,7 @@ fn fresh_and_forked_remote_sessions_and_local_resumes_keep_permission_arguments(
             )
             .unwrap();
             let manifest = launch.inspectable_manifest();
+            assert!(launch.codex_resume_permissions().is_none());
             let actual = manifest
                 .arguments
                 .iter()

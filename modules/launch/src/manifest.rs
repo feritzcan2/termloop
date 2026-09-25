@@ -240,7 +240,7 @@ pub(crate) fn provider_limitations(
     );
     if inherits_codex_permissions {
         provider_managed.push_str(
-            " Codex restores the conversation's saved permissions on remote resume; the permission shown is the Session's last saved selection and is not sent as a launch override.",
+            " TermLoop reapplies and verifies the Session's saved permission selection through Codex App Server before the resume TUI attaches; unsupported CLI permission overrides are not sent.",
         );
     }
     vec![
