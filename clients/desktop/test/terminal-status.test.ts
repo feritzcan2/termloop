@@ -10,6 +10,7 @@ function render(state?: TerminalPresentation) {
     snapshot: () => state,
     read: vi.fn(),
     recover: vi.fn(),
+    reconnect: vi.fn(),
   };
   return renderToStaticMarkup(createElement(TerminalStatus, { sessionId: "session-1", port }));
 }
@@ -17,7 +18,6 @@ function render(state?: TerminalPresentation) {
 describe("terminal status visibility", () => {
   it.each<TerminalPresentation | undefined>([
     undefined,
-    { phase: "connecting" },
     { phase: "replaying", progress: 50 },
     { phase: "live" },
     { phase: "live", input: "sending" },
@@ -29,13 +29,24 @@ describe("terminal status visibility", () => {
   });
 
   it.each<[TerminalPresentation, string]>([
-    [{ phase: "reconnecting" }, "Reconnecting"],
+    [{ phase: "reconnecting" }, "Connection lost — you cannot type here"],
+    [{ phase: "connecting" }, "Connecting — input unavailable"],
     [{ phase: "failed" }, "Terminal unavailable"],
-    [{ phase: "live", input: "uncertain" }, "Delivery unconfirmed"],
+    [{ phase: "live", input: "uncertain" }, "Last input delivery unconfirmed"],
     [{ phase: "live", notice: "Some earlier output is unavailable." }, "Some earlier output is unavailable."],
   ])("shows terminal problems: %j", (state, message) => {
     expect(render(state)).toContain(message);
-    expect(render(state)).toContain('role="status"');
+    expect(render(state)).toMatch(/role="(status|alert)"/);
+  });
+
+  it("prominently explains stale output and offers a connection reset", () => {
+    const markup = render({ phase: "reconnecting", reading: "Retained output" });
+    expect(markup).toContain("terminal-stream-status--unavailable");
+    expect(markup).toContain("Trying to reconnect automatically");
+    expect(markup).toContain("output shown may be out of date");
+    expect(markup).toContain("Force reconnect");
+    expect(markup).toContain("Running sessions are preserved");
+    expect(markup).toContain("Return to live");
   });
 
   it("keeps the recovery action available after a failure", () => {

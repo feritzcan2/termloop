@@ -1433,8 +1433,7 @@ handleIpc("termloop:connection-profile-list", async (event) => {
 });
 handleIpc("termloop:connection-profile-reconnect", async (event, profileId: string) => {
   requireMainRenderer(event);
-  await connections.reconnect(profileId);
-  return connections.summaries();
+  return profileLifecycle.reconnect(profileId);
 });
 handleIpc("termloop:connection-profile-connect", async (event, input: ConnectionProfileConnectInput) => {
   requireMainRenderer(event);
