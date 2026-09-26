@@ -20,6 +20,8 @@ fn initial_helper_selection_matches_manifest_and_provider_arguments() {
         for (provider, model, reasoning) in [
             ("codex", "default", "default"),
             ("codex", "gpt-6-astra", "default"),
+            ("codex", "gpt-6-sol", "default"),
+            ("codex", "gpt-6-luna", "high"),
             ("codex", "default", "high"),
             ("codex", "gpt-6-astra", "max"),
             ("claude", "default", "default"),

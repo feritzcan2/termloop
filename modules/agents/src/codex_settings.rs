@@ -175,6 +175,8 @@ pub fn normalize_codex_thread_settings(raw: &str) -> Option<CodexThreadSettingsO
             matches!(
                 model.as_str(),
                 "gpt-6-astra"
+                    | "gpt-6-sol"
+                    | "gpt-6-luna"
                     | "gpt-5.6-sol"
                     | "gpt-5.6-terra"
                     | "gpt-5.6-luna"
@@ -273,14 +275,16 @@ mod tests {
     }
 
     #[test]
-    fn captures_gpt_6_astra_as_a_replayable_model() {
-        let astra = notification(
+    fn captures_gpt_6_models_as_replayable_models() {
+        let settings = notification(
             r#""approvalPolicy":"never","approvalsReviewer":"user","sandboxPolicy":{"type":"dangerFullAccess"},"activePermissionProfile":{"id":":danger-full-access","extends":null},"effort":"max""#,
-        )
-        .replace("gpt-5.6-sol", "gpt-6-astra");
-        let observed = normalize_codex_thread_settings(&astra).unwrap();
-        assert_eq!(observed.model.as_deref(), Some("gpt-6-astra"));
-        assert_eq!(observed.reasoning.as_deref(), Some("max"));
+        );
+        for model in ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"] {
+            let observed =
+                normalize_codex_thread_settings(&settings.replace("gpt-5.6-sol", model)).unwrap();
+            assert_eq!(observed.model.as_deref(), Some(model));
+            assert_eq!(observed.reasoning.as_deref(), Some("max"));
+        }
     }
 
     #[test]
