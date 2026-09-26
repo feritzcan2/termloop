@@ -172,3 +172,27 @@ fn invalid_identity_and_directory_are_rejected_before_network_work() {
         assert!(CodexResumePermissions::new(id, cwd, CodexPermissionMode::Plan).is_none());
     }
 }
+
+#[test]
+fn resume_applies_and_verifies_explicit_model_and_effort() {
+    let request = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Plan)
+        .unwrap().with_configuration("gpt-5.6-terra", "low");
+    assert_eq!(request.params()["model"], "gpt-5.6-terra");
+    assert_eq!(request.params()["config"]["model_reasoning_effort"], "low");
+    let mut result = json!({
+        "thread": { "id": THREAD }, "approvalPolicy": "on-request",
+        "approvalsReviewer": "user", "sandbox": { "type": "readOnly" },
+        "model": "gpt-5.6-terra", "reasoningEffort": "low",
+    });
+    assert!(request.matches(&result));
+    result["model"] = json!("gpt-5.6-sol");
+    assert!(!request.matches(&result));
+    result["model"] = json!("gpt-5.6-terra");
+    result["reasoningEffort"] = json!("high");
+    assert!(!request.matches(&result));
+    let defaults = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Plan)
+        .unwrap().with_configuration("default", "default");
+    assert!(defaults.params().get("model").is_none());
+    assert!(defaults.params().get("config").is_none());
+    assert!(defaults.matches(&result));
+}
