@@ -10,3 +10,11 @@
 .assistant-terminal-frame { height: 100%; }
 
 .terminal-pane-body .terminal-resize-owner-badge, .terminal-pane-body > .terminal-recovery-strip { grid-area: 1 / 1; }
+
+.terminal-stream-message { display: flex; flex: 1 1 220px; flex-direction: column; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
+.terminal-stream-message strong { font-weight: 600; }
+.terminal-stream-status--unavailable { flex-wrap: wrap; gap: 10px 16px; padding: 12px 14px; color: var(--text-primary, #eee); background: color-mix(in srgb, var(--bg-panel, #202226) 87%, #edac43); border-top: 2px solid #d9962e; border-left: 4px solid #d9962e; font-size: 12px; line-height: 18px; }
+.terminal-stream-status--unavailable strong { font-size: 14px; }
+.terminal-stream-actions { flex-wrap: wrap; }
+.terminal-stream-actions .terminal-reconnect-button { padding: 6px 12px; border-color: #d9962e; background: #edac43; color: #231b0f; font-weight: 700; }
+.terminal-stream-actions button:disabled { opacity: .65; cursor: wait; }
