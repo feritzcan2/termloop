@@ -35,7 +35,7 @@ function fixture() {
     const live = new Set(["a", "b"]);
     return { live, stopProfile: vi.fn((id: string) => { live.delete(id); }) };
   };
-  const connections = { ...resourceOwner(), summaries: vi.fn(async () => snapshot()) };
+  const connections = { ...resourceOwner(), reconnect: vi.fn(async (_id: string) => {}), summaries: vi.fn(async () => snapshot()) };
   const gateways = resourceOwner();
   const forwards = resourceOwner();
   const lifecycle = new ConnectionProfileLifecycle(profiles, connections, gateways, forwards);
@@ -43,6 +43,26 @@ function fixture() {
 }
 
 describe("ConnectionProfileLifecycle", () => {
+  it("resets only the selected computer's control and terminal connections", async () => {
+    const f = fixture();
+    await f.lifecycle.reconnect("a");
+    expect(f.connections.reconnect).toHaveBeenCalledExactlyOnceWith("a");
+    expect(f.gateways.stopProfile).toHaveBeenCalledExactlyOnceWith("a");
+    expect(f.gateways.live.has("b")).toBe(true);
+    expect(f.connections.stopProfile).not.toHaveBeenCalled();
+    expect(f.forwards.stopProfile).not.toHaveBeenCalled();
+    expect(f.profiles.remove).not.toHaveBeenCalled();
+    expect(f.connections.reconnect.mock.invocationCallOrder[0]).toBeLessThan(f.gateways.stopProfile.mock.invocationCallOrder[0]!);
+  });
+
+  it("does not retire a terminal gateway when control reconnection rejects the profile", async () => {
+    const f = fixture();
+    f.connections.reconnect.mockRejectedValueOnce(new Error("unknownConnectionProfile"));
+    await expect(f.lifecycle.reconnect("missing")).rejects.toThrow("unknownConnectionProfile");
+    expect(f.gateways.stopProfile).not.toHaveBeenCalled();
+    await expect(f.lifecycle.reconnect("a")).resolves.toEqual(f.snapshot());
+  });
+
   it("returns the saved profile and both warnings when refreshing fails", async () => {
     const f = fixture();
     f.connections.summaries.mockRejectedValueOnce(new Error("private refresh diagnostic"));
