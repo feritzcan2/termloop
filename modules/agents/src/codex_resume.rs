@@ -11,6 +11,8 @@ pub struct CodexResumePermissions {
     native_thread_id: String,
     cwd: String,
     permission: CodexPermissionMode,
+    model: Option<String>,
+    reasoning: Option<String>,
 }
 
 impl CodexResumePermissions {
@@ -26,7 +28,17 @@ impl CodexResumePermissions {
             native_thread_id: native_thread_id.into(),
             cwd: cwd.into(),
             permission,
+            model: None,
+            reasoning: None,
         })
+    }
+
+    /// Apply explicit launch selections before the remote TUI attaches.
+    /// Defaults preserve the provider's saved conversation settings.
+    pub fn with_configuration(mut self, model: &str, reasoning: &str) -> Self {
+        self.model = (model != "default").then(|| model.to_owned());
+        self.reasoning = (reasoning != "default").then(|| reasoning.to_owned());
+        self
     }
 
     pub fn native_thread_id(&self) -> &str {
@@ -57,14 +69,21 @@ impl CodexResumePermissions {
 
     fn params(&self) -> Value {
         let (approval, reviewer, sandbox, _) = self.settings();
-        json!({
+        let mut params = json!({
             "threadId": self.native_thread_id,
             "cwd": self.cwd,
             "approvalPolicy": approval,
             "approvalsReviewer": reviewer,
             "sandbox": sandbox,
             "excludeTurns": true,
-        })
+        });
+        if let Some(model) = &self.model {
+            params["model"] = json!(model);
+        }
+        if let Some(reasoning) = &self.reasoning {
+            params["config"] = json!({ "model_reasoning_effort": reasoning });
+        }
+        params
     }
 
     fn matches(&self, result: &Value) -> bool {
@@ -73,6 +92,12 @@ impl CodexResumePermissions {
             && result.get("approvalPolicy").and_then(Value::as_str) == Some(approval)
             && result.get("approvalsReviewer").and_then(Value::as_str) == Some(reviewer)
             && result.pointer("/sandbox/type").and_then(Value::as_str) == Some(sandbox)
+            && self.model.as_ref().is_none_or(|model| {
+                result.get("model").and_then(Value::as_str) == Some(model.as_str())
+            })
+            && self.reasoning.as_ref().is_none_or(|reasoning| {
+                result.get("reasoningEffort").and_then(Value::as_str) == Some(reasoning.as_str())
+            })
     }
 }
 
