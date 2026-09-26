@@ -73,13 +73,17 @@ test("Ask-To advertises independent defaults and user-requested initial selectio
   assert.deepEqual(required, ["target", "message"]);
   assert.equal(properties.model.default, "default");
   assert.equal(properties.reasoning.default, "default");
-  assert.ok(properties.model.enum.includes("gpt-6-astra"));
+  for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+    assert.ok(properties.model.enum.includes(model));
+  }
   assert.deepEqual(properties.reasoning.enum, ["default", "low", "medium", "high", "xhigh", "max"]);
   assert.match(definition.description, /only when the user explicitly requests/);
   assert.match(definition.description, /Never infer or choose a non-default setting/);
   for (const target of ["claude", "codex"]) {
     const rule = allOf.find((rule) => rule.if.properties?.target?.const === target);
-    assert.equal(rule.then.properties.model.enum.includes("gpt-6-astra"), target === "codex");
+    for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+      assert.equal(rule.then.properties.model.enum.includes(model), target === "codex");
+    }
     assert.equal(rule.then.properties.model.enum.includes("opus"), target === "claude");
   }
   const reuse = allOf.find((rule) => rule.if.required.includes("conversationId"));
