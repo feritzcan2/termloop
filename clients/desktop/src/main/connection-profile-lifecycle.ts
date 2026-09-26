@@ -14,10 +14,20 @@ export class ConnectionProfileLifecycle {
 
   constructor(
     private readonly profiles: Pick<ConnectionProfileStore, "connect" | "setEnabled" | "remove">,
-    private readonly connections: Pick<ConnectionRegistry, "summaries" | "stopProfile">,
+    private readonly connections: Pick<ConnectionRegistry, "summaries" | "stopProfile" | "reconnect">,
     private readonly gateways: ProfileResources,
     private readonly forwards: ProfileResources,
   ) {}
+
+  reconnect(profileId: string): Promise<ConnectionProfileSummary[]> {
+    return this.#serialize(async () => {
+      await this.connections.reconnect(profileId);
+      // Retire the terminal socket too, including a silently stuck gateway.
+      // Its loss event reattaches the existing views without restarting PTYs.
+      this.gateways.stopProfile(profileId);
+      return this.connections.summaries();
+    });
+  }
 
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult> {
     return this.#serialize(async () => {

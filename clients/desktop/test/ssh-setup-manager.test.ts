@@ -155,7 +155,7 @@ describe("SSH setup orchestration", () => {
       setEnabled: vi.fn(), remove: vi.fn(),
     };
     const resources = { stopProfile: vi.fn() };
-    const lifecycle = new ConnectionProfileLifecycle(profiles, { ...resources, summaries: vi.fn().mockRejectedValue(new Error("Refresh failed")) }, resources, resources);
+    const lifecycle = new ConnectionProfileLifecycle(profiles, { ...resources, reconnect: vi.fn(), summaries: vi.fn().mockRejectedValue(new Error("Refresh failed")) }, resources, resources);
     const save = lifecycle.connect.bind(lifecycle);
     const verify = vi.fn().mockRejectedValueOnce(new Error("Offline")).mockRejectedValueOnce(new Error("Offline")).mockResolvedValue(undefined);
     for (let attempt = 0; attempt < 2; attempt++) await expect(manager.connect(1, reviewed.id, save, verify)).rejects.toThrow("Offline");

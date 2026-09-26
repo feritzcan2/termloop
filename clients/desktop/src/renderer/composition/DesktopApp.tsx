@@ -66,6 +66,7 @@ import { requireQuickActionSession } from "../quick-action-result.js";
 import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
+import { withTerminalReconnect } from "./terminal-reconnect.js";
 import { copyRemoteSkill, remoteSkillComputers } from "./remote-skills.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
@@ -141,6 +142,12 @@ const terminalPool = new TerminalPool(
   (sessionId) => { void pasteImageToSession(sessionId); },
 );
 terminalPool.setAppearanceTheme(appearanceTheme());
+const terminalPresentation = withTerminalReconnect(
+  terminalPool.presentationPort,
+  (id) => projectionStore.getSnapshot().sessions.find((session) => session.id === id),
+  (profileId) => desktopApi.connectionProfileReconnect(profileId),
+  (profileId) => terminalPool.reconnectAttachments(profileId),
+);
 subscribeAppearanceTheme(() => terminalPool.setAppearanceTheme(appearanceTheme()));
 let layoutLoadPromise: Promise<void> | undefined;
 let projectionRefreshCount = 0;
@@ -2667,7 +2674,7 @@ export function DesktopApp() {
       resizeLayoutSplit={resizeLayoutSplit}
       closePane={closePane}
       clearPane={clearPane}
-      terminalPresentation={terminalPool.presentationPort}
+      terminalPresentation={terminalPresentation}
       terminalResizeOwner={(sessionId) => terminalPool.resizeOwnership(sessionId)}
       reorderSession={reorderSession}
       agentGroups={selectedProject ? presentation.agentGroupsByProject[selectedProject.id] ?? [] : []}
