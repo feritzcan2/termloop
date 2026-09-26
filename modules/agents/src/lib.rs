@@ -1256,6 +1256,18 @@ async fn proxy_codex_connection(
                                 runtime_epoch,
                                 event: AgentRuntimeEvent::ResumeRefObserved(resume_ref),
                             });
+                            // A resumed thread may already be idle and emit no status-change
+                            // notification. Use the matched provider response, never a guessed state.
+                            if let Some(signal) = serde_json::from_str::<serde_json::Value>(text)
+                                .ok()
+                                .and_then(|response| response.pointer("/result/thread/status").and_then(normalize_codex_thread_status))
+                            {
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::Observation(signal),
+                                });
+                            }
                         }
                         if notification_is_in_scope {
                             if let Some(resume_ref) = normalize_codex_resume_ref(text) {
@@ -2576,7 +2588,7 @@ mod tests {
         let upstream_endpoint = format!("ws://{}", listener.local_addr().unwrap());
         let resume_request =
             r#"{"id":42,"method":"thread/resume","params":{"threadId":"thread-main"}}"#;
-        let resume_response = r#"{"id":42,"result":{"thread":{"id":"thread-main"}}}"#;
+        let resume_response = r#"{"id":42,"result":{"thread":{"id":"thread-main","status":{"type":"idle"}}}}"#;
         let history_probe_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-history-probe","status":{"type":"notLoaded"}}}"#;
         let unrelated_name = r#"{"method":"thread/name/updated","params":{"threadId":"thread-history-probe","threadName":"Unrelated name"}}"#;
         let main_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-main","status":{"type":"idle"}}}"#;
@@ -2626,6 +2638,10 @@ mod tests {
                 runtime_epoch: 77,
                 event: AgentRuntimeEvent::Observation(AgentSignal::Stopped),
             }
+        );
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(2)).unwrap().event,
+            AgentRuntimeEvent::Observation(AgentSignal::Stopped)
         );
         assert!(matches!(
             received.recv_timeout(Duration::from_millis(100)),

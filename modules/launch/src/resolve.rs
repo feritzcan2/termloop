@@ -432,7 +432,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             };
             Some(termloop_agents::CodexResumePermissions::new(
                 &resume_ref.native_session_id, cwd, mode,
-            ).ok_or(InvocationError::InvalidResumeReference)?)
+            ).ok_or(InvocationError::InvalidResumeReference)?
+                .with_configuration(model, reasoning))
         } else {
             None
         },
