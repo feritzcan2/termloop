@@ -88,7 +88,7 @@ describe("Agent Setup", () => {
     });
   });
 
-  it("keeps configured launch settings even when the improver cannot open", async () => {
+  it.each(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])("keeps %s launch settings even when the improver cannot open", async (model) => {
     const start = vi.fn(async () => "provider unavailable");
     const close = vi.fn();
     await act(async () => root.render(createElement(AgentSetupDialog, {
@@ -106,19 +106,19 @@ describe("Agent Setup", () => {
         select.dispatchEvent(new Event("change", { bubbles: true }));
       });
     };
-    await choose("Model", "gpt-6-astra");
+    await choose("Model", model);
     await choose("Permission", "bypassPermissions");
     await choose("Reasoning", "medium");
     await act(async () => host.querySelector<HTMLButtonElement>('button[type="submit"]')?.click());
 
     expect(start).toHaveBeenCalledWith({
       agentId: "codex",
-      model: "gpt-6-astra",
+      model,
       permission: "bypassPermissions",
       reasoning: "medium",
     });
     expect(readQuickActionMemory().presets.codex).toEqual({
-      model: "gpt-6-astra",
+      model,
       permission: "bypassPermissions",
       reasoning: "medium",
     });

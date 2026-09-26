@@ -186,6 +186,8 @@ fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
         json!({"target":"codex","message":"review"}),
         json!({"target":"codex","message":"review","model":"default","reasoning":"default"}),
         json!({"target":"codex","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-sol"}),
+        json!({"target":"codex","message":"review","model":"gpt-6-luna"}),
         json!({"target":"codex","message":"review","reasoning":"high"}),
         json!({"target":"codex","message":"review","model":"gpt-6-astra","reasoning":"max"}),
         json!({"target":"claude","message":"review","model":"opus","reasoning":"high"}),
@@ -199,6 +201,8 @@ fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
     for params in [
         json!({"target":"codex","message":"review","model":"opus"}),
         json!({"target":"claude","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"claude","message":"review","model":"gpt-6-sol"}),
+        json!({"target":"claude","message":"review","model":"gpt-6-luna"}),
         json!({"target":"codex","message":"review","model":"unknown"}),
         json!({"target":"codex","message":"review","reasoning":"unknown"}),
         json!({"target":"codex","message":"review","model":null}),
