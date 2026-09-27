@@ -1,5 +1,5 @@
 import type { Session, Task, WorkflowExecution } from "../model.js";
-import { agentName, isLiveSession, sessionLabel } from "../model.js";
+import { agentName, isLiveSession } from "../model.js";
 import { workflowStatusLabel, workflowStepSessionId } from "./workflow-presentation.js";
 
 export type ActiveAgentWorkflow = {
@@ -79,9 +79,11 @@ export function activeAgentWorkflowAction(session: Session): { label: string; re
   return { label: "Open workflow", resume: false };
 }
 
-/// Role names are presentation only: preserve the stored Session name and use
-/// exact workflow membership, including finished runs. A reused helper shows
-/// its most recently assigned role, not every role it has ever held.
+/// Role names are presentation only and never rename the stored Session. A
+/// workflow member's stored name is usually its prompt's first line, so the
+/// row names the role and the provider instead. Membership is exact, including
+/// finished runs. A reused helper shows its most recently assigned role, not
+/// every role it has ever held.
 export function workflowAgentLabels(
   executions: readonly WorkflowExecution[],
   sessions: readonly Session[],
@@ -89,16 +91,15 @@ export function workflowAgentLabels(
   const labels = new Map<string, string>();
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
-    const label = (sessionId: string, role: string, coordinator = false) => {
+    const label = (sessionId: string, role: string) => {
       const session = sessionsById.get(sessionId);
       if (!session || session.kind !== "Agent" || session.project_id !== execution.projectId
         || session.archived_at_epoch_ms !== null) return;
-      const name = coordinator && session.name === execution.workflowName ? agentName(session) : sessionLabel(session);
-      labels.set(sessionId, `${role} · ${name}`);
+      labels.set(sessionId, `${role} · ${agentName(session)}`);
     };
     const currentStep = execution.steps[execution.currentStepIndex];
     label(execution.coordinatorSessionId,
-      execution.status !== "completed" && currentStep?.kind === "fix" ? "Fixer" : "Implementer", true);
+      execution.status !== "completed" && currentStep?.kind === "fix" ? "Fixer" : "Implementer");
     for (const step of execution.steps) {
       if (step.kind !== "discuss" && step.kind !== "review") continue;
       const participant = execution.participants.find((candidate) => candidate.stepId === step.id);
@@ -115,7 +116,38 @@ export type WorkflowAgentGroup = {
   statusLabel: string;
   needsAttention: boolean;
   context: string;
+  /// The current step, e.g. "2/4 Implement"; absent once the run finished.
+  stepLabel: string | undefined;
+  /// Coordinator first, then each distinct participant in step order.
+  memberSessionIds: readonly string[];
+  updatedAtEpochMs: number;
 };
+
+export type WorkflowAgentRun = {
+  workflow: WorkflowAgentGroup;
+  sessions: readonly Session[];
+};
+
+/// One rail entry per execution that still owns at least one listed Agent. A
+/// Session reused by a newer run belongs only to that newer run, exactly as
+/// the per-Session group map resolves it.
+export function workflowAgentRuns(
+  sessions: readonly Session[],
+  groups: ReadonlyMap<string, WorkflowAgentGroup> | undefined,
+): WorkflowAgentRun[] {
+  if (!groups?.size) return [];
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  const runs = new Map<string, WorkflowAgentRun>();
+  for (const workflow of groups.values()) {
+    if (runs.has(workflow.executionId)) continue;
+    const members = workflow.memberSessionIds
+      .filter((sessionId) => groups.get(sessionId)?.executionId === workflow.executionId)
+      .map((sessionId) => sessionsById.get(sessionId))
+      .filter((session): session is Session => session !== undefined);
+    if (members.length) runs.set(workflow.executionId, { workflow, sessions: members });
+  }
+  return [...runs.values()];
+}
 
 /// A visual group is backed by the execution's exact membership, not by its
 /// name, worktree or an arbitrary Ask-To helper attached to the same lead.
@@ -130,6 +162,8 @@ export function workflowAgentGroups(
   for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
     const task = execution.taskId ? tasksById.get(execution.taskId) : undefined;
     const statusLabel = workflowStatusLabel(execution);
+    const currentStep = execution.steps[execution.currentStepIndex];
+    const memberSessionIds = [...new Set([execution.coordinatorSessionId, ...execution.participants.map((participant) => participant.sessionId)])];
     const group: WorkflowAgentGroup = {
       executionId: execution.id,
       name: execution.workflowName,
@@ -138,8 +172,12 @@ export function workflowAgentGroups(
       needsAttention: execution.status === "completed"
         && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached"),
       context: [execution.taskId === null ? "Project checkout" : task?.project_id === execution.projectId ? task.title : undefined, execution.workflowName, statusLabel].filter(Boolean).join(" · "),
+      stepLabel: execution.status !== "completed" && currentStep
+        ? `${execution.currentStepIndex + 1}/${execution.steps.length} ${currentStep.title}` : undefined,
+      memberSessionIds,
+      updatedAtEpochMs: execution.updatedAtEpochMs,
     };
-    for (const sessionId of [execution.coordinatorSessionId, ...execution.participants.map((participant) => participant.sessionId)]) {
+    for (const sessionId of memberSessionIds) {
       const session = sessionsById.get(sessionId);
       if (session?.kind === "Agent" && session.archived_at_epoch_ms === null && session.project_id === execution.projectId) groups.set(sessionId, group);
     }
