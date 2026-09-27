@@ -20,7 +20,8 @@ const binDirectory = path.join(testHomeDirectory, ".local", "bin");
 const tracePath = path.join(temporary, "provider-modes.txt");
 const runtimeFile = path.join(runtimeDirectory, "runtime.json");
 const evidencePath = path.join(root, "artifacts/evidence/f1/agent-fork.local.json");
-const serverBinary = path.join(root, "target", "debug", process.platform === "win32" ? "termloop-server.exe" : "termloop-server");
+const cargoTargetDirectory = path.resolve(root, process.env.CARGO_TARGET_DIR ?? "target");
+const serverBinary = path.join(cargoTargetDirectory, "debug", process.platform === "win32" ? "termloop-server.exe" : "termloop-server");
 const wsModule = createRequire(import.meta.url).resolve("ws");
 
 await Promise.all([
@@ -82,7 +83,7 @@ try {
     baseRef: "refs/remotes/origin/main",
   });
   const claude = await launchAgent(record, { projectId: project.id, cwd: projectDirectory, agentId: "claude" });
-  const codex = await launchAgent(record, { projectId: project.id, cwd: projectDirectory, agentId: "codex" });
+  const codex = await launchAgent(record, { projectId: project.id, cwd: projectDirectory, agentId: "codex", model: "default", permission: "bypassPermissions", reasoning: "default" });
   const taskClaude = await launchTaskAgent(record, { taskId: task.id, agentId: "claude" });
   const terminal = await controlCall(record, "session.launchTerminal", { projectId: project.id, cwd: projectDirectory });
   await controlCall(record, "session.rename", { sessionId: claude.id, name: "Research" });
@@ -305,24 +306,39 @@ if (args[0] === "app-server") {
       return;
     }
     if (initialize.method === "thread/fork") {
-      if (initialize.params.ephemeral !== true || initialize.params.excludeTurns !== true) {
-        socket.send(JSON.stringify({ id: initialize.id, error: { message: "Expected a bounded ephemeral history probe" } }));
+      const p = initialize.params;
+      if (p.ephemeral === true && p.excludeTurns === true) {
+        fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-history-probe\\n");
+        socket.send(JSON.stringify({ id: initialize.id, result: { thread: { id: crypto.randomUUID() } } }));
         return;
       }
-      fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-history-probe\\n");
-      socket.send(JSON.stringify({ id: initialize.id, result: { thread: { id: crypto.randomUUID() } } }));
+      if (p.excludeTurns !== true || !p.approvalPolicy || !p.sandbox) {
+        socket.send(JSON.stringify({ id: initialize.id, error: { message: "Expected explicit fork permissions" } }));
+        return;
+      }
+      fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-fork\\n");
+      socket.send(JSON.stringify({ id: initialize.id, result: {
+        thread: { id: crypto.randomUUID(), forkedFromId: p.threadId },
+        approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer,
+        sandbox: { type: { "read-only": "readOnly", "workspace-write": "workspaceWrite", "danger-full-access": "dangerFullAccess" }[p.sandbox] },
+        model: p.model, reasoningEffort: p.config?.model_reasoning_effort,
+      } }));
       return;
     }
     socket.send(JSON.stringify({ method: "thread/started", params: { thread: { id: initialize.mode === "resume" ? initialize.sourceId : crypto.randomUUID() } } }));
   }));
   return;
 }
-fs.appendFileSync(${JSON.stringify(tracePath)}, (args[0] === "fork" ? "codex-fork" : "codex-fresh") + "\\n");
-if (args[0] === "fork" && require("node:path").basename(process.cwd()) === "rejected-codex") {
+if (args[0] === "fork") { process.stderr.write("Remote fork must be prepared through App Server\\n"); process.exit(25); }
+if (args[0] === "resume" && args.some((arg) => ["--dangerously-bypass-approvals-and-sandbox", "--approve-for-me", "--sandbox", "--ask-for-approval"].includes(arg) || arg.startsWith("sandbox_workspace_write."))) {
+  process.stderr.write("Permission overrides are not supported when resuming a remote task.\\n"); process.exit(26);
+}
+if (args[0] !== "resume") fs.appendFileSync(${JSON.stringify(tracePath)}, "codex-fresh\\n");
+if (args[0] === "resume" && require("node:path").basename(process.cwd()) === "rejected-codex") {
   process.stderr.write("CODEX_FORK_REJECTED_DIAGNOSTIC\\n");
   process.exit(23);
 }
-if (args[0] === "fork" && require("node:path").basename(process.cwd()) === "flaky-codex") {
+if (args[0] === "resume" && require("node:path").basename(process.cwd()) === "flaky-codex") {
   const marker = require("node:path").join(process.cwd(), ".first-fork-exited");
   const exits = fs.existsSync(marker) ? Number(fs.readFileSync(marker, "utf8")) : 0;
   if (exits < 3) { fs.writeFileSync(marker, String(exits + 1)); process.exit(23); }
@@ -332,7 +348,7 @@ const connect = () => {
   const socket = new WebSocket(endpoint);
   socket.on("open", () => socket.send(JSON.stringify({ mode: args[0] || "fresh", sourceId: args[1] || null })));
 };
-if (args[0] === "fork") {
+if (args[0] === "resume") {
   process.stdout.write("\u001b[6n");
   let input = "";
   const timeout = setTimeout(() => process.exit(24), 2_000);
@@ -404,7 +420,7 @@ async function controlCall(record, method, params = {}) {
 
 async function launchAgent(record, params) {
   const preview = await controlCall(record, "session.previewAgent", params);
-  return controlCall(record, "session.launchAgent", { ...params, launchTicket: preview.launch_ticket });
+  return controlCall(record, "session.launchAgent", { projectId: params.projectId, cwd: params.cwd, agentId: params.agentId, launchTicket: preview.launch_ticket });
 }
 
 async function launchTaskAgent(record, params) {

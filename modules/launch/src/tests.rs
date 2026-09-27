@@ -288,3 +288,62 @@ fn remote_resume_routes_network_permissions_to_server_not_tui() {
         );
     }
 }
+
+#[test]
+fn remote_fork_prepares_permissions_and_binds_only_the_new_thread() {
+    let template = PromptTemplate {
+        id: "fork-test",
+        version: 1,
+        authored_body: "Continue",
+    };
+    let source = "019f1dae-3bf3-73d1-b3c7-08ddbbd1f036";
+    let child = "019f1dae-3bf3-73d1-b3c7-08ddbbd1f037";
+    let handle = ConversationHandle::from_native("codex", source.into()).unwrap();
+    for permission in ["default", "acceptEdits", "plan", "bypassPermissions"] {
+        let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+        request.conversation = handle.fork();
+        request.permission = permission;
+        request.workspace_network = Some(false);
+        request.observation = Some(AgentObservationLaunch {
+            session_id: "session",
+            endpoint: "http://localhost/hook",
+            token: "token",
+            transport: AgentObservationLaunchTransport::DaemonOwnedBridge {
+                endpoint: CODEX_APP_SERVER_RUNTIME_PLACEHOLDER,
+            },
+        });
+        let mut payload = resolve(request).unwrap().into_payload();
+        let preparation = payload.codex_resume_permissions().unwrap();
+        assert!(preparation.is_fork());
+        assert_eq!(preparation.native_thread_id(), source);
+        for forbidden in permission_args("codex", permission).unwrap() {
+            assert!(!payload.args().contains(&forbidden));
+        }
+        assert!(
+            !payload
+                .args()
+                .iter()
+                .any(|a| a.contains("sandbox_workspace_write"))
+        );
+        let preview = serde_json::to_string(payload.inspectable_manifest()).unwrap();
+        assert!(!preview.contains(source));
+        assert!(payload.bind_codex_fork_thread(source, source).is_err());
+        assert!(
+            payload
+                .bind_codex_fork_thread("wrong-source", child)
+                .is_err()
+        );
+        assert!(payload.bind_codex_fork_thread(source, "").is_err());
+        payload.bind_codex_fork_thread(source, child).unwrap();
+        assert!(payload.args().windows(2).any(|p| p == ["resume", child]));
+        assert!(!payload.args().iter().any(|a| a == source || a == "fork"));
+        assert!(payload.bind_codex_fork_thread(source, child).is_err());
+        assert_eq!(
+            preview,
+            serde_json::to_string(payload.inspectable_manifest()).unwrap()
+        );
+        payload
+            .bind_codex_app_server_endpoint("ws://127.0.0.1:4567")
+            .unwrap();
+    }
+}

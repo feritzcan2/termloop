@@ -10,6 +10,7 @@ mod agent_message;
 pub mod archive;
 pub(crate) mod ask_to;
 mod deleted;
+mod fork_preparation;
 mod history_repair;
 mod lifecycle;
 mod project_workflow;
@@ -340,6 +341,13 @@ impl AgentLaunchPlan {
         use crate::runtime::provider_runtime::{
             ProviderRuntimeMode, ProviderRuntimePreparation, ProviderRuntimePreparationError,
         };
+        if self.agent_id == "codex"
+            && self.fork_source_ref.is_some()
+            && let Err(error) = self.prepare_codex_fork_launch()
+        {
+            self.observation_warning = Some(error.to_string());
+            return;
+        }
         if let Some(source) = self.history_source.as_ref() {
             let fresh = termloop_platform::read_bounded_history_file_slices(&source.source, 1, 1);
             self.history_source_validated = fresh.is_ok_and(|fresh| {
@@ -374,6 +382,7 @@ impl AgentLaunchPlan {
             history: self
                 .history_source_ref
                 .as_ref()
+                .or(self.fork_source_ref.as_ref())
                 .map(|reference| reference.native_session_id.as_str()),
         });
         self.account_prepared = !matches!(
@@ -412,6 +421,17 @@ impl AgentLaunchPlan {
 
     pub fn verify_fork_source_history(&mut self) -> Result<(), CoreError> {
         if self.agent_id != "codex" {
+            return Ok(());
+        }
+        // Prepared remote forks already validated history before the API fork,
+        // verified the child's settings, and bound the TUI to that child.
+        if self.provider_runtime.codex().is_some()
+            && self
+                .prepared_launch
+                .as_ref()
+                .and_then(|launch| launch.codex_resume_permissions())
+                .is_some_and(|request| request.is_fork())
+        {
             return Ok(());
         }
         let native_thread_id = self

@@ -266,6 +266,45 @@ impl LaunchPayload {
     pub fn codex_resume_permissions(&self) -> Option<&termloop_agents::CodexResumePermissions> {
         self.codex_resume_permissions.as_ref()
     }
+
+    /// Attach the TUI to the new thread created and verified by App Server.
+    /// Never resume the source or ask the TUI to fork a second time.
+    pub fn bind_codex_fork_thread(
+        &mut self,
+        source_id: &str,
+        child_id: &str,
+    ) -> Result<(), InvocationError> {
+        let request = self
+            .codex_resume_permissions
+            .as_ref()
+            .filter(|request| request.is_fork() && request.native_thread_id() == source_id)
+            .ok_or(InvocationError::InvalidRuntimeBinding)?;
+        if child_id == request.native_thread_id()
+            || termloop_domain::ResumeRef::for_provider(
+                termloop_domain::ResumeProvider::Codex,
+                child_id.into(),
+            )
+            .is_none()
+        {
+            return Err(InvocationError::InvalidRuntimeBinding);
+        }
+        let mut matches = self
+            .args
+            .windows(2)
+            .enumerate()
+            .filter_map(|(index, pair)| {
+                (pair[0] == "fork" && pair[1] == source_id).then_some(index)
+            });
+        let index = matches
+            .next()
+            .ok_or(InvocationError::InvalidRuntimeBinding)?;
+        if matches.next().is_some() {
+            return Err(InvocationError::InvalidRuntimeBinding);
+        }
+        self.args[index] = "resume".into();
+        self.args[index + 1] = child_id.into();
+        Ok(())
+    }
     pub fn initial_input(&self) -> Option<&str> {
         self.initial_input
             .as_ref()

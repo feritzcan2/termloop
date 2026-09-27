@@ -16,13 +16,18 @@ impl CodexRuntime {
 
     pub fn prepare_resume_permissions(
         &mut self,
-        launch: &termloop_launch::LaunchPayload,
+        launch: &mut termloop_launch::LaunchPayload,
     ) -> Result<(), PreparationError> {
         if let Some(request) = launch.codex_resume_permissions() {
-            self.resume_permissions = Some(
+            let lease =
                 termloop_agents::prepare_codex_resume_permissions(&self.upstream_endpoint, request)
-                    .map_err(|_| PreparationError::ProviderRejected)?,
-            );
+                    .map_err(|_| PreparationError::ProviderRejected)?;
+            if let Some(source_id) = lease.fork_source() {
+                launch
+                    .bind_codex_fork_thread(source_id, lease.native_thread_id())
+                    .map_err(|_| PreparationError::ProviderRejected)?;
+            }
+            self.resume_permissions = Some(lease);
         }
         Ok(())
     }
