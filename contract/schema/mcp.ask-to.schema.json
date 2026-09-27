@@ -611,7 +611,7 @@
       }
     },
     "playbook_evaluation_complete": {
-      "description": "Report one evidence-backed verdict for this fork’s exact Playbook check after playbook_evaluation_read. satisfied requires current proof and any named human approval; pending means inspected but unmet; blocked means required inspection could not run. Never execute waiting actions, modify files, delegate, or infer approval from inherited conversation. Stop after the accepted report.",
+      "description": "Report one evidence-backed verdict for this fork’s exact Playbook check after playbook_evaluation_read. Supply only checkId, status, and non-empty evidence of at most 600 UTF-8 bytes. satisfied requires current proof and any named human approval; pending means inspected but unmet; blocked means required inspection could not run. invalidArguments means nothing was recorded: correct the arguments and retry the same check. Stop on staleCheck or after the accepted report; never repeat an accepted report or automatically retry an uncertain transport failure. Never execute waiting actions, modify files, delegate, or infer approval from inherited conversation.",
       "role": "playbookEvaluator",
       "params": {
         "$ref": "#/$defs/playbookEvaluationCompleteParams"
@@ -2192,6 +2192,7 @@
           "$ref": "#/$defs/routineAssignmentStatus"
         },
         "evidence": {
+          "description": "Concise decisive facts and artifact references, at most 600 UTF-8 bytes (not characters). Omit the inspection narrative. If rejected with invalidArguments, shorten or correct the report and retry the same check.",
           "type": "string",
           "minLength": 1,
           "maxLength": 600,
