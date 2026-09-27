@@ -192,6 +192,29 @@ async fn fork_agent_session_once(
     state: &AppState,
 ) -> Result<serde_json::Value, AgentForkAttemptFailure> {
     let plan = state.core.lock().await.plan_agent_fork(params)?;
+    execute_fork_plan(plan, deadline, state).await
+}
+
+pub(in crate::app) async fn launch_playbook_evaluation_fork(
+    plan: termloop_core::AgentLaunchPlan,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    match execute_fork_plan(plan, Instant::now() + Duration::from_secs(10), state).await {
+        Ok(value) => Ok(value),
+        Err(failure) => {
+            if let Some((session_id, runtime_epoch)) = failure.child.as_ref() {
+                rollback_failed_agent_fork(state, session_id, *runtime_epoch).await;
+            }
+            Err(failure.error)
+        }
+    }
+}
+
+async fn execute_fork_plan(
+    plan: termloop_core::AgentLaunchPlan,
+    deadline: Instant,
+    state: &AppState,
+) -> Result<serde_json::Value, AgentForkAttemptFailure> {
     let PendingAgentFork {
         session: value,
         session_id,

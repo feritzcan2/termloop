@@ -2588,7 +2588,8 @@ mod tests {
         let upstream_endpoint = format!("ws://{}", listener.local_addr().unwrap());
         let resume_request =
             r#"{"id":42,"method":"thread/resume","params":{"threadId":"thread-main"}}"#;
-        let resume_response = r#"{"id":42,"result":{"thread":{"id":"thread-main","status":{"type":"idle"}}}}"#;
+        let resume_response =
+            r#"{"id":42,"result":{"thread":{"id":"thread-main","status":{"type":"idle"}}}}"#;
         let history_probe_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-history-probe","status":{"type":"notLoaded"}}}"#;
         let unrelated_name = r#"{"method":"thread/name/updated","params":{"threadId":"thread-history-probe","threadName":"Unrelated name"}}"#;
         let main_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-main","status":{"type":"idle"}}}"#;

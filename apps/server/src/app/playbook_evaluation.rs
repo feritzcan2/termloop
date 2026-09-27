@@ -1,0 +1,147 @@
+use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
+use termloop_contract::current::{
+    PlaybookEvaluationCompleteParams, ProjectionTopic, RoutineAssignmentStatus,
+};
+use termloop_core::CoreError;
+use termloop_core::companion_integrations::tracker_runtime::StewardRoutineClaim;
+use termloop_core::session_launch::PlaybookEvaluationLaunch;
+
+use super::AppState;
+
+/// Both scheduled wakes and explicit next-assignment calls use this path.
+pub(super) async fn route_assignment(
+    state: &AppState,
+    claim: &mut StewardRoutineClaim,
+) -> Result<bool, CoreError> {
+    let outcome = state.core.lock().await.plan_playbook_evaluation(claim)?;
+    let delegated = match outcome {
+        PlaybookEvaluationLaunch::Steward(result) => {
+            claim.result = result;
+            Ok(false)
+        }
+        PlaybookEvaluationLaunch::Delegated(result) => {
+            claim.result = result;
+            Ok(true)
+        }
+        PlaybookEvaluationLaunch::Fork {
+            plan,
+            check_id,
+            result,
+        } => match super::control::launch_playbook_evaluation_fork(*plan, state).await {
+            Ok(_) => {
+                claim.result = result;
+                Ok(true)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Task Playbook evaluation fork unavailable; using Steward fallback");
+                state
+                    .core
+                    .lock()
+                    .await
+                    .fail_playbook_evaluation_launch(&check_id);
+                claim.result["evaluation"] =
+                    json!({"mode": "stewardFallback", "reason": "forkUnavailable"});
+                reap_obsolete_evaluators(state).await;
+                Ok(false)
+            }
+        },
+    }?;
+    if delegated {
+        let state_revision = state.core.lock().await.state_revision();
+        super::invalidation::queue_invalidation(
+            &state.invalidation_requests,
+            super::invalidation::InvalidationRequest {
+                topics: vec![ProjectionTopic::Playbook],
+                state_revision,
+                observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+            },
+        )
+        .await;
+    }
+    Ok(delegated)
+}
+
+pub(super) async fn complete(
+    token: &str,
+    params: PlaybookEvaluationCompleteParams,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let verdict = match params.status {
+        RoutineAssignmentStatus::Satisfied => {
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Passed
+        }
+        RoutineAssignmentStatus::Pending => {
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Waiting
+        }
+        RoutineAssignmentStatus::Blocked => {
+            termloop_core::companion_integrations::playbook_runtime::PlaybookStepVerdict::Blocked
+        }
+    };
+    let completion = state.core.lock().await.complete_playbook_evaluation(
+        token,
+        &params.check_id,
+        verdict,
+        params.evidence,
+    )?;
+    let project_id = completion["projectId"]
+        .as_str()
+        .expect("Core completion project");
+    let result = &completion["result"];
+    super::mcp::finish_routine_report_for(
+        project_id,
+        state,
+        super::mcp::step_verdict_wake(result),
+        vec![
+            ProjectionTopic::Routine,
+            ProjectionTopic::Playbook,
+            ProjectionTopic::Task,
+        ],
+    )
+    .await;
+    state.tracker_runtime_wake.notify_one();
+    let cleanup_state = state.clone();
+    tokio::spawn(async move {
+        reap_obsolete_evaluators(&cleanup_state).await;
+    });
+    Ok(json!({"status": "completed", "stewardReviewRequired": result["stewardReviewRequired"]}))
+}
+
+pub(super) async fn reap_obsolete_evaluators(state: &AppState) {
+    let sessions = state
+        .core
+        .lock()
+        .await
+        .obsolete_playbook_evaluator_sessions();
+    for session_id in sessions {
+        match super::control::terminate_session(json!({"sessionId": session_id}), state).await {
+            Ok(_) | Err(CoreError::NotFound) => {}
+            Err(error) => {
+                tracing::warn!(%error, "Playbook evaluator termination deferred");
+                continue;
+            }
+        }
+        let retired = {
+            state
+                .core
+                .lock()
+                .await
+                .retire_playbook_evaluator_descriptor(&session_id)
+        };
+        match retired {
+            Ok(()) => {
+                let state_revision = state.core.lock().await.state_revision();
+                super::invalidation::queue_durable_commit_invalidation(
+                    state,
+                    super::invalidation::CommitImpact::SessionAgent,
+                    state_revision,
+                )
+                .await;
+            }
+            Err(CoreError::NotFound) => {}
+            Err(error) => {
+                tracing::warn!(%error, "Playbook evaluator descriptor retirement deferred");
+            }
+        }
+    }
+}

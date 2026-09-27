@@ -2,7 +2,9 @@
 
 mod assistant;
 mod personal_agent;
+mod playbook_evaluation;
 mod profiles;
+pub use playbook_evaluation::playbook_evaluator_for_conversation;
 mod project_workflow;
 pub use personal_agent::personal_agent_for_conversation;
 pub use project_workflow::{
@@ -117,13 +119,13 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 21,
+    version: 22,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 39,
+    version: 40,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -264,6 +266,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         ASSISTANT_WAKE_TEMPLATE,
         ASSISTANT_ACTIVATION_TEMPLATE,
         ASK_TO_HELPER_TEMPLATE,
+        playbook_evaluation::PLAYBOOK_EVALUATOR_TEMPLATE,
         ASK_TO_FOLLOWUP_TEMPLATE,
         ASK_TO_REPLY_TEMPLATE,
         ASK_TO_RESUME_TEMPLATE,

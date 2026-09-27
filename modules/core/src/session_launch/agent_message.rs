@@ -134,6 +134,15 @@ impl CoreRuntime {
         message: &str,
     ) -> Result<Value, CoreError> {
         let principal = self.mcp_authorizer.authenticate(token)?;
+        if !matches!(
+            principal.role(),
+            super::AgentMcpRole::Interactive
+                | super::AgentMcpRole::Improver { .. }
+                | super::AgentMcpRole::Helper { .. }
+                | super::AgentMcpRole::Steward { .. }
+        ) {
+            return Err(CoreError::CapabilityDenied);
+        }
         let source = self
             .store
             .sessions()

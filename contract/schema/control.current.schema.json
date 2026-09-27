@@ -2250,7 +2250,9 @@
         "configuration_version_read",
         "configuration_version_write",
         "agent_library_read",
-        "agent_profile_create"
+        "agent_profile_create",
+        "playbook_evaluation_read",
+        "playbook_evaluation_complete"
       ]
     },
     "mcpToolRole": {
@@ -2262,7 +2264,8 @@
         "helper",
         "steward",
         "improver",
-        "agentCreator"
+        "agentCreator",
+        "playbookEvaluator"
       ]
     },
     "mcpToolSettingsDto": {
@@ -2331,8 +2334,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 34,
-          "maxItems": 34,
+          "minItems": 36,
+          "maxItems": 36,
           "uniqueItems": true
         }
       }
