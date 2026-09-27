@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:bfa4fedac2632fc5c73a7ee1c80c6fbb233d7e06dab780d178020279262446c8";
+    "sha256:02e692c406a1f03f6ed692274cca0151ce7d2b2b09a2abec1a5325dc9f2e1fa8";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -7127,9 +7127,33 @@ pub struct PlaybookRuntimeParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PlaybookEvaluationDto {
+    #[serde(rename = "routineId")]
+    pub routine_id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub mode: String,
+    #[serde(
+        rename = "sessionId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub session_id: Option<String>,
+    #[serde(
+        rename = "sourceSessionId",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub source_session_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PlaybookRuntimeResult {
     #[serde(rename = "activePipelineName")]
     pub active_pipeline_name: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub evaluation: Option<PlaybookEvaluationDto>,
     #[serde(
         rename = "processingTaskId",
         deserialize_with = "deserialize_required_nullable"
@@ -26653,48 +26677,113 @@ fn validate_playbook_runtime_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_playbook_evaluation_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("routineId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object.get("taskId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+        }) && object.get("mode").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                ["starting", "taskAgentFork", "stewardFallback"].contains(&text)
+            })
+        }) && object.get("sessionId").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+                || field.is_null())
+        }) && object.get("sourceSessionId").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+                || field.is_null())
+        }) && object.get("reason").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                [
+                    "noUnambiguousTaskAgent",
+                    "forkUnsupported",
+                    "forkUnavailable",
+                    "evaluationCapacity",
+                ]
+                .contains(&text)
+            }) || field.is_null())
+        }) && object.keys().all(|key| {
+            [
+                "routineId",
+                "taskId",
+                "mode",
+                "sessionId",
+                "sourceSessionId",
+                "reason",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_playbook_runtime_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("activePipelineName").is_some_and(|field| {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() <= 120)
-        }) && object.get("processingTaskId").is_some_and(|field| {
-            (field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
-                || field.is_null())
-        }) && object.get("steps").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 24
-                    && items
-                        .iter()
-                        .all(|item| validate_playbook_runtime_step_dto(item))
+        }) && object
+            .get("evaluation")
+            .is_some_and(|field| (validate_playbook_evaluation_dto(field) || field.is_null()))
+            && object.get("processingTaskId").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+                    || field.is_null())
             })
-        }) && object.get("doneTaskIds").is_some_and(|field| {
-            field.as_array().is_some_and(|items| {
-                items.len() <= 512
-                    && items.iter().all(|item| {
-                        item.as_str().is_some_and(|text| {
-                            text.chars().count() >= 1 && text.chars().count() <= 256
+            && object.get("steps").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 24
+                        && items
+                            .iter()
+                            .all(|item| validate_playbook_runtime_step_dto(item))
+                })
+            })
+            && object.get("doneTaskIds").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 512
+                        && items.iter().all(|item| {
+                            item.as_str().is_some_and(|text| {
+                                text.chars().count() >= 1 && text.chars().count() <= 256
+                            })
                         })
-                    })
+                })
             })
-        }) && object.get("stateRevision").is_some_and(|field| {
-            field.as_number().is_some_and(|number| {
-                (number.as_i64().is_some() || number.as_u64().is_some())
-                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            && object.get("stateRevision").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
             })
-        }) && object.keys().all(|key| {
-            [
-                "activePipelineName",
-                "processingTaskId",
-                "steps",
-                "doneTaskIds",
-                "stateRevision",
-            ]
-            .contains(&key.as_str())
-        })
+            && object.keys().all(|key| {
+                [
+                    "activePipelineName",
+                    "evaluation",
+                    "processingTaskId",
+                    "steps",
+                    "doneTaskIds",
+                    "stateRevision",
+                ]
+                .contains(&key.as_str())
+            })
     })
 }
 

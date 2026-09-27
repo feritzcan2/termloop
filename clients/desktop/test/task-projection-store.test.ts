@@ -145,6 +145,7 @@ describe("scoped Task projection merge", () => {
     const store = new ProjectionStore();
     const playbookRuntime = {
       activePipelineName: "Delivery",
+      evaluation: null,
       processingTaskId: "one",
       steps: [{ milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["one"], progress: [], nextAttemptAtEpochMs: null }],
       doneTaskIds: [],

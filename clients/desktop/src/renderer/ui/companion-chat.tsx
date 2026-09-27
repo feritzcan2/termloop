@@ -302,7 +302,7 @@ export function PlaybookStateStrip(props: { summary: PlaybookStateSummary }) {
       {step.title}{step.waitingCount > 0 ? ` · ${step.waitingCount}` : ""}
     </span>)}
     <span className="ap-playbook-done">Done · {props.summary.doneCount}</span>
-    {props.summary.processing ? <span className="ap-playbook-processing">Steward is handling a step now</span> : null}
+    {props.summary.processing ? <span className="ap-playbook-processing">A Playbook step is being checked</span> : null}
     {props.summary.nextAttemptAtEpochMs !== null
       ? <span className="ap-playbook-next">Next check {new Date(props.summary.nextAttemptAtEpochMs).toLocaleTimeString()}</span>
       : null}

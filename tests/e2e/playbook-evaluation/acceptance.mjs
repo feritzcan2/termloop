@@ -80,11 +80,20 @@ try {
   const evaluated = await wait(() => json(path.join(evidenceDirectory, "evaluation.json")).catch(() => null), "Evaluation fork did not run");
   assert.equal(evaluated.taskId, task.id);
   assert.equal(evaluated.sourceSessionId, source.id);
+  const checking = await wait(async () => {
+    const result = await call("playbook.runtime", { projectId: project.id });
+    return result.evaluation?.mode === "taskAgentFork" ? result.evaluation : null;
+  }, "Confirmed evaluation terminal was not projected");
+  assert.equal(checking.sessionId, evaluated.sessionId);
+  assert.equal(checking.sourceSessionId, source.id);
+  assert.equal(checking.taskId, task.id);
+  await writeFile(path.join(evidenceDirectory, "inspection-complete"), "ok");
   const completed = await wait(async () => {
     const result = await call("playbook.runtime", { projectId: project.id });
     return result.steps?.[0]?.progress?.some((row) => row.taskId === task.id && row.verdict === "passed") ? result : null;
   }, "Fork verdict did not advance the Task");
   assert.ok(completed);
+  assert.equal(completed.evaluation, null);
   await wait(async () => {
     const sessions = await call("session.list");
     assert.equal(sessions.find((session) => session.id === source.id)?.lifecycle_state, "running");

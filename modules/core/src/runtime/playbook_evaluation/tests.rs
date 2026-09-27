@@ -267,6 +267,70 @@ fn no_task_agent_preserves_an_explicit_steward_fallback() {
 }
 
 #[test]
+fn evaluation_projection_tracks_startup_executor_fallback_and_completion() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    assert!(
+        runtime
+            .playbook_runtime(json!({"projectId": project}))
+            .unwrap()["evaluation"]
+            .is_null()
+    );
+    let mut claim = claim(&mut runtime, &project);
+    let read = |runtime: &CoreRuntime| {
+        runtime
+            .playbook_runtime(json!({"projectId": project}))
+            .unwrap()["evaluation"]
+            .clone()
+    };
+    assert_eq!(read(&runtime)["mode"], "starting");
+    evaluator(&mut runtime, &claim);
+    runtime.pending_agent_forks.insert("reviewer".into());
+    let starting = read(&runtime);
+    assert_eq!(starting["mode"], "starting");
+    assert_eq!(starting["sourceSessionId"], "source");
+    assert!(starting["sessionId"].is_null());
+    runtime.pending_agent_forks.remove("reviewer");
+    let active = read(&runtime);
+    assert_eq!(active["mode"], "taskAgentFork");
+    assert_eq!(active["sessionId"], "reviewer");
+    assert_eq!(active["taskId"], "task-1");
+    assert_eq!(
+        active["routineId"],
+        claim.capability.as_ref().unwrap().tracker_id
+    );
+    assert!(active["reason"].is_null());
+    runtime.fail_playbook_evaluation_launch("evaluation-check");
+    let fallback = read(&runtime);
+    assert_eq!(fallback["mode"], "stewardFallback");
+    assert_eq!(fallback["reason"], "forkUnavailable");
+    assert_eq!(fallback["sessionId"], "steward-session");
+    assert!(fallback["sourceSessionId"].is_null());
+    for reason in [
+        "noUnambiguousTaskAgent",
+        "forkUnsupported",
+        "evaluationCapacity",
+    ] {
+        claim.result["evaluation"] = json!({"mode":"stewardFallback", "reason":reason});
+        runtime.record_playbook_evaluation_fallback(&claim);
+        assert_eq!(read(&runtime)["reason"], reason);
+    }
+    runtime
+        .report_steward_step_verdicts(
+            claim.capability.as_ref().unwrap(),
+            vec![StewardStepVerdict {
+                task_id: "task-1".into(),
+                verdict: PlaybookStepVerdict::Passed,
+                evidence: "Current proof".into(),
+            }],
+            "report".into(),
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+    assert!(read(&runtime).is_null());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite() {
     let (mut runtime, root, project) = pipeline_runtime();
     let claim = claim(&mut runtime, &project);
