@@ -73,6 +73,67 @@ impl TaskAgentActivity {
 }
 
 impl CoreRuntime {
+    /// UI routing is derived from the exact live claim, never Session names or cwd.
+    pub(crate) fn playbook_evaluation_projection(&self, routine_id: &str) -> Option<Value> {
+        let capability = self.current_step_check(routine_id)?;
+        let task_id = self.tracker_check_task_id(&capability).ok()??;
+        let mut projection = json!({
+            "routineId": routine_id, "taskId": task_id, "mode": "starting",
+            "sessionId": null, "sourceSessionId": null, "reason": null,
+        });
+        if let Some(evaluation) = self
+            .playbook_evaluation
+            .evaluations
+            .get(&capability.check_id)
+        {
+            self.validate_playbook_evaluation(evaluation, termloop_platform::current_epoch_ms())
+                .ok()?;
+            projection["sourceSessionId"] = json!(evaluation.source_session_id);
+            if self.store.sessions().iter().any(|session| {
+                session.id == evaluation.session_id
+                    && session.runtime_epoch == evaluation.runtime_epoch
+                    && session.lifecycle_state == "running"
+            }) && !self.pending_agent_forks.contains(&evaluation.session_id)
+            {
+                projection["mode"] = json!("taskAgentFork");
+                projection["sessionId"] = json!(evaluation.session_id);
+            }
+        } else if let Some(reason) = self.playbook_evaluation.fallbacks.get(&capability.check_id) {
+            projection["mode"] = json!("stewardFallback");
+            projection["reason"] = json!(reason);
+            projection["sessionId"] = json!(capability.steward_session_id);
+        }
+        Some(projection)
+    }
+
+    pub fn record_playbook_evaluation_fallback(&mut self, claim: &StewardRoutineClaim) {
+        let Some(capability) = claim.capability.as_ref() else {
+            return;
+        };
+        if claim.result["evaluation"]["mode"] != "stewardFallback"
+            || !self.tracker_check_is_current(capability)
+        {
+            return;
+        }
+        let Some(reason) = claim.result["evaluation"]["reason"]
+            .as_str()
+            .filter(|reason| {
+                matches!(
+                    *reason,
+                    "noUnambiguousTaskAgent"
+                        | "forkUnsupported"
+                        | "forkUnavailable"
+                        | "evaluationCapacity"
+                )
+            })
+        else {
+            return;
+        };
+        self.playbook_evaluation
+            .fallbacks
+            .insert(capability.check_id.clone(), reason.to_owned());
+    }
+
     /// Only authenticated structured observations contribute. No PTY text,
     /// session age, token estimates, or invented pre-restart activity.
     pub(crate) fn observe_task_agent_work(

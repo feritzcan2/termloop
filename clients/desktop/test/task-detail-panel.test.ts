@@ -69,7 +69,7 @@ function runtimeStep(overrides: Partial<PlaybookRuntimeStepDto> = {}): PlaybookR
 }
 
 function runtime(steps: PlaybookRuntimeStepDto[], doneTaskIds: string[] = []): PlaybookRuntimeResult {
-  return { activePipelineName: "Dev PR to production", processingTaskId: null, steps, doneTaskIds, stateRevision: 12 };
+  return { activePipelineName: "Dev PR to production", evaluation: null, processingTaskId: null, steps, doneTaskIds, stateRevision: 12 };
 }
 
 function routineHealth(overrides: Partial<RoutineHealthDto> = {}): RoutineHealthDto {

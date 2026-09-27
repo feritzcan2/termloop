@@ -18,6 +18,11 @@ pub(super) async fn route_assignment(
     let delegated = match outcome {
         PlaybookEvaluationLaunch::Steward(result) => {
             claim.result = result;
+            state
+                .core
+                .lock()
+                .await
+                .record_playbook_evaluation_fallback(claim);
             Ok(false)
         }
         PlaybookEvaluationLaunch::Delegated(result) => {
@@ -47,7 +52,7 @@ pub(super) async fn route_assignment(
             }
         },
     }?;
-    if delegated {
+    if delegated || claim.result.get("step").is_some_and(Value::is_object) {
         let state_revision = state.core.lock().await.state_revision();
         super::invalidation::queue_invalidation(
             &state.invalidation_requests,

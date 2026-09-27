@@ -255,6 +255,29 @@ impl CoreRuntime {
             .and_then(|active| active.step_task_id.clone())
     }
 
+    pub(crate) fn current_step_check(&self, routine_id: &str) -> Option<TrackerCheckCapability> {
+        let active = self
+            .tracker_runtime
+            .health
+            .get(routine_id)?
+            .active
+            .as_ref()?;
+        active.step_task_id.as_ref()?;
+        let capability = TrackerCheckCapability {
+            project_id: active.project_id.clone(),
+            tracker_id: routine_id.to_owned(),
+            check_id: active.check_id.clone(),
+            generation: active.generation,
+            claimed_at_epoch_ms: active.claimed_at_epoch_ms,
+            deadline_epoch_ms: active.deadline_epoch_ms,
+            steward_generation: active.steward_generation,
+            steward_session_id: active.steward_session_id.clone(),
+        };
+        self.validate_current_check(&capability, termloop_platform::current_epoch_ms())
+            .ok()?;
+        Some(capability)
+    }
+
     /// A Task-detail override waiting to be claimed by this step Routine.
     pub(crate) fn step_run_now_task_id(&self, routine_id: &str) -> Option<&str> {
         match self.tracker_runtime.step_gate.get(routine_id) {

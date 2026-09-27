@@ -657,6 +657,7 @@ impl CoreRuntime {
             return Ok(json!({
                 "activePipelineName": "",
                 "processingTaskId": null,
+                "evaluation": null,
                 "steps": [],
                 "doneTaskIds": [],
                 "stateRevision": self.store.revision(),
@@ -720,6 +721,7 @@ impl CoreRuntime {
         Ok(json!({
             "activePipelineName": playbook.active_pipeline_name,
             "processingTaskId": processing_task_id,
+            "evaluation": playbook.milestones.iter().find_map(|milestone| self.playbook_evaluation_projection(&milestone.routine_id)),
             "steps": steps,
             "doneTaskIds": done_task_ids,
             "stateRevision": self.store.revision(),
