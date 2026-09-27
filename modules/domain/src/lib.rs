@@ -110,6 +110,10 @@ pub enum McpToolName {
     SendToAgent,
     #[serde(rename = "reply_to_request")]
     ReplyToRequest,
+    #[serde(rename = "playbook_evaluation_read")]
+    PlaybookEvaluationRead,
+    #[serde(rename = "playbook_evaluation_complete")]
+    PlaybookEvaluationComplete,
     #[serde(rename = "workflow_delegate")]
     WorkflowDelegate,
     #[serde(rename = "workflow_step_complete")]
@@ -175,10 +179,12 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 36] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
+        Self::PlaybookEvaluationRead,
+        Self::PlaybookEvaluationComplete,
         Self::WorkflowDelegate,
         Self::WorkflowStepComplete,
         Self::ProjectRead,
@@ -217,6 +223,8 @@ impl McpToolName {
             Self::AskTo => "ask_to",
             Self::SendToAgent => "send_to_agent",
             Self::ReplyToRequest => "reply_to_request",
+            Self::PlaybookEvaluationRead => "playbook_evaluation_read",
+            Self::PlaybookEvaluationComplete => "playbook_evaluation_complete",
             Self::WorkflowDelegate => "workflow_delegate",
             Self::WorkflowStepComplete => "workflow_step_complete",
             Self::ProjectRead => "project_read",
@@ -260,6 +268,8 @@ impl std::str::FromStr for McpToolName {
             "ask_to" => Ok(Self::AskTo),
             "send_to_agent" => Ok(Self::SendToAgent),
             "reply_to_request" => Ok(Self::ReplyToRequest),
+            "playbook_evaluation_read" => Ok(Self::PlaybookEvaluationRead),
+            "playbook_evaluation_complete" => Ok(Self::PlaybookEvaluationComplete),
             "workflow_delegate" => Ok(Self::WorkflowDelegate),
             "workflow_step_complete" => Ok(Self::WorkflowStepComplete),
             "project_read" => Ok(Self::ProjectRead),
@@ -1451,6 +1461,8 @@ mod tests {
                 "ask_to",
                 "send_to_agent",
                 "reply_to_request",
+                "playbook_evaluation_read",
+                "playbook_evaluation_complete",
                 "workflow_delegate",
                 "workflow_step_complete",
                 "project_read",

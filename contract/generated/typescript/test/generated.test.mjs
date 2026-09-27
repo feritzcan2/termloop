@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ACCESS_PROTOCOL_IDENTITY, EVENTS, METHODS, CONTRACT_IDENTITY, READ_ONLY_METHODS, COMPANION_METHODS, MCP_TOOL_DEFINITIONS, MCP_INTERACTIVE_TOOLS, MCP_AGENT_CREATOR_TOOLS, MCP_IMPROVER_TOOLS, MCP_STEWARD_TOOLS, MCP_HELPER_TOOLS, TermLoopControlClient, TermLoopControlError, controlRequestTimeoutMs, validateMethodResult } from "../dist/current.js";
+import { ACCESS_PROTOCOL_IDENTITY, EVENTS, METHODS, CONTRACT_IDENTITY, READ_ONLY_METHODS, COMPANION_METHODS, MCP_TOOL_DEFINITIONS, MCP_INTERACTIVE_TOOLS, MCP_AGENT_CREATOR_TOOLS, MCP_IMPROVER_TOOLS, MCP_STEWARD_TOOLS, MCP_HELPER_TOOLS, MCP_PLAYBOOK_EVALUATOR_TOOLS, TermLoopControlClient, TermLoopControlError, controlRequestTimeoutMs, validateMethodResult } from "../dist/current.js";
 
 test("generated validator rejects cross-provider Git-host identities", () => {
   const result = [{
@@ -243,6 +243,7 @@ test("MCP tool settings projection is closed, bounded, and revisioned", () => {
     [new Set(MCP_AGENT_CREATOR_TOOLS), "agentCreator"],
     [new Set(MCP_HELPER_TOOLS), "helper"],
     [new Set(MCP_STEWARD_TOOLS), "steward"],
+    [new Set(MCP_PLAYBOOK_EVALUATOR_TOOLS), "playbookEvaluator"],
   ];
   const result = {
     stateRevision: 7,

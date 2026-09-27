@@ -176,7 +176,8 @@ fn invalid_identity_and_directory_are_rejected_before_network_work() {
 #[test]
 fn resume_applies_and_verifies_explicit_model_and_effort() {
     let request = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Plan)
-        .unwrap().with_configuration("gpt-5.6-terra", "low");
+        .unwrap()
+        .with_configuration("gpt-5.6-terra", "low");
     assert_eq!(request.params()["model"], "gpt-5.6-terra");
     assert_eq!(request.params()["config"]["model_reasoning_effort"], "low");
     let mut result = json!({
@@ -191,7 +192,8 @@ fn resume_applies_and_verifies_explicit_model_and_effort() {
     result["reasoningEffort"] = json!("high");
     assert!(!request.matches(&result));
     let defaults = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Plan)
-        .unwrap().with_configuration("default", "default");
+        .unwrap()
+        .with_configuration("default", "default");
     assert!(defaults.params().get("model").is_none());
     assert!(defaults.params().get("config").is_none());
     assert!(defaults.matches(&result));
@@ -200,9 +202,15 @@ fn resume_applies_and_verifies_explicit_model_and_effort() {
 #[test]
 fn resume_network_override_preserves_model_config_and_verifies_workspace_policy() {
     for enabled in [true, false] {
-        let request = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Default)
-            .unwrap().with_configuration("gpt-5.6-terra", "low").with_workspace_network(Some(enabled));
-        assert_eq!(request.params()["config"]["sandbox_workspace_write.network_access"], enabled);
+        let request =
+            CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Default)
+                .unwrap()
+                .with_configuration("gpt-5.6-terra", "low")
+                .with_workspace_network(Some(enabled));
+        assert_eq!(
+            request.params()["config"]["sandbox_workspace_write.network_access"],
+            enabled
+        );
         assert_eq!(request.params()["config"]["model_reasoning_effort"], "low");
         let mut result = json!({"thread":{"id":THREAD},"approvalPolicy":"on-request","approvalsReviewer":"user", "sandbox":{"type":"workspaceWrite","networkAccess":enabled},"model":"gpt-5.6-terra","reasoningEffort":"low"});
         assert!(request.matches(&result));

@@ -371,7 +371,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            21,
+            22,
         ),
     ];
 
@@ -412,14 +412,13 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 21);
-    assert_eq!(launch.provenance().template_version, 21);
+    assert_eq!(template.version, 22);
+    assert_eq!(launch.provenance().template_version, 22);
     for expected in [
         "two compact review",
         "For a scoped edit to one or a few existing steps",
         "After this change",
         "not a configuration delta",
-        "Never collapse those roles",
         "JSON-escaped snapshot fragment",
         "show the complete normal path as one readable arrow sequence",
         "present the complete detailed draft",
@@ -433,12 +432,9 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
         "authoritative only for TermLoop-owned Task identity",
         "Worker's cwd or HEAD",
         "task_agent_request",
-        "Steward-to-Agent coordination among the recommended options",
-        "`coordinationAgent` projection",
-        "sole authority",
-        "never require the Steward to re-prove Agent",
-        "Steward to attempt",
-        "ordinary unmet evidence and is `pending`",
+        "playbook_evaluation_read",
+        "playbook_evaluation_complete",
+        "fallback-only tool choreography",
         "Routines have no provider kind",
         "Reject a circular dependency",
         "unknown scope never counts as permission to skip",
@@ -2354,7 +2350,7 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 39);
+    assert_eq!(prompt.provenance().template_version, 40);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -2644,7 +2640,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 39);
+    assert_eq!(steward.provenance().template_version, 40);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));

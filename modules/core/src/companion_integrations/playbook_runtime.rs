@@ -399,6 +399,23 @@ impl CoreRuntime {
         report_id: String,
         completed_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
+        if self
+            .playbook_evaluation
+            .evaluations
+            .contains_key(&capability.check_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
+        self.apply_playbook_step_verdicts(capability, verdicts, report_id, completed_at_epoch_ms)
+    }
+
+    pub(crate) fn apply_playbook_step_verdicts(
+        &mut self,
+        capability: &super::tracker_runtime::TrackerCheckCapability,
+        verdicts: Vec<StewardStepVerdict>,
+        report_id: String,
+        completed_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
         let mut configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
         if configuration.trigger_mode.is_scheduled() {
             return Err(CoreError::InvalidParams("verdicts".into()));
@@ -726,7 +743,7 @@ fn step_waiting_source_key(milestone_id: &str, task_id: &str, evidence: &str) ->
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
     use termloop_domain::{
@@ -752,7 +769,7 @@ mod tests {
 
     /// A Project with two stages, evaluated by two step Routines in one enabled
     /// Steward, and two open Tasks on it.
-    fn pipeline_runtime() -> (CoreRuntime, std::path::PathBuf, String) {
+    pub(crate) fn pipeline_runtime() -> (CoreRuntime, std::path::PathBuf, String) {
         let root = std::env::temp_dir().join(format!(
             "termloop-core-playbook-runtime-{}-{}",
             std::process::id(),

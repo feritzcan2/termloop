@@ -96,7 +96,9 @@ pub(super) fn derive_resumed_mcp_role(
         }
         // A detached persistent-assistant Session must never fall back to the
         // ordinary interactive MCP profile.
-        Some(ASSISTANT_ACTIVATION_TEMPLATE | STEWARD_TEMPLATE) => None,
+        Some(
+            ASSISTANT_ACTIVATION_TEMPLATE | STEWARD_TEMPLATE | "builtin.agent.playbook-evaluator",
+        ) => None,
         _ => (steward_links.is_empty()
             && session.ask_to_source_session_id.is_none()
             && session.ask_to_continuation.is_none())
@@ -164,6 +166,12 @@ mod tests {
             generation: 1,
             updated_at_epoch_ms: 1,
         }
+    }
+
+    #[test]
+    fn temporary_evaluators_never_resume_as_interactive_agents() {
+        let evaluator = session("evaluation", "builtin.agent.playbook-evaluator");
+        assert!(derive_resumed_mcp_role(&evaluator, &[], &[], &transport()).is_none());
     }
 
     #[test]

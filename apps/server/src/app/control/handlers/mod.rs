@@ -28,7 +28,6 @@ pub(super) use prompt_improvement::{
     launch_assistant_prompt_improver, preview_assistant_prompt_improver,
 };
 pub(in crate::app) use session::reconcile_agent_resumes_after_start;
-pub(in crate::app) use session::terminate_session;
 pub(super) use session::{
     close_session, fork_agent_session, launch_agent_creator, launch_agent_session,
     launch_quick_action, launch_run_configuration_improver, launch_workflow_creator,
@@ -40,6 +39,7 @@ pub(super) use session::{
     restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
     session_history_preview,
 };
+pub(in crate::app) use session::{launch_playbook_evaluation_fork, terminate_session};
 pub(in crate::app) use session::{
     launch_project_run, launch_task_run, launch_task_session, preview_steward_task_agent_session,
     preview_task_agent_session,
