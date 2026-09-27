@@ -7,8 +7,7 @@ import { URL as FileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session, Task, WorkflowExecution } from "../src/renderer/model.js";
 import { ActiveAgentRail, activeAgentQueryMatches, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
-import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels } from "../src/renderer/ui/active-agent-workflows.js";
-import { workflowAgentSegments } from "../src/renderer/ui/WorkflowAgentGroup.js";
+import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels, workflowAgentRuns } from "../src/renderer/ui/active-agent-workflows.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
 
 function agent(id: string, overrides: Partial<Session> = {}): Session {
@@ -83,13 +82,21 @@ describe("workflow agent groups", () => {
     expect(runs[0]).toBe(newer);
   });
 
-  it("preserves row order and splits around helpers that do not belong to the workflow", () => {
-    const values = [sessions[0]!, agent("ordinary", { ask_to_source_session_id: "lead" }), ...sessions.slice(1)];
-    const segments = workflowAgentSegments(values, workflowAgentGroups([execution()], values));
-    expect(segments.map((segment) => [segment.workflow?.executionId, segment.sessions.map((session) => session.id)]))
-      .toEqual([["execution-1", ["lead"]], [undefined, ["ordinary"]], ["execution-1", ["helper-a", "helper-b"]]]);
-    expect(segments.flatMap((segment) => segment.sessions)).toEqual(values);
-    expect(workflowAgentSegments(values, undefined)).toEqual([{ workflow: undefined, sessions: values }]);
+  it("builds one run per execution, lead first, leaving unrelated helpers out", () => {
+    const values = [agent("helper-b", { ask_to_source_session_id: "lead" }), agent("ordinary", { ask_to_source_session_id: "lead" }), ...sessions.slice(0, 2)];
+    const runs = workflowAgentRuns(values, workflowAgentGroups([execution()], values));
+    expect(runs.map((run) => [run.workflow.executionId, run.sessions.map((session) => session.id)]))
+      .toEqual([["execution-1", ["lead", "helper-a", "helper-b"]]]);
+    expect(runs[0]?.workflow.stepLabel).toBe("1/5 Discuss");
+    expect(workflowAgentRuns(values, undefined)).toEqual([]);
+  });
+
+  it("gives a reused agent only to its newest run and drops runs without listed agents", () => {
+    const older = execution({ id: "older", coordinatorSessionId: "lead", participants: [], updatedAtEpochMs: 1 });
+    const newer = execution({ id: "newer", coordinatorSessionId: "lead", participants: [{ stepId: "discuss", sessionId: "helper-a" }], updatedAtEpochMs: 9 });
+    const runs = workflowAgentRuns(sessions, workflowAgentGroups([older, newer], sessions));
+    expect(runs.map((run) => [run.workflow.executionId, run.sessions.map((session) => session.id)])).toEqual([["newer", ["lead", "helper-a"]]]);
+    expect(workflowAgentGroups([execution({ status: "completed", phase: "completed" })], sessions).get("lead")?.stepLabel).toBeUndefined();
   });
 });
 
@@ -97,21 +104,22 @@ describe("workflow agent role labels", () => {
   it("names the implementer and exact reviewers, including completed workflows", () => {
     const values = [agent("lead", { name: "Build and verify" }), agent("helper-a", { name: "Claude" }), agent("helper-b", { name: "Codex" }), agent("ordinary", { name: "Claude" })];
     const labels = workflowAgentLabels([execution({ status: "completed", phase: "completed" })], values);
-    expect([...labels]).toEqual([["lead", "Implementer · Codex"], ["helper-a", "Reviewer · Claude"], ["helper-b", "Reviewer · Codex"]]);
+    expect([...labels]).toEqual([["lead", "Implementer · Codex"], ["helper-a", "Reviewer · Codex"], ["helper-b", "Reviewer · Codex"]]);
     expect(values[0]?.name).toBe("Build and verify");
     expect(values[1]?.name).toBe("Claude");
   });
 
   it("changes a reused advisor to reviewer only once that step has an actual participant", () => {
     const run = execution({ participants: [{ stepId: "discuss", sessionId: "helper-a" }] });
-    expect(workflowAgentLabels([run], sessions).get("helper-a")).toBe("Advisor · helper-a");
-    expect(workflowAgentLabels([execution()], sessions).get("helper-a")).toBe("Reviewer · helper-a");
-    expect(workflowAgentLabels([execution({ currentStepIndex: 4 })], sessions).get("lead")).toBe("Fixer · lead");
+    expect(workflowAgentLabels([run], sessions).get("helper-a")).toBe("Advisor · Codex");
+    expect(workflowAgentLabels([execution()], sessions).get("helper-a")).toBe("Reviewer · Codex");
+    expect(workflowAgentLabels([execution({ currentStepIndex: 4 })], sessions).get("lead")).toBe("Fixer · Codex");
   });
 
-  it("preserves custom names and ignores absent or cross-project sessions", () => {
-    const values = [agent("lead", { name: "Payments lead" }), agent("helper-a", { name: "Security expert" }), agent("helper-b", { project_id: "elsewhere" })];
-    expect([...workflowAgentLabels([execution()], values)]).toEqual([["lead", "Implementer · Payments lead"], ["helper-a", "Reviewer · Security expert"]]);
+  it("names the provider instead of prompt-derived names and ignores absent or cross-project sessions", () => {
+    const values = [agent("lead", { name: "You are the coordinator for the Core" }), agent("helper-a", { name: "Review this diff", process: { ...agent("x").process, agent_id: "claude" } }), agent("helper-b", { project_id: "elsewhere" })];
+    expect([...workflowAgentLabels([execution()], values)]).toEqual([["lead", "Implementer · Codex"], ["helper-a", "Reviewer · Claude"]]);
+    expect(values[0]?.name).toBe("You are the coordinator for the Core");
     expect(workflowAgentLabels([execution()], []).size).toBe(0);
   });
 });
@@ -258,15 +266,13 @@ describe("workflow actions in the Agents rail", () => {
     expect(container.querySelector('[data-session-id="ordinary"]')?.closest("[data-workflow-group]")).toBeNull();
   });
 
-  it("folds workflow members without affecting other agents or firing session actions", async () => {
+  it("folds workflow members by default without affecting other agents or firing session actions", async () => {
     const closeWorkflow = vi.fn();
     const props = await render([...sessions, agent("ordinary")], execution(), { closeWorkflow });
     const group = container.querySelector('[data-workflow-group="execution-1"]')!;
     const toggle = group.querySelector<HTMLButtonElement>(".workflow-agent-group-toggle")!;
     const members = group.querySelector<HTMLElement>(".workflow-agent-group-members")!;
     expect(toggle.getAttribute("aria-controls")).toBe(members.id);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    await act(async () => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(members.hidden).toBe(true);
     expect(container.querySelector('[data-session-id="ordinary"]')?.closest("[hidden]")).toBeNull();
@@ -285,7 +291,6 @@ describe("workflow actions in the Agents rail", () => {
 
   it("reveals a folded workflow when agent search opens", async () => {
     await render(sessions, execution());
-    await act(async () => container.querySelector<HTMLButtonElement>(".workflow-agent-group-toggle")!.click());
     expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(true);
     await render(sessions, execution(), { searchOpen: true });
     expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(false);
@@ -319,7 +324,15 @@ describe("workflow actions in the Agents rail", () => {
     expect(closeWorkflow).not.toHaveBeenCalled();
   });
 
-  it.each([0, 12])("shows a shared checkout and %i changes only once with a working group-level action", async (changeCount) => {
+  it("hides a zero change count on the shared checkout", async () => {
+    const values = sessions.map((session) => ({ ...session, process: { ...session.process, cwd: "/repo/worktrees/feature-payments" } }));
+    await render(values, execution(), { worktreeChangesBySessionId: new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount: 0 }]]) });
+    expect(container.querySelector('.workflow-agent-group-checkout')?.textContent).toBe("feature-payments");
+    expect(container.querySelector('.workflow-agent-group-changes')).toBeNull();
+    expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(0);
+  });
+
+  it.each([1, 12])("shows a shared checkout and %i changes only once with a working group-level action", async (changeCount) => {
     const values = sessions.map((session) => ({ ...session, process: { ...session.process, cwd: "/repo/worktrees/feature-payments" } }));
     // Helpers already inherit their exact source's checkout change projection.
     const worktreeChangesBySessionId = new Map([["lead", { taskId: "task-1", taskTitle: "Payments", changeCount }]]);
@@ -331,7 +344,7 @@ describe("workflow actions in the Agents rail", () => {
     expect(group.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(0);
     expect(group.querySelectorAll('.active-agent-row.has-worktree-changes')).toHaveLength(0);
     const action = group.querySelector<HTMLButtonElement>('.workflow-agent-group-changes')!;
-    expect(action.textContent).toBe(`${changeCount} changes`);
+    expect(action.textContent).toBe(changeCount === 1 ? "1 change" : `${changeCount} changes`);
     await act(async () => action.click());
     expect(props.openTaskChanges).toHaveBeenCalledExactlyOnceWith("task-1");
     expect(props.selectSession).not.toHaveBeenCalled();
@@ -349,7 +362,8 @@ describe("workflow actions in the Agents rail", () => {
   it("never collapses different checkouts with the same basename", async () => {
     const values = sessions.map((session, index) => ({ ...session, process: { ...session.process, cwd: index === 2 ? "/other/feature-payments" : "/repo/feature-payments" } }));
     await render(values, execution(), { worktreeChangesBySessionId: new Map(values.map((session) => [session.id, { taskId: "task-1", taskTitle: "Payments", changeCount: 4 }])) });
-    expect(container.querySelector('.workflow-agent-group-meta')).toBeNull();
+    expect(container.querySelector('.workflow-agent-group-checkout')).toBeNull();
+    expect(container.querySelector('.workflow-agent-group-step')?.textContent).toBe("1/5 Discuss");
     expect([...container.querySelectorAll('.row-subtitle')].map((node) => node.getAttribute("title"))).toEqual(["/repo/feature-payments", "/repo/feature-payments", "/other/feature-payments"]);
     expect(container.querySelectorAll('.active-agent-worktree-changes')).toHaveLength(3);
   });
@@ -397,17 +411,55 @@ describe("workflow actions in the Agents rail", () => {
     expect(props.resumeSession).not.toHaveBeenCalled();
   });
 
-  it("renders role names in agent rows and accessible labels without losing custom names", async () => {
-    await render([agent("lead", { name: "Build and verify" }), agent("helper-a", { name: "Claude", ask_to_source_session_id: "lead" })], execution({ status: "completed", phase: "completed" }));
+  it("renders role and provider names in agent rows and accessible labels", async () => {
+    const claude = { ...agent("x").process, agent_id: "claude" };
+    await render([agent("lead", { name: "Build and verify" }), agent("helper-a", { name: "Review this diff", ask_to_source_session_id: "lead", process: claude })], execution({ status: "completed", phase: "completed" }));
     const lead = container.querySelector('[data-session-id="lead"]')!;
     const reviewer = container.querySelector('[data-session-id="helper-a"]')!;
     expect(lead.querySelector(".row-title")?.textContent).toBe("Implementer · Codex");
     expect(lead.querySelector(".row-agent")).toBeNull();
     expect(reviewer.querySelector(".row-title")?.textContent).toBe("Reviewer · Claude");
     expect(reviewer.getAttribute("aria-label")).toContain("Reviewer · Claude");
+    expect(reviewer.closest(".active-agent-helper")).toBeNull();
     expect(container.querySelector(".active-agent-workflow")).toBeNull();
-    await render([agent("lead", { name: "My payments agent" })], execution());
-    expect(container.querySelector(".row-title")?.textContent).toBe("Implementer · My payments agent");
+    await render([agent("lead", { name: "You are the coordinator for the Core" })], execution());
+    expect(container.querySelector(".row-title")?.textContent).toBe("Implementer · Codex");
+  });
+
+  it("lists each run once in its own section and keeps its agents out of the state buckets", async () => {
+    await render([...sessions, agent("ordinary")], execution({ currentStepIndex: 1 }));
+    const sectionNames = [...container.querySelectorAll("[data-active-agent-section]")].map((section) => section.getAttribute("data-active-agent-section"));
+    expect(sectionNames[0]).toBe("Workflows");
+    const workflows = container.querySelector('[data-active-agent-section="Workflows"]')!;
+    expect(workflows.querySelector(".rail-subhead")?.textContent).toBe("Workflows1");
+    expect([...workflows.querySelectorAll("[data-session-id]")].map((row) => row.getAttribute("data-session-id"))).toEqual(["lead", "helper-a", "helper-b"]);
+    expect(workflows.querySelector(".workflow-agent-group-step")?.textContent).toBe("2/5 Implement");
+    const buckets = [...container.querySelectorAll('[data-active-agent-section]:not([data-active-agent-section="Workflows"]) [data-session-id]')];
+    expect(buckets.map((row) => row.getAttribute("data-session-id"))).toEqual(["ordinary"]);
+    expect(container.querySelector('[data-active-agent-section="Idle / paused"] .rail-subhead')?.textContent).toBe("Idle / paused1");
+  });
+
+  it("puts runs that need the user first and marks them while folded", async () => {
+    const values = [...sessions, agent("other-lead")];
+    const quiet = execution({ updatedAtEpochMs: 50 });
+    const waiting = execution({ id: "execution-2", coordinatorSessionId: "other-lead", participants: [], workflowName: "Waiting run", updatedAtEpochMs: 1 });
+    const groups = workflowAgentGroups([quiet, waiting], values, [task]);
+    await render(values, quiet, {
+      workflowGroupsBySessionId: groups,
+      statusesById: new Map([["other-lead", { sessionId: "other-lead", status: "awaitingInput" as const, source: "appServer" as const, observedAtEpochMs: 3 }]]),
+    });
+    const runs = [...container.querySelectorAll("[data-workflow-group]")];
+    expect(runs.map((run) => run.getAttribute("data-workflow-group"))).toEqual(["execution-2", "execution-1"]);
+    expect(runs[0]!.querySelector(".workflow-agent-group-attention")).not.toBeNull();
+    expect(runs[0]!.querySelector(".workflow-agent-group-toggle")?.getAttribute("aria-label")).toContain("an agent needs you");
+    expect(runs[1]!.querySelector(".workflow-agent-group-attention")).toBeNull();
+  });
+
+  it("opens a folded run when one of its agents becomes selected", async () => {
+    await render(sessions, execution());
+    expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(true);
+    await render(sessions, execution(), { selectedSession: sessions[2] });
+    expect(container.querySelector<HTMLElement>(".workflow-agent-group-members")!.hidden).toBe(false);
   });
 
   it("finds a finished workflow's agents by role and keeps their group together", async () => {
