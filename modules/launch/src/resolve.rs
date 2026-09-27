@@ -203,6 +203,9 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         if agent_id != "codex" {
             return Err(InvocationError::UnsupportedAgent(agent_id.into()));
         }
+        // Remote resume rejects permission overrides even in -c config.
+        // The App Server preparation owns this setting for resumed threads.
+        if !inherits_codex_permissions {
         arguments.extend([
             ResolvedArgument::exact("-c", "workspace sandbox network policy"),
             ResolvedArgument::exact(
@@ -210,6 +213,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 "workspace sandbox network policy",
             ),
         ]);
+        }
     }
     if let Some(policy) = execution {
         apply_execution_policy(agent_id, &mut arguments, policy)?;
@@ -433,7 +437,8 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             Some(termloop_agents::CodexResumePermissions::new(
                 &resume_ref.native_session_id, cwd, mode,
             ).ok_or(InvocationError::InvalidResumeReference)?
-                .with_configuration(model, reasoning))
+                .with_configuration(model, reasoning)
+                .with_workspace_network(workspace_network))
         } else {
             None
         },

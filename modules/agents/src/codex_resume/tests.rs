@@ -196,3 +196,17 @@ fn resume_applies_and_verifies_explicit_model_and_effort() {
     assert!(defaults.params().get("config").is_none());
     assert!(defaults.matches(&result));
 }
+
+#[test]
+fn resume_network_override_preserves_model_config_and_verifies_workspace_policy() {
+    for enabled in [true, false] {
+        let request = CodexResumePermissions::new(THREAD, "/workspace", CodexPermissionMode::Default)
+            .unwrap().with_configuration("gpt-5.6-terra", "low").with_workspace_network(Some(enabled));
+        assert_eq!(request.params()["config"]["sandbox_workspace_write.network_access"], enabled);
+        assert_eq!(request.params()["config"]["model_reasoning_effort"], "low");
+        let mut result = json!({"thread":{"id":THREAD},"approvalPolicy":"on-request","approvalsReviewer":"user", "sandbox":{"type":"workspaceWrite","networkAccess":enabled},"model":"gpt-5.6-terra","reasoningEffort":"low"});
+        assert!(request.matches(&result));
+        result["sandbox"]["networkAccess"] = json!(!enabled);
+        assert!(!request.matches(&result));
+    }
+}
