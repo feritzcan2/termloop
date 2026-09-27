@@ -67,6 +67,12 @@ try {
     const denied = await rpc("tools/call", { name: "send_to_agent", arguments: { sessionId: read.sourceSessionId, message: "Must be denied" } });
     assert.ok(denied.error || denied.result?.isError);
     await writeFile(path.join(evidenceDirectory, "evaluation.json"), JSON.stringify({ sessionId, sourceSessionId: read.sourceSessionId, taskId: read.task.id, scopedTools: true }));
+    let inspected = false;
+    for (let attempt = 0; attempt < 200 && !inspected; attempt++) {
+      inspected = await readFile(path.join(evidenceDirectory, "inspection-complete"), "utf8").then(() => true, () => false);
+      if (!inspected) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(inspected, "The UI routing projection was not inspected before completion");
     await call("playbook_evaluation_complete", { checkId: read.assignment.checkId, status: "satisfied", evidence: "Fixture verified exact Task and scoped native fork." });
   } else if (tools.includes("steward_next_assignment")) {
     const assignment = JSON.parse((await call("steward_next_assignment")).content);

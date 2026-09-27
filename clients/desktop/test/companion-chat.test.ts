@@ -277,7 +277,7 @@ describe("Playbook current-state strip", () => {
     savedPipelines: [], updatedAtEpochMs: 1,
   } as PlaybookDto;
   const runtime = {
-    activePipelineName: "Delivery", processingTaskId: "task-9",
+    activePipelineName: "Delivery", evaluation: null, processingTaskId: "task-9",
     steps: [
       { milestoneId: "ms-1", routineId: "routine-1", waitingTaskIds: ["task-1", "task-2"], progress: [], nextAttemptAtEpochMs: 2000 },
       { milestoneId: "ms-2", routineId: "routine-2", waitingTaskIds: [], progress: [], nextAttemptAtEpochMs: 1000 },
@@ -320,7 +320,7 @@ describe("Playbook current-state strip", () => {
     expect(markup).toContain("Build green · 2");
     expect(markup).toContain("Review approved");
     expect(markup).toContain("Done · 1");
-    expect(markup).toContain("Steward is handling a step now");
+    expect(markup).toContain("A Playbook step is being checked");
     expect(markup).toContain("Current Playbook state");
   });
 });

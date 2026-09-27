@@ -436,6 +436,7 @@ fn the_board_reads_where_every_task_is_standing() {
         "playbook.runtime",
         &json!({
             "activePipelineName": "Ship to production",
+            "evaluation": null,
             "processingTaskId": "task-2",
             "steps": [step],
             "doneTaskIds": [],
@@ -446,6 +447,7 @@ fn the_board_reads_where_every_task_is_standing() {
         "playbook.runtime",
         &json!({
             "activePipelineName": "Ship to production",
+            "evaluation": null,
             "processingTaskId": null,
             "steps": [],
             "doneTaskIds": [],
@@ -456,6 +458,7 @@ fn the_board_reads_where_every_task_is_standing() {
         "playbook.runtime",
         &json!({
             "activePipelineName": "Ship to production",
+            "evaluation": null,
             "steps": [],
             "doneTaskIds": [],
             "stateRevision": 9
@@ -469,6 +472,7 @@ fn the_board_reads_where_every_task_is_standing() {
         "playbook.runtime",
         &json!({
             "activePipelineName": "Ship to production",
+            "evaluation": null,
             "processingTaskId": null,
             "steps": [invented],
             "doneTaskIds": [],

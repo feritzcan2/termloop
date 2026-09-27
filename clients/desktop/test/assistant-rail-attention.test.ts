@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoutineConfigurationDto, RoutineConfigurationListResult, RoutineHealthDto } from "@termloop/contract/current";
 import { AssistantRail } from "../src/renderer/ui/AssistantRail.js";
+import type { Session } from "../src/renderer/model.js";
 
 const routine: RoutineConfigurationDto = {
   id: "routine-review", projectId: "project-1",
@@ -86,6 +87,25 @@ describe("Assistant rail Playbook Routine status", () => {
     const badge = host.querySelector<HTMLElement>(".ar-routine.playbook-step .ar-flag.attention");
     expect(badge?.textContent).toBe("Attention");
     expect(badge?.title).toContain("Azure DevOps authentication is unavailable.");
+  });
+
+  it("links the checking step to its projected evaluator and hides it on other steps", async () => {
+    const properties = props();
+    properties.sessions = [{ id: "fork", name: "Playbook evaluation", lifecycle_state: "running", process: { agent_id: "codex" } } as Session];
+    properties.playbookRuntime = {
+      activePipelineName: "Delivery", processingTaskId: "task", steps: [], doneTaskIds: [], stateRevision: 1,
+      evaluation: { routineId: routine.id, taskId: "task", mode: "taskAgentFork", sessionId: "fork", sourceSessionId: "source", reason: null },
+    };
+    properties.listRuntime = async () => ({ health: [{ ...attention, state: "checking", attentionMessage: null }], reports: [], reportsTruncated: false, stateRevision: 1 });
+    await act(async () => { root.render(createElement(AssistantRail, properties)); await Promise.resolve(); await Promise.resolve(); });
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Open task agent evaluation terminal"]');
+    expect(button).not.toBeNull();
+    button!.click();
+    expect(properties.openImproverTerminal).toHaveBeenCalledExactlyOnceWith("fork");
+    expect(properties.openDetails).not.toHaveBeenCalled();
+    properties.playbookRuntime.evaluation!.routineId = "another-routine";
+    await act(async () => root.render(createElement(AssistantRail, { ...properties })));
+    expect(host.querySelector('[data-evaluation-mode]')).toBeNull();
   });
 
   it("restores each Project immediately while its silent refresh is pending", async () => {

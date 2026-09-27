@@ -15544,6 +15544,65 @@
         }
       }
     },
+    "playbookEvaluationDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "routineId",
+        "taskId",
+        "mode",
+        "sessionId",
+        "sourceSessionId",
+        "reason"
+      ],
+      "properties": {
+        "routineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "taskAgentFork",
+            "stewardFallback"
+          ]
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sourceSessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["noUnambiguousTaskAgent", "forkUnsupported", "forkUnavailable", "evaluationCapacity"]
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "playbookRuntimeResult": {
       "x-codegen": true,
       "x-codegen-name": "PlaybookRuntimeResult",
@@ -15552,6 +15611,7 @@
       "required": [
         "activePipelineName",
         "processingTaskId",
+        "evaluation",
         "steps",
         "doneTaskIds",
         "stateRevision"
@@ -15560,6 +15620,12 @@
         "activePipelineName": {
           "type": "string",
           "maxLength": 120
+        },
+        "evaluation": {
+          "anyOf": [
+            { "$ref": "#/$defs/playbookEvaluationDto" },
+            { "type": "null" }
+          ]
         },
         "processingTaskId": {
           "type": [

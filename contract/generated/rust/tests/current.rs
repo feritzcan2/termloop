@@ -8,6 +8,7 @@ mod current_git_host;
 mod current_launch;
 mod current_mcp;
 mod current_playbook;
+mod current_playbook_evaluation;
 mod current_relocation;
 mod current_repair;
 mod current_run;
