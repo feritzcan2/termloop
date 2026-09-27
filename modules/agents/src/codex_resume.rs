@@ -13,6 +13,7 @@ pub struct CodexResumePermissions {
     permission: CodexPermissionMode,
     model: Option<String>,
     reasoning: Option<String>,
+    workspace_network: Option<bool>,
 }
 
 impl CodexResumePermissions {
@@ -30,6 +31,7 @@ impl CodexResumePermissions {
             permission,
             model: None,
             reasoning: None,
+            workspace_network: None,
         })
     }
 
@@ -38,6 +40,11 @@ impl CodexResumePermissions {
     pub fn with_configuration(mut self, model: &str, reasoning: &str) -> Self {
         self.model = (model != "default").then(|| model.to_owned());
         self.reasoning = (reasoning != "default").then(|| reasoning.to_owned());
+        self
+    }
+
+    pub fn with_workspace_network(mut self, enabled: Option<bool>) -> Self {
+        self.workspace_network = enabled;
         self
     }
 
@@ -83,6 +90,10 @@ impl CodexResumePermissions {
         if let Some(reasoning) = &self.reasoning {
             params["config"] = json!({ "model_reasoning_effort": reasoning });
         }
+        if let Some(enabled) = self.workspace_network {
+            if params.get("config").is_none() { params["config"] = json!({}); }
+            params["config"]["sandbox_workspace_write.network_access"] = json!(enabled);
+        }
         params
     }
 
@@ -92,6 +103,10 @@ impl CodexResumePermissions {
             && result.get("approvalPolicy").and_then(Value::as_str) == Some(approval)
             && result.get("approvalsReviewer").and_then(Value::as_str) == Some(reviewer)
             && result.pointer("/sandbox/type").and_then(Value::as_str) == Some(sandbox)
+            && self.workspace_network.is_none_or(|enabled| {
+                sandbox != "workspaceWrite"
+                    || result.pointer("/sandbox/networkAccess").and_then(Value::as_bool) == Some(enabled)
+            })
             && self.model.as_ref().is_none_or(|model| {
                 result.get("model").and_then(Value::as_str) == Some(model.as_str())
             })
