@@ -18,6 +18,11 @@ const bin = path.join(home, ".local", "bin");
 const worktree = path.join(temporary, "task");
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 await Promise.all([repository, runtimeDirectory, evidenceDirectory, bin].map((directory) => mkdir(directory, { recursive: true })));
+const reportStatus = process.argv.includes("--pending") ? "pending" : "satisfied";
+const report = { status: reportStatus, evidence: reportStatus === "pending"
+  ? "Fixture inspected current Task evidence; no human approval found."
+  : "Fixture verified exact Task and scoped native fork." };
+await writeFile(path.join(evidenceDirectory, "report.json"), JSON.stringify(report));
 await writeFile(path.join(bin, "claude"), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.resolve("tests/e2e/playbook-evaluation/fake-agent.mjs"))} ${quote(evidenceDirectory)} "$@"\n`);
 await chmod(path.join(bin, "claude"), 0o755);
 await writeFile(path.join(bin, "codex"), "#!/bin/sh\nexit 1\n");
@@ -90,16 +95,19 @@ try {
   await writeFile(path.join(evidenceDirectory, "inspection-complete"), "ok");
   const completed = await wait(async () => {
     const result = await call("playbook.runtime", { projectId: project.id });
-    return result.steps?.[0]?.progress?.some((row) => row.taskId === task.id && row.verdict === "passed") ? result : null;
-  }, "Fork verdict did not advance the Task");
+    const verdict = reportStatus === "pending" ? "waiting" : "passed";
+    return result.steps?.[0]?.progress?.some((row) => row.taskId === task.id && row.verdict === verdict) ? result : null;
+  }, "Corrected fork verdict was not recorded");
   assert.ok(completed);
   assert.equal(completed.evaluation, null);
+  assert.equal(completed.steps[0].progress.find((row) => row.taskId === task.id).evidence, report.evidence);
+  assert.equal(completed.doneTaskIds.includes(task.id), reportStatus === "satisfied");
   await wait(async () => {
     const sessions = await call("session.list");
     assert.equal(sessions.find((session) => session.id === source.id)?.lifecycle_state, "running");
     return !sessions.some((session) => session.id === evaluated.sessionId);
   }, "Temporary evaluator was not retired");
-  console.log("PLAYBOOK_EVALUATION_OK: native Task fork, scoped tools, preserved source, accepted verdict, temporary Session cleanup");
+  console.log(`PLAYBOOK_EVALUATION_OK: native Task fork, scoped tools, preserved source, rejected oversize reports, corrected ${reportStatus} verdict, temporary Session cleanup`);
 } catch (error) {
   console.error(JSON.stringify({
     sessions: await call("session.list").catch(() => []),

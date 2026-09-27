@@ -9,6 +9,16 @@ use termloop_core::session_launch::PlaybookEvaluationLaunch;
 
 use super::AppState;
 
+pub(super) fn invalid_report_message(arguments: &Value) -> String {
+    let evidence_size = arguments["evidence"]
+        .as_str()
+        .map(|evidence| format!(" Received {} bytes.", evidence.len()))
+        .unwrap_or_default();
+    format!(
+        "Expected only checkId (1-128 characters), status (satisfied/pending/blocked), and evidence (1-600 UTF-8 bytes).{evidence_size} Nothing was recorded; correct the arguments and retry the same check."
+    )
+}
+
 /// Both scheduled wakes and explicit next-assignment calls use this path.
 pub(super) async fn route_assignment(
     state: &AppState,
@@ -148,5 +158,33 @@ pub(super) async fn reap_obsolete_evaluators(state: &AppState) {
                 tracing::warn!(%error, "Playbook evaluator descriptor retirement deferred");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_report_explains_the_advertised_byte_limit_without_echoing_evidence() {
+        let tools: Value =
+            serde_json::from_str(termloop_contract::current::MCP_TOOL_DEFINITIONS_JSON).unwrap();
+        let schema = &tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "playbook_evaluation_complete")
+            .unwrap()["inputSchema"];
+        let limit = schema["properties"]["evidence"]["x-utf8-max-bytes"]
+            .as_u64()
+            .unwrap();
+        let message = invalid_report_message(&json!({"evidence": "ş".repeat(620)}));
+        assert!(message.contains(&format!("1-{limit} UTF-8 bytes")));
+        assert!(message.contains("Received 1240 bytes"));
+        assert!(message.contains("Nothing was recorded"));
+        assert!(message.contains("retry the same check"));
+        assert!(!message.contains('ş'));
+        assert!(message.len() <= 256);
+        assert!(!invalid_report_message(&json!({})).contains("Received"));
     }
 }

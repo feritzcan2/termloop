@@ -73,7 +73,18 @@ try {
       if (!inspected) await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.ok(inspected, "The UI routing projection was not inspected before completion");
-    await call("playbook_evaluation_complete", { checkId: read.assignment.checkId, status: "satisfied", evidence: "Fixture verified exact Task and scoped native fork." });
+    const report = JSON.parse(await readFile(path.join(evidenceDirectory, "report.json"), "utf8"));
+    for (const evidence of ["a".repeat(1239), "ş".repeat(301)]) {
+      const rejected = await rpc("tools/call", { name: "playbook_evaluation_complete", arguments: { checkId: read.assignment.checkId, status: report.status, evidence } });
+      assert.equal(rejected.result.isError, true);
+      assert.equal(rejected.result.structuredContent.code, "invalidArguments");
+      assert.match(rejected.result.structuredContent.message, /600 UTF-8 bytes/);
+      assert.ok(rejected.result.structuredContent.message.includes(`Received ${Buffer.byteLength(evidence)} bytes`));
+      assert.match(rejected.result.structuredContent.message, /Nothing was recorded.*retry the same check/);
+      const stillCurrent = JSON.parse((await call("playbook_evaluation_read")).content);
+      assert.equal(stillCurrent.assignment.checkId, read.assignment.checkId);
+    }
+    await call("playbook_evaluation_complete", { checkId: read.assignment.checkId, ...report });
   } else if (tools.includes("steward_next_assignment")) {
     const assignment = JSON.parse((await call("steward_next_assignment")).content);
     await writeFile(path.join(evidenceDirectory, "steward.json"), JSON.stringify({ status: assignment.status }));
