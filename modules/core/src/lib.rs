@@ -155,6 +155,7 @@ pub struct CoreRuntime {
     pub(crate) terminal: TerminalService,
     pub(crate) runtime_epoch: u64,
     pub(crate) observation_transport: Option<AgentObservationTransport>,
+    pub(crate) playbook_evaluation: runtime::playbook_evaluation::PlaybookEvaluationRuntime,
     pub(crate) agent_observations: HashMap<String, AgentObservationCapability>,
     pub(crate) provider_observation_ingress:
         runtime::provider_observation_ingress::ProviderObservationIngress,
@@ -641,6 +642,7 @@ impl CoreRuntime {
             terminal,
             runtime_epoch,
             observation_transport: None,
+            playbook_evaluation: Default::default(),
             agent_observations: HashMap::new(),
             provider_observation_ingress:
                 runtime::provider_observation_ingress::ProviderObservationIngress::default(),
@@ -830,6 +832,7 @@ impl CoreRuntime {
             capability.defer_generated_input_until_hook_response = true;
         }
         let capability_runtime_epoch = capability.runtime_epoch;
+        self.observe_task_agent_work(session_id, previous, next);
         let generated_input_confirmed = if signal == termloop_agents::AgentSignal::PromptSubmitted {
             self.confirm_generated_input_submission(
                 session_id,
@@ -1169,6 +1172,7 @@ impl CoreRuntime {
         capability.observation = Some(next);
         capability.last_signal = Some(signal);
         capability.last_notification_type = None;
+        self.observe_task_agent_work(session_id, previous, next);
         let generated_input_confirmed = if signal == termloop_agents::AgentSignal::PromptSubmitted {
             self.confirm_generated_input_submission(session_id, runtime_epoch, next.sequence)?
         } else {

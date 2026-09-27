@@ -84,6 +84,13 @@ enum StepGate {
 }
 
 impl TrackerRuntimeState {
+    pub(crate) fn active_check_ids(&self) -> std::collections::HashSet<String> {
+        self.health
+            .values()
+            .filter_map(|h| h.active.as_ref().map(|a| a.check_id.clone()))
+            .collect()
+    }
+
     pub(crate) fn tracker_is_active(&self, routine_id: &str) -> bool {
         self.health
             .get(routine_id)
@@ -1254,7 +1261,7 @@ impl CoreRuntime {
         }
     }
 
-    pub(crate) fn acknowledge_steward_assignment_delivery(&mut self, wake: &DueStewardWake) {
+    pub fn acknowledge_steward_assignment_delivery(&mut self, wake: &DueStewardWake) {
         self.tracker_runtime
             .pending_steward_wakes
             .remove(&wake.project_id);

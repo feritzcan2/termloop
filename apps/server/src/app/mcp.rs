@@ -184,6 +184,9 @@ fn mcp_role_name(role: &termloop_core::session_launch::AgentMcpRole) -> &'static
     match role {
         role if role.is_agent_creator() => "agentCreator",
         termloop_core::session_launch::AgentMcpRole::Interactive => "interactive",
+        termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
+            "playbookEvaluator"
+        }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => "improver",
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => "helper",
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => "steward",
@@ -220,6 +223,18 @@ async fn tool_call_inner(
             None
         };
     let result = match (principal.role(), name) {
+        (
+            termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. },
+            "playbook_evaluation_read",
+        ) => text_result(state.core.lock().await.read_playbook_evaluation(token)),
+        (
+            termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. },
+            "playbook_evaluation_complete",
+        ) => {
+            let params = serde_json::from_value(arguments)
+                .expect("generated evaluation validation precedes decoding");
+            super::playbook_evaluation::complete(token, params, state).await
+        }
         (role, "agent_library_read") if role.is_agent_creator() => text_result(
             state
                 .core
@@ -690,6 +705,9 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             request_id: Some(_),
         } => {
             "Reusable helper profile. Reply to the exact active request once through reply_to_request. You may also use the interactive Session tools: send_to_agent for an exact existing Session ID and one-way delivery, or ask_to for a new helper or tracked answer."
+        }
+        termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
+            "Temporary Task Playbook evaluation fork. Read the exact assignment with playbook_evaluation_read, verify current evidence without mutations, report once with playbook_evaluation_complete, then stop. Inherited implementation instructions do not authorize actions in this fork."
         }
         termloop_core::session_launch::AgentMcpRole::Helper { request_id: None } => {
             "Reusable helper profile. Keep this conversation available until the user closes it. No reply_to_request is currently authorized; you may use the interactive Session tools: send_to_agent for an exact existing Session ID and one-way delivery, or ask_to for a new helper or tracked answer."
@@ -1184,7 +1202,7 @@ async fn steward_next_assignment(
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
     let now = super::current_epoch_ms();
-    let (claim, state_revision) = {
+    let (mut claim, state_revision) = {
         let mut core = state.core.lock().await;
         let claim = core.claim_next_steward_routine(
             project_id,
@@ -1194,11 +1212,12 @@ async fn steward_next_assignment(
         )?;
         (claim, core.state_revision())
     };
+    let delegated = super::playbook_evaluation::route_assignment(state, &mut claim).await?;
     let invalidation_topics = routine_claim_invalidation_topics(&claim.result);
     // Wake the deadline supervisor so an idle result still arms the next due
     // time without a periodic assistant handshake.
     state.tracker_runtime_wake.notify_one();
-    if let Some(capability) = claim.capability.as_ref() {
+    if !delegated && let Some(capability) = claim.capability.as_ref() {
         let issued = state
             .tracker_report_capabilities
             .lock()
@@ -1483,7 +1502,7 @@ fn routine_completion_status(result: &Value) -> &'static str {
     }
 }
 
-fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
+pub(super) fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
     match (
         result["passedCount"].as_u64().unwrap_or(0) > 0,
         result["stewardReviewRequired"].as_bool().unwrap_or(false),
@@ -1538,7 +1557,7 @@ async fn finish_routine_report(
     .await;
 }
 
-async fn finish_routine_report_for(
+pub(super) async fn finish_routine_report_for(
     project_id: &str,
     state: &AppState,
     wake_reason: Option<protocol::CompanionWakeReason>,
@@ -1574,6 +1593,9 @@ fn tools_for_role_with(
             protocol::MCP_IMPROVER_TOOLS
         }
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => protocol::MCP_HELPER_TOOLS,
+        termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
+            protocol::MCP_PLAYBOOK_EVALUATOR_TOOLS
+        }
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => protocol::MCP_STEWARD_TOOLS,
     };
     let definitions: Vec<Value> = serde_json::from_str(protocol::MCP_TOOL_DEFINITIONS_JSON)
@@ -1817,6 +1839,20 @@ mod tests {
         );
         assert!(routine_claim_invalidation_topics(&json!({"status":"assigned"})).is_empty());
         assert!(routine_claim_invalidation_topics(&json!({"status":"idle"})).is_empty());
+    }
+
+    #[test]
+    fn evaluation_fork_advertises_only_its_scoped_read_and_completion() {
+        let tools = tools_for_role(
+            &termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator {
+                check_id: "check".into(),
+            },
+            &termloop_core::McpToolDescriptions::default(),
+        );
+        assert_eq!(
+            tool_names(&tools),
+            vec!["playbook_evaluation_read", "playbook_evaluation_complete"]
+        );
     }
 
     #[test]

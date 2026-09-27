@@ -291,6 +291,8 @@ impl CoreRuntime {
                     && session.kind == termloop_domain::SessionKind::Agent
                     && session.ask_to_source_session_id.is_none()
                     && session.improver_target.is_none()
+                    && session.process.template_ref.as_deref()
+                        != Some(crate::runtime::playbook_evaluation::EVALUATOR_TEMPLATE)
                     && !assistant_session_ids.contains(session.id.as_str())
                     && super::comparison_key(Path::new(&session.process.cwd))
                         .is_ok_and(|session_key| worktree_key.contains_or_equals(&session_key))

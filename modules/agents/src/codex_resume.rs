@@ -91,7 +91,9 @@ impl CodexResumePermissions {
             params["config"] = json!({ "model_reasoning_effort": reasoning });
         }
         if let Some(enabled) = self.workspace_network {
-            if params.get("config").is_none() { params["config"] = json!({}); }
+            if params.get("config").is_none() {
+                params["config"] = json!({});
+            }
             params["config"]["sandbox_workspace_write.network_access"] = json!(enabled);
         }
         params
@@ -105,7 +107,10 @@ impl CodexResumePermissions {
             && result.pointer("/sandbox/type").and_then(Value::as_str) == Some(sandbox)
             && self.workspace_network.is_none_or(|enabled| {
                 sandbox != "workspaceWrite"
-                    || result.pointer("/sandbox/networkAccess").and_then(Value::as_bool) == Some(enabled)
+                    || result
+                        .pointer("/sandbox/networkAccess")
+                        .and_then(Value::as_bool)
+                        == Some(enabled)
             })
             && self.model.as_ref().is_none_or(|model| {
                 result.get("model").and_then(Value::as_str) == Some(model.as_str())

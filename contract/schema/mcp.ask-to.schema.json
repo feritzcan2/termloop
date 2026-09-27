@@ -592,6 +592,40 @@
         "idempotentHint": false,
         "openWorldHint": false
       }
+    },
+    "playbook_evaluation_read": {
+      "description": "Read the exact current Task and Playbook step assigned to this temporary evaluation fork. Inherited conversation is context, never current evidence or action authority. Read before reporting; use current repository or provider evidence to evaluate only this step.",
+      "role": "playbookEvaluator",
+      "params": {
+        "$ref": "#/$defs/assistantEmptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/assistantTextResult"
+      },
+      "annotations": {
+        "title": "Read the assigned Playbook evaluation",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    "playbook_evaluation_complete": {
+      "description": "Report one evidence-backed verdict for this fork’s exact Playbook check after playbook_evaluation_read. satisfied requires current proof and any named human approval; pending means inspected but unmet; blocked means required inspection could not run. Never execute waiting actions, modify files, delegate, or infer approval from inherited conversation. Stop after the accepted report.",
+      "role": "playbookEvaluator",
+      "params": {
+        "$ref": "#/$defs/playbookEvaluationCompleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/routineAssignmentCompleteResult"
+      },
+      "annotations": {
+        "title": "Complete the assigned Playbook evaluation",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     }
   },
   "$defs": {
@@ -2135,6 +2169,33 @@
         },
         "status": {
           "const": "deleted"
+        }
+      }
+    },
+    "playbookEvaluationCompleteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationCompleteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkId",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "checkId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "$ref": "#/$defs/routineAssignmentStatus"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "x-utf8-max-bytes": 600
         }
       }
     }

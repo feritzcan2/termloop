@@ -42,6 +42,7 @@ const toolsForMcpRole = (role) => mcpTools.filter((tool) => {
 const mcpInteractiveTools = toolsForMcpRole("interactive");
 const mcpStewardTools = toolsForMcpRole("steward");
 const mcpHelperTools = toolsForMcpRole("helper");
+const mcpPlaybookEvaluatorTools = toolsForMcpRole("playbookEvaluator");
 const mcpImproverTools = toolsForMcpRole("improver");
 const mcpAgentCreatorTools = toolsForMcpRole("agentCreator");
 const mcpToolDefinitions = mcpTools.map((name) => ({
@@ -169,6 +170,9 @@ ${mcpStewardTools.map((tool) => `    ${JSON.stringify(tool)},`).join("\n")}
 pub const MCP_HELPER_TOOLS: &[&str] = &[
 ${rustMcpHelperTools}
 ];
+pub const MCP_PLAYBOOK_EVALUATOR_TOOLS: &[&str] = &[
+${mcpPlaybookEvaluatorTools.map((tool) => `    ${JSON.stringify(tool)},`).join("\n")}
+];
 pub const MCP_AGENT_CREATOR_TOOLS: &[&str] = &[
 ${mcpAgentCreatorTools.map((tool) => `    ${JSON.stringify(tool)},`).join("\n")}
 ];
@@ -242,6 +246,7 @@ export const EVENTS = ${JSON.stringify(events)} as const;
 export const MCP_TOOLS = ${JSON.stringify(mcpTools)} as const;
 export const MCP_INTERACTIVE_TOOLS = ${JSON.stringify(mcpInteractiveTools)} as const;
 export const MCP_STEWARD_TOOLS = ${JSON.stringify(mcpStewardTools)} as const;
+export const MCP_PLAYBOOK_EVALUATOR_TOOLS = ${JSON.stringify(mcpPlaybookEvaluatorTools)} as const;
 export const MCP_HELPER_TOOLS = ${JSON.stringify(mcpHelperTools)} as const;
 export const MCP_AGENT_CREATOR_TOOLS = ${JSON.stringify(mcpAgentCreatorTools)} as const;
 export const MCP_IMPROVER_TOOLS = ${JSON.stringify(mcpImproverTools)} as const;

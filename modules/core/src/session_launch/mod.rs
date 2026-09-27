@@ -1,6 +1,8 @@
 //! Session/agent launch and resume ownership boundary.
 
 mod agent_creator;
+mod playbook_evaluation;
+pub use playbook_evaluation::PlaybookEvaluationLaunch;
 mod agent_library;
 mod workflow_creator;
 
@@ -216,6 +218,9 @@ struct WorkflowLaunch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentMcpRole {
     Interactive,
+    PlaybookEvaluator {
+        check_id: String,
+    },
     /// One target-bound Improve Agent. It may use ordinary Agent coordination
     /// tools, but configuration writes can create and activate versions only
     /// for its authenticated target after the user confirms in conversation.
@@ -244,6 +249,9 @@ impl AgentMcpRole {
     pub(super) fn invocation_profile(&self) -> termloop_invocation::AgentMcpProfile {
         match self {
             Self::Interactive => termloop_invocation::AgentMcpProfile::Interactive,
+            Self::PlaybookEvaluator { .. } => {
+                termloop_invocation::AgentMcpProfile::PlaybookEvaluator
+            }
             Self::Improver { .. } => termloop_invocation::AgentMcpProfile::Improver,
             Self::Steward { .. } => termloop_invocation::AgentMcpProfile::Steward,
             Self::Helper { .. } => termloop_invocation::AgentMcpProfile::Helper,
@@ -253,9 +261,10 @@ impl AgentMcpRole {
     fn resume_lane(&self) -> AgentResumeLane {
         match self {
             Self::Steward { .. } => AgentResumeLane::Steward,
-            Self::Interactive | Self::Improver { .. } | Self::Helper { .. } => {
-                AgentResumeLane::Ordinary
-            }
+            Self::Interactive
+            | Self::Improver { .. }
+            | Self::Helper { .. }
+            | Self::PlaybookEvaluator { .. } => AgentResumeLane::Ordinary,
         }
     }
 }
@@ -1712,6 +1721,7 @@ impl CoreRuntime {
         if !self.project_exists(&plan.project_id) {
             return Err(CoreError::NotFound);
         }
+        self.revalidate_playbook_evaluator_launch(plan)?;
         self.revalidate_workflow_launch(plan)?;
         self.revalidate_workflow_creator(plan)?;
         self.validate_history_launch_plan(plan)?;
@@ -1853,6 +1863,16 @@ impl CoreRuntime {
             Ok(launch)
         } else if let Some(quick_action) = &plan.quick_action {
             resolve_quick_action_launch(plan, quick_action, conversation, observation, mcp)
+        } else if matches!(&plan.mcp_role, AgentMcpRole::PlaybookEvaluator { .. }) {
+            termloop_invocation::playbook_evaluator_for_conversation(
+                &plan.agent_id,
+                &plan.cwd,
+                &plan.interactive_options.clone().unwrap_or_default(),
+                conversation.in_account(plan.account.as_ref()),
+                observation,
+                mcp.ok_or(CoreError::AgentUnsupported)?,
+                managed_worktree,
+            )
         } else if let Some((request_id, message)) = plan.helper_prompt.as_ref() {
             let mcp = mcp.ok_or(CoreError::AgentUnsupported)?;
             let selection = plan.interactive_options.clone().unwrap_or_default();

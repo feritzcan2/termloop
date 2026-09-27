@@ -216,17 +216,16 @@ fn check_real_codex_resume(
                 .split_inclusive('\n')
                 .find(|line| line.ends_with('\n') && line.contains("Permissions:"))
             {
-                let expected_label = match expected {
-                    termloop_agents::CodexPermissionMode::Default => "Workspace (Ask for approval)",
+                let expected_label_lowercase = match expected {
+                    termloop_agents::CodexPermissionMode::Default => "workspace (ask for approval)",
                     termloop_agents::CodexPermissionMode::AcceptEdits => {
-                        "Workspace (Approve for me)"
+                        "workspace (approve for me)"
                     }
-                    termloop_agents::CodexPermissionMode::Plan => "Read Only (Ask for approval)",
-                    termloop_agents::CodexPermissionMode::BypassPermissions => "Full access",
+                    termloop_agents::CodexPermissionMode::Plan => "read only (ask for approval)",
+                    termloop_agents::CodexPermissionMode::BypassPermissions => "full access",
                 };
                 assert!(
-                    line.to_ascii_lowercase()
-                        .contains(&expected_label.to_ascii_lowercase()),
+                    line.to_ascii_lowercase().contains(expected_label_lowercase),
                     "unexpected TUI permissions for {expected:?}: {line}"
                 );
                 break;

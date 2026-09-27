@@ -51,6 +51,7 @@
     "f1:playwright-spike": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node spikes/f1-desktop-foundation/playwright-electron.mjs",
     "f1:packaged-spike": "pnpm --filter @termloop/desktop package:dir && cargo build -p termloop-server && node spikes/f1-desktop-foundation/playwright-electron.mjs --packaged",
     "f1:agent-signal-spike": "node spikes/f1-agent-signals/run.mjs",
+    "acceptance:playbook-evaluation": "cargo build -p termloop-server -p termloop-companion && node tests/e2e/playbook-evaluation/acceptance.mjs",
     "acceptance:mcp-ask-to": "node tests/e2e/mcp/acceptance.mjs",
     "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs",
     "check:server-management": "node --check tools/server/termloop-server-manager.mjs && node --check tools/server/server-release.mjs && node --check tools/release/package-server.mjs && bash -n tools/server/install.sh .github/runner/cleanup.sh",
