@@ -70,7 +70,7 @@ function step(overrides: Partial<PlaybookRuntimeStepDto> = {}): PlaybookRuntimeS
 }
 
 function runtime(steps: PlaybookRuntimeStepDto[], doneTaskIds: string[] = []): PlaybookRuntimeResult {
-  return { activePipelineName: "Dev PR to production", processingTaskId: null, steps, doneTaskIds, stateRevision: 9 };
+  return { activePipelineName: "Dev PR to production", evaluation: null, processingTaskId: null, steps, doneTaskIds, stateRevision: 9 };
 }
 
 const THREE = [

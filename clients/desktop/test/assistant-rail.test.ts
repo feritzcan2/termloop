@@ -215,6 +215,7 @@ describe("Assistant rail Session classification", () => {
     } as Task);
     const runtime = {
       activePipelineName: "Dev PR to production",
+      evaluation: null,
       processingTaskId: "task-2",
       steps: [
         { milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["task-1", "task-2"], progress: [], nextAttemptAtEpochMs: null },
