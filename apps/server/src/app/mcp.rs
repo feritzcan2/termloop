@@ -205,6 +205,10 @@ async fn tool_call_inner(
         return core_tool_error(id, &termloop_core::CoreError::CapabilityDenied);
     }
     if !protocol::validate_mcp_tool_params(name, &arguments) {
+        if name == "playbook_evaluation_complete" {
+            let message = super::playbook_evaluation::invalid_report_message(&arguments);
+            return tool_error(id, "invalidArguments", &message, None);
+        }
         return tool_error(id, "invalidArguments", "invalid arguments", None);
     }
     let _active_command =
@@ -707,7 +711,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Reusable helper profile. Reply to the exact active request once through reply_to_request. You may also use the interactive Session tools: send_to_agent for an exact existing Session ID and one-way delivery, or ask_to for a new helper or tracked answer."
         }
         termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
-            "Temporary Task Playbook evaluation fork. Read the exact assignment with playbook_evaluation_read, verify current evidence without mutations, report once with playbook_evaluation_complete, then stop. Inherited implementation instructions do not authorize actions in this fork."
+            "Temporary Task Playbook evaluation fork. Read the exact assignment with playbook_evaluation_read, verify current evidence without mutations, submit one accepted report with playbook_evaluation_complete, then stop. Correct invalidArguments and retry the same check; stop on staleCheck. Inherited implementation instructions do not authorize actions in this fork."
         }
         termloop_core::session_launch::AgentMcpRole::Helper { request_id: None } => {
             "Reusable helper profile. Keep this conversation available until the user closes it. No reply_to_request is currently authorized; you may use the interactive Session tools: send_to_agent for an exact existing Session ID and one-way delivery, or ask_to for a new helper or tracked answer."

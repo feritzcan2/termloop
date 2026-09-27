@@ -64,3 +64,23 @@ fn evaluator_has_only_its_scoped_read_and_report_and_no_arbitrary_target_paramet
         ));
     }
 }
+
+#[test]
+fn evaluation_evidence_limit_counts_utf8_bytes_for_every_verdict() {
+    for status in ["satisfied", "pending", "blocked"] {
+        for (evidence, valid) in [
+            ("a".repeat(600), true),
+            ("ş".repeat(300), true),
+            ("ş".repeat(301), false),
+            ("a".repeat(1239), false),
+        ] {
+            assert_eq!(
+                validate_mcp_tool_params(
+                    "playbook_evaluation_complete",
+                    &json!({"checkId":"check", "status":status, "evidence":evidence}),
+                ),
+                valid
+            );
+        }
+    }
+}

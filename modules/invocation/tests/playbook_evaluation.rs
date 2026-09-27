@@ -38,11 +38,17 @@ fn evaluation_forks_keep_provider_context_but_have_read_only_permissions_and_vis
             launch.provenance().template_ref,
             "builtin.agent.playbook-evaluator"
         );
+        assert_eq!(launch.provenance().template_version, 2);
         assert_eq!(launch.inspectable_manifest().target.permission, "plan");
         assert_eq!(
             launch.delivered_prompt().unwrap(),
             include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator.md")
         );
+        let prompt = launch.delivered_prompt().unwrap();
+        assert!(prompt.contains("600 UTF-8 bytes"));
+        assert!(prompt.contains("invalidArguments"));
+        assert!(prompt.contains("retry the same check"));
+        assert!(prompt.contains("Never repeat an accepted report"));
         assert!(launch.args().iter().any(|arg| arg
             == if provider == "claude" {
                 "--fork-session"
