@@ -1,27 +1,56 @@
 export type ProjectionRefresh = () => Promise<void>;
 
-/** Serializes snapshots and coalesces any overlap into one trailing refresh. */
+/**
+ * Serializes snapshots and coalesces requests into the next unstarted refresh.
+ * Each caller waits only for its round, never for later invalidations to stop.
+ */
 export function createProjectionRefreshQueue(
   refreshOnce: ProjectionRefresh,
   beforeFirstRefresh: ProjectionRefresh = () => new Promise((resolve) => setTimeout(resolve, 75)),
 ): ProjectionRefresh {
-  let inFlight: Promise<void> | undefined;
-  let queued = false;
-  return () => {
-    if (inFlight) {
-      queued = true;
-      return inFlight;
-    }
-    inFlight = (async () => {
+  let running = false;
+  let queued: {
+    promise: Promise<void>;
+    resolve(): void;
+    reject(error: unknown): void;
+  } | undefined;
+
+  const drain = async () => {
+    try {
       await beforeFirstRefresh();
-      do {
-        queued = false;
+    } catch (error) {
+      const failed = queued;
+      queued = undefined;
+      running = false;
+      failed?.reject(error);
+      return;
+    }
+    while (queued) {
+      const round = queued;
+      queued = undefined;
+      try {
         await refreshOnce();
-      } while (queued);
-    })().finally(() => {
-      inFlight = undefined;
-    });
-    return inFlight;
+        round.resolve();
+      } catch (error) {
+        round.reject(error);
+      }
+    }
+    running = false;
+  };
+
+  return () => {
+    if (!queued) {
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+      queued = { promise, resolve, reject };
+    }
+    const pending = queued.promise;
+    if (!running) {
+      running = true;
+      void drain();
+    }
+    return pending;
   };
 }
 
