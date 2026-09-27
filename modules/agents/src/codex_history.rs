@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const PROBE_RETRY_DELAY: Duration = Duration::from_millis(50);
 const MAX_ROLLOUT_BYTES: usize = 512 << 20;
 const MAX_ROLLOUT_RECORDS: usize = 1_000_000;
