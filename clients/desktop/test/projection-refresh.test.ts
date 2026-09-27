@@ -6,6 +6,29 @@ import {
 } from "../src/renderer/state/projection-refresh.js";
 
 describe("projection refresh queue", () => {
+  it("completes each caller after its snapshot even while invalidations keep arriving", async () => {
+    const releases: Array<() => void> = [];
+    const completed: number[] = [];
+    const refreshOnce = vi.fn(() => new Promise<void>((resolve) => releases.push(resolve)));
+    const refresh = createProjectionRefreshQueue(refreshOnce, async () => {});
+
+    const first = refresh().then(() => { completed.push(1); });
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(1));
+    const second = refresh().then(() => { completed.push(2); });
+    releases.shift()?.();
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(2));
+
+    const third = refresh().then(() => { completed.push(3); });
+    expect(completed).toEqual([1]);
+    releases.shift()?.();
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(3));
+    expect(completed).toEqual([1, 2]);
+
+    releases.shift()?.();
+    await Promise.all([first, second, third]);
+    expect(completed).toEqual([1, 2, 3]);
+  });
+
   it("serializes snapshots and coalesces overlap into one trailing refresh", async () => {
     const releases: Array<() => void> = [];
     let active = 0;
@@ -29,6 +52,71 @@ describe("projection refresh queue", () => {
 
     expect(maximumActive).toBe(1);
     expect(refreshOnce).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces callers before the initial delay finishes into one fresh snapshot", async () => {
+    let start!: () => void;
+    const refreshOnce = vi.fn(async () => {});
+    const refresh = createProjectionRefreshQueue(
+      refreshOnce,
+      () => new Promise<void>((resolve) => { start = resolve; }),
+    );
+
+    const first = refresh();
+    const second = refresh();
+    expect(refreshOnce).not.toHaveBeenCalled();
+    start();
+    await Promise.all([first, second]);
+    expect(refreshOnce).toHaveBeenCalledOnce();
+  });
+
+  it("reports a failed round without discarding requests for the next snapshot", async () => {
+    let fail!: (error: Error) => void;
+    const refreshOnce = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject; }))
+      .mockResolvedValue(undefined);
+    const refresh = createProjectionRefreshQueue(refreshOnce, async () => {});
+
+    const failed = expect(refresh()).rejects.toThrow("source unavailable");
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledOnce());
+    const trailing = refresh();
+    fail(new Error("source unavailable"));
+    await Promise.all([failed, trailing]);
+    expect(refreshOnce).toHaveBeenCalledTimes(2);
+
+    await refresh();
+    expect(refreshOnce).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not report a later snapshot's failure to an already completed caller", async () => {
+    let release!: () => void;
+    const refreshOnce = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }))
+      .mockRejectedValueOnce(new Error("later snapshot failed"));
+    const refresh = createProjectionRefreshQueue(refreshOnce, async () => {});
+
+    const first = refresh();
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledOnce());
+    const failed = expect(refresh()).rejects.toThrow("later snapshot failed");
+    release();
+    await expect(first).resolves.toBeUndefined();
+    await failed;
+  });
+
+  it("rejects callers when the initial delay fails and allows a new attempt", async () => {
+    const beforeFirstRefresh = vi.fn()
+      .mockRejectedValueOnce(new Error("delay failed"))
+      .mockResolvedValue(undefined);
+    const refreshOnce = vi.fn(async () => {});
+    const refresh = createProjectionRefreshQueue(refreshOnce, beforeFirstRefresh);
+
+    await Promise.all([
+      expect(refresh()).rejects.toThrow("delay failed"),
+      expect(refresh()).rejects.toThrow("delay failed"),
+    ]);
+    expect(refreshOnce).not.toHaveBeenCalled();
+    await refresh();
+    expect(refreshOnce).toHaveBeenCalledOnce();
   });
 
   it("isolates owners while coalescing each owner's overlap", async () => {
@@ -72,5 +160,27 @@ describe("projection refresh queue", () => {
     await queue.request("remote-a");
 
     expect(beforeFirstRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an unretained lane serialized until its last pending round completes", async () => {
+    const releases: Array<() => void> = [];
+    const refreshOnce = vi.fn(() => new Promise<void>((resolve) => releases.push(resolve)));
+    const queue = new KeyedProjectionRefreshQueue<string>(refreshOnce);
+
+    const first = queue.request("remote");
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(1));
+    const second = queue.request("remote");
+    queue.retain(new Set());
+    releases.shift()?.();
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(2));
+    await first;
+
+    const third = queue.request("remote");
+    await Promise.resolve();
+    expect(refreshOnce).toHaveBeenCalledTimes(2);
+    releases.shift()?.();
+    await vi.waitFor(() => expect(refreshOnce).toHaveBeenCalledTimes(3));
+    releases.shift()?.();
+    await Promise.all([second, third]);
   });
 });
