@@ -41,6 +41,7 @@ import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlE
 import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionLabel, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
+import { createSessionRename } from "./session-rename.js";
 import { closeWorkflowAgents as closeWorkflowAgentGroup } from "./workflow-close.js";
 import { retryAgentSession } from "./session-resume.js";
 import {
@@ -1659,17 +1660,12 @@ export function DesktopApp() {
   const closeSession = useCallback(async (sessionId: string) => {
     await dismissSession(sessionId);
   }, [dismissSession]);
-  const renameSession = useCallback(async (sessionId: string, name: string | null) => {
-    try {
-      await sourceApiForSession(sessionId).sessionRename(sessionId, name);
-      await refreshProjection();
-      return undefined;
-    } catch (error) {
-      const message = controlErrorMessage(error);
-      projectionStore.setMessage(message);
-      return message;
-    }
-  }, []);
+  const renameSession = useMemo(() => createSessionRename({
+    renameSession: (sessionId, name) => sourceApiForSession(sessionId).sessionRename(sessionId, name),
+    upsertSession: (session) => projectionStore.upsertSession(session),
+    refreshProjection,
+    setMessage: (message) => projectionStore.setMessage(message),
+  }), []);
   const createProject = useCallback(async (profileId: string, name: string, folderPath: string) => {
     const project = await desktopApi.source(profileId).projectCreate(name, folderPath);
     presentationStore.getState().selectProject(project.id);
