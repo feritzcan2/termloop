@@ -64,7 +64,10 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         }
     };
     let inherits_codex_permissions = agent_id == "codex"
-        && conversation_kind == "resume"
+        && matches!(
+            conversation,
+            AgentConversationLaunch::Resume { .. } | AgentConversationLaunch::Fork { .. }
+        )
         && observation.as_ref().is_some_and(|observation| {
             matches!(
                 observation.transport,
@@ -119,7 +122,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 .into_iter()
                 .map(|argument| ResolvedArgument::exact(argument, "reasoning selection")),
         );
-        // Remote resume rejects TUI permission overrides. Reapply the saved
+        // Remote resume and fork reject TUI permission overrides. Reapply the saved
         // selection through the App Server preparation carried by this payload.
         let permission_arguments = permission_args(agent_id, permission)?;
         if !inherits_codex_permissions {
@@ -203,16 +206,16 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         if agent_id != "codex" {
             return Err(InvocationError::UnsupportedAgent(agent_id.into()));
         }
-        // Remote resume rejects permission overrides even in -c config.
+        // Remote resume and fork reject permission overrides even in -c config.
         // The App Server preparation owns this setting for resumed threads.
         if !inherits_codex_permissions {
-        arguments.extend([
-            ResolvedArgument::exact("-c", "workspace sandbox network policy"),
-            ResolvedArgument::exact(
-                format!("sandbox_workspace_write.network_access={enabled}"),
-                "workspace sandbox network policy",
-            ),
-        ]);
+            arguments.extend([
+                ResolvedArgument::exact("-c", "workspace sandbox network policy"),
+                ResolvedArgument::exact(
+                    format!("sandbox_workspace_write.network_access={enabled}"),
+                    "workspace sandbox network policy",
+                ),
+            ]);
         }
     }
     if let Some(policy) = execution {
@@ -422,23 +425,32 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             workspace_network,
         },
         codex_resume_permissions: if inherits_codex_permissions {
-            let AgentConversationLaunch::Resume { resume_ref } = conversation else {
-                unreachable!("remote resume was checked")
+            let (resume_ref, fork) = match conversation {
+                AgentConversationLaunch::Resume { resume_ref } => (resume_ref, false),
+                AgentConversationLaunch::Fork { source_ref } => (source_ref, true),
+                _ => unreachable!("remote resume or fork was checked"),
             };
             let mode = match permission {
                 "default" => termloop_agents::CodexPermissionMode::Default,
                 "acceptEdits" => termloop_agents::CodexPermissionMode::AcceptEdits,
                 "plan" => termloop_agents::CodexPermissionMode::Plan,
                 "bypassPermissions" => termloop_agents::CodexPermissionMode::BypassPermissions,
-                _ => return Err(InvocationError::UnsupportedPermission {
-                    agent_id: agent_id.into(), permission: permission.into(),
-                }),
+                _ => {
+                    return Err(InvocationError::UnsupportedPermission {
+                        agent_id: agent_id.into(),
+                        permission: permission.into(),
+                    });
+                }
             };
-            Some(termloop_agents::CodexResumePermissions::new(
-                &resume_ref.native_session_id, cwd, mode,
-            ).ok_or(InvocationError::InvalidResumeReference)?
-                .with_configuration(model, reasoning)
-                .with_workspace_network(workspace_network))
+            let request = termloop_agents::CodexResumePermissions::new(
+                &resume_ref.native_session_id,
+                cwd,
+                mode,
+            )
+            .ok_or(InvocationError::InvalidResumeReference)?
+            .with_configuration(model, reasoning)
+            .with_workspace_network(workspace_network);
+            Some(if fork { request.for_fork() } else { request })
         } else {
             None
         },

@@ -9,6 +9,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 #[derive(Clone)]
 pub struct CodexResumePermissions {
     native_thread_id: String,
+    fork: bool,
     cwd: String,
     permission: CodexPermissionMode,
     model: Option<String>,
@@ -27,6 +28,7 @@ impl CodexResumePermissions {
         }
         Some(Self {
             native_thread_id: native_thread_id.into(),
+            fork: false,
             cwd: cwd.into(),
             permission,
             model: None,
@@ -50,6 +52,15 @@ impl CodexResumePermissions {
 
     pub fn native_thread_id(&self) -> &str {
         &self.native_thread_id
+    }
+
+    pub fn for_fork(mut self) -> Self {
+        self.fork = true;
+        self
+    }
+
+    pub fn is_fork(&self) -> bool {
+        self.fork
     }
 
     pub fn permission(&self) -> CodexPermissionMode {
@@ -101,7 +112,27 @@ impl CodexResumePermissions {
 
     fn matches(&self, result: &Value) -> bool {
         let (approval, reviewer, _, sandbox) = self.settings();
-        result.pointer("/thread/id").and_then(Value::as_str) == Some(self.native_thread_id.as_str())
+        let identity_matches = if self.fork {
+            result
+                .pointer("/thread/id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| {
+                    id != self.native_thread_id
+                        && termloop_domain::ResumeRef::for_provider(
+                            termloop_domain::ResumeProvider::Codex,
+                            id.into(),
+                        )
+                        .is_some()
+                })
+                && result
+                    .pointer("/thread/forkedFromId")
+                    .and_then(Value::as_str)
+                    == Some(self.native_thread_id.as_str())
+        } else {
+            result.pointer("/thread/id").and_then(Value::as_str)
+                == Some(self.native_thread_id.as_str())
+        };
+        identity_matches
             && result.get("approvalPolicy").and_then(Value::as_str) == Some(approval)
             && result.get("approvalsReviewer").and_then(Value::as_str) == Some(reviewer)
             && result.pointer("/sandbox/type").and_then(Value::as_str) == Some(sandbox)
@@ -128,8 +159,20 @@ pub struct CodexResumePermissionsError;
 /// Codex unloads a thread when its last client disconnects; dropping this
 /// connection before the TUI attaches would lose the verified permissions.
 pub struct CodexResumeLease {
+    native_thread_id: String,
+    fork_source: Option<String>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl CodexResumeLease {
+    pub fn native_thread_id(&self) -> &str {
+        &self.native_thread_id
+    }
+
+    pub fn fork_source(&self) -> Option<&str> {
+        self.fork_source.as_deref()
+    }
 }
 
 impl Drop for CodexResumeLease {
@@ -144,7 +187,7 @@ impl Drop for CodexResumeLease {
 }
 
 /// Configure the provider before its TUI attaches. Unlike CLI flags, the
-/// App Server accepts permission overrides on thread/resume. A mismatched or
+/// App Server accepts permission overrides on thread/resume and thread/fork. A mismatched or
 /// rejected response must prevent the caller from launching that TUI.
 pub fn prepare_codex_resume_permissions(
     endpoint: &str,
@@ -156,6 +199,7 @@ pub fn prepare_codex_resume_permissions(
         .map_err(|_| CodexResumePermissionsError)?;
     let endpoint = endpoint.to_owned();
     let request = request.clone();
+    let fork_source = request.fork.then(|| request.native_thread_id.clone());
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
     let worker = std::thread::Builder::new()
@@ -165,14 +209,14 @@ pub fn prepare_codex_resume_permissions(
                 let prepared =
                     tokio::time::timeout(Duration::from_secs(20), prepare(&endpoint, &request))
                         .await;
-                let mut socket = match prepared {
-                    Ok(Ok(socket)) => socket,
+                let (mut socket, native_thread_id) = match prepared {
+                    Ok(Ok(prepared)) => prepared,
                     _ => {
                         let _ = ready_tx.send(Err(CodexResumePermissionsError));
                         return;
                     }
                 };
-                if ready_tx.send(Ok(())).is_err() {
+                if ready_tx.send(Ok(native_thread_id)).is_err() {
                     return;
                 }
                 loop {
@@ -187,11 +231,13 @@ pub fn prepare_codex_resume_permissions(
             });
         })
         .map_err(|_| CodexResumePermissionsError)?;
-    let lease = CodexResumeLease {
+    let mut lease = CodexResumeLease {
+        native_thread_id: String::new(),
+        fork_source,
         stop: Some(stop_tx),
         worker: Some(worker),
     };
-    ready_rx.recv().map_err(|_| CodexResumePermissionsError)??;
+    lease.native_thread_id = ready_rx.recv().map_err(|_| CodexResumePermissionsError)??;
     Ok(lease)
 }
 
@@ -199,12 +245,18 @@ async fn prepare(
     endpoint: &str,
     request: &CodexResumePermissions,
 ) -> Result<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    (
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        String,
+    ),
     CodexResumePermissionsError,
 > {
     let (mut socket, _) = connect_async(endpoint)
         .await
         .map_err(|_| CodexResumePermissionsError)?;
+    let mut native_thread_id = String::new();
     for (id, method, params) in [
         (
             "termloop-resume-initialize",
@@ -216,7 +268,11 @@ async fn prepare(
         ),
         (
             "termloop-resume-permissions",
-            "thread/resume",
+            if request.fork {
+                "thread/fork"
+            } else {
+                "thread/resume"
+            },
             request.params(),
         ),
     ] {
@@ -259,9 +315,15 @@ async fn prepare(
                 .map_err(|_| CodexResumePermissionsError)?;
         } else if !request.matches(&response) {
             return Err(CodexResumePermissionsError);
+        } else {
+            native_thread_id = response
+                .pointer("/thread/id")
+                .and_then(Value::as_str)
+                .ok_or(CodexResumePermissionsError)?
+                .to_owned();
         }
     }
-    Ok(socket)
+    Ok((socket, native_thread_id))
 }
 
 #[cfg(test)]

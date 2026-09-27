@@ -39,7 +39,7 @@ fn provider_args(launch: &LaunchPayload) -> &[String] {
 }
 
 #[test]
-fn remote_resume_prepares_saved_permissions_without_rejected_tui_flags() {
+fn remote_resume_and_fork_prepare_saved_permissions_without_rejected_tui_flags() {
     let resume_ref = ResumeRef::for_provider(ResumeProvider::Codex, THREAD_ID.into()).unwrap();
     let account = AgentAccountContext {
         agent_id: "codex".into(),
@@ -47,80 +47,92 @@ fn remote_resume_prepares_saved_permissions_without_rejected_tui_flags() {
         name: "Work".into(),
         config_directory: Some(std::env::temp_dir().join("codex-resume-private-account")),
     };
-    for account in [None, Some(&account)] {
-        for (permission, _) in PERMISSION_ARGUMENTS.iter().rev() {
-            let launch = configured_interactive_agent_for_conversation(
-                "codex",
-                "/tmp/project",
-                "gpt-6-astra",
-                permission,
-                "xhigh",
-                AgentConversationLaunch::Resume {
-                    resume_ref: &resume_ref,
+    for fork in [false, true] {
+        for account in [None, Some(&account)] {
+            for (permission, _) in PERMISSION_ARGUMENTS.iter().rev() {
+                let launch = configured_interactive_agent_for_conversation(
+                    "codex",
+                    "/tmp/project",
+                    "gpt-6-astra",
+                    permission,
+                    "xhigh",
+                    (if fork {
+                        AgentConversationLaunch::Fork {
+                            source_ref: &resume_ref,
+                        }
+                    } else {
+                        AgentConversationLaunch::Resume {
+                            resume_ref: &resume_ref,
+                        }
+                    })
+                    .in_account(account),
+                    Some(observation()),
+                    None,
+                )
+                .unwrap();
+                let args = provider_args(&launch);
+                assert_eq!(
+                    &args[..2],
+                    [if fork { "fork" } else { "resume" }, THREAD_ID]
+                );
+                assert!(args.windows(2).any(|pair| pair == ["--remote", ENDPOINT]));
+                assert!(args.windows(2).any(|pair| pair == ["-C", "/tmp/project"]));
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--model", "gpt-6-astra"])
+                );
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["-c", "model_reasoning_effort=\"xhigh\""])
+                );
+                for (_, rejected) in PERMISSION_ARGUMENTS {
+                    for argument in *rejected {
+                        assert!(
+                            !args.iter().any(|arg| arg == argument),
+                            "{permission}: {argument}"
+                        );
+                    }
                 }
-                .in_account(account),
-                Some(observation()),
-                None,
-            )
-            .unwrap();
-            let args = provider_args(&launch);
-            assert_eq!(&args[..2], ["resume", THREAD_ID]);
-            assert!(args.windows(2).any(|pair| pair == ["--remote", ENDPOINT]));
-            assert!(args.windows(2).any(|pair| pair == ["-C", "/tmp/project"]));
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair == ["--model", "gpt-6-astra"])
-            );
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair == ["-c", "model_reasoning_effort=\"xhigh\""])
-            );
-            for (_, rejected) in PERMISSION_ARGUMENTS {
-                for argument in *rejected {
-                    assert!(
-                        !args.iter().any(|arg| arg == argument),
-                        "{permission}: {argument}"
-                    );
-                }
-            }
 
-            let manifest = launch.inspectable_manifest();
-            let actual = manifest
-                .arguments
-                .iter()
-                .filter(|argument| argument.purpose == "permission selection")
-                .map(|argument| argument.display.as_str())
-                .collect::<Vec<_>>();
-            assert!(actual.is_empty());
-            assert_eq!(manifest.target.permission, *permission);
-            assert_eq!(manifest.target.model, "gpt-6-astra");
-            assert_eq!(manifest.target.reasoning, "xhigh");
-            let preparation = launch.codex_resume_permissions().unwrap();
-            assert_eq!(preparation.native_thread_id(), THREAD_ID);
-            assert_eq!(preparation.permission().as_launch_selection(), *permission);
-            assert_eq!(manifest.arguments.len(), args.len());
-            for argument in &manifest.arguments {
-                if argument.visibility == "exact" {
-                    assert_eq!(argument.display, args[argument.position]);
+                let manifest = launch.inspectable_manifest();
+                let actual = manifest
+                    .arguments
+                    .iter()
+                    .filter(|argument| argument.purpose == "permission selection")
+                    .map(|argument| argument.display.as_str())
+                    .collect::<Vec<_>>();
+                assert!(actual.is_empty());
+                assert_eq!(manifest.target.permission, *permission);
+                assert_eq!(manifest.target.model, "gpt-6-astra");
+                assert_eq!(manifest.target.reasoning, "xhigh");
+                let preparation = launch.codex_resume_permissions().unwrap();
+                assert_eq!(preparation.native_thread_id(), THREAD_ID);
+                assert_eq!(preparation.is_fork(), fork);
+                assert_eq!(preparation.permission().as_launch_selection(), *permission);
+                assert_eq!(manifest.arguments.len(), args.len());
+                for argument in &manifest.arguments {
+                    if argument.visibility == "exact" {
+                        assert_eq!(argument.display, args[argument.position]);
+                    }
                 }
+                assert!(manifest.limitations.iter().any(|limitation| {
+                    limitation.kind == "providerManaged"
+                        && limitation.description.contains("reapplies and verifies")
+                        && limitation.description.contains("Codex App Server")
+                }));
+                assert_eq!(launch.initial_input(), None);
+                let preview = serde_json::to_string(manifest).unwrap();
+                assert!(!preview.contains(THREAD_ID));
+                assert!(!preview.contains(ENDPOINT));
+                assert!(!preview.contains("codex-resume-private-account"));
+                assert!(!format!("{launch:?}").contains(THREAD_ID));
             }
-            assert!(manifest.limitations.iter().any(|limitation| {
-                limitation.kind == "providerManaged"
-                    && limitation.description.contains("reapplies and verifies")
-                    && limitation.description.contains("Codex App Server")
-            }));
-            assert_eq!(launch.initial_input(), None);
-            let preview = serde_json::to_string(manifest).unwrap();
-            assert!(!preview.contains(THREAD_ID));
-            assert!(!preview.contains(ENDPOINT));
-            assert!(!preview.contains("codex-resume-private-account"));
-            assert!(!format!("{launch:?}").contains(THREAD_ID));
         }
     }
 }
 
 #[test]
-fn fresh_and_forked_remote_sessions_and_local_resumes_keep_permission_arguments() {
+fn fresh_remote_sessions_and_local_resume_and_fork_keep_permission_arguments() {
     let resume_ref = ResumeRef::for_provider(ResumeProvider::Codex, THREAD_ID.into()).unwrap();
     for (conversation, observation) in [
         (
@@ -131,7 +143,7 @@ fn fresh_and_forked_remote_sessions_and_local_resumes_keep_permission_arguments(
             AgentConversationLaunch::Fork {
                 source_ref: &resume_ref,
             },
-            Some(observation()),
+            None,
         ),
         (
             AgentConversationLaunch::Resume {
