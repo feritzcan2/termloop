@@ -256,18 +256,35 @@ fn execution_server_keeps_named_tool_policy_for_remote_resume() {
 
 #[test]
 fn remote_resume_routes_network_permissions_to_server_not_tui() {
-    let template = PromptTemplate { id: "resume-test", version: 1, authored_body: "Continue" };
-    let handle = ConversationHandle::from_native("codex", "019f1dae-3bf3-73d1-b3c7-08ddbbd1f036".into()).unwrap();
+    let template = PromptTemplate {
+        id: "resume-test",
+        version: 1,
+        authored_body: "Continue",
+    };
+    let handle =
+        ConversationHandle::from_native("codex", "019f1dae-3bf3-73d1-b3c7-08ddbbd1f036".into())
+            .unwrap();
     for enabled in [true, false] {
         let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
         request.conversation = handle.resume();
         request.permission = "bypassPermissions";
         request.workspace_network = Some(enabled);
         request.observation = Some(AgentObservationLaunch {
-            session_id: "session", endpoint: "http://localhost/hook", token: "token",
-            transport: AgentObservationLaunchTransport::DaemonOwnedBridge { endpoint: CODEX_APP_SERVER_RUNTIME_PLACEHOLDER },
+            session_id: "session",
+            endpoint: "http://localhost/hook",
+            token: "token",
+            transport: AgentObservationLaunchTransport::DaemonOwnedBridge {
+                endpoint: CODEX_APP_SERVER_RUNTIME_PLACEHOLDER,
+            },
         });
         let payload = resolve(request).unwrap().into_payload();
-        assert!(!payload.args().iter().any(|a| a.contains("sandbox_workspace_write") || a.contains("bypass-approvals") || a == "--sandbox"));
+        assert!(
+            !payload
+                .args()
+                .iter()
+                .any(|a| a.contains("sandbox_workspace_write")
+                    || a.contains("bypass-approvals")
+                    || a == "--sandbox")
+        );
     }
 }

@@ -164,6 +164,7 @@ impl TrackerReportCapabilityRegistry {
 
 pub(super) async fn run_tracker_deadlines(state: AppState) {
     loop {
+        super::playbook_evaluation::reap_obsolete_evaluators(&state).await;
         let next_wake = {
             let mut core = state.core.lock().await;
             match (
@@ -233,7 +234,7 @@ async fn deliver_due_steward_wake(
         let mut core = state.core.lock().await;
         core.claim_due_steward_routine(&wake, check_id.clone(), now)
     };
-    let claim = match claim {
+    let mut claim = match claim {
         Ok(claim) => claim,
         Err(error) => {
             tracing::warn!(project_id = wake.project_id, %error, "Steward assignment claim failed");
@@ -245,6 +246,34 @@ async fn deliver_due_steward_wake(
             return;
         }
     };
+    match super::playbook_evaluation::route_assignment(state, &mut claim).await {
+        Ok(true) => {
+            state
+                .core
+                .lock()
+                .await
+                .acknowledge_steward_assignment_delivery(&wake);
+            state.tracker_runtime_wake.notify_one();
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Playbook assignment routing failed");
+            if let Some(capability) = claim.capability.as_ref() {
+                state
+                    .core
+                    .lock()
+                    .await
+                    .release_steward_routine_claim(capability);
+            }
+            state.core.lock().await.fail_steward_assignment_delivery(
+                &wake,
+                now.saturating_add(WAKE_DELIVERY_RETRY_MS),
+            );
+            state.tracker_runtime_wake.notify_one();
+            return;
+        }
+    }
     let Some(capability) = claim.capability.as_ref() else {
         return;
     };

@@ -35,6 +35,7 @@ mod health;
 mod invalidation;
 mod keep_awake;
 mod mcp;
+mod playbook_evaluation;
 mod runtime_health;
 mod shell_history;
 mod steward_change;
@@ -211,6 +212,9 @@ fn generated_mcp_tool_catalog()
             let mut roles = Vec::new();
             if termloop_contract::current::MCP_INTERACTIVE_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Interactive);
+            }
+            if termloop_contract::current::MCP_PLAYBOOK_EVALUATOR_TOOLS.contains(&tool_name) {
+                roles.push(termloop_core::McpToolRole::PlaybookEvaluator);
             }
             if termloop_contract::current::MCP_HELPER_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Helper);

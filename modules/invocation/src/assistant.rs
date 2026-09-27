@@ -94,6 +94,7 @@ pub fn executor_prompt(role: ExecutorRole) -> Result<ProvenancedPrompt, Invocati
 }
 
 const RETIRED_STEWARD_EXECUTOR_DEFAULTS: &[&str] = &[
+    include_str!("../../../resources/prompts/retired/builtin.steward.executor.v39.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v2.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v3.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v4.md"),

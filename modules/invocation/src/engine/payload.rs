@@ -12,6 +12,7 @@ pub enum AgentMcpProfile {
     Improver,
     Steward,
     Helper,
+    PlaybookEvaluator,
 }
 
 impl AgentMcpProfile {
