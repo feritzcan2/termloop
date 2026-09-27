@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import type { AgentStatus, Session } from "../model.js";
@@ -10,8 +10,8 @@ import { SessionRowButton, SessionRowClose, sessionRelationshipLabel } from "./S
 import { taskChangeLabel } from "../task-presentation.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
-import { activeAgentWorkflowAction, type ActiveAgentWorkflow, type WorkflowAgentGroup } from "./active-agent-workflows.js";
-import { WorkflowAgentGroupFrame, workflowAgentSegments } from "./WorkflowAgentGroup.js";
+import { activeAgentWorkflowAction, workflowAgentRuns, type ActiveAgentWorkflow, type WorkflowAgentGroup, type WorkflowAgentRun } from "./active-agent-workflows.js";
+import { WorkflowAgentGroupFrame } from "./WorkflowAgentGroup.js";
 
 export type ActiveAgentSections = {
   actionNeeded: readonly Session[];
@@ -229,12 +229,11 @@ export function activeAgentQueryMatches(session: Session, normalizedQuery: strin
     || workflows.some((workflow) => workflow.context.toLowerCase().includes(normalizedQuery));
 }
 
-function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>, workflowGroups?: ReadonlyMap<string, WorkflowAgentGroup>): ActiveAgentGroupSections {
+function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>): ActiveAgentGroupSections {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return sections;
   const matching = (groups: readonly AgentSessionCluster[]) => groups.filter(
-    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id))
-      || workflowGroups?.get(session.id)?.context.toLowerCase().includes(normalized)),
+    (group) => agentSessionClusterMembers(group).some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id))),
   );
   return {
     actionNeeded: matching(sections.actionNeeded),
@@ -244,6 +243,31 @@ function filterActiveAgentGroupSections(sections: ActiveAgentGroupSections, quer
     older: matching(sections.older),
     stopped: matching(sections.stopped),
   };
+}
+
+/// Runs that are waiting on the user lead, then unfinished runs, then finished
+/// ones kept for their outcome and whole-run close. Recency breaks ties.
+function orderWorkflowRuns(
+  runs: readonly WorkflowAgentRun[],
+  statusesById: ReadonlyMap<string, AgentStatus>,
+  reviewReadySessionIds: ReadonlySet<string>,
+): { run: WorkflowAgentRun; attention: boolean }[] {
+  return runs
+    .map((run) => {
+      const live = run.sessions.filter((session) => isLiveSession(session));
+      return { run, attention: live.length > 0 && agentGroupActivityPriority(live, statusesById, reviewReadySessionIds) <= 2 };
+    })
+    .sort((left, right) => Number(right.attention) - Number(left.attention)
+      || Number(left.run.workflow.status === "completed") - Number(right.run.workflow.status === "completed")
+      || right.run.workflow.updatedAtEpochMs - left.run.workflow.updatedAtEpochMs);
+}
+
+function workflowRunMatches(run: WorkflowAgentRun, query: string, workflows?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]>, labels?: ReadonlyMap<string, string>): boolean {
+  const normalized = query.trim().toLowerCase();
+  return !normalized
+    || run.workflow.context.toLowerCase().includes(normalized)
+    || (run.workflow.stepLabel?.toLowerCase().includes(normalized) ?? false)
+    || run.sessions.some((session) => activeAgentQueryMatches(session, normalized, workflows?.get(session.id), labels?.get(session.id)));
 }
 
 function flattenGroupSections(sections: ActiveAgentGroupSections): Session[] {
@@ -307,23 +331,39 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
     return () => window.clearInterval(handle);
   }, [props.nowEpochMs]);
   const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
+  /// Workflow members live only in their run's entry, never also in a bucket.
+  const workflowRuns = useMemo(() => orderWorkflowRuns(
+    workflowAgentRuns(props.sessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
+    props.statusesById, props.reviewReadySessionIds,
+  ), [props.sessions, props.workflowGroupsBySessionId, props.statusesById, props.reviewReadySessionIds]);
+  const bucketSessions = useMemo(() => {
+    const members = new Set(workflowRuns.flatMap(({ run }) => run.sessions.map((session) => session.id)));
+    return members.size ? props.sessions.filter((session) => !members.has(session.id)) : props.sessions;
+  }, [props.sessions, workflowRuns]);
   const naturalSections = useMemo(
-    () => activeAgentGroupSections(props.sessions, props.statusesById, props.reviewReadySessionIds, props.favoriteSessionIds, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.rememberedActivityBySessionId),
-    [nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.favoriteSessionIds, props.rememberedActivityBySessionId, props.reviewReadySessionIds, props.sessions, props.statusesById],
+    () => activeAgentGroupSections(bucketSessions, props.statusesById, props.reviewReadySessionIds, props.favoriteSessionIds, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.rememberedActivityBySessionId),
+    [bucketSessions, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.favoriteSessionIds, props.rememberedActivityBySessionId, props.reviewReadySessionIds, props.statusesById],
   );
   /// The selected row follows the current state immediately. Focus and the
   /// terminal stage remain stable; keeping a row under a stale section label
   /// would make the rail contradict the status it renders.
   const sections = naturalSections;
-  const allOrdered = useMemo(() => flattenGroupSections(sections), [sections]);
+  const allOrdered = useMemo(
+    () => [...workflowRuns.flatMap(({ run }) => run.sessions), ...flattenGroupSections(sections)],
+    [sections, workflowRuns],
+  );
   const visibleSections = useMemo(
-    () => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId, props.workflowGroupsBySessionId),
-    [sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId, props.workflowGroupsBySessionId],
+    () => filterActiveAgentGroupSections(sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId),
+    [sections, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId],
   );
   const filtering = visibleSections !== sections;
+  const visibleWorkflowRuns = useMemo(
+    () => (filtering ? workflowRuns.filter(({ run }) => workflowRunMatches(run, query, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId)) : workflowRuns),
+    [filtering, query, workflowRuns, props.workflowsBySessionId, props.workflowAgentLabelsBySessionId],
+  );
   const ordered = useMemo(
-    () => (filtering ? flattenGroupSections(visibleSections) : allOrdered),
-    [allOrdered, filtering, visibleSections],
+    () => (filtering ? [...visibleWorkflowRuns.flatMap(({ run }) => run.sessions), ...flattenGroupSections(visibleSections)] : allOrdered),
+    [allOrdered, filtering, visibleSections, visibleWorkflowRuns],
   );
   const sessionsById = useMemo(
     () => new Map(props.sessions.map((session) => [session.id, session])),
@@ -389,6 +429,16 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
           <p className="agent-empty-hint">Tap Shift twice anywhere in TermLoop to open Quick Action, pick an agent, and write its first prompt.</p>
         </div>
       ) : <>
+        {visibleWorkflowRuns.length > 0 ? (
+          <section className="active-agent-section" aria-label="Workflows" data-active-agent-section="Workflows">
+            <div className="rail-subhead"><span>Workflows</span><span>{visibleWorkflowRuns.length}</span></div>
+            <div className="active-agent-list" role="list">
+              {visibleWorkflowRuns.map(({ run, attention }) => (
+                <WorkflowRunEntry key={run.workflow.executionId} run={run} attention={attention} props={props} />
+              ))}
+            </div>
+          </section>
+        ) : null}
         {visibleSections.actionNeeded.length > 0 ? (
           <ActiveAgentSection label="Action needed" sessions={visibleSections.actionNeeded} props={props} sessionsById={sessionsById} />
         ) : null}
@@ -443,55 +493,86 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
               renameGroup={props.renameAgentGroup}
               ungroup={props.ungroupAgentGroup}
             >
-              {cluster.groups.flatMap(({ source, helpers }) =>
-                workflowAgentSegments([source, ...helpers], props.workflowGroupsBySessionId).map((segment) => {
-                  const members = segment.sessions.map((session) => {
-                    const rowSource = session.id === source.id ? undefined : source;
-                    const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
-                    const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined
-                      : rowSource ?? (sourceId ? sessionsById.get(sourceId) : undefined);
-                    return {
-                      session, source: rowSource, projectedSource,
-                      worktreeChanges: props.worktreeChangesBySessionId.get(session.id)
-                        ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined),
-                    };
-                  });
-                  const first = members[0]!;
-                  // Share only exact checkout identities, never matching basenames.
-                  const checkout = segment.workflow && first.session.process.cwd && members.every(({ session }) =>
-                    session.project_id === first.session.project_id && session.process.cwd === first.session.process.cwd)
-                    ? first.session.process.cwd : undefined;
-                  const changes = checkout && first.worktreeChanges && members.every(({ worktreeChanges }) =>
-                    worktreeChanges?.taskId === first.worktreeChanges!.taskId
-                    && worktreeChanges.taskTitle === first.worktreeChanges!.taskTitle
-                    && worktreeChanges.changeCount === first.worktreeChanges!.changeCount)
-                    ? first.worktreeChanges : undefined;
-                  const rows = members.map((member) => <ActiveAgentRow
-                    key={member.session.id}
-                    {...member}
-                    compactWorkflow={Boolean(segment.workflow)}
-                    sharedCheckout={Boolean(checkout)}
-                    sharedChanges={Boolean(changes)}
-                    props={props}
-                  />);
-                  return segment.workflow
-                    ? <WorkflowAgentGroupFrame key={first.session.id} workflow={segment.workflow}
-                      close={props.closeWorkflow ? () => props.closeWorkflow!(segment.workflow!.executionId) : undefined}
-                      disabled={props.workflowActionsDisabled} revealMembers={props.searchOpen} metadata={checkout ? <div className="workflow-agent-group-meta">
-                      <span className="workflow-agent-group-checkout" title={checkout}><Icon name="folder" /><span>{checkout === props.projectFolder ? "Project checkout" : basename(checkout)}</span></span>
-                      {changes ? <button type="button" className="workflow-agent-group-changes"
-                        aria-label={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
-                        title={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
-                        onClick={() => props.openTaskChanges(changes.taskId)}>{taskChangeLabel(changes.changeCount)}</button> : null}
-                    </div> : undefined}>{rows}</WorkflowAgentGroupFrame>
-                    : <Fragment key={segment.sessions[0]!.id}>{rows}</Fragment>;
-                }))}
+              {cluster.groups.flatMap(({ source, helpers }) => [source, ...helpers].map((session) => {
+                const rowSource = session.id === source.id ? undefined : source;
+                const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
+                const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined
+                  : rowSource ?? (sourceId ? sessionsById.get(sourceId) : undefined);
+                return <ActiveAgentRow
+                  key={session.id}
+                  session={session}
+                  source={rowSource}
+                  projectedSource={projectedSource}
+                  worktreeChanges={props.worktreeChangesBySessionId.get(session.id)
+                    ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined)}
+                  compactWorkflow={false}
+                  sharedCheckout={false}
+                  sharedChanges={false}
+                  props={props}
+                />;
+              }))}
             </AgentGroupFrame>
           ))}
         </div>
       )}
     </section>
   );
+}
+
+/// One entry per run. Members are listed flat under their role labels: the
+/// role already says who asked whom, so no Ask-To nesting is drawn inside.
+function WorkflowRunEntry({ run, attention, props }: {
+  run: WorkflowAgentRun;
+  attention: boolean;
+  props: ActiveAgentRailProps;
+}) {
+  const { workflow } = run;
+  const members = run.sessions.map((session) => {
+    const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
+    return {
+      session,
+      worktreeChanges: props.worktreeChangesBySessionId.get(session.id)
+        ?? (sourceId ? props.worktreeChangesBySessionId.get(sourceId) : undefined),
+    };
+  });
+  const first = members[0]!;
+  // Share only exact checkout identities, never matching basenames.
+  const checkout = first.session.process.cwd && members.every(({ session }) =>
+    session.project_id === first.session.project_id && session.process.cwd === first.session.process.cwd)
+    ? first.session.process.cwd : undefined;
+  const changes = checkout && first.worktreeChanges && members.every(({ worktreeChanges }) =>
+    worktreeChanges?.taskId === first.worktreeChanges!.taskId
+    && worktreeChanges.taskTitle === first.worktreeChanges!.taskTitle
+    && worktreeChanges.changeCount === first.worktreeChanges!.changeCount)
+    ? first.worktreeChanges : undefined;
+  const details = workflow.stepLabel || checkout ? <div className="workflow-agent-group-meta">
+    {workflow.stepLabel ? <span className="workflow-agent-group-step">{workflow.stepLabel}</span> : null}
+    {checkout ? <span className="workflow-agent-group-checkout" title={checkout}><Icon name="folder" /><span>{checkout === props.projectFolder ? "Project checkout" : basename(checkout)}</span></span> : null}
+    {changes && changes.changeCount > 0 ? <button type="button" className="workflow-agent-group-changes"
+      aria-label={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
+      title={`Review ${taskChangeLabel(changes.changeCount)} in ${changes.taskTitle}`}
+      onClick={() => props.openTaskChanges(changes.taskId)}>{taskChangeLabel(changes.changeCount)}</button> : null}
+  </div> : undefined;
+  return <WorkflowAgentGroupFrame
+    workflow={workflow}
+    details={details}
+    attention={attention}
+    containsSelection={run.sessions.some((session) => session.id === props.selectedSession?.id)}
+    close={props.closeWorkflow ? () => props.closeWorkflow!(workflow.executionId) : undefined}
+    disabled={props.workflowActionsDisabled}
+    revealMembers={props.searchOpen}
+  >
+    {members.map((member) => <ActiveAgentRow
+      key={member.session.id}
+      session={member.session}
+      projectedSource={undefined}
+      worktreeChanges={changes ? undefined : member.worktreeChanges}
+      compactWorkflow
+      sharedCheckout={Boolean(checkout)}
+      sharedChanges={Boolean(changes)}
+      props={props}
+    />)}
+  </WorkflowAgentGroupFrame>;
 }
 
 function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, compactWorkflow, sharedCheckout, sharedChanges, props }: {
