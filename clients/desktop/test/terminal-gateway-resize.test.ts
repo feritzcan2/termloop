@@ -1,6 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
 import { EventEmitter, once } from "node:events";
-import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { ACCESS_PROTOCOL_IDENTITY, CONTRACT_IDENTITY } from "@termloop/contract/current";
@@ -24,13 +23,15 @@ afterEach(async () => {
 async function gateway(kind: "local" | "remote") {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");
+  const address = server.address();
+  if (typeof address === "string" || address === null) throw new Error("Expected a TCP server address");
   const parentPort = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
   const port = Object.assign(new EventEmitter(), {
     start: vi.fn(), postMessage: vi.fn(), close: vi.fn(),
   });
   Object.defineProperty(process, "parentPort", { configurable: true, value: parentPort });
   const frames: ReturnType<typeof decodeFrame>[] = [];
-  // The other client initially owns the PTY at a different size.
+  // The other client initially owns the terminal at a different size.
   let owner = false;
   let grid = { rows: 48, cols: 160 };
   server.on("connection", (socket) => {
@@ -76,7 +77,7 @@ async function gateway(kind: "local" | "remote") {
   await import("../src/utility/terminal-gateway.js");
   parentPort.emit("message", { data: {
     type: "configure", connectionKind: kind,
-    terminalUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    terminalUrl: `ws://127.0.0.1:${address.port}`,
     terminalToken: "test-terminal-token",
     ...(kind === "remote" ? {
       accessProfileId: "test-profile",

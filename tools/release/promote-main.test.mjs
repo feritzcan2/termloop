@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const versionFiles = ["package.json", "clients/desktop/package.json", "clients/cli/package.json", "contract/generated/typescript/package.json"];
+const versionFiles = ["package.json", "clients/desktop/package.json", "clients/terminal-wire/package.json", "clients/terminal-surface/package.json", "clients/ghostty-host/package.json", "clients/cli/package.json", "contract/generated/typescript/package.json"];
 
 async function fixture(t, { tagged = true } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "termloop-promote-test-"));
