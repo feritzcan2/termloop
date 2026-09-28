@@ -34,7 +34,7 @@ fn playbook_runtime_exposes_bounded_current_evaluation_routing() {
             "sessionId":"fork", "sourceSessionId":"source", "reason":null}
     });
     assert!(validate_method_result("playbook.runtime", &runtime));
-    runtime["evaluation"]["mode"] = json!("stewardFallback");
+    runtime["evaluation"]["mode"] = json!("waitingForTaskAgent");
     runtime["evaluation"]["reason"] = json!("forkUnavailable");
     assert!(validate_method_result("playbook.runtime", &runtime));
     runtime["evaluation"]["reason"] = json!("arbitrary provider output");

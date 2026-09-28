@@ -69,7 +69,7 @@ try {
     assert.equal(read.assignment.step.finishWith, "playbook_evaluation_complete");
     const denied = await rpc("tools/call", { name: "send_to_agent", arguments: { sessionId: read.sourceSessionId, message: "Must be denied" } });
     assert.ok(denied.error || denied.result?.isError);
-    await writeFile(path.join(evidenceDirectory, "evaluation.json"), JSON.stringify({ sessionId, sourceSessionId: read.sourceSessionId, taskId: read.task.id, scopedTools: true }));
+    await writeFile(path.join(evidenceDirectory, "evaluation.json"), JSON.stringify({ sessionId, sourceSessionId: read.sourceSessionId, taskId: read.task.id, taskNotes: read.task.developer_notes, scopedTools: true }));
     let inspected = false;
     for (let attempt = 0; attempt < 200 && !inspected; attempt++) {
       inspected = await readFile(path.join(evidenceDirectory, "inspection-complete"), "utf8").then(() => true, () => false);
@@ -90,7 +90,7 @@ try {
     await call("playbook_evaluation_complete", { checkId: read.assignment.checkId, ...report });
   } else if (tools.includes("steward_next_assignment")) {
     const assignment = JSON.parse((await call("steward_next_assignment")).content);
-    await writeFile(path.join(evidenceDirectory, "steward.json"), JSON.stringify({ status: assignment.status }));
+    await writeFile(path.join(evidenceDirectory, "steward.json"), JSON.stringify({ status: assignment.status, hasStep: Boolean(assignment.step) }));
   } else {
     await writeFile(path.join(evidenceDirectory, "source.json"), JSON.stringify({ sessionId }));
   }

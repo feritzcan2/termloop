@@ -18,6 +18,7 @@ const bin = path.join(home, ".local", "bin");
 const worktree = path.join(temporary, "task");
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 await Promise.all([repository, runtimeDirectory, evidenceDirectory, bin].map((directory) => mkdir(directory, { recursive: true })));
+const noAgent = process.argv.includes("--no-agent");
 const reportStatus = process.argv.includes("--pending") ? "pending" : "satisfied";
 const evaluatorSettings = process.argv.includes("--custom-settings")
   ? { codexModel: "gpt-6-luna", claudeModel: "haiku", permission: "bypassPermissions" }
@@ -76,10 +77,15 @@ try {
   const task = await call("task.create", { projectId: project.id, title: "Evaluate my task", worktreeIntent: "none", worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
   await call("task.provisionWorktree", { operationId: crypto.randomUUID(), taskId: task.id, repositoryPath: repository,
     destinationPath: worktree, branchName: "task/evaluation", branchMode: "create", baseRef: "refs/remotes/origin/main" });
+  const taskNotes = [{ id: "review-note", text: "Verify the exact DEV scenario before passing this step.", completed: false }];
+  await call("task.updateDeveloperNotes", { taskId: task.id, expectedDeveloperNotes: [], developerNotes: taskNotes });
+  let source;
+  if (!noAgent) {
   const params = { taskId: task.id, agentId: "claude", model: "sonnet", permission: "default", reasoning: "default" };
   const preview = await call("task.previewAgent", params);
-  const source = await call("task.launchAgent", { taskId: task.id, agentId: params.agentId, launchTicket: preview.launch_ticket });
+  source = await call("task.launchAgent", { taskId: task.id, agentId: params.agentId, launchTicket: preview.launch_ticket });
   await wait(() => json(path.join(evidenceDirectory, "source.json")).catch(() => null), "Source Agent did not initialize");
+  }
   let configuration = await call("steward.configurationGet", { projectId: project.id });
   const saved = await call("steward.configurationSet", { projectId: project.id, agentId: "claude", model: "default", permission: "bypassPermissions", reasoning: "default", enabled: false, systemPrompt: "", playbookEvaluator: evaluatorSettings, expectedRevision: configuration.stateRevision });
   assert.deepEqual(saved.configuration.playbookEvaluator, evaluatorSettings);
@@ -89,8 +95,25 @@ try {
   await call("playbook.update", { projectId: project.id, activePipelineName: "Delivery", milestones: [{ id: "verified", title: "Verified", gate: "automatic",
     completeWhen: "Verify the exact Task with current evidence.", whileWaiting: { mode: "off", instructions: "" }, retryDelaySeconds: 60, approver: null }],
     savedPipelines: [], expectedPlaybookRevision: 0, expectedRevision: playbook.stateRevision });
+  if (noAgent) {
+    const waiting = await wait(async () => {
+      const result = await call("playbook.runtime", { projectId: project.id });
+      return result.evaluation?.mode === "waitingForTaskAgent" ? result : null;
+    }, "Missing Agent did not leave the step waiting");
+    assert.equal(waiting.evaluation.reason, "noUnambiguousTaskAgent");
+    assert.equal(waiting.evaluation.sessionId, null);
+    assert.equal(waiting.processingTaskId, null);
+    assert.deepEqual(waiting.steps[0].progress, []);
+    assert.deepEqual((await call("playbook.evaluationHistory", { projectId: project.id })).entries, []);
+    const steward = await wait(() => json(path.join(evidenceDirectory, "steward.json")).catch(() => null), "Steward did not receive the idle response");
+    assert.equal(steward.status, "idle");
+    assert.equal(steward.hasStep, false);
+    assert.equal(await json(path.join(evidenceDirectory, "evaluation.json")).catch(() => null), null);
+    console.log("PLAYBOOK_NO_AGENT_OK: waiting, no fork or verdict, no Steward assignment");
+  } else {
   const evaluated = await wait(() => json(path.join(evidenceDirectory, "evaluation.json")).catch(() => null), "Evaluation fork did not run");
   assert.equal(evaluated.taskId, task.id);
+  assert.deepEqual(evaluated.taskNotes, taskNotes);
   assert.equal(evaluated.sourceSessionId, source.id);
   const checking = await wait(async () => {
     const result = await call("playbook.runtime", { projectId: project.id });
@@ -128,6 +151,8 @@ try {
   assert.equal(finishedHistory.entries[0].id, startedHistory.entries[0].id);
   assert.ok(finishedHistory.entries[0].finishedAtEpochMs >= startedHistory.entries[0].startedAtEpochMs);
   console.log(`PLAYBOOK_EVALUATION_OK: native Task fork, scoped tools, preserved source, rejected oversize reports, corrected ${reportStatus} verdict, temporary Session cleanup, retained fork history`);
+  }
+
 } catch (error) {
   console.error(JSON.stringify({
     sessions: await call("session.list").catch(() => []),

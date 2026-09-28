@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:2fa9fc63b11741ec22570e66b048b1401b71c7006b36b4854e7e781284c0794d";
+    "sha256:7b9482924b7a2a96683a6fc3a8552c3dd9fbfb191ff4ba0e227d9e2ef8940ae2";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -26940,7 +26940,7 @@ fn validate_playbook_evaluation_dto(value: &Value) -> bool {
                 .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
         }) && object.get("mode").is_some_and(|field| {
             field.as_str().is_some_and(|text| {
-                ["starting", "taskAgentFork", "stewardFallback"].contains(&text)
+                ["starting", "taskAgentFork", "waitingForTaskAgent"].contains(&text)
             })
         }) && object.get("sessionId").is_some_and(|field| {
             (field
