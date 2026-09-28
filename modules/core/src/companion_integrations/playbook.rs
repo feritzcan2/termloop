@@ -659,6 +659,7 @@ mod tests {
             .set_steward_configuration(
                 &runtime.write_authority,
                 StewardConfiguration {
+                    playbook_evaluator: Default::default(),
                     project_id: project_id.clone(),
                     agent_id: StewardAgentId::Codex,
                     model: "gpt-5.6-luna".into(),

@@ -111,6 +111,7 @@ impl Fixture {
     ) -> Result<crate::StewardConfigurationCommit, CoreError> {
         self.core
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id: &self.project,
                 agent_id: "codex",
                 model: "default".into(),
@@ -123,6 +124,79 @@ impl Fixture {
                 updated_at_epoch_ms: 2,
             })
     }
+}
+
+#[test]
+fn evaluator_settings_save_without_retiring_steward_and_omitted_updates_preserve_them() {
+    let mut fixture = Fixture::new();
+    let settings = crate::PlaybookEvaluatorSettings {
+        codex_model: Some("gpt-6-luna".into()),
+        claude_model: Some("haiku".into()),
+        permission: "default".into(),
+    };
+    let update = |settings, expected_revision| StewardConfigurationUpdate {
+        project_id: &fixture.project,
+        agent_id: "codex",
+        model: "default".into(),
+        permission: "bypassPermissions".into(),
+        reasoning: "default".into(),
+        enabled: true,
+        system_prompt: "original".into(),
+        playbook_evaluator: settings,
+        expected_revision,
+        capability: AssistantAvailability::Proven,
+        updated_at_epoch_ms: 3,
+    };
+    let old_revision = fixture.core.state_revision();
+    let changed = fixture
+        .core
+        .set_steward_configuration(update(Some(settings.clone()), old_revision))
+        .unwrap();
+    assert!(changed.change.changed());
+    assert_eq!(changed.change.generation(), 1);
+    assert!(changed.change.retired_session_id().is_none());
+    assert!(!changed.change.needs_wake());
+    assert_eq!(
+        changed.result["configuration"]["executorSessionId"],
+        "executor"
+    );
+    assert!(matches!(
+        fixture
+            .core
+            .set_steward_configuration(update(Some(settings.clone()), old_revision)),
+        Err(CoreError::RevisionConflict)
+    ));
+    let same = fixture
+        .core
+        .set_steward_configuration(update(
+            Some(settings.clone()),
+            fixture.core.state_revision(),
+        ))
+        .unwrap();
+    assert!(!same.change.changed());
+    let invalid = crate::PlaybookEvaluatorSettings {
+        codex_model: Some("haiku".into()),
+        ..settings.clone()
+    };
+    assert!(matches!(
+        fixture
+            .core
+            .set_steward_configuration(update(Some(invalid), fixture.core.state_revision())),
+        Err(CoreError::InvalidParams(_))
+    ));
+    fixture
+        .change(
+            "new prompt",
+            true,
+            fixture.core.state_revision(),
+            AssistantAvailability::Proven,
+        )
+        .unwrap();
+    assert_eq!(
+        fixture.core.store.steward_configurations()[0].playbook_evaluator,
+        settings
+    );
+    std::fs::remove_dir_all(&fixture.root).unwrap();
 }
 
 #[test]

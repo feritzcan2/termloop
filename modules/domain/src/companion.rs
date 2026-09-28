@@ -153,6 +153,8 @@ pub struct StewardConfiguration {
     pub permission: String,
     #[serde(default = "default_assistant_launch_option")]
     pub reasoning: String,
+    #[serde(default)]
+    pub playbook_evaluator: PlaybookEvaluatorSettings,
     pub enabled: bool,
     /// One current Project-scoped role prompt. An empty migrated value means
     /// invocation's visible built-in default until the user saves it.
@@ -161,6 +163,37 @@ pub struct StewardConfiguration {
     pub executor_session_id: Option<String>,
     pub generation: u64,
     pub updated_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlaybookEvaluatorSettings {
+    pub codex_model: Option<String>,
+    pub claude_model: Option<String>,
+    pub permission: String,
+}
+
+impl Default for PlaybookEvaluatorSettings {
+    fn default() -> Self {
+        Self {
+            codex_model: None,
+            claude_model: None,
+            permission: "plan".into(),
+        }
+    }
+}
+
+impl PlaybookEvaluatorSettings {
+    pub fn is_valid(&self) -> bool {
+        [&self.codex_model, &self.claude_model]
+            .into_iter()
+            .all(|model| {
+                model
+                    .as_deref()
+                    .is_none_or(|model| valid_assistant_launch_option(model) && model.len() <= 80)
+            })
+            && valid_assistant_permission(&self.permission)
+    }
 }
 
 fn default_assistant_launch_option() -> String {
@@ -411,6 +444,7 @@ impl StewardConfiguration {
             && valid_assistant_launch_option(&self.model)
             && valid_assistant_permission(&self.permission)
             && valid_assistant_launch_option(&self.reasoning)
+            && self.playbook_evaluator.is_valid()
             && self.system_prompt.len() <= STEWARD_SYSTEM_PROMPT_MAX_BYTES
             && (self.system_prompt.is_empty() || !self.system_prompt.trim().is_empty())
     }

@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:02e692c406a1f03f6ed692274cca0151ce7d2b2b09a2abec1a5325dc9f2e1fa8";
+    "sha256:364ab75a51d0dd91cd31f502b7da2685d032a6b9b7a5306a42cc4a380502bd84";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -5320,7 +5320,25 @@ pub struct StewardPresenceDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PlaybookEvaluatorSettingsDto {
+    #[serde(
+        rename = "codexModel",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub codex_model: Option<String>,
+    #[serde(
+        rename = "claudeModel",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub claude_model: Option<String>,
+    pub permission: AssistantPermission,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StewardConfigurationDto {
+    #[serde(rename = "playbookEvaluator")]
+    pub playbook_evaluator: PlaybookEvaluatorSettingsDto,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "agentId")]
@@ -5375,6 +5393,8 @@ pub struct StewardConfigurationGetResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StewardConfigurationSetParams {
+    #[serde(rename = "playbookEvaluator", skip_serializing_if = "Option::is_none")]
+    pub playbook_evaluator: Option<PlaybookEvaluatorSettingsDto>,
     #[serde(rename = "projectId")]
     pub project_id: String,
     #[serde(rename = "agentId")]
@@ -21120,11 +21140,44 @@ fn validate_steward_presence_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_playbook_evaluator_settings_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("codexModel").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+                || field.is_null())
+        }) && object.get("claudeModel").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+                || field.is_null())
+        }) && object
+            .get("permission")
+            .is_some_and(|field| validate_assistant_permission(field))
+            && object
+                .keys()
+                .all(|key| ["codexModel", "claudeModel", "permission"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_steward_configuration_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
-            .get("projectId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            .get("playbookEvaluator")
+            .is_some_and(|field| validate_playbook_evaluator_settings_dto(field))
+            && object
+                .get("projectId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object
                 .get("agentId")
                 .is_some_and(|field| validate_steward_agent_id(field))
@@ -21166,6 +21219,7 @@ fn validate_steward_configuration_dto(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "playbookEvaluator",
                     "projectId",
                     "agentId",
                     "model",
@@ -21286,8 +21340,11 @@ fn validate_steward_configuration_get_result(value: &Value) -> bool {
 fn validate_steward_configuration_set_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
-            .get("projectId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            .get("playbookEvaluator")
+            .is_none_or(|field| validate_playbook_evaluator_settings_dto(field))
+            && object
+                .get("projectId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
             && object
                 .get("agentId")
                 .is_some_and(|field| validate_steward_agent_id(field))
@@ -21320,6 +21377,7 @@ fn validate_steward_configuration_set_params(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "playbookEvaluator",
                     "projectId",
                     "agentId",
                     "model",

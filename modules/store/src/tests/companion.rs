@@ -22,6 +22,7 @@ fn legacy_assistant_configuration_launch_options_default_during_deserialization(
     .unwrap();
     assert_eq!(steward.model, "default");
     assert_eq!(steward.reasoning, "default");
+    assert_eq!(steward.playbook_evaluator, Default::default());
 }
 
 fn project(id: &str) -> ProjectRecord {
@@ -259,6 +260,7 @@ fn steward_configuration_is_one_current_revision_checked_row() {
         .unwrap();
     let revision = store.revision();
     let first = StewardConfiguration {
+        playbook_evaluator: Default::default(),
         project_id: "project-a".into(),
         agent_id: StewardAgentId::Codex,
         model: "default".into(),
@@ -277,6 +279,7 @@ fn steward_configuration_is_one_current_revision_checked_row() {
         store.set_steward_configuration(
             &authority,
             StewardConfiguration {
+                playbook_evaluator: Default::default(),
                 project_id: "project-a".into(),
                 agent_id: StewardAgentId::Claude,
                 model: "default".into(),
@@ -294,6 +297,22 @@ fn steward_configuration_is_one_current_revision_checked_row() {
     ));
     assert_eq!(store.steward_configurations().len(), 1);
     assert_eq!(store.steward_configurations()[0].generation, 1);
+    let mut configuration = store.steward_configurations()[0].clone();
+    configuration.playbook_evaluator = termloop_domain::PlaybookEvaluatorSettings {
+        codex_model: Some("gpt-6-luna".into()),
+        claude_model: Some("haiku".into()),
+        permission: "default".into(),
+    };
+    store
+        .set_steward_configuration(&authority, configuration.clone(), store.revision())
+        .unwrap();
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(
+        reopened.steward_configurations()[0].playbook_evaluator,
+        configuration.playbook_evaluator
+    );
+    drop(reopened);
     let _ = std::fs::remove_file(path);
 }
 
@@ -313,6 +332,7 @@ fn steward_session_attach_is_one_atomic_generation_checked_write() {
         .insert_project(&authority, project("project-a"))
         .unwrap();
     let configuration = StewardConfiguration {
+        playbook_evaluator: Default::default(),
         project_id: "project-a".into(),
         agent_id: StewardAgentId::Claude,
         model: "default".into(),
@@ -511,6 +531,7 @@ fn ordinary_agent_session(id: &str, project_id: &str) -> SessionRecord {
 
 fn steward_configuration(project_id: &str, generation: u64, enabled: bool) -> StewardConfiguration {
     StewardConfiguration {
+        playbook_evaluator: Default::default(),
         project_id: project_id.into(),
         agent_id: StewardAgentId::Claude,
         model: "default".into(),

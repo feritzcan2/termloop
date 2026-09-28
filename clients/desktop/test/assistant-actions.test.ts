@@ -6,6 +6,23 @@ import type { SourceDesktopApi } from "../src/renderer/transport/desktop-api.js"
 import { withCurrentRevision } from "../src/renderer/ui/StewardPanel.js";
 
 describe("assistant composition actions", () => {
+  it("sends fork settings only when explicitly edited", async () => {
+    const stewardConfigurationSet = vi.fn(async () => ({ stateRevision: 2 }) as never);
+    const actions = createAssistantActions({
+      api: { stewardConfigurationSet } as unknown as SourceDesktopApi,
+      coordinator: new AssistantReadCoordinator(),
+      identity: { profileId: "remote-a", projectId: "project-a" },
+      projectId: "project-a", promptImprovement: undefined, sessions: () => [],
+    });
+    const settings = { codexModel: "gpt-6-luna", claudeModel: null, permission: "default" as const };
+    await actions.setConfiguration("codex", "gpt-6-astra", "bypassPermissions", "high", true, "PM", 1, settings);
+    expect(stewardConfigurationSet).toHaveBeenLastCalledWith({
+      projectId: "project-a", agentId: "codex", model: "gpt-6-astra", permission: "bypassPermissions",
+      reasoning: "high", enabled: true, systemPrompt: "PM", expectedRevision: 1, playbookEvaluator: settings,
+    });
+    await actions.setConfiguration("codex", "gpt-6-astra", "bypassPermissions", "high", false, "PM", 2);
+    expect(stewardConfigurationSet).toHaveBeenLastCalledWith(expect.not.objectContaining({ playbookEvaluator: expect.anything() }));
+  });
   it("recovers a Steward toggle from a cached revision without an invalidation event", async () => {
     let stateRevision = 7;
     const stewardConfigurationGet = vi.fn(async () => ({

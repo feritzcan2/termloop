@@ -115,6 +115,7 @@ mod tests {
             .to_owned();
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id: &project_id,
                 agent_id: "codex",
                 model: "default".into(),

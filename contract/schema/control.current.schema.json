@@ -11954,6 +11954,40 @@
         }
       }
     },
+    "playbookEvaluatorSettingsDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluatorSettingsDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codexModel",
+        "claudeModel",
+        "permission"
+      ],
+      "properties": {
+        "codexModel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Null inherits the source Codex model."
+        },
+        "claudeModel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Null inherits the source Claude model."
+        },
+        "permission": {
+          "$ref": "#/$defs/assistantPermission"
+        }
+      }
+    },
     "stewardConfigurationDto": {
       "x-codegen": true,
       "x-codegen-name": "StewardConfigurationDto",
@@ -11965,6 +11999,7 @@
         "model",
         "permission",
         "reasoning",
+        "playbookEvaluator",
         "enabled",
         "systemPrompt",
         "executorSessionId",
@@ -11972,6 +12007,7 @@
         "updatedAtEpochMs"
       ],
       "properties": {
+        "playbookEvaluator": { "$ref": "#/$defs/playbookEvaluatorSettingsDto" },
         "projectId": {
           "type": "string",
           "minLength": 1
@@ -12123,6 +12159,7 @@
         "expectedRevision"
       ],
       "properties": {
+        "playbookEvaluator": { "$ref": "#/$defs/playbookEvaluatorSettingsDto" },
         "projectId": {
           "type": "string",
           "minLength": 1

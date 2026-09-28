@@ -85,7 +85,23 @@ impl CoreRuntime {
         plan.mcp_role = AgentMcpRole::PlaybookEvaluator {
             check_id: capability.check_id.clone(),
         };
-        plan.interactive_options.get_or_insert_default().permission = "plan".into();
+        let settings = self
+            .store
+            .steward_configurations()
+            .iter()
+            .find(|configuration| configuration.project_id == capability.project_id)
+            .map(|configuration| configuration.playbook_evaluator.clone())
+            .unwrap_or_default();
+        let model = match plan.agent_id.as_str() {
+            "codex" => settings.codex_model,
+            "claude" => settings.claude_model,
+            _ => None,
+        };
+        let selection = plan.interactive_options.get_or_insert_default();
+        if let Some(model) = model {
+            selection.model = model;
+        }
+        selection.permission = settings.permission;
         plan.fork_name = Some("Playbook evaluation".into());
         match self.reserve_playbook_evaluation(
             claim,
@@ -139,4 +155,74 @@ fn fallback_result(assignment: &Value, reason: &str) -> Value {
     let mut value = assignment.clone();
     value["evaluation"] = json!({"mode": "stewardFallback", "reason": reason});
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::companion_integrations::playbook_runtime::tests::pipeline_runtime;
+    use crate::runtime::playbook_evaluation::tests::attach_agents;
+    #[test]
+    fn evaluator_settings_override_only_the_fork_and_defaults_inherit_the_source_model() {
+        for model in [None, Some("gpt-6-luna"), Some("default")] {
+            for permission in ["plan", "default", "acceptEdits", "bypassPermissions"] {
+                let (mut runtime, root, project) = pipeline_runtime();
+                attach_agents(&mut runtime, &root, &["source"]);
+                let mut configuration = runtime.store.steward_configurations()[0].clone();
+                configuration.playbook_evaluator = termloop_domain::PlaybookEvaluatorSettings {
+                    codex_model: model.map(str::to_owned),
+                    claude_model: Some("haiku".into()),
+                    permission: permission.into(),
+                };
+                runtime
+                    .store
+                    .set_steward_configuration(
+                        &runtime.write_authority,
+                        configuration,
+                        runtime.state_revision(),
+                    )
+                    .unwrap();
+                let claim = runtime
+                    .claim_next_steward_routine(
+                        &project,
+                        "steward-session",
+                        "evaluation-check".into(),
+                        termloop_platform::current_epoch_ms(),
+                    )
+                    .unwrap();
+                let PlaybookEvaluationLaunch::Fork { mut plan, .. } =
+                    runtime.plan_playbook_evaluation(&claim).unwrap()
+                else {
+                    panic!("expected evaluation fork");
+                };
+                let selection = plan.interactive_options.as_ref().unwrap();
+                assert_eq!(selection.model, model.unwrap_or("gpt-6-astra"));
+                assert_eq!(selection.permission, permission);
+                assert_eq!(selection.reasoning, "high");
+                plan.prepare_codex_fork_launch().unwrap();
+                let launch = plan.prepared_launch.as_ref().unwrap();
+                assert_eq!(
+                    launch.inspectable_manifest().target.model,
+                    model.unwrap_or("gpt-6-astra")
+                );
+                assert_eq!(
+                    launch
+                        .codex_resume_permissions()
+                        .unwrap()
+                        .permission()
+                        .as_launch_selection(),
+                    permission
+                );
+                let source = runtime
+                    .store
+                    .sessions()
+                    .iter()
+                    .find(|s| s.id == "source")
+                    .unwrap();
+                assert_eq!(source.launch_selection.model, "gpt-6-astra");
+                assert_eq!(source.launch_selection.permission, "bypassPermissions");
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
 }

@@ -41,7 +41,7 @@ describe("Steward capability presentation", () => {
   });
 
   it("binds terminal views only to the exact Steward Session", () => {
-    const steward = { projectId: "project-1", agentId: "codex", model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high", enabled: true, systemPrompt: "PM", executorSessionId: "steward-session", generation: 1, updatedAtEpochMs: 1 } as const;
+    const steward = { playbookEvaluator: { codexModel: null, claudeModel: null, permission: "plan" }, projectId: "project-1", agentId: "codex", model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high", enabled: true, systemPrompt: "PM", executorSessionId: "steward-session", generation: 1, updatedAtEpochMs: 1 } as const;
     expect(assistantTerminalSessionId({ kind: "steward" }, steward)).toBe("steward-session");
     expect(assistantTerminalSessionId({ kind: "routine", routineId: "routine-1" }, steward)).toBeNull();
   });

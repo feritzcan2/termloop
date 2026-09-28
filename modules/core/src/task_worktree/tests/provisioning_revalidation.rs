@@ -217,6 +217,7 @@ fn attach_steward(fixture: &mut Fixture) {
     fixture
         .runtime
         .set_steward_configuration(crate::StewardConfigurationUpdate {
+            playbook_evaluator: None,
             project_id: &fixture.project_id,
             agent_id: "codex",
             model: "default".into(),
