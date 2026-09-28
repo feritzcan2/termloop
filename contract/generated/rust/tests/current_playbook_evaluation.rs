@@ -5,6 +5,26 @@ use termloop_contract::current::{
 };
 
 #[test]
+fn steward_accepts_optional_bounded_evaluator_settings() {
+    use termloop_contract::current::validate_method_params;
+    let mut params = json!({"projectId":"project", "agentId":"codex", "model":"gpt-6-astra",
+        "permission":"bypassPermissions", "reasoning":"high", "enabled":true,
+        "systemPrompt":"", "expectedRevision":1});
+    assert!(validate_method_params("steward.configurationSet", &params));
+    params["playbookEvaluator"] =
+        json!({"codexModel":"gpt-6-luna", "claudeModel":null, "permission":"default"});
+    assert!(validate_method_params("steward.configurationSet", &params));
+    for invalid in [
+        json!({"codexModel":null,"claudeModel":null,"permission":"unknown"}),
+        json!({"codexModel":"","claudeModel":null,"permission":"plan"}),
+        json!({"codexModel":null,"claudeModel":null,"permission":"plan","agentId":"claude"}),
+    ] {
+        params["playbookEvaluator"] = invalid;
+        assert!(!validate_method_params("steward.configurationSet", &params));
+    }
+}
+
+#[test]
 fn playbook_runtime_exposes_bounded_current_evaluation_routing() {
     use termloop_contract::current::validate_method_result;
     let mut runtime = json!({

@@ -164,6 +164,7 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
         .set_steward_configuration(
             &runtime.write_authority,
             termloop_domain::StewardConfiguration {
+                playbook_evaluator: Default::default(),
                 project_id: project_id.clone(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),
@@ -1586,6 +1587,7 @@ async fn steward_activation_waits_for_post_hook_and_confirms_once() {
         .set_steward_configuration(
             &runtime.write_authority,
             termloop_domain::StewardConfiguration {
+                playbook_evaluator: Default::default(),
                 project_id: project_id.clone(),
                 agent_id: termloop_domain::StewardAgentId::Claude,
                 model: "default".into(),

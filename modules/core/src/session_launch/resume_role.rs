@@ -155,6 +155,7 @@ mod tests {
 
     fn steward(session_id: &str) -> StewardConfiguration {
         StewardConfiguration {
+            playbook_evaluator: Default::default(),
             project_id: "project-1".into(),
             agent_id: StewardAgentId::Claude,
             model: "default".into(),

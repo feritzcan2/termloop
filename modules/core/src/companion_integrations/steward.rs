@@ -30,6 +30,8 @@ pub struct StewardConfigurationUpdate<'a> {
     pub model: String,
     pub permission: String,
     pub reasoning: String,
+    /// Omission preserves the current evaluator settings.
+    pub playbook_evaluator: Option<termloop_domain::PlaybookEvaluatorSettings>,
     pub enabled: bool,
     pub system_prompt: String,
     pub expected_revision: u64,
@@ -384,6 +386,7 @@ impl CoreRuntime {
                     model: current.model,
                     permission: current.permission,
                     reasoning: current.reasoning,
+                    playbook_evaluator: current.playbook_evaluator,
                     enabled: current.enabled,
                     system_prompt: system_prompt.to_owned(),
                     executor_session_id: None,
@@ -873,6 +876,7 @@ impl CoreRuntime {
             model,
             permission,
             reasoning,
+            playbook_evaluator,
             enabled,
             system_prompt,
             expected_revision,
@@ -910,13 +914,32 @@ impl CoreRuntime {
             .steward_configurations()
             .iter()
             .find(|configuration| configuration.project_id == project_id);
+        let playbook_evaluator = playbook_evaluator
+            .or_else(|| current.map(|current| current.playbook_evaluator.clone()))
+            .unwrap_or_default();
+        for (provider, model) in [
+            ("codex", &playbook_evaluator.codex_model),
+            ("claude", &playbook_evaluator.claude_model),
+        ] {
+            termloop_invocation::validate_agent_configuration(
+                provider,
+                model.as_deref().unwrap_or("default"),
+                &playbook_evaluator.permission,
+                "default",
+            )
+            .map_err(|_| CoreError::InvalidParams("playbookEvaluator".into()))?;
+        }
+        let steward_unchanged = current.is_some_and(|current| {
+            current.agent_id == agent_id
+                && current.model == model
+                && current.permission == permission
+                && current.reasoning == reasoning
+                && current.enabled == enabled
+                && current.system_prompt == system_prompt
+        });
         if let Some(current) = current
-            && current.agent_id == agent_id
-            && current.model == model
-            && current.permission == permission
-            && current.reasoning == reasoning
-            && current.enabled == enabled
-            && current.system_prompt == system_prompt
+            && steward_unchanged
+            && current.playbook_evaluator == playbook_evaluator
         {
             if expected_revision != self.store.revision() {
                 return Err(CoreError::RevisionConflict);
@@ -929,7 +952,7 @@ impl CoreRuntime {
         let generation = current
             .map(|configuration| configuration.generation)
             .unwrap_or(0)
-            .checked_add(1)
+            .checked_add(u64::from(!steward_unchanged))
             .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
         let configuration = StewardConfiguration {
             project_id: project_id.to_owned(),
@@ -937,9 +960,12 @@ impl CoreRuntime {
             model,
             permission,
             reasoning,
+            playbook_evaluator,
             enabled,
             system_prompt,
-            executor_session_id: None,
+            executor_session_id: current
+                .filter(|_| steward_unchanged)
+                .and_then(|current| current.executor_session_id.clone()),
             generation,
             updated_at_epoch_ms,
         };
@@ -1183,6 +1209,7 @@ mod tests {
         let project_id = project["id"].as_str().unwrap();
         assert!(matches!(
             runtime.set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1198,6 +1225,7 @@ mod tests {
         ));
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1212,6 +1240,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             runtime.set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -1229,6 +1258,7 @@ mod tests {
         ));
         let changed = runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id,
                 agent_id: "claude",
                 model: "default".into(),
@@ -1289,6 +1319,7 @@ mod tests {
             termloop_invocation::effective_steward_system_prompt(initial_prompt);
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id: &first,
                 agent_id: "codex",
                 model: "default".into(),

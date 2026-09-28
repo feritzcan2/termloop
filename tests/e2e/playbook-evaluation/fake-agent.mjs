@@ -59,7 +59,10 @@ try {
   const tools = (await rpc("tools/list")).result.tools.map((tool) => tool.name);
   if (tools.includes("playbook_evaluation_read")) {
     assert.ok(isFork);
-    assert.equal(args[args.indexOf("--permission-mode") + 1], "plan");
+    const selected = JSON.parse(await readFile(path.join(evidenceDirectory, "evaluator-settings.json"), "utf8"));
+    assert.equal(args[args.indexOf("--model") + 1], selected.claudeModel ?? "sonnet");
+    if (selected.permission === "bypassPermissions") assert.ok(args.includes("--dangerously-skip-permissions"));
+    else assert.equal(args[args.indexOf("--permission-mode") + 1], selected.permission);
     assert.deepEqual(tools, ["playbook_evaluation_read", "playbook_evaluation_complete"]);
     assert.ok(args.at(-1).includes("builtin.agent.playbook-evaluator"));
     const read = JSON.parse((await call("playbook_evaluation_read")).content);
