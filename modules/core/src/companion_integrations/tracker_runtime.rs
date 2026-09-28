@@ -1707,6 +1707,7 @@ mod tests {
             .set_steward_configuration(
                 &runtime.write_authority,
                 StewardConfiguration {
+                    playbook_evaluator: Default::default(),
                     project_id: project_id.clone(),
 
                     agent_id: StewardAgentId::Codex,
@@ -1971,6 +1972,7 @@ mod tests {
         let updated = runtime
             .set_steward_configuration(
                 crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    playbook_evaluator: None,
                     project_id: &project_id,
                     agent_id: "codex",
                     model: "default".into(),
@@ -2000,6 +2002,7 @@ mod tests {
         let updated = runtime
             .set_steward_configuration(
                 crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    playbook_evaluator: None,
                     project_id: &project_id,
                     agent_id: "codex",
                     model: "gpt-5.6-sol".into(),

@@ -2773,6 +2773,7 @@ function controlResult(
         reasoning: "default",
         enabled: true,
         executorSessionId: "steward-session",
+        playbookEvaluator: { codexModel: null, claudeModel: null, permission: "plan" },
         generation: 1,
         updatedAtEpochMs: 1,
         systemPrompt: "",
