@@ -69,6 +69,7 @@ let connecting: Promise<void> | undefined;
 let reconnectDelay = INITIAL_RECONNECT_MS;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 const attachments = new Map<string, Attachment>();
+let focusedSessionId: string | undefined;
 const MAX_TERMINAL_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 process.parentPort.on("message", (event) => {
@@ -155,6 +156,7 @@ function removeAttachment(sessionId: string, port: Electron.MessagePortMain): vo
     ));
   }
   attachments.delete(sessionId);
+  if (focusedSessionId === sessionId) focusedSessionId = undefined;
   port.close();
 }
 
@@ -194,16 +196,9 @@ function handlePortMessage(attachment: Attachment, message: PortMessage): void {
   } else if (message.type === "resize") {
     attachment.dimensions = { rows: message.rows, cols: message.cols };
     if (socket?.readyState === WebSocket.OPEN) sendResize(attachment);
-  } else if (message.type === "focus" && socket?.readyState === WebSocket.OPEN) {
-    socket.send(encodeFrame(
-      attachment.sessionId,
-      attachment.runtimeEpoch,
-      attachment.sequence++,
-      KIND_FOCUS,
-    ));
-    // The previous owner may have a different grid. Send our cached size
-    // after the claim so the daemon applies it even without a window resize.
-    sendResize(attachment);
+  } else if (message.type === "focus") {
+    focusedSessionId = attachment.sessionId;
+    if (socket?.readyState === WebSocket.OPEN) sendFocus(attachment);
   }
 }
 
@@ -384,7 +379,20 @@ function sendAttach(attachment: Attachment): void {
     KIND_ATTACH,
     replayRequestPayload(),
   ));
-  if (attachment.dimensions) sendResize(attachment);
+  if (focusedSessionId === attachment.sessionId) sendFocus(attachment);
+  else if (attachment.dimensions) sendResize(attachment);
+}
+
+function sendFocus(attachment: Attachment): void {
+  socket?.send(encodeFrame(
+    attachment.sessionId,
+    attachment.runtimeEpoch,
+    attachment.sequence++,
+    KIND_FOCUS,
+  ));
+  // The previous owner may have a different grid. Send our cached size
+  // after the claim so the daemon applies it even without a window resize.
+  sendResize(attachment);
 }
 
 function sendResize(attachment: Attachment): void {

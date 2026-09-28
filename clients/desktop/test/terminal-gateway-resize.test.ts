@@ -20,7 +20,7 @@ afterEach(async () => {
   vi.resetModules();
 });
 
-async function gateway(kind: "local" | "remote") {
+async function gateway(kind: "local" | "remote", openingMessages: object[] = []) {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");
   const address = server.address();
@@ -68,6 +68,7 @@ async function gateway(kind: "local" | "remote") {
   });
   cleanup = async () => {
     port.emit("message", { data: { type: "detach" } });
+    parentPort.postMessage.mockClear();
     const closed = once(server, "close");
     for (const client of server.clients) client.terminate();
     server.close();
@@ -88,16 +89,38 @@ async function gateway(kind: "local" | "remote") {
     } : {}),
   } });
   parentPort.emit("message", { data: { type: "attach", sessionId, runtimeEpoch: 1 }, ports: [port] });
+  for (const data of openingMessages) port.emit("message", { data });
   await vi.waitFor(() => expect(frames.some((frame) => frame.kind === KIND_ATTACH)).toBe(true));
   return {
     frames,
     grid: () => grid,
     send: (data: object) => port.emit("message", { data }),
     loseOwnership: () => { owner = false; grid = { rows: 48, cols: 160 }; },
+    disconnect: () => {
+      owner = false;
+      grid = { rows: 48, cols: 160 };
+      for (const client of server.clients) client.terminate();
+    },
   };
 }
 
 describe("terminal gateway resize ownership", () => {
+  it.each(["local", "remote"] as const)("retains focus while the %s connection authenticates and reconnects", async (kind) => {
+    const client = await gateway(kind, [
+      { type: "resize", rows: 35, cols: 90 },
+      { type: "focus" },
+    ]);
+    await vi.waitFor(() => expect(client.grid()).toEqual({ rows: 35, cols: 90 }));
+    expect(client.frames.filter((frame) => frame.sessionId === sessionId).map((frame) => frame.kind))
+      .toEqual([KIND_ATTACH, KIND_FOCUS, KIND_RESIZE]);
+
+    client.frames.length = 0;
+    client.disconnect();
+    await vi.waitFor(() => expect(client.grid()).toEqual({ rows: 35, cols: 90 }));
+    expect(client.frames.filter((frame) => frame.sessionId === sessionId).map((frame) => frame.kind))
+      .toEqual([KIND_ATTACH, KIND_FOCUS, KIND_RESIZE]);
+  });
+
   it.each(["local", "remote"] as const)("applies the %s client's current grid when focus takes ownership", async (kind) => {
     const client = await gateway(kind);
     client.send({ type: "resize", rows: 35, cols: 90 });

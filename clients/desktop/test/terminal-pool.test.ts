@@ -62,7 +62,7 @@ class FakeAttachment implements TerminalAttachmentLike {
     this.operations.push("resize");
     this.resizes.push({ rows, cols });
   }
-  focus(): void { this.focuses += 1; }
+  focus(): void { this.operations.push("focus"); this.focuses += 1; }
   acknowledge(bytes: number, startupReplay: boolean): void {
     this.acknowledged += bytes;
     if (startupReplay) this.replayAcknowledged += bytes;
@@ -113,6 +113,60 @@ function agentSession(id: string, projectId = "project-a"): Session {
 }
 
 describe("TerminalPool", () => {
+  it("retains focus until an asynchronous attachment can claim the measured grid", async () => {
+    let finishAttach!: (attachment: FakeAttachment) => void;
+    const attachment = new FakeAttachment();
+    const pool = new TerminalPool(
+      (_input, resize) => new FakeSurface({ callback: resize, rows: 35, cols: 90 }),
+      () => new Promise<FakeAttachment>((resolve) => { finishAttach = resolve; }),
+    );
+    const value = session("pending-focus");
+    pool.reconcile([value]);
+    const mounting = pool.mount(value.id, {} as HTMLElement);
+    pool.focus(value.id);
+    finishAttach(attachment);
+    await mounting;
+    expect(attachment.resizes).toEqual([{ rows: 35, cols: 90 }]);
+    expect(attachment.operations).toEqual(["resize", "focus", "listen"]);
+    pool.dispose();
+  });
+
+  it("does not let a late attachment reclaim focus from the newly selected pane", async () => {
+    const pending: Array<(attachment: FakeAttachment) => void> = [];
+    const pool = new TerminalPool(() => new FakeSurface(),
+      () => new Promise<FakeAttachment>((resolve) => { pending.push(resolve); }));
+    pool.reconcile([session("first"), session("second")]);
+    const firstMount = pool.mount("first", {} as HTMLElement);
+    pool.focus("first");
+    const secondMount = pool.mount("second", {} as HTMLElement);
+    pool.focus("second");
+    const first = new FakeAttachment(), second = new FakeAttachment();
+    pending[1]!(second);
+    await secondMount;
+    pending[0]!(first);
+    await firstMount;
+    expect(first.focuses).toBe(0);
+    expect(second.focuses).toBe(1);
+    pool.dispose();
+  });
+
+  it("forgets pending focus when the pane unmounts before its attachment is ready", async () => {
+    let finishAttach!: (attachment: FakeAttachment) => void;
+    const attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => new FakeSurface(),
+      () => new Promise<FakeAttachment>((resolve) => { finishAttach = resolve; }));
+    pool.reconcile([session("closed-pane")]);
+    const mounting = pool.mount("closed-pane", {} as HTMLElement);
+    pool.focus("closed-pane");
+    pool.unmount("closed-pane");
+    finishAttach(attachment);
+    await mounting;
+    expect(attachment.focuses).toBe(0);
+    await pool.mount("closed-pane", {} as HTMLElement);
+    expect(attachment.focuses).toBe(0);
+    pool.dispose();
+  });
+
   it("waits for native geometry before attaching when Session projections refresh during mount", async () => {
     let finishMount!: () => void;
     const attachment = new FakeAttachment();
