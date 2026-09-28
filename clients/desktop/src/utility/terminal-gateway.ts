@@ -201,6 +201,9 @@ function handlePortMessage(attachment: Attachment, message: PortMessage): void {
       attachment.sequence++,
       KIND_FOCUS,
     ));
+    // The previous owner may have a different grid. Send our cached size
+    // after the claim so the daemon applies it even without a window resize.
+    sendResize(attachment);
   }
 }
 
