@@ -1,0 +1,13 @@
+.assistant-task-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 3px; min-width: 0; }
+.playbook-note-toggle { display: flex; align-items: center; gap: 2px; border: 0; border-radius: 4px; padding: 5px 3px; background: transparent; color: var(--sidebar-dimmer); font-size: 9px; }
+.playbook-note-toggle:hover, .playbook-note-toggle[aria-expanded="true"] { color: var(--accent); background: var(--hover); }
+.playbook-note-toggle svg { width: 12px; height: 12px; }
+.playbook-task-notes { grid-column: 1 / -1; display: grid; gap: 7px; margin: 2px 0 7px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); color: var(--sidebar-text); font-size: 11px; }
+.playbook-task-notes small { color: var(--text-secondary); font-size: 10px; line-height: 1.5; }
+.playbook-task-notes ul { margin: 0; padding-left: 16px; max-height: 160px; overflow: auto; }
+.playbook-task-notes li { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.playbook-task-notes li.completed { text-decoration: line-through; color: var(--text-muted); }
+.playbook-task-notes textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-app); color: inherit; font: inherit; }
+.playbook-task-notes p { margin: 0; color: var(--danger); }
+.playbook-task-notes footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+.playbook-task-notes footer button { border: 1px solid var(--border); border-radius: 4px; padding: 4px 7px; background: var(--hover); color: var(--text); font: inherit; }

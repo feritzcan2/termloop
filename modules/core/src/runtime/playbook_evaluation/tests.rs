@@ -283,49 +283,103 @@ fn an_unmeasured_single_agent_is_usable_and_duplicate_claim_reuses_one_fork() {
     assert_eq!(history["entries"][0]["sourceSessionId"], "source");
     assert_eq!(history["entries"][0]["model"], "gpt-6-astra");
     assert_eq!(history["entries"][0]["outcome"], "inProgress");
-    runtime
+    let skipped = runtime
         .fail_playbook_evaluation_launch("evaluation-check")
         .unwrap();
-    assert!(
-        matches!(runtime.plan_playbook_evaluation(&claim).unwrap(), PlaybookEvaluationLaunch::Steward(value) if value["evaluation"]["reason"] == "forkUnavailable")
-    );
+    assert_eq!(skipped["status"], "idle");
+    assert_eq!(skipped["evaluation"]["reason"], "forkUnavailable");
     assert!(runtime.playbook_evaluation.evaluations.is_empty());
     assert_eq!(
         runtime.store.playbook_evaluations()[0].outcome,
         termloop_domain::PlaybookEvaluationOutcome::Failed
     );
-    runtime
-        .report_steward_step_verdicts(
+    assert!(matches!(
+        runtime.report_steward_step_verdicts(
             claim.capability.as_ref().unwrap(),
             vec![StewardStepVerdict {
                 task_id: "task-1".into(),
                 verdict: PlaybookStepVerdict::Passed,
-                evidence: "Fallback proof".into(),
+                evidence: "Unrequested fallback proof".into(),
             }],
             "fallback-report".into(),
-            termloop_platform::current_epoch_ms(),
-        )
-        .unwrap();
-    assert_eq!(
-        runtime.store.playbook_evaluations()[0].outcome,
-        termloop_domain::PlaybookEvaluationOutcome::Failed
-    );
+            termloop_platform::current_epoch_ms()
+        ),
+        Err(CoreError::TrackerReportStale)
+    ));
+    assert!(runtime.store.playbook_step_progress().is_empty());
 
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn no_task_agent_preserves_an_explicit_steward_fallback() {
-    let (mut runtime, root, project) = pipeline_runtime();
-    let claim = claim(&mut runtime, &project);
-    assert!(
-        matches!(runtime.plan_playbook_evaluation(&claim).unwrap(), PlaybookEvaluationLaunch::Steward(value) if value["evaluation"]["reason"] == "noUnambiguousTaskAgent")
-    );
-    std::fs::remove_dir_all(root).unwrap();
+fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
+    for ambiguous in [false, true] {
+        let (mut runtime, root, project) = pipeline_runtime();
+        if ambiguous {
+            attach_agents(&mut runtime, &root, &["one", "two"]);
+        }
+        let claim = claim(&mut runtime, &project);
+        let revision = runtime.state_revision();
+        let PlaybookEvaluationLaunch::Skipped(result) =
+            runtime.plan_playbook_evaluation(&claim).unwrap()
+        else {
+            panic!("must not delegate missing task context to Steward");
+        };
+        assert_eq!(result["status"], "idle");
+        assert_eq!(result["evaluation"]["reason"], "noUnambiguousTaskAgent");
+        assert!(result.get("step").is_none());
+        assert_eq!(runtime.state_revision(), revision);
+        assert!(runtime.store.playbook_evaluations().is_empty());
+        assert!(runtime.store.playbook_step_progress().is_empty());
+        let projection = runtime
+            .playbook_runtime(json!({"projectId": project}))
+            .unwrap();
+        assert!(projection["processingTaskId"].is_null());
+        assert_eq!(projection["evaluation"]["mode"], "waitingForTaskAgent");
+        assert!(projection["evaluation"]["sessionId"].is_null());
+        assert!(
+            runtime
+                .current_step_check(&claim.capability.as_ref().unwrap().tracker_id)
+                .is_none()
+        );
+        let next = runtime
+            .claim_next_steward_routine(
+                &project,
+                "steward-session",
+                "no-retry".into(),
+                termloop_platform::current_epoch_ms(),
+            )
+            .unwrap();
+        assert_eq!(next.result["status"], "idle");
+        assert!(next.capability.is_none());
+        assert!(
+            runtime
+                .admit_due_steward_wakes(termloop_platform::current_epoch_ms())
+                .is_empty()
+        );
+        if !ambiguous {
+            attach_agents(&mut runtime, &root, &["new-source"]);
+            let due = next.result["nextWakeAtEpochMs"].as_u64().unwrap();
+            let retry = runtime
+                .claim_next_steward_routine(
+                    &project,
+                    "steward-session",
+                    "retry-with-agent".into(),
+                    due + 1,
+                )
+                .unwrap();
+            assert!(matches!(
+                runtime.plan_playbook_evaluation(&retry).unwrap(),
+                PlaybookEvaluationLaunch::Fork { .. }
+            ));
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[test]
-fn evaluation_projection_tracks_startup_executor_fallback_and_completion() {
+fn evaluation_projection_tracks_startup_executor_and_waiting_after_failure() {
     let (mut runtime, root, project) = pipeline_runtime();
     assert!(
         runtime
@@ -333,7 +387,7 @@ fn evaluation_projection_tracks_startup_executor_fallback_and_completion() {
             .unwrap()["evaluation"]
             .is_null()
     );
-    let mut claim = claim(&mut runtime, &project);
+    let claim = claim(&mut runtime, &project);
     let read = |runtime: &CoreRuntime| {
         runtime
             .playbook_runtime(json!({"projectId": project}))
@@ -360,33 +414,11 @@ fn evaluation_projection_tracks_startup_executor_fallback_and_completion() {
     runtime
         .fail_playbook_evaluation_launch("evaluation-check")
         .unwrap();
-    let fallback = read(&runtime);
-    assert_eq!(fallback["mode"], "stewardFallback");
-    assert_eq!(fallback["reason"], "forkUnavailable");
-    assert_eq!(fallback["sessionId"], "steward-session");
-    assert!(fallback["sourceSessionId"].is_null());
-    for reason in [
-        "noUnambiguousTaskAgent",
-        "forkUnsupported",
-        "evaluationCapacity",
-    ] {
-        claim.result["evaluation"] = json!({"mode":"stewardFallback", "reason":reason});
-        runtime.record_playbook_evaluation_fallback(&claim);
-        assert_eq!(read(&runtime)["reason"], reason);
-    }
-    runtime
-        .report_steward_step_verdicts(
-            claim.capability.as_ref().unwrap(),
-            vec![StewardStepVerdict {
-                task_id: "task-1".into(),
-                verdict: PlaybookStepVerdict::Passed,
-                evidence: "Current proof".into(),
-            }],
-            "report".into(),
-            termloop_platform::current_epoch_ms(),
-        )
-        .unwrap();
-    assert!(read(&runtime).is_null());
+    let waiting = read(&runtime);
+    assert_eq!(waiting["mode"], "waitingForTaskAgent");
+    assert_eq!(waiting["reason"], "forkUnavailable");
+    assert!(waiting["sessionId"].is_null());
+    assert!(waiting["sourceSessionId"].is_null());
     std::fs::remove_dir_all(root).unwrap();
 }
 

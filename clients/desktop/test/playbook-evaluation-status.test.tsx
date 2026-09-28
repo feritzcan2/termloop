@@ -9,7 +9,6 @@ import { PlaybookEvaluationStatus } from "../src/renderer/ui/PlaybookEvaluationS
 let host: HTMLDivElement;
 let root: Root;
 const openAgentTerminal = vi.fn();
-const openStewardTerminal = vi.fn();
 const session = (id: string, name: string): Session => ({
   id, name, lifecycle_state: "running", process: { agent_id: "codex" },
 } as Session);
@@ -29,7 +28,7 @@ afterEach(async () => {
 });
 async function render(value: PlaybookEvaluationDto, rows = sessions) {
   await act(async () => root.render(<PlaybookEvaluationStatus evaluation={value} sessions={rows}
-    openAgentTerminal={openAgentTerminal} openStewardTerminal={openStewardTerminal} />));
+    openAgentTerminal={openAgentTerminal} />));
 }
 it("opens the exact evaluation fork and names its source without opening Steward", async () => {
   await render(evaluation);
@@ -37,13 +36,12 @@ it("opens the exact evaluation fork and names its source without opening Steward
   expect(host.textContent).toContain("Checking · Task agent");
   host.querySelector<HTMLButtonElement>("button")!.click();
   expect(openAgentTerminal).toHaveBeenCalledExactlyOnceWith("fork");
-  expect(openStewardTerminal).not.toHaveBeenCalled();
 });
-it("explains startup failure and opens only the projected fallback Steward", async () => {
-  await render({ ...evaluation, mode: "stewardFallback", sessionId: "steward", sourceSessionId: null, reason: "forkUnavailable" });
-  expect(host.textContent).toContain("The task agent fork could not start. Steward took over.");
-  host.querySelector<HTMLButtonElement>("button")!.click();
-  expect(openStewardTerminal).toHaveBeenCalledExactlyOnceWith("steward");
+it("leaves unavailable checks waiting without opening any terminal", async () => {
+  await render({ ...evaluation, mode: "waitingForTaskAgent", sessionId: null, sourceSessionId: null, reason: "forkUnavailable" });
+  expect(host.textContent).toContain("The task agent fork could not start. No check was performed.");
+  expect(host.textContent).toContain("Waiting · Task agent");
+  expect(host.querySelector("button")).toBeNull();
   expect(openAgentTerminal).not.toHaveBeenCalled();
 });
 it("does not route a starting check to Steward or to an unconfirmed fork", async () => {
