@@ -149,6 +149,33 @@ describe("normal-screen scrollback", () => {
     expect(plain(snapshot)).toEqual(["one", "two", "three", "four"]);
   });
 
+  it("keeps live history when a full-screen insertion is followed by a composer redraw", () => {
+    const projection = new TerminalScreenProjection();
+    // Discover a 40-row terminal and reserve the bottom four rows for the composer.
+    projection.write(encoder.encode(`${esc}[40;1H${esc}[37;1HComposer`));
+    const history = Array.from({ length: 60 }, (_, index) => `Answer line ${index + 1}`);
+    projection.write(encoder.encode(`${esc}[37;1H${esc}[J${history.join("\r\n")}${"\r\n".repeat(4)}`));
+    const snapshot = projection.write(encoder.encode(`${esc}[37;1H${esc}[JNext prompt`));
+
+    expect(plain(snapshot).filter((line) => line.startsWith("Answer line"))).toEqual(history);
+    expect(plain(snapshot).at(-1)).toBe("Next prompt");
+    expect(plain(snapshot)).not.toContain("Composer");
+    expect(snapshot?.droppedLines).toBe(0);
+  });
+
+  it("keeps history across repeated live insertions after resetting the scroll region", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[1;6r${esc}[r`));
+    const history = Array.from({ length: 60 }, (_, index) => `Live line ${index + 1}`);
+    for (const line of history) {
+      // Full-screen scrolling must still work after DECSTBM resets to the whole grid.
+      projection.write(encoder.encode(`${esc}[21;1H${esc}[J${line}${"\r\n".repeat(4)}`));
+      projection.write(encoder.encode(`${esc}[21;1H${esc}[JComposer`));
+    }
+
+    expect(plain(projection.snapshot()).filter((line) => line.startsWith("Live line"))).toEqual(history);
+  });
+
   it("does not turn a partial panel redraw into transcript history", () => {
     const projection = new TerminalScreenProjection();
     const snapshot = projection.write(encoder.encode(
@@ -167,6 +194,24 @@ describe("normal-screen scrollback", () => {
 
     expect(plain(snapshot)).not.toContain("one");
     expect(plain(snapshot)).toEqual(["two", "three", "four"]);
+  });
+
+  it("scrolls the fixed alternate screen without retaining its previous frames", () => {
+    const projection = new TerminalScreenProjection();
+    const rows = Array.from({ length: 30 }, (_, index) => `Frame line ${index + 1}`);
+    const snapshot = projection.write(encoder.encode(`${esc}[?1049h${rows.join("\r\n")}`));
+
+    expect(plain(snapshot)).toEqual(rows.slice(-24));
+  });
+
+  it("does not scroll a partial region when a newline occurs in the footer below it", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[1;3r${esc}[1;1HHistory${esc}[24;1HFooter`));
+    const snapshot = projection.write(encoder.encode(`\r\nUpdated footer${esc}[K`));
+
+    expect(plain(snapshot)[0]).toBe("History");
+    expect(plain(snapshot).at(-1)).toBe("Updated footer");
+    expect(snapshot?.droppedLines).toBe(0);
   });
 
   it("bounds scrollback together with the current screen", () => {

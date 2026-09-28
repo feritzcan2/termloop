@@ -275,7 +275,7 @@ describe("production control adapter", () => {
     );
     expect(new TextDecoder().decode(attachFrame?.payload.slice(0, 4))).toBe("TLRQ");
     expect(new DataView(attachFrame!.payload.buffer).getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
-    expect(new DataView(attachFrame!.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES);
+    expect(new DataView(attachFrame!.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES + 0x80000000);
     mobileSocket?.onmessage?.({ data: encodeFrame(
       sessionId, 7, 1n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("older "),
     ) });
@@ -1797,7 +1797,7 @@ describe("production terminal adapter", () => {
     expect(attachFrame.sessionId).toBe(sessionId);
     expect(new TextDecoder().decode(attachFrame.payload.slice(0, 4))).toBe("TLRQ");
     expect(new DataView(attachFrame.payload.buffer).getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
-    expect(new DataView(attachFrame.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES);
+    expect(new DataView(attachFrame.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES + 0x80000000);
 
     socket.message(encodeFrame(
       sessionId,

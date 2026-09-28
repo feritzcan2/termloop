@@ -91,6 +91,7 @@ interface TerminalSubscription {
   replayTimer: ReturnType<typeof setTimeout> | undefined;
   replayExpectedFrames: number | undefined;
   replayExpectedBytes: number | undefined;
+  replayMouseModes: number | undefined;
   replayReceivedFrames: number;
   replayDroppedFrames: number;
   replayEof: boolean;
@@ -243,6 +244,7 @@ export class MobileConnectionCoordinator {
       replayTimer: undefined,
       replayExpectedFrames: undefined,
       replayExpectedBytes: undefined,
+      replayMouseModes: undefined,
       replayReceivedFrames: 0,
       replayDroppedFrames: 0,
       replayEof: false,
@@ -790,6 +792,7 @@ export class MobileConnectionCoordinator {
       if (replay !== undefined) {
         subscription.replayExpectedFrames = replay.frameCount;
         subscription.replayExpectedBytes = replay.outputBytes;
+        subscription.replayMouseModes = replay.mouseModes;
         subscription.replayReceivedFrames = 0;
         subscription.onEvent({ type: "replayProgress", receivedBytes: 0, totalBytes: replay.outputBytes });
         this.reportTerminal(subscription, "replay_negotiated", {
@@ -1284,6 +1287,7 @@ export class MobileConnectionCoordinator {
       && subscription.replayDroppedFrames === 0 && !subscription.replayEof) return true;
     const expectedFrames = subscription.replayExpectedFrames;
     const expectedBytes = subscription.replayExpectedBytes;
+    const mouseModes = subscription.replayMouseModes;
     const receivedFrames = subscription.replayReceivedFrames;
     const droppedFrames = subscription.replayDroppedFrames;
     const eof = subscription.replayEof;
@@ -1308,7 +1312,9 @@ export class MobileConnectionCoordinator {
     if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || replayBytes !== expectedBytes)) subscription.onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     this.clearReplay(subscription);
     if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
-    if (bytes.byteLength > 0) subscription.onEvent({ type: "replay", bytes });
+    if (bytes.byteLength > 0 || mouseModes !== undefined) subscription.onEvent({
+      type: "replay", bytes, ...(mouseModes === undefined ? {} : { mouseModes }),
+    });
     if (eof) subscription.onEvent({ type: "eof" });
     if (!subscription.replayReady) {
       subscription.replayReady = true;
@@ -1335,6 +1341,7 @@ export class MobileConnectionCoordinator {
     subscription.replayBytes = 0;
     subscription.replayExpectedFrames = undefined;
     subscription.replayExpectedBytes = undefined;
+    subscription.replayMouseModes = undefined;
     subscription.replayReceivedFrames = 0;
     subscription.replayDroppedFrames = 0;
     subscription.replayEof = false;

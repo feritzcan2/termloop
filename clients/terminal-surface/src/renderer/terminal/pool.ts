@@ -9,6 +9,7 @@ import {
   KIND_GAP,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  replayMouseModesSequence,
 } from "@termloop/terminal-wire";
 import type { AttachmentEvent } from "./attachment.js";
 import type { TerminalBufferProbe, TerminalSurface, TerminalSurfaceFactory } from "./surface.js";
@@ -193,7 +194,7 @@ export class TerminalPool<S extends TerminalSession> {
       const surface = entry.surface;
       entry.batcher = new TerminalWriteBatcher((bytes, done) => surface.write(bytes, done));
       entry.removeErrorListener = surface.onError?.(() => { entry.rendererFailed = true; this.#present(entry, { phase: "failed" }); });
-      entry.replay = new TerminalReplayBuffer((bytes, complete) => {
+      entry.replay = new TerminalReplayBuffer((bytes, complete, mouseModes) => {
         const previous = entry.tail.snapshot();
         const continuation = continueReplay(previous, bytes);
         if (!complete) this.#present(entry, { notice: "Recent output is incomplete. Waiting for live output." });
@@ -210,8 +211,11 @@ export class TerminalPool<S extends TerminalSession> {
             this.#present(entry, { phase: "live", progress: undefined });
           }
         };
-        if (continuation.bytes.length) this.#write(entry, continuation.bytes, ready);
-        else ready();
+        if (continuation.bytes.length) this.#write(entry, continuation.bytes, mouseModes === undefined ? ready : () => {});
+        // Restore the program's wheel protocol even when startup modes fell out of
+        // the replay ring. These synthetic bytes must never enter the overlap tail.
+        if (mouseModes !== undefined) entry.batcher?.push(replayMouseModesSequence(mouseModes), ready);
+        else if (!continuation.bytes.length) ready();
       }, (progress) => this.#present(entry, { phase: "replaying", progress }));
     }
     const mountToken = {};

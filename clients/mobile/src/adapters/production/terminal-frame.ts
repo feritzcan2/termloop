@@ -32,6 +32,7 @@ export interface DecodedTerminalFrame {
 export interface TerminalReplayAck {
   readonly frameCount: number;
   readonly outputBytes: number;
+  readonly mouseModes?: number;
 }
 
 /// Requests a bounded newest suffix. Older daemons echo this payload in their Attach
@@ -42,19 +43,22 @@ export function replayRequestPayload(maxBytes = MOBILE_REPLAY_BUDGET_BYTES): Uin
   payload.set(encoder.encode(REPLAY_REQUEST_MAGIC));
   const view = new DataView(payload.buffer);
   view.setUint32(4, maxBytes);
-  view.setUint32(8, Math.min(maxBytes, MOBILE_REPLAY_CHUNK_BYTES));
+  // Older daemons clamp the high feature bit to their existing chunk limit.
+  view.setUint32(8, Math.min(maxBytes, MOBILE_REPLAY_CHUNK_BYTES) | 0x80000000);
   return payload;
 }
 
 export function decodeReplayAck(payload: Uint8Array): TerminalReplayAck | undefined {
-  if (payload.byteLength !== REPLAY_ACK_BYTES
+  if (![REPLAY_ACK_BYTES, REPLAY_ACK_BYTES + 4].includes(payload.byteLength)
     || new TextDecoder().decode(payload.slice(0, 4)) !== REPLAY_ACK_MAGIC) return undefined;
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const frameCount = view.getUint32(4);
   const outputBytes = view.getUint32(8);
+  const mouseModes = payload.byteLength === 16 ? view.getUint32(12) : undefined;
+  if (mouseModes !== undefined && ((mouseModes & ~0x1ff) !== 0 || (mouseModes & 0xff) > 4)) return undefined;
   if (frameCount > MAX_NEGOTIATED_REPLAY_FRAMES
     || outputBytes > MOBILE_REPLAY_BUDGET_BYTES) return undefined;
-  return { frameCount, outputBytes };
+  return { frameCount, outputBytes, ...(mouseModes === undefined ? {} : { mouseModes }) };
 }
 
 export function encodeFrame(
