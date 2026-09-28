@@ -14,7 +14,7 @@ fn observation(state: AgentState, sequence: u64, time: u64) -> AgentObservation 
     }
 }
 
-fn attach_agents(runtime: &mut CoreRuntime, root: &std::path::Path, ids: &[&str]) {
+pub(crate) fn attach_agents(runtime: &mut CoreRuntime, root: &std::path::Path, ids: &[&str]) {
     use termloop_domain::{
         ManagedWorktreeProof, NormalizedWorktreeSpec, ProvisioningBranchMode, ProvisioningStage,
         WorktreeProvisioningOperation,
@@ -109,6 +109,8 @@ fn attach_agents(runtime: &mut CoreRuntime, root: &std::path::Path, ids: &[&str]
             .clone();
         session.id = (*id).into();
         session.process.template_ref = Some("builtin.agent.interactive".into());
+        session.launch_selection =
+            termloop_domain::AgentLaunchSelection::new("gpt-6-astra", "bypassPermissions", "high");
         session.resume_ref =
             Some(ResumeRef::for_provider(ResumeProvider::Codex, format!("native-{id}")).unwrap());
         runtime

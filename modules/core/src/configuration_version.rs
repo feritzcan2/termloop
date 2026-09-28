@@ -539,6 +539,7 @@ impl CoreRuntime {
             ImproverSessionTargetKind::StewardInstructions => {
                 let snapshot: StewardSnapshot = parse_snapshot(&plan.content)?;
                 let commit = self.set_steward_configuration(StewardConfigurationUpdate {
+                    playbook_evaluator: None,
                     project_id: &plan.project_id,
                     agent_id: agent_wire(snapshot.agent_id),
                     model: snapshot.model,
@@ -795,6 +796,7 @@ impl CoreRuntime {
                     model: snapshot.model.clone(),
                     permission: snapshot.permission.clone(),
                     reasoning: snapshot.reasoning.clone(),
+                    playbook_evaluator: current.playbook_evaluator.clone(),
                     enabled: snapshot.enabled,
                     system_prompt: snapshot.system_prompt.trim().to_owned(),
                     executor_session_id: current.executor_session_id.clone(),

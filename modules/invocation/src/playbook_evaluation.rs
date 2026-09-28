@@ -22,7 +22,7 @@ pub fn playbook_evaluator_for_conversation(
         cwd,
         template,
         &selection.model,
-        "plan",
+        &selection.permission,
         &selection.reasoning,
         None,
         conversation,

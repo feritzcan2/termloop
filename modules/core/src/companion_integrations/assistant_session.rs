@@ -824,6 +824,7 @@ mod tests {
             .to_owned();
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id: &project_id,
                 agent_id: "codex",
                 model: "default".into(),
@@ -933,6 +934,7 @@ mod tests {
         runtime
             .set_steward_configuration(
                 crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    playbook_evaluator: None,
                     project_id: &project_id,
                     agent_id: "codex",
                     model: "default".into(),

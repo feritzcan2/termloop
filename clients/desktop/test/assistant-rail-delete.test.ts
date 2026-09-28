@@ -47,6 +47,7 @@ describe("Steward reset", () => {
       agentCapabilities: [],
       getSteward: async () => ({
         configuration: {
+          playbookEvaluator: { codexModel: null, claudeModel: null, permission: "plan" as const },
           projectId: "project-1",
           agentId: "codex" as const,
           model: "default",

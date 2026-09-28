@@ -128,6 +128,13 @@ pub(in crate::app::control) async fn set_steward_configuration(
             model: params.model,
             permission: permission_name(params.permission).into(),
             reasoning: params.reasoning,
+            playbook_evaluator: params.playbook_evaluator.map(|settings| {
+                termloop_core::PlaybookEvaluatorSettings {
+                    codex_model: settings.codex_model,
+                    claude_model: settings.claude_model,
+                    permission: permission_name(settings.permission).into(),
+                }
+            }),
             enabled: params.enabled,
             system_prompt: params.system_prompt,
             expected_revision: params.expected_revision,

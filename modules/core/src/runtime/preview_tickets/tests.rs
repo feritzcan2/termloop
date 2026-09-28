@@ -134,6 +134,7 @@ impl ProjectPreviews {
         let project_id = project["id"].as_str().unwrap().to_owned();
         runtime
             .set_steward_configuration(StewardConfigurationUpdate {
+                playbook_evaluator: None,
                 project_id: &project_id,
                 agent_id: "codex",
                 model: "default".into(),

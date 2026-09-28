@@ -133,6 +133,7 @@ fn absent_and_current_configuration_results_are_strict() {
                 "enabled":true,
                 "systemPrompt":"You are a PM.",
                 "executorSessionId":null,
+                "playbookEvaluator":{"codexModel":null,"claudeModel":null,"permission":"plan"},
                 "generation":1,
                 "updatedAtEpochMs":10
             },

@@ -19,6 +19,10 @@ const worktree = path.join(temporary, "task");
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 await Promise.all([repository, runtimeDirectory, evidenceDirectory, bin].map((directory) => mkdir(directory, { recursive: true })));
 const reportStatus = process.argv.includes("--pending") ? "pending" : "satisfied";
+const evaluatorSettings = process.argv.includes("--custom-settings")
+  ? { codexModel: "gpt-6-luna", claudeModel: "haiku", permission: "bypassPermissions" }
+  : { codexModel: null, claudeModel: null, permission: "plan" };
+await writeFile(path.join(evidenceDirectory, "evaluator-settings.json"), JSON.stringify(evaluatorSettings));
 const report = { status: reportStatus, evidence: reportStatus === "pending"
   ? "Fixture inspected current Task evidence; no human approval found."
   : "Fixture verified exact Task and scoped native fork." };
@@ -72,12 +76,15 @@ try {
   const task = await call("task.create", { projectId: project.id, title: "Evaluate my task", worktreeIntent: "none", worktreePrefix: null, baseRef: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
   await call("task.provisionWorktree", { operationId: crypto.randomUUID(), taskId: task.id, repositoryPath: repository,
     destinationPath: worktree, branchName: "task/evaluation", branchMode: "create", baseRef: "refs/remotes/origin/main" });
-  const params = { taskId: task.id, agentId: "claude" };
+  const params = { taskId: task.id, agentId: "claude", model: "sonnet", permission: "default", reasoning: "default" };
   const preview = await call("task.previewAgent", params);
-  const source = await call("task.launchAgent", { ...params, launchTicket: preview.launch_ticket });
+  const source = await call("task.launchAgent", { taskId: task.id, agentId: params.agentId, launchTicket: preview.launch_ticket });
   await wait(() => json(path.join(evidenceDirectory, "source.json")).catch(() => null), "Source Agent did not initialize");
   let configuration = await call("steward.configurationGet", { projectId: project.id });
-  await call("steward.configurationSet", { projectId: project.id, agentId: "claude", model: "default", permission: "bypassPermissions", reasoning: "default", enabled: false, systemPrompt: "", expectedRevision: configuration.stateRevision });
+  const saved = await call("steward.configurationSet", { projectId: project.id, agentId: "claude", model: "default", permission: "bypassPermissions", reasoning: "default", enabled: false, systemPrompt: "", playbookEvaluator: evaluatorSettings, expectedRevision: configuration.stateRevision });
+  assert.deepEqual(saved.configuration.playbookEvaluator, evaluatorSettings);
+  const unchanged = await call("steward.configurationSet", { projectId: project.id, agentId: "claude", model: "default", permission: "bypassPermissions", reasoning: "default", enabled: false, systemPrompt: "", expectedRevision: saved.stateRevision });
+  assert.deepEqual(unchanged.configuration.playbookEvaluator, evaluatorSettings);
   const playbook = await call("playbook.get", { projectId: project.id });
   await call("playbook.update", { projectId: project.id, activePipelineName: "Delivery", milestones: [{ id: "verified", title: "Verified", gate: "automatic",
     completeWhen: "Verify the exact Task with current evidence.", whileWaiting: { mode: "off", instructions: "" }, retryDelaySeconds: 60, approver: null }],

@@ -11,9 +11,11 @@ import type {
   RoutineRunNowResult,
   PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
+  PlaybookEvaluatorSettingsDto,
 } from "@termloop/contract/current";
 import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
+import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
@@ -32,7 +34,7 @@ export type StewardPanelProps = {
   openTermLoopInstructions(): void;
   renderTerminal(sessionId: string): ReactNode;
   getConfiguration(): Promise<StewardConfigurationGetResult>;
-  setConfiguration(agentId: StewardAgentId, model: string, permission: AssistantPermission, reasoning: AssistantReasoning, enabled: boolean, systemPrompt: string, expectedRevision: number): Promise<StewardConfigurationSetResult>;
+  setConfiguration(agentId: StewardAgentId, model: string, permission: AssistantPermission, reasoning: AssistantReasoning, enabled: boolean, systemPrompt: string, expectedRevision: number, playbookEvaluator?: PlaybookEvaluatorSettingsDto): Promise<StewardConfigurationSetResult>;
   listTranscript(beforeSequence?: number): Promise<CompanionTranscriptListResult>;
   appendMessage(content: string): Promise<CompanionTranscriptAppendResult>;
   respondToProposal(proposalMessageId: string, decision: CompanionProposalDecision): Promise<CompanionProposalRespondResult>;
@@ -516,6 +518,15 @@ export function StewardPanel(props: StewardPanelProps) {
       permission={steward.permission} reasoning={steward.reasoning} busy={busy} save={(model, permission, reasoning) => run(async () => {
         const result = await props.setConfiguration(
           steward.agentId, model, permission, reasoning, steward.enabled, steward.systemPrompt, stewardRevision,
+        );
+        setSteward(result.configuration);
+        setStewardRevision(result.stateRevision);
+      })} /> : null}
+    {steward ? <PlaybookEvaluatorSettings settings={steward.playbookEvaluator} busy={busy}
+      save={(settings) => run(async () => {
+        const result = await props.setConfiguration(
+          steward.agentId, steward.model, steward.permission, steward.reasoning,
+          steward.enabled, steward.systemPrompt, stewardRevision, settings,
         );
         setSteward(result.configuration);
         setStewardRevision(result.stateRevision);
