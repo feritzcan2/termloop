@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { assistantRefusalMessage, isRevisionConflict } from "./StewardPanel.js";
+import type { SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { PlaybookEvaluationStatus } from "./PlaybookEvaluationStatus.js";
 import {
   adoptTemplateInto,
@@ -388,6 +389,7 @@ type Props = {
   openImproverTerminal(sessionId: string): void;
   dismissImproverSession(sessionId: string): void;
   openTask(taskId: string): void;
+  saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   openDetails(selection: AssistantSelection): void;
 };
 
@@ -950,10 +952,6 @@ export function AssistantRail(props: Props) {
         evaluation={evaluation}
         sessions={props.sessions}
         openAgentTerminal={props.openImproverTerminal}
-        openStewardTerminal={(sessionId) => {
-          props.selectSession(sessionId);
-          props.openDetails({ kind: "steward", initialView: "terminal" });
-        }}
       /> : null}
       {dropRoutineId === routine.id ? <div className="ar-step-drop-hint" role="status">
         Move here and check now
@@ -964,6 +962,8 @@ export function AssistantRail(props: Props) {
           task={task}
           processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
           openTask={props.openTask}
+          saveTaskNotes={props.saveTaskNotes}
+          notesDisabled={props.disabled}
           dragging={draggedTaskId === task.id}
           beginDrag={taskDragEnabled ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
@@ -1059,7 +1059,7 @@ export function AssistantRail(props: Props) {
         {buildCtaVisible ? <ol className="ar-pl-flow" aria-label="How the assistant starts">
           <li>An agent drafts this Project&apos;s pipeline with you</li>
           <li>The Steward turns on and walks Tasks through it</li>
-          <li>The Steward verifies each due step and advances the Task</li>
+          <li>The Task agent’s fork verifies each due step and advances the Task</li>
         </ol> : null}
         {stewardEnableOfferVisible(pipelineJustCreated, steward?.enabled ?? false, board.steps.length)
           ? <div className="ar-pl-turn-on">
@@ -1102,6 +1102,8 @@ export function AssistantRail(props: Props) {
           placement={taskPlacement}
           processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
           openTask={props.openTask}
+          saveTaskNotes={props.saveTaskNotes}
+          notesDisabled={props.disabled}
           draggingTaskId={draggedTaskId}
           beginDrag={!props.disabled && mutatingKey === undefined ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
