@@ -137,6 +137,31 @@ fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
     runtime
         .reserve_playbook_evaluation(claim, "source".into(), "reviewer".into(), 1)
         .unwrap();
+    let capability = claim.capability.as_ref().unwrap();
+    runtime
+        .store
+        .start_playbook_evaluation(
+            &runtime.write_authority,
+            termloop_domain::PlaybookEvaluationRecord {
+                id: capability.check_id.clone(),
+                project_id: capability.project_id.clone(),
+                task_id: "task-1".into(),
+                task_title: "Task snapshot".into(),
+                milestone_id: claim.result["step"]["milestoneId"].as_str().unwrap().into(),
+                milestone_title: "Step snapshot".into(),
+                source_session_id: "source".into(),
+                source_name: "Implementer".into(),
+                session_id: "reviewer".into(),
+                agent_id: "codex".into(),
+                model: "gpt-6-luna".into(),
+                permission: "plan".into(),
+                started_at_epoch_ms: capability.claimed_at_epoch_ms,
+                finished_at_epoch_ms: None,
+                outcome: termloop_domain::PlaybookEvaluationOutcome::InProgress,
+                evidence: String::new(),
+            },
+        )
+        .unwrap();
     let mut session = runtime
         .store
         .sessions()
@@ -250,11 +275,42 @@ fn an_unmeasured_single_agent_is_usable_and_duplicate_claim_reuses_one_fork() {
         matches!(second, PlaybookEvaluationLaunch::Delegated(value) if value["evaluation"]["sessionId"] == plan.session_id())
     );
     assert_eq!(runtime.playbook_evaluation.evaluations.len(), 1);
-    runtime.fail_playbook_evaluation_launch("evaluation-check");
+    let history = runtime
+        .playbook_evaluation_history(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(history["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(history["entries"][0]["sessionId"], plan.session_id());
+    assert_eq!(history["entries"][0]["sourceSessionId"], "source");
+    assert_eq!(history["entries"][0]["model"], "gpt-6-astra");
+    assert_eq!(history["entries"][0]["outcome"], "inProgress");
+    runtime
+        .fail_playbook_evaluation_launch("evaluation-check")
+        .unwrap();
     assert!(
         matches!(runtime.plan_playbook_evaluation(&claim).unwrap(), PlaybookEvaluationLaunch::Steward(value) if value["evaluation"]["reason"] == "forkUnavailable")
     );
     assert!(runtime.playbook_evaluation.evaluations.is_empty());
+    assert_eq!(
+        runtime.store.playbook_evaluations()[0].outcome,
+        termloop_domain::PlaybookEvaluationOutcome::Failed
+    );
+    runtime
+        .report_steward_step_verdicts(
+            claim.capability.as_ref().unwrap(),
+            vec![StewardStepVerdict {
+                task_id: "task-1".into(),
+                verdict: PlaybookStepVerdict::Passed,
+                evidence: "Fallback proof".into(),
+            }],
+            "fallback-report".into(),
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+    assert_eq!(
+        runtime.store.playbook_evaluations()[0].outcome,
+        termloop_domain::PlaybookEvaluationOutcome::Failed
+    );
+
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -301,7 +357,9 @@ fn evaluation_projection_tracks_startup_executor_fallback_and_completion() {
         claim.capability.as_ref().unwrap().tracker_id
     );
     assert!(active["reason"].is_null());
-    runtime.fail_playbook_evaluation_launch("evaluation-check");
+    runtime
+        .fail_playbook_evaluation_launch("evaluation-check")
+        .unwrap();
     let fallback = read(&runtime);
     assert_eq!(fallback["mode"], "stewardFallback");
     assert_eq!(fallback["reason"], "forkUnavailable");
@@ -386,6 +444,7 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
         ),
         Err(CoreError::CapabilityDenied)
     ));
+    let before_completion = runtime.state_revision();
     let completed = runtime
         .complete_playbook_evaluation(
             "reviewer-token",
@@ -395,6 +454,14 @@ fn verdict_requires_exact_fork_read_and_advances_once_without_steward_overwrite(
         )
         .unwrap();
     assert_eq!(completed["result"]["passedCount"], 1);
+    assert_eq!(runtime.state_revision(), before_completion + 1);
+    let history = runtime
+        .playbook_evaluation_history(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(history["entries"][0]["outcome"], "passed");
+    assert_eq!(history["entries"][0]["evidence"], "PR 42 verified");
+    assert_eq!(history["entries"][0]["taskTitle"], "Task snapshot");
+
     assert_eq!(runtime.store.playbook_step_progress().len(), 1);
     assert!(matches!(
         runtime.retire_playbook_evaluator_descriptor("steward-session"),
@@ -465,7 +532,11 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
             ),
             Err(CoreError::TrackerReportStale)
         ));
-        runtime.obsolete_playbook_evaluator_sessions();
+        runtime.obsolete_playbook_evaluator_sessions().unwrap();
+        assert_eq!(
+            runtime.store.playbook_evaluations()[0].outcome,
+            termloop_domain::PlaybookEvaluationOutcome::Interrupted
+        );
         assert!(
             runtime
                 .mcp_authorizer
@@ -474,4 +545,32 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[test]
+fn fork_exit_without_a_verdict_is_recorded_as_interrupted_before_claim_expiry() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    runtime
+        .store
+        .mark_session_exited(&runtime.write_authority, "reviewer")
+        .unwrap();
+    assert_eq!(
+        runtime.obsolete_playbook_evaluator_sessions().unwrap(),
+        vec!["reviewer"]
+    );
+    let history = runtime
+        .playbook_evaluation_history(json!({"projectId": project}))
+        .unwrap();
+    assert_eq!(history["entries"][0]["outcome"], "interrupted");
+    assert_eq!(
+        history["entries"][0]["evidence"],
+        "The fork agent exited before recording a result."
+    );
+    runtime
+        .retire_playbook_evaluator_descriptor("reviewer")
+        .unwrap();
+    assert_eq!(runtime.store.playbook_evaluations().len(), 1);
+    std::fs::remove_dir_all(root).unwrap();
 }

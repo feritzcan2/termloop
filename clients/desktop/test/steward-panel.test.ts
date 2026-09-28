@@ -50,11 +50,13 @@ describe("Steward capability presentation", () => {
     expect(assistantTabs("steward")).toEqual([
       ["chat", "Workspace"],
       ["configuration", "Config"],
+      ["history", "History"],
     ]);
     expect(assistantTabs("steward", true)).toEqual([
       ["chat", "Workspace"],
       ["builder", "Builder"],
       ["configuration", "Config"],
+      ["history", "History"],
     ]);
     expect(assistantTabs("routine").map(([id]) => id)).toEqual(["context"]);
   });

@@ -163,6 +163,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   taskSourceCandidateUnignore: "termloop:task-source-candidate-unignore",
   playbookGet: "termloop:playbook-get",
   playbookRuntime: "termloop:playbook-runtime",
+  playbookEvaluationHistory: "termloop:playbook-evaluation-history",
   playbookTaskPositionSet: "termloop:playbook-task-position-set",
   playbookUpdate: "termloop:playbook-update",
   companionTranscriptList: "termloop:companion-transcript-list",

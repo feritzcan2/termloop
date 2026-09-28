@@ -185,6 +185,7 @@ describe("Assistant rail Session classification", () => {
   it("opens assistant content in-place with role-specific default tabs", () => {
     expect(assistantInitialView({ kind: "steward" })).toBe("chat");
     expect(assistantInitialView({ kind: "steward", initialView: "configuration" })).toBe("configuration");
+    expect(assistantInitialView({ kind: "steward", initialView: "history" })).toBe("history");
     expect(assistantInitialView({ kind: "steward", initialView: "builder" })).toBe("builder");
     expect(assistantInitialView({ kind: "routine", routineId: "routine-1" })).toBe("context");
     expect(assistantInitialView({ kind: "steward", initialView: "terminal" })).toBe("chat");

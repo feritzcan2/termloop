@@ -211,6 +211,9 @@ impl Store {
             .playbook_configurations
             .retain(|value| value.project_id != project_id);
         self.state
+            .playbook_evaluations
+            .retain(|value| value.project_id != project_id);
+        self.state
             .playbook_step_progress
             .retain(|progress| !task_ids.contains(&progress.task_id));
         self.state

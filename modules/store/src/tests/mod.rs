@@ -159,6 +159,7 @@ mod keep_awake;
 mod mcp_settings;
 mod migration;
 mod playbook;
+mod playbook_evaluation;
 mod project;
 mod project_branch_cleanup;
 mod provisioning;

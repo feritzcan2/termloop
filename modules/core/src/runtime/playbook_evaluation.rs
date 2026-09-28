@@ -428,7 +428,12 @@ impl CoreRuntime {
         )
     }
 
-    pub fn fail_playbook_evaluation_launch(&mut self, check_id: &str) {
+    pub fn fail_playbook_evaluation_launch(&mut self, check_id: &str) -> Result<(), CoreError> {
+        self.interrupt_evaluation_record(
+            check_id,
+            termloop_domain::PlaybookEvaluationOutcome::Failed,
+            "The evaluation fork could not start.",
+        )?;
         if let Some(evaluation) = self.playbook_evaluation.evaluations.remove(check_id) {
             self.mcp_authorizer.remove(&evaluation.session_id);
             self.pending_agent_forks.remove(&evaluation.session_id);
@@ -436,6 +441,7 @@ impl CoreRuntime {
                 .fallbacks
                 .insert(check_id.to_owned(), "forkUnavailable".into());
         }
+        Ok(())
     }
 
     pub fn retire_playbook_evaluator_descriptor(
@@ -486,22 +492,41 @@ impl CoreRuntime {
         Ok(())
     }
 
-    pub fn obsolete_playbook_evaluator_sessions(&mut self) -> Vec<String> {
+    pub fn obsolete_playbook_evaluator_sessions(&mut self) -> Result<Vec<String>, CoreError> {
         let now = termloop_platform::current_epoch_ms();
         let stale = self
             .playbook_evaluation
             .evaluations
             .iter()
-            .filter(|(_, e)| self.validate_playbook_evaluation(e, now).is_err())
-            .map(|(id, _)| id.clone())
+            .filter_map(|(id, evaluation)| {
+                let exited = self.store.sessions().iter().any(|session| {
+                    session.id == evaluation.session_id
+                        && (session.lifecycle_state != "running"
+                            || session.runtime_epoch != evaluation.runtime_epoch)
+                });
+                let reason = if exited {
+                    "The fork agent exited before recording a result."
+                } else if self.validate_playbook_evaluation(evaluation, now).is_err() {
+                    "The check expired or its Task, pipeline, or Steward changed before a result was recorded."
+                } else {
+                    return None;
+                };
+                Some((id.clone(), reason))
+            })
             .collect::<Vec<_>>();
-        for id in stale {
-            self.fail_playbook_evaluation_launch(&id);
+        for (id, reason) in stale {
+            self.interrupt_evaluation_record(
+                &id,
+                termloop_domain::PlaybookEvaluationOutcome::Interrupted,
+                reason,
+            )?;
+            self.fail_playbook_evaluation_launch(&id)?;
         }
         self.playbook_evaluation
             .activity
             .retain(|id, _| self.store.sessions().iter().any(|s| s.id == *id));
-        self.store
+        Ok(self
+            .store
             .sessions()
             .iter()
             .filter(|s| {
@@ -514,7 +539,7 @@ impl CoreRuntime {
                         .any(|e| e.session_id == s.id)
             })
             .map(|s| s.id.clone())
-            .collect()
+            .collect())
     }
 }
 
