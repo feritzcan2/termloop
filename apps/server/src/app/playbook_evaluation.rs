@@ -28,14 +28,9 @@ pub(super) async fn route_assignment(
     let delegated = match outcome {
         PlaybookEvaluationLaunch::Steward(result) => {
             claim.result = result;
-            state
-                .core
-                .lock()
-                .await
-                .record_playbook_evaluation_fallback(claim);
             Ok(false)
         }
-        PlaybookEvaluationLaunch::Delegated(result) => {
+        PlaybookEvaluationLaunch::Delegated(result) | PlaybookEvaluationLaunch::Skipped(result) => {
             claim.result = result;
             Ok(true)
         }
@@ -49,16 +44,14 @@ pub(super) async fn route_assignment(
                 Ok(true)
             }
             Err(error) => {
-                tracing::warn!(%error, "Task Playbook evaluation fork unavailable; using Steward fallback");
-                state
+                tracing::warn!(%error, "Task Playbook evaluation fork unavailable; leaving the step waiting");
+                claim.result = state
                     .core
                     .lock()
                     .await
                     .fail_playbook_evaluation_launch(&check_id)?;
-                claim.result["evaluation"] =
-                    json!({"mode": "stewardFallback", "reason": "forkUnavailable"});
                 reap_obsolete_evaluators(state).await;
-                Ok(false)
+                Ok(true)
             }
         },
     }?;
