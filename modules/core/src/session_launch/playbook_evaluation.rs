@@ -12,6 +12,7 @@ pub enum PlaybookEvaluationLaunch {
         result: Value,
     },
     Delegated(Value),
+    Skipped(Value),
     Steward(Value),
 }
 
@@ -28,11 +29,6 @@ impl CoreRuntime {
         };
         let now = termloop_platform::current_epoch_ms();
         self.validate_current_check(capability, now)?;
-        // These are current claims, not a history of evaluations.
-        let current_checks = self.tracker_runtime.active_check_ids();
-        self.playbook_evaluation
-            .fallbacks
-            .retain(|id, _| current_checks.contains(id));
         if let Some(evaluation) = self
             .playbook_evaluation
             .evaluations
@@ -45,18 +41,14 @@ impl CoreRuntime {
                 &evaluation.session_id,
             )));
         }
-        if let Some(reason) = self.playbook_evaluation.fallbacks.get(&capability.check_id) {
-            return Ok(PlaybookEvaluationLaunch::Steward(fallback_result(
-                &claim.result,
-                reason,
-            )));
-        }
+        self.playbook_evaluation
+            .waiting
+            .remove(&capability.tracker_id);
         let Some(source) = self.select_playbook_source(&capability.project_id, &task_id, now)?
         else {
-            return Ok(PlaybookEvaluationLaunch::Steward(fallback_result(
-                &claim.result,
-                "noUnambiguousTaskAgent",
-            )));
+            return Ok(PlaybookEvaluationLaunch::Skipped(
+                self.defer_playbook_evaluation(claim, "noUnambiguousTaskAgent")?,
+            ));
         };
         let provider = self
             .store
@@ -69,18 +61,16 @@ impl CoreRuntime {
                 .as_ref()
                 .is_some_and(|t| t.native_fork_supported(id))
         }) {
-            return Ok(PlaybookEvaluationLaunch::Steward(fallback_result(
-                &claim.result,
-                "forkUnsupported",
-            )));
+            return Ok(PlaybookEvaluationLaunch::Skipped(
+                self.defer_playbook_evaluation(claim, "forkUnsupported")?,
+            ));
         }
         let mut plan = match self.plan_agent_fork(json!({"sessionId": source})) {
             Ok(plan) if plan.mcp_token.is_some() => plan,
             _ => {
-                return Ok(PlaybookEvaluationLaunch::Steward(fallback_result(
-                    &claim.result,
-                    "forkUnavailable",
-                )));
+                return Ok(PlaybookEvaluationLaunch::Skipped(
+                    self.defer_playbook_evaluation(claim, "forkUnavailable")?,
+                ));
             }
         };
         plan.mcp_role = AgentMcpRole::PlaybookEvaluator {
@@ -112,10 +102,9 @@ impl CoreRuntime {
         ) {
             Ok(()) => {}
             Err(CoreError::HelperCapacityExhausted) => {
-                return Ok(PlaybookEvaluationLaunch::Steward(fallback_result(
-                    &claim.result,
-                    "evaluationCapacity",
-                )));
+                return Ok(PlaybookEvaluationLaunch::Skipped(
+                    self.defer_playbook_evaluation(claim, "evaluationCapacity")?,
+                ));
             }
             Err(error) => return Err(error),
         }
@@ -203,12 +192,6 @@ fn delegated_result(check_id: &str, source: &str, evaluator: &str) -> Value {
         "sourceSessionId": source, "sessionId": evaluator,
         "selection": "observedTaskWorkOrCanonicalAgent",
     }})
-}
-
-fn fallback_result(assignment: &Value, reason: &str) -> Value {
-    let mut value = assignment.clone();
-    value["evaluation"] = json!({"mode": "stewardFallback", "reason": reason});
-    value
 }
 
 #[cfg(test)]

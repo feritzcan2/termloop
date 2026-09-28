@@ -717,12 +717,17 @@ impl CoreRuntime {
             .milestones
             .iter()
             .find_map(|milestone| self.claimed_step_task_id(&milestone.routine_id));
+        let evaluation = playbook
+            .milestones
+            .iter()
+            .filter_map(|milestone| self.playbook_evaluation_projection(&milestone.routine_id))
+            .min_by_key(|value| value["mode"] == "waitingForTaskAgent");
         // A pipeline that asks nothing has nobody standing on it; every open
         // Task is reported as done rather than invented into a first step.
         Ok(json!({
             "activePipelineName": playbook.active_pipeline_name,
             "processingTaskId": processing_task_id,
-            "evaluation": playbook.milestones.iter().find_map(|milestone| self.playbook_evaluation_projection(&milestone.routine_id)),
+            "evaluation": evaluation,
             "steps": steps,
             "doneTaskIds": done_task_ids,
             "stateRevision": self.store.revision(),
