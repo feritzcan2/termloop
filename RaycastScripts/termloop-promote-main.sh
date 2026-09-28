@@ -211,7 +211,7 @@ if [[ "$next_version" != "$source_version" ]]; then
   fi
   while IFS= read -r changed_path; do
     case "$changed_path" in
-      package.json|Cargo.toml|Cargo.lock|clients/desktop/package.json|clients/cli/package.json|contract/generated/typescript/package.json) ;;
+      package.json|Cargo.toml|Cargo.lock|clients/desktop/package.json|clients/terminal-wire/package.json|clients/terminal-surface/package.json|clients/ghostty-host/package.json|clients/cli/package.json|contract/generated/typescript/package.json) ;;
       *) echo "Unexpected change during version preparation: $changed_path. Review it before retrying."; exit 1 ;;
     esac
   done < <(git -C "$source_checkout" diff --name-only HEAD)
@@ -219,8 +219,8 @@ if [[ "$next_version" != "$source_version" ]]; then
     echo "Untracked work appeared during version preparation. Review it before retrying."
     exit 1
   fi
-  git -C "$source_checkout" add -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/cli/package.json contract/generated/typescript/package.json
-  git -C "$source_checkout" commit --only -m "chore(release): prepare $next_version" -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/cli/package.json contract/generated/typescript/package.json
+  git -C "$source_checkout" add -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/terminal-wire/package.json clients/terminal-surface/package.json clients/ghostty-host/package.json clients/cli/package.json contract/generated/typescript/package.json
+  git -C "$source_checkout" commit --only -m "chore(release): prepare $next_version" -- package.json Cargo.toml Cargo.lock clients/desktop/package.json clients/terminal-wire/package.json clients/terminal-surface/package.json clients/ghostty-host/package.json clients/cli/package.json contract/generated/typescript/package.json
   git -C "$source_checkout" push origin "refs/heads/$SOURCE_BRANCH"
   candidate_sha="$(git -C "$source_checkout" rev-parse HEAD)"
 else
