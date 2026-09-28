@@ -633,6 +633,12 @@ impl CoreRuntime {
         store
             .reconcile_restart(&write_authority)
             .map_err(store_error)?;
+        store
+            .interrupt_playbook_evaluations_on_restart(
+                &write_authority,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
         let provider_cache = store.open_provider_cache().map_err(store_error)?;
         let (agent_runtime_sender, agent_runtime_signals) = std::sync::mpsc::channel();
         let (ask_to_requests, ask_to_by_source, ask_to_conversations) =

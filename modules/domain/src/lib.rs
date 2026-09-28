@@ -61,6 +61,10 @@ pub use project_task_automation::{
 };
 
 mod playbook;
+mod playbook_evaluation;
+pub use playbook_evaluation::{
+    PLAYBOOK_EVALUATIONS_PER_PROJECT_MAX, PlaybookEvaluationOutcome, PlaybookEvaluationRecord,
+};
 mod task_source;
 pub use playbook::{
     PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES, PLAYBOOK_EVIDENCE_MAX_BYTES,

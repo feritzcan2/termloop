@@ -64,9 +64,9 @@ export function isAssistantSession(session: Session): boolean {
     || template === "builtin.steward.executor";
 }
 
-export type AssistantView = "chat" | "terminal" | "configuration" | "context" | "builder";
+export type AssistantView = "chat" | "terminal" | "configuration" | "context" | "builder" | "history";
 export type AssistantSelection =
-  | { kind: "steward"; initialView?: "chat" | "terminal" | "configuration" | "builder" }
+  | { kind: "steward"; initialView?: "chat" | "terminal" | "configuration" | "builder" | "history" }
   | { kind: "routine"; routineId: string; initialView?: "context" };
 
 export type AssistantLaunchDefaults = Readonly<{
@@ -999,6 +999,8 @@ export function AssistantRail(props: Props) {
     <div className="ar-head">
       <span>Project assistant</span>
       <i className="ar-rule" aria-hidden="true" />
+      {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Playbook check history" title="Playbook check history"
+        onClick={() => props.openDetails({ kind: "steward", initialView: "history" })}><Icon name="history" /></button>}
       {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Configure Steward prompts" title="Configure Steward prompts"
         onClick={() => props.openDetails({ kind: "steward", initialView: "configuration" })}><Icon name="edit" /></button>}
     </div>

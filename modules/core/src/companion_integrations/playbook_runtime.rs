@@ -624,6 +624,7 @@ impl CoreRuntime {
                 &assignment.project_id,
                 answers.clone(),
                 configuration.clone(),
+                self.completed_evaluation_record(&capability.check_id, &answers[0]),
                 self.store.revision(),
             )
             .map_err(crate::store_error)?;

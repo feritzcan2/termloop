@@ -108,6 +108,8 @@ export function createAssistantActions({
       "playbook.get",
       () => api.playbookGet(projectId),
     ),
+    // History has a single mounted consumer and an explicit refresh button.
+    getEvaluationHistory: () => api.playbookEvaluationHistory(projectId),
     getPlaybookRuntime: () => coordinator.read(
       identity,
       "playbook.runtime",

@@ -45,6 +45,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || tracker_configurations_are_invalid(state)
         || playbook_configurations_are_invalid(state)
         || playbook_step_progress_is_invalid(state)
+        || super::records::playbook_evaluation::records_are_invalid(state)
         || sessions_are_invalid(state)
         || deleted_sessions_are_invalid(state)
         || agent_conversation_readiness_is_invalid(state)
