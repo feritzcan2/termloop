@@ -8,6 +8,7 @@ pub(crate) mod issue_link;
 mod keep_awake;
 mod mcp_settings;
 pub(crate) mod playbook;
+pub(crate) mod playbook_evaluation;
 mod project;
 mod project_task_automation;
 mod run_configuration;

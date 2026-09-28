@@ -11,10 +11,11 @@ import type {
   RoutineRunNowResult,
   PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
-  PlaybookEvaluatorSettingsDto,
+  PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult,
 } from "@termloop/contract/current";
 import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookBuilderSetup, routineIntervalLabel, type AssistantSelection, type AssistantView } from "./AssistantRail.js";
 import { Icon } from "./Icon.js";
+import { PlaybookEvaluationHistory } from "./PlaybookEvaluationHistory.js";
 import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
@@ -49,6 +50,7 @@ export type StewardPanelProps = {
   runRoutineNow(routineId: string): Promise<RoutineRunNowResult>;
   getPlaybook(): Promise<PlaybookGetResult>;
   getPlaybookRuntime(): Promise<PlaybookRuntimeResult>;
+  getEvaluationHistory(): Promise<PlaybookEvaluationHistoryResult>;
   /// Improve-with-agent for editable prompts and the Playbook on this panel. Absent
   /// when the composition root has not wired it, which leaves the editors
   /// exactly as they were.
@@ -275,6 +277,7 @@ export function assistantTabs(
     ["chat", "Workspace"],
     ...(hasPlaybookBuilder ? [["builder", "Builder"]] as const : []),
     ["configuration", "Config"],
+    ["history", "History"],
   ];
   return [["context", "Context"]];
 }
@@ -593,6 +596,7 @@ export function StewardPanel(props: StewardPanelProps) {
     {error ? <p className="ap-error">{error}</p> : null}
     <div className={`ap-body${view === "terminal" || view === "builder" || (props.selection.kind === "steward" && view === "chat") ? " terminal-active" : ""}`}>{loading ? <Empty text="Loading…" />
       : props.selection.kind === "routine" ? context
+      : view === "history" ? <PlaybookEvaluationHistory key={props.projectId} refreshToken={props.refreshToken} load={props.getEvaluationHistory} />
       : view === "builder" ? playbookBuilderTerminal
       : view === "configuration" ? stewardConfiguration : stewardWorkspace}</div>
   </section>;

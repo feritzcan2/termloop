@@ -24,6 +24,7 @@ describe("Steward reset", () => {
   });
 
   it("requires the destructive second click and returns to Build pipeline with agent", async () => {
+    const openDetails = vi.fn();
     const deleteSteward = vi.fn(async (expectedRevision: number) => ({
       projectId: "project-1",
       deleted: true as const,
@@ -53,7 +54,7 @@ describe("Steward reset", () => {
           model: "default",
           permission: "bypassPermissions" as const,
           reasoning: "default" as const,
-          enabled: false,
+          enabled: true,
           executorSessionId: null,
           generation: 1,
           updatedAtEpochMs: 1,
@@ -102,8 +103,14 @@ describe("Steward reset", () => {
       openImproverTerminal: () => undefined,
       dismissImproverSession: () => undefined,
       openTask: () => undefined,
-      openDetails: () => undefined,
+      openDetails,
     })));
+
+    const history = host.querySelector<HTMLButtonElement>('[aria-label="Playbook check history"]');
+    expect(history).not.toBeNull();
+    expect(history!.parentElement!.querySelector('[aria-label="Configure Steward prompts"]')).not.toBeNull();
+    await act(async () => history!.click());
+    expect(openDetails).toHaveBeenLastCalledWith({ kind: "steward", initialView: "history" });
 
     const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove Project Steward"]');
     expect(remove).not.toBeNull();

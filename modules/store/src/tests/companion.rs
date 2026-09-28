@@ -686,10 +686,22 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         .collect();
     assert!(crate::validation::validate_current_state(&store.state).is_ok());
 
+    store
+        .start_playbook_evaluation(
+            &authority,
+            super::playbook_evaluation::evaluation("reset-a", 1),
+        )
+        .unwrap();
+    let mut retained = super::playbook_evaluation::evaluation("keep-b", 1);
+    retained.project_id = "project-b".into();
+    store
+        .start_playbook_evaluation(&authority, retained.clone())
+        .unwrap();
     let reset = store
         .reset_project_assistant(&authority, "project-a", store.revision(), 10)
         .unwrap();
 
+    assert_eq!(store.playbook_evaluations(), &[retained]);
     assert_eq!(reset.deleted_routines, 1);
     assert_eq!(reset.deleted_messages, 1);
     assert!(reset.playbook_deleted);

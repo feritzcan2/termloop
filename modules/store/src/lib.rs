@@ -69,7 +69,8 @@ use termloop_domain::{
 // Version 60 adds an optional workflow selection to Project Task automation.
 // Version 61 removes orphan conversation readiness left by archived Task deletion.
 // Version 63 removes orphan branch sets left by Project deletion.
-const CURRENT_SCHEMA_VERSION: u32 = 63;
+// Version 64 adds bounded, user-requested Playbook fork evaluation receipts.
+const CURRENT_SCHEMA_VERSION: u32 = 64;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -139,6 +140,8 @@ struct CurrentState {
     playbook_configurations: Vec<PlaybookConfiguration>,
     #[serde(default)]
     playbook_step_progress: Vec<PlaybookStepProgress>,
+    #[serde(default)]
+    playbook_evaluations: Vec<termloop_domain::PlaybookEvaluationRecord>,
     /// Migration-only input. Schema 51 never writes persistent Worker state.
     #[serde(default, skip_serializing)]
     worker_configurations: Vec<serde_json::Value>,
@@ -202,6 +205,7 @@ impl Default for CurrentState {
             tracker_configurations: vec![],
             playbook_configurations: vec![],
             playbook_step_progress: vec![],
+            playbook_evaluations: vec![],
             worker_configurations: vec![],
             run_configurations: vec![],
             workflow_configurations: vec![],

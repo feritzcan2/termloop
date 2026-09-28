@@ -1344,6 +1344,10 @@
         "$ref": "#/$defs/playbookRuntimeResult"
       }
     },
+    "playbook.evaluationHistory": {
+      "params": { "$ref": "#/$defs/playbookRuntimeParams" },
+      "result": { "$ref": "#/$defs/playbookEvaluationHistoryResult" }
+    },
     "companion.transcriptAppend": {
       "params": {
         "$ref": "#/$defs/companionTranscriptAppendParams"
@@ -1930,6 +1934,7 @@
         "playbook.update",
         "playbook.taskPositionSet",
         "playbook.runtime",
+        "playbook.evaluationHistory",
         "companion.transcriptAppend",
         "companion.proposalRespond",
         "companion.suggestionAccept",
@@ -15515,6 +15520,43 @@
           "minimum": 0,
           "x-rust-type": "u64"
         }
+      }
+    },
+    "playbookEvaluationRecordDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationRecordDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "projectId", "taskId", "taskTitle", "milestoneId", "milestoneTitle", "sourceSessionId", "sourceName", "sessionId", "agentId", "model", "permission", "startedAtEpochMs", "finishedAtEpochMs", "outcome", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "taskTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "milestoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "milestoneTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sourceSessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sourceName": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "agentId": { "$ref": "#/$defs/stewardAgentId" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "permission": { "$ref": "#/$defs/assistantPermission" },
+        "startedAtEpochMs": { "type": "integer", "minimum": 0 },
+        "finishedAtEpochMs": { "type": ["integer", "null"], "minimum": 0 },
+        "outcome": { "type": "string", "enum": ["inProgress", "passed", "waiting", "blocked", "failed", "interrupted"] },
+        "evidence": { "type": "string", "maxLength": 600, "x-utf8-max-bytes": 600 }
+      }
+    },
+    "playbookEvaluationHistoryResult": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookEvaluationHistoryResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries", "retentionLimit", "stateRevision"],
+      "properties": {
+        "entries": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/playbookEvaluationRecordDto" } },
+        "retentionLimit": { "type": "integer", "const": 200 },
+        "stateRevision": { "type": "integer", "minimum": 0 }
       }
     },
     "playbookRuntimeStepDto": {

@@ -638,6 +638,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "taskSource.candidateList"
             | "playbook.get"
             | "playbook.runtime"
+            | "playbook.evaluationHistory"
             | "companion.transcriptList"
             | "companion.wakeNext"
             | "voice.settingsGet"
@@ -859,6 +860,7 @@ mod tests {
                             "taskSource.statusList",
                             "taskSource.statusListStored",
                             "task.branchCommitSummaryList",
+                            "playbook.evaluationHistory",
                             // Credential presence is safe to cancel, but voice
                             // configuration remains local Full-scope metadata.
                             "voice.settingsGet",

@@ -4,6 +4,7 @@ mod agent_accounts;
 mod codex_thread_name;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod playbook_evaluation;
+mod playbook_evaluation_history;
 pub(crate) mod preview_tickets;
 pub(crate) mod provider_observation_ingress;
 pub(crate) mod provider_runtime;
@@ -101,6 +102,7 @@ impl CoreRuntime {
             "routine.configurationList" => self.list_tracker_configurations(params),
             "playbook.get" => self.get_playbook(params),
             "playbook.runtime" => self.playbook_runtime(params),
+            "playbook.evaluationHistory" => self.playbook_evaluation_history(params),
             "routine.runtimeList" => self.list_tracker_runtime(params),
             _ => Err(CoreError::MethodNotFound),
         }

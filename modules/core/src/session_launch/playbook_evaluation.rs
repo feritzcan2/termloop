@@ -2,7 +2,8 @@ use serde_json::{Value, json};
 
 use super::{AgentLaunchPlan, AgentMcpRole};
 use crate::companion_integrations::tracker_runtime::StewardRoutineClaim;
-use crate::{CoreError, CoreRuntime};
+use crate::{CoreError, CoreRuntime, required_string, store_error};
+use termloop_domain::{PlaybookEvaluationOutcome as Outcome, PlaybookEvaluationRecord};
 
 pub enum PlaybookEvaluationLaunch {
     Fork {
@@ -118,11 +119,64 @@ impl CoreRuntime {
             }
             Err(error) => return Err(error),
         }
+        if let Err(error) = self.record_playbook_evaluation_start(&plan, &capability.check_id) {
+            self.playbook_evaluation
+                .evaluations
+                .remove(&capability.check_id);
+            return Err(error);
+        }
         Ok(PlaybookEvaluationLaunch::Fork {
             result: delegated_result(&capability.check_id, &source, &plan.session_id),
             check_id: capability.check_id.clone(),
             plan: Box::new(plan),
         })
+    }
+
+    fn record_playbook_evaluation_start(
+        &mut self,
+        plan: &AgentLaunchPlan,
+        check_id: &str,
+    ) -> Result<(), CoreError> {
+        let evaluation = self
+            .playbook_evaluation
+            .evaluations
+            .get(check_id)
+            .ok_or(CoreError::TrackerReportStale)?;
+        let source = self
+            .store
+            .sessions()
+            .iter()
+            .find(|s| s.id == evaluation.source_session_id)
+            .ok_or(CoreError::NotFound)?;
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|t| t.id == evaluation.task_id)
+            .ok_or(CoreError::NotFound)?;
+        let selection = plan.interactive_options.clone().unwrap_or_default();
+        let step = &evaluation.assignment["step"];
+        let record = PlaybookEvaluationRecord {
+            id: check_id.to_owned(),
+            project_id: evaluation.capability.project_id.clone(),
+            task_id: task.id.clone(),
+            task_title: task.title.clone(),
+            milestone_id: required_string(step, "milestoneId")?,
+            milestone_title: required_string(step, "title")?,
+            source_session_id: source.id.clone(),
+            source_name: source.name.clone().unwrap_or_else(|| plan.agent_id.clone()),
+            session_id: plan.session_id.clone(),
+            agent_id: plan.agent_id.clone(),
+            model: selection.model,
+            permission: selection.permission,
+            started_at_epoch_ms: evaluation.capability.claimed_at_epoch_ms,
+            finished_at_epoch_ms: None,
+            outcome: Outcome::InProgress,
+            evidence: String::new(),
+        };
+        self.store
+            .start_playbook_evaluation(&self.write_authority, record)
+            .map_err(store_error)
     }
 
     pub(super) fn revalidate_playbook_evaluator_launch(

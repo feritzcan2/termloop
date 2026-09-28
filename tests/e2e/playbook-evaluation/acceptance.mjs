@@ -99,6 +99,13 @@ try {
   assert.equal(checking.sessionId, evaluated.sessionId);
   assert.equal(checking.sourceSessionId, source.id);
   assert.equal(checking.taskId, task.id);
+  const startedHistory = await call("playbook.evaluationHistory", { projectId: project.id });
+  assert.equal(startedHistory.entries.length, 1);
+  assert.equal(startedHistory.entries[0].sourceSessionId, source.id);
+  assert.equal(startedHistory.entries[0].sessionId, evaluated.sessionId);
+  assert.equal(startedHistory.entries[0].outcome, "inProgress");
+  assert.equal(startedHistory.entries[0].model, evaluatorSettings.claudeModel ?? "sonnet");
+  assert.equal(startedHistory.entries[0].permission, evaluatorSettings.permission);
   await writeFile(path.join(evidenceDirectory, "inspection-complete"), "ok");
   const completed = await wait(async () => {
     const result = await call("playbook.runtime", { projectId: project.id });
@@ -114,7 +121,13 @@ try {
     assert.equal(sessions.find((session) => session.id === source.id)?.lifecycle_state, "running");
     return !sessions.some((session) => session.id === evaluated.sessionId);
   }, "Temporary evaluator was not retired");
-  console.log(`PLAYBOOK_EVALUATION_OK: native Task fork, scoped tools, preserved source, rejected oversize reports, corrected ${reportStatus} verdict, temporary Session cleanup`);
+  const finishedHistory = await call("playbook.evaluationHistory", { projectId: project.id });
+  assert.equal(finishedHistory.entries.length, 1);
+  assert.equal(finishedHistory.entries[0].outcome, reportStatus === "pending" ? "waiting" : "passed");
+  assert.equal(finishedHistory.entries[0].evidence, report.evidence);
+  assert.equal(finishedHistory.entries[0].id, startedHistory.entries[0].id);
+  assert.ok(finishedHistory.entries[0].finishedAtEpochMs >= startedHistory.entries[0].startedAtEpochMs);
+  console.log(`PLAYBOOK_EVALUATION_OK: native Task fork, scoped tools, preserved source, rejected oversize reports, corrected ${reportStatus} verdict, temporary Session cleanup, retained fork history`);
 } catch (error) {
   console.error(JSON.stringify({
     sessions: await call("session.list").catch(() => []),
