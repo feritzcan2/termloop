@@ -108,6 +108,7 @@ export class TerminalPool<S extends TerminalSession> {
 
   readonly #resizeOwnershipListeners = new Set<() => void>();
   #resizeOwnershipRevision = 0;
+  #focusedSessionId: string | undefined;
   #visible = true;
   #appearanceTheme: AppearanceTheme = "dark";
 
@@ -126,6 +127,7 @@ export class TerminalPool<S extends TerminalSession> {
     for (const [id, entry] of this.#entries) {
       const next = retained.get(id);
       if (!next) {
+        if (this.#focusedSessionId === id) this.#focusedSessionId = undefined;
         this.#disposeEntry(entry);
         this.#entries.delete(id);
       } else {
@@ -228,6 +230,7 @@ export class TerminalPool<S extends TerminalSession> {
   }
 
   unmount(sessionId: string): void {
+    if (this.#focusedSessionId === sessionId) this.#focusedSessionId = undefined;
     const entry = this.#entries.get(sessionId);
     if (!entry?.surface || !entry.mounted) return;
     entry.mountToken = undefined;
@@ -239,6 +242,8 @@ export class TerminalPool<S extends TerminalSession> {
 
   focus(sessionId: string): void {
     const entry = this.#entries.get(sessionId);
+    if (!entry) return;
+    this.#focusedSessionId = sessionId;
     entry?.attachment?.focus();
     entry?.surface?.focus();
   }
@@ -331,6 +336,7 @@ export class TerminalPool<S extends TerminalSession> {
   }
 
   dispose(): void {
+    this.#focusedSessionId = undefined;
     for (const entry of this.#entries.values()) this.#disposeEntry(entry);
     this.#entries.clear();
   }
@@ -369,6 +375,9 @@ export class TerminalPool<S extends TerminalSession> {
         // onEvent(), which opens output credit and startup replay, so a TUI
         // cannot paint its first frame at the daemon's placeholder PTY size.
         if (entry.dimensions) attachment.resize(entry.dimensions.rows, entry.dimensions.cols);
+        // Selection can precede an asynchronous native mount or transport
+        // attachment. Only the still-selected, mounted pane may claim size.
+        if (entry.mounted && this.#focusedSessionId === entry.session.id) attachment.focus();
         attachment.onEvent((event) => this.#handleEvent(entry, attachment, event));
       })
       .catch((error) => {
