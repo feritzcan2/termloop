@@ -728,11 +728,33 @@ describe("TerminalPool", () => {
 });
 
 describe("TerminalPool stream presentation", () => {
-  const ack = (frames: number, bytes: number) => {
-    const data = new Uint8Array(12); data.set(new TextEncoder().encode("TLRA"));
+  const ack = (frames: number, bytes: number, mouseModes?: number) => {
+    const data = new Uint8Array(mouseModes === undefined ? 12 : 16); data.set(new TextEncoder().encode("TLRA"));
     const view = new DataView(data.buffer); view.setUint32(4, frames); view.setUint32(8, bytes);
+    if (mouseModes !== undefined) view.setUint32(12, mouseModes);
     return { type: "frame" as const, kind: 11, data: data.buffer };
   };
+  it("restores late-attach wheel tracking without duplicating output on the next reconnect", async () => {
+    vi.useFakeTimers();
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    try {
+      pool.reconcile([session("mouse")]); await pool.mount("mouse", {} as HTMLElement);
+      const bytes = new TextEncoder().encode("\x1b[1;1HOnly the latest frame remains");
+      attachment.emit(ack(1, bytes.length, 0x104));
+      attachment.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: bytes.buffer });
+      await vi.advanceTimersByTimeAsync(10);
+      const restored = "\x1b[?9;1000;1002;1003;1006l\x1b[?1003h\x1b[?1006h";
+      expect(surface.probeValue.text).toBe(new TextDecoder().decode(bytes) + restored);
+      attachment.emit({ type: "state", state: "connectionLost" });
+      attachment.emit(ack(1, bytes.length, 0));
+      attachment.emit({ type: "frame", kind: KIND_REPLAY_OUTPUT, data: bytes.buffer });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(surface.probeValue.text).toBe(new TextDecoder().decode(bytes) + restored + "\x1b[?9;1000;1002;1003;1006l");
+      expect(surface.probeValue.text).not.toContain("\x1bc");
+      expect(pool.presentationPort.snapshot("mouse")?.phase).toBe("live");
+    } finally { pool.dispose(); vi.useRealTimers(); }
+  });
   it("does not revive an exited terminal when a replay write completes later", async () => {
     const surface = new FakeSurface(), attachment = new FakeAttachment();
     const consumed: (() => void)[] = [];

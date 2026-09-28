@@ -22,7 +22,7 @@ describe("terminal replay negotiation", () => {
     expect(new TextDecoder().decode(request.slice(0, 4))).toBe("TLRQ");
     const view = new DataView(request.buffer);
     expect(view.getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
-    expect(view.getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES);
+    expect(view.getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES + 0x80000000);
   });
 
   it("distinguishes a new replay ACK from an old daemon echoing the request", () => {
@@ -36,5 +36,17 @@ describe("terminal replay negotiation", () => {
   it("rejects metadata outside the negotiated mobile bounds", () => {
     expect(decodeReplayAck(ack(129, 1))).toBeUndefined();
     expect(decodeReplayAck(ack(1, MOBILE_REPLAY_BUDGET_BYTES + 1))).toBeUndefined();
+  });
+
+  it("reads negotiated mouse modes while accepting old replay metadata", () => {
+    const payload = new Uint8Array(16);
+    payload.set(ack(2, 100));
+    const view = new DataView(payload.buffer);
+    view.setUint32(12, 0x104);
+    expect(decodeReplayAck(payload)).toEqual({ frameCount: 2, outputBytes: 100, mouseModes: 0x104 });
+    view.setUint32(12, 5);
+    expect(decodeReplayAck(payload)).toBeUndefined();
+    view.setUint32(12, 0x204);
+    expect(decodeReplayAck(payload)).toBeUndefined();
   });
 });

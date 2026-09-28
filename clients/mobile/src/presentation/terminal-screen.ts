@@ -347,6 +347,11 @@ export class TerminalScreenProjection {
     return this.#sgrMouseEncoding;
   }
 
+  restoreMouseModes(modes: number): void {
+    this.#mouseTracking = (["none", "x10", "normal", "button", "any"] as const)[modes & 0xff] ?? "unknown";
+    this.#sgrMouseEncoding = (modes & 0x100) !== 0;
+  }
+
   constructor() {
     this.#grid = Array.from({ length: DEFAULT_ROWS }, () => this.#createRow());
   }
@@ -710,14 +715,11 @@ export class TerminalScreenProjection {
   }
 
   #lineFeed(): void {
-    if (this.#row < this.#scrollBottom) { this.#row += 1; return; }
-    /// With no scroll region declared, a line feed past the last known row means the
-    /// real screen is taller than anything seen so far. The row is materialised only
-    /// when something is printed into it, so a frame that ends with a newline does not
-    /// make the grid creep a row taller every redraw.
-    if (!this.#regionSet && this.#row + 1 < SCREEN_MAX_ROWS) { this.#row += 1; return; }
-    this.#scrollUp();
-    this.#row = this.#scrollBottom;
+    // A newline at the bottom scrolls the known grid, even without explicit margins.
+    // Growing here leaves committed history inside the live screen, where the next
+    // composer redraw erases it. Only cursor addressing can discover a taller grid.
+    if (this.#row === this.#scrollBottom) this.#scrollUp();
+    else this.#row = Math.min(this.#rows - 1, this.#row + 1);
   }
 
   #reverseIndex(): void {

@@ -98,6 +98,10 @@ export class TerminalSessionState {
       this.reconcilingReplay = true;
       return;
     }
+    if (event.type === "replay" && event.bytes.length === 0 && event.mouseModes !== undefined) {
+      this.projection.restoreMouseModes(event.mouseModes);
+      return;
+    }
     let effectiveEvent = event;
     let base = this.buffer;
     if (event.type === "replay" && this.reconcilingReplay) {
@@ -125,6 +129,11 @@ export class TerminalSessionState {
     const screen = bytes === undefined ? undefined
       : await this.projectOutput(this.projection, bytes, active);
     if (!active()) return;
+    // Attach metadata describes the mode at the replay/live boundary. Apply it
+    // after replay, even when continuity let us skip already rendered bytes.
+    if (event.type === "replay" && event.mouseModes !== undefined) {
+      this.projection.restoreMouseModes(event.mouseModes);
+    }
     if (effectiveEvent.type === "replay") mobileDiagnostics.report("terminal", "replay_projected", {
       connectionId: this.connectionId, sessionId: this.sessionId,
       bytes: effectiveEvent.bytes.byteLength, durationMs: performance.now() - started,

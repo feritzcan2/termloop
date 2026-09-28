@@ -3,6 +3,7 @@
 mod input_activity;
 mod input_readiness;
 mod input_writer;
+mod mouse_modes;
 mod output_settlement;
 mod shell_history;
 pub use shell_history::{ShellHistory, ShellHistorySnapshot};
@@ -313,10 +314,12 @@ struct RecentReplay {
     bytes: usize,
     dropped_frames: u64,
     events: VecDeque<TerminalEvent>,
+    mouse_modes: mouse_modes::MouseModeTracker,
 }
 
 impl RecentReplay {
     fn record_output(&mut self, bytes: &[u8]) {
+        self.mouse_modes.record(bytes);
         if !self.enabled || bytes.len() > MAX_RECENT_REPLAY_BYTES {
             return;
         }
@@ -414,6 +417,7 @@ impl RecentReplay {
 pub struct TerminalSubscription {
     replay: VecDeque<TerminalEvent>,
     live: broadcast::Receiver<TerminalEvent>,
+    replay_mouse_modes: u32,
 }
 
 pub struct TerminalDelivery {
@@ -422,6 +426,10 @@ pub struct TerminalDelivery {
 }
 
 impl TerminalSubscription {
+    pub fn replay_mouse_modes(&self) -> u32 {
+        self.replay_mouse_modes
+    }
+
     pub fn replay_event_count(&self) -> usize {
         self.replay.len()
     }
@@ -913,7 +921,11 @@ impl TerminalService {
         } else {
             recent.snapshot_with_options(max_replay_bytes, max_replay_chunk_bytes)
         };
-        Ok(TerminalSubscription { replay, live })
+        Ok(TerminalSubscription {
+            replay,
+            live,
+            replay_mouse_modes: recent.mouse_modes.snapshot(),
+        })
     }
 
     pub fn subscribe_lifecycle(&self) -> broadcast::Receiver<TerminalLifecycleEvent> {
@@ -2087,6 +2099,23 @@ mod tests {
     }
 
     #[test]
+    fn late_attachment_retains_mouse_modes_after_startup_output_is_evicted() {
+        let mut replay = RecentReplay {
+            enabled: true,
+            ..RecentReplay::default()
+        };
+        replay.record_output(b"\x1b[?1000;1002;1003;1006h");
+        replay.record_output(&vec![b'x'; MAX_RECENT_REPLAY_BYTES]);
+        assert!(matches!(
+            replay.snapshot().front(),
+            Some(TerminalEvent::Gap(1))
+        ));
+        assert_eq!(replay.mouse_modes.snapshot(), 0x104);
+        replay.record_output(b"\x1b[?1003;1006l");
+        assert_eq!(replay.mouse_modes.snapshot(), 0);
+    }
+
+    #[test]
     fn attachment_replay_budget_keeps_a_contiguous_newest_suffix() {
         let mut replay = RecentReplay {
             enabled: true,
@@ -2172,6 +2201,7 @@ mod tests {
             ]),
             bytes: 11,
             dropped_frames: 3,
+            mouse_modes: mouse_modes::MouseModeTracker::default(),
         };
 
         let snapshot = replay.snapshot();

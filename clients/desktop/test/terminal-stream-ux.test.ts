@@ -44,10 +44,10 @@ describe("terminal streaming", () => {
     replay.accept(); replay.accept(encode("ab"));
     expect(complete).not.toHaveBeenCalled();
     replay.accept(encode("cd"));
-    expect(complete).toHaveBeenCalledWith(encode("abcd"), true);
+    expect(complete).toHaveBeenCalledWith(encode("abcd"), true, undefined);
     expect(progress).toHaveBeenCalledWith(50);
     view.setUint32(4, 0); view.setUint32(8, 0); replay.begin(metadata);
-    expect(complete).toHaveBeenLastCalledWith(new Uint8Array(), true);
+    expect(complete).toHaveBeenLastCalledWith(new Uint8Array(), true, undefined);
     expect(vi.getTimerCount()).toBe(0);
   });
   it("releases receipt credit only on acknowledgement or explicit uncertainty", async () => {
