@@ -1,6 +1,7 @@
 import type { PlaybookRuntimeResult } from "@termloop/contract/current";
 import type { DragEvent } from "react";
 import type { Task } from "../model.js";
+import { PlaybookTaskNotes, type SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { Icon } from "./Icon.js";
 
 export type AssistantTaskPlacement = Readonly<{
@@ -48,13 +49,15 @@ export function AssistantTaskRow(props: {
   task: Task;
   processingTaskId: string | null;
   openTask(taskId: string): void;
+  saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  notesDisabled?: boolean | undefined;
   dragging?: boolean;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
 }) {
   const processing = props.processingTaskId === props.task.id;
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
-  return <button
+  return <div className="assistant-task-item" role="listitem"><button
     type="button"
     className={`assistant-task-row${processing ? " processing" : ""}${props.dragging ? " dragging" : ""}`}
     draggable={draggable}
@@ -71,13 +74,15 @@ export function AssistantTaskRow(props: {
       <small>{props.task.branch?.name ?? (props.task.worktree ? "Worktree ready" : "No worktree")}</small>
     </span>
     {processing ? <em>Active</em> : null}
-  </button>;
+  </button>{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}</div>;
 }
 
 export function AssistantTaskTail(props: {
   placement: AssistantTaskPlacement;
   processingTaskId: string | null;
   openTask(taskId: string): void;
+  saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  notesDisabled?: boolean | undefined;
   draggingTaskId?: string | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
@@ -98,6 +103,8 @@ export function AssistantTaskTail(props: {
       task={task}
       processingTaskId={props.processingTaskId}
       openTask={props.openTask}
+      saveTaskNotes={props.saveTaskNotes}
+      notesDisabled={props.notesDisabled}
       dragging={props.draggingTaskId === task.id}
       beginDrag={props.beginDrag}
       endDrag={props.endDrag}

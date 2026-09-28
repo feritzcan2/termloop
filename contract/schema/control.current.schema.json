@@ -15652,7 +15652,7 @@
           "enum": [
             "starting",
             "taskAgentFork",
-            "stewardFallback"
+            "waitingForTaskAgent"
           ]
         },
         "sessionId": {
