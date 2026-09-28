@@ -89,14 +89,23 @@ export function replayRequestPayload(): Uint8Array {
   payload.set(encoder.encode("TLRQ"));
   const view = new DataView(payload.buffer);
   view.setUint32(4, 1024 * 1024);
-  view.setUint32(8, 64 * 1024);
+  view.setUint32(8, (64 * 1024) | 0x80000000);
   return payload;
 }
-export function decodeReplayAck(payload: Uint8Array): { frames: number; bytes: number } | undefined {
-  if (payload.length !== 12 || new TextDecoder().decode(payload.subarray(0, 4)) !== "TLRA") return undefined;
+export function decodeReplayAck(payload: Uint8Array): { frames: number; bytes: number; mouseModes?: number } | undefined {
+  if (![12, 16].includes(payload.length) || new TextDecoder().decode(payload.subarray(0, 4)) !== "TLRA") return undefined;
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const frames = view.getUint32(4), bytes = view.getUint32(8);
-  return frames <= 256 && bytes <= 1024 * 1024 ? { frames, bytes } : undefined;
+  const mouseModes = payload.length === 16 ? view.getUint32(12) : undefined;
+  if (mouseModes !== undefined && ((mouseModes & ~0x1ff) !== 0 || (mouseModes & 0xff) > 4)) return undefined;
+  return frames <= 256 && bytes <= 1024 * 1024
+    ? { frames, bytes, ...(mouseModes === undefined ? {} : { mouseModes }) } : undefined;
+}
+
+// Apply after replay, separately from the byte tail used to prove continuity.
+export function replayMouseModesSequence(modes: number): Uint8Array {
+  const tracking = [undefined, 9, 1000, 1002, 1003][modes & 0xff];
+  return encoder.encode(`\x1b[?9;1000;1002;1003;1006l${tracking === undefined ? "" : `\x1b[?${tracking}h`}${modes & 0x100 ? "\x1b[?1006h" : ""}`);
 }
 
 export { encodeBoundFrame, decodeBoundFrame, type BoundFrameFormat } from "./bound.js";

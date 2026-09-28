@@ -295,7 +295,7 @@ export type TerminalEvent =
   | { type: "ready" }
   | { type: "inputDelivery"; state: "sending" | "confirmed" | "sent" | "uncertain" }
   | { type: "reset" }
-  | { type: "replay"; bytes: Uint8Array }
+  | { type: "replay"; bytes: Uint8Array; mouseModes?: number }
   | { type: "live"; bytes: Uint8Array }
   | { type: "gap"; droppedFrames: number }
   | { type: "eof" }

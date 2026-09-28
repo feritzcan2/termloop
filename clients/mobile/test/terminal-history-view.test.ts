@@ -5,12 +5,74 @@ import { isValidElement, type ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { emptyTerminalBuffer } from "../src/presentation/terminal-buffer";
+import { TerminalSessionState } from "../src/features/terminal/terminal-session-state";
 import { terminalGeometry } from "../src/theme/tokens";
 
 const require = createRequire(import.meta.url);
 type Props = Record<string, any>;
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("lets a connected reader scroll back through output received during live composer redraws", async () => {
+  const encoder = new TextEncoder();
+  const state = new TerminalSessionState("mac", "live-history");
+  state.begin();
+  state.push({ type: "replay", bytes: encoder.encode("\x1b[40;1H\x1b[37;1HComposer") });
+  state.push({ type: "state", state: "connected" });
+  state.push({ type: "ready" });
+  await state.whenIdle();
+  const props = { buffer: state.buffer, fontSizeIndex: 1, capNotice: undefined, onScrollBack: vi.fn() };
+  const harness = await terminalHarness(props);
+  const height = terminalGeometry.lineHeights[1]!;
+  try {
+    let view = harness.render();
+    view.onContentSizeChange();
+    harness.frames();
+    const history = Array.from({ length: 510 }, (_, index) => `Live answer ${index + 1}`);
+    for (let start = 0; start < history.length; start += 170) {
+      state.push({ type: "live", bytes: encoder.encode(
+        `\x1b[37;1H\x1b[J${history.slice(start, start + 170).join("\r\n")}${"\r\n".repeat(4)}\x1b[37;1H\x1b[JComposer`,
+      ) });
+      await state.whenIdle();
+      props.buffer = state.buffer;
+      view = harness.render();
+      view.onContentSizeChange();
+    }
+    const screen = state.buffer.screen!;
+    expect(screen.map((row) => row.spans.map((span) => span.text).join("")))
+      .toEqual([...history, "Composer"]);
+
+    view.onScroll(scrollEvent(200 * height - 600, 200 * height));
+    view = harness.render();
+    view.onScrollBeginDrag();
+    view.onScroll(scrollEvent(40, 200 * height));
+    view = harness.render();
+    view.onContentSizeChange();
+    view.onScroll(scrollEvent(20, 400 * height));
+    view = harness.render();
+    view.onContentSizeChange();
+    view.onScroll(scrollEvent(0, screen.length * height));
+    harness.render();
+    expect(harness.renderedKeys()).toContain(String(screen[0]!.id));
+    expect(props.onScrollBack).not.toHaveBeenCalled();
+
+    // A further live redraw must leave the reader on the oldest retained answer.
+    harness.scrollTo.mockClear();
+    harness.scrollToEnd.mockClear();
+    state.push({ type: "live", bytes: encoder.encode(
+      "\x1b[37;1H\x1b[JLatest answer\r\n\r\n\r\n\r\n\x1b[37;1H\x1b[JComposer",
+    ) });
+    await state.whenIdle();
+    props.buffer = state.buffer;
+    view = harness.render();
+    view.onContentSizeChange();
+    expect(harness.renderedKeys()).toContain(String(screen[0]!.id));
+    expect(harness.scrollTo).not.toHaveBeenCalled();
+    expect(harness.scrollToEnd).not.toHaveBeenCalled();
+  } finally {
+    state.dispose();
+  }
+});
 
 it("reveals one cached page per layout, anchors the reader, and sends no program input", async () => {
   const screen = Array.from({ length: 510 }, (_, index) => ({ id: index + 1, spans: [] }));
@@ -124,6 +186,7 @@ async function terminalHarness(props: Props) {
   );
   return {
     scrollTo,
+    scrollToEnd,
     frames: () => { while (frames.length) frames.shift()!(); },
     renderedKeys: () => nodes(tree).filter((node) => node.props.spans).map((node) => node.key),
     render: () => {

@@ -26,11 +26,14 @@ const REPLAY_REQUEST_MAGIC: &[u8; 4] = b"TLRQ";
 const REPLAY_ACK_MAGIC: &[u8; 4] = b"TLRA";
 const REPLAY_REQUEST_BYTES: usize = 12;
 const MAX_REPLAY_WIRE_CHUNK_BYTES: usize = 256 * 1024;
+// Older daemons clamp this high bit to their maximum chunk size, preserving replay.
+const REPLAY_MOUSE_MODES_FLAG: u32 = 1 << 31;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReplayRequest {
     max_bytes: usize,
     max_chunk_bytes: usize,
+    mouse_modes: bool,
 }
 
 #[derive(Clone)]
@@ -429,7 +432,15 @@ async fn terminal_socket(
                                 kind: FrameKind::Ack as u8,
                                 payload: replay_request.map_or_else(
                                     || frame.payload.clone(),
-                                    |_| replay_ack_payload(replay_event_count, replay_output_bytes),
+                                    |request| {
+                                        replay_ack_payload(
+                                            replay_event_count,
+                                            replay_output_bytes,
+                                            request
+                                                .mouse_modes
+                                                .then(|| receiver.replay_mouse_modes()),
+                                        )
+                                    },
                                 ),
                                 ..frame.clone()
                             },
@@ -646,7 +657,8 @@ fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
         return None;
     }
     let requested_bytes = u32::from_be_bytes(payload[4..8].try_into().ok()?) as usize;
-    let requested_chunk_bytes = u32::from_be_bytes(payload[8..12].try_into().ok()?) as usize;
+    let chunk_options = u32::from_be_bytes(payload[8..12].try_into().ok()?);
+    let requested_chunk_bytes = (chunk_options & !REPLAY_MOUSE_MODES_FLAG) as usize;
     Some(ReplayRequest {
         max_bytes: requested_bytes.clamp(
             termloop_terminal::MAX_IO_CHUNK_BYTES,
@@ -656,11 +668,20 @@ fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
             termloop_terminal::MAX_IO_CHUNK_BYTES,
             MAX_REPLAY_WIRE_CHUNK_BYTES,
         ),
+        mouse_modes: chunk_options & REPLAY_MOUSE_MODES_FLAG != 0,
     })
 }
 
-fn replay_ack_payload(event_count: usize, output_bytes: usize) -> Vec<u8> {
-    termloop_terminal_wire::replay_ack_payload(event_count, output_bytes)
+fn replay_ack_payload(
+    event_count: usize,
+    output_bytes: usize,
+    mouse_modes: Option<u32>,
+) -> Vec<u8> {
+    let mut payload = termloop_terminal_wire::replay_ack_payload(event_count, output_bytes);
+    if let Some(modes) = mouse_modes {
+        payload.extend_from_slice(&modes.to_be_bytes());
+    }
+    payload
 }
 
 #[cfg(test)]
@@ -705,6 +726,7 @@ mod tests {
             Some(ReplayRequest {
                 max_bytes: 1024 * 1024,
                 max_chunk_bytes: 256 * 1024,
+                mouse_modes: false,
             })
         );
 
@@ -716,16 +738,34 @@ mod tests {
             Some(ReplayRequest {
                 max_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
                 max_chunk_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
+                mouse_modes: false,
             })
         );
         assert_eq!(requested_replay_options(b"TLRA\0\0\0\x01"), None);
+        request[8..12].copy_from_slice(&(REPLAY_MOUSE_MODES_FLAG | (64 * 1024)).to_be_bytes());
+        assert_eq!(
+            requested_replay_options(&request),
+            Some(ReplayRequest {
+                max_bytes: 1024 * 1024,
+                max_chunk_bytes: 64 * 1024,
+                mouse_modes: true,
+            })
+        );
 
-        let ack = replay_ack_payload(18, 256 * 1024);
+        let ack = replay_ack_payload(18, 256 * 1024, None);
+        assert_eq!(ack.len(), 12);
         assert_eq!(&ack[..4], REPLAY_ACK_MAGIC);
         assert_eq!(u32::from_be_bytes(ack[4..8].try_into().unwrap()), 18);
         assert_eq!(
             u32::from_be_bytes(ack[8..12].try_into().unwrap()),
             256 * 1024
+        );
+        let extended = replay_ack_payload(18, 256 * 1024, Some(0x104));
+        assert_eq!(&extended[..12], ack.as_slice());
+        assert_eq!(extended.len(), 16);
+        assert_eq!(
+            u32::from_be_bytes(extended[12..].try_into().unwrap()),
+            0x104
         );
     }
 
