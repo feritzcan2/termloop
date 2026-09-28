@@ -197,6 +197,8 @@ impl Store {
             .retain(|configuration| configuration.project_id != project_id);
         next.playbook_configurations
             .retain(|configuration| configuration.project_id != project_id);
+        next.playbook_evaluations
+            .retain(|record| record.project_id != project_id);
         next.playbook_step_progress
             .retain(|progress| !task_ids.contains(&progress.task_id));
         next.companion_messages

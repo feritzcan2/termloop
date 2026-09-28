@@ -54,7 +54,7 @@ pub(super) async fn route_assignment(
                     .core
                     .lock()
                     .await
-                    .fail_playbook_evaluation_launch(&check_id);
+                    .fail_playbook_evaluation_launch(&check_id)?;
                 claim.result["evaluation"] =
                     json!({"mode": "stewardFallback", "reason": "forkUnavailable"});
                 reap_obsolete_evaluators(state).await;
@@ -123,11 +123,33 @@ pub(super) async fn complete(
 }
 
 pub(super) async fn reap_obsolete_evaluators(state: &AppState) {
-    let sessions = state
-        .core
-        .lock()
-        .await
-        .obsolete_playbook_evaluator_sessions();
+    let (sessions, changed_revision) = {
+        let mut core = state.core.lock().await;
+        let before = core.state_revision();
+        let sessions = core.obsolete_playbook_evaluator_sessions();
+        (
+            sessions,
+            (before != core.state_revision()).then_some(core.state_revision()),
+        )
+    };
+    if let Some(state_revision) = changed_revision {
+        super::invalidation::queue_invalidation(
+            &state.invalidation_requests,
+            super::invalidation::InvalidationRequest {
+                topics: vec![ProjectionTopic::Playbook],
+                state_revision,
+                observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+            },
+        )
+        .await;
+    }
+    let sessions = match sessions {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            tracing::warn!(%error, "Playbook evaluator cleanup deferred");
+            return;
+        }
+    };
     for session_id in sessions {
         match super::control::terminate_session(json!({"sessionId": session_id}), state).await {
             Ok(_) | Err(CoreError::NotFound) => {}

@@ -120,7 +120,7 @@ type AssistantActions = Pick<StewardPanelProps,
   | "getConfiguration" | "setConfiguration" | "listTranscript" | "appendMessage"
   | "respondToProposal" | "acceptSuggestion" | "clearTranscript"
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
-  | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime"
+  | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime" | "getEvaluationHistory"
   | "promptImprovement"
 > & Pick<ComponentProps<typeof TaskDetailPanel>, "setPlaybookTaskPosition">
   & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {

@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:364ab75a51d0dd91cd31f502b7da2685d032a6b9b7a5306a42cc4a380502bd84";
+    "sha256:2fa9fc63b11741ec22570e66b048b1401b71c7006b36b4854e7e781284c0794d";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -384,6 +384,7 @@ pub const METHODS: &[&str] = &[
     "playbook.update",
     "playbook.taskPositionSet",
     "playbook.runtime",
+    "playbook.evaluationHistory",
     "companion.transcriptAppend",
     "companion.proposalRespond",
     "companion.suggestionAccept",
@@ -7123,6 +7124,51 @@ pub struct PlaybookStepProgressDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PlaybookEvaluationRecordDto {
+    pub id: String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(rename = "taskTitle")]
+    pub task_title: String,
+    #[serde(rename = "milestoneId")]
+    pub milestone_id: String,
+    #[serde(rename = "milestoneTitle")]
+    pub milestone_title: String,
+    #[serde(rename = "sourceSessionId")]
+    pub source_session_id: String,
+    #[serde(rename = "sourceName")]
+    pub source_name: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "agentId")]
+    pub agent_id: StewardAgentId,
+    pub model: String,
+    pub permission: AssistantPermission,
+    #[serde(rename = "startedAtEpochMs")]
+    pub started_at_epoch_ms: u64,
+    #[serde(
+        rename = "finishedAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub finished_at_epoch_ms: Option<u64>,
+    pub outcome: String,
+    pub evidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PlaybookEvaluationHistoryResult {
+    pub entries: Vec<PlaybookEvaluationRecordDto>,
+    #[serde(rename = "retentionLimit")]
+    pub retention_limit: i64,
+    #[serde(rename = "stateRevision")]
+    pub state_revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PlaybookRuntimeStepDto {
     #[serde(rename = "milestoneId")]
     pub milestone_id: String,
@@ -8583,6 +8629,7 @@ pub type TaskSourceCandidateIgnoreParams = TaskSourceCandidateMutationParams;
 pub type TaskSourceCandidateIgnoreResult = TaskSourceCandidateMutationResult;
 pub type TaskSourceCandidateUnignoreParams = TaskSourceCandidateMutationParams;
 pub type TaskSourceCandidateUnignoreResult = TaskSourceCandidateMutationResult;
+pub type PlaybookEvaluationHistoryParams = PlaybookRuntimeParams;
 pub type CompanionProposalRespondResult = CompanionTranscriptAppendResult;
 pub type CompanionSuggestionAcceptResult = CompanionTranscriptAppendResult;
 pub type VoiceSettingsGetParams = EmptyParams;
@@ -8931,6 +8978,7 @@ fn validate_method(value: &Value) -> bool {
             "playbook.update",
             "playbook.taskPositionSet",
             "playbook.runtime",
+            "playbook.evaluationHistory",
             "companion.transcriptAppend",
             "companion.proposalRespond",
             "companion.suggestionAccept",
@@ -26662,6 +26710,151 @@ fn validate_playbook_step_progress_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_playbook_evaluation_record_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("taskId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("taskTitle").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("milestoneId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("milestoneTitle").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("sourceSessionId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("sourceName").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("sessionId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object
+            .get("agentId")
+            .is_some_and(|field| validate_steward_agent_id(field))
+            && object.get("model").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
+            })
+            && object
+                .get("permission")
+                .is_some_and(|field| validate_assistant_permission(field))
+            && object.get("startedAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.get("finishedAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.get("outcome").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    [
+                        "inProgress",
+                        "passed",
+                        "waiting",
+                        "blocked",
+                        "failed",
+                        "interrupted",
+                    ]
+                    .contains(&text)
+                })
+            })
+            && object.get("evidence").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 600 && text.len() <= 600)
+            })
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "projectId",
+                    "taskId",
+                    "taskTitle",
+                    "milestoneId",
+                    "milestoneTitle",
+                    "sourceSessionId",
+                    "sourceName",
+                    "sessionId",
+                    "agentId",
+                    "model",
+                    "permission",
+                    "startedAtEpochMs",
+                    "finishedAtEpochMs",
+                    "outcome",
+                    "evidence",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_evaluation_history_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("entries").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 200
+                    && items
+                        .iter()
+                        .all(|item| validate_playbook_evaluation_record_dto(item))
+            })
+        }) && object
+            .get("retentionLimit")
+            .is_some_and(|field| field == &serde_json::json!(200))
+            && object.get("stateRevision").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["entries", "retentionLimit", "stateRevision"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_playbook_runtime_step_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("milestoneId").is_some_and(|field| {
@@ -31289,6 +31482,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<PlaybookRuntimeParams>(params.clone()).is_ok()
                 && validate_playbook_runtime_params(params)
         }
+        "playbook.evaluationHistory" => {
+            serde_json::from_value::<PlaybookEvaluationHistoryParams>(params.clone()).is_ok()
+                && validate_playbook_runtime_params(params)
+        }
         "companion.transcriptAppend" => {
             serde_json::from_value::<CompanionTranscriptAppendParams>(params.clone()).is_ok()
                 && validate_companion_transcript_append_params(params)
@@ -32137,6 +32334,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "playbook.runtime" => {
             serde_json::from_value::<PlaybookRuntimeResult>(result.clone()).is_ok()
                 && validate_playbook_runtime_result(result)
+        }
+        "playbook.evaluationHistory" => {
+            serde_json::from_value::<PlaybookEvaluationHistoryResult>(result.clone()).is_ok()
+                && validate_playbook_evaluation_history_result(result)
         }
         "companion.transcriptAppend" => {
             serde_json::from_value::<CompanionTranscriptAppendResult>(result.clone()).is_ok()

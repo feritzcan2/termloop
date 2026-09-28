@@ -293,6 +293,7 @@ impl Store {
         project_id: &str,
         answers: Vec<PlaybookStepProgress>,
         routine: TrackerConfiguration,
+        evaluation: Option<termloop_domain::PlaybookEvaluationRecord>,
         expected_revision: u64,
     ) -> Result<Vec<PlaybookStepProgress>, StoreError> {
         if expected_revision != self.state.revision {
@@ -321,6 +322,32 @@ impl Store {
         let mut next = previous.clone();
         apply_step_progress(&mut next, &answers);
         next.tracker_configurations[routine_index] = routine;
+        if let Some(record) = evaluation {
+            if record.project_id != project_id
+                || !answers.iter().any(|answer| {
+                    answer.task_id == record.task_id
+                        && answer.milestone_id == record.milestone_id
+                        && answer.evidence == record.evidence
+                        && record.finished_at_epoch_ms == Some(answer.decided_at_epoch_ms)
+                        && matches!(
+                            (answer.verdict, record.outcome),
+                            (
+                                termloop_domain::PlaybookStepVerdict::Passed,
+                                termloop_domain::PlaybookEvaluationOutcome::Passed
+                            ) | (
+                                termloop_domain::PlaybookStepVerdict::Waiting,
+                                termloop_domain::PlaybookEvaluationOutcome::Waiting
+                            ) | (
+                                termloop_domain::PlaybookStepVerdict::Blocked,
+                                termloop_domain::PlaybookEvaluationOutcome::Blocked
+                            )
+                        )
+                })
+            {
+                return Err(StoreError::ConstraintViolation);
+            }
+            super::playbook_evaluation::apply_finished(&mut next, record)?;
+        }
         crate::validation::validate_current_state(&next)
             .map_err(|_| StoreError::ConstraintViolation)?;
         self.state = next;

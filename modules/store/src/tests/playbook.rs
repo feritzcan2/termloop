@@ -539,6 +539,13 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
         created_at_epoch_ms: 2,
     }];
     routine.updated_at_epoch_ms = 2;
+    let mut receipt = super::playbook_evaluation::evaluation("atomic-check", 1);
+    store
+        .start_playbook_evaluation(&authority, receipt.clone())
+        .unwrap();
+    receipt.outcome = termloop_domain::PlaybookEvaluationOutcome::Waiting;
+    receipt.evidence = answer.evidence.clone();
+    receipt.finished_at_epoch_ms = Some(answer.decided_at_epoch_ms);
     let revision = store.revision();
     store
         .record_playbook_step_progress_with_routine(
@@ -546,6 +553,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
             "project-a",
             vec![answer.clone()],
             routine.clone(),
+            Some(receipt.clone()),
             revision,
         )
         .unwrap();
@@ -555,6 +563,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
         std::slice::from_ref(&answer)
     );
     assert_eq!(store.tracker_configurations()[0], routine);
+    assert_eq!(store.playbook_evaluations(), std::slice::from_ref(&receipt));
 
     let before_revision = store.revision();
     let before_progress = store.playbook_step_progress().to_vec();
@@ -570,6 +579,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
                 ..answer
             }],
             mismatched,
+            None,
             before_revision,
         ),
         Err(StoreError::NotFound | StoreError::ConstraintViolation)
@@ -577,6 +587,7 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
     assert_eq!(store.revision(), before_revision);
     assert_eq!(store.playbook_step_progress(), before_progress);
     assert_eq!(store.tracker_configurations()[0], before_routine);
+    assert_eq!(store.playbook_evaluations(), &[receipt]);
 
     store
         .set_task_status(&authority, "task-1", TaskStatus::Closed, 3)
