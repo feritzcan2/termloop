@@ -5,15 +5,17 @@ export class TerminalReplayBuffer {
   private received = 0;
   private remaining: number | undefined;
   private total = 0;
+  private mouseModes: number | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private active = false;
-  constructor(private readonly complete: (bytes: Uint8Array, complete: boolean) => void, private readonly progress: (percent: number | undefined) => void) {}
+  constructor(private readonly complete: (bytes: Uint8Array, complete: boolean, mouseModes?: number) => void, private readonly progress: (percent: number | undefined) => void) {}
   begin(payload: Uint8Array): void {
     this.cancel();
     const metadata = decodeReplayAck(payload);
     this.active = true;
     this.remaining = metadata?.frames;
     this.total = metadata?.bytes ?? 0;
+    this.mouseModes = metadata?.mouseModes;
     this.progress(this.total ? 0 : undefined);
     if (this.remaining === 0) this.flush();
     else this.timer = setTimeout(() => this.flush(), metadata ? 5_000 : 1_000);
@@ -36,8 +38,9 @@ export class TerminalReplayBuffer {
     let offset = 0;
     for (const chunk of this.chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     const complete = this.remaining === undefined || (this.remaining === 0 && this.received === this.total);
+    const mouseModes = this.mouseModes;
     this.cancel();
-    this.complete(bytes, complete);
+    this.complete(bytes, complete, mouseModes);
   }
   cancel(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
@@ -46,5 +49,6 @@ export class TerminalReplayBuffer {
     this.chunks = [];
     this.received = 0;
     this.remaining = undefined;
+    this.mouseModes = undefined;
   }
 }

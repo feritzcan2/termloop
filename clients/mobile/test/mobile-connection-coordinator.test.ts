@@ -92,11 +92,12 @@ describe("mobile connection coordinator", () => {
       limits.push(new DataView(frame.payload.buffer, frame.payload.byteOffset).getUint32(4));
       const output = limits.length === 1 && mode !== "overlap"
         ? mode === "empty" ? new Uint8Array() : unrelated : resumed;
-      const metadata = new Uint8Array(12);
+      const metadata = new Uint8Array(16);
       metadata.set(new TextEncoder().encode("TLRA"));
       const view = new DataView(metadata.buffer);
       view.setUint32(4, output.byteLength === 0 ? 0 : 1);
       view.setUint32(8, output.byteLength);
+      view.setUint32(12, 0x104);
       queueMicrotask(() => {
         socket.onmessage?.({ data: encodeFrame(sessionId, 7, frame.sequence, KIND_ACK, metadata) });
         if (output.byteLength > 0) socket.onmessage?.({ data: encodeFrame(sessionId, 7, 1n, KIND_REPLAY_OUTPUT, output) });
@@ -106,7 +107,7 @@ describe("mobile connection coordinator", () => {
     const attachment = await coordinator.attachTerminal({ id: sessionId, runtime_epoch: 7 }, (event) => terminalEvents.push(event), { previousOutputTail: prior });
     await waitFor(() => terminalEvents.some((event) => event.type === "live"));
     expect(limits).toEqual(mode === "overlap" ? [65536] : [65536, 1048576]);
-    expect(terminalEvents.filter((event) => event.type === "replay")).toEqual([{ type: "replay", bytes: resumed }]);
+    expect(terminalEvents.filter((event) => event.type === "replay")).toEqual([{ type: "replay", bytes: resumed, mouseModes: 0x104 }]);
     expect(terminalEvents.filter((event) => event.type === "live")).toEqual([{ type: "live", bytes: new Uint8Array([42]) }]);
     await attachment.detach();
     coordinator.close();

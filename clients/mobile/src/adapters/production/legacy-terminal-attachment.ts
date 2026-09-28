@@ -70,6 +70,7 @@ export async function attachTerminal(
   let replayBytes = 0;
   let replayExpectedFrames: number | undefined;
   let replayExpectedBytes: number | undefined;
+  let replayMouseModes: number | undefined;
   let replayReceivedFrames = 0;
   let replayDroppedFrames = 0;
   let replayEof = false;
@@ -119,6 +120,7 @@ export async function attachTerminal(
     replayBytes = 0;
     replayExpectedFrames = undefined;
     replayExpectedBytes = undefined;
+    replayMouseModes = undefined;
     replayReceivedFrames = 0;
     replayDroppedFrames = 0;
     replayEof = false;
@@ -146,6 +148,7 @@ export async function attachTerminal(
     if (detached) return;
     const expectedFrames = replayExpectedFrames;
     const expectedBytes = replayExpectedBytes;
+    const mouseModes = replayMouseModes;
     const receivedFrames = replayReceivedFrames;
     const droppedFrames = replayDroppedFrames;
     const eof = replayEof;
@@ -159,7 +162,9 @@ export async function attachTerminal(
     if (expectedFrames !== undefined && (receivedFrames !== expectedFrames || bytes.length !== expectedBytes)) onEvent({ type: "notice", message: "Recent output is incomplete. Waiting for live output." });
     discardReplay();
     if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
-    if (bytes.byteLength > 0) onEvent({ type: "replay", bytes });
+    if (bytes.byteLength > 0 || mouseModes !== undefined) onEvent({
+      type: "replay", bytes, ...(mouseModes === undefined ? {} : { mouseModes }),
+    });
     if (eof) onEvent({ type: "eof" });
     if (!replayReady) { replayReady = true; onEvent({ type: "ready" }); }
     if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
@@ -435,6 +440,7 @@ export async function attachTerminal(
       if (replay !== undefined) {
         replayExpectedFrames = replay.frameCount;
         replayExpectedBytes = replay.outputBytes;
+        replayMouseModes = replay.mouseModes;
         replayReceivedFrames = 0;
         onEvent({ type: "replayProgress", receivedBytes: 0, totalBytes: replay.outputBytes });
         report("replay_negotiated", {

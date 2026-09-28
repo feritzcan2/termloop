@@ -3,11 +3,39 @@ import { TerminalContinuityCache } from "../src/features/terminal/terminal-conti
 import { projectTerminalOutput } from "../src/features/terminal/terminal-event-queue";
 import { TerminalSessionState } from "../src/features/terminal/terminal-session-state";
 import { TerminalScreenProjection } from "../src/presentation/terminal-screen";
+import { scrollSequence } from "../src/presentation/terminal-scroll";
 
 const encoder = new TextEncoder();
 const encode = (text: string) => encoder.encode(text);
 
 describe("cached terminal state", () => {
+  it("restores wheel input after startup modes were evicted, without contaminating replay continuity", async () => {
+    const state = new TerminalSessionState("remote", "late-attach");
+    const bytes = encode("\x1b[1;1HRecent frame without startup modes");
+    state.begin();
+    state.push({ type: "replay", bytes, mouseModes: 0x104 });
+    await state.whenIdle();
+    expect(scrollSequence(-2, state.projection.mouseTracking, state.projection.sgrMouseEncoding))
+      .toBe("\x1b[<64;1;1M".repeat(2));
+    expect(state.outputTail).toEqual(bytes);
+    const screen = state.buffer.screen;
+
+    state.begin();
+    state.push({ type: "replay", bytes, mouseModes: 0 });
+    await state.whenIdle();
+    expect(state.buffer.screen).toEqual(screen);
+    expect(state.outputTail).toEqual(bytes);
+    expect(state.projection.mouseTracking).toBe("none");
+    expect(state.projection.sgrMouseEncoding).toBe(false);
+    state.begin();
+    state.push({ type: "replay", bytes: new Uint8Array(), mouseModes: 0x104 });
+    await state.whenIdle();
+    expect(state.buffer.screen).toEqual(screen);
+    expect(state.outputTail).toEqual(bytes);
+    expect(state.projection.mouseTracking).toBe("any");
+    state.dispose();
+  });
+
   it("finishes received output after leaving and resumes from that checkpoint", async () => {
     let finish: (() => void) | undefined;
     let slow = false;
