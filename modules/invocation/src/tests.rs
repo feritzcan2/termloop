@@ -776,7 +776,23 @@ fn quick_action_image_attachment_uses_provider_delivery_from_one_manifest() {
             .windows(2)
             .any(|arguments| { arguments == ["--image", attachment.file_path.as_str()] })
     );
-    assert_eq!(codex.initial_input(), Some("Inspect this image\r"));
+    assert_eq!(
+        &codex.args()[codex.args().len() - 2..],
+        ["--", "Inspect this image"]
+    );
+    assert_eq!(codex.initial_input(), None);
+    assert_eq!(codex.initial_input_sequence(), None);
+    assert!(codex.initial_input_submission().is_none());
+    assert_eq!(codex.delivered_prompt(), Some("Inspect this image"));
+    let manifest = codex.inspectable_manifest();
+    assert_eq!(manifest.content_parts[0].delivery, "providerPromptArgument");
+    assert_eq!(manifest.transport.kind, "providerPromptArgument");
+    assert_eq!(manifest.transport.delivered_content, "Inspect this image");
+    assert_eq!(manifest.transport.byte_length, "Inspect this image".len());
+    assert_eq!(
+        manifest.transport.digest,
+        content_digest("Inspect this image")
+    );
     let image_part = &codex.inspectable_manifest().content_parts[1];
     assert_eq!(image_part.kind, "imageAttachment");
     assert_eq!(image_part.delivery, "providerImageArgument");
