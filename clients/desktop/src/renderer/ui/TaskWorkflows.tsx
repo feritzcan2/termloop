@@ -5,7 +5,7 @@ import type { RowTone } from "../row-tone.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu.js";
-import { stepKindLabel, agentLabel, workflowSummary, workflowExecutionSummary, workflowStatusLabel, workflowPhaseLabel, workflowStepParticipant, workflowStepResult, workflowStepState, workflowStepSessionId, workflowStepResultLabel, workflowStepResultFileName } from "./workflow-presentation.js";
+import { stepKindLabel, agentLabel, workflowSummary, workflowExecutionSummary, workflowDisplayStatus, workflowStatusLabel, workflowPhaseLabel, workflowStepParticipant, workflowStepResult, workflowStepState, workflowStepSessionId, workflowStepResultLabel, workflowStepResultFileName } from "./workflow-presentation.js";
 export { WorkflowEditorPanel, initialWorkflowSteps, moveWorkflowStep } from "./WorkflowEditorPanel.js";
 export { nextStepId, workflowStepResultFileName } from "./workflow-presentation.js";
 
@@ -42,6 +42,7 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
   const execution = props.executions.find((candidate) => props.task
     ? candidate.taskId === props.task.id && candidate.projectId === props.task.project_id
     : candidate.taskId === null && candidate.projectId === props.project.id);
+  const displayStatus = execution ? workflowDisplayStatus(execution, props.sessionPresentation) : undefined;
   const executionActive = execution !== undefined && execution.status !== "completed";
   const executionNeedsAttention = execution?.status === "completed"
     && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached");
@@ -88,14 +89,14 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
       ? props.renderLaunchers(workflowButton)
       : <div className="task-launch">{workflowButton}</div> : null}
     {execution && props.task ? <section
-      className={`workflow-execution-row status-${execution.status}${executionNeedsAttention ? " needs-attention" : ""}`}
+      className={`workflow-execution-row status-${displayStatus}${executionNeedsAttention ? " needs-attention" : ""}`}
       aria-label={`${execution.workflowName} workflow`}
     >
       <div className="workflow-execution-header">
         <button
           type="button"
           className="workflow-execution-toggle"
-          title={`${workflowExecutionSummary(execution)}\n${workflowPhaseLabel(execution, currentStep)}`}
+          title={`${workflowExecutionSummary(execution)}\n${workflowPhaseLabel(execution, currentStep, displayStatus)}`}
           aria-label={`${progressExpanded ? "Hide" : "Show"} ${execution.workflowName} workflow steps`}
           aria-describedby={`${executionSummaryId}-state ${executionSummaryId}-detail`}
           aria-expanded={progressExpanded}
@@ -105,7 +106,7 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
             {executionActive ? <Icon name="branch" /> : executionNeedsAttention ? "!" : "✓"}
           </span>
           <span className="workflow-execution-name">{execution.workflowName}</span>
-          <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{workflowStatusLabel(execution)}</span>
+          <span id={`${executionSummaryId}-state`} className="workflow-execution-state">{workflowStatusLabel(execution, displayStatus)}</span>
           <Icon name="chevronDown" className={`workflow-disclosure${progressExpanded ? " expanded" : ""}`} />
           <span id={`${executionSummaryId}-detail`} className="workflow-execution-detail" hidden>
             {executionActive
@@ -134,7 +135,7 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
           : executionActive ? `Finish or stop ${execution.workflowName} first.` : undefined}
         currentWorkflow={props.project && execution ? {
           name: execution.workflowName,
-          status: workflowStatusLabel(execution),
+          status: workflowStatusLabel(execution, displayStatus),
           open: () => { closeTemplates(); setInspectingExecution(true); },
         } : undefined}
         close={closeTemplates}
@@ -180,6 +181,7 @@ function WorkflowSidebarProgress(props: {
   sessionPresentation(sessionId: string): WorkflowSessionPresentation | undefined;
   showResult(step: WorkflowStepDto, result: WorkflowStepResultDto): void;
 }) {
+  const displayStatus = workflowDisplayStatus(props.execution, props.sessionPresentation);
   return <section className="workflow-sidebar-progress" aria-label={`${props.execution.workflowName} workflow progress`}>
     <ol>
       <li className="workflow-tree-coordinator">
@@ -198,7 +200,7 @@ function WorkflowSidebarProgress(props: {
         const sessionId = workflowStepSessionId(props.execution, step);
         const participant = workflowStepParticipant(step, props.execution.steps, props.agentProfiles);
         const stateLabel = result ? workflowStepResultLabel(step.kind, result.outcome)
-          : state === "current" ? workflowPhaseLabel(props.execution, step) : state === "skipped" ? "Skipped" : "Upcoming";
+          : state === "current" ? workflowPhaseLabel(props.execution, step, displayStatus) : state === "skipped" ? "Skipped" : "Upcoming";
         return <li key={step.id} className={`kind-${step.kind} ${state}`} aria-current={state === "current" ? "step" : undefined}>
           <WorkflowTreeSession
             label={step.title}
@@ -307,6 +309,7 @@ function WorkflowExecutionDialog(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const currentStep = props.execution.steps[props.execution.currentStepIndex];
+  const displayStatus = workflowDisplayStatus(props.execution, props.sessionPresentation);
   const stop = async () => {
     setBusy(true); setError(undefined);
     try {
@@ -320,13 +323,13 @@ function WorkflowExecutionDialog(props: {
     <section className="dialog-card workflow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="workflow-progress-title">
       <header className="dialog-header">
         <div><span className="dialog-eyebrow">Workflow progress</span><h2 id="workflow-progress-title">{props.execution.workflowName}</h2></div>
-        <span className={`workflow-status-badge status-${props.execution.status}`}><i aria-hidden="true" />{workflowStatusLabel(props.execution)}</span>
+        <span className={`workflow-status-badge status-${displayStatus}`}><i aria-hidden="true" />{workflowStatusLabel(props.execution, displayStatus)}</span>
         <button className="icon-button quiet" aria-label="Close dialog" disabled={busy} onClick={props.close}><Icon name="close" /></button>
       </header>
       <div className="dialog-body">
         <div className="workflow-progress-current">
           <span>{props.execution.status === "completed" ? "Finished" : currentStep ? `${stepKindLabel(currentStep.kind)} · step ${props.execution.currentStepIndex + 1} of ${props.execution.steps.length}` : "Workflow"}</span>
-          <strong>{workflowPhaseLabel(props.execution, currentStep)}</strong>
+          <strong>{workflowPhaseLabel(props.execution, currentStep, displayStatus)}</strong>
           <span className="workflow-coordinator-summary">
             <small>Coordinator</small>
             <WorkflowSessionButton
