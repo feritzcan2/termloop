@@ -672,6 +672,7 @@ button.task-signal.issue:hover { color: var(--warning); }
 .workflow-template-menu > button, .workflow-template-menu > .context-menu-divider { flex-shrink: 0; }
 .workflow-menu-notice { margin: 5px 8px 8px; color: var(--text-muted); font: 11px/1.4 var(--font-ui); }
 .workflow-execution-row { --workflow-state-color: var(--accent-strong); min-width: 0; margin: 4px 0; }
+.workflow-execution-row.status-waiting { --workflow-state-color: var(--text-muted); }
 .workflow-execution-row.status-completed { --workflow-state-color: var(--success); }
 .workflow-execution-row.status-paused,.workflow-execution-row.needs-attention { --workflow-state-color: var(--warning); }
 .workflow-execution-header { display: flex; min-width: 0; align-items: center; }
@@ -697,7 +698,7 @@ button.task-signal.issue:hover { color: var(--warning); }
 .task-workflow-activity > p { margin: 2px 4px; color: var(--sidebar-dim); font: 9px/1.4 var(--font-ui); }
 .workflow-status-badge > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #4ba675; box-shadow: 0 0 0 2px color-mix(in srgb,#4ba675 14%,transparent); }
 .workflow-status-badge.status-paused > i { background: #d09555; box-shadow: 0 0 0 2px color-mix(in srgb,#d09555 14%,transparent); }
-.workflow-status-badge.status-completed > i { background: #7b8790; box-shadow: none; }
+.workflow-status-badge.status-waiting > i,.workflow-status-badge.status-completed > i { background: #7b8790; box-shadow: none; }
 .workflow-add { display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 5px 0 3px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 600 9.5px/1 var(--font-ui); }
 .workflow-add:hover { border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--accent-strong); }
 .workflow-add svg { width: 9px; height: 9px; }
@@ -2691,6 +2692,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workflow-agent-group { --workflow-group-tone: var(--accent-strong); min-width: 0; margin: 0; border-radius: 5px; }
 .workflow-agent-group.status-completed:not(.needs-attention):not(.members-need-attention):not(.expanded) { opacity: .7; }
 .workflow-agent-group.status-completed { --workflow-group-tone: var(--success); }
+.workflow-agent-group.status-waiting { --workflow-group-tone: var(--text-muted); }
 .workflow-agent-group.status-paused,.workflow-agent-group.needs-attention { --workflow-group-tone: var(--warning); }
 .workflow-agent-group-header { display: flex; align-items: center; min-width: 0; }
 .workflow-agent-group-toggle { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; min-height: 28px; padding: 3px 5px; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-text); text-align: left; }

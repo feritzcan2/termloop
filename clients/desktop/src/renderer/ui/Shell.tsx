@@ -715,8 +715,8 @@ export function Shell(props: ShellProps) {
     [props.workflowExecutions, props.projectSessions],
   );
   const workflowGroupsBySessionId = useMemo(
-    () => workflowAgentGroups(props.workflowExecutions, props.projectSessions, props.projectTasks),
-    [props.workflowExecutions, props.projectSessions, props.projectTasks],
+    () => workflowAgentGroups(props.workflowExecutions, props.projectSessions, props.projectTasks, statusesById),
+    [props.workflowExecutions, props.projectSessions, props.projectTasks, statusesById],
   );
   const looseSessions = useMemo(
     () => props.projectSessions.filter((session) => !attachedSessionIds.has(session.id) && !taskNestedHelperIds.has(session.id) && !isAssistantSession(session)),
