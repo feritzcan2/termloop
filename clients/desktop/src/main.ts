@@ -1373,6 +1373,9 @@ handleIpc("termloop:session-repair-provider-history", (_event, sessionId: string
 handleIpc("termloop:session-history-list", (_event, projectId: string, force = false, fillCache = false) =>
   controlCall("session.historyList", { projectId, force, fillCache }),
 );
+handleIpc("termloop:session-conversation-read", (_event, projectId: string, sessionId: string, before?: number) =>
+  controlCall("session.conversationRead", { projectId, sessionId, ...(before === undefined ? {} : { before }) }),
+);
 handleIpc("termloop:session-history-preview", (_event, projectId: string, sessionId: string) =>
   controlCall("session.historyPreview", { projectId, sessionId }),
 );

@@ -764,6 +764,14 @@
         "$ref": "#/$defs/sessionHistoryListResult"
       }
     },
+    "session.conversationRead": {
+      "params": {
+        "$ref": "#/$defs/sessionConversationReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sessionConversationReadResult"
+      }
+    },
     "session.historyPreview": {
       "params": {
         "$ref": "#/$defs/sessionHistoryPreviewParams"
@@ -1857,6 +1865,7 @@
         "session.forkAgent",
         "session.repairProviderHistory",
         "session.historyList",
+        "session.conversationRead",
         "session.historyPreview",
         "session.previewHistoryResumeAgent",
         "session.resumeHistoryAgent",
@@ -6964,6 +6973,92 @@
           "type": "boolean"
         },
         "fillCache": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sessionConversationReadParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionConversationReadParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sessionId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "before": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "sessionConversationMessageDto": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionConversationMessageDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "text",
+        "truncated"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/sessionHistoryPreviewRole"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sessionConversationReadResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionConversationReadResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "messages",
+        "next_before",
+        "incomplete"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/sessionHistoryPreviewStatus"
+        },
+        "messages": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/sessionConversationMessageDto"
+          }
+        },
+        "next_before": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "incomplete": {
           "type": "boolean"
         }
       }

@@ -9,6 +9,8 @@ mod codex_history;
 mod codex_name;
 mod codex_resume;
 mod codex_settings;
+mod conversation;
+pub use conversation::{ConversationMessage, ConversationPage, read_agent_conversation};
 mod provider_hooks;
 mod provider_observation;
 mod session_history;

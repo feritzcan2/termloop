@@ -167,6 +167,26 @@ describe("TerminalPool", () => {
     pool.dispose();
   });
 
+  it("keeps a covered native surface hidden across remount and global visibility changes", async () => {
+    const surface = new FakeSurface(), attachment = new FakeAttachment();
+    surface.focus = vi.fn();
+    const pool = new TerminalPool(() => surface, async () => attachment);
+    pool.reconcile([session("covered")]); await pool.mount("covered", {} as HTMLElement);
+    pool.presentationPort.cover?.("covered", true);
+    pool.setVisible(false); pool.setVisible(true);
+    pool.unmount("covered"); await pool.mount("covered", {} as HTMLElement);
+    pool.focus("covered");
+    expect(surface.focus).not.toHaveBeenCalled();
+    expect(surface.visibility.at(-1)).toBe(false);
+    attachment.emit({ type: "frame", kind: KIND_OUTPUT, data: new TextEncoder().encode("still live").buffer });
+    expect(surface.probeValue.text).toBe("still live");
+    pool.presentationPort.cover?.("covered", false);
+    pool.focus("covered");
+    expect(surface.focus).toHaveBeenCalledTimes(1);
+    expect(surface.visibility.at(-1)).toBe(true);
+    expect(attachment.disposed).toBe(false);
+    pool.dispose();
+  });
   it("waits for native geometry before attaching when Session projections refresh during mount", async () => {
     let finishMount!: () => void;
     const attachment = new FakeAttachment();

@@ -18,3 +18,15 @@
 .terminal-stream-actions { flex-wrap: wrap; }
 .terminal-stream-actions .terminal-reconnect-button { padding: 6px 12px; border-color: #d9962e; background: #edac43; color: #231b0f; font-weight: 700; }
 .terminal-stream-actions button:disabled { opacity: .65; cursor: wait; }
+
+.terminal-conversation-view { grid-area: 1 / 1; z-index: 5; min-width: 0; min-height: 0; display: flex; flex-direction: column; color: var(--text-primary, #ddd); background: var(--bg-panel, #202226); user-select: text; }
+.terminal-conversation-view header, .terminal-conversation-view footer { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border, #36383b); }
+.terminal-conversation-view header p { margin: 4px 0 0; color: var(--text-muted, #aaa); font-size: 12px; }
+.terminal-conversation-view footer { border-top: 1px solid var(--border, #36383b); border-bottom: none; font-size: 12px; }
+.terminal-conversation-view button { cursor: pointer; padding: 6px 10px; color: inherit; background: transparent; border: 1px solid var(--border, #555); border-radius: 4px; }
+.terminal-conversation-view button:disabled { opacity: .5; cursor: default; }
+.terminal-conversation-view button:focus-visible, .terminal-conversation-messages:focus-visible { outline: 2px solid var(--accent, #aabaff); outline-offset: -2px; }
+.terminal-conversation-messages { flex: 1; min-height: 0; overflow: auto; padding: 0 20px 20px; }
+.terminal-conversation-messages article { padding: 16px 0; border-bottom: 1px solid var(--border, #36383b); }
+.terminal-conversation-messages h3 { margin: 0 0 10px; color: var(--text-muted, #aaa); font-size: 12px; }
+.terminal-conversation-messages pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 monospace; }

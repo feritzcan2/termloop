@@ -1,6 +1,8 @@
 //! Session/agent launch and resume ownership boundary.
 
 mod agent_creator;
+mod conversation;
+pub use conversation::{ObservedSessionConversation, SessionConversationPlan};
 mod playbook_evaluation;
 pub use playbook_evaluation::PlaybookEvaluationLaunch;
 mod agent_library;
