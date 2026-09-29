@@ -619,6 +619,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "session.listArchived"
             | "session.historyList"
             | "session.historyPreview"
+            | "session.conversationRead"
             | "agent.capabilityList"
             | "agent.profileList"
             | "agent.libraryGet"
@@ -847,6 +848,7 @@ mod tests {
                             // provider transcripts from the daemon host.
                             "session.historyList",
                             "session.historyPreview",
+                            "session.conversationRead",
                             // Agent instructions remain Full-scope data even
                             // though reading the library is safe to cancel.
                             "agent.libraryGet",

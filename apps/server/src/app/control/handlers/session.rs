@@ -304,6 +304,27 @@ pub(in crate::app::control) async fn session_history_preview(
     state.core.lock().await.session_history_preview(params)
 }
 
+pub(in crate::app::control) async fn read_session_conversation(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let plan = state
+        .core
+        .lock()
+        .await
+        .plan_session_conversation_read(params)?;
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let _cancel_on_drop = SessionHistoryScanCancellation(cancellation.clone());
+    let observed = tokio::task::spawn_blocking(move || plan.observe(&cancellation))
+        .await
+        .map_err(|_| CoreError::Terminal("Conversation read failed".into()))?;
+    state
+        .core
+        .lock()
+        .await
+        .complete_session_conversation_read(observed)
+}
+
 struct SessionHistoryScanCancellation(Arc<AtomicBool>);
 
 impl Drop for SessionHistoryScanCancellation {

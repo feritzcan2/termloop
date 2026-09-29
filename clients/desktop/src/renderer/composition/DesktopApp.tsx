@@ -68,6 +68,7 @@ import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
 import { withTerminalReconnect } from "./terminal-reconnect.js";
+import { createConversationReader } from "./conversation-reader.js";
 import { copyRemoteSkill, remoteSkillComputers } from "./remote-skills.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
@@ -148,6 +149,14 @@ const terminalPresentation = withTerminalReconnect(
   (id) => projectionStore.getSnapshot().sessions.find((session) => session.id === id),
   (profileId) => desktopApi.connectionProfileReconnect(profileId),
   (profileId) => terminalPool.reconnectAttachments(profileId),
+);
+terminalPresentation.conversation = createConversationReader(
+  (id) => projectionStore.getSnapshot().sessions.find((session) => session.id === id),
+  (projectId, id, before) => sourceApiForSession(id).sessionConversationRead(projectId, id, before),
+  (id, covered) => {
+    terminalPool.presentationPort.cover?.(id, covered);
+    if (!covered) terminalPool.focus(id);
+  },
 );
 subscribeAppearanceTheme(() => terminalPool.setAppearanceTheme(appearanceTheme()));
 let layoutLoadPromise: Promise<void> | undefined;
