@@ -1,6 +1,7 @@
-import type { Session, Task, WorkflowExecution } from "../model.js";
+import type { AgentStatus, Session, Task, WorkflowExecution } from "../model.js";
 import { agentName, isLiveSession } from "../model.js";
-import { workflowStatusLabel, workflowStepSessionId } from "./workflow-presentation.js";
+import { sessionState } from "../session-presentation.js";
+import { workflowDisplayStatus, workflowStatusLabel, workflowStepSessionId, type WorkflowDisplayStatus } from "./workflow-presentation.js";
 
 export type ActiveAgentWorkflow = {
   executionId: string;
@@ -112,7 +113,7 @@ export function workflowAgentLabels(
 export type WorkflowAgentGroup = {
   executionId: string;
   name: string;
-  status: WorkflowExecution["status"];
+  status: WorkflowDisplayStatus;
   statusLabel: string;
   needsAttention: boolean;
   context: string;
@@ -155,19 +156,25 @@ export function workflowAgentGroups(
   executions: readonly WorkflowExecution[],
   sessions: readonly Session[],
   tasks: readonly Task[] = [],
+  statusesById: ReadonlyMap<string, AgentStatus> = new Map(),
 ): ReadonlyMap<string, WorkflowAgentGroup> {
   const groups = new Map<string, WorkflowAgentGroup>();
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   for (const execution of [...executions].sort((left, right) => left.updatedAtEpochMs - right.updatedAtEpochMs)) {
     const task = execution.taskId ? tasksById.get(execution.taskId) : undefined;
-    const statusLabel = workflowStatusLabel(execution);
+    const status = workflowDisplayStatus(execution, (sessionId) => {
+      const session = sessionsById.get(sessionId);
+      if (!session || session.kind !== "Agent" || session.archived_at_epoch_ms !== null || session.project_id !== execution.projectId) return undefined;
+      return sessionState(session, statusesById.get(sessionId), false);
+    });
+    const statusLabel = workflowStatusLabel(execution, status);
     const currentStep = execution.steps[execution.currentStepIndex];
     const memberSessionIds = [...new Set([execution.coordinatorSessionId, ...execution.participants.map((participant) => participant.sessionId)])];
     const group: WorkflowAgentGroup = {
       executionId: execution.id,
       name: execution.workflowName,
-      status: execution.status,
+      status,
       statusLabel,
       needsAttention: execution.status === "completed"
         && (execution.completionOutcome === "changesRequested" || execution.completionOutcome === "reviewLimitReached"),

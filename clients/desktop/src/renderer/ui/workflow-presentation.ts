@@ -1,5 +1,33 @@
 import type { AgentLibraryEntry, AssistantPermission, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepKind, WorkflowStepResultDto } from "@termloop/contract/current";
 import type { WorkflowExecution } from "../model.js";
+import type { RowTone } from "../row-tone.js";
+
+export type WorkflowDisplayStatus = WorkflowExecution["status"] | "waiting";
+
+/// The execution status describes its lifecycle. Only current-step activity
+/// can say that work is happening; an open terminal alone cannot.
+export function workflowDisplayStatus(
+  execution: WorkflowExecution,
+  sessionPresentation: (sessionId: string) => { tone: RowTone } | undefined,
+): WorkflowDisplayStatus {
+  if (execution.status !== "running") return execution.status;
+  const step = execution.steps[execution.currentStepIndex];
+  if (!step) return "waiting";
+  const sessionIds: string[] = [];
+  if (execution.phase !== "awaitingHelper") sessionIds.push(execution.coordinatorSessionId);
+  if (step.kind === "review" && execution.phase !== "awaitingStepCompletion") {
+    for (const index of activeReviewIndexes(execution)) {
+      const review = execution.steps[index]!;
+      if (!execution.activeReviewStepIds.includes(review.id) || !execution.pendingReviewStepIds.includes(review.id)) continue;
+      const sessionId = execution.participants.find((participant) => participant.stepId === review.id)?.sessionId;
+      if (sessionId) sessionIds.push(sessionId);
+    }
+  } else if (step.kind === "discuss" && execution.phase === "awaitingHelper") {
+    const sessionId = workflowStepSessionId(execution, step);
+    if (sessionId) sessionIds.push(sessionId);
+  }
+  return sessionIds.some((sessionId) => sessionPresentation(sessionId)?.tone === "working") ? "running" : "waiting";
+}
 
 export type WorkflowReasoning = NonNullable<WorkflowStepDto["reasoning"]>;
 
@@ -86,18 +114,18 @@ export function workflowExecutionSummary(execution: WorkflowExecution): string {
   return `${execution.workflowName}: ${step?.title ?? "in progress"} (${execution.currentStepIndex + 1}/${execution.steps.length})`;
 }
 
-export function workflowStatusLabel(execution: WorkflowExecution): string {
+export function workflowStatusLabel(execution: WorkflowExecution, status: WorkflowDisplayStatus = workflowDisplayStatus(execution, () => undefined)): string {
   if (execution.status === "completed") {
     if (execution.completionOutcome === "approved") return "Approved";
     if (execution.completionOutcome === "reviewLimitReached") return "Review limit reached";
     if (execution.completionOutcome === "changesRequested") return "Changes requested";
     return "Completed";
   }
-  if (execution.status === "paused") return "Paused";
-  return "Running";
+  if (status === "paused") return "Paused";
+  return status === "running" ? "Running" : "Waiting";
 }
 
-export function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowStepDto | undefined): string {
+export function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowStepDto | undefined, status: WorkflowDisplayStatus = execution.status): string {
   if (execution.status === "completed") {
     if (execution.completionOutcome === "approved") return "All reviewers approved the final result";
     if (execution.completionOutcome === "reviewLimitReached") return "Review limit reached — the last fixes have not been reviewed again";
@@ -108,6 +136,12 @@ export function workflowPhaseLabel(execution: WorkflowExecution, step: WorkflowS
   const reviewCount = step?.kind === "review" ? activeReviewIndexes(execution).length : 0;
   if (execution.phase === "awaitingHelper" && reviewCount) return `Waiting for ${execution.pendingReviewStepIds.length} of ${reviewCount} reviewer${reviewCount === 1 ? "" : "s"}`;
   if (execution.phase === "awaitingHelper") return `Waiting for ${agentLabel(step?.agentId ?? null)}`;
+  if (status === "waiting") {
+    if (execution.phase === "awaitingStepCompletion") return "Reply delivered — waiting for coordinator to record the outcome";
+    if (step?.kind === "implement") return "Waiting for coordinator to finish implementation";
+    if (step?.kind === "fix") return "Waiting for coordinator to finish the review fixes";
+    return "Waiting for coordinator to start this step";
+  }
   if (execution.phase === "awaitingStepCompletion" && reviewCount) return `All ${reviewCount} review replies delivered — coordinator is recording outcomes`;
   if (execution.phase === "awaitingStepCompletion") return "Helper reply delivered — coordinator is deciding the outcome";
   if (step?.kind === "implement") return "Coordinator is implementing the agreed approach";
