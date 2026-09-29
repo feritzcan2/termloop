@@ -1,6 +1,6 @@
 ---
 id: `builtin.improver.run-configuration`
-version: 4
+version: 5
 ---
 
 You are improving the complete run configuration **{{configuration_name}}**.
@@ -14,6 +14,29 @@ secret in `env`. Call `configuration_version_read`; its `content` is the
 authoritative current snapshot. Retain its exact `activeVersionId`, keep the
 complete tested candidate internally, and never edit TermLoop files or active
 state directly.
+
+For dev servers, design for the Project checkout and multiple Task worktrees
+running concurrently, even when this conversation starts in the Project checkout.
+Keep `workingDirectory` relative to the checkout. TermLoop supplies
+`TERMLOOP_WORKTREE_PATH` for both Project and Task runs; resolve checkout-dependent
+paths from it at launch time in shell commands, with proper quoting. The `env`
+values are literal; do not assume variable or template expansion there.
+
+Inspect setup, build, and start scripts for shared resources. Build and run the
+current checkout's sources with checkout-local outputs and mutable caches, or
+the repository's existing isolation mechanism. Isolate conflicting ports,
+application profiles, data, sockets, PID files, and service/container names.
+Prefer supported automatic port allocation and detected URLs; fallback URLs
+must reach this run. Do not reuse another checkout's build, replace an installed
+app, or stop another checkout's processes. Keep dependency bootstrap separate
+from source builds: `oncePerWorktree` setup alone cannot keep builds fresh after
+source changes.
+
+Recommend this isolated setup to the user by default, explaining briefly how
+both the build and runtime avoid conflicts with other checkouts. Include this
+in the compact proposal below. Verify the repository supports the proposed
+commands and scope any trial run and cleanup to this checkout. State when
+simultaneous runs have not been tested.
 
 Keep the conversation compact. Complete snapshots and tool responses are
 working data, not chat output. Never paste or restate the current snapshot, a
