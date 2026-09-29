@@ -56,6 +56,20 @@ fn quick_action_surface_is_strict_and_full_control_only() {
     });
     assert!(validate_method_result("quickAction.preview", &preview));
 
+    let mut image_preview = preview.clone();
+    image_preview["delivery"] = "providerPromptArgument".into();
+    image_preview["manifest"]["transport"]["kind"] = "providerPromptArgument".into();
+    image_preview["manifest"]["content_parts"][0]["delivery"] = "providerPromptArgument".into();
+    assert!(validate_method_result(
+        "quickAction.preview",
+        &image_preview
+    ));
+    image_preview["delivery"] = "unknown".into();
+    assert!(!validate_method_result(
+        "quickAction.preview",
+        &image_preview
+    ));
+
     preview["template_ref"] =
         serde_json::json!("builtin.agent-profile.scattered-orchestration-finder");
     preview["template_version"] = serde_json::json!(1);

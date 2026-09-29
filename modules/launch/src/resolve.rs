@@ -273,6 +273,20 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         .map_err(|error| agent_cli_error(agent_id, error))?;
     let executable = launch_target_utf8(agent_id, &target)?;
 
+    // Codex submits --image attachments with its initial prompt immediately.
+    // Sending the text later through the terminal would create a second turn.
+    let prompt_argument = agent_id == "codex" && !attachments.is_empty();
+    let prompt_delivery = if prompt_argument {
+        "providerPromptArgument"
+    } else {
+        "terminalInput"
+    };
+    if prompt_argument && let Some(prompt) = prompt {
+        arguments.extend([
+            ResolvedArgument::exact("--", "initial prompt separator"),
+            ResolvedArgument::exact(prompt, "initial prompt accompanying image attachments"),
+        ]);
+    }
     let delivered = prompt.unwrap_or_default().to_owned();
     let provenance_delivery = if prompt.is_some() {
         delivered.as_str()
@@ -286,7 +300,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 "first-message",
                 "firstMessage",
                 format!("resources/prompts/{}", template.id),
-                "terminalInput",
+                prompt_delivery,
                 &delivered,
             )]
         })
@@ -362,7 +376,10 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         },
         content_parts,
         transport: if prompt.is_some() {
-            transport("terminalInput", &terminal_delivery)
+            transport(
+                prompt_delivery,
+                if prompt_argument { &delivered } else { &terminal_delivery },
+            )
         } else if let Some(instructions) = delivered_provider_instructions {
             transport(
                 if agent_id == "codex" {
@@ -455,6 +472,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             None
         },
         initial_input: prompt
+            .filter(|_| !prompt_argument)
             .map(|_| InitialInputDelivery::submitted(&delivered))
             .transpose()?,
         inspectable,
