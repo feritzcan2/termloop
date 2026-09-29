@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { readFile } from "node:fs/promises";
 import { URL as FileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Session, Task, WorkflowExecution } from "../src/renderer/model.js";
+import type { AgentStatus, Session, Task, WorkflowExecution } from "../src/renderer/model.js";
 import { ActiveAgentRail, activeAgentQueryMatches, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
 import { activeAgentWorkflowAction, activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels, workflowAgentRuns } from "../src/renderer/ui/active-agent-workflows.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
@@ -43,6 +43,10 @@ function execution(overrides: Partial<WorkflowExecution> = {}): WorkflowExecutio
 const sessions = [agent("lead"), agent("helper-a", { ask_to_source_session_id: "lead" }), agent("helper-b", { ask_to_source_session_id: "lead" })];
 const task = { id: "task-1", project_id: "project-1", title: "Payments" } as Task;
 
+function statuses(entries: Record<string, AgentStatus["status"]>): ReadonlyMap<string, AgentStatus> {
+  return new Map(Object.entries(entries).map(([sessionId, status]) => [sessionId, { sessionId, status, source: "hook", observedAtEpochMs: 1 }]));
+}
+
 describe("workflow agent groups", () => {
   it("keeps Taskless workflow groups and resume cues on exact Agents", () => {
     const run = execution({ taskId: null });
@@ -56,7 +60,7 @@ describe("workflow agent groups", () => {
     const groups = workflowAgentGroups([execution()], values, [task]);
     expect([...groups.keys()]).toEqual(["lead", "helper-a", "helper-b"]);
     expect(groups.get("lead")).toBe(groups.get("helper-a"));
-    expect(groups.get("lead")?.context).toBe("Payments · Build and verify · Running");
+    expect(groups.get("lead")?.context).toBe("Payments · Build and verify · Waiting");
     const unavailable = [agent("lead", { archived_at_epoch_ms: 3 }), agent("helper-a", { project_id: "other" }), agent("helper-b", { kind: "Terminal" })];
     expect(workflowAgentGroups([execution()], unavailable).size).toBe(0);
     expect(workflowAgentGroups([execution()], []).size).toBe(0);
@@ -97,6 +101,57 @@ describe("workflow agent groups", () => {
     const runs = workflowAgentRuns(sessions, workflowAgentGroups([older, newer], sessions));
     expect(runs.map((run) => [run.workflow.executionId, run.sessions.map((session) => session.id)])).toEqual([["newer", ["lead", "helper-a"]]]);
     expect(workflowAgentGroups([execution({ status: "completed", phase: "completed" })], sessions).get("lead")?.stepLabel).toBeUndefined();
+  });
+});
+
+describe("workflow activity status", () => {
+  it.each(["idle", "unknown", "awaitingInput", "interrupted", "failed", "exited"] as const)("shows Waiting for a live but %s coordinator", (status) => {
+    const run = execution({ currentStepIndex: 1 });
+    const group = workflowAgentGroups([run], sessions, [task], statuses({ lead: status })).get("lead");
+    expect(group).toMatchObject({ status: "waiting", statusLabel: "Waiting", context: "Payments · Build and verify · Waiting" });
+    expect(run.status).toBe("running");
+  });
+
+  it.each(["working", "compacting"] as const)("shows Running for a %s coordinator on its current step", (status) => {
+    expect(workflowAgentGroups([execution({ currentStepIndex: 1 })], sessions, [], statuses({ lead: status })).get("lead"))
+      .toMatchObject({ status: "running", statusLabel: "Running" });
+  });
+
+  it.each(["stale", "exited", "resumeFailed", "resuming"] as const)("does not reuse a working observation from a %s session", (lifecycle_state) => {
+    const values = [agent("lead", { lifecycle_state })];
+    expect(workflowAgentGroups([execution()], values, [], statuses({ lead: "working" })).get("lead")?.statusLabel).toBe("Waiting");
+  });
+
+  it("keeps missing observations quiet and durable completion or pause authoritative", () => {
+    expect(workflowAgentGroups([execution()], sessions).get("lead")?.statusLabel).toBe("Waiting");
+    expect(workflowAgentGroups([execution({ status: "paused" })], sessions, [], statuses({ lead: "working" })).get("lead")?.statusLabel).toBe("Paused");
+    expect(workflowAgentGroups([execution({ status: "completed", phase: "completed", completionOutcome: "approved" })], sessions, [], statuses({ lead: "working" })).get("lead")?.statusLabel).toBe("Approved");
+  });
+
+  it("uses pending reviewers, excluding delivered replies and participants from an earlier cycle", () => {
+    const run = execution({ currentStepIndex: 2, phase: "awaitingHelper", activeReviewStepIds: ["review-a", "review-b"], pendingReviewStepIds: ["review-a", "review-b"] });
+    const live = statuses({ lead: "idle", "helper-a": "idle", "helper-b": "working" });
+    expect(workflowAgentGroups([run], sessions, [], live).get("lead")?.statusLabel).toBe("Running");
+    expect(workflowAgentGroups([{ ...run, pendingReviewStepIds: ["review-a"] }], sessions, [], live).get("lead")?.statusLabel).toBe("Waiting");
+    expect(workflowAgentGroups([{ ...run, phase: "awaitingCoordinator", reviewCycle: 2, activeReviewStepIds: [], pendingReviewStepIds: [] }], sessions, [], live).get("lead")?.statusLabel).toBe("Waiting");
+    expect(workflowAgentGroups([{ ...run, phase: "awaitingStepCompletion", pendingReviewStepIds: [] }], sessions, [], live).get("lead")?.statusLabel).toBe("Waiting");
+  });
+
+  it("counts the coordinator while dispatching reviewers, but only helpers while awaiting their replies", () => {
+    const run = execution({ currentStepIndex: 2, activeReviewStepIds: ["review-a"], pendingReviewStepIds: ["review-a"] });
+    const live = statuses({ lead: "working", "helper-a": "idle" });
+    expect(workflowAgentGroups([run], sessions, [], live).get("lead")?.statusLabel).toBe("Running");
+    expect(workflowAgentGroups([{ ...run, phase: "awaitingHelper" }], sessions, [], live).get("lead")?.statusLabel).toBe("Waiting");
+  });
+
+  it("uses the exact discussion helper and ignores unrelated or unavailable participants", () => {
+    const run = execution({ phase: "awaitingHelper" });
+    const live = statuses({ lead: "idle", "helper-a": "working", "helper-b": "working", unrelated: "working" });
+    expect(workflowAgentGroups([run], sessions, [], live).get("lead")?.statusLabel).toBe("Running");
+    for (const overrides of [{ archived_at_epoch_ms: 1 }, { project_id: "other" }, { kind: "Terminal" as const }]) {
+      const values = [sessions[0]!, agent("helper-a", overrides), sessions[2]!, agent("unrelated")];
+      expect(workflowAgentGroups([run], values, [], live).get("lead")?.statusLabel).toBe("Waiting");
+    }
   });
 });
 
@@ -229,7 +284,7 @@ describe("workflow actions in the Agents rail", () => {
       reviewReadySessionIds: new Set(), favoriteSessionIds: new Set(), taskAttachedSessionIds: new Set(), worktreeChangesBySessionId: new Map(),
       workflowsBySessionId: activeAgentWorkflows([run], values, [task]), menuSessionId: undefined,
       workflowAgentLabelsBySessionId: workflowAgentLabels([run], values),
-      workflowGroupsBySessionId: workflowAgentGroups([run], values, [task]),
+      workflowGroupsBySessionId: workflowAgentGroups([run], values, [task], overrides.statusesById),
       selectSession: vi.fn(), navigateSession: vi.fn(), openSessionMenu: vi.fn(), dismissSession: vi.fn(), resumeSession: vi.fn(), archiveSession: vi.fn(),
       toggleFavoriteSession: vi.fn(), openTaskChanges: vi.fn(), searchOpen: false, setSearchOpen: vi.fn(), nowEpochMs: 100,
       ...overrides,
@@ -237,6 +292,19 @@ describe("workflow actions in the Agents rail", () => {
     await act(async () => root!.render(createElement(ActiveAgentRail, props)));
     return props;
   }
+
+  it("updates the folded workflow label from current agent activity without a new execution", async () => {
+    const run = execution({ currentStepIndex: 1 });
+    for (const [status, label] of [["idle", "Waiting"], ["working", "Running"], ["idle", "Waiting"]] as const) {
+      await render(sessions, run, { statusesById: statuses({ lead: status }) });
+      const group = container.querySelector('[data-workflow-group="execution-1"]')!;
+      expect(group.querySelector(".workflow-agent-group-status")?.textContent).toBe(label);
+      expect(group.classList.contains(label === "Running" ? "status-running" : "status-waiting")).toBe(true);
+      expect(group.getAttribute("aria-label")).toBe(`Workflow · Payments · Build and verify · ${label}`);
+      expect(group.querySelector<HTMLElement>(".workflow-agent-group-members")?.hidden).toBe(true);
+    }
+    expect(run.status).toBe("running");
+  });
 
   it("resumes the exact stopped helper through the existing resume intent", async () => {
     const values = [sessions[0]!, agent("helper-a", { lifecycle_state: "stale", retryable: true, ask_to_source_session_id: "lead" })];

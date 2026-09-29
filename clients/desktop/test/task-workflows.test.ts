@@ -364,7 +364,7 @@ describe("Task workflow editor", () => {
 
     expect(markup).toContain('aria-label="Hide Discuss, build, review workflow steps"');
     expect(markup).toContain("Step 3 of 3 · Review");
-    expect(markup).toContain('class="workflow-execution-state">Running');
+    expect(markup).toContain('class="workflow-execution-state">Waiting');
     expect(markup).toContain('aria-label="Discuss, build, review workflow progress"');
     expect(markup).toContain('aria-label="Open decisions.md"');
     expect(markup).toContain('aria-label="Open implementation.md"');
@@ -645,14 +645,14 @@ describe("Compact workflow menu", () => {
       expect(start.nextElementSibling).toBe(row);
       expect(start.querySelector(".workflow-add")).not.toBeNull();
       expect(start.querySelector(".workflow-execution-toggle")).toBeNull();
-      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Running");
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Waiting");
       expect(row.querySelector(".workflow-execution-detail")?.textContent).toBe("Step 3 of 3 · Review");
       expect(row.querySelector(".workflow-sidebar-progress")).not.toBeNull();
       const toggle = row.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!;
       await act(async () => toggle.click());
       expect(toggle.getAttribute("aria-expanded")).toBe("false");
       expect(row.querySelector(".workflow-sidebar-progress")).toBeNull();
-      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Running");
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Waiting");
       await act(async () => toggle.click());
       expect(toggle.getAttribute("aria-expanded")).toBe("true");
     } finally { await f.dispose(); }
@@ -680,7 +680,32 @@ describe("Compact workflow menu", () => {
     } finally { await f.dispose(); }
   });
 
-  it("updates a collapsed running row to paused and then completed from the execution projection", async () => {
+  it("updates activity in the Task row and open dialog without changing the execution", async () => {
+    const run = { ...execution, phase: "awaitingCoordinator" as const, currentStepIndex: 1 };
+    const f = await launcherFixture({ executions: [run] });
+    try {
+      await act(async () => f.container.querySelector<HTMLButtonElement>('[aria-label="Workflow details"]')!.click());
+      const row = f.container.querySelector(".workflow-execution-row")!;
+      const badge = () => document.querySelector(".workflow-status-badge");
+      expect(row.classList.contains("status-waiting")).toBe(true);
+      expect(badge()?.textContent).toBe("Waiting");
+      expect(document.querySelector(".workflow-progress-current strong")?.textContent).toBe("Waiting for coordinator to finish implementation");
+      f.props.sessionPresentation = () => ({ agentLabel: "Codex", stateLabel: "Working", tone: "working" });
+      await f.render();
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Running");
+      expect(badge()?.classList.contains("status-running")).toBe(true);
+      expect(document.querySelector(".workflow-progress-current strong")?.textContent).toBe("Coordinator is implementing the agreed approach");
+      f.props.sessionPresentation = () => ({ agentLabel: "Codex", stateLabel: "Idle", tone: "quiet" });
+      await f.render();
+      expect(row.querySelector(".workflow-execution-state")?.textContent).toBe("Waiting");
+      expect(badge()?.classList.contains("status-waiting")).toBe(true);
+      expect(f.props.executions[0]).toBe(run);
+      expect(f.props.cancel).not.toHaveBeenCalled();
+      expect(f.props.launch).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+
+  it("updates a collapsed waiting row to paused and then completed from the execution projection", async () => {
     const f = await launcherFixture({ executions: [execution] });
     try {
       await act(async () => f.container.querySelector<HTMLButtonElement>(".workflow-execution-toggle")!.click());
