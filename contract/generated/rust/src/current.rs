@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:7b9482924b7a2a96683a6fc3a8552c3dd9fbfb191ff4ba0e227d9e2ef8940ae2";
+    "sha256:43b523642c9fc6b7a2897595a55e5838707e20b77f1cee0fed6dc8ae694f40bd";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -16580,7 +16580,7 @@ fn validate_quick_action_preview_result(value: &Value) -> bool {
             && object.get("delivery").is_some_and(|field| {
                 field
                     .as_str()
-                    .is_some_and(|text| ["terminalInput"].contains(&text))
+                    .is_some_and(|text| ["terminalInput", "providerPromptArgument"].contains(&text))
             })
             && object
                 .get("delivered_preview")

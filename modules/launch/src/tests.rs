@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn codex_image_prompt_is_one_literal_argument_without_a_terminal_submission() {
+    let template = PromptTemplate {
+        id: "image-prompt-test",
+        version: 1,
+        authored_body: "Inspect the image",
+    };
+    let attachments = [ImageAttachment {
+        attachment_id: "123e4567-e89b-42d3-a456-426614174000".into(),
+        file_path: "/tmp/image folder/image.png".into(),
+        media_type: "image/png".into(),
+        byte_length: 100,
+        sha256: format!("sha256:{}", "a".repeat(64)),
+        width: 1,
+        height: 1,
+    }];
+    for prompt in [
+        "Inspect this image",
+        "--help\nBu görseli incele: 'quoted' \"text\" $HOME `literal`\n",
+    ] {
+        let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+        request.prompt = Some(prompt);
+        request.attachments = &attachments;
+        let payload = resolve(request).unwrap().into_payload();
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| { args == ["--image", attachments[0].file_path.as_str()] })
+        );
+        assert_eq!(&payload.args()[payload.args().len() - 2..], ["--", prompt]);
+        assert_eq!(
+            payload.args().iter().filter(|arg| *arg == prompt).count(),
+            1
+        );
+        assert!(payload.initial_input_submission().is_none());
+        let manifest = payload.inspectable_manifest();
+        assert_eq!(manifest.transport.kind, "providerPromptArgument");
+        assert_eq!(manifest.transport.delivered_content, prompt);
+        assert_eq!(manifest.transport.byte_length, prompt.len());
+        assert_eq!(manifest.transport.digest, content_digest(prompt));
+        assert_eq!(manifest.provenance.delivered_digest, content_digest(prompt));
+        assert_eq!(manifest.content_parts[0].content, prompt);
+        assert_eq!(manifest.arguments.last().unwrap().display, prompt);
+
+        // Text-only launches still use the generated terminal submission.
+        let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+        request.prompt = Some(prompt);
+        let payload = resolve(request).unwrap().into_payload();
+        assert!(!payload.args().iter().any(|arg| arg == prompt));
+        assert_eq!(
+            payload.initial_input(),
+            Some(format!("{prompt}\r").as_str())
+        );
+        assert!(payload.initial_input_submission().is_some());
+        assert_eq!(
+            payload.inspectable_manifest().transport.kind,
+            "terminalInput"
+        );
+    }
+
+    let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+    request.attachments = &attachments;
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(!payload.args().iter().any(|arg| arg == "--"));
+    assert!(payload.initial_input_submission().is_none());
+}
+
+#[test]
 fn external_product_names_cannot_inject_provider_configuration() {
     let mut arguments = Vec::new();
     for name in ["", "app.tools", "app\nother", "app=untrusted", "app[0]"] {
