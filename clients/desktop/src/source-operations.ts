@@ -192,6 +192,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   sessionForkAgent: "termloop:session-fork-agent",
   sessionRepairProviderHistory: "termloop:session-repair-provider-history",
   sessionHistoryList: "termloop:session-history-list",
+  sessionConversationRead: "termloop:session-conversation-read",
   sessionHistoryPreview: "termloop:session-history-preview",
   sessionHistoryPreviewResumeAgent: "termloop:session-history-preview-resume-agent",
   sessionHistoryResumeAgent: "termloop:session-history-resume-agent",
