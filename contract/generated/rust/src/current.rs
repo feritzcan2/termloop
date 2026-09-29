@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:43b523642c9fc6b7a2897595a55e5838707e20b77f1cee0fed6dc8ae694f40bd";
+    "sha256:37f3b1b712897cf4631086f9faa0c84e7dc9389781f4d277f040883530eb2e91";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -307,6 +307,7 @@ pub const METHODS: &[&str] = &[
     "session.forkAgent",
     "session.repairProviderHistory",
     "session.historyList",
+    "session.conversationRead",
     "session.historyPreview",
     "session.previewHistoryResumeAgent",
     "session.resumeHistoryAgent",
@@ -3307,6 +3308,35 @@ pub struct SessionHistoryListParams {
     pub force: Option<bool>,
     #[serde(rename = "fillCache", skip_serializing_if = "Option::is_none")]
     pub fill_cache: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SessionConversationReadParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SessionConversationMessageDto {
+    pub role: SessionHistoryPreviewRole,
+    pub text: String,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SessionConversationReadResult {
+    pub status: SessionHistoryPreviewStatus,
+    pub messages: Vec<SessionConversationMessageDto>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub next_before: Option<u64>,
+    pub incomplete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -8901,6 +8931,7 @@ fn validate_method(value: &Value) -> bool {
             "session.forkAgent",
             "session.repairProviderHistory",
             "session.historyList",
+            "session.conversationRead",
             "session.historyPreview",
             "session.previewHistoryResumeAgent",
             "session.resumeHistoryAgent",
@@ -15943,6 +15974,106 @@ fn validate_session_history_list_params(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["projectId", "force", "fillCache"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_session_conversation_read_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("sessionId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("before").is_none_or(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                        && (number
+                            .as_u64()
+                            .is_some_and(|number| number <= 9007199254740991_u64))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["projectId", "sessionId", "before"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_session_conversation_message_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("role")
+            .is_some_and(|field| validate_session_history_preview_role(field))
+            && object.get("text").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 65536)
+            })
+            && object
+                .get("truncated")
+                .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["role", "text", "truncated"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_session_conversation_read_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("status")
+            .is_some_and(|field| validate_session_history_preview_status(field))
+            && object.get("messages").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 50
+                        && items
+                            .iter()
+                            .all(|item| validate_session_conversation_message_dto(item))
+                })
+            })
+            && object.get("next_before").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                        && (number
+                            .as_u64()
+                            .is_some_and(|number| number <= 9007199254740991_u64))
+                }) || field.is_null())
+            })
+            && object
+                .get("incomplete")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                ["status", "messages", "next_before", "incomplete"].contains(&key.as_str())
+            })
     })
 }
 
@@ -31171,6 +31302,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<SessionHistoryListParams>(params.clone()).is_ok()
                 && validate_session_history_list_params(params)
         }
+        "session.conversationRead" => {
+            serde_json::from_value::<SessionConversationReadParams>(params.clone()).is_ok()
+                && validate_session_conversation_read_params(params)
+        }
         "session.historyPreview" => {
             serde_json::from_value::<SessionHistoryPreviewParams>(params.clone()).is_ok()
                 && validate_session_history_preview_params(params)
@@ -32011,6 +32146,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "session.historyList" => {
             serde_json::from_value::<SessionHistoryListResult>(result.clone()).is_ok()
                 && validate_session_history_list_result(result)
+        }
+        "session.conversationRead" => {
+            serde_json::from_value::<SessionConversationReadResult>(result.clone()).is_ok()
+                && validate_session_conversation_read_result(result)
         }
         "session.historyPreview" => {
             serde_json::from_value::<SessionHistoryPreviewResult>(result.clone()).is_ok()

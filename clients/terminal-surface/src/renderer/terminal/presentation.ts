@@ -11,4 +11,5 @@ export type TerminalPresentationPort = {
   snapshot(sessionId: string): TerminalPresentation | undefined;
   read(sessionId: string, enabled: boolean): void;
   recover(sessionId: string): void;
+  cover?(sessionId: string, covered: boolean): void;
 };

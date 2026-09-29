@@ -132,6 +132,34 @@ try {
   const privateIds = privateState.sessions.filter((session) => session.resume_ref).map((session) => session.resume_ref.nativeSessionId);
   const privateClaude = privateState.sessions.find((session) => session.id === claude.id);
   const privateCodex = privateState.sessions.find((session) => session.id === codex.id);
+  const savedAnswer = `## Saved answer\n\n${"Full paragraph. ".repeat(400)}\n\nEND_OF_SAVED_ANSWER`;
+  for (const [provider, saved] of [["claude", privateClaude], ["codex", privateCodex]]) {
+    const nativeId = saved.resume_ref.nativeSessionId;
+    const directory = path.join(testHomeDirectory, `.${provider}`, provider === "codex" ? "sessions" : "projects", "conversation-fixture");
+    await mkdir(directory, { recursive: true });
+    const records = provider === "codex" ? [{ type: "session_meta", payload: { id: nativeId, cwd: projectDirectory } }] : [];
+    for (let index = 0; index < 123; index++) {
+      const text = index === 122 ? savedAnswer : `SAVED_MESSAGE_${index}`;
+      records.push(provider === "codex"
+        ? { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }] } }
+        : { type: "assistant", sessionId: nativeId, message: { role: "assistant", content: [{ type: "text", text }] } });
+    }
+    await writeFile(path.join(directory, `${provider === "codex" ? "rollout-" : ""}${nativeId}.jsonl`), records.map((record) => JSON.stringify(record)).join("\n") + "\n");
+    let before;
+    let messages = [];
+    do {
+      const savedPage = await controlCall(record, "session.conversationRead", { projectId: project.id, sessionId: saved.id, ...(before ? { before } : {}) });
+      assert.equal(savedPage.status, "available");
+      assert.ok(savedPage.messages.length <= 50);
+      assert.ok(!JSON.stringify(savedPage).includes(nativeId));
+      messages = [...savedPage.messages, ...messages];
+      before = savedPage.next_before;
+    } while (before !== null);
+    assert.equal(messages.length, 123);
+    assert.equal(messages[0].text, "SAVED_MESSAGE_0");
+    assert.equal(messages.at(-1).text, savedAnswer);
+  }
+  evidence.checks.savedConversationsPaginateWithoutShorteningAnswers = true;
   evidence.checks.launchSelectionPersistsPrivately = privateClaude?.launch_selection?.model === "fable"
     && privateClaude.launch_selection.permission === "bypassPermissions"
     && privateClaude.launch_selection.reasoning === "high"
@@ -215,6 +243,23 @@ try {
   await assertVisibleStartupOutput(page, claude.id, "TERMLOOP_CLAUDE_RESUME_SCREEN");
   await assertVisibleStartupOutput(page, codex.id, "TERMLOOP_CODEX_RESUME_SCREEN");
   evidence.checks.electronReceivesInitialTuiOutput = true;
+  await page.getByRole("button", { name: "Earlier messages", exact: true }).click();
+  let savedMessageText = "";
+  await waitUntil(async () => {
+    savedMessageText = await page.locator(".terminal-conversation-messages").textContent();
+    return savedMessageText.includes("END_OF_SAVED_ANSWER");
+  }, 10_000, () => `saved messages did not show the full answer: ${savedMessageText.slice(0, 600)}`);
+  const epochBeforeReading = (await controlCall(record, "session.list")).find((session) => session.id === codex.id).runtime_epoch;
+  await page.getByRole("button", { name: "Older messages", exact: true }).click();
+  await waitUntil(async () => (await page.locator(".terminal-conversation-messages").innerText()).includes("SAVED_MESSAGE_23"), 10_000, "older saved messages did not load");
+  await page.getByRole("button", { name: "Older messages", exact: true }).click();
+  await waitUntil(async () => (await page.locator(".terminal-conversation-messages").innerText()).includes("SAVED_MESSAGE_0"), 10_000, "oldest saved messages did not load");
+  await page.screenshot({ path: path.join(path.dirname(evidencePath), `saved-conversation-${requireGhostty ? "ghostty" : "xterm"}.png`) });
+  await page.getByRole("button", { name: "Return to terminal", exact: true }).click();
+  assert.equal(await page.locator(".terminal-conversation-view").count(), 0);
+  assert.equal((await controlCall(record, "session.list")).find((session) => session.id === codex.id).runtime_epoch, epochBeforeReading);
+  await assertVisibleStartupOutput(page, codex.id, "TERMLOOP_CODEX_RESUME_SCREEN");
+  evidence.checks.savedMessagesReturnToSameLiveTerminal = true;
   const firstRestartTrace = await readFile(tracePath, "utf8");
   evidence.checks.electronRestartUsesProviderResumePermissions =
     firstRestartTrace.includes("claude-resume-bypass")
@@ -289,7 +334,9 @@ try {
   await relocatingRow.click({ button: "right" });
   await page.getByRole("menuitem").filter({ hasText: "Continue in Task worktree" }).click();
   const relocationDialog = await waitForRelocationDialog(app);
-  await relocationDialog.locator("#relocation-task").selectOption({ label: task.title });
+  const relocationTaskValue = await relocationDialog.locator(`#relocation-task option[value$="${task.id}"]`).getAttribute("value");
+  assert.ok(relocationTaskValue, "relocation target Task is listed");
+  await relocationDialog.locator("#relocation-task").selectOption(relocationTaskValue);
   await waitUntil(async () => await relocationDialog
     .getByRole("heading")
     .filter({ hasText: `to “${task.title}”` })
@@ -734,6 +781,24 @@ if (args[0] === "app-server") {
   const server = new WebSocketServer({ host: endpoint.hostname, port: Number(endpoint.port) });
   server.on("connection", (socket) => socket.on("message", (raw) => {
     const initialize = JSON.parse(String(raw));
+    if (initialize.method === "initialize") {
+      socket.send(JSON.stringify({ id: initialize.id, result: { codexHome: ${JSON.stringify(path.join(testHomeDirectory, ".codex"))} } }));
+      return;
+    }
+    if (initialize.method === "initialized") return;
+    if (initialize.method === "thread/read" || initialize.method === "thread/fork") {
+      socket.send(JSON.stringify({ id: initialize.id, result: { thread: { id: initialize.params.threadId } } }));
+      return;
+    }
+    if (initialize.method === "thread/resume") {
+      const p = initialize.params;
+      socket.send(JSON.stringify({ id: initialize.id, result: {
+        thread: { id: p.threadId }, approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer,
+        sandbox: { type: { "read-only": "readOnly", "workspace-write": "workspaceWrite", "danger-full-access": "dangerFullAccess" }[p.sandbox], networkAccess: p.config?.["sandbox_workspace_write.network_access"] },
+        model: p.model, reasoningEffort: p.config?.model_reasoning_effort,
+      } }));
+      return;
+    }
     socket.send(JSON.stringify({ method: "thread/started", params: { thread: { id: initialize.resumeId || crypto.randomUUID() } } }));
     if (path.basename(process.cwd()) !== "inactive-codex" || initialize.resumeId) {
       if (initialize.resumeId) {
@@ -794,7 +859,13 @@ async function startServer() {
     } catch {
       return undefined;
     }
-  }, 10_000, () => `runtime discovery did not appear: ${stderr}`);
+  }, 30_000, () => `runtime discovery did not appear: ${stderr}`).catch(async (error) => {
+    if (child.exitCode === null) {
+      child.kill("SIGKILL");
+      await new Promise((resolve) => child.once("exit", resolve));
+    }
+    throw error;
+  });
   return [child, record];
 }
 
@@ -827,7 +898,7 @@ async function waitForPrivateReferences(count) {
 }
 
 async function assertVisibleStartupOutput(page, sessionId, marker) {
-  await page.locator(sessionSelector(sessionId)).click();
+  await page.locator(`${sessionSelector(sessionId)}:visible`).first().click();
   let diagnostics = {};
   await waitUntil(
     async () => {

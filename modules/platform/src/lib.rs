@@ -40,8 +40,9 @@ pub use access_crypto::{
     generate_pairing_code, pairing_code_digest, verify_access_signature,
 };
 pub use agent_history_fs::{
-    BoundedHistoryFile, BoundedHistoryFileSlices, discover_bounded_history_files,
-    discover_bounded_history_files_cancellable, read_bounded_history_file_slices,
+    BoundedHistoryFile, BoundedHistoryFileSlices, BoundedHistoryFileWindow,
+    discover_bounded_history_files, discover_bounded_history_files_cancellable,
+    read_bounded_history_file_slices, read_bounded_history_file_window,
 };
 pub use context_bank::{
     ContextBankCatalog, ContextBankCatalogItem, ContextBankError, ContextBankFile,

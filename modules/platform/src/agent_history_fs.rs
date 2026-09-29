@@ -238,6 +238,42 @@ pub fn read_bounded_history_file_slices(
     })
 }
 
+/// Reads a bounded window ending at an exclusive byte position. Revalidate the
+/// discovered file on every page; callers never supply a filesystem path.
+pub struct BoundedHistoryFileWindow {
+    pub head: Vec<u8>,
+    pub start: u64,
+    pub bytes: Vec<u8>,
+}
+
+pub fn read_bounded_history_file_window(
+    candidate: &BoundedHistoryFile,
+    before: Option<u64>,
+    head_limit: usize,
+    limit: usize,
+) -> Result<BoundedHistoryFileWindow, PlatformError> {
+    let path = canonical_existing_file_within(candidate.root(), candidate.path())?;
+    let mut file = fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let end = before.unwrap_or(size);
+    if end > size {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "history position changed",
+        )
+        .into());
+    }
+    // Read identity and page through the same open file, so replacing the
+    // pathname cannot mix one conversation's header with another's messages.
+    let mut head = vec![0; size.min(head_limit as u64) as usize];
+    file.read_exact(&mut head)?;
+    let start = end.saturating_sub(limit as u64);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = vec![0; (end - start) as usize];
+    file.read_exact(&mut bytes)?;
+    Ok(BoundedHistoryFileWindow { head, start, bytes })
+}
+
 fn modified_epoch_ms(metadata: &fs::Metadata) -> u64 {
     metadata
         .modified()
@@ -300,6 +336,27 @@ mod tests {
         let slices = read_bounded_history_file_slices(&candidate, 8, 8).unwrap();
         assert_eq!(slices.head, b"01234567");
         assert_eq!(slices.tail, b"89ab");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn history_windows_page_backwards_and_reject_positions_after_truncation() {
+        let root = fixture_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("one.jsonl");
+        fs::write(&path, b"0123456789abcdef").unwrap();
+        let file = discover_bounded_history_files(&root, "jsonl", 0, 1)
+            .unwrap()
+            .pop()
+            .unwrap();
+        let window = read_bounded_history_file_window(&file, None, 2, 4).unwrap();
+        assert_eq!(window.head, b"01");
+        assert_eq!(window.bytes, b"cdef");
+        assert_eq!(window.start, 12);
+        let window = read_bounded_history_file_window(&file, Some(window.start), 2, 4).unwrap();
+        assert_eq!(window.bytes, b"89ab");
+        fs::write(&path, b"short").unwrap();
+        assert!(read_bounded_history_file_window(&file, Some(12), 2, 4).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -46,6 +46,7 @@ type Entry<S> = {
   attaching: Promise<void> | undefined;
   dimensions: { rows: number; cols: number } | undefined;
   mounted: boolean;
+  covered: boolean;
   mountToken: object | undefined;
   resizeOwner: boolean | undefined;
   measurement: { started: number; resolve(value: number): void; reject(error: Error): void; timeout: ReturnType<typeof setTimeout> } | undefined;
@@ -67,6 +68,12 @@ export class TerminalPool<S extends TerminalSession> {
     snapshot: (id) => this.#entries.get(id)?.presentation,
     read: (id, enabled) => { void this.#read(id, enabled); },
     recover: (id) => { void this.#recover(id); },
+    cover: (id, covered) => {
+      const entry = this.#entries.get(id);
+      if (!entry) return;
+      entry.covered = covered;
+      if (entry.mounted) entry.surface?.setVisible?.(this.#visible && !covered && entry.presentation.reading === undefined);
+    },
   };
 
   #present(entry: Entry<S>, patch: Partial<TerminalPresentation>): void {
@@ -82,7 +89,7 @@ export class TerminalPool<S extends TerminalSession> {
     const revision = ++entry.readRevision;
     if (!enabled) {
       this.#present(entry, { reading: undefined, unread: false });
-      entry.surface.setVisible?.(this.#visible && entry.presentation.reading === undefined);
+      entry.surface.setVisible?.(this.#visible && !entry.covered && entry.presentation.reading === undefined);
       entry.surface.scrollToBottom?.();
       return;
     }
@@ -152,7 +159,7 @@ export class TerminalPool<S extends TerminalSession> {
         }
         if (!this.policy.canAttach(next)) this.#present(entry, { phase: "exited", progress: undefined });
         if (lifecycleChanged && entry.mounted) {
-          entry.surface?.setVisible?.(this.#visible && entry.presentation.reading === undefined);
+          entry.surface?.setVisible?.(this.#visible && !entry.covered && entry.presentation.reading === undefined);
         }
       }
     }
@@ -170,6 +177,7 @@ export class TerminalPool<S extends TerminalSession> {
           attaching: undefined,
           dimensions: undefined,
           mounted: false,
+          covered: false,
           mountToken: undefined,
           resizeOwner: undefined,
           measurement: undefined,
@@ -201,8 +209,12 @@ export class TerminalPool<S extends TerminalSession> {
         if (previous.length && !bytes.length) this.#present(entry, { notice: "Connection restored. Output produced while disconnected may be unavailable." });
         if (!continuation.continuous && bytes.length) {
           entry.tail.clear();
-          surface.write(new Uint8Array([27, 99]), () => {});
-          this.#present(entry, { notice: "Earlier output could not be matched. Showing available recent output." });
+          // RIS clears scrollback. Preserve the existing normal screen by
+          // scrolling it into history, then replay onto a clean active screen.
+          const rows = Math.max(1, Math.min(1024, entry.dimensions?.rows ?? 24));
+          surface.write(new TextEncoder().encode("\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[!p\x1b[0m\x1b[r\x1b[9999;1H"
+            + "\r\n".repeat(rows) + "\x1b[H"), () => {});
+          this.#present(entry, { notice: "Connection restored with a gap. Previously displayed output is still above." });
         }
         const attachment = entry.attachment;
         const ready = () => {
@@ -227,7 +239,7 @@ export class TerminalPool<S extends TerminalSession> {
     if (mounting) await mounting;
     if (!entry.mounted || entry.mountToken !== mountToken || entry.surface !== surface) return;
     entry.surfaceReady = true;
-    entry.surface.setVisible?.(this.#visible && entry.presentation.reading === undefined);
+    entry.surface.setVisible?.(this.#visible && !entry.covered && entry.presentation.reading === undefined);
     if (this.policy.canAttach(entry.session)) {
       await this.#ensureAttachment(entry);
     }
@@ -249,7 +261,7 @@ export class TerminalPool<S extends TerminalSession> {
     if (!entry) return;
     this.#focusedSessionId = sessionId;
     entry?.attachment?.focus();
-    entry?.surface?.focus();
+    if (entry && !entry.covered && entry.presentation.reading === undefined) entry.surface?.focus();
   }
 
   subscribeResizeOwnership = (listener: () => void): (() => void) => {
@@ -268,7 +280,7 @@ export class TerminalPool<S extends TerminalSession> {
     this.#visible = visible;
     for (const entry of this.#entries.values()) {
       if (entry.mounted) {
-        entry.surface?.setVisible?.(visible && entry.presentation.reading === undefined);
+        entry.surface?.setVisible?.(visible && !entry.covered && entry.presentation.reading === undefined);
       }
     }
   }
@@ -447,7 +459,7 @@ export class TerminalPool<S extends TerminalSession> {
       this.#present(entry, { phase: "live", progress: undefined });
     } else if (event.kind === KIND_GAP) {
       if (!entry.replay?.accept()) entry.tail.clear();
-      this.#present(entry, { notice: "Some earlier output is unavailable." });
+      this.#present(entry, { notice: "Earlier terminal output is no longer available in this view." });
     } else if (event.kind === KIND_EOF) {
       entry.replay?.accept();
       entry.replay?.flush();
