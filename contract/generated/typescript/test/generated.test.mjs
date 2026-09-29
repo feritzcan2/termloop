@@ -285,6 +285,11 @@ test("Quick Action contract is strict, versioned, and full-control only", () => 
     },
   };
   assert.equal(validateMethodResult("quickAction.preview", preview), true);
+  const imagePreview = structuredClone(preview);
+  imagePreview.delivery = "providerPromptArgument";
+  imagePreview.manifest.transport.kind = "providerPromptArgument";
+  imagePreview.manifest.content_parts[0].delivery = "providerPromptArgument";
+  assert.equal(validateMethodResult("quickAction.preview", imagePreview), true);
   assert.equal(validateMethodResult("quickAction.preview", {
     ...preview,
     manifest: {
