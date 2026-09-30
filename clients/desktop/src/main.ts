@@ -847,7 +847,7 @@ handleIpc("termloop:task-preview-agent", (
   agentId: string,
   model: string,
   permission: "default" | "acceptEdits" | "plan" | "bypassPermissions",
-  reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max",
+  reasoning: QuickActionParams["reasoning"],
   kickoffMessage?: string,
 ) =>
   typedControlCall("task.previewAgent", {
@@ -1274,7 +1274,7 @@ function requireAgentId(agentId: string): string {
 }
 handleIpc(
   "termloop:agent-preview",
-  async (_event, projectId: string, agentId: string, model?: string, permission?: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning?: "default" | "low" | "medium" | "high" | "xhigh" | "max") => {
+  async (_event, projectId: string, agentId: string, model?: string, permission?: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning?: QuickActionParams["reasoning"]) => {
     return controlCall("session.previewAgent", {
       projectId,
       cwd: await projectCwd(projectId),
@@ -1299,7 +1299,7 @@ const quickActionParams = async (
   agentId: string,
   model: string,
   permission: "default" | "acceptEdits" | "plan" | "bypassPermissions",
-  reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max",
+  reasoning: QuickActionParams["reasoning"],
   templateRef: QuickActionParams["templateRef"],
   prompt: string,
   attachmentIds: string[],
@@ -1318,12 +1318,12 @@ const quickActionParams = async (
 });
 handleIpc(
   "termloop:quick-action-preview",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string) =>
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string) =>
     controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)),
 );
 handleIpc(
   "termloop:quick-action-launch",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
     const params: QuickActionLaunchParams = {
       ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId),
       launchTicket,

@@ -4,7 +4,7 @@ import {
   removeQuickActionShortcut, saveQuickActionShortcut, type QuickActionShortcutDraft,
   readProviderShortcuts, saveProviderShortcut, updateQuickActionShortcut,
 } from "../src/renderer/quick-action-shortcuts.js";
-import { fullAgentCapability } from "./agent-capability-fixture.js";
+import { fullAgentCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
 
 const draft: QuickActionShortcutDraft = { name: "Deep review", icon: "search", agentId: "codex", model: "gpt-6-astra", permission: "plan", reasoning: "high" };
 const storage = (initial: string | null = null) => {
@@ -13,6 +13,21 @@ const storage = (initial: string | null = null) => {
 };
 
 describe("Quick Action shortcuts", () => {
+  it("persists OpenCode thinking settings and rejects variants from another model", () => {
+    const source = storage();
+    const capability = resumableOpenCodeCapability();
+    for (const reasoning of ["none", "thinking"] as const) {
+      const selection = { ...draft, agentId: "opencode", model: "opencode-go/minimax-m3", reasoning };
+      const saved = saveProviderShortcut(selection, source);
+      expect(readProviderShortcuts(source)).toEqual(saved);
+      expect(readProviderShortcuts(source)[0]?.reasoning).toBe(reasoning);
+      expect(quickActionShortcutUnavailable(selection, [capability])).toBeUndefined();
+      expect(quickActionShortcutUnavailable({ ...selection, model: "opencode-go/kimi-k2.7-code" }, [capability])).toContain("Reasoning");
+    }
+    expect(quickActionShortcutUnavailable({ ...draft, agentId: "opencode", model: "opencode-go/glm-5.3-flash" }, [capability])).toBeUndefined();
+    expect(quickActionShortcutUnavailable({ ...draft, agentId: "opencode", model: "default" }, [capability])).toContain("Reasoning");
+  });
+
   it("persists independent model selections and removes only the chosen shortcut", () => {
     const source = storage();
     const first = saveQuickActionShortcut({ ...draft, name: "  Deep review  " }, source)[0]!;

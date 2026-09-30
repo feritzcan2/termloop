@@ -1,3 +1,4 @@
+import { agentReasoningOptions } from "../../agent-reasoning.js";
 import { useEffect, useRef, useState } from "react";
 import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RemoteBranchDto, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
@@ -449,7 +450,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
                 <div className="start-agent-configuration-head"><Icon name={startIcon(agentId)} /><span>{label}</span></div>
                 <div className="task-automation-launch-options">
                   <label htmlFor={`create-agent-${agentId}-model`}><span>Model</span>
-                    <select id={`create-agent-${agentId}-model`} aria-label={`${label} model`} value={selection.model} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { model: event.target.value })}>
+                    <select id={`create-agent-${agentId}-model`} aria-label={`${label} model`} value={selection.model} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { model: event.target.value, reasoning: agentReasoningOptions(capability, event.target.value).includes(selection.reasoning) ? selection.reasoning : "default" })}>
                       {capability.models.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
                   </label>
@@ -460,7 +461,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
                   </label>
                   <label htmlFor={`create-agent-${agentId}-reasoning`}><span>Reasoning</span>
                     <select id={`create-agent-${agentId}-reasoning`} aria-label={`${label} reasoning`} value={selection.reasoning} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { reasoning: event.target.value as TaskAgentStartSelection["reasoning"] })}>
-                      {capability.reasoning.map((reasoning) => <option key={reasoning} value={reasoning}>{reasoning}</option>)}
+                      {agentReasoningOptions(capability, selection.model).map((reasoning) => <option key={reasoning} value={reasoning}>{reasoning}</option>)}
                     </select>
                   </label>
                 </div>

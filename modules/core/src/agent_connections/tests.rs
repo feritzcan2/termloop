@@ -46,6 +46,7 @@ fn account_auth_changes_do_not_repeat_discovery_but_cli_installation_changes_do(
         models: vec![],
         permissions: vec![],
         reasoning: vec![],
+        model_reasoning: Default::default(),
         observation_supported: false,
         quick_action_supported: false,
         tracked_helpers_supported: false,

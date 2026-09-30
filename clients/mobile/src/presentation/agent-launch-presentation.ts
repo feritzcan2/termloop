@@ -22,11 +22,12 @@ export function restoreLaunchSelection(
   if (capability === undefined || saved === undefined || saved.agentId !== agentId) {
     return defaultLaunchSelection(agentId);
   }
+  const model = capability.models.includes(saved.model) ? saved.model : "default";
   return {
     agentId,
-    model: capability.models.includes(saved.model) ? saved.model : "default",
+    model,
     permission: capability.permissions.includes(saved.permission) ? saved.permission : "default",
-    reasoning: capability.reasoning.includes(saved.reasoning) ? saved.reasoning : "default",
+    reasoning: modelReasoningOptions(capability, model).includes(saved.reasoning) ? saved.reasoning : "default",
   };
 }
 
@@ -59,6 +60,7 @@ export function permissionLabel(agentId: AgentLaunchAgentId, permission: AgentLa
 /// missing CLI reads as a missing CLI instead of a shorter list.
 export function launchAgentOptions(
   capabilities: readonly AgentCapabilityDto[],
+  model = "default",
 ): readonly {
   agentId: AgentLaunchAgentId;
   label: string;
@@ -77,7 +79,7 @@ export function launchAgentOptions(
     integrationLevel: capability.integration_level,
     models: capability.models,
     permissions: capability.permissions,
-    reasoning: capability.reasoning,
+    reasoning: modelReasoningOptions(capability, model),
   }));
 }
 
@@ -99,4 +101,8 @@ export function launchBlockedReason(task: {
   if (task.worktree_health === undefined) return "Your Mac has not checked this worktree yet.";
   if (!task.worktree_health.launch_ready) return "Your Mac cannot prove this checkout is safe to launch in.";
   return undefined;
+}
+
+function modelReasoningOptions(capability: AgentCapabilityDto, model: string): AgentCapabilityDto["reasoning"] {
+  return capability.model_reasoning?.find((entry) => entry.model === model)?.reasoning ?? capability.reasoning;
 }

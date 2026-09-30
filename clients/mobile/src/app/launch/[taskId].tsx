@@ -29,7 +29,6 @@ import { useConnections } from "@/features/connection/connection-store";
 import { useRouteConnection } from "@/features/connection/use-route-connection";
 import { useOverview } from "@/features/overview/overview-store";
 import {
-  coerceModel,
   defaultLaunchSelection,
   launchAgentOptions,
   launchBlockedReason,
@@ -116,7 +115,7 @@ export default function LaunchRoute() {
   }, [stage]);
 
   const blocked = useMemo(() => (task ? launchBlockedReason(task) : undefined), [task]);
-  const options = useMemo(() => launchAgentOptions(capabilities ?? []), [capabilities]);
+  const options = useMemo(() => launchAgentOptions(capabilities ?? [], selection?.model), [capabilities, selection?.model]);
   const chosenOption = options.find((option) => option.agentId === selection?.agentId);
   const chosenAvailable = selection !== undefined
     && options.some((option) => option.agentId === selection.agentId && option.available);
@@ -133,7 +132,7 @@ export default function LaunchRoute() {
         return defaultLaunchSelection(next.agentId);
       }
       const merged = { ...current, ...next };
-      return { ...merged, model: coerceModel(merged.agentId, merged.model, capabilities ?? []) };
+      return restoreLaunchSelection(merged, capabilities ?? []);
     });
   }, [capabilities, stage]);
 

@@ -82,6 +82,23 @@ describe("the launch choices a phone offers", () => {
 });
 
 describe("saved launch choices", () => {
+  it("resets reasoning when the new model does not support the stored variant", () => {
+    const capability: AgentCapabilityDto = {
+      ...CAPABILITIES[1]!, agent_id: "opencode", label: "OpenCode",
+      models: ["default", "opencode-go/minimax-m3", "opencode-go/kimi-k2.7-code"],
+      reasoning: ["default", "max", "none", "thinking"],
+      model_reasoning: [
+        { model: "default", reasoning: ["default"] },
+        { model: "opencode-go/minimax-m3", reasoning: ["default", "none", "thinking"] },
+        { model: "opencode-go/kimi-k2.7-code", reasoning: ["default", "max"] },
+      ],
+    };
+    const selection = { agentId: "opencode", model: "opencode-go/minimax-m3", permission: "default" as const, reasoning: "thinking" as const };
+    expect(restoreLaunchSelection(selection, [capability])).toEqual(selection);
+    expect(restoreLaunchSelection({ ...selection, model: "opencode-go/kimi-k2.7-code" }, [capability]).reasoning).toBe("default");
+    expect(launchAgentOptions([capability], selection.model)[0]?.reasoning).toEqual(["default", "none", "thinking"]);
+  });
+
   it("restores supported choices for the same available provider", () => {
     expect(restoreLaunchSelection({
       agentId: "codex",

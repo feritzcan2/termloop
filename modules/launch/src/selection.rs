@@ -4,6 +4,9 @@ pub fn validate_agent_configuration(
     permission: &str,
     reasoning: &str,
 ) -> Result<(), InvocationError> {
+    if !termloop_agents::reasoning_for_model(agent_id, model).contains(&reasoning) {
+        return Err(InvocationError::UnsupportedReasoning { agent_id: agent_id.into(), reasoning: reasoning.into() });
+    }
     model_args(agent_id, model)?;
     permission_args(agent_id, permission)?;
     reasoning_args(agent_id, reasoning).map(|_| ())
@@ -33,6 +36,7 @@ fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationErro
 fn reasoning_args(agent_id: &str, reasoning: &str) -> Result<Vec<String>, InvocationError> {
     match (agent_id, reasoning) {
         ("claude" | "codex" | "gemini" | "opencode", "default") => Ok(vec![]),
+        ("opencode", "low" | "high" | "max" | "none" | "thinking") => Ok(vec![]),
         ("claude", "low" | "medium" | "high" | "xhigh" | "max") => {
             Ok(vec!["--effort".into(), reasoning.into()])
         }

@@ -515,6 +515,7 @@ pub struct DiscoveredAgentCapabilities {
     pub models: Vec<String>,
     pub permissions: Vec<String>,
     pub reasoning: Vec<String>,
+    pub model_reasoning: std::collections::BTreeMap<String, Vec<String>>,
     pub observation_supported: bool,
     pub quick_action_supported: bool,
     pub tracked_helpers_supported: bool,
@@ -562,6 +563,19 @@ pub(crate) fn discover_agent_capabilities_matching(
                     .reasoning
                     .iter()
                     .map(|value| (*value).into())
+                    .collect(),
+                model_reasoning: descriptor
+                    .models
+                    .iter()
+                    .map(|model| {
+                        (
+                            (*model).to_owned(),
+                            termloop_agents::reasoning_for_model(descriptor.id, model)
+                                .iter()
+                                .map(|value| (*value).to_owned())
+                                .collect(),
+                        )
+                    })
                     .collect(),
                 observation_supported: capability.observation
                     != termloop_agents::ObservationCapability::None,

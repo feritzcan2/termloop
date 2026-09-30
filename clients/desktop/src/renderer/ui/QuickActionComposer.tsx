@@ -1,3 +1,4 @@
+import { agentReasoningOptions } from "../agent-reasoning.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
@@ -121,7 +122,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     && initialCapability?.permissions.includes(initialPreset.permission)
     ? initialPreset.permission : selectedProfile?.permission ?? defaultAgentPermission(initialAgentId));
   const [reasoning, setReasoning] = useState<Reasoning>(initialPreset?.reasoning
-    && initialCapability?.reasoning.includes(initialPreset.reasoning)
+    && agentReasoningOptions(initialCapability, model).includes(initialPreset.reasoning)
     ? initialPreset.reasoning : "default");
   const [prompt, setPrompt] = useState(() => memory.draft ?? "");
   const [attachment, setAttachment] = useState<QuickActionImageHandle | undefined>(() => memory.draftAttachment);
@@ -141,7 +142,10 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   const selectedCapability = capabilityByAgent.get(agentId);
   const models = selectedCapability?.models ?? ["default"];
   const permissions = selectedCapability?.permissions ?? ["default"];
-  const reasoningOptions = selectedCapability?.reasoning ?? ["default"];
+  const reasoningOptions = agentReasoningOptions(selectedCapability, model);
+  useEffect(() => {
+    if (!agentReasoningOptions(selectedCapability, model).includes(reasoning)) setReasoning("default");
+  }, [selectedCapability, model, reasoning]);
   const attachmentIds = useMemo(() => attachment ? [attachment.id] : [], [attachment]);
   const shortcutSelection = { agentId, model, permission, reasoning };
   const shortcutDisabled = running || Boolean(quickActionShortcutUnavailable(shortcutSelection, capabilities));
@@ -183,7 +187,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
       : preset?.permission && capability?.permissions.includes(preset.permission)
         ? preset.permission
         : defaultAgentPermission(agentId));
-    setReasoning(preset?.reasoning && capability?.reasoning.includes(preset.reasoning)
+    setReasoning(preset?.reasoning && agentReasoningOptions(capability, preset.model).includes(preset.reasoning)
       ? preset.reasoning : "default");
     setPreviewResult(undefined);
   }, [agentId, capabilityByAgent, memory.presets, selectedProfile]);

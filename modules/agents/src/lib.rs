@@ -19,8 +19,8 @@ mod session_history;
 
 pub use catalog::{
     AgentDescriptor, BuiltinAgentAdapter, ResumeIdentityScope, agent_catalog, agent_descriptor,
-    has_global_resume_identity, is_supported_agent, supports_generated_input_coordination,
-    supports_tracked_helpers,
+    has_global_resume_identity, is_supported_agent, reasoning_for_model,
+    supports_generated_input_coordination, supports_tracked_helpers,
 };
 pub use claude_transcript::{
     ClaudeObservedModel, claude_observed_model, claude_observed_permission,

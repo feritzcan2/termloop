@@ -238,6 +238,9 @@ pub(crate) fn provider_limitations(
     let mut provider_managed = format!(
         "{agent_id} may apply a provider-managed system prompt that TermLoop cannot observe."
     );
+    if agent_id == "opencode" {
+        provider_managed.push_str(" Reasoning configures the selected model's default options. OpenCode's own selected variant, including a remembered variant, takes precedence.");
+    }
     if inherits_codex_permissions {
         provider_managed.push_str(
             " TermLoop reapplies and verifies the Session's saved permission selection through Codex App Server before the resume TUI attaches; unsupported CLI permission overrides are not sent.",

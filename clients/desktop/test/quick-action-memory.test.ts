@@ -10,6 +10,15 @@ function memoryStorage() {
 }
 
 describe("Quick Action launch memory", () => {
+  it("retains OpenCode thinking options when restoring a run", () => {
+    const storage = memoryStorage();
+    for (const reasoning of ["none", "thinking"] as const) {
+      const preset = { model: "opencode-go/minimax-m3", permission: "default" as const, reasoning };
+      rememberQuickActionRun("project-1", "opencode", preset, storage);
+      expect(readQuickActionMemory(storage).presets.opencode).toEqual(preset);
+    }
+  });
+
   it("keeps an unsent draft and clears it after a successful run", () => {
     const storage = memoryStorage();
     rememberQuickActionDraft("finish the pending refactor", storage);
