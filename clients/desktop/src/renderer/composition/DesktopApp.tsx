@@ -64,6 +64,7 @@ import { automaticBranchCommitTaskIds } from "../model.js";
 import { readLastQuickActionAgentSelection, readQuickActionPreset, readTaskAgentPreset, type QuickActionAgentId, type QuickActionAgentSelection } from "../quick-action-memory.js";
 import { createLayoutPersistence } from "../state/layout-persistence.js";
 import { requireQuickActionSession } from "../quick-action-result.js";
+import { quickActionShortcutUnavailable, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
 import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
@@ -1025,14 +1026,18 @@ export function DesktopApp() {
       projectionStore.setMessage(controlErrorMessage(error));
     }
   }, [selectedProject, selectedSourceApi]);
-  const launchAgent = useCallback(async (agentId: string) => {
+  const launchAgent = useCallback(async (agentId: string, shortcut?: QuickActionShortcutSelection) => {
     if (!selectedProject) return;
     const activation = captureSessionActivation();
     const projectId = selectedProject.id;
     const capability = agentCapabilities.find((candidate) => candidate.agent_id === agentId);
     if (!capability?.available) return;
     let preset: OrdinaryAgentLaunchPreset;
-    if (capability.quick_action_supported) {
+    if (shortcut) {
+      const unavailable = quickActionShortcutUnavailable({ ...shortcut, agentId }, agentCapabilities);
+      if (unavailable) { projectionStore.setMessage(unavailable); return; }
+      preset = shortcut;
+    } else if (capability.quick_action_supported) {
       if (!isQuickActionAgentId(agentId)) return;
       const saved = readQuickActionPreset(agentId);
       if (!saved) return "configure" as const;
