@@ -10,7 +10,9 @@ mod codex_name;
 mod codex_resume;
 mod codex_settings;
 mod conversation;
+mod opencode;
 pub use conversation::{ConversationMessage, ConversationPage, read_agent_conversation};
+pub use opencode::opencode_uses_server_configuration;
 mod provider_hooks;
 mod provider_observation;
 mod session_history;
@@ -760,7 +762,8 @@ fn opencode_plugin_version_supported(version: Option<&str>) -> bool {
                 ))
             })?
         })
-        .is_some_and(|version| version >= (1, 18, 33))
+        // The v2 CLI replaced the v1 TUI plugin API and configuration format.
+        .is_some_and(|version| version.0 == 1 && version >= (1, 18, 33))
 }
 
 type SemanticVersion = (u64, u64, u64);
@@ -2578,6 +2581,7 @@ mod tests {
         assert!(!capabilities.tracked_helpers_supported());
         assert!(!supports_generated_input_coordination("opencode"));
         assert!(!opencode_plugin_version_supported(Some("1.18.32")));
+        assert!(!opencode_plugin_version_supported(Some("opencode v2.0.20")));
         assert!(!opencode_plugin_version_supported(Some("unknown")));
         let _ = std::fs::remove_dir_all(directory);
     }

@@ -114,6 +114,14 @@ fn inspect_environment(
                     source: "invocation",
                     purpose: "launch-scoped Gemini observation settings",
                 },
+                "OPENCODE_CONFIG_CONTENT" => InspectableEnvironmentEntry {
+                    key,
+                    display_value: "<redacted launch configuration>".into(),
+                    visibility: "redacted",
+                    classification: "runtimeConfiguration",
+                    source: "invocation",
+                    purpose: "launch-scoped OpenCode model and agent selection",
+                },
                 "OPENCODE_TUI_CONFIG" => InspectableEnvironmentEntry {
                     key,
                     display_value: "<redacted runtime settings path>".into(),

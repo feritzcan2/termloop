@@ -272,6 +272,9 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     let target = termloop_agents::resolve_agent_cli(agent_id, &environment)
         .map_err(|error| agent_cli_error(agent_id, error))?;
     let executable = launch_target_utf8(agent_id, &target)?;
+    if agent_id == "opencode" {
+        configure_opencode_launch(&target, &mut arguments, &mut environment, model, permission);
+    }
 
     // OpenCode accepts its first message through --prompt. Codex submits image
     // prompts through argv too. Neither should receive a second terminal turn.
