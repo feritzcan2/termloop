@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher, shortcutLaunchers }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -17,6 +17,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   launchTerminal(): Promise<void>;
   launchAgent(agentId: string): Promise<void>;
   workflowLauncher?: ReactNode;
+  shortcutLaunchers?: ReactNode;
   setupAgents?(): void;
   /// Present only until this Project has a dev server to run. It states the
   /// whole offer in words because nothing on screen has taught the icon yet.
@@ -164,6 +165,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             onClick={() => agent.available ? void launchAgent(agent.agent_id) : setupAgents?.()}
           ><Icon name={icon} /></button>;
         })}
+        {shortcutLaunchers}
         {workflowLauncher}
         <span className="workspace-history-separator" aria-hidden="true" />
         <button
