@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Session } from "../src/renderer/model.js";
-import { AgentGroupFrame, agentSessionClusters } from "../src/renderer/ui/AgentGroup.js";
+import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters } from "../src/renderer/ui/AgentGroup.js";
 
 function agent(id: string): Session {
   return {
@@ -41,6 +41,27 @@ describe("Agent group controls", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+  });
+
+  it("keeps every generation of forks beneath its exact source even when children arrive first", () => {
+    const source = agent("source");
+    const fork = { ...agent("fork"), fork_source_session_id: source.id };
+    const nested = { ...agent("nested"), fork_source_session_id: fork.id };
+    const sibling = { ...agent("sibling"), fork_source_session_id: source.id };
+    const [cluster] = agentSessionClusters([nested, sibling, fork, source]);
+
+    expect(cluster?.groups[0]?.helpers.map(({ session, source: parent, depth }) => [session.id, parent.id, depth]))
+      .toEqual([["sibling", "source", 1], ["fork", "source", 1], ["nested", "fork", 2]]);
+    expect(cluster && agentSessionClusterMembers(cluster).map((session) => session.id))
+      .toEqual(["source", "sibling", "fork", "nested"]);
+  });
+
+  it("shows malformed cyclic forks once each", () => {
+    const first = { ...agent("first"), fork_source_session_id: "second" };
+    const second = { ...agent("second"), fork_source_session_id: "first" };
+    const clusters = agentSessionClusters([first, second]);
+    expect(clusters.flatMap((cluster) => agentSessionClusterMembers(cluster).map((session) => session.id)).sort())
+      .toEqual(["first", "second"]);
   });
 
   it("renames a group inline and ungroups it from the leading close button", async () => {

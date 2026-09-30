@@ -1258,6 +1258,24 @@ describe("Task rail row anatomy", () => {
     expect(markup).toContain("from Moved source");
   });
 
+  it("keeps a fork of a fork in its source Task after both forks leave the worktree", () => {
+    const source = agentSession("source");
+    const fork = { ...agentSession("fork"), fork_source_session_id: source.id,
+      process: { ...source.process, cwd: "/repository" } };
+    const nested = { ...agentSession("nested"), fork_source_session_id: fork.id,
+      process: { ...source.process, cwd: "/repository" } };
+    const sessions = new Map([nested, fork, source].map((session) => [session.id, session]));
+    const attached = taskAttachedSessionIds([launchableTask()], sessions);
+
+    expect(attached).toEqual(new Set([source.id]));
+    expect(askToHelpersForSources(attached, sessions)).toEqual(new Set([fork.id, nested.id]));
+    const markup = renderRail({ sessions: [nested, fork, source] });
+    expect(markup.indexOf('data-session-id="source"')).toBeLessThan(markup.indexOf('data-session-id="fork"'));
+    expect(markup.indexOf('data-session-id="fork"')).toBeLessThan(markup.indexOf('data-session-id="nested"'));
+    expect(markup).toContain("forked from fork");
+    expect(markup.match(/data-session-id="nested"/gu)).toHaveLength(1);
+  });
+
   it("keeps a helper independently movable while its own cwd is the Task worktree", () => {
     const source = agentSession("project-source");
     source.process = { ...source.process, cwd: "/repository" };
