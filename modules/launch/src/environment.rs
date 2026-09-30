@@ -118,7 +118,7 @@ fn inspect_environment(
                     key,
                     display_value: "<redacted launch configuration>".into(),
                     visibility: "redacted",
-                    classification: "runtimeConfiguration",
+                    classification: "public",
                     source: "invocation",
                     purpose: "launch-scoped OpenCode model and agent selection",
                 },
