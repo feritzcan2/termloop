@@ -1078,7 +1078,7 @@ export function DesktopApp() {
     }
   }, []);
   const loadAgentAccounts = useCallback(async (projectId: string) => (await sourceApiForProject(projectId).agentAccountList()).accounts, [sourceApiForProject]);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
     const activation = captureSessionActivation();
     try {
       const session = requireQuickActionSession(

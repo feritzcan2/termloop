@@ -3,7 +3,7 @@ import { connectionAttachmentIdentity } from "../connection-scope.js";
 
 export type QuickActionAgentId = string;
 export type QuickActionPermission = "default" | "acceptEdits" | "plan" | "bypassPermissions";
-export type QuickActionReasoning = "default" | "low" | "medium" | "high" | "xhigh" | "max";
+export type QuickActionReasoning = "default" | "low" | "medium" | "high" | "xhigh" | "max" | "none" | "thinking";
 
 export type QuickActionAgentPreset = {
   model: string;
@@ -38,6 +38,8 @@ export const QUICK_ACTION_AGENT_MODELS: Readonly<Record<QuickActionAgentId, read
 export const QUICK_ACTION_AGENT_PERMISSIONS: readonly QuickActionPermission[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 export const QUICK_ACTION_AGENT_REASONING: readonly QuickActionReasoning[] = ["default", "low", "medium", "high", "xhigh", "max"];
 
+export const ALL_AGENT_REASONING: readonly QuickActionReasoning[] = [...QUICK_ACTION_AGENT_REASONING, "none", "thinking"];
+
 export function readQuickActionMemory(storage?: Pick<Storage, "getItem">): QuickActionMemory {
   try {
     const source = storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
@@ -60,7 +62,7 @@ export function readQuickActionMemory(storage?: Pick<Storage, "getItem">): Quick
           || values.model.length > 80
           || /[\u0000-\u001f\u007f]/u.test(values.model)
           || !QUICK_ACTION_AGENT_PERMISSIONS.includes(values.permission as QuickActionPermission)
-          || !QUICK_ACTION_AGENT_REASONING.includes(values.reasoning as QuickActionReasoning)) continue;
+          || !ALL_AGENT_REASONING.includes(values.reasoning as QuickActionReasoning)) continue;
         memory.presets[agentId] = {
           model: values.model,
           permission: values.permission as QuickActionPermission,

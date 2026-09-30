@@ -1,3 +1,4 @@
+import { agentReasoningOptions } from "../agent-reasoning.js";
 import type {
   AgentCapabilityDto,
   ProjectTaskAutomationGetResult,
@@ -46,7 +47,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
     : agentCapabilities.find((capability) => capability.agent_id === value.agentId);
   const modelOptions = selectedCapability?.models ?? (value.model ? [value.model] : []);
   const permissionOptions = selectedCapability?.permissions ?? (value.permission ? [value.permission] : []);
-  const reasoningOptions = selectedCapability?.reasoning ?? (value.reasoning ? [value.reasoning] : []);
+  const reasoningOptions = agentReasoningOptions(selectedCapability, value.model ?? "default");
   return <div className="task-automation-choices">
     <label className="checkbox-row">
       <input
@@ -129,7 +130,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
       </select>
       <div className="task-automation-launch-options">
         <label htmlFor={`${idPrefix}-model`}><span>Model</span>
-          <select id={`${idPrefix}-model`} value={value.model ?? ""} disabled={busy} onChange={(event) => change({ ...value, model: event.target.value })}>
+          <select id={`${idPrefix}-model`} value={value.model ?? ""} disabled={busy} onChange={(event) => change({ ...value, model: event.target.value, reasoning: value.reasoning && agentReasoningOptions(selectedCapability, event.target.value).includes(value.reasoning) ? value.reasoning : "default" })}>
             {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
           </select>
         </label>

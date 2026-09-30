@@ -134,7 +134,7 @@ export interface PlaybookPort {
 
 export type AgentLaunchAgentId = string;
 export type AgentLaunchPermission = "default" | "acceptEdits" | "plan" | "bypassPermissions";
-export type AgentLaunchReasoning = "default" | "low" | "medium" | "high" | "xhigh" | "max";
+export type AgentLaunchReasoning = "default" | "low" | "medium" | "high" | "xhigh" | "max" | "none" | "thinking";
 
 export interface AgentLaunchSelection {
   agentId: AgentLaunchAgentId;

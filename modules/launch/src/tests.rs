@@ -626,3 +626,97 @@ fn remote_fork_prepares_permissions_and_binds_only_the_new_thread() {
             .unwrap();
     }
 }
+
+#[test]
+fn opencode_reasoning_uses_model_options_in_both_cli_generations() {
+    let directory = std::env::temp_dir().join(format!(
+        "termloop-opencode-reasoning-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let template = PromptTemplate {
+        id: "reasoning-test",
+        version: 1,
+        authored_body: "",
+    };
+    for server_configuration in [false, true] {
+        let flag = if server_configuration {
+            "--standalone"
+        } else {
+            "--model"
+        };
+        termloop_platform::test_support::write_cli_fixture(
+            &directory, "opencode",
+            &format!("#!/bin/sh\nif [ \"$1\" = --help ]; then printf '  {flag}  option\\n'; exit 0; fi\nexit 1\n"),
+            &format!("@echo off\r\nif \"%1\"==\"--help\" (echo   {flag}  option& exit /b 0)\r\nexit /b 1\r\n"),
+        ).unwrap();
+        for (model, reasoning, expected) in [
+            (
+                "opencode-go/deepseek-v4.1-flash",
+                "low",
+                serde_json::json!({"reasoningEffort":"low"}),
+            ),
+            (
+                "opencode-go/glm-5.3-flash",
+                "high",
+                serde_json::json!({"reasoningEffort":"high"}),
+            ),
+            (
+                "opencode-go/kimi-k2.7-code",
+                "max",
+                serde_json::json!({"reasoningEffort":"max"}),
+            ),
+            (
+                "opencode-go/minimax-m3",
+                "none",
+                serde_json::json!({"thinking":{"type":"disabled"}}),
+            ),
+            (
+                "opencode-go/minimax-m3",
+                "thinking",
+                serde_json::json!({"thinking":{"type":"adaptive"}}),
+            ),
+        ] {
+            let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+            request.executable_directory = Some(&directory);
+            request.model = model;
+            request.reasoning = reasoning;
+            let payload = resolve(request).unwrap().into_payload();
+            let value = payload
+                .environment
+                .entries()
+                .find(|(key, _)| *key == "OPENCODE_CONFIG_CONTENT")
+                .unwrap()
+                .1;
+            let config: serde_json::Value = serde_json::from_str(value.to_str().unwrap()).unwrap();
+            let (provider, model_id) = model.split_once('/').unwrap();
+            let (root, options) = if server_configuration {
+                ("providers", "settings")
+            } else {
+                ("provider", "options")
+            };
+            assert_eq!(
+                config[root][provider]["models"][model_id][options],
+                expected
+            );
+            assert_eq!(
+                payload.args().iter().any(|arg| arg == "--standalone"),
+                server_configuration
+            );
+            assert!(!payload.args().iter().any(|arg| arg == "--variant"));
+            assert_eq!(payload.inspectable_manifest().target.reasoning, reasoning);
+        }
+    }
+    for (model, reasoning) in [
+        ("default", "high"),
+        ("opencode-go/qwen3.7-plus", "high"),
+        ("opencode-go/kimi-k2.7-code", "low"),
+        ("opencode-go/minimax-m3", "max"),
+    ] {
+        assert!(matches!(
+            validate_agent_configuration("opencode", model, "default", reasoning),
+            Err(InvocationError::UnsupportedReasoning { .. })
+        ));
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

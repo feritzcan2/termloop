@@ -1,3 +1,4 @@
+import { agentReasoningOptions } from "../agent-reasoning.js";
 import { useState } from "react";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import { defaultAgentPermission, permissionLabel } from "../quick-action-memory.js";
@@ -29,9 +30,9 @@ export function AgentShortcutSettings({ shortcut, capabilities, fixedProvider, s
           {!capability ? <option value={selection.agentId}>{selection.agentId}</option> : null}
           {capabilities.map((item) => <option key={item.agent_id} value={item.agent_id}>{item.label}</option>)}
         </select></label>
-        <label><span>MODEL</span><em>{selection.model}</em><select aria-label="Model" value={selection.model} onChange={(event) => setSelection({ ...selection, model: event.target.value })}>{[...new Set([selection.model, ...capability?.models ?? []])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span>MODEL</span><em>{selection.model}</em><select aria-label="Model" value={selection.model} onChange={(event) => setSelection({ ...selection, model: event.target.value, reasoning: agentReasoningOptions(capability, event.target.value).includes(selection.reasoning) ? selection.reasoning : "default" })}>{[...new Set([selection.model, ...capability?.models ?? []])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label><span>PERM</span><em>{permissionLabel(selection.agentId, selection.permission)}</em><select aria-label="Permission" value={selection.permission} onChange={(event) => setSelection({ ...selection, permission: event.target.value as QuickActionShortcutSelection["permission"] })}>{[...new Set([selection.permission, ...capability?.permissions ?? []])].map((value) => <option key={value} value={value}>{permissionLabel(selection.agentId, value)}</option>)}</select></label>
-        <label><span>REASON</span><em>{selection.reasoning}</em><select aria-label="Reasoning" value={selection.reasoning} onChange={(event) => setSelection({ ...selection, reasoning: event.target.value as QuickActionShortcutSelection["reasoning"] })}>{[...new Set([selection.reasoning, ...capability?.reasoning ?? []])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span>REASON</span><em>{selection.reasoning}</em><select aria-label="Reasoning" value={selection.reasoning} onChange={(event) => setSelection({ ...selection, reasoning: event.target.value as QuickActionShortcutSelection["reasoning"] })}>{[...new Set([selection.reasoning, ...agentReasoningOptions(capability, selection.model)])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
       </div>
       <QuickActionShortcutEditor selection={selection} initialName={shortcut.name} initialIcon={shortcut.icon} disabled={Boolean(unavailable)} editing save={save} close={close} />
       {unavailable ? <p className="shortcut-settings-error" role="status">{unavailable}</p> : null}

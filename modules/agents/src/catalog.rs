@@ -63,6 +63,7 @@ const OPENCODE_MODELS: &[&str] = &[
 const STANDARD_PERMISSIONS: &[&str] = &["default", "acceptEdits", "plan", "bypassPermissions"];
 const OPENCODE_PERMISSIONS: &[&str] = &["default", "plan", "bypassPermissions"];
 const STANDARD_REASONING: &[&str] = &["default", "low", "medium", "high", "xhigh", "max"];
+const OPENCODE_REASONING: &[&str] = &["default", "low", "high", "max", "none", "thinking"];
 const DEFAULT_REASONING: &[&str] = &["default"];
 
 const AGENT_CATALOG: &[AgentDescriptor] = &[
@@ -109,7 +110,7 @@ const AGENT_CATALOG: &[AgentDescriptor] = &[
         adapter: BuiltinAgentAdapter::OpenCode,
         models: OPENCODE_MODELS,
         permissions: OPENCODE_PERMISSIONS,
-        reasoning: DEFAULT_REASONING,
+        reasoning: OPENCODE_REASONING,
         resume_identity_scope: ResumeIdentityScope::WorkingDirectory,
         generated_input_coordination_supported: false,
         tracked_helpers_supported: false,
@@ -142,6 +143,22 @@ pub fn supports_tracked_helpers(agent_id: &str) -> bool {
 pub fn has_global_resume_identity(agent_id: &str) -> bool {
     agent_descriptor(agent_id)
         .is_some_and(|descriptor| descriptor.resume_identity_scope == ResumeIdentityScope::Global)
+}
+
+/// Native variants supported by the curated model catalog. An unspecified
+/// OpenCode model cannot promise a reasoning level before it is resolved.
+pub fn reasoning_for_model(agent_id: &str, model: &str) -> &'static [&'static str] {
+    if agent_id != "opencode" {
+        return agent_descriptor(agent_id).map_or(DEFAULT_REASONING, |agent| agent.reasoning);
+    }
+    match model {
+        "opencode-go/kimi-k2.7-code" => &["default", "max"],
+        "opencode-go/glm-5.3-flash" | "opencode-go/deepseek-v4.1-flash" => {
+            &["default", "low", "high", "max"]
+        }
+        "opencode-go/minimax-m3" => &["default", "none", "thinking"],
+        _ => DEFAULT_REASONING,
+    }
 }
 
 #[cfg(test)]

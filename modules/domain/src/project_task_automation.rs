@@ -123,7 +123,7 @@ fn valid_model(value: &str) -> bool {
 fn valid_reasoning(value: &str) -> bool {
     matches!(
         value,
-        "default" | "low" | "medium" | "high" | "xhigh" | "max"
+        "default" | "low" | "medium" | "high" | "xhigh" | "max" | "none" | "thinking"
     )
 }
 

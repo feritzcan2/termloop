@@ -1087,6 +1087,7 @@ async fn dispatch_inner(
                             "models": capability.models,
                             "permissions": capability.permissions,
                             "reasoning": capability.reasoning,
+                            "model_reasoning": capability.model_reasoning.iter().map(|(model, reasoning)| json!({"model": model, "reasoning": reasoning})).collect::<Vec<_>>(),
                             "observation_supported": capability.observation_supported,
                             "quick_action_supported": capability.quick_action_supported,
                             "tracked_helpers_supported": capability.tracked_helpers_supported,

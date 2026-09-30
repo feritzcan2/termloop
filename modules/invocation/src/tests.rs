@@ -989,13 +989,16 @@ fn catalog_launch_options_are_accepted_by_their_invocation_adapter() {
                 descriptor.id
             );
         }
-        for reasoning in descriptor.reasoning {
-            assert!(
-                validate_agent_configuration(descriptor.id, "default", "default", reasoning)
-                    .is_ok(),
-                "catalog reasoning {reasoning} drifted for {}",
-                descriptor.id
-            );
+        for model in descriptor.models {
+            for reasoning in termloop_agents::reasoning_for_model(descriptor.id, model) {
+                assert!(
+                    descriptor.reasoning.contains(reasoning)
+                        && validate_agent_configuration(descriptor.id, model, "default", reasoning)
+                            .is_ok(),
+                    "catalog reasoning {reasoning} drifted for {} model {model}",
+                    descriptor.id
+                );
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ const MODELS: Record<string, string[]> = {
   claude: ["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"],
   codex: ["default", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
   gemini: ["default", "auto", "pro", "flash", "flash-lite"],
-  opencode: ["default", "opencode-go/kimi-k2.7-code"],
+  opencode: ["default", "opencode-go/kimi-k2.7-code", "opencode-go/glm-5.3-flash", "opencode-go/deepseek-v4.1-flash", "opencode-go/minimax-m3", "opencode-go/qwen3.7-plus"],
 };
 
 export function fullAgentCapability(
@@ -64,7 +64,15 @@ export function resumableOpenCodeCapability(
     degraded_reason: "trackedHelpersUnavailable",
     models: MODELS.opencode!,
     permissions: ["default", "plan", "bypassPermissions"],
-    reasoning: ["default"],
+    reasoning: ["default", "low", "high", "max", "none", "thinking"],
+    model_reasoning: [
+      { model: "default", reasoning: ["default"] },
+      { model: "opencode-go/kimi-k2.7-code", reasoning: ["default", "max"] },
+      { model: "opencode-go/glm-5.3-flash", reasoning: ["default", "low", "high", "max"] },
+      { model: "opencode-go/deepseek-v4.1-flash", reasoning: ["default", "low", "high", "max"] },
+      { model: "opencode-go/minimax-m3", reasoning: ["default", "none", "thinking"] },
+      { model: "opencode-go/qwen3.7-plus", reasoning: ["default"] },
+    ],
     observation_supported: true,
     quick_action_supported: true,
     tracked_helpers_supported: false,

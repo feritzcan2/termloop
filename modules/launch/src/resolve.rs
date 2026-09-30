@@ -79,6 +79,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         interactive_template.map(|template| template.authored_body);
     let delivered_provider_instructions =
         provider_instructions.or(interactive_provider_instructions);
+    validate_agent_configuration(agent_id, model, permission, reasoning)?;
     let mut arguments = conversation_manifest_args(agent_id, conversation)?;
     if let Some(account) = account {
         arguments.extend(
@@ -273,7 +274,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         .map_err(|error| agent_cli_error(agent_id, error))?;
     let executable = launch_target_utf8(agent_id, &target)?;
     if agent_id == "opencode" {
-        configure_opencode_launch(&target, &mut arguments, &mut environment, model, permission);
+        configure_opencode_launch(&target, &mut arguments, &mut environment, model, permission, reasoning);
     }
 
     // OpenCode accepts its first message through --prompt. Codex submits image

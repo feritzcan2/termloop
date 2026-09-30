@@ -8,7 +8,7 @@ import type {
 
 const STORAGE_KEY = "termloop.agent-launch-selection.v1";
 const PERMISSIONS = new Set<AgentLaunchPermission>(["default", "acceptEdits", "plan", "bypassPermissions"]);
-const REASONING = new Set<AgentLaunchReasoning>(["default", "low", "medium", "high", "xhigh", "max"]);
+const REASONING = new Set<AgentLaunchReasoning>(["default", "low", "medium", "high", "xhigh", "max", "none", "thinking"]);
 
 export const agentLaunchPreferences = {
   async read(): Promise<AgentLaunchSelection | undefined> {

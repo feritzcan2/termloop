@@ -1,7 +1,8 @@
+import { agentReasoningOptions } from "./agent-reasoning.js";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import {
   QUICK_ACTION_AGENT_PERMISSIONS,
-  QUICK_ACTION_AGENT_REASONING,
+  ALL_AGENT_REASONING,
   permissionLabel,
   type QuickActionAgentPreset,
 } from "./quick-action-memory.js";
@@ -40,7 +41,7 @@ function validShortcut(value: unknown): value is QuickActionShortcut {
     && boundedText(item.agentId, 64) && /^[a-z](?:[a-z0-9]|-[a-z0-9])*$/u.test(item.agentId)
     && boundedText(item.model, 80)
     && QUICK_ACTION_AGENT_PERMISSIONS.includes(item.permission!)
-    && QUICK_ACTION_AGENT_REASONING.includes(item.reasoning!)
+    && ALL_AGENT_REASONING.includes(item.reasoning!)
     && QUICK_ACTION_SHORTCUT_ICONS.some((icon) => icon.id === item.icon);
 }
 
@@ -121,7 +122,7 @@ export function quickActionShortcutUnavailable(
   if (!capability?.available) return "Provider unavailable on this connection";
   if (!capability.models.includes(selection.model)) return "Model unavailable on this connection";
   if (!capability.permissions.includes(selection.permission)) return "Permission unavailable on this connection";
-  if (!capability.reasoning.includes(selection.reasoning)) return "Reasoning unavailable on this connection";
+  if (!agentReasoningOptions(capability, selection.model).includes(selection.reasoning)) return "Reasoning unavailable on this connection";
   return undefined;
 }
 
