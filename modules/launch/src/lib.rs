@@ -21,6 +21,7 @@ include!("request.rs");
 include!("payload.rs");
 include!("provider.rs");
 include!("selection.rs");
+include!("opencode.rs");
 include!("resolve.rs");
 include!("environment.rs");
 include!("arguments.rs");
