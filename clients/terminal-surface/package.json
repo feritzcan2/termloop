@@ -57,7 +57,7 @@
   "scripts": {
     "check": "pnpm --filter @termloop/terminal-wire build && tsc --noEmit",
     "build": "node build-assets.mjs --clean && tsc && node build-assets.mjs",
-    "test": "vitest run"
+    "test": "pnpm --filter @termloop/terminal-wire build && vitest run"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
