@@ -347,7 +347,10 @@ impl AgentCapabilities {
     pub fn quick_action_supported(&self) -> bool {
         self.available
             && self.observation != ObservationCapability::None
-            && supports_generated_input_coordination(&self.agent_id)
+            // OpenCode accepts the first message through its native --prompt
+            // argument; it does not require generated terminal submissions.
+            && (supports_generated_input_coordination(&self.agent_id)
+                || self.agent_id == "opencode")
     }
 
     pub fn tracked_helpers_supported(&self) -> bool {
@@ -2571,7 +2574,9 @@ mod tests {
             capabilities.integration_level(),
             AgentIntegrationLevel::Resumable
         );
-        assert!(!capabilities.quick_action_supported());
+        assert!(capabilities.quick_action_supported());
+        assert!(!capabilities.tracked_helpers_supported());
+        assert!(!supports_generated_input_coordination("opencode"));
         assert!(!opencode_plugin_version_supported(Some("1.18.32")));
         assert!(!opencode_plugin_version_supported(Some("unknown")));
         let _ = std::fs::remove_dir_all(directory);

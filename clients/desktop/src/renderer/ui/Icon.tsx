@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from "react";
 
 export type IconName =
-  | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "opencode" | "fileGear" | "fileText"
+  | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "opencode" | "gemini" | "fileGear" | "fileText"
   | "chevronDown" | "circle" | "close" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
   | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "settings" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash"
@@ -17,11 +17,12 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
 }
 
 export function agentIconName(agentId: string): IconName {
-  if (agentId === "claude" || agentId === "codex" || agentId === "opencode") return agentId;
+  if (agentId === "claude" || agentId === "codex" || agentId === "opencode" || agentId === "gemini") return agentId;
   return "agent";
 }
 
 const paths: Record<IconName, ReactNode> = {
+  gemini: <path fill="currentColor" stroke="none" d="M10 1c1.2 5.3 3.7 7.8 9 9-5.3 1.2-7.8 3.7-9 9-1.2-5.3-3.7-7.8-9-9 5.3-1.2 7.8-3.7 9-9Z" />,
   add: <><path d="M10 4v12M4 10h12" /></>,
   alert: <><path d="M10 3 17.5 16.5h-15z" /><path d="M10 8v4" /><circle cx="10" cy="14.2" r=".6" fill="currentColor" stroke="none" /></>,
   power: <><path d="M10 3v6.5" /><path d="M6.2 5.6a6 6 0 1 0 7.6 0" /></>,

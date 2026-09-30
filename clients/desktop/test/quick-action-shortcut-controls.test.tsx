@@ -52,7 +52,7 @@ describe("Quick Action shortcut controls", () => {
     await select("Model", "gpt-6-astra"); await select("Permission", "plan"); await select("Reasoning", "high");
     await click("Create shortcut");
     expect(container.querySelectorAll('.shortcut-icon-picker input')).toHaveLength(12);
-    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Research"]')!.click());
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Coral"]')!.click());
     await click("Save shortcut");
     const saved = readQuickActionShortcuts()[0]!;
     expect(saved).toMatchObject({ icon: "search", agentId: "codex", model: "gpt-6-astra", permission: "plan", reasoning: "high" });
@@ -108,7 +108,7 @@ describe("Quick Action shortcut controls", () => {
     for (const props of [{ capabilities: [capability], disabled: true }, { capabilities: [{ ...capability, models: ["default"] }], disabled: false }]) {
       await act(async () => root.render(<QuickActionShortcutLaunchers {...props} shortcuts={shortcuts} launch={launch} remove={remove} />));
       const launcher = container.querySelector<HTMLButtonElement>('.saved-agent-shortcut')!;
-      expect(launcher.disabled).toBe(true);
+      expect(launcher.getAttribute("aria-disabled")).toBe("true");
       await act(async () => launcher.click()); expect(launch).not.toHaveBeenCalled();
       expect(container.querySelector<HTMLButtonElement>('.remove-agent-shortcut')!.disabled).toBe(false);
     }

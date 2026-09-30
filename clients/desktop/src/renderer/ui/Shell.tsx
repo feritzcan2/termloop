@@ -39,13 +39,14 @@ import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
 import { QuickActionComposer } from "./QuickActionComposer.js";
 import { QuickActionShortcutLaunchers } from "./QuickActionShortcutLaunchers.js";
-import { readQuickActionShortcuts, removeQuickActionShortcut, saveQuickActionShortcut, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
+import { readProviderShortcuts, readQuickActionShortcuts, removeQuickActionShortcut, saveProviderShortcut, saveQuickActionShortcut, updateQuickActionShortcut, type QuickActionShortcut, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
+import { AgentShortcutSettings } from "./AgentShortcutSettings.js";
 import { AgentSetupDialog } from "./AgentSetupDialog.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import { useSettingsLibrary } from "./settings-library.js";
 import { StageEditorPlaceholder } from "./StageEditorPlaceholder.js";
 import { promptImproveTarget, type PromptAsset } from "../prompt-settings.js";
-import type { QuickActionAgentSelection } from "../quick-action-memory.js";
+import { defaultAgentPermission, readQuickActionPreset, type QuickActionAgentSelection } from "../quick-action-memory.js";
 import { McpRail } from "./McpRail.js";
 import { McpToolPanel } from "./McpToolPanel.js";
 import { PromptPanel } from "./PromptPanel.js";
@@ -571,10 +572,13 @@ export function Shell(props: ShellProps) {
   const [shortcutSettingsOpen, setShortcutSettingsOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
   const [quickActionShortcuts, setQuickActionShortcuts] = useState(readQuickActionShortcuts);
+  const [providerShortcuts, setProviderShortcuts] = useState(readProviderShortcuts);
+  const [agentShortcutEdit, setAgentShortcutEdit] = useState<{ kind: "provider" | "saved"; shortcut: QuickActionShortcut }>();
   const [quickActionAgent, setQuickActionAgent] = useState<string>();
   const [quickActionProfile, setQuickActionProfile] = useState<string>();
   useEffect(() => {
     setQuickActionOpen(false); setQuickActionProfile(undefined);
+    setAgentShortcutEdit(undefined);
     setStagePage(undefined);
   }, [props.selectedProject?.connectionProfileId]);
   const [improverSetup, setImproverSetup] = useState<ImproverSetup>();
@@ -1068,7 +1072,7 @@ export function Shell(props: ShellProps) {
     deleteProjectOpen,
     renameSessionOpen: Boolean(renameTarget),
     shortcutSettingsOpen,
-    quickActionOpen: quickActionOpen || Boolean(improverSetup),
+    quickActionOpen: quickActionOpen || Boolean(improverSetup) || Boolean(agentShortcutEdit),
     runEditorOpen,
     changesEditorOpen: Boolean(changesSubject) || filesPreviewVisible,
   });
@@ -1081,7 +1085,7 @@ export function Shell(props: ShellProps) {
     renameSession: Boolean(renameTarget),
     commandPalette: commandPaletteOpen,
     shortcutSettings: shortcutSettingsOpen,
-    quickAction: quickActionOpen || Boolean(improverSetup),
+    quickAction: quickActionOpen || Boolean(improverSetup) || Boolean(agentShortcutEdit),
     runEditor: runEditorOpen,
     sessionMenu: Boolean(sessionMenu),
     taskRelocation: Boolean(relocationSession),
@@ -1144,8 +1148,21 @@ export function Shell(props: ShellProps) {
     setQuickActionOpen(true);
   }, []);
   const launchOrConfigureAgent = useCallback(async (agentId: string) => {
-    if (await props.launchAgent(agentId) === "configure") openQuickAction(agentId);
-  }, [openQuickAction, props.launchAgent]);
+    if (await props.launchAgent(agentId, providerShortcuts.find((item) => item.agentId === agentId)) === "configure") openQuickAction(agentId);
+  }, [openQuickAction, props.launchAgent, providerShortcuts]);
+  const configureAgent = (agentId: string) => {
+    const capability = props.agentCapabilities.find((item) => item.agent_id === agentId);
+    if (!capability) return;
+    const saved = providerShortcuts.find((item) => item.agentId === agentId);
+    const preset = readQuickActionPreset(agentId);
+    setAgentShortcutEdit({ kind: "provider", shortcut: saved ?? {
+      id: agentId, agentId, name: capability.label,
+      icon: agentId === "claude" || agentId === "codex" ? agentId : "agent",
+      model: preset?.model ?? capability.models[0] ?? "default",
+      permission: preset?.permission ?? defaultAgentPermission(agentId),
+      reasoning: preset?.reasoning ?? capability.reasoning[0] ?? "default",
+    } });
+  };
   const commands: ShellCommand[] = [
     {
       id: "launch.quickAction", title: "Open Quick Action", detail: "Compose a versioned prompt for an agent.", group: "Launch", keywords: ["shift", "prompt", "model"],
@@ -1483,12 +1500,15 @@ export function Shell(props: ShellProps) {
             select={selectWorkspaceView}
             launchTerminal={props.launchTerminal}
             launchAgent={launchOrConfigureAgent}
+            providerShortcuts={providerShortcuts}
+            configureAgent={configureAgent}
             shortcutLaunchers={<QuickActionShortcutLaunchers
               shortcuts={quickActionShortcuts}
               capabilities={props.agentCapabilities}
               disabled={disabled}
               launch={(shortcut) => props.launchAgent(shortcut.agentId, shortcut)}
               remove={(id) => setQuickActionShortcuts(removeQuickActionShortcut(id))}
+              configure={(shortcut) => setAgentShortcutEdit({ kind: "saved", shortcut })}
             />}
             workflowLauncher={workspaceView === "agents" && props.selectedProject ? <WorkflowLaunchers
               key={`${props.selectedProject.connectionProfileId}:${props.selectedProject.id}`}
@@ -2179,6 +2199,16 @@ export function Shell(props: ShellProps) {
         launch={props.launchQuickAction}
         createShortcut={(draft) => setQuickActionShortcuts(saveQuickActionShortcut(draft))}
         close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}
+      /> : null}
+      {agentShortcutEdit ? <AgentShortcutSettings
+        shortcut={agentShortcutEdit.shortcut}
+        capabilities={props.agentCapabilities}
+        fixedProvider={agentShortcutEdit.kind === "provider"}
+        save={(draft) => {
+          if (agentShortcutEdit.kind === "provider") setProviderShortcuts(saveProviderShortcut(draft));
+          else setQuickActionShortcuts(updateQuickActionShortcut(agentShortcutEdit.shortcut.id, draft));
+        }}
+        close={() => setAgentShortcutEdit(undefined)}
       /> : null}
       {improverSetup && props.selectedProject && (improverSetup.kind !== "workflowCreator" || improverSetup.scopeKey === workflowDraftKey) ? <AgentSetupDialog
         project={props.selectedProject}
