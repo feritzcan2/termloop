@@ -481,6 +481,23 @@ describe("Active Agent rail", () => {
     expect(markup.match(/data-session-id="fork"/gu)).toHaveLength(1);
   });
 
+  it("shows a fork of a fork beneath its immediate source", () => {
+    const source = agent("source", { name: "Source agent" });
+    const fork = agent("fork", { name: "First fork", fork_source_session_id: source.id });
+    const nested = agent("nested", { name: "Second fork", fork_source_session_id: fork.id });
+    const markup = renderToStaticMarkup(createElement(ActiveAgentRail, props(
+      [nested, fork, source],
+      [status(source.id, "idle"), status(fork.id, "idle"), status(nested.id, "working")],
+      new Set(),
+    )));
+
+    expect(markup.indexOf('data-session-id="source"')).toBeLessThan(markup.indexOf('data-session-id="fork"'));
+    expect(markup.indexOf('data-session-id="fork"')).toBeLessThan(markup.indexOf('data-session-id="nested"'));
+    expect(markup).toContain("forked from First fork");
+    expect(markup.match(/data-session-id="nested"/gu)).toHaveLength(1);
+    expect(markup).toContain('class="ask-to-helper compact active-agent-helper" role="listitem" style="margin-left:7px"');
+  });
+
   it("nests an Ask-To helper under its projected source even after that source stopped", () => {
     const stoppedSource = agent("stopped-source", { lifecycle_state: "exited" });
     const helper = agent("orphaned-helper", { ask_to_source_session_id: stoppedSource.id });

@@ -6,7 +6,7 @@ import { agentActivityIsOlder, agentActivityPriority, agentAttention, agentGroup
 import { integrationTone, taskChangeCount, taskChangeLabel, taskChangedFileLabel, taskDivergence, taskIntegration, taskPrimaryAction, taskRowAccessibleName, taskRowTone, taskStage, type TaskDivergence, type TaskIntegration, type TaskNextStepKind, type TaskSignalTone, type TaskStage } from "../task-presentation.js";
 import { Icon } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
-import { AskToHelperRow, MenuButton, SessionRowButton, SessionRowClose, sessionRelationshipLabel } from "./SessionRow.js";
+import { AskToHelperRow, MenuButton, SessionRowButton, SessionRowClose, askToSessionGroups, sessionRelationshipLabel } from "./SessionRow.js";
 import { BindBranchDialog } from "./task-dialogs/bind-branch-dialog.js";
 import { ProvisionWorktreeDialog } from "./task-dialogs/provision-worktree-dialog.js";
 import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js";
@@ -94,8 +94,8 @@ export function taskRelocationDropEnabled(
     && !taskAttachedSessionIds([task], sessionsById).has(draggedSession.id);
 }
 
-/// The Sessions a Task shows: the ones running in its checkout, plus the Ask-To
-/// helpers those Sessions launched. Shared with the Task detail page so both
+/// The Sessions a Task shows: the ones running in its checkout, plus the
+/// projected descendants those Sessions launched. Shared with the Task detail page so both
 /// surfaces answer "who is working on this Task" the same way.
 export function taskSessions(task: Task, sessionsById: ReadonlyMap<string, Session>): Session[] {
   const ids = taskAttachedSessionIds([task], sessionsById);
@@ -199,14 +199,14 @@ export function askToHelpersForSources(
   sessionsById: ReadonlyMap<string, Session>,
 ): ReadonlySet<string> {
   const helpers = new Set<string>();
-  for (const session of sessionsById.values()) {
-    const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
-    const source = sourceId ? sessionsById.get(sourceId) : undefined;
-    if (session.kind === "Agent"
-      && source?.kind === "Agent"
-      && sourceIds.has(source.id)
-      && (session.ask_to_source_session_id === source.id || session.fork_source_session_id === source.id)) {
-      helpers.add(session.id);
+  const attached = new Set(sourceIds);
+  for (const group of askToSessionGroups([...sessionsById.values()])) {
+    if (attached.has(group.source.id)) {
+      for (const helper of group.helpers) helpers.add(helper.session.id);
+      continue;
+    }
+    for (const helper of group.helpers) {
+      if (attached.has(helper.source.id) || helpers.has(helper.source.id)) helpers.add(helper.session.id);
     }
   }
   return helpers;
@@ -1321,12 +1321,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                       stop={() => props.dismissSession(source.id)}
                       openExternal={props.openExternal}
                     /> : null}
-                    {helpers.map((helper) => (
+                    {helpers.map(({ session: helper, source: helperSource, depth }) => (
                       <Fragment key={helper.id}>
                         <AskToHelperRow
-                          source={source}
+                          source={helperSource}
                           helper={helper}
-                          relationshipLabel={sessionRelationshipLabel(source, helper)}
+                          depth={depth}
+                          relationshipLabel={sessionRelationshipLabel(helperSource, helper)}
                           agentStatus={props.statusesById.get(helper.id)}
                           reviewReady={props.reviewReadySessionIds.has(helper.id)}
                           subtitle={relativeCwd(helper.process.cwd, task.worktree?.path ?? "")}

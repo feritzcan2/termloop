@@ -18,7 +18,7 @@ export type SessionMenuState = { sessionId: string; x: number; y: number; invoke
 
 export type AskToSessionGroup = {
   source: Session;
-  helpers: readonly Session[];
+  helpers: readonly { session: Session; source: Session; depth: number }[];
 };
 
 export function sessionRelationshipLabel(source: Session, helper: Session): string {
@@ -27,16 +27,15 @@ export function sessionRelationshipLabel(source: Session, helper: Session): stri
     : `from ${sessionLabel(source)}`;
 }
 
-/// Build one presentation-only level from the exact current Ask-To source
-/// projection. Missing, malformed, or nested sources degrade to ordinary
-/// top-level rows instead of hiding a Session or inventing a relationship.
+/// Follow exact projected relationships through any number of native forks.
+/// Missing or malformed sources become top-level rows; cyclic projections
+/// lose one edge so every Session still appears exactly once.
 export function askToSessionGroups(
   sessions: readonly Session[],
   detachedRelationshipSessionIds: ReadonlySet<string> = new Set(),
 ): AskToSessionGroup[] {
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
-  const helpersBySource = new Map<string, Session[]>();
-  const sources: Session[] = [];
+  const parentById = new Map<string, string>();
 
   for (const session of sessions) {
     const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
@@ -47,16 +46,43 @@ export function askToSessionGroups(
       && source.id !== session.id
       && (session.fork_source_session_id === source.id
         || (session.ask_to_source_session_id === source.id && source.ask_to_source_session_id === null));
-    if (!validRelationship || !source) {
-      sources.push(session);
-      continue;
-    }
-    const helpers = helpersBySource.get(source.id) ?? [];
-    helpers.push(session);
-    helpersBySource.set(source.id, helpers);
+    if (validRelationship && source) parentById.set(session.id, source.id);
   }
 
-  return sources.map((source) => ({ source, helpers: helpersBySource.get(source.id) ?? [] }));
+  for (const session of sessions) {
+    const seen = new Set([session.id]);
+    let currentId = session.id;
+    while (parentById.has(currentId)) {
+      const parentId = parentById.get(currentId)!;
+      if (seen.has(parentId)) {
+        parentById.delete(currentId);
+        break;
+      }
+      seen.add(parentId);
+      currentId = parentId;
+    }
+  }
+
+  const childrenBySource = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const parentId = parentById.get(session.id);
+    if (!parentId) continue;
+    const children = childrenBySource.get(parentId) ?? [];
+    children.push(session);
+    childrenBySource.set(parentId, children);
+  }
+
+  return sessions.filter((session) => !parentById.has(session.id)).map((source) => {
+    const helpers: { session: Session; source: Session; depth: number }[] = [];
+    const visit = (parent: Session, depth: number) => {
+      for (const child of childrenBySource.get(parent.id) ?? []) {
+        helpers.push({ session: child, source: parent, depth });
+        visit(child, depth + 1);
+      }
+    };
+    visit(source, 1);
+    return { source, helpers };
+  });
 }
 
 /// Close removes the Session from the user's current surface. Retryable
@@ -205,9 +231,10 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   );
 }
 
-export function AskToHelperRow({ source, helper, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, compact = false, relocatable = false, select, openMenu, dismiss, resume, detachRelationship }: {
+export function AskToHelperRow({ source, helper, depth = 1, agentStatus, reviewReady = false, subtitle, relationshipLabel, active, visible, menuOpen, compact = false, relocatable = false, select, openMenu, dismiss, resume, detachRelationship }: {
   source: Session;
   helper: Session;
+  depth?: number;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
   subtitle: string;
@@ -230,7 +257,7 @@ export function AskToHelperRow({ source, helper, agentStatus, reviewReady = fals
     disabled: !relocatable,
   });
   return (
-    <div ref={draggable.setNodeRef} className={`ask-to-helper${compact ? " compact" : ""}${draggable.isDragging ? " dragging" : ""}`} role="listitem">
+    <div ref={draggable.setNodeRef} className={`ask-to-helper${compact ? " compact" : ""}${draggable.isDragging ? " dragging" : ""}`} role="listitem" style={depth > 1 ? { marginLeft: `${7 + (depth - 1) * 12}px` } : undefined}>
       {detachRelationship ? <button
         type="button"
         className="ask-to-helper-detach"

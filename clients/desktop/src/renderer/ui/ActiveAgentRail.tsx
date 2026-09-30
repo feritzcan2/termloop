@@ -493,8 +493,10 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
               renameGroup={props.renameAgentGroup}
               ungroup={props.ungroupAgentGroup}
             >
-              {cluster.groups.flatMap(({ source, helpers }) => [source, ...helpers].map((session) => {
-                const rowSource = session.id === source.id ? undefined : source;
+              {cluster.groups.flatMap(({ source, helpers }) => [
+                { session: source, source: undefined as Session | undefined, depth: 0 },
+                ...helpers,
+              ].map(({ session, source: rowSource, depth }) => {
                 const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
                 const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined
                   : rowSource ?? (sourceId ? sessionsById.get(sourceId) : undefined);
@@ -502,6 +504,7 @@ function ActiveAgentSection({ label, sessions, props, sessionsById, empty = fals
                   key={session.id}
                   session={session}
                   source={rowSource}
+                  depth={depth}
                   projectedSource={projectedSource}
                   worktreeChanges={props.worktreeChangesBySessionId.get(session.id)
                     ?? (projectedSource ? props.worktreeChangesBySessionId.get(projectedSource.id) : undefined)}
@@ -575,9 +578,10 @@ function WorkflowRunEntry({ run, attention, props }: {
   </WorkflowAgentGroupFrame>;
 }
 
-function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, compactWorkflow, sharedCheckout, sharedChanges, props }: {
+function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeChanges, compactWorkflow, sharedCheckout, sharedChanges, props }: {
   session: Session;
   source?: Session | undefined;
+  depth?: number;
   projectedSource: Session | undefined;
   worktreeChanges: ActiveAgentWorktreeChanges | undefined;
   compactWorkflow: boolean;
@@ -669,7 +673,7 @@ function ActiveAgentRow({ session, source, projectedSource, worktreeChanges, com
   );
   if (!source) return row;
   return (
-    <div className="ask-to-helper compact active-agent-helper" role="listitem">
+    <div className="ask-to-helper compact active-agent-helper" role="listitem" style={depth > 1 ? { marginLeft: `${-5 + (depth - 1) * 12}px` } : undefined}>
       {props.detachRelationship ? <button
         type="button"
         className="ask-to-helper-detach"
