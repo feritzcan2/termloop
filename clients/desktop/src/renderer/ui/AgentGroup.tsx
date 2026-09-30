@@ -13,7 +13,7 @@ export type AgentSessionCluster = {
 };
 
 export function agentSessionClusterMembers(cluster: AgentSessionCluster): Session[] {
-  return cluster.groups.flatMap(({ source, helpers }) => [source, ...helpers]);
+  return cluster.groups.flatMap(({ source, helpers }) => [source, ...helpers.map((helper) => helper.session)]);
 }
 
 /// Manual groups join peer Agent roots only. Ask-To/fork helpers remain nested
@@ -29,7 +29,7 @@ export function agentSessionClusters(
   const rootIdBySessionId = new Map<string, string>();
   for (const group of relationshipGroups) {
     rootIdBySessionId.set(group.source.id, group.source.id);
-    for (const helper of group.helpers) rootIdBySessionId.set(helper.id, group.source.id);
+    for (const helper of group.helpers) rootIdBySessionId.set(helper.session.id, group.source.id);
   }
 
   const claimedRootIds = new Set<string>();
