@@ -219,11 +219,11 @@ try {
     targetServer = net.createServer((socket) => {
       targetSockets.add(socket);
       socket.once("close", () => targetSockets.delete(socket));
-      // Revoking a forwarding connection can reset its echo target while a
-      // write is pending on Windows. The protocol assertions below still
+      // Revoking a forwarding connection can close its echo target while a
+      // write is pending. The protocol assertions below still
       // require complete delivery before the intentional disconnect.
       socket.on("error", (error) => {
-        if (error.code !== "ECONNRESET") throw error;
+        if (error.code !== "ECONNRESET" && error.code !== "EPIPE") throw error;
         socket.destroy();
       });
       socket.pipe(socket);
@@ -321,11 +321,12 @@ try {
   }
   await new Promise((resolve) => setTimeout(resolve, 100));
   forwarded.socket.resume();
+  let recoveredBytes = 0;
   assert.deepEqual(
     await bounded(
-      nextBinaryBytes(forwarded.socket, slowConsumerEcho.byteLength),
+      nextBinaryBytes(forwarded.socket, slowConsumerEcho.byteLength, (count) => { recoveredBytes = count; }),
       10_000,
-      "forward did not recover after a slow consumer",
+      () => `forward did not recover after a slow consumer (${recoveredBytes}/${slowConsumerEcho.byteLength} bytes received; ${forwarded.socket.bufferedAmount} bytes queued to send)`,
     ),
     slowConsumerEcho,
   );
@@ -550,7 +551,7 @@ function nextJson(socket) {
   });
 }
 
-async function nextBinaryBytes(socket, expectedBytes) {
+async function nextBinaryBytes(socket, expectedBytes, onProgress = () => {}) {
   const chunks = [];
   let receivedBytes = 0;
   while (receivedBytes < expectedBytes) {
@@ -558,6 +559,7 @@ async function nextBinaryBytes(socket, expectedBytes) {
     chunks.push(chunk);
     receivedBytes += chunk.byteLength;
     if (receivedBytes > expectedBytes) throw new Error("forward returned more bytes than requested");
+    onProgress(receivedBytes);
   }
   return Buffer.concat(chunks, receivedBytes);
 }
@@ -648,7 +650,7 @@ async function bounded(promise, timeoutMs, message) {
   try {
     return await Promise.race([
       promise,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(typeof message === "function" ? message() : message)), timeoutMs); }),
     ]);
   } finally {
     clearTimeout(timer);
