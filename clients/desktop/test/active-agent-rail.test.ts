@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
 import { ActiveAgentRail, activeAgentSections, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
 import { WorkspaceViewSwitch } from "../src/renderer/ui/WorkspaceViewSwitch.js";
-import { fullAgentCapability, launchOnlyGeminiCapability } from "./agent-capability-fixture.js";
+import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
 import {
   persistActiveAgentFavoriteToggle,
   readActiveAgentFavorites,
@@ -694,7 +694,7 @@ describe("Workspace view switch", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
       view: "agents",
       disabled: false,
-      agents: [fullAgentCapability("claude"), fullAgentCapability("codex"), launchOnlyGeminiCapability()],
+      agents: [fullAgentCapability("claude"), fullAgentCapability("codex"), launchOnlyGeminiCapability(), resumableOpenCodeCapability()],
       select: () => {},
       launchTerminal: async () => {},
       launchAgent: async () => {},
@@ -707,9 +707,12 @@ describe("Workspace view switch", () => {
     expect(markup).toContain('aria-label="New Claude Session"');
     expect(markup).toContain('aria-label="New Codex Session"');
     expect(markup).toContain('aria-label="New Gemini CLI Session (launch only)"');
+    expect(markup).toContain('aria-label="New OpenCode Session"');
+    expect(markup).toContain('d="M18 19.5H6v-15h12v15ZM15 7.5H9v9h6v-9Z"');
     expect(markup).toContain('aria-label="Session History"');
     expect(markup).toContain('class="workspace-history-separator"');
     expect(markup.indexOf('aria-label="New Gemini CLI Session (launch only)"')).toBeLessThan(markup.indexOf('aria-label="Session History"'));
+    expect(markup.indexOf('aria-label="New OpenCode Session"')).toBeLessThan(markup.indexOf('aria-label="Session History"'));
     expect(markup.indexOf('class="workspace-view-switch"')).toBeLessThan(markup.indexOf('class="workspace-launch-actions"'));
     expect(markup).not.toContain(">Tasks and Sessions<");
     expect(markup).not.toContain(">All active agents<");

@@ -13,6 +13,7 @@ pub struct ProviderHookSettings {
     pub delivery: ProviderHookSettingsDelivery,
     pub content: String,
     pub inspectable_content: String,
+    pub companion_script: Option<String>,
 }
 
 pub fn provider_hook_settings(
@@ -32,6 +33,7 @@ pub fn provider_hook_settings(
                 termloop_platform::powershell_or_posix_hook_command(executable, &["hook"]);
             gemini_hook_settings(&command).map(Some)
         }
+        BuiltinAgentAdapter::OpenCode => opencode_hook_settings(executable).map(Some),
         BuiltinAgentAdapter::Codex => Ok(None),
     }
 }
@@ -40,7 +42,9 @@ pub fn supports_provider_hook_observation(agent_id: &str) -> bool {
     agent_descriptor(agent_id).is_some_and(|descriptor| {
         matches!(
             descriptor.adapter,
-            BuiltinAgentAdapter::Claude | BuiltinAgentAdapter::Gemini
+            BuiltinAgentAdapter::Claude
+                | BuiltinAgentAdapter::Gemini
+                | BuiltinAgentAdapter::OpenCode
         )
     })
 }
@@ -82,6 +86,7 @@ fn claude_hook_settings(command: &str) -> Result<ProviderHookSettings, serde_jso
         inspectable_content: serde_json::to_string_pretty(&json!({
             "hooks": build("<redacted TermLoop hook executable>")
         }))?,
+        companion_script: None,
     })
 }
 
@@ -130,6 +135,25 @@ fn gemini_hook_settings(command: &str) -> Result<ProviderHookSettings, serde_jso
         inspectable_content: serde_json::to_string_pretty(&json!({
             "hooks": build("<redacted TermLoop hook executable>")
         }))?,
+        companion_script: None,
+    })
+}
+
+fn opencode_hook_settings(executable: &Path) -> Result<ProviderHookSettings, serde_json::Error> {
+    // The server replaces this marker with the private runtime file URL before
+    // writing the overlay. OpenCode merges this config with the user's config.
+    let config = json!({"plugin": ["__TERMLOOP_OPENCODE_PLUGIN_URL__"]});
+    let executable = serde_json::to_string(&executable.to_string_lossy())?;
+    Ok(ProviderHookSettings {
+        delivery: ProviderHookSettingsDelivery::EnvironmentSettingsPath {
+            variable: "OPENCODE_TUI_CONFIG",
+        },
+        content: serde_json::to_string(&config)?,
+        inspectable_content: serde_json::to_string_pretty(&config)?,
+        companion_script: Some(
+            include_str!("../assets/opencode-observation.js")
+                .replace("__TERMLOOP_HOOK_EXECUTABLE__", &executable),
+        ),
     })
 }
 
@@ -180,6 +204,25 @@ mod tests {
             "${TERMLOOP_AGENT_ID}"
         );
         assert!(!gemini.inspectable_content.contains("/private/termloop"));
+
+        let opencode = provider_hook_settings("opencode", executable)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            opencode.delivery,
+            ProviderHookSettingsDelivery::EnvironmentSettingsPath {
+                variable: "OPENCODE_TUI_CONFIG"
+            }
+        );
+        assert!(
+            opencode
+                .content
+                .contains("__TERMLOOP_OPENCODE_PLUGIN_URL__")
+        );
+        let script = opencode.companion_script.unwrap();
+        assert!(script.contains("/private/termloop hook"));
+        assert!(script.contains("session.status"));
+        assert!(!opencode.inspectable_content.contains("/private/termloop"));
     }
 
     #[test]

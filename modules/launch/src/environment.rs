@@ -114,6 +114,14 @@ fn inspect_environment(
                     source: "invocation",
                     purpose: "launch-scoped Gemini observation settings",
                 },
+                "OPENCODE_TUI_CONFIG" => InspectableEnvironmentEntry {
+                    key,
+                    display_value: "<redacted runtime settings path>".into(),
+                    visibility: "redacted",
+                    classification: "sensitivePath",
+                    source: "invocation",
+                    purpose: "launch-scoped OpenCode observation settings",
+                },
                 "TERMLOOP_MCP_TOKEN" => InspectableEnvironmentEntry {
                     key,
                     display_value: "<redacted secret>".into(),

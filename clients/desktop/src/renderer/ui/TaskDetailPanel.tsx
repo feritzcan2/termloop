@@ -14,7 +14,7 @@ import {
 import { playbookRelativeMinutes } from "./playbook-policy.js";
 import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
 import { TaskBrief } from "./TaskBrief.js";
-import { Icon } from "./Icon.js";
+import { Icon, agentIconName } from "./Icon.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 
 /* ------------------------------------------------------------- derivation */
@@ -430,7 +430,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     className={`td-mini agent-${capability.agent_id}`}
                     title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
                     onClick={() => void props.launchAgent!(task.id, capability.agent_id)}
-                  ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} />{capability.label}</button>
+                  ><Icon name={agentIconName(capability.agent_id)} />{capability.label}</button>
                 )) : null}
               </div>
             ) : null}

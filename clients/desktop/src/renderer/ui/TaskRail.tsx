@@ -4,7 +4,7 @@ import type { AgentGroupLayout } from "../../layout/model.js";
 import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration, type WorkflowExecution } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentAttention, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { integrationTone, taskChangeCount, taskChangeLabel, taskChangedFileLabel, taskDivergence, taskIntegration, taskPrimaryAction, taskRowAccessibleName, taskRowTone, taskStage, type TaskDivergence, type TaskIntegration, type TaskNextStepKind, type TaskSignalTone, type TaskStage } from "../task-presentation.js";
-import { Icon } from "./Icon.js";
+import { Icon, agentIconName } from "./Icon.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { AskToHelperRow, MenuButton, SessionRowButton, SessionRowClose, askToSessionGroups, sessionRelationshipLabel } from "./SessionRow.js";
 import { BindBranchDialog } from "./task-dialogs/bind-branch-dialog.js";
@@ -1014,7 +1014,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                 title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
                 aria-label={`Start ${capability.label} in ${task.title}`}
                 onClick={() => void props.launchAgent(task.id, capability.agent_id)}
-              ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} /></button>
+              ><Icon name={agentIconName(capability.agent_id)} /></button>
             ))}
           </> : null}
           {workflowButton}

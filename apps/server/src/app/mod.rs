@@ -360,11 +360,20 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 termloop_core::AgentObservationRuntimeTransport::DaemonOwnedBridge
             }
             termloop_core::ObservationCapability::LaunchScopedHook => {
-                let settings = termloop_core::provider_hook_settings(
+                let mut settings = termloop_core::provider_hook_settings(
                     &capability.agent_id,
                     hook_executable.path(),
                 )?
                 .ok_or("launch-scoped observation provider has no hook settings adapter")?;
+                if let Some(script) = settings.companion_script.take() {
+                    let path = runtime_directory
+                        .join(format!("agent-{}-observation.js", capability.agent_id));
+                    termloop_platform::write_private_file(&path, script.as_bytes())?;
+                    let url = file_url_for_runtime_plugin(&path);
+                    settings.content = settings
+                        .content
+                        .replace("__TERMLOOP_OPENCODE_PLUGIN_URL__", &url);
+                }
                 let config = match settings.delivery {
                     termloop_core::ProviderHookSettingsDelivery::InlineSettings => {
                         termloop_core::AgentLaunchScopedConfig::InlineSettings {
@@ -824,6 +833,23 @@ async fn wait_for_mcp_readiness(address: SocketAddr) -> std::io::Result<()> {
     })?
 }
 
+fn file_url_for_runtime_plugin(path: &std::path::Path) -> String {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let mut url = String::from("file://");
+    if !path.starts_with('/') {
+        url.push('/');
+    }
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~' | b':') {
+            url.push(byte as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(url, "%{byte:02X}");
+        }
+    }
+    url
+}
+
 fn write_claude_mcp_config(
     path: &std::path::Path,
     endpoint: &str,
@@ -1266,6 +1292,13 @@ fn current_epoch_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opencode_plugin_url_escapes_a_private_runtime_path() {
+        let url =
+            file_url_for_runtime_plugin(std::path::Path::new("/private/TermLoop #1/plugin.js"));
+        assert_eq!(url, "file:///private/TermLoop%20%231/plugin.js");
+    }
 
     #[tokio::test]
     async fn mcp_readiness_waits_for_the_router_to_serve_requests() {

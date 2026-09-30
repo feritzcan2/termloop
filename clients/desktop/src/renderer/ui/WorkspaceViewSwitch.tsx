@@ -1,4 +1,4 @@
-import { Icon, type IconName } from "./Icon.js";
+import { Icon, agentIconName, type IconName } from "./Icon.js";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "../workspace-view-memory.js";
 import type { ReactNode } from "react";
@@ -151,7 +151,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
         <span className="workspace-session-launchers">
         <button id="new-terminal" type="button" title="New Terminal" aria-label="New Terminal" disabled={disabled} onClick={() => void launchTerminal()}><Icon name="terminal" /></button>
         {agents.map((agent) => {
-          const icon = agent.agent_id === "claude" ? "claude" : agent.agent_id === "codex" ? "codex" : "agent";
+          const icon = agentIconName(agent.agent_id);
           const title = !agent.available
             ? `${agent.label} CLI unavailable — set up in Settings`
             : `New ${agent.label} Session${agent.integration_level === "launchOnly" ? " (launch only)" : ""}`;

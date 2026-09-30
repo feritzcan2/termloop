@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DeletedSessionDto } from "@termloop/contract/current";
 import { sessionLabel } from "../model.js";
-import { Icon } from "./Icon.js";
+import { Icon, agentIconName } from "./Icon.js";
 import { RailHeader } from "./RailHeader.js";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -73,7 +73,7 @@ export function DeletedRail(props: {
             const retention = deletedRetentionLabel(item.purge_at_epoch_ms);
             return (
               <div key={item.session.id} className="archived-row deleted-row" role="listitem">
-                <span className="archived-glyph" aria-hidden="true"><Icon name={item.session.process.agent_id === "claude" ? "claude" : "codex"} /></span>
+                <span className="archived-glyph" aria-hidden="true"><Icon name={agentIconName(item.session.process.agent_id ?? "")} /></span>
                 <span className="deleted-copy" title={`${label} · Deleted ${new Date(item.deleted_at_epoch_ms).toLocaleDateString()} · ${retention}${blocker ? ` · ${blocker}` : ""}`}>
                   <span className="archived-title">{label}</span>
                   <small className={`deleted-retention${blocker ? " unavailable" : ""}`}>{blocker ?? retention}</small>

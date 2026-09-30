@@ -767,6 +767,7 @@ pub(super) fn manual_agent_resume_available(session: &SessionRecord) -> bool {
         (ResumeProvider::Claude, Some("claude"))
             | (ResumeProvider::Codex, Some("codex"))
             | (ResumeProvider::Gemini, Some("gemini"))
+            | (ResumeProvider::Opencode, Some("opencode"))
     )
 }
 

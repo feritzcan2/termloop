@@ -104,9 +104,7 @@ where
     // type is the only thing separating "blocked on you" from "idle nudge".
     let notification_type = field_str(&payload, "notification_type", "notificationType")
         .filter(|value| !value.is_empty() && value.chars().count() <= 64);
-    let native_session_id = field_str(&payload, "session_id", "sessionId")
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|value| value.to_string());
+    let native_session_id = hook_native_session_id(&config.agent_id, &payload);
     let is_claude = config.agent_id == "claude";
     let plan = is_claude
         .then(|| termloop_agents::normalize_claude_plan_update(&payload))
@@ -192,6 +190,11 @@ where
     let request = protocol.encode(&request_id, &config.token, params)?;
     let response = post_hook_observation(config.address, &request).await?;
     protocol.accept(&request_id, response)
+}
+
+fn hook_native_session_id(agent_id: &str, payload: &serde_json::Value) -> Option<String> {
+    field_str(payload, "session_id", "sessionId")
+        .and_then(|value| termloop_agents::provider_hook_native_session_id(agent_id, value))
 }
 
 pub async fn post_hook_observation(

@@ -982,7 +982,8 @@ impl CoreRuntime {
         self.resume_reservations.insert(session_id.clone());
         self.resume_ready.remove(&session_id);
         self.suspend_ask_to_session_for_resume(&session_id);
-        let observation_token = (agent_id == "claude")
+        let observation_token = transport
+            .launch_scoped_observation_supported(&agent_id)
             .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
         let mcp_role = self.resumed_mcp_role(&session, &transport);
         let steward_system_prompt = match &mcp_role {

@@ -82,6 +82,7 @@ impl ConversationHandle {
             "claude" => termloop_domain::ResumeProvider::Claude,
             "codex" => termloop_domain::ResumeProvider::Codex,
             "gemini" => termloop_domain::ResumeProvider::Gemini,
+            "opencode" => termloop_domain::ResumeProvider::Opencode,
             _ => return Err(InvocationError::UnsupportedAgent(provider.into())),
         };
         termloop_domain::ResumeRef::for_provider(provider, identity)

@@ -20,24 +20,24 @@ fn json_array_unique(values: &[Value]) -> bool {
 static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("\\S").expect("generated contract pattern"));
 static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("generated contract pattern")
+    regex::Regex::new("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$").expect("generated contract pattern")
+    regex::Regex::new("^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> =
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[0-9]+$").expect("generated contract pattern"));
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$").expect("generated contract pattern")
-});
 static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
 });
@@ -142,20 +142,20 @@ static CONTRACT_PATTERN_37: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
 fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
         "\\S" => CONTRACT_PATTERN_0.is_match(text),
-        "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" => CONTRACT_PATTERN_1.is_match(text),
-        "^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$" => {
-            CONTRACT_PATTERN_2.is_match(text)
+        "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$" => {
+            CONTRACT_PATTERN_1.is_match(text)
         }
-        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$" => {
+        "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" => CONTRACT_PATTERN_2.is_match(text),
+        "^(?:builtin\\.quick-action\\.free-prompt|(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*)$" => {
             CONTRACT_PATTERN_3.is_match(text)
         }
-        "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$" => {
+        "^(?:builtin|custom)\\.agent-profile\\.[a-z](?:[a-z0-9]|-[a-z0-9])*$" => {
             CONTRACT_PATTERN_4.is_match(text)
         }
-        "^[0-9]+$" => CONTRACT_PATTERN_5.is_match(text),
-        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" => {
-            CONTRACT_PATTERN_6.is_match(text)
+        "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$" => {
+            CONTRACT_PATTERN_5.is_match(text)
         }
+        "^[0-9]+$" => CONTRACT_PATTERN_6.is_match(text),
         "^[0-9a-f]{32}$" => CONTRACT_PATTERN_7.is_match(text),
         "^[0-9a-f]{64}$" => CONTRACT_PATTERN_8.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:37f3b1b712897cf4631086f9faa0c84e7dc9389781f4d277f040883530eb2e91";
+    "sha256:16ae86fe4beead8d541507a7f9dfcca12d1ed810e0940e7005b301cc0dedd133";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -18079,7 +18079,7 @@ fn validate_agent_status_dto(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_agent_observe_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 36 && text.chars().count() <= 36 && contract_pattern_matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 5 && text.chars().count() <= 256 && contract_pattern_matches("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan"].contains(&key.as_str())))
 }
 
 #[allow(
