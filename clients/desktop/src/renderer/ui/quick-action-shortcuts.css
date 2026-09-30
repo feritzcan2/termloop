@@ -1,0 +1,35 @@
+.quick-action-layer:has(.quick-action-shortcut-editor) { padding-bottom: 24px; }
+.quick-action-target .create-shortcut { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 4px 8px; border: 1px solid var(--qa-rule); border-radius: 6px; background: var(--qa-fill); color: var(--qa-text); font: 500 11px var(--qa-font); }
+.create-shortcut svg { width: 13px; height: 13px; }
+.create-shortcut[aria-expanded="true"], .create-shortcut:hover:not(:disabled) { border-color: var(--accent); }
+.shortcut-created { margin-left: auto; padding: 0 8px; color: var(--qa-secondary); font-size: 11px; }
+.shortcut-created + .create-shortcut { margin-left: 0; }
+.quick-action-shortcut-editor { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 12px 16px; border-bottom: 1px solid var(--qa-rule); background: var(--qa-fill); font: 12px var(--qa-font); }
+.shortcut-editor-heading, .shortcut-editor-footer { display: flex; align-items: center; gap: 8px; }
+.shortcut-editor-heading > button { margin-left: auto; }
+.quick-action-shortcut-editor button { display: inline-flex; align-items: center; justify-content: center; padding: 5px 9px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-text); font: inherit; }
+.quick-action-shortcut-editor button svg { width: 12px; height: 12px; }
+.quick-action-shortcut-editor p { margin: 7px 0; color: var(--qa-secondary); }
+.quick-action-shortcut-editor code { display: block; color: var(--qa-text); overflow-wrap: anywhere; font: 11px var(--qa-mono); }
+.shortcut-name { display: grid; gap: 5px; margin-top: 12px; }
+.shortcut-name input { width: 100%; padding: 7px 9px; border: 1px solid var(--qa-rule); border-radius: 6px; background: var(--qa-fill); color: var(--qa-text); font: inherit; }
+.shortcut-icon-picker { margin: 12px 0; padding: 0; border: 0; }
+.shortcut-icon-picker legend { margin-bottom: 6px; padding: 0; }
+.shortcut-icon-picker > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.shortcut-icon-picker label { position: relative; display: grid; place-items: center; width: 34px; height: 32px; border: 1px solid var(--qa-rule); border-radius: 7px; color: var(--qa-secondary); cursor: pointer; }
+.shortcut-icon-picker input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.shortcut-icon-picker svg { width: 18px; height: 18px; pointer-events: none; }
+.shortcut-icon-picker label.selected { border-color: var(--accent); background: var(--accent-wash); color: var(--qa-text); }
+.shortcut-icon-picker label:has(input:focus-visible), .shortcut-name input:focus-visible, .quick-action-shortcut-editor button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shortcut-preview { display: flex; align-items: center; gap: 6px; min-width: 0; margin-right: auto; color: var(--qa-secondary); }
+.shortcut-preview svg { width: 16px; height: 16px; flex: none; }
+.shortcut-preview > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shortcut-editor-footer button { flex: none; }
+.quick-action-shortcut-editor .shortcut-save { border-color: var(--accent); background: var(--accent-wash); }
+.quick-action-shortcut-editor [role="alert"], .shortcut-launch-error { color: var(--danger); }
+.quick-action-shortcut-launcher { position: relative; display: inline-flex; flex: none; }
+.workspace-launch-actions .saved-agent-shortcut { border-color: var(--border); background: var(--accent-wash); }
+.workspace-launch-actions .remove-agent-shortcut { position: absolute; z-index: 1; right: -4px; top: -5px; width: 12px; height: 12px; padding: 1px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-raised); color: var(--sidebar-text); opacity: 0; pointer-events: none; }
+.workspace-launch-actions .remove-agent-shortcut svg { width: 9px; height: 9px; }
+.quick-action-shortcut-launcher:hover .remove-agent-shortcut, .quick-action-shortcut-launcher:focus-within .remove-agent-shortcut { opacity: 1; pointer-events: auto; }
+.shortcut-launch-error { width: 100%; font-size: 11px; }

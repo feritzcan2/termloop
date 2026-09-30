@@ -38,6 +38,8 @@ import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/c
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
 import { QuickActionComposer } from "./QuickActionComposer.js";
+import { QuickActionShortcutLaunchers } from "./QuickActionShortcutLaunchers.js";
+import { readQuickActionShortcuts, removeQuickActionShortcut, saveQuickActionShortcut, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
 import { AgentSetupDialog } from "./AgentSetupDialog.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import { useSettingsLibrary } from "./settings-library.js";
@@ -300,7 +302,7 @@ export type ShellProps = {
   openExternal(url: string, runSessionId?: string): Promise<void>;
   copySessionId(sessionId: string): Promise<void>;
   launchTerminal(): Promise<void>;
-  launchAgent(agentId: string): Promise<"configure" | undefined>;
+  launchAgent(agentId: string, preset?: QuickActionShortcutSelection): Promise<"configure" | undefined>;
   loadSessionHistory(projectId: string, force?: boolean, fillCache?: boolean): Promise<SessionHistoryListResult>;
   loadSessionHistoryPreview(projectId: string, sessionId: string): Promise<SessionHistoryPreviewResult>;
   resumeHistorySession(projectId: string, historyHandle: string): Promise<string | undefined>;
@@ -568,6 +570,7 @@ export function Shell(props: ShellProps) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutSettingsOpen, setShortcutSettingsOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const [quickActionShortcuts, setQuickActionShortcuts] = useState(readQuickActionShortcuts);
   const [quickActionAgent, setQuickActionAgent] = useState<string>();
   const [quickActionProfile, setQuickActionProfile] = useState<string>();
   useEffect(() => {
@@ -1480,6 +1483,13 @@ export function Shell(props: ShellProps) {
             select={selectWorkspaceView}
             launchTerminal={props.launchTerminal}
             launchAgent={launchOrConfigureAgent}
+            shortcutLaunchers={<QuickActionShortcutLaunchers
+              shortcuts={quickActionShortcuts}
+              capabilities={props.agentCapabilities}
+              disabled={disabled}
+              launch={(shortcut) => props.launchAgent(shortcut.agentId, shortcut)}
+              remove={(id) => setQuickActionShortcuts(removeQuickActionShortcut(id))}
+            />}
             workflowLauncher={workspaceView === "agents" && props.selectedProject ? <WorkflowLaunchers
               key={`${props.selectedProject.connectionProfileId}:${props.selectedProject.id}`}
               project={props.selectedProject}
@@ -2167,6 +2177,7 @@ export function Shell(props: ShellProps) {
         loadAccounts={props.loadAgentAccounts}
         preview={props.previewQuickAction}
         launch={props.launchQuickAction}
+        createShortcut={(draft) => setQuickActionShortcuts(saveQuickActionShortcut(draft))}
         close={() => { setQuickActionOpen(false); setQuickActionAgent(undefined); setQuickActionProfile(undefined); }}
       /> : null}
       {improverSetup && props.selectedProject && (improverSetup.kind !== "workflowCreator" || improverSetup.scopeKey === workflowDraftKey) ? <AgentSetupDialog

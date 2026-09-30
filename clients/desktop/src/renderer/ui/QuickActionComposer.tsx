@@ -19,6 +19,9 @@ import {
 } from "../quick-action-memory.js";
 import { AgentProfilePicker } from "./AgentProfilePicker.js";
 import { requireQuickActionPreview } from "../quick-action-result.js";
+import { quickActionShortcutUnavailable, type QuickActionShortcutDraft } from "../quick-action-shortcuts.js";
+import { QuickActionShortcutEditor } from "./QuickActionShortcutEditor.js";
+import { Icon } from "./Icon.js";
 
 export const QUICK_ACTION_MODELS = QUICK_ACTION_AGENT_MODELS;
 export const QUICK_ACTION_PERMISSIONS = QUICK_ACTION_AGENT_PERMISSIONS;
@@ -52,7 +55,7 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, close }: {
+export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
   capabilities: readonly AgentCapabilityDto[];
@@ -61,6 +64,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   initialTemplateRef?: string | undefined;
   manageAgents?: (() => void) | undefined;
   initialAgent?: AgentId;
+  createShortcut?: ((draft: QuickActionShortcutDraft) => void) | undefined;
   loadAccounts?: ((projectId: string) => Promise<AgentAccountDto[]>) | undefined;
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
@@ -126,6 +130,9 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [shortcutCreated, setShortcutCreated] = useState(false);
+  const shortcutTriggerRef = useRef<HTMLButtonElement>(null);
   const [inspectorTab, setInspectorTab] = useState<"preview" | "raw">("preview");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const attachmentRef = useRef<QuickActionImageHandle | undefined>(memory.draftAttachment);
@@ -136,6 +143,9 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   const permissions = selectedCapability?.permissions ?? ["default"];
   const reasoningOptions = selectedCapability?.reasoning ?? ["default"];
   const attachmentIds = useMemo(() => attachment ? [attachment.id] : [], [attachment]);
+  const shortcutSelection = { agentId, model, permission, reasoning };
+  const shortcutDisabled = running || Boolean(quickActionShortcutUnavailable(shortcutSelection, capabilities));
+  const closeShortcut = () => { setShortcutOpen(false); shortcutTriggerRef.current?.focus(); };
 
   useEffect(() => { requestAnimationFrame(() => promptRef.current?.focus()); }, []);
   useEffect(() => { rememberQuickActionDraft(prompt); }, [prompt]);
@@ -193,7 +203,7 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable) return;
+    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable || shortcutOpen) return;
     setRunning(true);
     try {
       const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId));
@@ -288,6 +298,8 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
             <button type="button" className="active">Run</button>
             <button type="button" disabled title="Task worktree targeting follows in a separate packet">Worktree</button>
           </div>
+          {shortcutCreated ? <span className="shortcut-created" role="status">Shortcut created</span> : null}
+          {createShortcut ? <button ref={shortcutTriggerRef} className="create-shortcut" type="button" disabled={shortcutDisabled} aria-expanded={shortcutOpen} onClick={() => { setShortcutCreated(false); setShortcutOpen((open) => !open); }}><Icon name="star" />Create shortcut</button> : null}
         </div>
         <main className="quick-action-body">
           <label htmlFor="quick-action-prompt">{selectedProfile ? "Scope / task" : "Prompt"}</label>
@@ -313,6 +325,12 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
           </select><small>Manage accounts in Settings → Servers</small>
           {accountError ? <p role="status">Accounts could not be loaded. You can still run with {accountId ? "the selected account" : "the server default"}. <button type="button" aria-label="Retry loading accounts" onClick={() => setAccountReload((value) => value + 1)}>Retry</button></p> : null}
         </div> : null}
+        {shortcutOpen && createShortcut ? <QuickActionShortcutEditor
+          selection={shortcutSelection}
+          disabled={shortcutDisabled}
+          save={(draft) => { createShortcut(draft); setShortcutCreated(true); }}
+          close={closeShortcut}
+        /> : null}
         <button className="quick-action-advanced-row" type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen}><span aria-hidden="true"><PuzzleGlyph /></span><strong>Advanced {attachment ? 1 : 0}</strong><small>· project</small><i /> <em>{attachment ? "1 image attachment ·" : "No project rules ·"}</em><b>Advanced</b></button>
         {advancedOpen || error || profileUnavailable ? <section className="quick-action-preview">
           {profileUnavailable ? <p role="alert">This agent is unavailable on the current connection. Choose another agent or Free prompt.</p> : error ? <p role="alert">{error}</p> : <>
