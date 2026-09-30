@@ -3,12 +3,13 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use termloop_contract::current::{
     ACCESS_PROTOCOL_IDENTITY, AccessChannel, AccessForwardOpen, AccessForwardOpened,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, timeout};
 
 use super::AppState;
@@ -103,49 +104,46 @@ async fn access_forward_socket(mut socket: WebSocket, state: AppState) {
 }
 
 async fn bridge_forward(
-    mut socket: WebSocket,
+    socket: WebSocket,
     stream: TcpStream,
     mut revocation: super::access_plane::RemoteRevocation,
 ) {
     let (mut tcp_read, mut tcp_write) = stream.into_split();
-    let mut buffer = vec![0_u8; FORWARD_BUFFER_BYTES];
-    loop {
-        tokio::select! {
-            read = tcp_read.read(&mut buffer) => {
-                let Ok(read) = read else { break; };
-                if read == 0 { break; }
-                let sent = tokio::select! {
-                    result = socket.send(Message::Binary(buffer[..read].to_vec().into())) => result.is_ok(),
-                    () = revocation.wait() => false,
-                };
-                if !sent {
-                    break;
-                }
-            }
-            message = socket.recv() => {
+    let (socket_write, mut socket_read) = socket.split();
+    let socket_write = Mutex::new(socket_write);
+
+    // A blocked send to a slow WebSocket reader must not stop us from draining
+    // frames in the opposite direction. Otherwise an echo target can fill both
+    // TCP buffers and leave the bridge waiting on itself.
+    tokio::select! {
+        _ = async {
+            loop {
+                let Some(message) = socket_read.next().await else { break; };
                 match message {
-                    Some(Ok(Message::Binary(bytes))) if bytes.len() <= FORWARD_BUFFER_BYTES => {
-                        let written = tokio::select! {
-                            result = tcp_write.write_all(&bytes) => result.is_ok(),
-                            () = revocation.wait() => false,
-                        };
-                        if !written { break; }
+                    Ok(Message::Binary(bytes)) if bytes.len() <= FORWARD_BUFFER_BYTES => {
+                        if tcp_write.write_all(&bytes).await.is_err() { break; }
                     }
-                    Some(Ok(Message::Ping(bytes))) => {
-                        let sent = tokio::select! {
-                            result = socket.send(Message::Pong(bytes)) => result.is_ok(),
-                            () = revocation.wait() => false,
-                        };
-                        if !sent { break; }
+                    Ok(Message::Ping(bytes)) => {
+                        if socket_write.lock().await.send(Message::Pong(bytes)).await.is_err() { break; }
                     }
-                    Some(Ok(Message::Pong(_))) => continue,
-                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    Ok(Message::Pong(_)) => continue,
+                    Ok(Message::Close(_)) | Err(_) => break,
                     _ => break,
                 }
             }
-            () = revocation.wait() => break,
-        }
+        } => {},
+        _ = async {
+            let mut buffer = vec![0_u8; FORWARD_BUFFER_BYTES];
+            loop {
+                let Ok(read) = tcp_read.read(&mut buffer).await else { break; };
+                if read == 0 { break; }
+                if socket_write.lock().await.send(Message::Binary(buffer[..read].to_vec().into())).await.is_err() {
+                    break;
+                }
+            }
+        } => {},
+        () = revocation.wait() => {},
     }
     let _ = tcp_write.shutdown().await;
-    let _ = socket.close().await;
+    let _ = socket_write.lock().await.close().await;
 }
