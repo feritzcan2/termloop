@@ -22,7 +22,7 @@ mod tests {
     };
 
     #[test]
-    fn v2_cli_does_not_claim_v1_observation_or_resume_support() {
+    fn v2_cli_supports_quick_action_without_claiming_observation_or_resume() {
         let directory = std::env::temp_dir().join(format!(
             "termloop-opencode-v2-capabilities-{}-{}",
             std::process::id(),
@@ -47,7 +47,8 @@ mod tests {
         );
         assert!(!capabilities.resume_supported);
         assert!(!capabilities.native_fork_supported);
-        assert!(!capabilities.quick_action_supported());
+        assert!(capabilities.quick_action_supported());
+        assert!(!capabilities.tracked_helpers_supported());
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -348,11 +348,12 @@ impl AgentCapabilityDegradedReason {
 impl AgentCapabilities {
     pub fn quick_action_supported(&self) -> bool {
         self.available
-            && self.observation != ObservationCapability::None
             // OpenCode accepts the first message through its native --prompt
-            // argument; it does not require generated terminal submissions.
-            && (supports_generated_input_coordination(&self.agent_id)
-                || self.agent_id == "opencode")
+            // argument, including without observation on v2. Only generated
+            // terminal submissions require provider readiness signals.
+            && (self.agent_id == "opencode"
+                || (self.observation != ObservationCapability::None
+                    && supports_generated_input_coordination(&self.agent_id)))
     }
 
     pub fn tracked_helpers_supported(&self) -> bool {
@@ -2067,7 +2068,29 @@ mod tests {
             opencode.integration_level(),
             AgentIntegrationLevel::LaunchOnly
         );
-        assert!(!opencode.quick_action_supported());
+        assert!(opencode.quick_action_supported());
+        assert!(!opencode.tracked_helpers_supported());
+
+        for agent_id in ["claude", "codex", "gemini"] {
+            let unobserved = capabilities(
+                agent_id,
+                true,
+                ObservationCapability::None,
+                false,
+                false,
+                false,
+            );
+            assert!(!unobserved.quick_action_supported());
+        }
+        let missing_opencode = capabilities(
+            "opencode",
+            false,
+            ObservationCapability::None,
+            false,
+            false,
+            false,
+        );
+        assert!(!missing_opencode.quick_action_supported());
 
         let unavailable = capabilities(
             "gemini",
