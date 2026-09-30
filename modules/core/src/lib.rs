@@ -866,7 +866,9 @@ impl CoreRuntime {
         if !turn_is_running(next.state) {
             self.claude_turn_watches.remove(session_id);
         }
-        if resume_started
+        if (resume_started
+            || (agent_id == "opencode"
+                && normalized.resume_ref.as_ref() == durable_session.resume_ref.as_ref()))
             && self.resume_reservations.contains(session_id)
             && self
                 .observation_transport
@@ -901,25 +903,23 @@ impl CoreRuntime {
             .as_ref()
             .is_some_and(|transport| transport.resume_supported(agent_id))
             && let Some(resume_ref) = normalized.resume_ref.as_ref()
+            && matches!(
+                (resume_ref.provider, agent_id),
+                (termloop_domain::ResumeProvider::Claude, "claude")
+                    | (termloop_domain::ResumeProvider::Opencode, "opencode")
+            )
         {
-            // Resume persistence is provider-specific. A valid future
-            // provider resume fact must never invalidate an otherwise
-            // authenticated status observation merely because durable resume
-            // support has not been implemented here yet.
-            if let (termloop_domain::ResumeProvider::Claude, "claude") =
-                (resume_ref.provider, agent_id)
-            {
-                match self.record_claude_resume_ref(
-                    token,
-                    session_id,
-                    &resume_ref.native_session_id,
-                ) {
-                    Ok(changed) => session_changed |= changed,
-                    Err(CoreError::ResumeRefReplacement) => {
-                        provider_session_replaced = true;
-                    }
-                    Err(error) => return Err(error),
+            match self.record_hook_resume_ref(
+                token,
+                session_id,
+                resume_ref.provider,
+                &resume_ref.native_session_id,
+            ) {
+                Ok(changed) => session_changed |= changed,
+                Err(CoreError::ResumeRefReplacement) => {
+                    provider_session_replaced = true;
                 }
+                Err(error) => return Err(error),
             }
         }
         if !provider_session_replaced {
@@ -1827,6 +1827,26 @@ impl CoreRuntime {
         session_id: &str,
         native_session_id: &str,
     ) -> Result<bool, CoreError> {
+        self.record_hook_resume_ref(
+            token,
+            session_id,
+            termloop_domain::ResumeProvider::Claude,
+            native_session_id,
+        )
+    }
+
+    fn record_hook_resume_ref(
+        &mut self,
+        token: &str,
+        session_id: &str,
+        provider: termloop_domain::ResumeProvider,
+        native_session_id: &str,
+    ) -> Result<bool, CoreError> {
+        let agent_id = match provider {
+            termloop_domain::ResumeProvider::Claude => "claude",
+            termloop_domain::ResumeProvider::Opencode => "opencode",
+            _ => return Err(CoreError::CapabilityDenied),
+        };
         let durable_session = self
             .store
             .sessions()
@@ -1834,7 +1854,7 @@ impl CoreRuntime {
             .find(|session| {
                 session.id == session_id
                     && session.kind == termloop_domain::SessionKind::Agent
-                    && session.process.agent_id.as_deref() == Some("claude")
+                    && session.process.agent_id.as_deref() == Some(agent_id)
                     && (session.lifecycle_state == "running"
                         || (session.lifecycle_state == "resuming"
                             && self.resume_reservations.contains(session_id)))
@@ -1842,14 +1862,15 @@ impl CoreRuntime {
             .cloned()
             .ok_or(CoreError::CapabilityDenied)?;
         self.authorized_agent_observation(session_id, token)?;
-        let provider_id = uuid::Uuid::parse_str(native_session_id)
-            .map_err(|_| CoreError::InvalidParams("nativeSessionId".into()))?
-            .to_string();
-        let resume_ref = termloop_domain::ResumeRef::for_provider(
-            termloop_domain::ResumeProvider::Claude,
-            provider_id,
-        )
-        .ok_or_else(|| CoreError::InvalidParams("nativeSessionId".into()))?;
+        let provider_id = if provider == termloop_domain::ResumeProvider::Claude {
+            uuid::Uuid::parse_str(native_session_id)
+                .map_err(|_| CoreError::InvalidParams("nativeSessionId".into()))?
+                .to_string()
+        } else {
+            native_session_id.to_owned()
+        };
+        let resume_ref = termloop_domain::ResumeRef::for_provider(provider, provider_id)
+            .ok_or_else(|| CoreError::InvalidParams("nativeSessionId".into()))?;
         if durable_session.lifecycle_state == "resuming"
             && self.resume_reservations.contains(session_id)
             && let Some(expected) = self.pending_agent_resume_refs.get(session_id)
@@ -3285,6 +3306,157 @@ mod tests {
             Err(CoreError::CapabilityDenied)
         ));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn opencode_hook_observation_persists_the_exact_resume_identity() {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-core-opencode-observation-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let store = Store::open(&path).unwrap();
+        let mut runtime = CoreRuntime::new(
+            store,
+            termloop_store::issue_core_write_authority_for_composition(),
+            TerminalService::default(),
+            1,
+        )
+        .unwrap();
+        let mut transport = test_agent_observation_transport(std::env::temp_dir());
+        transport.agents.insert(
+            "opencode".into(),
+            AgentRuntimeCapabilities {
+                observation: AgentObservationRuntimeTransport::LaunchScopedConfig(
+                    AgentLaunchScopedConfig::EnvironmentSettingsPath {
+                        variable: "OPENCODE_TUI_CONFIG".into(),
+                        path: "/tmp/opencode-observation.json".into(),
+                        content: "{}".into(),
+                        inspectable_content: "{}".into(),
+                    },
+                ),
+                fresh_session_id_supported: false,
+                resume_supported: true,
+                native_fork_supported: true,
+                mcp_http_supported: false,
+            },
+        );
+        runtime.configure_agent_observations(transport);
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                termloop_domain::SessionRecord {
+                    launch_selection: Default::default(),
+                    id: "opencode-session".into(),
+                    project_id: "project-1".into(),
+                    name: None,
+                    kind: termloop_domain::SessionKind::Agent,
+                    process: termloop_domain::ProcessDescriptor {
+                        program: "opencode".into(),
+                        args: vec![],
+                        cwd: "/tmp".into(),
+                        agent_id: Some("opencode".into()),
+                        template_ref: None,
+                        template_version: None,
+                    },
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 1,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
+        runtime.agent_observations.insert(
+            "opencode-session".into(),
+            AgentObservationCapability {
+                token: Some("opencode-token".into()),
+                runtime_epoch: 1,
+                last_signal: None,
+                defer_generated_input_until_hook_response: false,
+                last_notification_type: None,
+                observation: None,
+                pending_generated_input: None,
+            },
+        );
+        let observed = runtime
+            .record_provider_hook_observation(
+                "opencode-token",
+                "opencode-session",
+                ProviderHookObservationInput {
+                    event_name: "OpenCodeSessionStart".into(),
+                    notification_type: None,
+                    native_session_id: Some("ses_abc123".into()),
+                    provider_model_id: None,
+                    permission_mode: None,
+                    reasoning_level: None,
+                    transcript_path: None,
+                    prompt_id: None,
+                    plan: None,
+                },
+                1,
+                1,
+            )
+            .unwrap();
+        assert!(observed.session_changed);
+        assert_eq!(
+            runtime.store.sessions()[0]
+                .resume_ref
+                .as_ref()
+                .unwrap()
+                .native_session_id,
+            "ses_abc123"
+        );
+        assert_eq!(
+            runtime.agent_observations["opencode-session"]
+                .observation
+                .unwrap()
+                .state,
+            AgentState::Idle
+        );
+        runtime
+            .record_provider_hook_observation(
+                "opencode-token",
+                "opencode-session",
+                ProviderHookObservationInput {
+                    event_name: "OpenCodeSessionStart".into(),
+                    notification_type: None,
+                    native_session_id: Some("ses_switched".into()),
+                    provider_model_id: None,
+                    permission_mode: None,
+                    reasoning_level: None,
+                    transcript_path: None,
+                    prompt_id: None,
+                    plan: None,
+                },
+                2,
+                2,
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.store.sessions()[0]
+                .resume_ref
+                .as_ref()
+                .unwrap()
+                .native_session_id,
+            "ses_switched"
+        );
+        assert!(matches!(
+            runtime.record_hook_resume_ref(
+                "wrong-token",
+                "opencode-session",
+                termloop_domain::ResumeProvider::Opencode,
+                "ses_other"
+            ),
+            Err(CoreError::CapabilityDenied)
+        ));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

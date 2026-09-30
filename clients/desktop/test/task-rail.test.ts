@@ -8,7 +8,7 @@ import type { AgentStatus, BranchCommitSummary, GitHostProjection, RunConfigurat
 import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskRelocationDropEnabled, type TaskRailProps } from "../src/renderer/ui/TaskRail.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-collapse-memory.js";
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
-import { fullAgentCapability, launchOnlyGeminiCapability } from "./agent-capability-fixture.js";
+import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
 
 beforeEach(() => window.localStorage.clear());
@@ -267,6 +267,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
       fullAgentCapability("claude", { version: null }),
       fullAgentCapability("codex", { version: null }),
       launchOnlyGeminiCapability(),
+      resumableOpenCodeCapability(),
     ],
     launchTaskTerminal: unused,
     launchTaskAgent: unused,
@@ -770,6 +771,7 @@ describe("Task rail row anatomy", () => {
     expect(markup).toContain('class="task-launch-icon agent-claude" title="New Claude Session"');
     expect(markup).toContain('class="task-launch-icon agent-codex" title="New Codex Session"');
     expect(markup).toContain('class="task-launch-icon agent-gemini" title="New Gemini CLI Session (launch only)"');
+    expect(markup).toContain('class="task-launch-icon agent-opencode" title="New OpenCode Session"');
   });
 
   it("keeps a background deletion visible and disables Task actions", () => {

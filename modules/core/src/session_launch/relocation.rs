@@ -729,6 +729,7 @@ impl CoreRuntime {
         }
         if agent_id.is_none_or(|agent_id| {
             !termloop_agents::is_supported_agent(agent_id)
+                || !termloop_agents::has_global_resume_identity(agent_id)
                 || self
                     .observation_transport
                     .as_ref()
@@ -937,6 +938,7 @@ impl CoreRuntime {
         let agent_id = session.process.agent_id.as_deref();
         if agent_id.is_none_or(|agent_id| {
             !termloop_agents::is_supported_agent(agent_id)
+                || !termloop_agents::has_global_resume_identity(agent_id)
                 || self
                     .observation_transport
                     .as_ref()

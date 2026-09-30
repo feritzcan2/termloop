@@ -4,6 +4,7 @@ const MODELS: Record<string, string[]> = {
   claude: ["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"],
   codex: ["default", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro"],
   gemini: ["default", "auto", "pro", "flash", "flash-lite"],
+  opencode: ["default", "opencode-go/kimi-k2.7-code"],
 };
 
 export function fullAgentCapability(
@@ -47,6 +48,28 @@ export function launchOnlyGeminiCapability(
     tracked_helpers_supported: false,
     resume_supported: false,
     native_fork_supported: false,
+    ...overrides,
+  };
+}
+
+export function resumableOpenCodeCapability(
+  overrides: Partial<AgentCapabilityDto> = {},
+): AgentCapabilityDto {
+  return {
+    agent_id: "opencode",
+    label: "OpenCode",
+    available: true,
+    version: "1.18.33",
+    integration_level: "resumable",
+    degraded_reason: "trackedHelpersUnavailable",
+    models: MODELS.opencode!,
+    permissions: ["default", "plan", "bypassPermissions"],
+    reasoning: ["default"],
+    observation_supported: true,
+    quick_action_supported: false,
+    tracked_helpers_supported: false,
+    resume_supported: true,
+    native_fork_supported: true,
     ...overrides,
   };
 }

@@ -1886,5 +1886,6 @@ pub(super) fn provider_matches_agent(provider: ResumeProvider, agent_id: Option<
         (ResumeProvider::Claude, Some("claude"))
             | (ResumeProvider::Codex, Some("codex"))
             | (ResumeProvider::Gemini, Some("gemini"))
+            | (ResumeProvider::Opencode, Some("opencode"))
     )
 }

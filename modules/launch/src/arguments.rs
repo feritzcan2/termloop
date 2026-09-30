@@ -20,6 +20,7 @@ fn conversation_args(
             ("claude", ResumeProvider::Claude)
                 | ("codex", ResumeProvider::Codex)
                 | ("gemini", ResumeProvider::Gemini)
+                | ("opencode", ResumeProvider::Opencode)
         )
     {
         return Err(InvocationError::InvalidResumeReference);
@@ -45,6 +46,8 @@ fn conversation_args(
             "--resume".into(),
             resume_ref.native_session_id.clone(),
         ]),
+        ("opencode", "resume") => Ok(vec!["--session".into(), resume_ref.native_session_id.clone()]),
+        ("opencode", "fork") => Ok(vec!["--session".into(), resume_ref.native_session_id.clone(), "--fork".into()]),
         _ => Err(InvocationError::UnsupportedAgent(agent_id.to_owned())),
     }
 }
@@ -58,6 +61,7 @@ fn observation_args(agent_id: &str, observation: &AgentObservationLaunch<'_>) ->
             vec!["--remote".into(), endpoint.into()]
         }
         ("gemini", AgentObservationLaunchTransport::EnvironmentSettingsPath { .. }) => vec![],
+        ("opencode", AgentObservationLaunchTransport::EnvironmentSettingsPath { .. }) => vec![],
         _ => vec![],
     }
 }
@@ -81,6 +85,13 @@ fn observation_transport_matches_agent(
                 ..
             }
         )
+            | (
+                "opencode",
+                AgentObservationLaunchTransport::EnvironmentSettingsPath {
+                    variable: "OPENCODE_TUI_CONFIG",
+                    ..
+                }
+            )
     )
 }
 

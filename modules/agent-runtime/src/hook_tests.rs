@@ -79,3 +79,19 @@ fn hook_receipts_cannot_be_reused_for_another_request_or_protocol() {
         assert!(EngineHookProtocol.accept("request", value).is_err());
     }
 }
+
+#[test]
+fn opencode_hook_identity_accepts_only_provider_session_ids() {
+    assert_eq!(
+        hook_native_session_id("opencode", &json!({"session_id":"ses_abc123"})),
+        Some("ses_abc123".into())
+    );
+    assert_eq!(
+        hook_native_session_id("claude", &json!({"session_id":"ses_abc123"})),
+        None
+    );
+    assert_eq!(
+        hook_native_session_id("opencode", &json!({"session_id":"ses_bad/id"})),
+        None
+    );
+}

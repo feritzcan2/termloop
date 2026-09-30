@@ -127,6 +127,42 @@ fn gemini_launch_options_use_only_current_interactive_cli_flags() {
 }
 
 #[test]
+fn opencode_go_launch_options_match_the_interactive_cli() {
+    assert!(model_args("opencode", "default").unwrap().is_empty());
+    assert_eq!(
+        model_args("opencode", "opencode-go/kimi-k2.7-code").unwrap(),
+        ["--model", "opencode-go/kimi-k2.7-code"]
+    );
+    assert!(matches!(
+        model_args("opencode", "kimi-k2.7-code"),
+        Err(InvocationError::UnsupportedModel { .. })
+    ));
+    assert_eq!(
+        permission_args("opencode", "plan").unwrap(),
+        ["--agent", "plan"]
+    );
+    assert_eq!(
+        permission_args("opencode", "bypassPermissions").unwrap(),
+        ["--auto"]
+    );
+    assert!(matches!(
+        permission_args("opencode", "acceptEdits"),
+        Err(InvocationError::UnsupportedPermission { .. })
+    ));
+    assert!(reasoning_args("opencode", "default").unwrap().is_empty());
+
+    let handle = ConversationHandle::from_native("opencode", "ses_abc123".into()).unwrap();
+    assert_eq!(
+        conversation_args("opencode", handle.resume()).unwrap(),
+        ["--session", "ses_abc123"]
+    );
+    assert_eq!(
+        conversation_args("opencode", handle.fork()).unwrap(),
+        ["--session", "ses_abc123", "--fork"]
+    );
+}
+
+#[test]
 fn quick_action_bypass_is_an_exact_provider_flag() {
     let claude = permission_args("claude", "bypassPermissions").unwrap();
     let codex = permission_args("codex", "bypassPermissions").unwrap();

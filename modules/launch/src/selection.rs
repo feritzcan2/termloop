@@ -11,7 +11,7 @@ pub fn validate_agent_configuration(
 
 fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationError> {
     match (agent_id, model) {
-        ("claude" | "codex" | "gemini", "default") => Ok(vec![]),
+        ("claude" | "codex" | "gemini" | "opencode", "default") => Ok(vec![]),
         ("claude", "opus[1m]" | "fable" | "sonnet" | "haiku" | "opus")
         | (
             "codex",
@@ -19,7 +19,10 @@ fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationErro
             | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.5-pro",
         ) => Ok(vec!["--model".into(), model.into()]),
         ("gemini", "auto" | "pro" | "flash" | "flash-lite") => Ok(vec!["-m".into(), model.into()]),
-        ("claude" | "codex" | "gemini", _) => Err(InvocationError::UnsupportedModel {
+        ("opencode", "opencode-go/kimi-k2.7-code" | "opencode-go/glm-5.3-flash"
+            | "opencode-go/minimax-m3" | "opencode-go/qwen3.7-plus"
+            | "opencode-go/deepseek-v4.1-flash") => Ok(vec!["--model".into(), model.into()]),
+        ("claude" | "codex" | "gemini" | "opencode", _) => Err(InvocationError::UnsupportedModel {
             agent_id: agent_id.to_owned(),
             model: model.to_owned(),
         }),
@@ -29,7 +32,7 @@ fn model_args(agent_id: &str, model: &str) -> Result<Vec<String>, InvocationErro
 
 fn reasoning_args(agent_id: &str, reasoning: &str) -> Result<Vec<String>, InvocationError> {
     match (agent_id, reasoning) {
-        ("claude" | "codex" | "gemini", "default") => Ok(vec![]),
+        ("claude" | "codex" | "gemini" | "opencode", "default") => Ok(vec![]),
         ("claude", "low" | "medium" | "high" | "xhigh" | "max") => {
             Ok(vec!["--effort".into(), reasoning.into()])
         }
@@ -37,7 +40,7 @@ fn reasoning_args(agent_id: &str, reasoning: &str) -> Result<Vec<String>, Invoca
             "-c".into(),
             format!("model_reasoning_effort=\"{reasoning}\""),
         ]),
-        ("claude" | "codex" | "gemini", _) => Err(InvocationError::UnsupportedReasoning {
+        ("claude" | "codex" | "gemini" | "opencode", _) => Err(InvocationError::UnsupportedReasoning {
             agent_id: agent_id.to_owned(),
             reasoning: reasoning.to_owned(),
         }),
@@ -77,7 +80,10 @@ fn permission_args(agent_id: &str, permission: &str) -> Result<Vec<String>, Invo
         ("gemini", "bypassPermissions") => {
             vec!["--approval-mode".into(), "yolo".into()]
         }
-        ("claude" | "codex" | "gemini", _) => {
+        ("opencode", "default") => vec![],
+        ("opencode", "plan") => vec!["--agent".into(), "plan".into()],
+        ("opencode", "bypassPermissions") => vec!["--auto".into()],
+        ("claude" | "codex" | "gemini" | "opencode", _) => {
             return Err(InvocationError::UnsupportedPermission {
                 agent_id: agent_id.to_owned(),
                 permission: permission.to_owned(),

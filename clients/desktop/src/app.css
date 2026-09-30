@@ -47,6 +47,7 @@
   --agent-status-exited: #e1757e;
   --agent-claude: #e0a35c;
   --agent-codex: #66b3ff;
+  --agent-opencode: #e8e2dc;
   --sidebar-width: 270px;
   --radius: 8px;
   --shadow-menu: 0 18px 52px rgba(0, 0, 0, .58), 0 0 0 1px light-dark(rgba(15,23,42,.025), rgba(255,255,255,.025));
@@ -94,6 +95,7 @@
   --agent-status-exited: #b42331;
   --agent-claude: #9a5a22;
   --agent-codex: #1468a8;
+  --agent-opencode: #514842;
   --shadow-menu: 0 18px 52px rgba(15, 23, 42, .18), 0 0 0 1px rgba(15, 23, 42, .04);
 }
 
@@ -353,6 +355,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .row-agent { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--state-ready); text-overflow: ellipsis; white-space: nowrap; }
 .row-agent.agent-claude { color: var(--agent-claude); }
 .row-agent.agent-codex { color: var(--agent-codex); }
+.row-agent.agent-opencode { color: var(--agent-opencode); }
 .agent-todo-count { display: inline-grid; flex: none; order: -1; min-width: 25px; padding: 1px 4px; place-items: center; border: 1px solid light-dark(rgba(66,111,151,.2), rgba(102,179,255,.22)); border-radius: 4px; color: var(--accent-strong); font: 700 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; cursor: pointer; }
 .agent-todo-count.done { border-color: light-dark(rgba(46,125,96,.2), rgba(105,208,166,.2)); color: var(--success); }
 .agent-todo-progress, .agent-todo-dismiss-glyph { grid-area: 1 / 1; transition: opacity .1s ease; }
@@ -533,6 +536,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-agent-dot i { width: 8px; height: 8px; border: 1.5px solid var(--bg-sidebar); border-radius: 50%; background: var(--state-ready); transition: transform 100ms ease; }
 .task-agent-dot.agent-claude i { background: var(--agent-claude); }
 .task-agent-dot.agent-codex i { background: var(--agent-codex); }
+.task-agent-dot.agent-opencode i { background: var(--agent-opencode); }
 .task-agent-dot[data-tone="quiet"] i { opacity: .5; }
 .task-agent-dot[data-tone="attention"] i { box-shadow: 0 0 0 2px rgba(255,143,107,.55); }
 .task-agent-dot[data-tone="review"] i { box-shadow: 0 0 0 2px rgba(102,179,255,.5); }
@@ -645,6 +649,7 @@ button.task-signal.issue:hover { color: var(--warning); }
 .task-launch-icon svg { width: 11px; height: 11px; }
 .task-launch-icon.agent-claude:hover:not(:disabled) { color: var(--agent-claude); }
 .task-launch-icon.agent-codex:hover:not(:disabled) { color: var(--agent-codex); }
+.task-launch-icon.agent-opencode:hover:not(:disabled) { color: var(--agent-opencode); }
 
 /* A run configuration is a launcher, so it lives in the Start row beside the
    terminal and agent launchers rather than in a card stack of its own. The chip
@@ -2123,6 +2128,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .ap-avatar svg { width: 17px; height: 17px; }
 .ar-avatar.agent-claude, .ap-avatar.agent-claude { border-color: rgba(224,163,92,.3); background: rgba(224,163,92,.09); color: var(--agent-claude); }
 .ar-avatar.agent-codex, .ap-avatar.agent-codex { border-color: rgba(102,179,255,.26); background: rgba(102,179,255,.08); color: var(--agent-codex); }
+.ar-avatar.agent-opencode, .ap-avatar.agent-opencode { border-color: rgba(232,226,220,.3); background: rgba(232,226,220,.08); color: var(--agent-opencode); }
 
 /* Sidebar rail. */
 .assistant-rail { display: flex; flex-direction: column; padding: 5px 9px 16px; }
@@ -2212,6 +2218,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .ar-agent-pick.selected:disabled { opacity: 1; cursor: default; }
 .ar-agent-pick.selected.agent-claude { border-color: rgba(224,163,92,.42); background: rgba(224,163,92,.13); color: var(--agent-claude); }
 .ar-agent-pick.selected.agent-codex { border-color: rgba(102,179,255,.4); background: rgba(102,179,255,.12); color: var(--agent-codex); }
+.ar-agent-pick.selected.agent-opencode { border-color: rgba(232,226,220,.4); background: rgba(232,226,220,.12); color: var(--agent-opencode); }
 .ar-agent-pick.unavailable:not(.selected) { opacity: .45; }
 /* One accent spine for everything the Steward supervises. */
 .ar-tree { position: relative; display: grid; gap: 2px; margin: 4px 0 0 19px; padding-left: 10px; }
@@ -2639,6 +2646,7 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workspace-launch-actions svg { width: 14px; height: 14px; }
 .workspace-launch-actions .claude { color: var(--agent-claude); }
 .workspace-launch-actions .codex { color: var(--agent-codex); }
+.workspace-launch-actions .opencode { color: var(--agent-opencode); }
 .workspace-launch-actions .workspace-workflow { display: inline-flex; width: auto; flex: 0 0 auto; gap: 3px; padding: 0 5px; white-space: nowrap; }
 .workspace-launch-actions .workspace-workflow svg { width: 10px; height: 10px; }
 .workflow-run-scope { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--accent-wash); margin-bottom: 14px; }
@@ -2803,6 +2811,7 @@ button.history-row-main { cursor: pointer; }
 .history-provider { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: light-dark(rgba(15,23,42,.04), rgba(255,255,255,.04)); color: var(--sidebar-dim); }
 .history-provider.claude { color: var(--agent-claude); }
 .history-provider.codex { color: var(--agent-codex); }
+.history-provider.opencode { color: var(--agent-opencode); }
 .history-provider svg { width: 13px; height: 13px; }
 .history-copy { min-width: 0; display: grid; gap: 2px; }
 .history-copy strong { overflow: hidden; color: var(--sidebar-text); font: 600 11px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
@@ -3080,6 +3089,7 @@ button.history-row-main { cursor: pointer; }
 .td-mini:hover:not(:disabled) svg { color: var(--accent-strong); }
 .td-mini.agent-claude:hover svg { color: var(--agent-claude); }
 .td-mini.agent-codex:hover svg { color: var(--agent-codex); }
+.td-mini.agent-opencode:hover svg { color: var(--agent-opencode); }
 .td-launch { display: flex; flex-wrap: wrap; gap: 4px; }
 .td-pipeline .td-meter { height: 2px; margin: 0 0 10px; }
 .td-steward summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }

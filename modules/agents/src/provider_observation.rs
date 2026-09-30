@@ -49,6 +49,7 @@ pub fn normalize_provider_hook_observation(
     match descriptor.adapter {
         BuiltinAgentAdapter::Claude => normalize_claude_hook(input),
         BuiltinAgentAdapter::Gemini => normalize_gemini_hook(input),
+        BuiltinAgentAdapter::OpenCode => normalize_opencode_hook(input),
         BuiltinAgentAdapter::Codex => None,
     }
 }
@@ -110,6 +111,34 @@ fn normalize_gemini_hook(
         source: AgentSignalSource::Hook,
         resume_ref,
         provider_model_id: input.provider_model_id,
+        permission_mode: None,
+        reasoning_level: None,
+        turn_watch: None,
+        plan: None,
+    })
+}
+
+fn normalize_opencode_hook(
+    input: ProviderHookObservationInput,
+) -> Option<NormalizedProviderObservation> {
+    let signal = match input.event_name.as_str() {
+        "OpenCodeSessionStart" => AgentSignal::SessionStarted,
+        "OpenCodeWorking" => AgentSignal::PromptSubmitted,
+        "OpenCodeIdle" => AgentSignal::Stopped,
+        "OpenCodePermission" => AgentSignal::PermissionRequested,
+        "OpenCodeError" => AgentSignal::Failed,
+        "OpenCodeSessionEnd" => AgentSignal::SessionEnded,
+        _ => return None,
+    };
+    let resume_ref = input
+        .native_session_id
+        .and_then(|id| ResumeRef::for_provider(ResumeProvider::Opencode, id));
+    Some(NormalizedProviderObservation {
+        ingress: ProviderObservationIngress::LaunchScopedHook,
+        signal,
+        source: AgentSignalSource::Hook,
+        resume_ref,
+        provider_model_id: None,
         permission_mode: None,
         reasoning_level: None,
         turn_watch: None,
@@ -193,6 +222,41 @@ mod tests {
                 .unwrap()
                 .provider,
             ResumeProvider::Gemini
+        );
+    }
+
+    #[test]
+    fn opencode_events_have_a_bounded_resume_identity_and_distinct_statuses() {
+        let mut started = input("OpenCodeSessionStart");
+        started.native_session_id = Some("ses_abc123".into());
+        let normalized = normalize_provider_hook_observation("opencode", started).unwrap();
+        assert_eq!(normalized.signal, AgentSignal::SessionStarted);
+        assert_eq!(
+            normalized.resume_ref.unwrap().provider,
+            ResumeProvider::Opencode
+        );
+        for (event, signal) in [
+            ("OpenCodeWorking", AgentSignal::PromptSubmitted),
+            ("OpenCodeIdle", AgentSignal::Stopped),
+            ("OpenCodePermission", AgentSignal::PermissionRequested),
+            ("OpenCodeError", AgentSignal::Failed),
+            ("OpenCodeSessionEnd", AgentSignal::SessionEnded),
+        ] {
+            assert_eq!(
+                normalize_provider_hook_observation("opencode", input(event))
+                    .unwrap()
+                    .signal,
+                signal
+            );
+            assert!(normalize_provider_hook_observation("claude", input(event)).is_none());
+        }
+        let mut invalid = input("OpenCodeSessionStart");
+        invalid.native_session_id = Some("ses_bad/id".into());
+        assert!(
+            normalize_provider_hook_observation("opencode", invalid)
+                .unwrap()
+                .resume_ref
+                .is_none()
         );
     }
 }

@@ -6,6 +6,7 @@ pub enum BuiltinAgentAdapter {
     Claude,
     Codex,
     Gemini,
+    OpenCode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,7 @@ pub struct AgentDescriptor {
 const CLAUDE_EXECUTABLE_CANDIDATES: &[&str] = &["claude"];
 const CODEX_EXECUTABLE_CANDIDATES: &[&str] = &["codex"];
 const GEMINI_EXECUTABLE_CANDIDATES: &[&str] = &["gemini"];
+const OPENCODE_EXECUTABLE_CANDIDATES: &[&str] = &["opencode"];
 const CLAUDE_MODELS: &[&str] = &["default", "opus[1m]", "fable", "sonnet", "haiku", "opus"];
 const CODEX_MODELS: &[&str] = &[
     "default",
@@ -50,7 +52,16 @@ const CODEX_MODELS: &[&str] = &[
     "gpt-5.5-pro",
 ];
 const GEMINI_MODELS: &[&str] = &["default", "auto", "pro", "flash", "flash-lite"];
+const OPENCODE_MODELS: &[&str] = &[
+    "default",
+    "opencode-go/kimi-k2.7-code",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/minimax-m3",
+    "opencode-go/qwen3.7-plus",
+    "opencode-go/deepseek-v4.1-flash",
+];
 const STANDARD_PERMISSIONS: &[&str] = &["default", "acceptEdits", "plan", "bypassPermissions"];
+const OPENCODE_PERMISSIONS: &[&str] = &["default", "plan", "bypassPermissions"];
 const STANDARD_REASONING: &[&str] = &["default", "low", "medium", "high", "xhigh", "max"];
 const DEFAULT_REASONING: &[&str] = &["default"];
 
@@ -89,6 +100,18 @@ const AGENT_CATALOG: &[AgentDescriptor] = &[
         reasoning: DEFAULT_REASONING,
         resume_identity_scope: ResumeIdentityScope::WorkingDirectory,
         generated_input_coordination_supported: true,
+        tracked_helpers_supported: false,
+    },
+    AgentDescriptor {
+        id: "opencode",
+        label: "OpenCode",
+        executable_candidates: OPENCODE_EXECUTABLE_CANDIDATES,
+        adapter: BuiltinAgentAdapter::OpenCode,
+        models: OPENCODE_MODELS,
+        permissions: OPENCODE_PERMISSIONS,
+        reasoning: DEFAULT_REASONING,
+        resume_identity_scope: ResumeIdentityScope::WorkingDirectory,
+        generated_input_coordination_supported: false,
         tracked_helpers_supported: false,
     },
 ];
@@ -174,6 +197,10 @@ mod tests {
             Some(BuiltinAgentAdapter::Gemini)
         );
         assert_eq!(
+            agent_descriptor("opencode").map(|descriptor| descriptor.adapter),
+            Some(BuiltinAgentAdapter::OpenCode)
+        );
+        assert_eq!(
             agent_descriptor("gemini").map(|descriptor| descriptor.resume_identity_scope),
             Some(ResumeIdentityScope::WorkingDirectory)
         );
@@ -189,6 +216,7 @@ mod tests {
         assert!(!supports_tracked_helpers("gemini"));
         assert!(!has_global_resume_identity("gemini"));
         assert!(!supports_generated_input_coordination("unknown"));
+        assert!(!supports_generated_input_coordination("opencode"));
         assert!(!supports_tracked_helpers("unknown"));
         assert!(!has_global_resume_identity("unknown"));
     }

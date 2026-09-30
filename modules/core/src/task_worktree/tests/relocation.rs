@@ -43,6 +43,25 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
     for capability in transport.agents.values_mut() {
         capability.mcp_http_supported = false;
     }
+    if agent_id == "opencode" {
+        transport.agents.insert(
+            "opencode".into(),
+            crate::AgentRuntimeCapabilities {
+                observation: crate::AgentObservationRuntimeTransport::LaunchScopedConfig(
+                    crate::AgentLaunchScopedConfig::EnvironmentSettingsPath {
+                        variable: "OPENCODE_TUI_CONFIG".into(),
+                        path: "/tmp/opencode-observation.json".into(),
+                        content: "{}".into(),
+                        inspectable_content: "{}".into(),
+                    },
+                ),
+                fresh_session_id_supported: false,
+                resume_supported: true,
+                native_fork_supported: true,
+                mcp_http_supported: false,
+            },
+        );
+    }
     fixture.runtime.configure_agent_observations(transport);
     fixture
         .runtime
@@ -70,24 +89,39 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
                 improver_target: None,
                 ask_to_continuation: None,
                 resume_ref: ResumeRef::for_provider(
-                    if agent_id == "claude" {
-                        ResumeProvider::Claude
-                    } else {
-                        ResumeProvider::Codex
+                    match agent_id {
+                        "claude" => ResumeProvider::Claude,
+                        "opencode" => ResumeProvider::Opencode,
+                        _ => ResumeProvider::Codex,
                     },
-                    "00000000-0000-4000-8000-000000000001".into(),
+                    if agent_id == "opencode" {
+                        "ses_abc123"
+                    } else {
+                        "00000000-0000-4000-8000-000000000001"
+                    }
+                    .into(),
                 ),
                 resume_launch_guard: None,
                 resume_failure: None,
                 launch_selection: termloop_domain::AgentLaunchSelection {
                     account_id: None,
-                    model: if agent_id == "claude" {
+                    model: if agent_id == "claude" || agent_id == "opencode" {
                         "default".into()
                     } else {
                         "gpt-5.6-sol".into()
                     },
-                    permission: "acceptEdits".into(),
-                    reasoning: "high".into(),
+                    permission: if agent_id == "opencode" {
+                        "default"
+                    } else {
+                        "acceptEdits"
+                    }
+                    .into(),
+                    reasoning: if agent_id == "opencode" {
+                        "default"
+                    } else {
+                        "high"
+                    }
+                    .into(),
                 },
             },
         )
@@ -492,6 +526,31 @@ fn fresh_handoff_is_explicit_and_rejected_for_codex() {
             .unwrap()
             .iter()
             .any(|blocker| blocker == "freshHandoffUnsupported")
+    );
+    let _ = std::fs::remove_dir_all(target);
+}
+
+#[test]
+fn worktree_scoped_opencode_conversation_cannot_be_moved_to_another_directory() {
+    let (mut fixture, task_id, session_id, target) = prepare_relocation_fixture_for("opencode");
+    let outcome = fixture
+        .runtime
+        .plan_session_relocation_preview(json!({
+            "sessionId": session_id,
+            "taskId": task_id,
+            "mode": "resume",
+        }))
+        .unwrap();
+    let crate::SessionRelocationPreviewOutcome::Current(preview) = outcome else {
+        panic!("OpenCode relocation must be blocked before observing the target");
+    };
+    assert_eq!(preview["can_relocate"], false);
+    assert!(
+        preview["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|blocker| blocker == "resumeCapabilityUnavailable")
     );
     let _ = std::fs::remove_dir_all(target);
 }

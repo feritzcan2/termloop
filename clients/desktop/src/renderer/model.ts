@@ -91,6 +91,7 @@ export function sessionResumeActionLabel(session: Session): "Retry" | undefined 
 
 export function agentName(session: Session): string {
   const id = session.process.agent_id;
+  if (id === "opencode") return "OpenCode";
   return id ? `${id.slice(0, 1).toUpperCase()}${id.slice(1)}` : "Agent";
 }
 

@@ -912,6 +912,7 @@ pub enum ResumeProvider {
     Claude,
     Codex,
     Gemini,
+    Opencode,
     #[serde(other)]
     Unknown,
 }
@@ -922,6 +923,7 @@ impl std::fmt::Debug for ResumeProvider {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::Gemini => "Gemini",
+            Self::Opencode => "OpenCode",
             Self::Unknown => "Unknown",
         })
     }
@@ -947,6 +949,15 @@ impl ResumeRef {
                         .is_ok_and(|value| value.hyphenated().to_string() == self.native_session_id)
                 }
                 ResumeProvider::Codex => true,
+                ResumeProvider::Opencode => self
+                    .native_session_id
+                    .strip_prefix("ses_")
+                    .is_some_and(|id| {
+                        !id.is_empty()
+                            && id.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                            })
+                    }),
                 ResumeProvider::Unknown => false,
             }
     }
@@ -1455,6 +1466,12 @@ mod tests {
             )
             .is_none()
         );
+        assert!(
+            ResumeRef::for_provider(ResumeProvider::Opencode, "ses_abc123_X-y".into()).is_some()
+        );
+        for invalid in ["abc123", "ses_", "ses_abc/123", "ses_abc\n123"] {
+            assert!(ResumeRef::for_provider(ResumeProvider::Opencode, invalid.into()).is_none());
+        }
     }
 
     #[test]
