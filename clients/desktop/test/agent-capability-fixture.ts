@@ -66,7 +66,7 @@ export function resumableOpenCodeCapability(
     permissions: ["default", "plan", "bypassPermissions"],
     reasoning: ["default"],
     observation_supported: true,
-    quick_action_supported: false,
+    quick_action_supported: true,
     tracked_helpers_supported: false,
     resume_supported: true,
     native_fork_supported: true,

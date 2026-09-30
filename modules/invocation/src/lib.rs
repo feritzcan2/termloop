@@ -348,7 +348,11 @@ pub fn preview_quick_action_for_conversation(
         reasoning: reasoning.to_owned(),
         template_ref: template.id.to_owned(),
         template_version: template.version,
-        delivery: "terminalInput",
+        delivery: if agent_id == "opencode" {
+            "providerPromptArgument"
+        } else {
+            "terminalInput"
+        },
         delivered_preview: prompt.to_owned(),
         manifest: resolved.inspectable_manifest().clone(),
     })

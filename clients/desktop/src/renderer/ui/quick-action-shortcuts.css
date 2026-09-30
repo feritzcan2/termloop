@@ -16,10 +16,12 @@
 .shortcut-icon-picker { margin: 12px 0; padding: 0; border: 0; }
 .shortcut-icon-picker legend { margin-bottom: 6px; padding: 0; }
 .shortcut-icon-picker > div { display: flex; flex-wrap: wrap; gap: 6px; }
-.shortcut-icon-picker label { position: relative; display: grid; place-items: center; width: 34px; height: 32px; border: 1px solid var(--qa-rule); border-radius: 7px; color: var(--qa-secondary); cursor: pointer; }
+.shortcut-icon-picker label { position: relative; display: grid; place-items: center; width: 42px; height: 40px; border: 1px solid var(--qa-rule); border-radius: 9px; background: color-mix(in srgb, var(--shortcut-icon-color) 5%, transparent); cursor: pointer; }
 .shortcut-icon-picker input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.shortcut-icon-picker svg { width: 18px; height: 18px; pointer-events: none; }
-.shortcut-icon-picker label.selected { border-color: var(--accent); background: var(--accent-wash); color: var(--qa-text); }
+.shortcut-provider-icon { color: var(--shortcut-icon-color); }
+.shortcut-icon-picker svg { width: 23px; height: 23px; pointer-events: none; }
+.shortcut-icon-picker label:hover { background: color-mix(in srgb, var(--shortcut-icon-color) 12%, transparent); }
+.shortcut-icon-picker label.selected { border-color: var(--shortcut-icon-color); background: color-mix(in srgb, var(--shortcut-icon-color) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--shortcut-icon-color) 20%, transparent); }
 .shortcut-icon-picker label:has(input:focus-visible), .shortcut-name input:focus-visible, .quick-action-shortcut-editor button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .shortcut-preview { display: flex; align-items: center; gap: 6px; min-width: 0; margin-right: auto; color: var(--qa-secondary); }
 .shortcut-preview svg { width: 16px; height: 16px; flex: none; }
@@ -28,7 +30,14 @@
 .quick-action-shortcut-editor .shortcut-save { border-color: var(--accent); background: var(--accent-wash); }
 .quick-action-shortcut-editor [role="alert"], .shortcut-launch-error { color: var(--danger); }
 .quick-action-shortcut-launcher { position: relative; display: inline-flex; flex: none; }
-.workspace-launch-actions .saved-agent-shortcut { border-color: var(--border); background: var(--accent-wash); }
+.workspace-launch-actions .saved-agent-shortcut { border-color: color-mix(in srgb, var(--shortcut-icon-color) 25%, transparent); background: color-mix(in srgb, var(--shortcut-icon-color) 8%, transparent); }
+.workspace-launch-actions .shortcut-provider-icon { width: 16px; height: 16px; }
+.workspace-launch-actions button[aria-disabled="true"] { opacity: .45; }
+.workspace-launch-actions button { touch-action: manipulation; }
+.agent-shortcut-settings .quick-action-options { height: auto; min-height: 42px; flex-wrap: wrap; padding: 10px 12px; }
+.agent-shortcut-settings .quick-action-options label { max-width: 100%; }
+.agent-shortcut-settings .quick-action-options em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shortcut-settings-error { padding: 0 16px; color: var(--danger); font-size: 12px; }
 .workspace-launch-actions .remove-agent-shortcut { position: absolute; z-index: 1; right: -4px; top: -5px; width: 12px; height: 12px; padding: 1px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-raised); color: var(--sidebar-text); opacity: 0; pointer-events: none; }
 .workspace-launch-actions .remove-agent-shortcut svg { width: 9px; height: 9px; }
 .quick-action-shortcut-launcher:hover .remove-agent-shortcut, .quick-action-shortcut-launcher:focus-within .remove-agent-shortcut { opacity: 1; pointer-events: auto; }

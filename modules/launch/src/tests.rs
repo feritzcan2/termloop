@@ -1,6 +1,83 @@
 use super::*;
 
 #[test]
+fn opencode_initial_prompt_is_literal_and_never_replayed_through_the_terminal() {
+    let directory = std::env::temp_dir().join(format!(
+        "termloop-opencode-prompt-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    termloop_platform::test_support::write_cli_fixture(
+        &directory,
+        "opencode",
+        "#!/bin/sh\nexit 0\n",
+        "@echo off\r\nexit /b 0\r\n",
+    )
+    .unwrap();
+    let template = PromptTemplate {
+        id: "opencode-prompt-test",
+        version: 1,
+        authored_body: "Inspect the project",
+    };
+    for prompt in [
+        "Review this project",
+        "--help\nTürkçe 'quoted' \"text\" $HOME `literal`",
+    ] {
+        let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+        request.executable_directory = Some(&directory);
+        request.model = "opencode-go/kimi-k2.7-code";
+        request.permission = "plan";
+        request.prompt = Some(prompt);
+        let payload = resolve(request).unwrap().into_payload();
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| args == ["--model", "opencode-go/kimi-k2.7-code"])
+        );
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| args == ["--agent", "plan"])
+        );
+        assert_eq!(
+            payload
+                .args()
+                .iter()
+                .filter(|arg| arg.starts_with("--prompt="))
+                .count(),
+            1
+        );
+        assert_eq!(
+            payload.args().last().unwrap(),
+            &format!("--prompt={prompt}")
+        );
+        assert!(payload.initial_input_submission().is_none());
+        let manifest = payload.inspectable_manifest();
+        assert_eq!(manifest.transport.kind, "providerPromptArgument");
+        assert_eq!(manifest.transport.delivered_content, prompt);
+        assert_eq!(manifest.transport.byte_length, prompt.len());
+        assert_eq!(manifest.provenance.delivered_digest, content_digest(prompt));
+        assert_eq!(manifest.content_parts[0].content, prompt);
+        assert_eq!(
+            manifest.arguments.last().unwrap().display,
+            format!("--prompt={prompt}")
+        );
+    }
+    let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+    request.executable_directory = Some(&directory);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(!payload.args().iter().any(|arg| arg.starts_with("--prompt")));
+    assert_eq!(payload.inspectable_manifest().transport.kind, "none");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn codex_image_prompt_is_one_literal_argument_without_a_terminal_submission() {
     let template = PromptTemplate {
         id: "image-prompt-test",

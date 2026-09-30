@@ -2,10 +2,13 @@ import { Icon, agentIconName, type IconName } from "./Icon.js";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "../workspace-view-memory.js";
 import type { ReactNode } from "react";
+import type { QuickActionShortcut } from "../quick-action-shortcuts.js";
+import { AgentLaunchButton } from "./AgentLaunchButton.js";
+import { QuickActionShortcutIcon } from "./QuickActionShortcutIcon.js";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher, shortcutLaunchers }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher, shortcutLaunchers, providerShortcuts = [], configureAgent }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -18,6 +21,8 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   launchAgent(agentId: string): Promise<void>;
   workflowLauncher?: ReactNode;
   shortcutLaunchers?: ReactNode;
+  providerShortcuts?: readonly QuickActionShortcut[];
+  configureAgent?: ((agentId: string) => void) | undefined;
   setupAgents?(): void;
   /// Present only until this Project has a dev server to run. It states the
   /// whole offer in words because nothing on screen has taught the icon yet.
@@ -152,18 +157,20 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
         <button id="new-terminal" type="button" title="New Terminal" aria-label="New Terminal" disabled={disabled} onClick={() => void launchTerminal()}><Icon name="terminal" /></button>
         {agents.map((agent) => {
           const icon = agentIconName(agent.agent_id);
+          const shortcut = providerShortcuts.find((item) => item.agentId === agent.agent_id);
           const title = !agent.available
             ? `${agent.label} CLI unavailable — set up in Settings`
-            : `New ${agent.label} Session${agent.integration_level === "launchOnly" ? " (launch only)" : ""}`;
-          return <button
+            : `New ${shortcut?.name ?? agent.label} Session${agent.integration_level === "launchOnly" ? " (launch only)" : ""}`;
+          return <AgentLaunchButton
             key={agent.agent_id}
             type="button"
             className={agent.agent_id}
-            title={title}
+            title={`${title}${configureAgent ? "\nHold or right-click to configure" : ""}`}
             aria-label={title}
             disabled={disabled || (!agent.available && !setupAgents)}
             onClick={() => agent.available ? void launchAgent(agent.agent_id) : setupAgents?.()}
-          ><Icon name={icon} /></button>;
+            configure={configureAgent ? () => configureAgent(agent.agent_id) : undefined}
+          >{shortcut ? <QuickActionShortcutIcon agentId={agent.agent_id} icon={shortcut.icon} /> : <Icon name={icon} />}</AgentLaunchButton>;
         })}
         {shortcutLaunchers}
         {workflowLauncher}

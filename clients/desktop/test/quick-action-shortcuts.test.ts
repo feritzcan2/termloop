@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_QUICK_ACTION_SHORTCUTS, quickActionShortcutUnavailable, readQuickActionShortcuts,
   removeQuickActionShortcut, saveQuickActionShortcut, type QuickActionShortcutDraft,
+  readProviderShortcuts, saveProviderShortcut, updateQuickActionShortcut,
 } from "../src/renderer/quick-action-shortcuts.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
 
@@ -56,9 +57,30 @@ describe("Quick Action shortcuts", () => {
     expect(quickActionShortcutUnavailable(draft, [capability])).toBeUndefined();
     expect(quickActionShortcutUnavailable(draft, [])).toContain("Provider");
     expect(quickActionShortcutUnavailable(draft, [{ ...capability, available: false }])).toContain("Provider");
-    expect(quickActionShortcutUnavailable(draft, [{ ...capability, quick_action_supported: false }])).toContain("Provider");
+    expect(quickActionShortcutUnavailable(draft, [{ ...capability, quick_action_supported: false }])).toBeUndefined();
     expect(quickActionShortcutUnavailable(draft, [{ ...capability, models: ["default"] }])).toContain("Model");
     expect(quickActionShortcutUnavailable(draft, [{ ...capability, permissions: ["default"] }])).toContain("Permission");
     expect(quickActionShortcutUnavailable(draft, [{ ...capability, reasoning: ["default"] }])).toContain("Reasoning");
+  });
+
+  it("updates a shortcut in place even when all twelve slots are used", () => {
+    const source = storage();
+    for (let i = 0; i < MAX_QUICK_ACTION_SHORTCUTS; i++) saveQuickActionShortcut(draft, source);
+    const before = readQuickActionShortcuts(source);
+    const changed = updateQuickActionShortcut(before[0]!.id, { ...draft, icon: "branch", model: "gpt-6-luna", name: "Fast review" }, source);
+    expect(changed).toHaveLength(MAX_QUICK_ACTION_SHORTCUTS);
+    expect(changed[0]).toMatchObject({ id: before[0]!.id, model: "gpt-6-luna", icon: "branch", name: "Fast review" });
+    expect(changed.slice(1)).toEqual(before.slice(1));
+    expect(() => updateQuickActionShortcut("missing", draft, source)).toThrow("no longer exists");
+  });
+
+  it("persists provider button settings independently from custom shortcuts", () => {
+    const values = new Map<string, string>();
+    const source = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+    const custom = saveQuickActionShortcut(draft, source);
+    saveProviderShortcut(draft, source);
+    saveProviderShortcut({ ...draft, model: "gpt-6-luna", icon: "terminal" }, source);
+    expect(readProviderShortcuts(source)).toEqual([{ ...draft, id: "codex", model: "gpt-6-luna", icon: "terminal" }]);
+    expect(readQuickActionShortcuts(source)).toEqual(custom);
   });
 });

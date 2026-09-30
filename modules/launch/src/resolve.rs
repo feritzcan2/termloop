@@ -273,15 +273,21 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         .map_err(|error| agent_cli_error(agent_id, error))?;
     let executable = launch_target_utf8(agent_id, &target)?;
 
-    // Codex submits --image attachments with its initial prompt immediately.
-    // Sending the text later through the terminal would create a second turn.
-    let prompt_argument = agent_id == "codex" && !attachments.is_empty();
+    // OpenCode accepts its first message through --prompt. Codex submits image
+    // prompts through argv too. Neither should receive a second terminal turn.
+    let prompt_argument = agent_id == "opencode"
+        || (agent_id == "codex" && !attachments.is_empty());
     let prompt_delivery = if prompt_argument {
         "providerPromptArgument"
     } else {
         "terminalInput"
     };
-    if prompt_argument && let Some(prompt) = prompt {
+    if agent_id == "opencode" && let Some(prompt) = prompt {
+        arguments.push(ResolvedArgument::exact(
+            format!("--prompt={prompt}"),
+            "initial prompt",
+        ));
+    } else if prompt_argument && let Some(prompt) = prompt {
         arguments.extend([
             ResolvedArgument::exact("--", "initial prompt separator"),
             ResolvedArgument::exact(prompt, "initial prompt accompanying image attachments"),
