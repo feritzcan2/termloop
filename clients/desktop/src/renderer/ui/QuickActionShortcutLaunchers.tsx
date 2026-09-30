@@ -6,14 +6,16 @@ import { AgentLaunchButton } from "./AgentLaunchButton.js";
 import { QuickActionShortcutIcon, shortcutColorStyle } from "./QuickActionShortcutIcon.js";
 import "./quick-action-shortcuts.css";
 
-export function QuickActionShortcutLaunchers({ shortcuts, capabilities, disabled, launch, remove, configure }: {
+export type QuickActionShortcutLaunchersProps = {
   shortcuts: readonly QuickActionShortcut[];
   capabilities: readonly AgentCapabilityDto[];
   disabled: boolean;
   launch(shortcut: QuickActionShortcut): Promise<unknown>;
   remove(id: string): void;
   configure?: ((shortcut: QuickActionShortcut) => void) | undefined;
-}) {
+};
+
+export function QuickActionShortcutLaunchers({ shortcuts, capabilities, disabled, launch, remove, configure }: QuickActionShortcutLaunchersProps) {
   const [error, setError] = useState<string>();
   return <>{shortcuts.map((shortcut) => {
     const unavailable = quickActionShortcutUnavailable(shortcut, capabilities);

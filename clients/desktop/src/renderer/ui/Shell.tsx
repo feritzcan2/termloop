@@ -38,7 +38,6 @@ import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/c
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
 import { QuickActionComposer } from "./QuickActionComposer.js";
-import { QuickActionShortcutLaunchers } from "./QuickActionShortcutLaunchers.js";
 import { readProviderShortcuts, readQuickActionShortcuts, removeQuickActionShortcut, saveProviderShortcut, saveQuickActionShortcut, updateQuickActionShortcut, type QuickActionShortcut, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
 import { AgentShortcutSettings } from "./AgentShortcutSettings.js";
 import { AgentSetupDialog } from "./AgentSetupDialog.js";
@@ -1502,14 +1501,12 @@ export function Shell(props: ShellProps) {
             launchAgent={launchOrConfigureAgent}
             providerShortcuts={providerShortcuts}
             configureAgent={configureAgent}
-            shortcutLaunchers={<QuickActionShortcutLaunchers
-              shortcuts={quickActionShortcuts}
-              capabilities={props.agentCapabilities}
-              disabled={disabled}
-              launch={(shortcut) => props.launchAgent(shortcut.agentId, shortcut)}
-              remove={(id) => setQuickActionShortcuts(removeQuickActionShortcut(id))}
-              configure={(shortcut) => setAgentShortcutEdit({ kind: "saved", shortcut })}
-            />}
+            shortcutLaunchers={{
+              shortcuts: quickActionShortcuts,
+              launch: (shortcut) => props.launchAgent(shortcut.agentId, shortcut),
+              remove: (id) => setQuickActionShortcuts(removeQuickActionShortcut(id)),
+              configure: (shortcut) => setAgentShortcutEdit({ kind: "saved", shortcut }),
+            }}
             workflowLauncher={workspaceView === "agents" && props.selectedProject ? <WorkflowLaunchers
               key={`${props.selectedProject.connectionProfileId}:${props.selectedProject.id}`}
               project={props.selectedProject}

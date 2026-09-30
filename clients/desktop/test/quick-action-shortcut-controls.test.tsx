@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QuickActionComposer } from "../src/renderer/ui/QuickActionComposer.js";
 import { QuickActionShortcutLaunchers } from "../src/renderer/ui/QuickActionShortcutLaunchers.js";
 import { WorkspaceViewSwitch } from "../src/renderer/ui/WorkspaceViewSwitch.js";
-import { readQuickActionShortcuts, removeQuickActionShortcut, saveQuickActionShortcut } from "../src/renderer/quick-action-shortcuts.js";
+import { readQuickActionShortcuts, removeQuickActionShortcut, saveQuickActionShortcut, updateQuickActionShortcut, type QuickActionShortcut } from "../src/renderer/quick-action-shortcuts.js";
 import { readQuickActionMemory, rememberQuickActionDraft } from "../src/renderer/quick-action-memory.js";
 import { fullAgentCapability } from "./agent-capability-fixture.js";
 
@@ -45,7 +45,7 @@ describe("Quick Action shortcut controls", () => {
     function Harness() {
       const [shortcuts, setShortcuts] = useState(readQuickActionShortcuts);
       return <><WorkspaceViewSwitch view="agents" disabled={false} agents={[capability]} select={vi.fn()} launchTerminal={vi.fn()} launchAgent={vi.fn()}
-        shortcutLaunchers={<QuickActionShortcutLaunchers shortcuts={shortcuts} capabilities={[capability]} disabled={false} launch={launch} remove={(id) => setShortcuts(removeQuickActionShortcut(id))} />} />
+        shortcutLaunchers={{ shortcuts, launch, remove: (id) => setShortcuts(removeQuickActionShortcut(id)) }} />
         <QuickActionComposer {...props} createShortcut={(draft) => setShortcuts(saveQuickActionShortcut(draft))} /></>;
     }
     await act(async () => root.render(<Harness />));
@@ -68,6 +68,35 @@ describe("Quick Action shortcut controls", () => {
     await act(async () => container.querySelector<HTMLButtonElement>('.remove-agent-shortcut')!.click());
     expect(readQuickActionShortcuts()).toEqual([]);
     expect(container.querySelector('.saved-agent-shortcut')).toBeNull();
+  });
+
+  it("keeps provider shortcuts together after creation, model edits and reload, with actions bound to the right shortcut", async () => {
+    const launch = vi.fn().mockResolvedValue(undefined);
+    const configure = vi.fn();
+    for (const [agentId, model, name] of [
+      ["codex", "gpt-6-astra", "Astra"], ["claude", "opus", "Opus"],
+      ["codex", "gpt-6-luna", "Luna"], ["claude", "haiku", "Haiku"],
+    ]) saveQuickActionShortcut({ agentId: agentId!, model: model!, name: name!, icon: "agent", permission: "default", reasoning: "default" });
+    const render = async () => act(async () => root.render(<WorkspaceViewSwitch
+      view="agents" disabled={false} agents={[fullAgentCapability("claude"), capability]} select={vi.fn()} launchTerminal={vi.fn()} launchAgent={vi.fn()}
+      shortcutLaunchers={{ shortcuts: readQuickActionShortcuts(), launch, configure, remove: vi.fn() }}
+    />));
+    const order = () => [...container.querySelectorAll('.workspace-session-launchers button:not(.remove-agent-shortcut)')].map((item) => item.getAttribute("aria-label"));
+    await render();
+    expect(order()).toEqual(["New Terminal", "New Claude Session", "New session: Haiku", "New session: Opus", "New Codex Session", "New session: Luna", "New session: Astra", "Session History"]);
+    const astra = readQuickActionShortcuts()[0]!;
+    const changed: QuickActionShortcut = { ...astra, model: "gpt-5.6-luna" };
+    updateQuickActionShortcut(astra.id, changed);
+    await render();
+    expect(order().slice(4, 7)).toEqual(["New Codex Session", "New session: Astra", "New session: Luna"]);
+    const launcher = container.querySelector<HTMLButtonElement>('[aria-label="New session: Astra"]')!;
+    await act(async () => launcher.click());
+    expect(launch).toHaveBeenCalledWith(changed);
+    await act(async () => launcher.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    expect(configure).toHaveBeenCalledWith(changed);
+    await act(async () => root.unmount()); root = createRoot(container);
+    await render();
+    expect(order().slice(4, 7)).toEqual(["New Codex Session", "New session: Astra", "New session: Luna"]);
   });
 
   it("saves from the name field with Enter without running a prompt", async () => {
