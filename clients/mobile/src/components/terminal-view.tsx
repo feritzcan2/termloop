@@ -36,13 +36,12 @@ import { fontFamily } from "@/theme/typography";
 /// redraws arrive as cursor motion, and stripping that motion leaves duplicated
 /// fragments in no particular order.
 ///
-/// Everything else is a plain byte stream, and gets the bounded line list: no grid, no
-/// cursor, and two places where it says out loud that it is not telling the whole
-/// story — a dropped-frame gap, and its own buffer cap.
+/// Everything else is a plain byte stream, and gets the bounded line list: no grid
+/// or cursor.
 ///
 /// Long lines scroll horizontally rather than wrapping, because wrapping a 300-column
 /// diff at 39 characters produces a column of fragments nobody can read.
-export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }: {
+export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   buffer: TerminalBuffer;
   fontSizeIndex: number;
   capNotice: string | undefined;
@@ -53,23 +52,21 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
-  const [held, setHeld] = useState<TerminalBuffer>();
   const [unread, setUnread] = useState(false);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });
   const [initialPosition, setInitialPosition] = useState<InitialTerminalPosition>("waitingForContent");
   const revealFrame = useRef<number | undefined>(undefined);
   const fontSize = terminalGeometry.fontSizes[fontSizeIndex] ?? terminalGeometry.fontSizes[1];
   const lineHeight = terminalGeometry.lineHeights[fontSizeIndex] ?? terminalGeometry.lineHeights[1];
-  const shown = held ?? buffer;
-  const hasContent = shown.screen !== undefined || shown.lines.length !== 0 || shown.pending.length !== 0;
+  const hasContent = buffer.screen !== undefined || buffer.lines.length !== 0 || buffer.pending.length !== 0;
   const loading = terminalLoading(buffer);
   const requested = useRef({ direction: 0, lines: 0 });
-  const canScrollBack = onScrollBack !== undefined && buffer.screen !== undefined && !held;
-  const outputLines = useMemo(() => shown.lines.filter((line) => line.kind === "output"), [shown.lines]);
-  const historyLines = shown.screen ?? outputLines;
-  const historyKind = shown.screen === undefined ? "stream" : "screen";
+  const canScrollBack = onScrollBack !== undefined && buffer.screen !== undefined;
+  const outputLines = useMemo(() => buffer.lines.filter((line) => line.kind === "output"), [buffer.lines]);
+  const historyLines = buffer.screen ?? outputLines;
+  const historyKind = buffer.screen === undefined ? "stream" : "screen";
   const [history, setHistory] = useState(() => recentTerminalHistory(historyLines, historyKind));
-  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom && !held);
+  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom);
   if (page !== history) setHistory(page);
   const count = page.rows.length - page.start;
   const rows = terminalRowWindow(count, viewport.offset, viewport.height, lineHeight);
@@ -81,9 +78,9 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   const pagedDuringGesture = useRef(false);
 
   useEffect(() => {
-    if (lastRevision.current !== buffer.outputRevision && (!atBottomRef.current || held)) setUnread(true);
+    if (lastRevision.current !== buffer.outputRevision && !atBottomRef.current) setUnread(true);
     lastRevision.current = buffer.outputRevision;
-  }, [buffer.outputRevision, held]);
+  }, [buffer.outputRevision]);
 
   useLayoutEffect(() => {
     const previous = reading.current;
@@ -113,7 +110,6 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
   }, [initialPosition, page]);
 
   const jumpToLive = useCallback(() => {
-    setHeld(undefined);
     setUnread(false);
     setAtBottom(true);
     atBottomRef.current = true;
@@ -132,7 +128,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     const bottom = contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
-    if (bottom && !held) setUnread(false);
+    if (bottom) setUnread(false);
     setViewport({ offset: Math.max(0, contentOffset.y), height: layoutMeasurement.height });
     if (initialPosition === "ready" && scrolling.current && movingUp
       && contentOffset.y <= lineHeight * 4 && page.start > 0) {
@@ -152,7 +148,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, held, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
+  }, [canScrollBack, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
 
   const onContentChange = useCallback(() => {
     if (pendingPosition.current !== undefined) {
@@ -173,8 +169,8 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
       });
       return;
     }
-    if (atBottomRef.current && !held) scroll.current?.scrollToEnd({ animated: false });
-  }, [hasContent, held, initialPosition, loading?.label]);
+    if (atBottomRef.current) scroll.current?.scrollToEnd({ animated: false });
+  }, [hasContent, initialPosition, loading?.label]);
 
   useEffect(() => {
     if (!hasContent && !loading) setInitialPosition("ready");
@@ -183,25 +179,13 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     if (revealFrame.current !== undefined) cancelAnimationFrame(revealFrame.current);
   }, []);
 
-  const notices = buffer.lines.filter((line) => line.kind !== "output");
   return (
     <View style={styles.surface}>
-      <View style={styles.readingBar}>
-        <Text style={styles.notice} accessibilityLiveRegion="polite">{loading?.label ?? (buffer.stream === "exited" ? "Process exited" : buffer.stream === "detached" ? "Disconnected" : held ? "Reading paused · session keeps running" : "Live")}{loading?.percent === undefined ? "" : ` · ${loading.percent}%`}</Text>
-        <Pressable accessibilityRole="button" onPress={() => held ? jumpToLive() : setHeld(buffer)}>
-          <Text style={styles.notice}>{held ? "Return to live" : "Pause to read"}</Text>
+      {page.start > 0 ? <View style={styles.historyBar}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Load earlier output" onPress={loadEarlier}>
+          <Text style={styles.notice}>↑ Scroll up for earlier output</Text>
         </Pressable>
-      </View>
-      {capNotice || buffer.continuityNotice || notices.length ? <View style={styles.readingBar} accessibilityLiveRegion="polite">
-        <Text style={styles.capNotice}>{[buffer.continuityNotice, capNotice, notices.at(-1)?.text].filter(Boolean).join(" · ")}</Text>
       </View> : null}
-      {count === 0 ? null : <View style={styles.historyBar}>
-        {page.start > 0
-          ? <Pressable accessibilityRole="button" accessibilityLabel="Load earlier output" onPress={loadEarlier}>
-              <Text style={styles.notice}>↑ Scroll up for earlier output</Text>
-            </Pressable>
-          : <Text style={styles.notice}>Start of saved output</Text>}
-      </View>}
       <ScrollView ref={scroll} style={styles.scroll}
         contentContainerStyle={[styles.content, initialPosition === "ready" ? null : styles.initiallyHidden]}
         onLayout={(event) => {
@@ -222,11 +206,11 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
         <ScrollView horizontal contentContainerStyle={styles.horizontal} showsHorizontalScrollIndicator={false}>
           <View>
             <View style={{ height: rows.before }} />
-            {shown.screen === undefined
+            {buffer.screen === undefined
               ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
-              : shown.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
+              : buffer.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
             <View style={{ height: rows.after }} />
-            {shown.screen === undefined && shown.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: shown.pending, style: DEFAULT_TERMINAL_STYLE }])}</Text> : null}
+            {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }])}</Text> : null}
           </View>
         </ScrollView>
       </ScrollView>
@@ -237,7 +221,7 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
         <Text style={styles.loadingLabel}>{loading.label}</Text>
         {loading.percent === undefined ? null : <Text style={styles.loadingProgress}>{loading.percent}%</Text>}
       </View> : null}
-      {atBottom && !held ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={styles.jump}>
+      {atBottom ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={styles.jump}>
         <Text style={styles.jumpGlyph}>{unread ? "New output · " : ""}↓ Live</Text>
       </Pressable>}
     </View>
@@ -304,7 +288,6 @@ function renderSpans(spans: readonly TerminalSpan[]) {
 
 const styles = StyleSheet.create({
   historyBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, alignItems: "center" },
-  readingBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, flexDirection: "row", justifyContent: "space-between", gap: space.sm },
   surface: { flex: 1, backgroundColor: color.bgTerminal },
   scroll: { flex: 1 },
   /// No `gap` here. A gap between the notice and the output block is fine, but the block
@@ -325,12 +308,6 @@ const styles = StyleSheet.create({
   horizontal: { minWidth: "100%" },
   output: { color: color.text, fontFamily: fontFamily.mono },
   notice: { color: color.textMuted, fontFamily: fontFamily.mono },
-  capNotice: {
-    color: color.textMuted,
-    fontFamily: fontFamily.mono,
-    lineHeight: 16,
-    marginBottom: space.sm,
-  },
   jump: {
     position: "absolute",
     right: space.md,

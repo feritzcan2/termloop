@@ -42,8 +42,23 @@ describe("terminal native layout", () => {
       module, module.exports,
     );
     const tree = module.exports.TerminalView({
-      buffer: emptyTerminalBuffer(), fontSizeIndex: 1, capNotice: undefined,
+      buffer: {
+        ...emptyTerminalBuffer(),
+        stream: "live",
+        continuityNotice: "Earlier output could not be matched",
+        lines: [
+          { id: 1, kind: "gap", text: "181958 frames were dropped" },
+          { id: 2, kind: "output", text: "Visible terminal output" },
+        ],
+      },
+      fontSizeIndex: 1,
+      capNotice: "Output cap reached",
     });
+    expect(renderedText(tree)).not.toContain("Pause to read");
+    expect(renderedText(tree)).not.toContain("Start of saved output");
+    expect(renderedText(tree)).not.toContain("181958 frames were dropped");
+    expect(renderedText(tree)).not.toContain("Output cap reached");
+    expect(renderedText(tree)).not.toContain("Earlier output could not be matched");
     const layout = findLayout(tree);
     expect(layout).toBeDefined();
     const event = { nativeEvent: { layout: { height: 320 } } as { layout: { height: number } } | null };
@@ -53,6 +68,13 @@ describe("terminal native layout", () => {
     expect(updates.map((update) => update())).toContainEqual({ offset: 0, height: 320 });
   });
 });
+
+function renderedText(node: ReactNode): string {
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map(renderedText).join(" ");
+  if (!isValidElement<{ children?: ReactNode }>(node)) return "";
+  return renderedText(node.props.children);
+}
 
 function findLayout(node: ReactNode): ((event: unknown) => void) | undefined {
   if (!isValidElement<{ onLayout?: (event: unknown) => void; children?: ReactNode }>(node)) return;
