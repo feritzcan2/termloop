@@ -1,0 +1,24 @@
+name: Prepare Windows Python
+description: Provide a pinned portable Python for node-gyp without running an installer
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify Python
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $version = '3.12.10'
+        $archive = Join-Path $env:RUNNER_TEMP "python-$version-embed-amd64.zip"
+        $directory = Join-Path $env:RUNNER_TEMP "python-$version-embed-amd64"
+        $url = "https://www.python.org/ftp/python/$version/python-$version-embed-amd64.zip"
+        Invoke-WebRequest -Uri $url -OutFile $archive -TimeoutSec 120
+        $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        $expected = '4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3'
+        if ($actual -ne $expected) { throw "Python archive checksum mismatch: $actual" }
+        Expand-Archive -LiteralPath $archive -DestinationPath $directory -Force
+        $python = Join-Path $directory 'python.exe'
+        & $python -c 'import json, subprocess, sys; print(sys.version)'
+        if ($LASTEXITCODE -ne 0) { throw 'Portable Python did not start' }
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $directory
+        Add-Content -LiteralPath $env:GITHUB_ENV -Value "PYTHON=$python"
