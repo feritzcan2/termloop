@@ -3,8 +3,10 @@ import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { WorkspaceView } from "../workspace-view-memory.js";
 import type { ReactNode } from "react";
 import type { QuickActionShortcut } from "../quick-action-shortcuts.js";
+import { groupQuickActionShortcuts } from "../quick-action-shortcut-order.js";
 import { AgentLaunchButton } from "./AgentLaunchButton.js";
 import { QuickActionShortcutIcon } from "./QuickActionShortcutIcon.js";
+import { QuickActionShortcutLaunchers, type QuickActionShortcutLaunchersProps } from "./QuickActionShortcutLaunchers.js";
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
@@ -20,7 +22,7 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   launchTerminal(): Promise<void>;
   launchAgent(agentId: string): Promise<void>;
   workflowLauncher?: ReactNode;
-  shortcutLaunchers?: ReactNode;
+  shortcutLaunchers?: Omit<QuickActionShortcutLaunchersProps, "capabilities" | "disabled">;
   providerShortcuts?: readonly QuickActionShortcut[];
   configureAgent?: ((agentId: string) => void) | undefined;
   setupAgents?(): void;
@@ -155,14 +157,13 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
         ) : null}
         <span className="workspace-session-launchers">
         <button id="new-terminal" type="button" title="New Terminal" aria-label="New Terminal" disabled={disabled} onClick={() => void launchTerminal()}><Icon name="terminal" /></button>
-        {agents.map((agent) => {
-          const icon = agentIconName(agent.agent_id);
-          const shortcut = providerShortcuts.find((item) => item.agentId === agent.agent_id);
-          const title = !agent.available
+        {groupQuickActionShortcuts(shortcutLaunchers?.shortcuts ?? [], agents.map((agent) => agent.agent_id)).map((group) => {
+          const agent = agents.find((item) => item.agent_id === group.agentId);
+          const shortcut = providerShortcuts.find((item) => item.agentId === group.agentId);
+          const title = agent && !agent.available
             ? `${agent.label} CLI unavailable — set up in Settings`
-            : `New ${shortcut?.name ?? agent.label} Session${agent.integration_level === "launchOnly" ? " (launch only)" : ""}`;
-          return <AgentLaunchButton
-            key={agent.agent_id}
+            : `New ${shortcut?.name ?? agent?.label} Session${agent?.integration_level === "launchOnly" ? " (launch only)" : ""}`;
+          return <span className="workspace-agent-launch-group" key={group.agentId}>{agent ? <AgentLaunchButton
             type="button"
             className={agent.agent_id}
             title={`${title}${configureAgent ? "\nHold or right-click to configure" : ""}`}
@@ -170,9 +171,10 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             disabled={disabled || (!agent.available && !setupAgents)}
             onClick={() => agent.available ? void launchAgent(agent.agent_id) : setupAgents?.()}
             configure={configureAgent ? () => configureAgent(agent.agent_id) : undefined}
-          >{shortcut ? <QuickActionShortcutIcon agentId={agent.agent_id} icon={shortcut.icon} /> : <Icon name={icon} />}</AgentLaunchButton>;
+          >{shortcut ? <QuickActionShortcutIcon agentId={agent.agent_id} icon={shortcut.icon} /> : <Icon name={agentIconName(agent.agent_id)} />}</AgentLaunchButton> : null}
+            {shortcutLaunchers ? <QuickActionShortcutLaunchers {...shortcutLaunchers} shortcuts={group.shortcuts} capabilities={agents} disabled={disabled} /> : null}
+          </span>;
         })}
-        {shortcutLaunchers}
         {workflowLauncher}
         <span className="workspace-history-separator" aria-hidden="true" />
         <button

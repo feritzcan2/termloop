@@ -509,7 +509,9 @@ describe("Agents Project workflow launcher", () => {
     try {
       expect(f.trigger().parentElement?.className).toBe("workspace-session-launchers");
       expect(f.trigger().parentElement?.parentElement?.className).toBe("workspace-launch-actions");
-      expect(f.trigger().previousElementSibling?.className).toBe("codex");
+      const agentGroup = f.trigger().previousElementSibling;
+      expect(agentGroup?.className).toBe("workspace-agent-launch-group");
+      expect(agentGroup?.lastElementChild?.className).toBe("codex");
       expect(f.trigger().nextElementSibling?.className).toBe("workspace-history-separator");
       expect(f.container.querySelector(".task-launch")).toBeNull();
       expect(f.container.querySelector(".workflow-execution-row")).toBeNull();
