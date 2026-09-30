@@ -102,10 +102,8 @@ jobs:
         if: runner.os == 'macOS'
         with:
           node-version: 22
-      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      - uses: ./.github/actions/windows-python
         if: runner.os == 'Windows'
-        with:
-          python-version: '3.12'
       - name: Verify pinned Zig for Ghostty
         if: runner.os == 'macOS'
         shell: bash
