@@ -10,6 +10,7 @@ import { readTaskCollapsed, writeTaskCollapsed } from "../src/renderer/task-coll
 import type { TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import { fullAgentCapability, launchOnlyGeminiCapability, resumableOpenCodeCapability } from "./agent-capability-fixture.js";
 import { workflowConfiguration } from "./workflow-fixture.js";
+import { restoreTerminalFocusAfterOverlay } from "../src/renderer/composition/native-overlay-window.js";
 
 beforeEach(() => window.localStorage.clear());
 
@@ -1459,31 +1460,59 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("renames an active Task inline from the actions menu", async () => {
+  it.each([
+    ["contextmenu", "Enter"], ["actions", "Enter"],
+    ["contextmenu", "blur"], ["contextmenu", "Escape"],
+  ])("keeps inline rename focused from %s and handles %s", async (origin, finish) => {
     const task = launchableTask();
     const updateTask = vi.fn(async () => undefined);
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const flushFrames = async () => {
+      while (frames.length) await act(async () => { frames.splice(0).forEach((callback) => callback(0)); });
+    };
+    const focusTerminal = vi.fn();
+    let overlayWasOpen = false;
+    const overlayVisibilityChanged = (open: boolean) => {
+      if (overlayWasOpen && !open) restoreTerminalFocusAfterOverlay(focusTerminal);
+      overlayWasOpen = open;
+    };
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), updateTask })));
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), updateTask, overlayVisibilityChanged })));
 
-    await act(async () => container.querySelector<HTMLButtonElement>('.task-item[data-task-id="task-1"]')!
-      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () => {
+      if (origin === "contextmenu") container.querySelector<HTMLButtonElement>('.task-item[data-task-id="task-1"]')!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+      else container.querySelector<HTMLButtonElement>('[aria-label="More actions for Compact launchers"]')!.click();
+    });
+    await flushFrames();
     const rename = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
       .find((item) => item.textContent?.includes("Rename"))!;
     await act(async () => rename.click());
+    await flushFrames();
     const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Compact launchers"]')!;
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(focusTerminal).not.toHaveBeenCalled();
     expect(input.value).toBe("Compact launchers");
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
     await act(async () => typeInto(input, "Renamed from card"));
     await act(async () => {
-      input.blur();
+      if (finish === "blur") input.blur();
+      else input.dispatchEvent(new KeyboardEvent("keydown", { key: finish, bubbles: true }));
       await Promise.resolve();
     });
-    expect(updateTask).toHaveBeenCalledWith("task-1", "Renamed from card", task.brief);
+    if (finish === "Escape") expect(updateTask).not.toHaveBeenCalled();
+    else expect(updateTask).toHaveBeenCalledExactlyOnceWith("task-1", "Renamed from card", task.brief);
+    expect(container.querySelector(".task-rename")).toBeNull();
 
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
