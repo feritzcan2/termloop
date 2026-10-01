@@ -195,15 +195,17 @@ export function sessionRowAccessibleName(options: {
   return parts.join(", ");
 }
 
-/// An Ask-To helper is the one Session relation the projection carries, and it is
-/// a bounded live fact rather than Session parentage. The row states it so a
-/// helper conversation is not mistaken for an ordinary Agent the user started.
+/// State exact projected Ask-To and fork provenance without inferring Session
+/// parentage from names, paths, or launch order.
 export function sessionRelationship(
   session: SessionDto,
   sessionsById: ReadonlyMap<string, SessionDto>,
 ): string | undefined {
-  const sourceId = session.ask_to_source_session_id;
+  const sourceId = session.ask_to_source_session_id ?? session.fork_source_session_id;
   if (!sourceId) return undefined;
   const source = sessionsById.get(sourceId);
+  if (session.fork_source_session_id === sourceId) {
+    return source ? `forked from ${sessionLabel(source)}` : "forked session";
+  }
   return source ? `helping ${sessionLabel(source)}` : "helper session";
 }

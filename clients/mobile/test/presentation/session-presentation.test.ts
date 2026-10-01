@@ -181,6 +181,13 @@ describe("row provenance and accessible names", () => {
     expect(sessionRelationship(source, byId)).toBeUndefined();
   });
 
+  it("names the exact source of a native fork", () => {
+    const source = session({ id: "ses_source", name: "First fork" });
+    const fork = session({ id: "ses_nested", fork_source_session_id: source.id });
+    expect(sessionRelationship(fork, new Map([[source.id, source]]))).toBe("forked from First fork");
+    expect(sessionRelationship(fork, new Map())).toBe("forked session");
+  });
+
   it("reads a row as one sentence in the design's ranked order", () => {
     const subject = session({ name: "Mobile work" });
     const state = sessionState(subject, status("awaitingInput"), false);
