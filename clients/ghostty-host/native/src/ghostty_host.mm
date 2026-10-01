@@ -16,6 +16,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #include <ghostty.h>
+#include "terminal_links.h"
 
 #include <sys/socket.h>
 #include <fcntl.h>
@@ -77,7 +78,14 @@ static void wakeupCallback(void *) {
   });
 }
 
-static bool actionCallback(ghostty_app_t, ghostty_target_s, ghostty_action_s) {
+static void updateHoveredLink(ghostty_surface_t, const char *, size_t);
+
+static bool actionCallback(ghostty_app_t, ghostty_target_s target, ghostty_action_s action) {
+  if (target.tag == GHOSTTY_TARGET_SURFACE && action.tag == GHOSTTY_ACTION_MOUSE_OVER_LINK) {
+    updateHoveredLink(target.target.surface, action.action.mouse_over_link.url,
+                      action.action.mouse_over_link.len);
+    return true;
+  }
   // TermLoop owns application actions (new windows, titles, and process
   // lifecycle); this byte-renderer host does not delegate them to Ghostty.
   return false;
@@ -220,6 +228,7 @@ static void notifyShellShortcut(const char *shortcut) {
 @property(nonatomic, assign) BOOL surfaceFocused;
 @property(nonatomic, assign) NSTimeInterval firstShiftDownAt;
 @property(nonatomic, assign) BOOL shiftReleased;
+@property(nonatomic, strong) TLTerminalLinks *terminalLinks;
 @property(nonatomic, strong) NSMutableAttributedString *markedText;
 @property(nonatomic, strong, nullable) NSMutableArray<NSString *> *keyTextAccumulator;
 @property(nonatomic, weak, nullable) NSResponder *restorationResponder;
@@ -238,6 +247,7 @@ static void notifyShellShortcut(const char *shortcut) {
         [NSColor colorWithSRGBRed:0.157 green:0.173 blue:0.204 alpha:1.0]
             .CGColor;
     self.markedText = [[NSMutableAttributedString alloc] initWithString:@""];
+    self.terminalLinks = [TLTerminalLinks new];
     NSTrackingArea *area = [[NSTrackingArea alloc]
         initWithRect:NSZeroRect
              options:NSTrackingMouseMoved | NSTrackingActiveInKeyWindow |
@@ -672,6 +682,10 @@ static void notifyShellShortcut(const char *shortcut) {
 
 - (void)mouseDown:(NSEvent *)event {
   [self focusSurface];
+  const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+  if (self.surface && [self.terminalLinks mouseDown:self.surface
+      point:NSMakePoint(p.x, self.bounds.size.height - p.y)
+      mods:modsFromNSEvent(event.modifierFlags)]) return;
   [self reportMousePos:event];
   if (self.surface)
     ghostty_surface_mouse_button(self.surface, GHOSTTY_MOUSE_PRESS,
@@ -680,6 +694,12 @@ static void notifyShellShortcut(const char *shortcut) {
 }
 
 - (void)mouseUp:(NSEvent *)event {
+  const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+  if (self.surface && [self.terminalLinks mouseUp:self.surface
+      point:NSMakePoint(p.x, self.bounds.size.height - p.y)]) {
+    [self reportMousePos:event];
+    return;
+  }
   [self reportMousePos:event];
   if (self.surface)
     ghostty_surface_mouse_button(self.surface, GHOSTTY_MOUSE_RELEASE,
@@ -708,6 +728,8 @@ static void notifyShellShortcut(const char *shortcut) {
 }
 
 - (void)mouseDragged:(NSEvent *)event {
+  const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+  if ([self.terminalLinks mouseDragged:NSMakePoint(p.x, self.bounds.size.height - p.y)]) return;
   [self reportMousePos:event];
 }
 
@@ -733,6 +755,13 @@ static void notifyShellShortcut(const char *shortcut) {
 }
 
 @end
+
+static void updateHoveredLink(ghostty_surface_t surface, const char *url, size_t length) {
+  TLGhosttyView *view = (__bridge TLGhosttyView *)ghostty_surface_userdata(surface);
+  view.terminalLinks.hoveredURL = length > 0 && length <= 8192 && url != nullptr
+      ? [[NSString alloc] initWithBytes:url length:length encoding:NSUTF8StringEncoding]
+      : nil;
+}
 
 static ghostty_surface_t surfaceFromUserdata(void *userdata) {
   if (userdata == nullptr) return nullptr;
