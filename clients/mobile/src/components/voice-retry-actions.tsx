@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { color, geometry, radius, space } from "../theme/tokens";
+import { createThemedStyles } from "@/theme/context";
+import { Pressable, Text, View } from "react-native";
+import { geometry, radius, space } from "../theme/tokens";
 
 export function VoiceRetryActions({ retryable, busy, recordingSaved, onRetry, onCancel }: {
   retryable: boolean;
@@ -8,6 +9,7 @@ export function VoiceRetryActions({ retryable, busy, recordingSaved, onRetry, on
   onRetry(): void;
   onCancel(): void;
 }) {
+  const styles = useStyles();
   return <View style={styles.container}>
     {recordingSaved ? <Text style={styles.hint}>Kaydın saklandı.</Text> : null}
     <View style={styles.actions}>
@@ -21,7 +23,7 @@ export function VoiceRetryActions({ retryable, busy, recordingSaved, onRetry, on
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   container: { gap: space.xs },
   hint: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: space.sm },
@@ -29,4 +31,4 @@ const styles = StyleSheet.create({
   cancelText: { color: color.textSecondary, fontSize: 12, fontWeight: "600" },
   retry: { minHeight: geometry.touchTarget, paddingHorizontal: space.md, justifyContent: "center", borderRadius: radius.control, backgroundColor: color.accent },
   retryText: { color: color.onAccent, fontSize: 12, fontWeight: "700" },
-});
+}));

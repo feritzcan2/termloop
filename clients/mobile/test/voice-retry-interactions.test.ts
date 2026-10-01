@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -149,7 +150,7 @@ function hookHost() {
     effects: () => effects.forEach((effect) => effect()), dirty: () => changed,
     unmount: () => slots.forEach((slot) => slot?.cleanup?.()),
     react: {
-      ...require("react"),
+      ...require("react"), useContext: () => lightTheme,
       useRef: (initial: unknown) => slots[cursor++] ??= { current: initial },
       useMemo: memo, useCallback: (callback: unknown, deps?: unknown[]) => memo(() => callback, deps),
       useState: (initial: any) => {

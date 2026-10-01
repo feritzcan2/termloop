@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -82,7 +83,7 @@ describe("workflow progress interactions", () => {
 
 async function harness() {
   const slots: any[] = []; let cursor = 0;
-  const react = { ...require("react"), useState(initial: unknown) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial; return [slots[index], (next: any) => { slots[index] = typeof next === "function" ? next(slots[index]) : next; }]; } };
+  const react = { ...require("react"), useContext: () => lightTheme, useState(initial: unknown) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial; return [slots[index], (next: any) => { slots[index] = typeof next === "function" ? next(slots[index]) : next; }]; } };
   const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/features/workflows/workflow-execution-card.tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "react-native-safe-area-context", "../../components/primitives", "../../components/screen"] });
   const module = { exports: {} as { WorkflowExecutionCard: Component } };
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)((name: string) => {

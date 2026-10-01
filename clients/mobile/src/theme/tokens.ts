@@ -1,10 +1,4 @@
-/// The mobile client's colour and geometry vocabulary.
-///
-/// Mobile is deliberately light-only. Muted slate surfaces reduce glare while keeping
-/// dense terminal and worktree content readable, and a saturated blue accent carries
-/// selection and primary action. Phone-native geometry remains independent from the palette.
-
-export const color = {
+const lightColor = {
   bgApp: "#DFE4EC",
   bgRaised: "#ECEFF4",
   bgSidebar: "#D4DAE5",
@@ -45,7 +39,7 @@ export const color = {
 /// Tone hues. `quiet` renders no spine at all and `done` is stated but never lit,
 /// so neither has a colour here — a settled row must not compete with the one row
 /// that is actually waiting on the user.
-export const toneColor = {
+const lightToneColor = {
   working: "#0B6845",
   interrupted: "#7D4D00",
   review: "#125F9C",
@@ -55,7 +49,7 @@ export const toneColor = {
 } as const;
 
 /** Subtle row fields make live state glanceable without turning the list neon. */
-export const toneWash = {
+const lightToneWash = {
   working: "rgba(11,104,69,0.14)",
   interrupted: "rgba(125,77,0,0.14)",
   review: "rgba(18,95,156,0.14)",
@@ -63,6 +57,64 @@ export const toneWash = {
   attention: "rgba(159,53,23,0.15)",
   blocked: "rgba(167,39,62,0.15)",
 } as const;
+
+export type AppearanceMode = "light" | "dark";
+export type MobileTheme = {
+  readonly mode: AppearanceMode;
+  readonly color: { readonly [Key in keyof typeof lightColor]: string };
+  readonly toneColor: { readonly [Key in keyof typeof lightToneColor]: string };
+  readonly toneWash: { readonly [Key in keyof typeof lightToneWash]: string };
+};
+
+export const lightTheme: MobileTheme = {
+  mode: "light", color: lightColor, toneColor: lightToneColor, toneWash: lightToneWash,
+};
+
+// The dark canvas matches the embedded Ghostty default (#282C34).
+export const darkTheme: MobileTheme = {
+  mode: "dark",
+  color: {
+    bgApp: "#282C34",
+    bgRaised: "#303640",
+    bgSidebar: "#242830",
+    bgHover: "#3B4350",
+    bgTerminal: "#282C34",
+    border: "#495361",
+    borderStrong: "#647184",
+    rule: "rgba(255,255,255,0.12)",
+    text: "#FFFFFF",
+    textSecondary: "#C5C8C6",
+    textMuted: "#ABB2BF",
+    accent: "#81A2BE",
+    accentStrong: "#A8C7E3",
+    accentWash: "rgba(129,162,190,0.18)",
+    success: "#B5BD68",
+    successWash: "rgba(181,189,104,0.16)",
+    warning: "#F0C674",
+    danger: "#F09090",
+    dangerBorder: "#CC6666",
+    dangerWash: "rgba(204,102,102,0.18)",
+    attention: "#F0AA78",
+    agentClaude: "#F0AA78",
+    agentCodex: "#8ABEB7",
+    onAccent: "#1D1F21",
+    shadow: "#000000",
+    scrim: "rgba(0,0,0,0.60)",
+    mediaScrim: "rgba(0,0,0,0.78)",
+    onMedia: "#FFFFFF",
+  },
+  toneColor: {
+    working: "#B5BD68", interrupted: "#F0C674", review: "#A8C7E3",
+    busy: "#F0AA78", attention: "#F0AA78", blocked: "#F09090",
+  },
+  toneWash: {
+    working: "rgba(181,189,104,0.16)", interrupted: "rgba(240,198,116,0.16)",
+    review: "rgba(129,162,190,0.18)", busy: "rgba(240,170,120,0.16)",
+    attention: "rgba(240,170,120,0.16)", blocked: "rgba(204,102,102,0.18)",
+  },
+};
+
+export const themes = { light: lightTheme, dark: darkTheme } as const;
 
 export const radius = {
   control: 8,

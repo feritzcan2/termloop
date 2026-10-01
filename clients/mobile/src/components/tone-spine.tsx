@@ -1,9 +1,10 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useEffect, useState } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Text, View } from "react-native";
 
 import type { RowTone } from "@/presentation/tone";
 import { fontFamily } from "@/theme/typography";
-import { radius, toneColor } from "@/theme/tokens";
+import { radius } from "@/theme/tokens";
 
 /// The row's strongest tone marker. The surrounding row uses only a restrained
 /// wash, while this spine carries the precise state colour. Urgency is not a
@@ -12,6 +13,8 @@ import { radius, toneColor } from "@/theme/tokens";
 /// `quiet` and `done` render nothing. A settled row is stated in words, never in
 /// colour.
 export function ToneSpine({ tone }: { tone: RowTone }) {
+  const { toneColor } = useTheme();
+  const styles = useStyles();
   const background = tone === "quiet" || tone === "done" ? undefined : toneColor[tone];
   if (background === undefined) return <View style={styles.spine} />;
   return <View style={[styles.spine, { backgroundColor: background }]} />;
@@ -24,6 +27,7 @@ export function ToneSpine({ tone }: { tone: RowTone }) {
 /// With Reduce Motion on, the cursor holds steady instead of blinking; presence
 /// is the signal, motion is only emphasis.
 export function WaitingCursor({ tint }: { tint: string }) {
+  const styles = useStyles();
   const [lit, setLit] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -59,7 +63,7 @@ export function WaitingCursor({ tint }: { tint: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(() => ({
   spine: {
     width: radius.spine,
     borderRadius: radius.spine,
@@ -67,4 +71,4 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   cursor: { fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "700" },
-});
+}));

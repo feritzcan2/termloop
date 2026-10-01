@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -97,7 +98,7 @@ async function harness() {
   const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/app/project/[projectId].tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "expo-router", "@/*"] });
   const module = { exports: {} as { default(): ReactNode } };
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)((name: string) => {
-    if (name === "react") return { ...require("react"), useMemo: (create: () => unknown) => create(), useEffect: () => {}, useState: (initial: unknown) => { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], (value: unknown) => { slots[index] = value; }]; } };
+    if (name === "react") return { ...require("react"), useContext: () => lightTheme, useMemo: (create: () => unknown) => create(), useEffect: () => {}, useState: (initial: unknown) => { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], (value: unknown) => { slots[index] = value; }]; } };
     if (name === "react-native") return { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", RefreshControl: "RefreshControl", ScrollView: "ScrollView", Text: "Text", View: "View", StyleSheet: { create: (value: unknown) => value, hairlineWidth: 0.5 } };
     if (name === "expo-router") return { useLocalSearchParams: () => params, useRouter: () => router };
     if (name === "@/features/connection/use-route-connection") return { useRouteConnection: () => {} };
@@ -110,6 +111,7 @@ async function harness() {
     if (name === "@/features/connection/connection-route") return connectionRoute;
     if (name === "@/presentation/relative-time") return relativeTime;
     if (name === "@/theme/tokens") return tokens;
+    if (name === "@/theme/context") return { useTheme: () => lightTheme, createThemedStyles: (create: (theme: typeof lightTheme) => unknown) => () => create(lightTheme) };
     if (name === "@/theme/typography") return { fontFamily: { mono: "Menlo" } };
     if (name.startsWith("@/components/") || name.startsWith("@/features/")) return new Proxy({}, { get: (_target, property) => property });
     return require(name);

@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -85,7 +86,7 @@ describe("external link controls", () => {
 async function harness(entry: string) {
   const openURL = vi.fn().mockResolvedValue(undefined), alert = vi.fn();
   const react = {
-    ...require("react"), memo: (component: unknown) => component,
+    ...require("react"), useContext: () => lightTheme, memo: (component: unknown) => component,
     useMemo: (create: () => unknown) => create(), useCallback: (callback: unknown) => callback,
     useEffect: () => {}, useLayoutEffect: () => {}, useRef: (current: unknown) => ({ current }),
     useState: (initial: unknown) => [typeof initial === "function" ? initial() : initial, () => {}],

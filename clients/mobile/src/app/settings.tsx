@@ -1,5 +1,6 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 
 import { Banner, Card, CardDivider, EmptyState, SectionHeader } from "@/components/primitives";
 import { Row } from "@/components/row";
@@ -7,13 +8,15 @@ import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
-import { color, space } from "@/theme/tokens";
+import { space } from "@/theme/tokens";
 
 /// Settings that belong to this phone, rather than durable TermLoop Project
 /// state. A Watch choice is kept per paired Mac and delivered over
 /// WatchConnectivity as latest state, so an unreachable Watch receives it on
 /// its next connection.
 export default function SettingsRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   const connections = useConnections();
   const overview = useOverview();
@@ -121,11 +124,11 @@ export default function SettingsRoute() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
   loading: { alignItems: "center", paddingVertical: space.xl },
   intro: { gap: space.xs },
   title: { color: color.text, fontSize: 18, fontWeight: "700" },
   body: { color: color.textSecondary, fontSize: 13, lineHeight: 19 },
   section: { gap: space.sm },
-});
+}));

@@ -1,3 +1,5 @@
+import { useTextStyles, fontFamily } from "@/theme/typography";
+import { createThemedStyles } from "@/theme/context";
 import { useRouter, type Href } from "expo-router";
 import type { PropsWithChildren, ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -5,14 +7,14 @@ import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { backNavigationAction } from "@/presentation/back-navigation";
-import { color, geometry, space } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, space } from "@/theme/tokens";
 
 /// Every screen's frame. The native header is off across the app so the header can
 /// carry the Project selector and a compact right slot at the legacy client's proven
 /// 47pt height; the stack's back gesture still works, and the chevron is a real 44pt
 /// target rather than a native title-bar hit-box.
 export function Screen({ children, edges }: PropsWithChildren<{ edges?: readonly Edge[] }>) {
+  const styles = useStyles();
   return (
     <SafeAreaView style={styles.screen} edges={edges ?? ["top", "bottom"]}>
       {children}
@@ -32,6 +34,8 @@ export function ScreenHeader({ title, subtitle, back, backFallback, center, righ
   center?: ReactNode;
   right?: ReactNode;
 }) {
+  const styles = useStyles();
+  const text = useTextStyles();
   const router = useRouter();
   return (
     <View style={styles.header}>
@@ -69,6 +73,7 @@ export function ScreenHeader({ title, subtitle, back, backFallback, center, righ
 /// is an identity, not a request, and blinking is reserved for rows that are
 /// actually waiting on the user.
 export function Wordmark() {
+  const styles = useStyles();
   return (
     <View style={styles.wordmarkZone} accessibilityRole="header" accessible accessibilityLabel="TermLoop">
       <Text style={styles.wordmark} numberOfLines={1}>
@@ -80,6 +85,7 @@ export function Wordmark() {
 }
 
 export function MockBadge() {
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   if (runtime.kind !== "mock") return null;
   return (
@@ -90,6 +96,7 @@ export function MockBadge() {
 }
 
 export function MockNotice({ detail }: { detail: string }) {
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   if (runtime.kind !== "mock") return null;
   return (
@@ -102,7 +109,7 @@ export function MockNotice({ detail }: { detail: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   screen: { flex: 1, backgroundColor: color.bgApp },
   header: {
     flexDirection: "row",
@@ -156,4 +163,4 @@ const styles = StyleSheet.create({
   },
   mockNoticeText: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   mockNoticeLead: { color: color.accentStrong, fontWeight: "700" },
-});
+}));

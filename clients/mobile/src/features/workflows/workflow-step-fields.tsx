@@ -1,8 +1,9 @@
+import { createThemedStyles } from "@/theme/context";
 import type { AgentCapabilityDto, StewardAgentId, WorkflowStepDto } from "@termloop/contract/current";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { WorkflowAgentCatalog } from "../../application/workflow-templates-port";
 import { workflowAgentName, workflowHelper, workflowLaunchDefaults, workflowPermissionName, type WorkflowDraft } from "../../presentation/workflow-template";
-import { color, space } from "../../theme/tokens";
+import { space } from "../../theme/tokens";
 import { WorkflowAdvanced, WorkflowField, WorkflowSelect } from "./workflow-controls";
 
 export function WorkflowLaunchFields(props: {
@@ -23,6 +24,7 @@ export function WorkflowStepFields(props: {
   step: WorkflowStepDto; draft: WorkflowDraft; catalog: WorkflowAgentCatalog; disabled: boolean;
   update(value: Partial<WorkflowStepDto>): void;
 }) {
+  const styles = useStyles();
   const { step, draft, catalog, disabled } = props;
   const prior = draft.steps.slice(0, draft.steps.findIndex((item) => item.id === step.id)).filter((item) => item.kind === "discuss");
   const taken = new Set(draft.steps.filter((item) => item.kind === "review" && item.id !== step.id).map((item) => item.reuseStepId));
@@ -66,4 +68,4 @@ export function WorkflowStepFields(props: {
   </View>;
 }
 
-const styles = StyleSheet.create({ fields: { gap: space.md }, help: { color: color.textSecondary, fontSize: 13, lineHeight: 19 }, owned: { color: color.accentStrong, fontSize: 13, lineHeight: 19, padding: space.md, backgroundColor: color.accentWash, borderRadius: 8 } });
+const useStyles = createThemedStyles(({ color }) => ({ fields: { gap: space.md }, help: { color: color.textSecondary, fontSize: 13, lineHeight: 19 }, owned: { color: color.accentStrong, fontSize: 13, lineHeight: 19, padding: space.md, backgroundColor: color.accentWash, borderRadius: 8 } }));

@@ -1,3 +1,4 @@
+import { createThemedStyles } from "@/theme/context";
 import { parseDiff, type IChange, type IFile } from "react-native-diff-view";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -5,12 +6,12 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { TaskWorktreeDiffState, TaskWorktreePreImageResult } from "@termloop/contract/current";
 import { reconstructFullFile, type FullFileDisplayLine } from "@/presentation/worktree-full-file";
 import { diffReviewLine, reviewLineKey, type ReviewLine } from "@/presentation/change-review-notes";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// `react-native-diff-view` owns the unified-patch parser. Its stock renderer
 /// carries a fixed palette, so this small native renderer consumes its typed
-/// hunk model and keeps the review surface inside TermLoop's light theme.
+/// hunk model and keeps the review surface inside TermLoop's selected theme.
 export type WorktreeDiffMode = "diff" | "fullFile";
 export type WorktreeDiffReview = {
   notedLines: ReadonlySet<string>;
@@ -26,6 +27,7 @@ export function WorktreeDiff({ state, patch, mode = "diff", preImage, fullFileLo
   fullFileError?: string | undefined;
   review?: WorktreeDiffReview | undefined;
 }) {
+  const styles = useStyles();
   if (state !== "patch" || patch === null) {
     return <Text style={styles.unavailable}>{diffStateMessage(state)}</Text>;
   }
@@ -47,6 +49,7 @@ function ParsedPatch({ patch, mode, preImage, fullFileLoading, fullFileError, re
   fullFileError: string | undefined;
   review: WorktreeDiffReview | undefined;
 }) {
+  const styles = useStyles();
   const files = useMemo(() => {
     try {
       return parseDiff(patch);
@@ -85,6 +88,7 @@ function ExpandedFile({ files, preImage, loading, error, review }: {
   error: string | undefined;
   review: WorktreeDiffReview | undefined;
 }) {
+  const styles = useStyles();
   if (loading) return <Text style={styles.unavailable}>Loading the full file…</Text>;
   if (error !== undefined) return <Text style={styles.unavailable}>{error}</Text>;
   if (preImage === undefined) return <Text style={styles.unavailable}>The full file is not available yet.</Text>;
@@ -112,6 +116,7 @@ function ExpandedFile({ files, preImage, loading, error, review }: {
 }
 
 function ParsedFile({ file, review }: { file: IFile; review: WorktreeDiffReview | undefined }) {
+  const styles = useStyles();
   return (
     <View style={styles.file}>
       {file.hunks.map((hunk, hunkIndex) => {
@@ -130,6 +135,7 @@ function ParsedFile({ file, review }: { file: IFile; review: WorktreeDiffReview 
 }
 
 function DiffLine({ change, review }: { change: IChange; review: WorktreeDiffReview | undefined }) {
+  const styles = useStyles();
   const isInsert = change.type === "insert";
   const isDelete = change.type === "delete";
   const line = diffReviewLine(change);
@@ -202,6 +208,7 @@ function numberedLineChunks(lines: readonly FullFileDisplayLine[]): readonly (re
 }
 
 function FullFileChunk({ lines, review }: { lines: readonly NumberedFullFileLine[]; review: WorktreeDiffReview | undefined }) {
+  const styles = useStyles();
   return (
     <Text selectable={!review} style={[styles.fullFileCode, review ? styles.fullFileCommentable : null]}>
       {lines.map((line, index) => line.type === "code" ? (
@@ -218,7 +225,7 @@ function FullFileChunk({ lines, review }: { lines: readonly NumberedFullFileLine
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   unavailable: { color: color.textSecondary, fontSize: 13, lineHeight: 19, padding: space.md },
   scrollContent: { minWidth: "100%" },
   patch: { minWidth: "100%" },
@@ -249,4 +256,4 @@ const styles = StyleSheet.create({
   fullFileCommentable: { lineHeight: geometry.touchTarget },
   fullFileChanged: { backgroundColor: color.successWash, color: color.success },
   fullFileDeleted: { backgroundColor: color.dangerWash, color: color.danger },
-});
+}));

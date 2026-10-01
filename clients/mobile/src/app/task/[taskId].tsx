@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -42,12 +44,14 @@ import {
 } from "@/presentation/task-presentation";
 import { taskAttachedAgents } from "@/presentation/task-browser";
 import type { RowTone } from "@/presentation/tone";
-import { color, geometry, space, toneColor, toneWash } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, space } from "@/theme/tokens";
+import type { MobileTheme } from "@/theme/tokens";
 
 /// Task detail keeps Task/worktree recovery read-only while attached Session rows
 /// expose the same bounded lifecycle and Agent-coordination menu as Project rows.
 export default function TaskRoute() {
+  const { color, toneColor, toneWash } = useTheme();
+  const styles = useStyles();
   const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
   const router = useRouter();
   const store = useOverview();
@@ -168,11 +172,11 @@ export default function TaskRoute() {
         ) : null}
         {tab === "overview" ? (
           <>
-            <Card style={glance.tone === "quiet" || glance.tone === "done" ? undefined : { borderLeftWidth: 4, borderLeftColor: statusColor(glance.tone), backgroundColor: toneWash[glance.tone] }}>
+            <Card style={glance.tone === "quiet" || glance.tone === "done" ? undefined : { borderLeftWidth: 4, borderLeftColor: statusColor(glance.tone, color, toneColor), backgroundColor: toneWash[glance.tone] }}>
               <View style={styles.glance}>
                 <View style={styles.glanceHead}>
-                  <View style={[styles.glanceDot, { backgroundColor: statusColor(glance.tone) }]} />
-                  <Text style={[styles.glanceLabel, { color: statusColor(glance.tone) }]}>
+                  <View style={[styles.glanceDot, { backgroundColor: statusColor(glance.tone, color, toneColor) }]} />
+                  <Text style={[styles.glanceLabel, { color: statusColor(glance.tone, color, toneColor) }]}>
                     {glance.tone === "working" ? "WORKING NOW" : glance.tone === "attention" ? "WAITING FOR YOU" : glance.tone === "review" ? "READY FOR REVIEW" : "CURRENT STATUS"}
                   </Text>
                 </View>
@@ -370,7 +374,7 @@ export default function TaskRoute() {
   );
 }
 
-function statusColor(tone: RowTone): string {
+function statusColor(tone: RowTone, color: MobileTheme["color"], toneColor: MobileTheme["toneColor"]): string {
   switch (tone) {
     case "attention": return toneColor.attention;
     case "blocked": return color.danger;
@@ -388,6 +392,7 @@ function Section({ label, trailing, children }: {
   trailing?: ReactNode | undefined;
   children: ReactNode;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.section}>
       <SectionHeader label={label} trailing={trailing} />
@@ -401,6 +406,7 @@ function TaskTab({ label, selected, onPress }: {
   selected: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="tab"
@@ -417,81 +423,85 @@ function TaskTab({ label, selected, onPress }: {
   );
 }
 
-const styles = StyleSheet.create({
-  centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl + 64 },
-  detailHeader: { padding: space.screen, gap: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
-  taskEyebrow: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
-  hiddenPanel: { display: "none" },
-  titleBlock: { gap: space.sm },
-  /// A Task title is human prose, so it stays sans while the chrome around it
-  /// speaks mono.
-  title: { color: color.text, fontSize: 20, fontWeight: "700", lineHeight: 27 },
-  pills: { flexDirection: "row", alignItems: "center", gap: 8 },
-  tabs: {
-    flexDirection: "row",
-    padding: 3,
-    borderRadius: 10,
-    backgroundColor: color.bgRaised,
-  },
-  tab: {
-    minHeight: geometry.touchTarget,
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
-  },
-  tabSelected: { backgroundColor: color.bgHover },
-  tabPressed: { opacity: 0.75 },
-  tabLabel: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
-  tabLabelSelected: { color: color.accentStrong },
-  glance: { gap: 7, padding: space.md },
-  glanceHead: { flexDirection: "row", alignItems: "center", gap: 7 },
-  glanceDot: { width: 8, height: 8, borderRadius: 4 },
-  glanceLabel: {
-    color: color.textMuted,
-    fontFamily: fontFamily.mono,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-  },
-  glanceTitle: { color: color.text, fontSize: 17, fontWeight: "700" },
-  glanceDetail: { color: color.textSecondary, fontSize: 13, lineHeight: 19 },
-  section: { gap: 6 },
-  sectionBody: { gap: 4 },
-  body: { ...text.body, lineHeight: 19 },
-  emptyBody: { color: color.textMuted, fontSize: 13 },
-  goalTitle: { color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 21, marginBottom: 4 },
-  moreButton: { minHeight: geometry.touchTarget, justifyContent: "center", alignSelf: "flex-start" },
-  more: { color: color.accentStrong, fontSize: 12, fontWeight: "700", paddingVertical: 4 },
-  mono: { color: color.text, fontFamily: fontFamily.mono, fontSize: 13 },
-  repo: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  detail: { color: color.textSecondary, fontSize: 12, lineHeight: 18 },
-  count: {
-    color: color.textMuted,
-    fontFamily: fontFamily.mono,
-    fontSize: 11,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  inlineBanner: { marginTop: 6 },
-  actions: { gap: space.xs },
-  secondaryActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  detailsToggle: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 10,
-    backgroundColor: color.bgHover,
-  },
-  detailsTogglePressed: { borderColor: color.borderStrong },
-  detailsTitle: { color: color.text, fontSize: 13, fontWeight: "700" },
-  detailsSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
-  detailsChevron: { color: color.textSecondary, fontSize: 16 },
-  detailsBody: { gap: space.lg },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    centre: { flex: 1, justifyContent: "center", padding: space.screen },
+    content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl + 64 },
+    detailHeader: { padding: space.screen, gap: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
+    taskEyebrow: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+    hiddenPanel: { display: "none" },
+    titleBlock: { gap: space.sm },
+    /// A Task title is human prose, so it stays sans while the chrome around it
+    /// speaks mono.
+    title: { color: color.text, fontSize: 20, fontWeight: "700", lineHeight: 27 },
+    pills: { flexDirection: "row", alignItems: "center", gap: 8 },
+    tabs: {
+      flexDirection: "row",
+      padding: 3,
+      borderRadius: 10,
+      backgroundColor: color.bgRaised,
+    },
+    tab: {
+      minHeight: geometry.touchTarget,
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 8,
+    },
+    tabSelected: { backgroundColor: color.bgHover },
+    tabPressed: { opacity: 0.75 },
+    tabLabel: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
+    tabLabelSelected: { color: color.accentStrong },
+    glance: { gap: 7, padding: space.md },
+    glanceHead: { flexDirection: "row", alignItems: "center", gap: 7 },
+    glanceDot: { width: 8, height: 8, borderRadius: 4 },
+    glanceLabel: {
+      color: color.textMuted,
+      fontFamily: fontFamily.mono,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.8,
+    },
+    glanceTitle: { color: color.text, fontSize: 17, fontWeight: "700" },
+    glanceDetail: { color: color.textSecondary, fontSize: 13, lineHeight: 19 },
+    section: { gap: 6 },
+    sectionBody: { gap: 4 },
+    body: { ...text.body, lineHeight: 19 },
+    emptyBody: { color: color.textMuted, fontSize: 13 },
+    goalTitle: { color: color.text, fontSize: 15, fontWeight: "600", lineHeight: 21, marginBottom: 4 },
+    moreButton: { minHeight: geometry.touchTarget, justifyContent: "center", alignSelf: "flex-start" },
+    more: { color: color.accentStrong, fontSize: 12, fontWeight: "700", paddingVertical: 4 },
+    mono: { color: color.text, fontFamily: fontFamily.mono, fontSize: 13 },
+    repo: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+    detail: { color: color.textSecondary, fontSize: 12, lineHeight: 18 },
+    count: {
+      color: color.textMuted,
+      fontFamily: fontFamily.mono,
+      fontSize: 11,
+      fontWeight: "700",
+      fontVariant: ["tabular-nums"],
+    },
+    inlineBanner: { marginTop: 6 },
+    actions: { gap: space.xs },
+    secondaryActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+    detailsToggle: {
+      minHeight: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      borderWidth: 1,
+      borderColor: color.border,
+      borderRadius: 10,
+      backgroundColor: color.bgHover,
+    },
+    detailsTogglePressed: { borderColor: color.borderStrong },
+    detailsTitle: { color: color.text, fontSize: 13, fontWeight: "700" },
+    detailsSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
+    detailsChevron: { color: color.textSecondary, fontSize: 16 },
+    detailsBody: { gap: space.lg },
+  };
 });

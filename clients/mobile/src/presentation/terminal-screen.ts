@@ -1,4 +1,3 @@
-import { color } from "../theme/tokens";
 import { webUrl } from "./web-links";
 
 const ESC = String.fromCharCode(0x1b);
@@ -27,18 +26,10 @@ export const SCREEN_MAX_COLUMNS = 320;
 /// late review of long Codex turns; measure a real device before raising it again.
 export const SCREEN_MAX_ROWS = 4800;
 
-const DEFAULT_FOREGROUND = color.text;
-const DEFAULT_BACKGROUND = color.bgTerminal;
-
-/// The 16 ANSI slots are tuned for the light terminal canvas. Both the dark and light
-/// named slots retain enough contrast to remain legible when command-line tools choose
-/// a basic ANSI foreground rather than the default text colour.
-const ANSI_16 = [
-  "#1F2937", "#B4233A", "#147A53", "#8A5700",
-  "#1769AA", "#93400F", "#087485", "#596579",
-  "#667085", "#C53049", "#167B53", "#945D00",
-  "#1B70B4", "#963F0E", "#08788A", "#344054",
-] as const;
+// Keep theme-dependent colors symbolic so existing scrollback can be recolored
+// without replaying bytes or resetting the terminal grid.
+const DEFAULT_FOREGROUND = "defaultForeground";
+const DEFAULT_BACKGROUND = "defaultBackground";
 
 const CUBE_STEPS = [0, 95, 135, 175, 215, 255] as const;
 
@@ -49,6 +40,7 @@ export interface TerminalStyle {
   readonly foreground: string;
   readonly background: string | undefined;
   readonly bold: boolean;
+  readonly faint?: boolean;
   readonly italic: boolean;
   readonly underline: boolean;
 }
@@ -86,7 +78,7 @@ export type TerminalMouseTracking = "unknown" | "none" | "x10" | "normal" | "but
 const styleCache = new Map<string, TerminalStyle>();
 
 function internStyle(candidate: TerminalStyle): TerminalStyle {
-  const key = `${candidate.foreground}|${candidate.background ?? ""}|${candidate.bold ? 1 : 0}${candidate.italic ? 1 : 0}${candidate.underline ? 1 : 0}|${candidate.hyperlink ?? ""}`;
+  const key = `${candidate.foreground}|${candidate.background ?? ""}|${candidate.faint ? 1 : 0}${candidate.bold ? 1 : 0}${candidate.italic ? 1 : 0}${candidate.underline ? 1 : 0}|${candidate.hyperlink ?? ""}`;
   const existing = styleCache.get(key);
   if (existing !== undefined) return existing;
   /// A truecolor stream could mint styles without bound. The cache is only a render
@@ -112,7 +104,7 @@ function rgbHex(red: number, green: number, blue: number): string {
 
 function paletteColor(index: number): string | undefined {
   if (!Number.isInteger(index) || index < 0 || index > 255) return undefined;
-  if (index < 16) return ANSI_16[index];
+  if (index < 16) return `ansi:${index}`;
   if (index < 232) {
     const offset = index - 16;
     return rgbHex(
@@ -123,18 +115,6 @@ function paletteColor(index: number): string | undefined {
   }
   const level = 8 + (index - 232) * 10;
   return rgbHex(level, level, level);
-}
-
-/// Faint text is rendered as a translucent foreground rather than as a darker hue, so
-/// SGR 2 stays readable on a phone in daylight instead of collapsing into the
-/// background.
-function faded(value: string): string {
-  if (!value.startsWith("#") || value.length !== 7) return value;
-  const red = Number.parseInt(value.slice(1, 3), 16);
-  const green = Number.parseInt(value.slice(3, 5), 16);
-  const blue = Number.parseInt(value.slice(5, 7), 16);
-  if (Number.isNaN(red) || Number.isNaN(green) || Number.isNaN(blue)) return value;
-  return `rgba(${red}, ${green}, ${blue}, 0.62)`;
 }
 
 /// The cells of one screen row, plus the span projection last handed to the view.
@@ -177,11 +157,11 @@ function resolvePen(pen: Pen): TerminalStyle {
     background = foreground;
     foreground = swapped;
   }
-  if (pen.faint) foreground = faded(foreground);
   return internStyle({
     foreground,
     background,
     bold: pen.bold,
+    faint: pen.faint,
     italic: pen.italic,
     underline: pen.underline,
   });
@@ -619,10 +599,10 @@ export class TerminalScreenProjection {
         }
         continue;
       }
-      if (code >= 30 && code <= 37) { pen.foreground = ANSI_16[code - 30]; continue; }
-      if (code >= 90 && code <= 97) { pen.foreground = ANSI_16[code - 90 + 8]; continue; }
-      if (code >= 40 && code <= 47) { pen.background = ANSI_16[code - 40]; continue; }
-      if (code >= 100 && code <= 107) { pen.background = ANSI_16[code - 100 + 8]; continue; }
+      if (code >= 30 && code <= 37) { pen.foreground = paletteColor(code - 30); continue; }
+      if (code >= 90 && code <= 97) { pen.foreground = paletteColor(code - 90 + 8); continue; }
+      if (code >= 40 && code <= 47) { pen.background = paletteColor(code - 40); continue; }
+      if (code >= 100 && code <= 107) { pen.background = paletteColor(code - 100 + 8); continue; }
     }
     this.#setPen(pen);
   }

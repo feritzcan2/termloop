@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type {
   TaskDto,
   TaskWorktreeChangeEntryDto,
@@ -28,7 +29,7 @@ import {
   reviewedEntries,
   unreviewedSections,
 } from "@/presentation/worktree-change-review";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 type LoadState = "idle" | "loading" | "ready" | "failed";
@@ -38,6 +39,7 @@ type LoadState = "idle" | "loading" | "ready" | "failed";
 /// observation returned with its file list. Checkmarks and feedback are temporary
 /// presentation state scoped to the selected Mac and Task.
 export default function TaskChangesRoute() {
+  const { color } = useTheme();
   const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
   const connections = useConnections();
   const selectingConnection = connectionId !== undefined && connections.selectedId !== connectionId;
@@ -53,6 +55,8 @@ export default function TaskChangesRoute() {
 }
 
 function TaskChangesScreen({ connectionId, task }: { connectionId: string; task: TaskDto }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   const overview = useOverview();
   const review = useChangeReview(runtime, connectionId, task, overview.overview?.sessions ?? []);
@@ -365,6 +369,7 @@ function TaskChangesScreen({ connectionId, task }: { connectionId: string; task:
 }
 
 function UnavailableChanges({ title, body }: { title: string; body: string }) {
+  const styles = useStyles();
   return (
     <Screen>
       <ScreenHeader back="Task" title="Changes" />
@@ -380,6 +385,7 @@ function ChangeRow({ entry, selected, reviewed = false, onSelect, onMarkReviewed
   onSelect(): void;
   onMarkReviewed?: (() => void) | undefined;
 }) {
+  const styles = useStyles();
   return (
     <View style={[styles.row, selected ? styles.rowSelected : null]}>
       <Pressable
@@ -451,6 +457,8 @@ function ChangeDiffModal({
   onReview(): void;
   onClose(): void;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaProvider>
@@ -578,7 +586,7 @@ function reviewPercent(progress: { reviewed: number; total: number }): number {
   return progress.total === 0 ? 0 : Math.round((progress.reviewed / progress.total) * 100);
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   feedbackBar: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.sm, paddingHorizontal: space.md, paddingVertical: space.xs },
   centre: { flex: 1, justifyContent: "center", padding: space.screen },
   content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
@@ -641,4 +649,4 @@ const styles = StyleSheet.create({
   closeButton: { alignItems: "center", justifyContent: "center", minHeight: geometry.touchTarget, paddingHorizontal: space.sm },
   closeButtonPressed: { backgroundColor: color.bgHover },
   closeButtonText: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
-});
+}));

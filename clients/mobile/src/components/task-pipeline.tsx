@@ -1,5 +1,7 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import type { PlaybookProjection } from "@/application/ports";
 import { Banner, Card, SecondaryButton, UnavailableNote } from "@/components/primitives";
@@ -18,8 +20,7 @@ import {
   type TaskPipelineStep,
   type TaskPipelineView,
 } from "@/presentation/playbook-presentation";
-import { color, geometry, radius, space } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, radius, space } from "@/theme/tokens";
 
 /// The Task's place on its Project's delivery pipeline, at phone scale.
 ///
@@ -40,6 +41,8 @@ export function TaskPipeline({ connectionId, projectId, taskId, nowEpochMs, open
   nowEpochMs: number;
   openSteward: () => void;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   const [projection, setProjection] = useState<PlaybookProjection | undefined>(undefined);
   const [load, setLoad] = useState<"loading" | "ready" | "failed">("loading");
@@ -217,6 +220,7 @@ export function TaskPipeline({ connectionId, projectId, taskId, nowEpochMs, open
 /// Position stated as countable blocks: one segment per step, filled when
 /// cleared, lit at the standing step, hollow ahead.
 function SegmentedMeter({ view }: { view: TaskPipelineView }) {
+  const styles = useStyles();
   return (
     <View style={styles.meter} accessibilityElementsHidden importantForAccessibility="no">
       {pipelineSegments(view).map((standing, index) => (
@@ -243,6 +247,7 @@ function Rail({ standing, first, last, human }: {
   last: boolean;
   human: boolean;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.rail}>
       <View style={[styles.railLine, first ? styles.railLineHidden : null, standing === "passed" ? styles.railLinePassed : null]} />
@@ -272,6 +277,7 @@ function PipelineStepRow({ step, view, first, nowEpochMs, open, busy, onToggle, 
   onSetPosition: (passedMilestoneCount: number) => void;
   onCheckNow: () => void;
 }) {
+  const styles = useStyles();
   const summary = stepRowSummary(step, nowEpochMs);
   const standing = step.standing === "waiting";
   return (
@@ -327,6 +333,7 @@ function StepDetail({ step, view, nowEpochMs, busy, onSetPosition, onCheckNow }:
   onSetPosition: (passedMilestoneCount: number) => void;
   onCheckNow: () => void;
 }) {
+  const styles = useStyles();
   const evidence = stepEvidence(step);
   const timing = stepTiming(step, nowEpochMs);
   const answers = stepAnswerSource(step);
@@ -381,6 +388,7 @@ function QuietAction({ label, disabled, onPress }: {
   disabled: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -404,81 +412,85 @@ function positionFailure(cause: unknown): string {
 
 const NODE = 18;
 
-const styles = StyleSheet.create({
-  centre: { paddingVertical: space.lg, alignItems: "center" },
-  block: { gap: space.sm },
-  emptyBlock: { gap: space.sm, alignItems: "flex-start" },
-  errorBlock: { paddingTop: 2 },
-  progressRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: space.sm },
-  pipelineName: { ...text.body, color: color.text, flexShrink: 1, fontWeight: "600" },
-  progressLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11 },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    centre: { paddingVertical: space.lg, alignItems: "center" },
+    block: { gap: space.sm },
+    emptyBlock: { gap: space.sm, alignItems: "flex-start" },
+    errorBlock: { paddingTop: 2 },
+    progressRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: space.sm },
+    pipelineName: { ...text.body, color: color.text, flexShrink: 1, fontWeight: "600" },
+    progressLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11 },
 
-  meter: { flexDirection: "row", gap: 3 },
-  meterSegment: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.border },
-  meterPassed: { backgroundColor: color.success },
-  meterWaiting: { backgroundColor: color.accent },
-  meterAway: { backgroundColor: color.borderStrong },
+    meter: { flexDirection: "row", gap: 3 },
+    meterSegment: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.border },
+    meterPassed: { backgroundColor: color.success },
+    meterWaiting: { backgroundColor: color.accent },
+    meterAway: { backgroundColor: color.borderStrong },
 
-  row: {
-    flexDirection: "row",
-    minHeight: geometry.touchTarget,
-    paddingHorizontal: space.md,
-    gap: space.sm,
-  },
-  rowStanding: { backgroundColor: color.accentWash },
-  rail: { width: NODE, alignItems: "center" },
-  railLine: { flex: 1, width: 2, backgroundColor: color.border },
-  railLineHidden: { backgroundColor: "transparent" },
-  railLinePassed: { backgroundColor: color.success },
-  node: {
-    width: NODE,
-    height: NODE,
-    borderRadius: NODE / 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nodeHuman: { borderRadius: 5 },
-  nodePassed: { backgroundColor: color.successWash },
-  nodeWaiting: { backgroundColor: color.accent },
-  nodeAhead: { borderWidth: 1.5, borderColor: color.borderStrong },
-  nodeCheck: { color: color.success, fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "800" },
-  nodeCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.onAccent },
+    row: {
+      flexDirection: "row",
+      minHeight: geometry.touchTarget,
+      paddingHorizontal: space.md,
+      gap: space.sm,
+    },
+    rowStanding: { backgroundColor: color.accentWash },
+    rail: { width: NODE, alignItems: "center" },
+    railLine: { flex: 1, width: 2, backgroundColor: color.border },
+    railLineHidden: { backgroundColor: "transparent" },
+    railLinePassed: { backgroundColor: color.success },
+    node: {
+      width: NODE,
+      height: NODE,
+      borderRadius: NODE / 2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    nodeHuman: { borderRadius: 5 },
+    nodePassed: { backgroundColor: color.successWash },
+    nodeWaiting: { backgroundColor: color.accent },
+    nodeAhead: { borderWidth: 1.5, borderColor: color.borderStrong },
+    nodeCheck: { color: color.success, fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "800" },
+    nodeCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.onAccent },
 
-  rowBody: { flex: 1, paddingVertical: 12, gap: 6 },
-  rowHead: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
-  rowTitle: { ...text.body, color: color.text, flex: 1, fontWeight: "600", lineHeight: 19 },
-  rowTitlePassed: { color: color.textSecondary, fontWeight: "500" },
-  rowTitleAhead: { color: color.textMuted, fontWeight: "500" },
-  rowSummary: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  rowSummaryStanding: { color: color.accentStrong },
-  rowSummaryStalled: { color: color.warning, fontWeight: "700" },
-  terminusDone: { ...text.body, flex: 1, color: color.success, fontWeight: "600", lineHeight: 19 },
+    rowBody: { flex: 1, paddingVertical: 12, gap: 6 },
+    rowHead: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
+    rowTitle: { ...text.body, color: color.text, flex: 1, fontWeight: "600", lineHeight: 19 },
+    rowTitlePassed: { color: color.textSecondary, fontWeight: "500" },
+    rowTitleAhead: { color: color.textMuted, fontWeight: "500" },
+    rowSummary: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+    rowSummaryStanding: { color: color.accentStrong },
+    rowSummaryStalled: { color: color.warning, fontWeight: "700" },
+    terminusDone: { ...text.body, flex: 1, color: color.success, fontWeight: "600", lineHeight: 19 },
 
-  detail: { gap: 6 },
-  evidence: { color: color.textSecondary, fontSize: 12, lineHeight: 18 },
-  evidenceStanding: { color: color.text },
-  factRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  fact: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  factBlocked: { color: color.warning },
-  factStanding: { color: color.accentStrong },
+    detail: { gap: 6 },
+    evidence: { color: color.textSecondary, fontSize: 12, lineHeight: 18 },
+    evidenceStanding: { color: color.text },
+    factRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+    fact: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+    factBlocked: { color: color.warning },
+    factStanding: { color: color.accentStrong },
 
-  rowActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.sm, paddingTop: 2 },
-  checkNow: {
-    minHeight: 36,
-    justifyContent: "center",
-    paddingHorizontal: space.md,
-    borderRadius: radius.control,
-    backgroundColor: color.accent,
-  },
-  checkNowPressed: { backgroundColor: color.accentStrong },
-  checkNowLabel: { color: color.onAccent, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
-  quietAction: {
-    minHeight: 36,
-    justifyContent: "center",
-    paddingHorizontal: space.md,
-    borderRadius: radius.control,
-    backgroundColor: color.bgHover,
-  },
-  quietActionPressed: { backgroundColor: color.border },
-  quietActionLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "600" },
+    rowActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.sm, paddingTop: 2 },
+    checkNow: {
+      minHeight: 36,
+      justifyContent: "center",
+      paddingHorizontal: space.md,
+      borderRadius: radius.control,
+      backgroundColor: color.accent,
+    },
+    checkNowPressed: { backgroundColor: color.accentStrong },
+    checkNowLabel: { color: color.onAccent, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
+    quietAction: {
+      minHeight: 36,
+      justifyContent: "center",
+      paddingHorizontal: space.md,
+      borderRadius: radius.control,
+      backgroundColor: color.bgHover,
+    },
+    quietActionPressed: { backgroundColor: color.border },
+    quietActionLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "600" },
+  };
 });

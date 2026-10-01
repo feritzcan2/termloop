@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -29,7 +30,7 @@ import {
 } from "@/presentation/attention-overview";
 import { connectionPresentation } from "@/presentation/connection-presentation";
 import { relativeAge } from "@/presentation/relative-time";
-import { color, geometry, space } from "@/theme/tokens";
+import { geometry, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// Project workspace navigation follows desktop: Agents and Tasks are peer tabs.
@@ -41,6 +42,8 @@ import { fontFamily } from "@/theme/typography";
 /// links to agents and changes.
 
 export default function ProjectRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { projectId, connectionId, tab } = useLocalSearchParams<{ projectId: string; connectionId?: string; tab?: string }>();
   const router = useRouter();
   const connections = useConnections();
@@ -301,6 +304,7 @@ function AgentClusterView({ cluster, memberships, workflowDataStale, nowMs, open
   nowMs: number;
   openActions(sessionId: string): void;
 }) {
+  const styles = useStyles();
   const sourceIds = new Set(cluster.groups.map(({ source }) => source.sessionId));
   const rows = workflowAgentSegments(agentClusterMembers(cluster), memberships).map((segment, segmentIndex) => {
     const members = segment.rows.map((row, index) => {
@@ -392,7 +396,7 @@ function asksForUser(tone: AgentRow["tone"]): boolean {
   return tone === "attention" || tone === "blocked" || tone === "review";
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   headerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
   headerAction: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   headerActionDisabled: { opacity: 0.4 },
@@ -548,4 +552,4 @@ const styles = StyleSheet.create({
   },
   fabPressed: { opacity: 0.85 },
   fabGlyph: { color: color.onAccent, fontSize: 26, lineHeight: 30, fontWeight: "600" },
-});
+}));

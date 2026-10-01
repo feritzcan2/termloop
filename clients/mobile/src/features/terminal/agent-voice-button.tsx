@@ -1,7 +1,8 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { reportVoiceFailure } from "@/platform/voice-diagnostics";
 import { AudioModule, setAudioModeAsync, useAudioStream } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { useVoiceTranscription } from "@/features/voice/use-voice-transcription";
 import { VoiceRetryActions } from "@/components/voice-retry-actions";
@@ -24,7 +25,7 @@ import {
   stopVoiceAudioStream,
   stewardVoiceAudioErrorMessage,
 } from "@/platform/steward-voice-audio";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 const PCM_STREAM_START_TIMEOUT_MS = 2_000;
@@ -42,6 +43,8 @@ export function AgentVoiceButton({
   onBusyChange: (busy: boolean) => void;
   onTranscript: (transcript: string) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   const [phase, setPhase] = useState<AgentComposerVoicePhase>("ready");
   const [retryRecording, setRetryRecording] = useState(false);
@@ -270,7 +273,7 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   control: { position: "relative" },
   button: {
     width: geometry.touchTarget,
@@ -300,4 +303,4 @@ const styles = StyleSheet.create({
   errorBubble: { borderColor: color.dangerBorder },
   statusText: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10.5, lineHeight: 15 },
   errorText: { color: color.danger },
-});
+}));

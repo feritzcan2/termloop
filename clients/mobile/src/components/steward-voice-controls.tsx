@@ -1,7 +1,8 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import {
   Pressable,
   ScrollView,
-  StyleSheet,
+
   Text,
   TextInput,
   useWindowDimensions,
@@ -14,7 +15,7 @@ import { StewardVoiceProjectSelector } from "@/components/steward-voice-project-
 import { canSwitchVoiceProject } from "@/presentation/steward-voice-project-selection";
 import type { VoicePhase } from "@/presentation/steward-voice-presentation";
 import { voiceDockWidth } from "@/presentation/steward-voice-presentation";
-import { color, radius, space } from "@/theme/tokens";
+import { radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export interface StewardVoiceControlsProps {
@@ -41,6 +42,8 @@ export interface StewardVoiceControlsProps {
 }
 
 export function StewardVoiceControls(props: StewardVoiceControlsProps) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { width: viewportWidth } = useWindowDimensions();
 
   if (!props.active) {
@@ -156,7 +159,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
       <View style={styles.bar}>
         <View style={styles.statusZone}>
           <View style={styles.projectLine}>
-            <View style={[styles.stateDot, dotStyle(props.phase)]} />
+            <View style={[styles.stateDot, dotStyle(props.phase, styles)]} />
             <Text numberOfLines={1} style={styles.projectName}>{props.projectName}</Text>
           </View>
           <Text numberOfLines={1} style={styles.status}>
@@ -196,7 +199,7 @@ function voiceStatus(phase: VoicePhase, durationMs: number): string {
   }
 }
 
-function dotStyle(phase: VoicePhase) {
+function dotStyle(phase: VoicePhase, styles: ReturnType<typeof useStyles>) {
   if (phase === "error") return styles.dotDanger;
   if (["permission", "transcribing", "sending"].includes(phase)) return styles.dotWarning;
   if (phase === "listening") return styles.dotRecording;
@@ -204,7 +207,7 @@ function dotStyle(phase: VoicePhase) {
   return styles.dotReady;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   compactButton: {
     width: 52,
     height: 52,
@@ -292,4 +295,4 @@ const styles = StyleSheet.create({
     borderColor: color.accentStrong,
   },
   micButtonActive: { backgroundColor: color.danger, borderColor: color.dangerBorder },
-});
+}));

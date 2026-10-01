@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -172,7 +173,7 @@ describe("feedback batch state", () => {
 
 async function diffHarness() {
   return await load<typeof import("../src/components/worktree-diff")>("../src/components/worktree-diff.tsx", {
-    react: { ...require("react"), useMemo: (factory: () => unknown) => factory() },
+    react: { ...require("react"), useContext: () => lightTheme, useMemo: (factory: () => unknown) => factory() },
     "react-native-diff-view": require("react-native-diff-view/dist/utils/parse"),
   });
 }
@@ -201,7 +202,7 @@ function hookState() {
   const cleanups: Array<() => void> = [];
   let cursor = 0;
   return { begin: () => { cursor = 0; }, unmount: () => cleanups.forEach((cleanup) => cleanup()), react: {
-    ...require("react"),
+    ...require("react"), useContext: () => lightTheme,
     useCallback: (callback: unknown) => callback,
     useState: (initial: any) => {
       const index = cursor++;

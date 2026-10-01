@@ -1,3 +1,6 @@
+import { useTheme } from "@/theme/context";
+import { ThemeProvider } from "@/theme/provider";
+import { appearancePreferences } from "@/platform/appearance-preferences";
 import * as Sentry from "@sentry/react-native";
 import { ErrorBoundary as ExpoErrorBoundary, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -12,7 +15,6 @@ import { WatchSyncCoordinator } from "@/features/watch/watch-sync-coordinator";
 import { StewardVoiceDock } from "@/components/steward-voice-dock";
 import { AppLifecycleProvider } from "@/platform/app-lifecycle";
 import "@/platform/mobile-sentry";
-import { color } from "@/theme/tokens";
 
 // Render failures can bypass ErrorUtils in Fabric. Keep a retry surface and
 // explicitly capture the error through Expo Router's supported Sentry boundary.
@@ -23,6 +25,11 @@ export const ErrorBoundary = Sentry.wrapExpoRouterErrorBoundary(ExpoErrorBoundar
 /// legacy mobile client proved on a phone; the stack still owns navigation and the
 /// iOS back gesture.
 function RootLayout() {
+  return <ThemeProvider preferences={appearancePreferences}><ThemedRootLayout /></ThemeProvider>;
+}
+
+function ThemedRootLayout() {
+  const { color, mode } = useTheme();
   return (
     <SafeAreaProvider>
       <AppLifecycleProvider>
@@ -31,7 +38,7 @@ function RootLayout() {
             <OverviewProvider>
               <NotificationCoordinator />
               <WatchSyncCoordinator />
-              <StatusBar style="dark" />
+              <StatusBar style={mode === "dark" ? "light" : "dark"} />
               <Stack
                 screenOptions={{
                   headerShown: false,

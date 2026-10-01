@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,9 +24,11 @@ import {
   terminalReadingAnchor, terminalReadingOffset, type TerminalHistoryPage,
 } from "@/presentation/terminal-history";
 import { DEFAULT_TERMINAL_STYLE, type TerminalSpan, type TerminalStyle } from "@/presentation/terminal-screen";
+import { terminalStyleColors } from "@/presentation/terminal-colors";
+import type { MobileTheme } from "@/theme/tokens";
 import { terminalLinkSpans } from "@/presentation/terminal-links";
 import { ExternalLink } from "@/components/external-link";
-import { color, space, terminalGeometry } from "@/theme/tokens";
+import { space, terminalGeometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// Two renderers behind one surface, chosen by the stream rather than by a setting.
@@ -49,6 +52,9 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   /// history of its own to ask about.
   onScrollBack?: (lines: number) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const styles = useStyles();
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
@@ -210,7 +216,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
               ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
               : buffer.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
             <View style={{ height: rows.after }} />
-            {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }])}</Text> : null}
+            {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }], theme)}</Text> : null}
           </View>
         </ScrollView>
       </ScrollView>
@@ -231,19 +237,23 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
 /// Resolved styles are cached against the interned cell style they came from, so a
 /// frame that reuses a dozen colours allocates a dozen style objects rather than one
 /// per span per redraw.
-const spanStyles = new WeakMap<TerminalStyle, TextStyle>();
+const spanStyles = new WeakMap<MobileTheme, WeakMap<TerminalStyle, TextStyle>>();
 
-function spanStyle(style: TerminalStyle): TextStyle {
-  const existing = spanStyles.get(style);
+function spanStyle(style: TerminalStyle, theme: MobileTheme): TextStyle {
+  let cache = spanStyles.get(theme);
+  if (cache === undefined) {
+    cache = new WeakMap();
+    spanStyles.set(theme, cache);
+  }
+  const existing = cache.get(style);
   if (existing !== undefined) return existing;
   const created: TextStyle = {
-    color: style.foreground,
-    ...(style.background === undefined ? null : { backgroundColor: style.background }),
+    ...terminalStyleColors(style, theme),
     ...(style.bold ? { fontWeight: "700" as const } : null),
     ...(style.italic ? { fontStyle: "italic" as const } : null),
     ...(style.underline ? { textDecorationLine: "underline" as const } : null),
   };
-  spanStyles.set(style, created);
+  cache.set(style, created);
   return created;
 }
 
@@ -257,11 +267,13 @@ const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lin
   fontSize: number;
   lineHeight: number;
 }) {
+  const styles = useStyles();
+  const theme = useTheme();
   return (
     <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
       {spans.length === 0
         ? " "
-        : renderSpans(spans)}
+        : renderSpans(spans, theme)}
     </Text>
   );
 });
@@ -271,22 +283,24 @@ function TerminalLineText({ line, fontSize, lineHeight }: {
   fontSize: number;
   lineHeight: number;
 }) {
+  const styles = useStyles();
+  const theme = useTheme();
   /// Selectable so a long-press can copy a line without the view owning a clipboard
   /// dependency of its own.
   return (
     <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
-      {line.text.length === 0 ? " " : renderSpans([{ text: line.text, style: DEFAULT_TERMINAL_STYLE }])}
+      {line.text.length === 0 ? " " : renderSpans([{ text: line.text, style: DEFAULT_TERMINAL_STYLE }], theme)}
     </Text>
   );
 }
 
-function renderSpans(spans: readonly TerminalSpan[]) {
+function renderSpans(spans: readonly TerminalSpan[], theme: MobileTheme) {
   return terminalLinkSpans(spans).map((span, index) => span.url
-    ? <ExternalLink key={index} url={span.url} style={spanStyle(span.style)}>{span.text}</ExternalLink>
-    : <Text key={index} style={spanStyle(span.style)}>{span.text}</Text>);
+    ? <ExternalLink key={index} url={span.url} style={spanStyle(span.style, theme)}>{span.text}</ExternalLink>
+    : <Text key={index} style={spanStyle(span.style, theme)}>{span.text}</Text>);
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   historyBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, alignItems: "center" },
   surface: { flex: 1, backgroundColor: color.bgTerminal },
   scroll: { flex: 1 },
@@ -322,4 +336,4 @@ const styles = StyleSheet.create({
     backgroundColor: color.bgRaised,
   },
   jumpGlyph: { color: color.text, fontSize: 12, lineHeight: 20 },
-});
+}));

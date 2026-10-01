@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -9,8 +11,7 @@ import { buildLocatedProjectSummaries } from "@/presentation/attention-overview"
 import type { ProjectSummary } from "@/presentation/attention-overview";
 import { connectionPresentation } from "@/presentation/connection-presentation";
 import { projectSelectorGroups } from "@/presentation/project-selector-model";
-import { color, geometry, radius, space, toneColor } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, radius, space } from "@/theme/tokens";
 
 /// The persistent Project switch, in the header of every Project-scoped screen.
 ///
@@ -28,6 +29,8 @@ export function ProjectSelector({ current, variant }: {
   /// identity owns the primary row.
   variant?: "full" | "mini" | undefined;
 }) {
+  const { toneColor } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const connections = useConnections();
   const overview = useOverview();
@@ -168,6 +171,7 @@ export function ProjectSelector({ current, variant }: {
 /// read. Derived rather than stored: a Project has no avatar in the domain and adding
 /// one to durable state to decorate a menu would be the wrong place to put it.
 export function ProjectAvatar({ name, size }: { name: string; size: number }) {
+  const styles = useStyles();
   const initials = name
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
@@ -181,97 +185,101 @@ export function ProjectAvatar({ name, size }: { name: string; size: number }) {
   );
 }
 
-const styles = StyleSheet.create({
-  /// `flex: 1` with a stretched trigger made the header one wide box with a chevron
-  /// stranded at the far right. The control hugs its label instead, so the header reads
-  /// as chevron, project, action rather than as a text field.
-  wrap: { flex: 1, minWidth: 0, alignItems: "flex-start" },
-  miniWrap: { alignSelf: "flex-start", maxWidth: "100%" },
-  trigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    maxWidth: "100%",
-    gap: 7,
-    height: 34,
-    paddingLeft: 7,
-    paddingRight: 9,
-    borderRadius: radius.control,
-    backgroundColor: color.bgHover,
-  },
-  /// Borderless on the terminal's second line. There the Session identity owns the
-  /// primary row, and a second bordered pill under it reads as two competing controls.
-  triggerMini: {
-    height: 24,
-    gap: 6,
-    paddingLeft: 0,
-    paddingRight: 4,
-    backgroundColor: "transparent",
-  },
-  triggerLabel: {
-    flexShrink: 1,
-    color: color.text,
-    fontFamily: fontFamily.mono,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  triggerLabelMini: { fontSize: 11.5, color: color.textSecondary },
-  chevron: { color: color.textMuted, fontSize: 14, lineHeight: 16 },
-  chevronMini: { fontSize: 12 },
-  scrim: { flex: 1, backgroundColor: color.scrim, paddingTop: 96, paddingHorizontal: space.md },
-  menu: {
-    maxHeight: "70%",
-    padding: 5,
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    borderRadius: radius.card,
-    backgroundColor: color.bgSidebar,
-  },
-  item: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    minHeight: geometry.touchTarget,
-    paddingHorizontal: space.sm,
-    paddingVertical: 5,
-    borderRadius: radius.control,
-  },
-  itemSelected: { backgroundColor: color.accentWash },
-  itemPressed: { backgroundColor: color.bgHover },
-  computerHeader: {
-    minHeight: 42,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    paddingHorizontal: space.sm,
-    paddingVertical: 5,
-  },
-  computerName: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 12.5 },
-  computerStatus: { color: color.textSecondary, fontSize: 10.5 },
-  projectItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    minHeight: geometry.touchTarget,
-    marginLeft: 16,
-    paddingHorizontal: space.sm,
-    paddingVertical: 5,
-    borderRadius: radius.control,
-  },
-  emptyComputer: { minHeight: 32, justifyContent: "center", paddingLeft: 52, paddingRight: space.sm },
-  emptyComputerText: { color: color.textMuted, fontSize: 10.5 },
-  itemBody: { flex: 1, minWidth: 0, gap: 1 },
-  itemTitle: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 13 },
-  itemDetail: { color: color.textSecondary, fontSize: 11 },
-  toneDot: { width: 7, height: 7, borderRadius: 4 },
-  menuDivider: { height: StyleSheet.hairlineWidth, marginVertical: 4, marginHorizontal: 5, backgroundColor: color.border },
-  /// Outlined and washed rather than filled, matching the agent avatar's language:
-  /// identity chips are labels, and only true actions get the solid accent fill.
-  avatar: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: `${color.accent}66`,
-    backgroundColor: color.accentWash,
-  },
-  avatarText: { color: color.accentStrong, fontFamily: fontFamily.mono, fontWeight: "800" },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    /// `flex: 1` with a stretched trigger made the header one wide box with a chevron
+    /// stranded at the far right. The control hugs its label instead, so the header reads
+    /// as chevron, project, action rather than as a text field.
+    wrap: { flex: 1, minWidth: 0, alignItems: "flex-start" },
+    miniWrap: { alignSelf: "flex-start", maxWidth: "100%" },
+    trigger: {
+      flexDirection: "row",
+      alignItems: "center",
+      maxWidth: "100%",
+      gap: 7,
+      height: 34,
+      paddingLeft: 7,
+      paddingRight: 9,
+      borderRadius: radius.control,
+      backgroundColor: color.bgHover,
+    },
+    /// Borderless on the terminal's second line. There the Session identity owns the
+    /// primary row, and a second bordered pill under it reads as two competing controls.
+    triggerMini: {
+      height: 24,
+      gap: 6,
+      paddingLeft: 0,
+      paddingRight: 4,
+      backgroundColor: "transparent",
+    },
+    triggerLabel: {
+      flexShrink: 1,
+      color: color.text,
+      fontFamily: fontFamily.mono,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    triggerLabelMini: { fontSize: 11.5, color: color.textSecondary },
+    chevron: { color: color.textMuted, fontSize: 14, lineHeight: 16 },
+    chevronMini: { fontSize: 12 },
+    scrim: { flex: 1, backgroundColor: color.scrim, paddingTop: 96, paddingHorizontal: space.md },
+    menu: {
+      maxHeight: "70%",
+      padding: 5,
+      borderWidth: 1,
+      borderColor: color.borderStrong,
+      borderRadius: radius.card,
+      backgroundColor: color.bgSidebar,
+    },
+    item: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      minHeight: geometry.touchTarget,
+      paddingHorizontal: space.sm,
+      paddingVertical: 5,
+      borderRadius: radius.control,
+    },
+    itemSelected: { backgroundColor: color.accentWash },
+    itemPressed: { backgroundColor: color.bgHover },
+    computerHeader: {
+      minHeight: 42,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      paddingHorizontal: space.sm,
+      paddingVertical: 5,
+    },
+    computerName: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 12.5 },
+    computerStatus: { color: color.textSecondary, fontSize: 10.5 },
+    projectItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      minHeight: geometry.touchTarget,
+      marginLeft: 16,
+      paddingHorizontal: space.sm,
+      paddingVertical: 5,
+      borderRadius: radius.control,
+    },
+    emptyComputer: { minHeight: 32, justifyContent: "center", paddingLeft: 52, paddingRight: space.sm },
+    emptyComputerText: { color: color.textMuted, fontSize: 10.5 },
+    itemBody: { flex: 1, minWidth: 0, gap: 1 },
+    itemTitle: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 13 },
+    itemDetail: { color: color.textSecondary, fontSize: 11 },
+    toneDot: { width: 7, height: 7, borderRadius: 4 },
+    menuDivider: { height: StyleSheet.hairlineWidth, marginVertical: 4, marginHorizontal: 5, backgroundColor: color.border },
+    /// Outlined and washed rather than filled, matching the agent avatar's language:
+    /// identity chips are labels, and only true actions get the solid accent fill.
+    avatar: {
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: `${color.accent}66`,
+      backgroundColor: color.accentWash,
+    },
+    avatarText: { color: color.accentStrong, fontFamily: fontFamily.mono, fontWeight: "800" },
+  };
 });

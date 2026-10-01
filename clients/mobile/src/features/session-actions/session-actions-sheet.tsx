@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type {
   AgentCapabilityDto,
   SessionDto,
@@ -32,7 +33,7 @@ import {
   relocationWarningMessage,
   sessionActionPresentation,
 } from "@/presentation/session-actions-presentation";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 type SheetPage = "root" | "agents" | "tasks" | "rename" | "relocation";
@@ -61,6 +62,8 @@ function nextOperationId(): string {
 /// thumb-sized sheet; nested desktop submenus become explicit sheet pages so the
 /// complete action and its target remain readable on a phone.
 export function SessionActionsSheet(props: SessionActionsSheetProps) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { session, visible, onClose } = props;
   const runtime = useMobileRuntime();
   const connections = useConnections();
@@ -575,6 +578,7 @@ function ActionRow({ glyph, label, detail, trailing, danger = false, disabled = 
   disabled?: boolean | undefined;
   onPress(): void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -598,18 +602,22 @@ function ActionRow({ glyph, label, detail, trailing, danger = false, disabled = 
 }
 
 function Divider() {
+  const styles = useStyles();
   return <View style={styles.divider} />;
 }
 
 function SectionLabel({ children }: { children: string }) {
+  const styles = useStyles();
   return <Text style={styles.sectionLabel}>{children}</Text>;
 }
 
 function EmptyMessage({ children }: { children: string }) {
+  const styles = useStyles();
   return <Text style={styles.empty}>{children}</Text>;
 }
 
 function ModeButton({ label, selected, onPress }: { label: string; selected: boolean; onPress(): void }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -623,6 +631,7 @@ function ModeButton({ label, selected, onPress }: { label: string; selected: boo
 }
 
 function PrimaryAction({ label, disabled = false, onPress }: { label: string; disabled?: boolean; onPress(): void }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -637,6 +646,7 @@ function PrimaryAction({ label, disabled = false, onPress }: { label: string; di
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.fact}>
       <Text style={styles.factLabel}>{label}</Text>
@@ -649,7 +659,7 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : "This Session action could not be completed.";
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   layer: { flex: 1, justifyContent: "flex-end" },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: color.scrim },
   keyboardAvoiding: { maxHeight: "88%", justifyContent: "flex-end" },
@@ -781,4 +791,4 @@ const styles = StyleSheet.create({
   factValue: { flex: 1, color: color.text, fontSize: 12 },
   warning: { color: color.warning, fontSize: 12, lineHeight: 17 },
   blocker: { color: color.danger, fontSize: 12, lineHeight: 17 },
-});
+}));

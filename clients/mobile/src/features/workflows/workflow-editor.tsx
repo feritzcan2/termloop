@@ -1,13 +1,14 @@
+import { createThemedStyles } from "@/theme/context";
 import type { WorkflowConfigurationDto, WorkflowStepDto } from "@termloop/contract/current";
 import { useRef, useState } from "react";
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { WorkflowMutationUnconfirmedError, type WorkflowAgentCatalog } from "../../application/workflow-templates-port";
 import { Banner, PrimaryButton } from "../../components/primitives";
 import { Screen, ScreenHeader } from "../../components/screen";
 import { keyboardAvoidingBehavior } from "../../platform/presentation";
 import { addWorkflowStep, canMoveWorkflowStep, moveWorkflowStep, normalizedWorkflowDraft, removeWorkflowStep, sanitizeWorkflowReuse, startingWorkflowSteps, workflowAgentName, workflowDraft, workflowDraftError, workflowLaunchDefaults, workflowPermissionName, workflowStarts, workflowStepLabel, workflowStepOwner, type WorkflowDraft } from "../../presentation/workflow-template";
-import { color, radius, space } from "../../theme/tokens";
+import { radius, space } from "../../theme/tokens";
 import { WorkflowAdvanced, WorkflowButton, WorkflowField, WorkflowSelect } from "./workflow-controls";
 import { WorkflowLaunchFields, WorkflowStepFields } from "./workflow-step-fields";
 
@@ -20,6 +21,7 @@ export function WorkflowEditor(props: {
   save(draft: WorkflowDraft, generation: number | undefined): Promise<void>;
   remove(generation: number): Promise<void>;
 }) {
+  const styles = useStyles();
   const [draft, setDraft] = useState(() => workflowDraft(props.configuration));
   const [baseline, setBaseline] = useState(() => workflowDraft(props.configuration));
   const [generation, setGeneration] = useState(props.configuration?.generation);
@@ -156,7 +158,7 @@ export function WorkflowEditor(props: {
   </Modal>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   body: { flex: 1 }, content: { padding: space.screen, gap: space.lg, paddingBottom: space.xl },
   title: { color: color.text, fontSize: 23, fontWeight: "700", lineHeight: 29 }, help: { color: color.textSecondary, fontSize: 13, lineHeight: 19 },
   starter: { padding: space.lg, gap: space.md, backgroundColor: color.bgRaised, borderWidth: 1, borderColor: color.border, borderRadius: radius.card },
@@ -170,4 +172,4 @@ const styles = StyleSheet.create({
   kind: { color: color.accentStrong, fontSize: 12 }, stepFields: { padding: space.md, gap: space.md, borderTopWidth: 1, borderTopColor: color.rule },
   actions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end" }, notice: { padding: space.md, gap: space.md, borderRadius: radius.control, backgroundColor: color.accentWash },
   noticeTitle: { color: color.text, fontSize: 14, lineHeight: 20, fontWeight: "600" }, footer: { padding: space.screen, gap: space.sm, borderTopWidth: 1, borderTopColor: color.rule }, footerHelp: { color: color.textSecondary, fontSize: 12 },
-});
+}));

@@ -1,13 +1,16 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { ChangeReview } from "@/features/changes/use-change-review";
 import { MAX_REVIEW_NOTE_CHARS } from "@/presentation/change-review-notes";
 import { sessionLabel } from "@/presentation/dto-readers";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 import { Banner, Card, EmptyState, PrimaryButton, SecondaryButton, SectionHeader } from "./primitives";
 
 export function ChangeReviewEditor({ review }: { review: ChangeReview }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const note = review.draft;
   if (!note) return null;
   return (
@@ -35,6 +38,7 @@ export function ChangeReviewPanel({ review, observationId, onBackToDiff }: {
   observationId: string | undefined;
   onBackToDiff?: (() => void) | undefined;
 }) {
+  const styles = useStyles();
   const [preview, setPreview] = useState(false);
   return (
     <ScrollView contentContainerStyle={styles.panel} keyboardShouldPersistTaps="handled">
@@ -75,7 +79,7 @@ export function ChangeReviewPanel({ review, observationId, onBackToDiff }: {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   panel: { padding: space.md, gap: space.md },
   editor: { padding: space.md, gap: space.sm, borderTopColor: color.rule, borderTopWidth: StyleSheet.hairlineWidth },
   input: { color: color.text, backgroundColor: color.bgRaised, borderColor: color.border, borderWidth: 1, borderRadius: radius.control, minHeight: 88, maxHeight: 150, padding: space.sm, fontSize: 14 },
@@ -90,4 +94,4 @@ const styles = StyleSheet.create({
   agent: { minHeight: geometry.touchTarget, justifyContent: "center", padding: space.sm, borderRadius: radius.control },
   agentSelected: { backgroundColor: color.accentWash },
   preview: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 12, lineHeight: 18 },
-});
+}));

@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -132,7 +133,7 @@ async function harness(project = false) {
     return slots[index].value;
   };
   const react = {
-    ...require("react"),
+    ...require("react"), useContext: () => lightTheme,
     useRef(value: unknown) { const index = cursor++; return slots[index] ??= { current: value }; },
     useState(initial: unknown) {
       const index = cursor++;
@@ -178,7 +179,8 @@ async function harness(project = false) {
     if (name === "@/platform/agent-launch-preferences") return { agentLaunchPreferences: preferences };
     if (name === "@/platform/presentation") return { keyboardAvoidingBehavior: "padding" };
     if (name === "@/theme/tokens") return tokens;
-    if (name === "@/theme/typography") return { fontFamily: { mono: "Menlo" }, text: { body: {}, muted: {} } };
+    if (name === "@/theme/context") return { useTheme: () => lightTheme, createThemedStyles: (create: (theme: typeof lightTheme) => unknown) => () => create(lightTheme) };
+    if (name === "@/theme/typography") return { fontFamily: { mono: "Menlo" }, createTextStyles: () => ({ body: {}, muted: {} }), useTextStyles: () => ({ body: {}, muted: {} }) };
     return require(name);
   }, module, module.exports);
   const render = () => {

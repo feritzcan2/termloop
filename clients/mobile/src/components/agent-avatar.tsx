@@ -1,12 +1,15 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useTheme, createThemedStyles } from "@/theme/context";
+import { Text, View } from "react-native";
 
-import { color, radius } from "@/theme/tokens";
+import { radius } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export function AgentAvatar({ agentId, active }: {
   agentId: string | null;
   active: boolean;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const claude = agentId === "claude";
   const label = claude ? "C" : agentId === "codex" ? "CX" : "A";
   const tint = claude ? color.agentClaude : agentId === "codex" ? color.agentCodex : color.accentStrong;
@@ -23,7 +26,7 @@ export function AgentAvatar({ agentId, active }: {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(() => ({
   avatar: {
     width: 28,
     height: 28,
@@ -33,4 +36,4 @@ const styles = StyleSheet.create({
     borderRadius: radius.control,
   },
   label: { fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "800" },
-});
+}));

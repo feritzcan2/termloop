@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -6,13 +8,14 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fro
 import { Banner, Card, PrimaryButton, SecondaryButton, SectionHeader } from "@/components/primitives";
 import { MockBadge, MockNotice, Screen, ScreenHeader } from "@/components/screen";
 import { useConnections } from "@/features/connection/connection-store";
-import { color, radius, space } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { radius, space } from "@/theme/tokens";
 
 /// QR and paste carry the exact same versioned bootstrap bytes. The camera therefore
 /// adds no second pairing protocol and the secure connection adapter remains the only
 /// place that parses or stores credentials.
 export default function PairRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const connections = useConnections();
   const [code, setCode] = useState("");
@@ -155,69 +158,73 @@ export default function PairRoute() {
   );
 }
 
-const styles = StyleSheet.create({
-  headerRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  close: { width: 32, height: 44, alignItems: "flex-end", justifyContent: "center" },
-  closeGlyph: { color: color.textSecondary, fontSize: 17 },
-  content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
-  section: { gap: 6 },
-  body: { ...text.body, lineHeight: 20 },
-  mono: { fontFamily: fontFamily.mono, color: color.text },
-  codeInput: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    borderRadius: radius.control,
-    backgroundColor: color.bgTerminal,
-    color: color.text,
-    fontFamily: fontFamily.mono,
-    fontSize: 12,
-    paddingHorizontal: space.md,
-  },
-  cameraFrame: {
-    position: "relative",
-    height: 330,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    borderRadius: radius.card,
-    backgroundColor: color.bgTerminal,
-  },
-  cameraPlaceholder: {
-    minHeight: 190,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space.md,
-    padding: space.lg,
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    borderRadius: radius.card,
-    backgroundColor: color.bgTerminal,
-  },
-  cameraHint: { ...text.body, color: color.textSecondary, textAlign: "center" },
-  scanTarget: {
-    position: "absolute",
-    top: 48,
-    right: 38,
-    bottom: 48,
-    left: 38,
-    borderWidth: 2,
-    borderColor: color.accentStrong,
-    borderRadius: radius.card,
-  },
-  scanOverlay: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space.md,
-    padding: space.lg,
-    backgroundColor: color.mediaScrim,
-  },
-  scanOverlayText: { ...text.body, color: color.onMedia, textAlign: "center" },
-  consent: { padding: space.md },
-  consentText: { ...text.body, lineHeight: 20 },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    headerRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
+    close: { width: 32, height: 44, alignItems: "flex-end", justifyContent: "center" },
+    closeGlyph: { color: color.textSecondary, fontSize: 17 },
+    content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
+    section: { gap: 6 },
+    body: { ...text.body, lineHeight: 20 },
+    mono: { fontFamily: fontFamily.mono, color: color.text },
+    codeInput: {
+      minHeight: 48,
+      borderWidth: 1,
+      borderColor: color.borderStrong,
+      borderRadius: radius.control,
+      backgroundColor: color.bgTerminal,
+      color: color.text,
+      fontFamily: fontFamily.mono,
+      fontSize: 12,
+      paddingHorizontal: space.md,
+    },
+    cameraFrame: {
+      position: "relative",
+      height: 330,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: color.borderStrong,
+      borderRadius: radius.card,
+      backgroundColor: color.bgTerminal,
+    },
+    cameraPlaceholder: {
+      minHeight: 190,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: space.md,
+      padding: space.lg,
+      borderWidth: 1,
+      borderColor: color.borderStrong,
+      borderRadius: radius.card,
+      backgroundColor: color.bgTerminal,
+    },
+    cameraHint: { ...text.body, color: color.textSecondary, textAlign: "center" },
+    scanTarget: {
+      position: "absolute",
+      top: 48,
+      right: 38,
+      bottom: 48,
+      left: 38,
+      borderWidth: 2,
+      borderColor: color.accentStrong,
+      borderRadius: radius.card,
+    },
+    scanOverlay: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: space.md,
+      padding: space.lg,
+      backgroundColor: color.mediaScrim,
+    },
+    scanOverlayText: { ...text.body, color: color.onMedia, textAlign: "center" },
+    consent: { padding: space.md },
+    consentText: { ...text.body, lineHeight: 20 },
+  };
 });
