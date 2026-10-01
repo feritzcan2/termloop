@@ -186,6 +186,7 @@ fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
         json!({"target":"codex","message":"review"}),
         json!({"target":"codex","message":"review","model":"default","reasoning":"default"}),
         json!({"target":"codex","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"codex","message":"review","model":"gpt-6.1-sol"}),
         json!({"target":"codex","message":"review","model":"gpt-6-sol"}),
         json!({"target":"codex","message":"review","model":"gpt-6-luna"}),
         json!({"target":"codex","message":"review","reasoning":"high"}),
@@ -201,6 +202,7 @@ fn ask_to_selection_is_optional_provider_scoped_and_initial_only() {
     for params in [
         json!({"target":"codex","message":"review","model":"opus"}),
         json!({"target":"claude","message":"review","model":"gpt-6-astra"}),
+        json!({"target":"claude","message":"review","model":"gpt-6.1-sol"}),
         json!({"target":"claude","message":"review","model":"gpt-6-sol"}),
         json!({"target":"claude","message":"review","model":"gpt-6-luna"}),
         json!({"target":"codex","message":"review","model":"unknown"}),
@@ -317,7 +319,7 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             "taskId":"task-1",
             "assignment":"Implement it.",
             "agentId":"codex",
-            "model":"gpt-6-astra"
+            "model":"gpt-6.1-sol"
         })
     ));
     // The transport keeps one simple object-shaped tool declaration for model
@@ -360,7 +362,7 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
             "branchName":"termloop/task-1",
             "worktreePath":"/tmp/task-1",
             "agentId":"codex",
-            "model":"gpt-6-astra",
+            "model":"gpt-6.1-sol",
             "permission":"default",
             "reasoning":"max",
             "assignmentDelivered":true,

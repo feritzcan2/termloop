@@ -73,7 +73,7 @@ test("Ask-To advertises independent defaults and user-requested initial selectio
   assert.deepEqual(required, ["target", "message"]);
   assert.equal(properties.model.default, "default");
   assert.equal(properties.reasoning.default, "default");
-  for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+  for (const model of ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]) {
     assert.ok(properties.model.enum.includes(model));
   }
   assert.deepEqual(properties.reasoning.enum, ["default", "low", "medium", "high", "xhigh", "max"]);
@@ -81,7 +81,7 @@ test("Ask-To advertises independent defaults and user-requested initial selectio
   assert.match(definition.description, /Never infer or choose a non-default setting/);
   for (const target of ["claude", "codex"]) {
     const rule = allOf.find((rule) => rule.if.properties?.target?.const === target);
-    for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+    for (const model of ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]) {
       assert.equal(rule.then.properties.model.enum.includes(model), target === "codex");
     }
     assert.equal(rule.then.properties.model.enum.includes("opus"), target === "claude");
@@ -140,12 +140,14 @@ test("Steward Task Agent results validate provider/model pairs", () => {
     status: "ready",
   };
   assert.equal(validateMcpToolResult("task_agent_start", result), true);
-  assert.equal(validateMcpToolResult("task_agent_start", {
-    ...result,
-    agentId: "codex",
-    model: "gpt-6-astra",
-    reasoning: "max",
-  }), true);
+  for (const model of ["gpt-6-astra", "gpt-6.1-sol"]) {
+    assert.equal(validateMcpToolResult("task_agent_start", {
+      ...result,
+      agentId: "codex",
+      model,
+      reasoning: "max",
+    }), true);
+  }
   assert.equal(validateMcpToolResult("task_agent_start", {
     ...result,
     agentId: "codex",
