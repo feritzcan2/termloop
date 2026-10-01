@@ -88,7 +88,7 @@ describe("Agent Setup", () => {
     });
   });
 
-  it.each(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])("keeps %s launch settings even when the improver cannot open", async (model) => {
+  it.each(["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("keeps %s launch settings even when the improver cannot open", async (model) => {
     const start = vi.fn(async () => "provider unavailable");
     const close = vi.fn();
     await act(async () => root.render(createElement(AgentSetupDialog, {

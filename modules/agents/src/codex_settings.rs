@@ -175,6 +175,7 @@ pub fn normalize_codex_thread_settings(raw: &str) -> Option<CodexThreadSettingsO
             matches!(
                 model.as_str(),
                 "gpt-6-astra"
+                    | "gpt-6.1-sol"
                     | "gpt-6-sol"
                     | "gpt-6-luna"
                     | "gpt-5.6-sol"
@@ -279,7 +280,7 @@ mod tests {
         let settings = notification(
             r#""approvalPolicy":"never","approvalsReviewer":"user","sandboxPolicy":{"type":"dangerFullAccess"},"activePermissionProfile":{"id":":danger-full-access","extends":null},"effort":"max""#,
         );
-        for model in ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"] {
+        for model in ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"] {
             let observed =
                 normalize_codex_thread_settings(&settings.replace("gpt-5.6-sol", model)).unwrap();
             assert_eq!(observed.model.as_deref(), Some(model));
