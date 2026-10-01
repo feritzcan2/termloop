@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -7,7 +9,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
+
   Text,
   TextInput,
   View,
@@ -38,14 +40,15 @@ import {
 } from "@/presentation/agent-launch-presentation";
 import { agentLaunchPreferences } from "@/platform/agent-launch-preferences";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
-import { color, radius, space } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { radius, space } from "@/theme/tokens";
 
 const PROJECT_TARGET_PREFIX = "project:";
 
 /// Start with the last successful choices. The Mac still previews and binds
 /// the exact prompt and settings before launch; inspection is available in Edit.
 export default function LaunchRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { taskId, connectionId: routeConnectionId } = useLocalSearchParams<{
     taskId: string;
     connectionId?: string;
@@ -397,6 +400,7 @@ function Choice({ label, options, value, disabled = false, onChange }: {
   disabled?: boolean | undefined;
   onChange: (value: string) => void;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.section}>
       <SectionHeader label={label} />
@@ -432,6 +436,7 @@ function Choice({ label, options, value, disabled = false, onChange }: {
 }
 
 function ManifestLine({ label, value }: { label: string; value: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.manifestLine}>
       <Text style={styles.manifestLabel}>{label}</Text>
@@ -440,64 +445,68 @@ function ManifestLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  body: { flex: 1 },
-  content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
-  titleBlock: { gap: space.xs },
-  title: { color: color.text, fontSize: 18, fontWeight: "700", lineHeight: 24 },
-  subtitle: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  section: { gap: 6 },
-  settingsSummary: { flexDirection: "row", alignItems: "center", gap: space.md, padding: space.md, borderRadius: radius.card, backgroundColor: color.bgRaised },
-  settingsSummaryCopy: { flex: 1, gap: 4 },
-  settingsTitle: { ...text.body, color: color.text, fontWeight: "700" },
-  settingsDetail: { ...text.muted, color: color.textSecondary },
-  settingsEdit: { ...text.body, color: color.accentStrong, fontWeight: "600", paddingVertical: space.sm },
-  choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  choice: {
-    minHeight: 36,
-    justifyContent: "center",
-    paddingHorizontal: space.md,
-    borderRadius: radius.pill,
-    backgroundColor: color.bgRaised,
-  },
-  choiceSelected: { backgroundColor: color.accent },
-  choiceDisabled: { backgroundColor: color.bgApp, opacity: 0.55 },
-  choiceLabel: { ...text.body, color: color.textSecondary, fontWeight: "600" },
-  choiceLabelSelected: { color: color.onAccent },
-  choiceLabelDisabled: { color: color.textMuted },
-  manifestLine: { paddingHorizontal: space.md, paddingVertical: space.sm, gap: 2 },
-  manifestLabel: {
-    color: color.textMuted,
-    fontFamily: fontFamily.mono,
-    fontSize: 10,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-  },
-  manifestValue: { color: color.text, fontFamily: fontFamily.mono, fontSize: 12 },
-  promptInput: {
-    minHeight: 108,
-    paddingHorizontal: space.md,
-    paddingVertical: space.md,
-    borderRadius: radius.card,
-    backgroundColor: color.bgRaised,
-    color: color.text,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  promptHint: { ...text.muted, paddingHorizontal: 2 },
-  launchStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    padding: space.md,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: color.accent,
-    backgroundColor: color.accentWash,
-  },
-  launchStatusCopy: { flex: 1, gap: 3 },
-  launchStatusTitle: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
-  launchStatusBody: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
-  actions: { paddingTop: space.xs },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    centre: { flex: 1, justifyContent: "center", padding: space.screen },
+    body: { flex: 1 },
+    content: { gap: space.lg, padding: space.screen, paddingBottom: space.xl },
+    titleBlock: { gap: space.xs },
+    title: { color: color.text, fontSize: 18, fontWeight: "700", lineHeight: 24 },
+    subtitle: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+    section: { gap: 6 },
+    settingsSummary: { flexDirection: "row", alignItems: "center", gap: space.md, padding: space.md, borderRadius: radius.card, backgroundColor: color.bgRaised },
+    settingsSummaryCopy: { flex: 1, gap: 4 },
+    settingsTitle: { ...text.body, color: color.text, fontWeight: "700" },
+    settingsDetail: { ...text.muted, color: color.textSecondary },
+    settingsEdit: { ...text.body, color: color.accentStrong, fontWeight: "600", paddingVertical: space.sm },
+    choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+    choice: {
+      minHeight: 36,
+      justifyContent: "center",
+      paddingHorizontal: space.md,
+      borderRadius: radius.pill,
+      backgroundColor: color.bgRaised,
+    },
+    choiceSelected: { backgroundColor: color.accent },
+    choiceDisabled: { backgroundColor: color.bgApp, opacity: 0.55 },
+    choiceLabel: { ...text.body, color: color.textSecondary, fontWeight: "600" },
+    choiceLabelSelected: { color: color.onAccent },
+    choiceLabelDisabled: { color: color.textMuted },
+    manifestLine: { paddingHorizontal: space.md, paddingVertical: space.sm, gap: 2 },
+    manifestLabel: {
+      color: color.textMuted,
+      fontFamily: fontFamily.mono,
+      fontSize: 10,
+      letterSpacing: 0.6,
+      textTransform: "uppercase",
+    },
+    manifestValue: { color: color.text, fontFamily: fontFamily.mono, fontSize: 12 },
+    promptInput: {
+      minHeight: 108,
+      paddingHorizontal: space.md,
+      paddingVertical: space.md,
+      borderRadius: radius.card,
+      backgroundColor: color.bgRaised,
+      color: color.text,
+      fontSize: 15,
+      lineHeight: 21,
+    },
+    promptHint: { ...text.muted, paddingHorizontal: 2 },
+    launchStatus: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.md,
+      padding: space.md,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: color.accent,
+      backgroundColor: color.accentWash,
+    },
+    launchStatusCopy: { flex: 1, gap: 3 },
+    launchStatusTitle: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "800" },
+    launchStatusBody: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
+    actions: { paddingTop: space.xs },
+  };
 });

@@ -1,6 +1,7 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { WorkflowConfigurationDto, WorkflowConfigurationListResult } from "@termloop/contract/current";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import type { ControlReadPort } from "../../application/ports";
 import type { WorkflowAgentCatalog, WorkflowTemplatesPort } from "../../application/workflow-templates-port";
 import { deleteWorkflowTemplate, saveWorkflowTemplate } from "../../application/workflow-template-commands";
@@ -8,7 +9,7 @@ import { Banner, EmptyState, PrimaryButton } from "../../components/primitives";
 import { MockBadge, MockNotice, Screen, ScreenHeader } from "../../components/screen";
 import { useAppLifecycle } from "../../platform/app-lifecycle";
 import { workflowAgentName, workflowSummary } from "../../presentation/workflow-template";
-import { color, radius, space } from "../../theme/tokens";
+import { radius, space } from "../../theme/tokens";
 import { WorkflowButton } from "./workflow-controls";
 import { WorkflowEditor } from "./workflow-editor";
 
@@ -20,6 +21,8 @@ export function WorkflowTemplatesScreen(props: {
   projectName: string;
   online: boolean;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { port, control, connectionId, projectId, online } = props;
   const lifecycle = useAppLifecycle();
   const [snapshot, setSnapshot] = useState<WorkflowConfigurationListResult>();
@@ -91,10 +94,10 @@ export function WorkflowTemplatesScreen(props: {
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   content: { padding: space.screen, gap: space.lg, paddingBottom: space.xl }, title: { color: color.text, fontSize: 23, fontWeight: "700" },
   help: { color: color.textSecondary, fontSize: 13, lineHeight: 20 }, count: { color: color.textMuted, fontSize: 11, letterSpacing: 1, fontWeight: "600" },
   template: { padding: space.lg, gap: space.sm, borderWidth: 1, borderColor: color.border, borderRadius: radius.card, backgroundColor: color.bgRaised },
   row: { flexDirection: "row", alignItems: "center", gap: space.md }, name: { flex: 1, color: color.text, fontSize: 16, fontWeight: "600", lineHeight: 22 },
   link: { color: color.accentStrong, fontSize: 13, fontWeight: "600" }, flow: { color: color.accentStrong, fontSize: 13, lineHeight: 21 },
-});
+}));

@@ -1,10 +1,11 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { TaskDto } from "@termloop/contract/current";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { AgentAvatar } from "../../components/agent-avatar";
 import { JiraIssueLink } from "../../components/external-link";
 import { ToneSpine } from "../../components/tone-spine";
 import type { AgentRow } from "../../presentation/attention-overview";
-import { color, space, toneColor, toneWash } from "../../theme/tokens";
+import { space } from "../../theme/tokens";
 import { fontFamily } from "../../theme/typography";
 
 /** One task-led row; Jira remains an independent touch target beside navigation. */
@@ -15,6 +16,8 @@ export function TaskAgentRow({ row, task, age, onPress, onLongPress }: {
   onPress(): void;
   onLongPress(): void;
 }) {
+  const { color, toneColor, toneWash } = useTheme();
+  const styles = useStyles();
   const tone = row.tone;
   const tint = tone === "quiet" || tone === "done" ? color.textSecondary : toneColor[tone];
   const wash = tone === "quiet" || tone === "done" ? undefined : toneWash[tone];
@@ -47,7 +50,7 @@ export function TaskAgentRow({ row, task, age, onPress, onLongPress }: {
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   row: { flexDirection: "row", alignItems: "center" },
   main: { flex: 1, minWidth: 0, flexDirection: "row", gap: 10, padding: space.md, minHeight: 76 },
   pressed: { backgroundColor: color.bgHover },
@@ -59,4 +62,4 @@ const styles = StyleSheet.create({
   actions: { maxWidth: "35%", alignItems: "flex-end", paddingRight: space.sm, paddingVertical: space.sm, gap: 3 },
   state: { fontSize: 11, fontWeight: "600", textAlign: "right", paddingHorizontal: space.sm },
   age: { color: color.textMuted, fontSize: 10, paddingHorizontal: space.sm },
-});
+}));

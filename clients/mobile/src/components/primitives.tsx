@@ -1,9 +1,10 @@
+import { useTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { PropsWithChildren, ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import type { RowTone } from "@/presentation/tone";
-import { color, geometry, radius, space, toneColor } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, radius, space } from "@/theme/tokens";
 
 /// The small shared vocabulary every screen is built from. Kept in one file because
 /// each piece is a handful of lines and splitting them would cost more navigation
@@ -14,10 +15,12 @@ import { fontFamily, text } from "@/theme/typography";
 /// terminal frame. Children separate with dividers rather than gaps, so a group
 /// reads as one object.
 export function Card({ children, style }: PropsWithChildren<{ style?: StyleProp<ViewStyle> }>) {
+  const styles = useStyles();
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
 export function CardDivider() {
+  const styles = useStyles();
   return <View style={styles.divider} />;
 }
 
@@ -25,6 +28,8 @@ export function CardDivider() {
 /// accent's one appearance per section, so the eye can hop prompt to prompt the
 /// way it hops prompt to prompt in a scrollback.
 export function SectionHeader({ label, trailing }: { label: string; trailing?: ReactNode }) {
+  const styles = useStyles();
+  const text = useTextStyles();
   return (
     <View style={styles.sectionHeader} accessibilityRole="header">
       <View style={styles.sectionLabel}>
@@ -42,6 +47,7 @@ export function Chip({ label, count, selected, onPress }: {
   selected: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -60,17 +66,18 @@ export function Chip({ label, count, selected, onPress }: {
 
 export type DotKind = "connected" | "connecting" | "offline" | "needsAttention";
 
-const dotColor: Record<DotKind, string> = {
-  connected: color.success,
-  connecting: color.warning,
-  offline: color.textMuted,
-  needsAttention: color.danger,
-};
-
 /// Connection reachability, which is a different question from a row's tone and so
 /// has its own vocabulary. An unreachable Mac is hollow rather than coloured, because
 /// "cannot be read" is an absence and should look like one.
 export function StatusDot({ kind }: { kind: DotKind }) {
+  const { color } = useTheme();
+  const dotColor: Record<DotKind, string> = {
+    connected: color.success,
+    connecting: color.warning,
+    offline: color.textMuted,
+    needsAttention: color.danger,
+  };
+  const styles = useStyles();
   const filled = kind !== "offline";
   return (
     <View
@@ -85,6 +92,9 @@ export function StatusDot({ kind }: { kind: DotKind }) {
 /// The one state word a row or header prints. Tinted by tone, never filled — a filled
 /// pill reads as an action, and none of these are actionable from the phone.
 export function StatePill({ tone, label }: { tone: RowTone; label: string }) {
+  const { color, toneColor } = useTheme();
+  const styles = useStyles();
+  const text = useTextStyles();
   const tint = tone === "quiet" || tone === "done" ? color.textSecondary : toneColor[tone];
   return (
     <View style={[styles.pill, { borderColor: `${tint}59` }]}>
@@ -94,13 +104,6 @@ export function StatePill({ tone, label }: { tone: RowTone; label: string }) {
 }
 
 export type BannerKind = "info" | "warning" | "danger" | "gap";
-
-const bannerTint: Record<BannerKind, string> = {
-  info: color.accentStrong,
-  warning: color.warning,
-  danger: color.danger,
-  gap: color.textSecondary,
-};
 
 /// A tinted strip with a leading bar — the row spine's vocabulary applied to a
 /// message, so state colour means the same thing whether it marks a row or a
@@ -112,6 +115,14 @@ export function Banner({ kind, message, action, onAction, onDismiss }: {
   onAction?: (() => void) | undefined;
   onDismiss?: (() => void) | undefined;
 }) {
+  const { color } = useTheme();
+  const bannerTint: Record<BannerKind, string> = {
+    info: color.accentStrong,
+    warning: color.warning,
+    danger: color.danger,
+    gap: color.textSecondary,
+  };
+  const styles = useStyles();
   const tint = bannerTint[kind];
   return (
     <View style={[styles.banner, { backgroundColor: `${tint}14` }]}>
@@ -138,6 +149,7 @@ export function Banner({ kind, message, action, onAction, onDismiss }: {
 }
 
 export function EmptyState({ title, body, children }: PropsWithChildren<{ title: string; body: string }>) {
+  const styles = useStyles();
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{title}</Text>
@@ -151,6 +163,7 @@ export function EmptyState({ title, body, children }: PropsWithChildren<{ title:
 /// genuinely unavailable: the screen says so in the place the fact belongs, rather
 /// than hiding the section and leaving the reader to wonder.
 export function UnavailableNote({ children }: PropsWithChildren) {
+  const styles = useStyles();
   return <Text style={styles.unavailable}>{children}</Text>;
 }
 
@@ -160,6 +173,8 @@ export function PrimaryButton({ label, onPress, disabled, busy }: {
   disabled?: boolean | undefined;
   busy?: boolean | undefined;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -182,6 +197,7 @@ export function PrimaryButton({ label, onPress, disabled, busy }: {
 }
 
 export function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -193,7 +209,7 @@ export function SecondaryButton({ label, onPress }: { label: string; onPress: ()
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   card: {
     borderRadius: radius.card,
     backgroundColor: color.bgRaised,
@@ -305,4 +321,4 @@ const styles = StyleSheet.create({
   },
   secondaryPressed: { backgroundColor: color.bgHover },
   secondaryLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 13, fontWeight: "600" },
-});
+}));

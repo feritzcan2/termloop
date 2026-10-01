@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -118,7 +119,7 @@ async function editorHarness() {
   const slots: unknown[] = [];
   let cursor = 0;
   const react = {
-    ...require("react"),
+    ...require("react"), useContext: () => lightTheme,
     useRef: (value: unknown) => { const index = cursor++; if (!(index in slots)) slots[index] = { current: value }; return slots[index]; },
     useState: (initial: unknown) => {
       const index = cursor++;

@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -96,7 +97,7 @@ async function harness() {
   };
   const same = (a: unknown[] | undefined, b: unknown[]) => a?.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
-    ...require("react"),
+    ...require("react"), useContext: () => lightTheme,
     useRef(value: unknown) { const i = cursor++; return slots[i] ??= { current: value }; },
     useState(initial: unknown) {
       const i = cursor++;
@@ -150,7 +151,8 @@ async function harness() {
     if (name === "@/platform/steward-local-speech") return { stewardLocalSpeech: local };
     if (name === "@/platform/steward-voice-audio") return audioSession;
     if (name === "@/theme/tokens") return tokens;
-    if (name === "@/theme/typography") return { fontFamily: {}, text: {} };
+    if (name === "@/theme/context") return { useTheme: () => lightTheme, createThemedStyles: (create: (theme: typeof lightTheme) => unknown) => () => create(lightTheme) };
+    if (name === "@/theme/typography") return { fontFamily: {}, createTextStyles: () => ({}), useTextStyles: () => ({}) };
     return require(name);
   }, module, module.exports);
   const render = () => {

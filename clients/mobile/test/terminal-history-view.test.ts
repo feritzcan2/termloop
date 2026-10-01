@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -147,7 +148,7 @@ async function terminalHarness(props: Props) {
   let tree: ReactNode;
   vi.stubGlobal("requestAnimationFrame", (callback: () => void) => { frames.push(callback); return frames.length; });
   const react = {
-    ...require("react"),
+    ...require("react"), useContext: () => lightTheme,
     useCallback: (callback: unknown) => callback,
     useEffect: () => {},
     useLayoutEffect: (callback: () => void) => { layouts.push(callback); },

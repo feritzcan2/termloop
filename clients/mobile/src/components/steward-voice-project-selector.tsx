@@ -1,6 +1,7 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { createThemedStyles } from "@/theme/context";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
-import { color, radius, space } from "@/theme/tokens";
+import { radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export interface StewardVoiceProjectOption {
@@ -17,6 +18,7 @@ export interface StewardVoiceProjectSelectorProps {
 }
 
 export function StewardVoiceProjectSelector(props: StewardVoiceProjectSelectorProps) {
+  const styles = useStyles();
   return (
     <View style={styles.selector}>
       <Text style={styles.label}>KONUŞULAN PROJE</Text>
@@ -58,7 +60,7 @@ export function StewardVoiceProjectSelector(props: StewardVoiceProjectSelectorPr
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   selector: { gap: space.xs },
   label: {
     color: color.textMuted,
@@ -84,4 +86,4 @@ const styles = StyleSheet.create({
   connectionName: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 9, marginTop: 2 },
   disabled: { opacity: 0.38 },
   pressed: { opacity: 0.74, transform: [{ scale: 0.98 }] },
-});
+}));

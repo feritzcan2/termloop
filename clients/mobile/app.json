@@ -6,7 +6,7 @@
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "scheme": "termloop",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "owner": "feritzcan",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "202609300140",
+      "buildNumber": "202610012218",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,

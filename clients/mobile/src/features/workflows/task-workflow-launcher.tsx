@@ -1,13 +1,14 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { AgentStatusDto, SessionDto, TaskDto } from "@termloop/contract/current";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import type { ControlReadPort } from "../../application/ports";
 import { WorkflowLaunchUnconfirmedError, type WorkflowLaunchPort } from "../../application/workflow-launch-port";
 import type { WorkflowTemplatesPort } from "../../application/workflow-templates-port";
 import { Banner, PrimaryButton } from "../../components/primitives";
 import { launchBlockedReason } from "../../presentation/agent-launch-presentation";
 import { workflowAgentName, workflowPermissionName, workflowSummary } from "../../presentation/workflow-template";
-import { color, radius, space } from "../../theme/tokens";
+import { radius, space } from "../../theme/tokens";
 import { WorkflowButton, WorkflowField, WorkflowSelect } from "./workflow-controls";
 import { taskWorkflowExecution } from "../../presentation/workflow-execution";
 import { useWorkflowSnapshot } from "./use-workflow-snapshot";
@@ -26,6 +27,8 @@ export function TaskWorkflowLauncher(props: {
   openTemplates(): void;
   openSession(sessionId: string): void;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { task, connectionId, online, templates, control } = props;
   const { snapshot, loading, error: readError, checkedAt, refresh } = useWorkflowSnapshot(templates, control, connectionId, task.project_id, online);
   const [selection, setSelection] = useState("");
@@ -106,11 +109,11 @@ export function TaskWorkflowLauncher(props: {
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   card: { backgroundColor: color.bgRaised, borderWidth: 1, borderColor: color.borderStrong, borderRadius: radius.card, padding: space.lg, gap: space.md },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { color: color.text, fontSize: 19, fontWeight: "700" },
   help: { color: color.textSecondary, fontSize: 13, lineHeight: 20 },
   hint: { color: color.textMuted, fontSize: 12, lineHeight: 18 },
   flow: { color: color.accentStrong, fontSize: 13, lineHeight: 21 },
-});
+}));

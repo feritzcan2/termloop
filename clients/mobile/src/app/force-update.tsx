@@ -1,6 +1,7 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { Banner, Card, PrimaryButton, SecondaryButton } from "@/components/primitives";
 import { Screen, ScreenHeader } from "@/components/screen";
@@ -11,7 +12,7 @@ import {
 } from "@/platform/app-update";
 import { expoAppUpdateClient } from "@/platform/expo-app-update-client";
 import { logMobileAppUpdate } from "@/platform/mobile-sentry";
-import { color, space } from "@/theme/tokens";
+import { space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 type UpdateState = AppUpdatePhase | AppUpdateResult | "error";
@@ -25,6 +26,8 @@ const statusCopy: Record<Exclude<UpdateState, "error">, string> = {
 };
 
 export default function ForceUpdateRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const params = useLocalSearchParams<{ group?: string | string[] }>();
   const group = typeof params.group === "string" && /^[A-Za-z0-9-]{1,128}$/.test(params.group)
@@ -85,11 +88,11 @@ export default function ForceUpdateRoute() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   content: { flex: 1, justifyContent: "center", padding: space.screen },
   card: { gap: space.lg, padding: space.xl },
   hero: { alignItems: "center", gap: space.sm },
   title: { color: color.text, fontSize: 22, fontWeight: "700" },
   status: { color: color.textSecondary, fontSize: 14, lineHeight: 20, textAlign: "center" },
   group: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10 },
-});
+}));

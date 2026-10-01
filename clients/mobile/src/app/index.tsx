@@ -1,6 +1,8 @@
+import { AppearanceSelector } from "@/components/appearance-selector";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import {
   Banner,
@@ -16,7 +18,7 @@ import { Row } from "@/components/row";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import { buildLocatedProjectSummaries } from "@/presentation/attention-overview";
-import { color, space } from "@/theme/tokens";
+import { space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 /// Home: every Project, with its Mac shown as location metadata.
@@ -25,6 +27,8 @@ import { fontFamily } from "@/theme/typography";
 /// selects its owning credential immediately before opening it, so identical UI can
 /// safely address several Macs without merging their domain projections.
 export default function HomeRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const connections = useConnections();
   const overview = useOverview();
@@ -91,6 +95,7 @@ export default function HomeRoute() {
           />
         }
       >
+        <AppearanceSelector />
         <MockNotice detail="No Mac is contacted. Every project, session, and terminal byte below comes from a fixture in this build." />
 
         {connections.error === undefined ? null : (
@@ -183,7 +188,7 @@ export default function HomeRoute() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   headerRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   settingsButton: { width: 34, height: 44, alignItems: "center", justifyContent: "center" },
   settingsGlyph: { color: color.textSecondary, fontSize: 18 },
@@ -193,4 +198,4 @@ const styles = StyleSheet.create({
   emptyAction: { alignSelf: "stretch", marginTop: space.sm },
   section: { gap: 6 },
   pair: { marginTop: space.xs },
-});
+}));

@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -84,7 +85,7 @@ async function harness() {
   const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/features/workflows/workflow-agent-list.tsx", import.meta.url))], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react-native", "react/jsx-runtime", "../../components/primitives", "./use-workflow-snapshot"] });
   const module = { exports: {} as Components };
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)((name: string) => {
-    if (name === "react") return { ...require("react"), useMemo: (create: () => unknown) => create() };
+    if (name === "react") return { ...require("react"), useContext: () => lightTheme, useMemo: (create: () => unknown) => create() };
     if (name === "react-native") return { Text: "Text", View: "View", Platform: { OS: "ios", select: (options: Record<string, unknown>) => options.ios ?? options.default }, StyleSheet: { create: (value: unknown) => value, hairlineWidth: 0.5 } };
     if (name.endsWith("/primitives")) return { Banner: "Banner", Card: "Card", CardDivider: "CardDivider" };
     if (name.endsWith("/use-workflow-snapshot")) return { useWorkflowSnapshot: read };

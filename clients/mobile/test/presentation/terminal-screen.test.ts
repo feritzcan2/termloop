@@ -6,7 +6,9 @@ import {
   type TerminalScreenSnapshot,
   type TerminalSpan,
 } from "../../src/presentation/terminal-screen";
-import { color } from "../../src/theme/tokens";
+import { lightTheme } from "../../src/theme/tokens";
+import { terminalStyleColors } from "../../src/presentation/terminal-colors";
+const { color } = lightTheme;
 
 const encoder = new TextEncoder();
 const esc = String.fromCharCode(0x1b);
@@ -16,7 +18,10 @@ function plain(snapshot: TerminalScreenSnapshot | undefined): string[] {
 }
 
 function spansOf(snapshot: TerminalScreenSnapshot | undefined, row: number): readonly TerminalSpan[] {
-  return snapshot?.lines[row]?.spans ?? [];
+  return (snapshot?.lines[row]?.spans ?? []).map((span) => {
+    const colors = terminalStyleColors(span.style, lightTheme);
+    return { ...span, style: { ...span.style, foreground: colors.color, background: colors.backgroundColor } };
+  });
 }
 
 describe("terminal screen projection", () => {

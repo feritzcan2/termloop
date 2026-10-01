@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import {
   setAudioModeAsync,
   useAudioPlayer,
@@ -10,7 +12,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  StyleSheet,
+
   Text,
   View,
 } from "react-native";
@@ -28,8 +30,7 @@ import {
   configureStewardAudioSession,
   stewardVoiceAudioErrorMessage,
 } from "@/platform/steward-voice-audio";
-import { color, radius, space } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { radius, space } from "@/theme/tokens";
 
 const POLL_MS = 6_000;
 
@@ -40,6 +41,8 @@ const POLL_MS = 6_000;
 /// opens from push notifications, and can read any Steward response aloud without
 /// pretending the delayed work is a live call.
 export default function StewardRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { projectId, connectionId: routeConnectionId } = useLocalSearchParams<{
     projectId: string;
     connectionId?: string;
@@ -246,6 +249,7 @@ function StewardBubble({ message, nowMs, busy, speaking, readAloud, respond }: {
   readAloud: (message: StewardMessage) => Promise<void>;
   respond: (messageId: string, action: "approve" | "decline" | "accept") => Promise<void>;
 }) {
+  const styles = useStyles();
   const mine = message.author === "user";
   return (
     <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMine : null]}>
@@ -284,6 +288,7 @@ function BubbleAction({ label, busy, accent, onPress }: {
   accent?: boolean | undefined;
   onPress: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -311,32 +316,36 @@ async function configureVoicePlaybackAudio(): Promise<void> {
   }));
 }
 
-const styles = StyleSheet.create({
-  centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  thread: { gap: space.sm, padding: space.screen, paddingBottom: 112 },
-  threadError: { paddingTop: space.sm },
-  bubbleWrap: { alignItems: "flex-start", gap: 6, maxWidth: "92%" },
-  bubbleWrapMine: { alignSelf: "flex-end", alignItems: "flex-end" },
-  bubble: {
-    borderRadius: radius.card,
-    backgroundColor: color.bgRaised,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    gap: 4,
-  },
-  bubbleMine: { backgroundColor: color.accentWash },
-  bubbleText: { ...text.body, color: color.text, lineHeight: 19 },
-  bubbleTextMine: { color: color.text },
-  bubbleMeta: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10 },
-  bubbleActions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  bubbleAction: {
-    minHeight: 34,
-    justifyContent: "center",
-    paddingHorizontal: space.md,
-    borderRadius: radius.control,
-    backgroundColor: color.bgHover,
-  },
-  bubbleActionAccent: { backgroundColor: color.accent },
-  bubbleActionLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
-  bubbleActionLabelAccent: { color: color.onAccent },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    centre: { flex: 1, justifyContent: "center", padding: space.screen },
+    thread: { gap: space.sm, padding: space.screen, paddingBottom: 112 },
+    threadError: { paddingTop: space.sm },
+    bubbleWrap: { alignItems: "flex-start", gap: 6, maxWidth: "92%" },
+    bubbleWrapMine: { alignSelf: "flex-end", alignItems: "flex-end" },
+    bubble: {
+      borderRadius: radius.card,
+      backgroundColor: color.bgRaised,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      gap: 4,
+    },
+    bubbleMine: { backgroundColor: color.accentWash },
+    bubbleText: { ...text.body, color: color.text, lineHeight: 19 },
+    bubbleTextMine: { color: color.text },
+    bubbleMeta: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10 },
+    bubbleActions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+    bubbleAction: {
+      minHeight: 34,
+      justifyContent: "center",
+      paddingHorizontal: space.md,
+      borderRadius: radius.control,
+      backgroundColor: color.bgHover,
+    },
+    bubbleActionAccent: { backgroundColor: color.accent },
+    bubbleActionLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
+    bubbleActionLabelAccent: { color: color.onAccent },
+  };
 });

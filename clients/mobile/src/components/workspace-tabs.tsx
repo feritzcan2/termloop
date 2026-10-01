@@ -1,6 +1,7 @@
+import { createThemedStyles } from "@/theme/context";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export type WorkspaceTabId = "agents" | "tasks";
@@ -22,6 +23,7 @@ export function WorkspaceTabs({ selected, agents, tasks, select }: {
   tasks: Pick<WorkspaceTab, "count" | "attentionCount">;
   select: (tab: WorkspaceTabId) => void;
 }) {
+  const styles = useStyles();
   const tabs: readonly WorkspaceTab[] = [
     { id: "agents", label: "Agents", ...agents },
     { id: "tasks", label: "Tasks", ...tasks },
@@ -58,7 +60,7 @@ export function WorkspaceTabs({ selected, agents, tasks, select }: {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   rail: {
     flexDirection: "row",
     gap: space.xs,
@@ -117,4 +119,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.45,
     shadowRadius: 4,
   },
-});
+}));

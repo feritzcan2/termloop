@@ -1,14 +1,19 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useState, type PropsWithChildren } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { color, geometry, radius, space } from "../../theme/tokens";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { geometry, radius, space } from "../../theme/tokens";
 
 export function WorkflowButton(props: { label: string; onPress(): void; disabled?: boolean; danger?: boolean }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   return <Pressable accessibilityRole="button" accessibilityLabel={props.label} accessibilityState={{ disabled: Boolean(props.disabled) }} disabled={props.disabled} onPress={props.onPress} style={[styles.button, props.disabled && styles.disabled]}>
     <Text style={[styles.buttonText, props.danger && { color: color.danger }]}>{props.label}</Text>
   </Pressable>;
 }
 
 export function WorkflowField(props: { label: string; value: string; change(value: string): void; disabled: boolean; multiline?: boolean; maxLength: number; placeholder?: string }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   return <View style={styles.field}><Text style={styles.label}>{props.label}</Text><TextInput
     accessibilityLabel={props.label} value={props.value} onChangeText={props.change} editable={!props.disabled}
     multiline={props.multiline} maxLength={props.maxLength} placeholder={props.placeholder} placeholderTextColor={color.textMuted}
@@ -19,6 +24,8 @@ export function WorkflowField(props: { label: string; value: string; change(valu
 export interface WorkflowOption { value: string; label: string; disabled?: boolean }
 
 export function WorkflowSelect(props: { label: string; value: string; options: readonly WorkflowOption[]; change(value: string): void; disabled: boolean }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const selected = props.options.find((option) => option.value === props.value);
@@ -41,6 +48,7 @@ export function WorkflowSelect(props: { label: string; value: string; options: r
 }
 
 export function WorkflowAdvanced(props: PropsWithChildren<{ title: string; disabled: boolean }>) {
+  const styles = useStyles();
   const [open, setOpen] = useState(false);
   return <View style={styles.advanced}>
     <Pressable accessibilityRole="button" accessibilityLabel={props.title} accessibilityState={{ expanded: open, disabled: props.disabled }} disabled={props.disabled} onPress={() => setOpen(!open)} style={styles.option}>
@@ -50,7 +58,7 @@ export function WorkflowAdvanced(props: PropsWithChildren<{ title: string; disab
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   field: { gap: 7 }, label: { color: color.text, fontSize: 13, fontWeight: "600" },
   input: { minHeight: geometry.touchTarget, backgroundColor: color.bgRaised, borderWidth: 1, borderColor: color.borderStrong, borderRadius: radius.control, color: color.text, fontSize: 15, padding: space.md },
   instructions: { minHeight: 130 }, select: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 48, padding: space.md, borderWidth: 1, borderColor: color.border, borderRadius: radius.control, backgroundColor: color.bgRaised },
@@ -61,4 +69,4 @@ const styles = StyleSheet.create({
   button: { minHeight: geometry.touchTarget, justifyContent: "center", alignItems: "center", paddingHorizontal: space.md },
   buttonText: { color: color.accentStrong, fontSize: 13, fontWeight: "600" }, help: { color: color.textSecondary, fontSize: 13, padding: space.md },
   advanced: { borderWidth: 1, borderColor: color.border, borderRadius: radius.control }, advancedFields: { gap: space.md, padding: space.md, paddingTop: 0 },
-});
+}));

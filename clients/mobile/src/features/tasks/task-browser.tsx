@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { TaskDto } from "@termloop/contract/current";
 import { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -7,7 +8,7 @@ import { JiraIssueLink } from "@/components/external-link";
 import type { AgentRow, TaskRow } from "@/presentation/attention-overview";
 import { buildTaskBrowserItems, filterTaskItems, taskFilters, type TaskBrowserItem, type TaskFilter } from "@/presentation/task-browser";
 import { taskChangeLabel } from "@/presentation/task-presentation";
-import { color, geometry, radius, space, toneColor, toneWash } from "@/theme/tokens";
+import { geometry, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export interface TaskBrowserProps {
@@ -24,6 +25,8 @@ export interface TaskBrowserProps {
 }
 
 export function TaskBrowser(props: TaskBrowserProps) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [query, setQuery] = useState("");
   const list = useRef<FlatList<TaskBrowserItem>>(null);
@@ -124,6 +127,8 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
   openChanges: TaskBrowserProps["openChanges"];
   openAgent: TaskBrowserProps["openAgent"];
 }) {
+  const { color, toneColor, toneWash } = useTheme();
+  const styles = useStyles();
   const { row, task, agent } = item;
   const tint = row.tone === "quiet" || row.tone === "done" ? color.textSecondary : toneColor[row.tone];
   const prominent = item.filter === "attention" || item.filter === "active";
@@ -184,7 +189,7 @@ function TaskCard({ item, openTask, openChanges, openAgent }: {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   screen: { flex: 1 },
   toolbar: { gap: space.md, paddingBottom: space.xs },
   heading: { flexDirection: "row", alignItems: "center", gap: space.sm },
@@ -232,4 +237,4 @@ const styles = StyleSheet.create({
   waitingActionLabel: { color: color.onAccent, fontWeight: "700" },
   actionPressed: { opacity: 0.75 },
   pressed: { backgroundColor: color.accentWash },
-});
+}));

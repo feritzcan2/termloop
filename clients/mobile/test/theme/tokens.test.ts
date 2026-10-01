@@ -1,24 +1,29 @@
 import { describe, expect, it } from "vitest";
 
 import appConfig from "../../app.json";
-import { color, toneColor } from "../../src/theme/tokens";
+import { lightTheme, darkTheme } from "../../src/theme/tokens";
 
-describe("mobile light theme", () => {
-  it("forces the native application into light appearance", () => {
-    expect(appConfig.expo.userInterfaceStyle).toBe("light");
+describe.each([lightTheme, darkTheme])("mobile $mode theme", (theme) => {
+  const { color, toneColor } = theme;
+  it("allows both native appearances", () => {
+    expect(appConfig.expo.userInterfaceStyle).toBe("automatic");
   });
 
-  it("keeps every application surface light without returning to near-white glare", () => {
+  it("keeps every application surface within its appearance range", () => {
     for (const surface of [color.bgApp, color.bgRaised, color.bgSidebar, color.bgHover, color.bgTerminal]) {
-      expect(relativeLuminance(surface)).toBeGreaterThan(0.58);
-      expect(relativeLuminance(surface)).toBeLessThan(0.9);
+      if (theme.mode === "light") {
+        expect(relativeLuminance(surface)).toBeGreaterThan(0.58);
+        expect(relativeLuminance(surface)).toBeLessThan(0.9);
+      } else {
+        expect(relativeLuminance(surface)).toBeLessThan(0.07);
+      }
     }
   });
 
   it("uses a brighter raised surface above the dimmer application canvas", () => {
     expect(relativeLuminance(color.bgRaised)).toBeGreaterThan(relativeLuminance(color.bgApp));
     expect(relativeLuminance(color.bgApp)).toBeGreaterThan(relativeLuminance(color.bgSidebar));
-    expect(relativeLuminance(color.bgSidebar)).toBeGreaterThan(relativeLuminance(color.bgHover));
+    if (theme.mode === "light") expect(relativeLuminance(color.bgSidebar)).toBeGreaterThan(relativeLuminance(color.bgHover));
   });
 
   it("keeps small semantic text readable on the application canvas", () => {
@@ -38,7 +43,9 @@ describe("mobile light theme", () => {
     ];
 
     for (const foreground of foregrounds) {
-      expect(contrastRatio(foreground, color.bgApp)).toBeGreaterThanOrEqual(4.5);
+      for (const surface of [color.bgApp, color.bgRaised]) {
+        expect(contrastRatio(foreground, surface), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 

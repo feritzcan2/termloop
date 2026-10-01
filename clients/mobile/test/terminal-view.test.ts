@@ -1,3 +1,4 @@
+import { lightTheme } from "../src/theme/tokens";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ describe("terminal native layout", () => {
   it("keeps the measured height after React Native releases the event", async () => {
     const updates: Array<() => unknown> = [];
     const react = {
-      ...require("react"),
+      ...require("react"), useContext: () => lightTheme,
       useCallback: (callback: unknown) => callback,
       useEffect: () => {},
       useLayoutEffect: () => {},

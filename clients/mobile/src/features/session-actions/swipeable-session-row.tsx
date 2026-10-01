@@ -1,3 +1,4 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { SessionDto } from "@termloop/contract/current";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,13 +25,15 @@ import {
   sessionSwipeTranslation,
   settledSessionSwipeTranslation,
 } from "@/presentation/session-swipe-presentation";
-import { color, geometry } from "@/theme/tokens";
+import { geometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
 export function SwipeableSessionRow({ session, children }: {
   session: SessionDto;
   children: ReactNode;
 }) {
+  const { color } = useTheme();
+  const styles = useStyles();
   const runtime = useMobileRuntime();
   const connections = useConnections();
   const overview = useOverview();
@@ -143,7 +146,7 @@ export function SwipeableSessionRow({ session, children }: {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   clip: {
     overflow: "hidden",
     backgroundColor: color.bgRaised,
@@ -169,4 +172,4 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   foreground: { backgroundColor: color.bgRaised },
-});
+}));

@@ -1,12 +1,14 @@
+import { createThemedStyles } from "@/theme/context";
 import type { WorkflowStepDto, WorkflowStepResultDto } from "@termloop/contract/current";
-import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Screen, ScreenHeader } from "../../components/screen";
 import { workflowResultLabel } from "../../presentation/workflow-execution";
-import { color, radius, space } from "../../theme/tokens";
+import { radius, space } from "../../theme/tokens";
 import { WorkflowButton } from "./workflow-controls";
 
 export function WorkflowResultSheet(props: { step: WorkflowStepDto; result: WorkflowStepResultDto; close(): void }) {
+  const styles = useStyles();
   return <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={props.close}>
     <SafeAreaProvider><Screen>
       <ScreenHeader title="Step result" right={<WorkflowButton label="Done" onPress={props.close} />} />
@@ -23,11 +25,11 @@ export function WorkflowResultSheet(props: { step: WorkflowStepDto; result: Work
   </Modal>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   content: { padding: space.screen, gap: space.lg, paddingBottom: space.xl },
   title: { color: color.text, fontSize: 24, fontWeight: "700", lineHeight: 31 },
   meta: { backgroundColor: color.accentWash, borderRadius: radius.card, padding: space.lg, gap: space.sm },
   outcome: { color: color.accentStrong, fontSize: 17, fontWeight: "700" },
   caption: { color: color.textSecondary, fontSize: 12, lineHeight: 19 },
   result: { color: color.text, fontSize: 16, lineHeight: 25 },
-});
+}));

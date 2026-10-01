@@ -1,3 +1,5 @@
+import { createTextStyles, fontFamily } from "@/theme/typography";
+import { useTheme, createThemedStyles } from "@/theme/context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -44,8 +46,7 @@ import { agentName, basename, sessionLabel, taskIdBySessionId } from "@/presenta
 import { sessionState } from "@/presentation/session-presentation";
 import type { TerminalStreamState } from "@/presentation/terminal-buffer";
 import type { RowTone } from "@/presentation/tone";
-import { color, geometry, radius, space, terminalGeometry } from "@/theme/tokens";
-import { fontFamily, text } from "@/theme/typography";
+import { geometry, radius, space, terminalGeometry } from "@/theme/tokens";
 
 /// The attached Session.
 ///
@@ -89,6 +90,8 @@ interface ComposerImage {
 }
 
 export default function SessionRoute() {
+  const { color } = useTheme();
+  const styles = useStyles();
   const { sessionId, connectionId, projectId: routeProjectId, workflowTaskId } = useLocalSearchParams<{
     sessionId: string;
     connectionId?: string;
@@ -670,169 +673,173 @@ export default function SessionRoute() {
   );
 }
 
-const styles = StyleSheet.create({
-  centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  header: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
-  identityZone: { flex: 1, minWidth: 0 },
-  identity: { ...text.headerTitle },
-  projected: { color: color.textSecondary, fontSize: 11 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  changesControl: {
-    minHeight: geometry.touchTarget,
-    justifyContent: "center",
-    paddingHorizontal: 2,
-  },
-  changesControlLabel: {
-    color: color.accentStrong,
-    fontFamily: fontFamily.mono,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  fontControl: {
-    minWidth: 30,
-    height: geometry.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fontControlGlyph: { color: color.textSecondary, fontSize: 13, fontWeight: "700" },
-  menuControl: {
-    minWidth: 30,
-    height: geometry.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  menuControlGlyph: { color: color.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
-  subHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    /// Lines up under the header title, past the 28pt back chevron and the 12pt inset.
-    paddingLeft: 40,
-    paddingRight: space.md,
-    paddingBottom: 9,
-  },
-  subDetail: { flex: 1, color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  notice: { paddingHorizontal: space.sm, paddingTop: space.sm },
-  terminal: { flex: 1 },
-  /// Dimmed rather than cleared while reconnecting. The last output a user saw is the
-  /// most useful thing on the screen, and blanking it to signal a lost socket throws
-  /// away the only context they have.
-  dimmed: { opacity: 0.55 },
-  keys: {
-    gap: 5,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    alignItems: "center",
-  },
-  key: {
-    /// Narrow enough that all nine fit a 390pt phone. Wider keys pushed the last one
-    /// half off the edge, which reads as a rendering fault rather than as a scrollable
-    /// row — and the row stays scrollable anyway on a smaller screen.
-    minWidth: terminalGeometry.keyMinWidth,
-    height: terminalGeometry.keyRowHeight,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.control,
-    backgroundColor: color.bgRaised,
-  },
-  keyPressed: { backgroundColor: color.bgHover },
-  keyDisabled: { opacity: 0.45 },
-  keyGlyph: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 12.5 },
-  composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space.sm,
-    paddingHorizontal: space.md,
-    paddingTop: space.sm,
-    paddingBottom: space.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.rule,
-    backgroundColor: color.bgSidebar,
-  },
-  imageAttachment: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    marginHorizontal: space.md,
-    marginTop: space.sm,
-    padding: space.sm,
-    borderWidth: 1,
-    borderColor: color.accent,
-    borderRadius: radius.control,
-    backgroundColor: color.accentWash,
-  },
-  imagePreviewFrame: { width: 56, height: 56, borderRadius: 7, overflow: "hidden" },
-  imagePreview: { width: 56, height: 56, backgroundColor: color.bgHover },
-  imageSendingOverlay: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.mediaScrim,
-  },
-  imageAttachmentCopy: { flex: 1, gap: 3 },
-  imageAttachmentLabel: { color: color.text, fontSize: 13, fontWeight: "700" },
-  imageAttachmentMeta: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 10.5 },
-  removeImage: { width: geometry.touchTarget, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
-  removeImageGlyph: { color: color.textSecondary, fontSize: 22, lineHeight: 22 },
-  imageActions: { flexDirection: "row", gap: 5 },
-  attach: {
-    width: geometry.touchTarget,
-    height: geometry.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.bgRaised,
-  },
-  attachPressed: { backgroundColor: color.bgHover },
-  attachDisabled: { opacity: 0.45 },
-  attachGlyph: { color: color.textSecondary, fontSize: 24, fontWeight: "500", lineHeight: 25 },
-  pasteImage: {
-    minWidth: 54,
-    height: geometry.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: space.sm,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.bgRaised,
-  },
-  pasteImageLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10.5, fontWeight: "700" },
-  input: {
-    flex: 1,
-    minHeight: terminalGeometry.composerInputMin,
-    maxHeight: terminalGeometry.composerInputMax,
-    paddingHorizontal: space.md,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.bgApp,
-    color: color.text,
-    fontFamily: fontFamily.mono,
-    fontSize: 13,
-  },
-  send: {
-    width: 52,
-    height: geometry.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    backgroundColor: color.accent,
-  },
-  sendPressed: { backgroundColor: color.accentStrong },
-  sendDisabled: { backgroundColor: color.bgHover },
-  sendGlyph: { color: color.onAccent, fontSize: 17, fontWeight: "700" },
-  exited: {
-    padding: space.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.rule,
-    backgroundColor: color.bgSidebar,
-  },
-  exitedText: { color: color.textSecondary, fontSize: 13, textAlign: "center" },
+const useStyles = createThemedStyles((theme) => {
+  const { color } = theme;
+  const text = createTextStyles(theme);
+  return {
+    centre: { flex: 1, justifyContent: "center", padding: space.screen },
+    header: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.rule },
+    identityZone: { flex: 1, minWidth: 0 },
+    identity: { ...text.headerTitle },
+    projected: { color: color.textSecondary, fontSize: 11 },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
+    changesControl: {
+      minHeight: geometry.touchTarget,
+      justifyContent: "center",
+      paddingHorizontal: 2,
+    },
+    changesControlLabel: {
+      color: color.accentStrong,
+      fontFamily: fontFamily.mono,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    fontControl: {
+      minWidth: 30,
+      height: geometry.touchTarget,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    fontControlGlyph: { color: color.textSecondary, fontSize: 13, fontWeight: "700" },
+    menuControl: {
+      minWidth: 30,
+      height: geometry.touchTarget,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    menuControlGlyph: { color: color.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+    subHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      /// Lines up under the header title, past the 28pt back chevron and the 12pt inset.
+      paddingLeft: 40,
+      paddingRight: space.md,
+      paddingBottom: 9,
+    },
+    subDetail: { flex: 1, color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
+    notice: { paddingHorizontal: space.sm, paddingTop: space.sm },
+    terminal: { flex: 1 },
+    /// Dimmed rather than cleared while reconnecting. The last output a user saw is the
+    /// most useful thing on the screen, and blanking it to signal a lost socket throws
+    /// away the only context they have.
+    dimmed: { opacity: 0.55 },
+    keys: {
+      gap: 5,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      alignItems: "center",
+    },
+    key: {
+      /// Narrow enough that all nine fit a 390pt phone. Wider keys pushed the last one
+      /// half off the edge, which reads as a rendering fault rather than as a scrollable
+      /// row — and the row stays scrollable anyway on a smaller screen.
+      minWidth: terminalGeometry.keyMinWidth,
+      height: terminalGeometry.keyRowHeight,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 6,
+      borderWidth: 1,
+      borderColor: color.border,
+      borderRadius: radius.control,
+      backgroundColor: color.bgRaised,
+    },
+    keyPressed: { backgroundColor: color.bgHover },
+    keyDisabled: { opacity: 0.45 },
+    keyGlyph: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 12.5 },
+    composer: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: space.sm,
+      paddingHorizontal: space.md,
+      paddingTop: space.sm,
+      paddingBottom: space.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: color.rule,
+      backgroundColor: color.bgSidebar,
+    },
+    imageAttachment: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+      marginHorizontal: space.md,
+      marginTop: space.sm,
+      padding: space.sm,
+      borderWidth: 1,
+      borderColor: color.accent,
+      borderRadius: radius.control,
+      backgroundColor: color.accentWash,
+    },
+    imagePreviewFrame: { width: 56, height: 56, borderRadius: 7, overflow: "hidden" },
+    imagePreview: { width: 56, height: 56, backgroundColor: color.bgHover },
+    imageSendingOverlay: {
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: color.mediaScrim,
+    },
+    imageAttachmentCopy: { flex: 1, gap: 3 },
+    imageAttachmentLabel: { color: color.text, fontSize: 13, fontWeight: "700" },
+    imageAttachmentMeta: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 10.5 },
+    removeImage: { width: geometry.touchTarget, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
+    removeImageGlyph: { color: color.textSecondary, fontSize: 22, lineHeight: 22 },
+    imageActions: { flexDirection: "row", gap: 5 },
+    attach: {
+      width: geometry.touchTarget,
+      height: geometry.touchTarget,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.bgRaised,
+    },
+    attachPressed: { backgroundColor: color.bgHover },
+    attachDisabled: { opacity: 0.45 },
+    attachGlyph: { color: color.textSecondary, fontSize: 24, fontWeight: "500", lineHeight: 25 },
+    pasteImage: {
+      minWidth: 54,
+      height: geometry.touchTarget,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: space.sm,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.bgRaised,
+    },
+    pasteImageLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10.5, fontWeight: "700" },
+    input: {
+      flex: 1,
+      minHeight: terminalGeometry.composerInputMin,
+      maxHeight: terminalGeometry.composerInputMax,
+      paddingHorizontal: space.md,
+      paddingTop: 12,
+      paddingBottom: 12,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.bgApp,
+      color: color.text,
+      fontFamily: fontFamily.mono,
+      fontSize: 13,
+    },
+    send: {
+      width: 52,
+      height: geometry.touchTarget,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.control,
+      backgroundColor: color.accent,
+    },
+    sendPressed: { backgroundColor: color.accentStrong },
+    sendDisabled: { backgroundColor: color.bgHover },
+    sendGlyph: { color: color.onAccent, fontSize: 17, fontWeight: "700" },
+    exited: {
+      padding: space.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: color.rule,
+      backgroundColor: color.bgSidebar,
+    },
+    exitedText: { color: color.textSecondary, fontSize: 13, textAlign: "center" },
+  };
 });

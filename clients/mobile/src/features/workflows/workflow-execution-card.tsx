@@ -1,10 +1,11 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { AgentStatusDto, SessionDto, WorkflowExecutionDto, WorkflowStepDto, WorkflowStepResultDto } from "@termloop/contract/current";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { Banner, StatePill } from "../../components/primitives";
 import { relativeAge, relativeAgeSentence } from "../../presentation/relative-time";
 import { workflowExecutionView, workflowResultLabel, type WorkflowAgentView, type WorkflowStepView } from "../../presentation/workflow-execution";
-import { color, geometry, radius, space, toneColor } from "../../theme/tokens";
+import { geometry, radius, space } from "../../theme/tokens";
 import { WorkflowAdvanced, WorkflowButton } from "./workflow-controls";
 import { WorkflowResultSheet } from "./workflow-result-sheet";
 
@@ -20,6 +21,8 @@ export function WorkflowExecutionCard(props: {
   refresh(): void;
   openSession(sessionId: string): void;
 }) {
+  const { color, toneColor } = useTheme();
+  const styles = useStyles();
   const { execution, online } = props;
   const view = workflowExecutionView(execution, props.sessions, props.statuses);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -103,6 +106,7 @@ export function WorkflowExecutionCard(props: {
 }
 
 function AgentLink(props: { agent: WorkflowAgentView; label: string; online: boolean; stale: boolean; open(id: string): void }) {
+  const styles = useStyles();
   return <Pressable accessibilityRole="button" accessibilityLabel={`${props.label}: ${props.agent.name}. ${props.stale ? "Last known: " : ""}${props.agent.status}`} accessibilityState={{ disabled: !props.online || !props.agent.available }} disabled={!props.online || !props.agent.available} onPress={() => props.open(props.agent.id)} style={[styles.agent, (!props.online || !props.agent.available) && styles.disabled]}>
     <View style={styles.agentText}><Text style={styles.agentName}>{props.label}</Text><Text style={styles.hint} numberOfLines={1}>{props.agent.name}</Text></View>
     <Text style={styles.agentState}>{props.stale ? "Last known · " : ""}{props.agent.status}</Text><Text style={styles.chevron}>›</Text>
@@ -110,6 +114,7 @@ function AgentLink(props: { agent: WorkflowAgentView; label: string; online: boo
 }
 
 function ResultPreview({ row, expanded, show }: { row: WorkflowStepView; expanded: boolean; show(): void }) {
+  const styles = useStyles();
   const result = row.result!;
   return <Pressable accessibilityRole="button" accessibilityLabel={`Read result: ${row.step.title}, round ${result.reviewCycle}, ${workflowResultLabel(result.outcome)}`} onPress={show} style={styles.resultPreview}>
     <Text style={styles.resultMeta}>{row.previousRound ? "PREVIOUS ROUND" : "SAVED RESULT"} · {result.reviewCycle} · {workflowResultLabel(result.outcome)}</Text>
@@ -118,7 +123,7 @@ function ResultPreview({ row, expanded, show }: { row: WorkflowStepView; expande
   </Pressable>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   content: { gap: space.lg }, nameRow: { gap: space.sm, alignItems: "flex-start" }, name: { color: color.text, fontSize: 21, lineHeight: 28, fontWeight: "700" },
   hero: { backgroundColor: color.accentWash, borderRadius: radius.card, padding: space.lg, gap: space.sm }, heroMuted: { backgroundColor: color.bgSidebar },
   eyebrow: { color: color.textSecondary, fontSize: 10, lineHeight: 16, letterSpacing: 1, fontWeight: "700" }, headline: { color: color.text, fontSize: 19, lineHeight: 25, fontWeight: "700" },
@@ -133,4 +138,4 @@ const styles = StyleSheet.create({
   agent: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.sm, minHeight: geometry.touchTarget, padding: space.sm, backgroundColor: color.bgRaised, borderWidth: 1, borderColor: color.border, borderRadius: radius.control }, agentText: { flex: 1, minWidth: 70, gap: 2 }, agentName: { color: color.accentStrong, fontSize: 13, fontWeight: "600", lineHeight: 19 }, agentState: { color: color.textSecondary, fontSize: 11, lineHeight: 17, maxWidth: "50%" }, disabled: { opacity: 0.6 },
   resultPreview: { borderLeftWidth: 2, borderLeftColor: color.borderStrong, paddingLeft: space.sm, gap: 5, marginTop: space.sm, minHeight: geometry.touchTarget }, resultMeta: { color: color.textMuted, fontSize: 9, lineHeight: 15, fontWeight: "600" }, resultText: { color: color.textSecondary, fontSize: 12, lineHeight: 18 }, resultAction: { color: color.accentStrong, fontSize: 11, fontWeight: "600", lineHeight: 19 },
   instructions: { color: color.text, fontSize: 13, lineHeight: 21 }, loop: { color: color.textSecondary, fontSize: 12, lineHeight: 19 }, syncRow: { gap: space.sm }, syncText: { gap: 4 },
-});
+}));

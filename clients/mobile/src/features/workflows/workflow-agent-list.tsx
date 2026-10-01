@@ -1,13 +1,14 @@
+import { useTheme, createThemedStyles } from "@/theme/context";
 import type { SessionDto, TaskDto } from "@termloop/contract/current";
 import { useMemo, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { ControlReadPort } from "../../application/ports";
 import type { WorkflowTemplatesPort } from "../../application/workflow-templates-port";
 import { Banner, Card, CardDivider } from "../../components/primitives";
 import { JiraIssueLink } from "../../components/external-link";
 import type { AgentCluster } from "../../presentation/attention-overview";
 import { workflowAgentClusters, workflowAgentMemberships, type WorkflowAgentGroup, type WorkflowAgentMembership } from "../../presentation/workflow-agent-groups";
-import { color, radius, space, toneColor } from "../../theme/tokens";
+import { radius, space } from "../../theme/tokens";
 import { fontFamily } from "../../theme/typography";
 import { useWorkflowSnapshot } from "./use-workflow-snapshot";
 
@@ -24,6 +25,7 @@ export function WorkflowAgentList(props: {
   clusters: readonly AgentCluster[];
   renderCluster(cluster: AgentCluster, memberships: ReadonlyMap<string, WorkflowAgentMembership>, stale: boolean): ReactNode;
 }) {
+  const styles = useStyles();
   const { snapshot, loading, error, refresh } = useWorkflowSnapshot(props.templates, props.control, props.connectionId, props.projectId, props.online);
   const memberships = useMemo(() => workflowAgentMemberships(snapshot?.executions ?? [], props.sessions, props.tasks, props.projectId), [snapshot, props.sessions, props.tasks, props.projectId]);
   const clusters = useMemo(() => workflowAgentClusters(props.clusters, memberships), [props.clusters, memberships]);
@@ -39,6 +41,8 @@ export function WorkflowAgentList(props: {
 }
 
 export function WorkflowAgentGroupFrame({ group, stale, children }: { group: WorkflowAgentGroup; stale: boolean; children: ReactNode }) {
+  const { color, toneColor } = useTheme();
+  const styles = useStyles();
   const tint = stale ? color.textSecondary : group.tone === "done" ? color.success : group.tone === "quiet" ? color.textSecondary : toneColor[group.tone];
   const status = stale ? `Last known: ${group.status}` : group.status;
   return <View testID={`workflow-agent-group:${group.executionId}`} style={styles.group}>
@@ -58,7 +62,7 @@ export function WorkflowAgentGroupFrame({ group, stale, children }: { group: Wor
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = createThemedStyles(({ color }) => ({
   list: { gap: space.sm }, notice: { color: color.textSecondary, fontSize: 12 },
   group: {
     minWidth: 0,
@@ -78,4 +82,4 @@ const styles = StyleSheet.create({
   name: { color: color.textSecondary, fontSize: 12, lineHeight: 17 },
   task: { color: color.text, fontSize: 16, lineHeight: 22, fontWeight: "600" },
   statusText: { flexShrink: 1, fontSize: 11, fontWeight: "600", textAlign: "right" },
-});
+}));
