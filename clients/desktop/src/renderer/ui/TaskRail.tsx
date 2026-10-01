@@ -670,7 +670,11 @@ export function TaskRail(props: TaskRailProps) {
             <header><strong>{menuTask.title}</strong><span>{menuTask.worktree ? menuTask.worktree.path : "No worktree yet"}</span></header>
             <MenuButton icon="focus" label="Open details" detail="Pipeline, changes, and Sessions" action={() => perform(() => props.openTaskDetail(menuTask.id))} />
             <MenuButton icon="edit" label="Edit Task" detail="Title and brief" action={() => perform(() => setEditTask(menuTask))} />
-            {menuTask.status === "open" ? <MenuButton icon="edit" label="Rename" detail="Inline · Enter to save" action={() => perform(() => beginTaskRename(menuTask))} /> : null}
+            {menuTask.status === "open" ? <MenuButton icon="edit" label="Rename" detail="Inline · Enter to save" action={() => {
+              // The input owns focus; restoring the menu invoker would blur and save it immediately.
+              setMenu(undefined);
+              beginTaskRename(menuTask);
+            }} /> : null}
             {!menuTask.branch ? <MenuButton icon="branch" label="Use existing branch" detail="Link a local branch to this Task" action={() => perform(() => setBindTarget(menuTask))} /> : null}
             {!menuTask.worktree ? <MenuButton icon="terminal" label="Create worktree" detail={menuTask.worktree_provisioning?.status === "failed" ? "Retry with reviewed values" : "A separate checkout for this Task"} action={() => perform(() => setProvisionTarget(menuTask))} /> : null}
             {canDismissTaskWorktreeProvisioning(menuTask) ? <MenuButton icon="close" label="Dismiss failure" detail="Clear the failed attempt" action={() => perform(() => props.dismissTaskWorktreeProvisioning(menuTask.id, menuTask.worktree_provisioning!.operation_id))} /> : null}

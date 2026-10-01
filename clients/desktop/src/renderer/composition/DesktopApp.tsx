@@ -81,7 +81,7 @@ import {
 } from "./assistant-read-coordinator.js";
 import { createAssistantActions } from "./assistant-actions.js";
 import { presentedAgentStatus } from "../session-presentation.js";
-import { nativeOverlayPassiveVisible, terminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
+import { nativeOverlayPassiveVisible, restoreTerminalFocusAfterOverlay, terminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
 import { selectProjectWithTerminalFocus } from "./project-navigation.js";
 import {
@@ -797,7 +797,9 @@ export function DesktopApp() {
   useEffect(() => {
     const wasActive = nativeOverlayWasActive.current;
     nativeOverlayWasActive.current = nativeOverlayActive;
-    if (wasActive && !nativeOverlayActive && selectedSession) focusTerminalSoon(selectedSession.id);
+    if (wasActive && !nativeOverlayActive && selectedSession) {
+      return restoreTerminalFocusAfterOverlay(() => terminalPool.focus(selectedSession.id));
+    }
   }, [nativeOverlayActive, selectedSession?.id]);
   useEffect(() => {
     if (projection.connection !== "connected") {

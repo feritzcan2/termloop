@@ -4,6 +4,20 @@ import type { TerminalRendererKind } from "../terminal/renderer-kind.js";
 const FRAME_NAME = "termloop-native-overlay";
 const MASK_LAYER_ID = "native-overlay-terminal-masks";
 
+export function restoreTerminalFocusAfterOverlay(focus: () => void): () => void {
+  // Let the closing overlay and its replacement settle before restoring focus.
+  // An inline editor opened by a menu action keeps ownership of keyboard input.
+  let frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active?.matches("input, textarea, select")
+        || (active instanceof HTMLElement && active.isContentEditable)) return;
+      focus();
+    });
+  });
+  return () => cancelAnimationFrame(frame);
+}
+
 function terminalMaskLayer(document: Document): HTMLElement {
   const existing = document.querySelector<HTMLElement>(`#${MASK_LAYER_ID}`);
   if (existing) return existing;
