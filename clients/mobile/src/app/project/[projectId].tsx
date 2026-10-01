@@ -307,7 +307,9 @@ function AgentClusterView({ cluster, memberships, workflowDataStale, nowMs, open
       const content = <AgentRowView row={row} membership={memberships.get(row.sessionId)} nowMs={nowMs} openActions={openActions} />;
       return segment.group || sourceIds.has(row.sessionId)
         ? <View key={row.sessionId}>{index === 0 ? null : <CardDivider />}{content}</View>
-        : <View key={row.sessionId} style={styles.helperWrap}>
+        : <View key={row.sessionId} style={[styles.helperWrap, row.nestingDepth && row.nestingDepth > 1
+          ? { marginLeft: Math.min(row.nestingDepth - 1, 4) * 12 }
+          : null]}>
           <View style={styles.helperConnector} />
           <View style={styles.helperBody}><CardDivider />{content}</View>
         </View>;

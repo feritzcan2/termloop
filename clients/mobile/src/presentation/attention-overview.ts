@@ -67,6 +67,8 @@ export interface AgentRow {
   readonly taskId: string | undefined;
   readonly taskTitle: string | undefined;
   readonly relationship: string | undefined;
+  /// Visual depth in the exact projected Ask-To/fork chain.
+  readonly nestingDepth?: number;
   readonly observedAtEpochMs: number | undefined;
   readonly accessibleName: string;
   readonly attachable: boolean;
@@ -214,8 +216,7 @@ function buildAgentClusters(
 ): readonly AgentCluster[] {
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const rowsById = new Map(agentRows.map((row) => [row.sessionId, row]));
-  const helpersBySourceId = new Map<string, AgentRow[]>();
-  const sources: AgentRow[] = [];
+  const parentById = new Map<string, string>();
   for (const row of agentRows) {
     const session = sessionsById.get(row.sessionId);
     const sourceId = session?.ask_to_source_session_id ?? session?.fork_source_session_id;
@@ -227,19 +228,44 @@ function buildAgentClusters(
       && source.id !== session.id
       && (session.fork_source_session_id === source.id
         || (session.ask_to_source_session_id === source.id && source.ask_to_source_session_id === null));
-    if (!validRelationship || !sourceId) {
-      sources.push(row);
-      continue;
-    }
-    const helpers = helpersBySourceId.get(sourceId) ?? [];
-    helpers.push(row);
-    helpersBySourceId.set(sourceId, helpers);
+    if (validRelationship && sourceId) parentById.set(row.sessionId, sourceId);
   }
 
-  const relationships = sources.map((source): AgentRelationshipGroup => ({
-    source,
-    helpers: helpersBySourceId.get(source.sessionId) ?? [],
-  }));
+  /// A malformed cycle must not make either Agent disappear from the list.
+  for (const row of agentRows) {
+    const seen = new Set([row.sessionId]);
+    let currentId = row.sessionId;
+    while (parentById.has(currentId)) {
+      const parentId = parentById.get(currentId)!;
+      if (seen.has(parentId)) {
+        parentById.delete(currentId);
+        break;
+      }
+      seen.add(parentId);
+      currentId = parentId;
+    }
+  }
+
+  const childrenBySourceId = new Map<string, AgentRow[]>();
+  for (const row of agentRows) {
+    const parentId = parentById.get(row.sessionId);
+    if (!parentId) continue;
+    const children = childrenBySourceId.get(parentId) ?? [];
+    children.push(row);
+    childrenBySourceId.set(parentId, children);
+  }
+
+  const relationships = agentRows.filter((row) => !parentById.has(row.sessionId)).map((source): AgentRelationshipGroup => {
+    const helpers: AgentRow[] = [];
+    const visit = (parent: AgentRow, depth: number) => {
+      for (const child of childrenBySourceId.get(parent.sessionId) ?? []) {
+        helpers.push({ ...child, nestingDepth: depth });
+        visit(child, depth + 1);
+      }
+    };
+    visit(source, 1);
+    return { source, helpers };
+  });
   const relationshipByRootId = new Map(relationships.map((group) => [group.source.sessionId, group]));
   const rootIdBySessionId = new Map<string, string>();
   for (const group of relationships) {

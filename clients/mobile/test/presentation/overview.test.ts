@@ -186,6 +186,28 @@ describe("project overview sectioning", () => {
     );
   });
 
+  it("shows a fork of a fork exactly once beneath its immediate source", () => {
+    const source = session({ id: "ses_source", name: "Source" });
+    const fork = session({ id: "ses_fork", name: "First fork", fork_source_session_id: source.id });
+    const nested = session({ id: "ses_nested", name: "Second fork", fork_source_session_id: fork.id });
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: [nested, fork, source],
+      agentStatuses: [],
+    };
+
+    const model = buildProjectOverview(overview, source.project_id);
+    expect(model.agentClusters).toHaveLength(1);
+    expect(model.agentClusters[0]?.groups[0]?.source.sessionId).toBe(source.id);
+    expect(model.agentClusters[0]?.groups[0]?.helpers.map((row) => [row.sessionId, row.nestingDepth, row.relationship]))
+      .toEqual([
+        [fork.id, 1, "forked from Source"],
+        [nested.id, 2, "forked from First fork"],
+      ]);
+    expect(model.agentClusters.flatMap((cluster) => cluster.groups.flatMap(({ source: root, helpers }) => [root, ...helpers]))
+      .map((row) => row.sessionId)).toEqual([source.id, fork.id, nested.id]);
+  });
+
   it("keeps every member and name of a desktop-authored peer group", () => {
     const agents = [1, 2, 3, 4].map((index) => session({ id: `ses_group_${index}` }));
     const overview: MobileOverview = {
