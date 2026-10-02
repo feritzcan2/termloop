@@ -31,16 +31,20 @@
 
 ## Native verification
 
+- The three-platform CI and release gates below apply to desktop/server releases
+  and cross-platform native changes. Mobile TestFlight, App Store Connect, OTA,
+  and private device releases use the mobile checks and their deployment workflow;
+  desktop/server CI failures or unavailable runners must not block those releases.
 - Treat GitHub Actions as native verification, not as a lint or type-check
   iteration loop.
-- macOS, Linux, and Windows are release gates. Local builds and cross-compiles
-  are preflight evidence only; PTY, path, process, packaging, and other native
+- macOS, Linux, and Windows are desktop/server release gates. Local builds and
+  cross-compiles are preflight evidence only; PTY, path, process, packaging, and other native
   changes need runtime evidence on every affected host.
 - Use the dedicated self-hosted runners for all three platforms: macOS with
   `termloop-macos`, Linux with `netcup`, and Windows with `termloop-windows`.
   The Mac with no `termloop-macos` label is not the CI or release host.
-- Start the full three-platform CI matrix directly when preparing a release or
-  validating cross-platform changes. Native jobs may run alongside preflight;
+- Start the full three-platform CI matrix directly when preparing a desktop/server
+  release or validating cross-platform changes. Native jobs may run alongside preflight;
   do not wait for a single-platform diagnostic before starting the other hosts.
   macOS preflight still runs static validation plus Linux and Windows
   cross-target clippy, and remains required for a successful full CI run.
@@ -56,8 +60,8 @@
   parallel feedback is faster, and default to `tests` scope unless diagnosing
   acceptance, smoke, packaging, or bundle assembly. A diagnostic is never a
   prerequisite for dispatching full CI on the self-hosted runners.
-- A partial diagnostic success is not release evidence. Publishing still
-  requires one successful full `ci.yml` run for the exact candidate SHA,
+- A partial diagnostic success is not desktop/server release evidence. Publishing
+  those releases requires one successful full `ci.yml` run for the exact candidate SHA,
   including preflight and all three native platforms.
 - Fix and exhaust local verification before starting another exact-SHA run.
 - Use `gh run rerun --failed` only for a transient failure when the candidate SHA
@@ -65,13 +69,15 @@
 - If an Actions budget prevents a hosted job from starting, do not retry or
   dispatch another hosted workflow until the budget resets or is increased. A
   budget-rejected job contributes no native evidence.
-- The full suite is CI's responsibility before merge or release. State when it
-  was not run locally and list the narrower checks that were run.
+- The full suite is CI's responsibility before merge or desktop/server release.
+  State when it was not run locally and list the narrower checks that were run.
 
 ## Release
 
-- Build and publish from one immutable commit or tag only after the exact
-  candidate has a successful full native CI run.
+- Build and publish desktop/server releases from one immutable commit or tag only
+  after the exact candidate has a successful full native CI run.
+- Mobile releases require the mobile client's checks and the selected mobile
+  deployment workflow. They do not require the desktop/server CI matrix.
 - macOS release apps are universal: build both Rust targets, combine native
   binaries with `lipo`, build universal Ghostty, package with
   `electron-builder --universal`, and verify the final bundle with `codesign`.
