@@ -94,6 +94,7 @@ async function harness(entry: string) {
   const native = {
     ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", FlatList: "FlatList", Text: "Text", TextInput: "TextInput", View: "View",
     Linking: { openURL }, Alert: { alert },
+    PanResponder: { create: (panHandlers: unknown) => ({ panHandlers }) },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 0.5 },
     Platform: { OS: "ios", select: (options: Props) => options.ios ?? options.default },
   };

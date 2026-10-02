@@ -4,9 +4,40 @@ import {
   overscrollRequest,
   reduceInitialTerminalPosition,
   scrollSequence,
+  supportsTerminalWheel,
+  terminalDragScroll,
 } from "../../src/presentation/terminal-scroll";
 
 const esc = String.fromCharCode(0x1b);
+
+describe("direct terminal drag", () => {
+  it("only captures drags for a program with a supported wheel protocol", () => {
+    for (const tracking of ["normal", "button", "any"] as const) {
+      expect(supportsTerminalWheel(tracking, true)).toBe(true);
+      expect(supportsTerminalWheel(tracking, false)).toBe(false);
+    }
+    for (const tracking of ["unknown", "none", "x10"] as const) {
+      expect(supportsTerminalWheel(tracking, true)).toBe(false);
+    }
+  });
+
+  it("accumulates slow finger motion and reverses without repeating earlier input", () => {
+    const first = terminalDragScroll(6, 13, 0, 0, 0);
+    expect(first.lines).toBe(0);
+    const second = terminalDragScroll(20, 13, first.remainder, 0, 0);
+    expect(second).toEqual({ offset: 0, lines: -2, remainder: 0 });
+    expect(terminalDragScroll(-13, 13, second.remainder, 0, 0)).toEqual({ offset: 0, lines: 1, remainder: 0 });
+    expect(terminalDragScroll(0, 13, 0, 0, 0)).toEqual({ offset: 0, lines: 0, remainder: 0 });
+  });
+
+  it("pans a taller frame before sending either edge's remaining motion to the program", () => {
+    expect(terminalDragScroll(50, 10, 0, 100, 200)).toEqual({ offset: 50, lines: 0, remainder: 0 });
+    expect(terminalDragScroll(100, 10, 0, 50, 200)).toEqual({ offset: 0, lines: -5, remainder: 0 });
+    expect(terminalDragScroll(-250, 10, 0, 0, 200)).toEqual({ offset: 200, lines: 5, remainder: 0 });
+    // Leaving the edge clears its fractional wheel motion.
+    expect(terminalDragScroll(-10, 10, -0.5, 0, 200)).toEqual({ offset: 10, lines: 0, remainder: 0 });
+  });
+});
 
 describe("initial terminal position", () => {
   it("waits for real output instead of revealing the empty top of the scroll view", () => {

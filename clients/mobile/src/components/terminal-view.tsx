@@ -2,6 +2,7 @@ import { useTheme, createThemedStyles } from "@/theme/context";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,7 @@ import type { TerminalBuffer, TerminalLine } from "@/presentation/terminal-buffe
 import { terminalLoading } from "@/presentation/terminal-loading";
 import {
   overscrollRequest,
+  terminalDragScroll,
   type InitialTerminalPosition,
 } from "@/presentation/terminal-scroll";
 import { terminalRowWindow } from "@/presentation/terminal-window";
@@ -44,13 +46,14 @@ import { fontFamily } from "@/theme/typography";
 ///
 /// Long lines scroll horizontally rather than wrapping, because wrapping a 300-column
 /// diff at 39 characters produces a column of fragments nobody can read.
-export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
+export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScroll = false }: {
   buffer: TerminalBuffer;
   fontSizeIndex: number;
   capNotice: string | undefined;
   /// Asks the running program to scroll its own history. Absent for a stream with no
   /// history of its own to ask about.
   onScrollBack?: (lines: number) => void;
+  programScroll?: boolean;
 }) {
   const theme = useTheme();
   const { color } = theme;
@@ -75,6 +78,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom);
   if (page !== history) setHistory(page);
   const count = page.rows.length - page.start;
+  const directScroll = canScrollBack && programScroll && page.start === 0;
   const rows = terminalRowWindow(count, viewport.offset, viewport.height, lineHeight);
   const lastRevision = useRef(buffer.outputRevision);
   const reading = useRef<{ page: TerminalHistoryPage; offset: number; lineHeight: number } | undefined>(undefined);
@@ -82,6 +86,45 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   const loadingPage = useRef(false);
   const scrolling = useRef(false);
   const pagedDuringGesture = useRef(false);
+  const drag = useRef({ y: 0, remainder: 0, active: false });
+  const dragViewport = useRef({ offset: 0, maxOffset: 0 });
+  dragViewport.current = {
+    offset: viewport.offset,
+    maxOffset: Math.max(0, count * lineHeight + 2 * terminalGeometry.contentPadding - viewport.height),
+  };
+  const scrollGesture = useMemo(() => {
+    const reset = () => { drag.current = { y: 0, remainder: 0, active: false }; };
+    const move = (y: number) => {
+      if (!directScroll || initialPosition !== "ready") return;
+      const frame = dragViewport.current;
+      const { offset, lines, remainder } = terminalDragScroll(
+        y - drag.current.y, lineHeight, drag.current.remainder, frame.offset, frame.maxOffset,
+      );
+      drag.current = { y, remainder, active: true };
+      if (offset !== frame.offset) {
+        frame.offset = offset;
+        const bottom = offset >= frame.maxOffset;
+        atBottomRef.current = bottom;
+        setAtBottom(bottom);
+        if (bottom) setUnread(false);
+        setViewport((current) => ({ ...current, offset }));
+        scroll.current?.scrollTo({ y: offset, animated: false });
+      }
+      if (lines !== 0) onScrollBack?.(lines);
+    };
+    return PanResponder.create({
+      // Capture vertical drags before the nested native ScrollViews take them.
+      // Horizontal panning, taps, and text selection keep their native handlers.
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => directScroll
+        && initialPosition === "ready" && gesture.numberActiveTouches === 1
+        && Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
+      onPanResponderGrant: () => { reset(); drag.current.active = true; },
+      onPanResponderMove: (_event, gesture) => { move(gesture.dy); },
+      onPanResponderRelease: reset,
+      onPanResponderTerminate: reset,
+      onPanResponderTerminationRequest: () => true,
+    });
+  }, [directScroll, initialPosition, lineHeight, onScrollBack]);
 
   useEffect(() => {
     if (lastRevision.current !== buffer.outputRevision && !atBottomRef.current) setUnread(true);
@@ -126,7 +169,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   }, [historyLines, historyKind]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (loadingPage.current) return;
+    if (loadingPage.current || drag.current.active) return;
     pendingPosition.current = undefined;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const movingUp = contentOffset.y < viewport.offset;
@@ -144,7 +187,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
     // Native bounce events from revealing cached rows must never become input
     // to the program, including the gesture that revealed the final page.
     if (pagedDuringGesture.current) return;
-    if (!canScrollBack || !scrolling.current) return;
+    if (directScroll || !canScrollBack || !scrolling.current) return;
     if (contentOffset.y < 0 && page.start > 0) return;
     const total = overscrollRequest(contentOffset.y, contentSize.height, layoutMeasurement.height, lineHeight);
     const direction = Math.sign(total);
@@ -154,7 +197,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
+  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
 
   const onContentChange = useCallback(() => {
     if (pendingPosition.current !== undefined) {
@@ -186,13 +229,14 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack }: {
   }, []);
 
   return (
-    <View style={styles.surface}>
+    <View style={styles.surface} {...scrollGesture.panHandlers}>
       {page.start > 0 ? <View style={styles.historyBar}>
         <Pressable accessibilityRole="button" accessibilityLabel="Load earlier output" onPress={loadEarlier}>
           <Text style={styles.notice}>↑ Scroll up for earlier output</Text>
         </Pressable>
       </View> : null}
       <ScrollView ref={scroll} style={styles.scroll}
+        scrollEnabled={!directScroll}
         contentContainerStyle={[styles.content, initialPosition === "ready" ? null : styles.initiallyHidden]}
         onLayout={(event) => {
           // Fabric releases this pooled event before a queued updater may run.

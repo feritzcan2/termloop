@@ -8,11 +8,111 @@ import { afterEach, expect, it, vi } from "vitest";
 import { emptyTerminalBuffer } from "../src/presentation/terminal-buffer";
 import { TerminalSessionState } from "../src/features/terminal/terminal-session-state";
 import { terminalGeometry } from "../src/theme/tokens";
+import { scrollSequence, supportsTerminalWheel } from "../src/presentation/terminal-scroll";
 
 const require = createRequire(import.meta.url);
 type Props = Record<string, any>;
 
 afterEach(() => vi.unstubAllGlobals());
+
+it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after %s without native overscroll", async (attach) => {
+  const state = new TerminalSessionState("mac", "touch-scroll");
+  state.begin();
+  const frame = "\x1b[?1049h\x1b[1;1HFirst visible answer\x1b[24;1HComposer";
+  state.push({ type: "replay", bytes: new TextEncoder().encode(
+    (attach === "startup" ? "\x1b[?1003;1006h" : "") + frame,
+  ), ...(attach === "late attach" ? { mouseModes: 0x104 } : {}) });
+  state.push({ type: "state", state: "connected" });
+  state.push({ type: "ready" });
+  await state.whenIdle();
+  const projection = state.projection;
+  const onScrollBack = vi.fn((lines: number) => scrollSequence(lines, projection.mouseTracking, projection.sgrMouseEncoding));
+  const harness = await terminalHarness({
+    buffer: state.buffer, fontSizeIndex: 1, capNotice: undefined, onScrollBack,
+    programScroll: supportsTerminalWheel(projection.mouseTracking, projection.sgrMouseEncoding),
+  });
+  const height = terminalGeometry.lineHeights[1]!;
+  try {
+    let view = harness.render();
+    expect(harness.gesture().onMoveShouldSetPanResponderCapture({}, finger(2 * height))).toBe(false);
+    view.onContentSizeChange();
+    harness.frames();
+    view = harness.render();
+    const gesture = harness.gesture();
+    expect(view.scrollEnabled).toBe(false);
+    expect(gesture.onMoveShouldSetPanResponderCapture({}, finger(2 * height))).toBe(true);
+    expect(gesture.onMoveShouldSetPanResponderCapture({}, finger(0, 50))).toBe(false);
+    expect(gesture.onMoveShouldSetPanResponderCapture({}, { ...finger(50), numberActiveTouches: 2 })).toBe(false);
+
+    gesture.onPanResponderGrant({}, finger(0));
+    gesture.onPanResponderMove({}, finger(height));
+    gesture.onPanResponderMove({}, finger(height * 1.5));
+    gesture.onPanResponderMove({}, finger(height * 2));
+    gesture.onPanResponderMove({}, finger(height));
+    expect(onScrollBack.mock.calls).toEqual([[-1], [-1], [1]]);
+    expect(onScrollBack.mock.results.map((result) => result.value)).toEqual([
+      "\x1b[<64;1;1M", "\x1b[<64;1;1M", "\x1b[<65;1;1M",
+    ]);
+    // A native bounce must not duplicate the input already sent by the drag.
+    view.onScrollBeginDrag();
+    view.onScroll(scrollEvent(-3 * height, 24 * height));
+    expect(onScrollBack).toHaveBeenCalledTimes(3);
+    gesture.onPanResponderRelease();
+    gesture.onPanResponderGrant({}, finger(0));
+    gesture.onPanResponderMove({}, finger(-height));
+    expect(onScrollBack).toHaveBeenLastCalledWith(1);
+    gesture.onPanResponderTerminate();
+    gesture.onPanResponderGrant({}, finger(0));
+    gesture.onPanResponderMove({}, finger(height));
+    expect(onScrollBack).toHaveBeenLastCalledWith(-1);
+  } finally {
+    state.dispose();
+  }
+});
+
+it("pans a tall terminal frame and scrolls the program at its edge in the same drag", async () => {
+  const height = terminalGeometry.lineHeights[1]!;
+  const screen = Array.from({ length: 80 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const onScrollBack = vi.fn();
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" },
+    fontSizeIndex: 1, capNotice: undefined, onScrollBack, programScroll: true,
+  });
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  const contentHeight = 80 * height + 2 * terminalGeometry.contentPadding;
+  const bottom = contentHeight - 600;
+  view.onScroll(scrollEvent(bottom, contentHeight));
+  view = harness.render();
+  const gesture = harness.gesture();
+  gesture.onPanResponderGrant({}, finger(0));
+  gesture.onPanResponderMove({}, finger(height));
+  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: bottom - height, animated: false });
+  expect(onScrollBack).not.toHaveBeenCalled();
+  // Delayed native callbacks must not undo the position owned by the gesture.
+  view.onScroll(scrollEvent(bottom, contentHeight));
+  harness.render();
+  gesture.onPanResponderMove({}, finger(bottom + 2 * height));
+  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+  expect(onScrollBack.mock.calls).toEqual([[-2]]);
+  harness.render();
+  gesture.onPanResponderMove({}, finger(-height));
+  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: bottom, animated: false });
+  expect(onScrollBack.mock.calls).toEqual([[-2], [3]]);
+});
+
+it("leaves native history scrolling enabled when no program requested wheel input", async () => {
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen: [{ id: 1, spans: [] }], ready: true, stream: "live" },
+    fontSizeIndex: 1, capNotice: undefined, onScrollBack: vi.fn(), programScroll: false,
+  });
+  harness.render().onContentSizeChange();
+  harness.frames();
+  expect(harness.render().scrollEnabled).toBe(true);
+  expect(harness.gesture().onMoveShouldSetPanResponderCapture({}, finger(50))).toBe(false);
+});
 
 it("lets a connected reader scroll back through output received during live composer redraws", async () => {
   const encoder = new TextEncoder();
@@ -137,6 +237,10 @@ function scrollEvent(y: number, contentHeight: number) {
   return { nativeEvent: { contentOffset: { y }, contentSize: { height: contentHeight }, layoutMeasurement: { height: 600 } } };
 }
 
+function finger(dy: number, dx = 0) {
+  return { dy, dx, numberActiveTouches: 1 };
+}
+
 async function terminalHarness(props: Props) {
   const slots: any[] = [];
   let cursor = 0;
@@ -173,6 +277,7 @@ async function terminalHarness(props: Props) {
   };
   const native = {
     ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View",
+    PanResponder: { create: (panHandlers: unknown) => ({ panHandlers }) },
     StyleSheet: { create: (styles: unknown) => styles },
     Platform: { OS: "ios", select: (values: { ios: string }) => values.ios },
   };
@@ -188,6 +293,7 @@ async function terminalHarness(props: Props) {
   return {
     scrollTo,
     scrollToEnd,
+    gesture: () => nodes(tree)[0]!.props,
     frames: () => { while (frames.length) frames.shift()!(); },
     renderedKeys: () => nodes(tree).filter((node) => node.props.spans).map((node) => node.key),
     render: () => {
