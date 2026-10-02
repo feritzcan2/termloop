@@ -8,7 +8,7 @@ import {
   terminalCapNotice,
   type TerminalBuffer,
 } from "@/presentation/terminal-buffer";
-import { scrollSequence } from "@/presentation/terminal-scroll";
+import { scrollSequence, supportsTerminalWheel } from "@/presentation/terminal-scroll";
 import { attachedImageMessage } from "@/presentation/terminal-image-message";
 import { submitTerminalTurn } from "./submit-terminal-turn";
 import { TerminalOutputBatcher } from "./output-batcher";
@@ -76,6 +76,8 @@ export interface TerminalSession {
   /// scrollback: the program owns the grid and repaints it, so rows that left the frame
   /// were never held on the phone to scroll back to.
   scrollBack: (lines: number) => void;
+  /// The program requested wheel input, so touch drags should move its viewport.
+  readonly programScroll: boolean;
 }
 
 export function useTerminalSession(
@@ -274,6 +276,10 @@ export function useTerminalSession(
     void deliver(open, encoder.encode(sequence));
   }, [canSend, deliver, encoder]);
 
+  const projection = continuity.current?.projection;
+  const programScroll = canSend && projection !== undefined
+    && supportsTerminalWheel(projection.mouseTracking, projection.sgrMouseEncoding);
+
   return {
     buffer,
     submitting,
@@ -286,5 +292,6 @@ export function useTerminalSession(
     reconnect,
     sendKey,
     scrollBack,
+    programScroll,
   };
 }

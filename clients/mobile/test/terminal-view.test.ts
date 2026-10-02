@@ -28,6 +28,7 @@ describe("terminal native layout", () => {
     };
     const native = {
       ActivityIndicator: "ActivityIndicator", Pressable: "Pressable",
+      PanResponder: { create: (panHandlers: unknown) => ({ panHandlers }) },
       ScrollView: "ScrollView", Text: "Text", View: "View",
       StyleSheet: { create: (styles: unknown) => styles },
       Platform: { OS: "ios", select: (values: { ios: string }) => values.ios },

@@ -485,6 +485,7 @@ export default function SessionRoute() {
           fontSizeIndex={fontSizeIndex}
           capNotice={terminal.capNotice}
           onScrollBack={terminal.scrollBack}
+          programScroll={terminal.programScroll}
         />
       </View>
 

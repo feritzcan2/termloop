@@ -52,6 +52,26 @@ const WHEEL_REPORT_CELL = 1;
 /// through the whole history at once.
 const LINES_PER_PAGE = 3;
 
+export function supportsTerminalWheel(tracking: TerminalMouseTracking, sgrEncoding: boolean): boolean {
+  return sgrEncoding && (tracking === "normal" || tracking === "button" || tracking === "any");
+}
+
+/// Pan a desktop-sized frame on the phone first, then send motion beyond its
+/// edges to the program. This also works on platforms without native bounce.
+export function terminalDragScroll(
+  deltaY: number,
+  lineHeight: number,
+  remainder: number,
+  offset: number,
+  maxOffset: number,
+): { offset: number; lines: number; remainder: number } {
+  const target = offset - deltaY;
+  const nextOffset = Math.max(0, Math.min(maxOffset, target));
+  const total = (nextOffset === offset ? remainder : 0) + (target - nextOffset) / Math.max(1, lineHeight);
+  const lines = Math.trunc(total) || 0;
+  return { offset: nextOffset, lines, remainder: total - lines };
+}
+
 /// Describes a drag beyond the locally-rendered frame. A projected terminal screen has
 /// no local transcript after either edge, so the overscroll is a request for the
 /// program to move its own viewport instead. Negative lines mean backwards, positive
@@ -82,8 +102,7 @@ export function scrollSequence(
   if (count === 0) return "";
   /// `unknown` is not `none`. A late attach never saw the enable sequence, and guessing
   /// that a program tracks the mouse is exactly the guess that types garbage into it.
-  const wheelCapable = tracking === "normal" || tracking === "button" || tracking === "any";
-  if (wheelCapable && sgrEncoding) {
+  if (supportsTerminalWheel(tracking, sgrEncoding)) {
     const code = back ? 64 : 65;
     return `${ESC}[<${code};${WHEEL_REPORT_CELL};${WHEEL_REPORT_CELL}M`.repeat(count);
   }
