@@ -256,6 +256,8 @@ pub struct ClaudeInterruptCheck {
     pub transcript_path: std::path::PathBuf,
     pub native_session_id: String,
     pub prompt_id: String,
+    runtime_epoch: u64,
+    observation_sequence: u64,
 }
 
 #[derive(Clone)]
@@ -2139,9 +2141,11 @@ impl CoreRuntime {
         Ok(())
     }
 
-    /// Plans the bounded transcript reads for every Claude turn that still
-    /// looks like it is working. Reading happens outside the core lock; the
-    /// answer comes back through `apply_claude_interrupt_observation`.
+    /// Plans bounded transcript reads for working Claude turns. Compacting
+    /// pauses the check: manual `/compact` does not submit a new prompt, so the
+    /// watched prompt may already have an interruption record. Keep the watch
+    /// for work that resumes after auto compaction. Reads run outside the core
+    /// lock; `apply_claude_interrupt_observation` revalidates their snapshot.
     pub fn plan_claude_interrupt_checks(&mut self) -> Vec<ClaudeInterruptCheck> {
         // A watch belongs to one process lifetime: a replaced or retired
         // capability retires the question with it.
@@ -2152,16 +2156,12 @@ impl CoreRuntime {
         });
         self.claude_turn_watches
             .iter()
-            .filter(|(session_id, _)| {
-                self.agent_observations
-                    .get(*session_id)
-                    .is_some_and(|capability| {
-                        capability
-                            .observation
-                            .is_some_and(|observation| turn_is_running(observation.state))
-                    })
-            })
             .filter_map(|(session_id, watch)| {
+                let observation = self
+                    .agent_observations
+                    .get(session_id)?
+                    .observation
+                    .filter(|observation| observation.state == AgentState::Working)?;
                 let native_session_id = self
                     .running_claude_agent_session(session_id)?
                     .resume_ref
@@ -2173,6 +2173,8 @@ impl CoreRuntime {
                     transcript_path: watch.transcript_path.clone(),
                     native_session_id,
                     prompt_id: watch.prompt_id.clone(),
+                    runtime_epoch: watch.runtime_epoch,
+                    observation_sequence: observation.sequence,
                 })
             })
             .collect()
@@ -2186,21 +2188,37 @@ impl CoreRuntime {
         sequence: u64,
         observed_at_epoch_ms: u64,
     ) -> Result<bool, CoreError> {
-        let runtime_epoch = self
+        let watch = self
             .claude_turn_watches
             .get(&check.session_id)
-            .filter(|watch| watch.prompt_id == check.prompt_id)
-            .map(|watch| watch.runtime_epoch)
+            .filter(|watch| {
+                watch.prompt_id == check.prompt_id
+                    && watch.transcript_path == check.transcript_path
+                    && watch.runtime_epoch == check.runtime_epoch
+            })
             .ok_or(CoreError::CapabilityDenied)?;
+        if self
+            .running_claude_agent_session(&check.session_id)
+            .ok_or(CoreError::CapabilityDenied)?
+            .resume_ref
+            .as_ref()
+            .is_none_or(|reference| reference.native_session_id != check.native_session_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
         let capability = self
             .agent_observations
             .get_mut(&check.session_id)
-            .filter(|capability| capability.runtime_epoch == runtime_epoch)
+            .filter(|capability| capability.runtime_epoch == watch.runtime_epoch)
             .ok_or(CoreError::CapabilityDenied)?;
         let previous = capability.observation;
-        // The check is public, so the turn is re-proven to still be running
-        // here rather than trusting the planned value.
-        if previous.is_none_or(|observation| !turn_is_running(observation.state)) {
+        // A hook received during the read supersedes the planned question,
+        // including a compact that has already returned to working by now.
+        if previous.is_none_or(|observation| {
+            observation.state != AgentState::Working
+                || observation.sequence != check.observation_sequence
+                || sequence <= observation.sequence
+        }) {
             return Err(CoreError::CapabilityDenied);
         }
         let next = termloop_agents::reduce_observation(
@@ -2893,6 +2911,37 @@ mod tests {
         assert_eq!(checks[0].native_session_id, native_session_id);
         assert_eq!(checks[0].transcript_path, transcript);
 
+        // A replacement process can resume the same conversation and prompt;
+        // that does not make an earlier process's pending read current again.
+        runtime
+            .agent_observations
+            .get_mut("claude-live")
+            .unwrap()
+            .runtime_epoch = 2;
+        runtime
+            .claude_turn_watches
+            .get_mut("claude-live")
+            .unwrap()
+            .runtime_epoch = 2;
+        assert!(matches!(
+            runtime.apply_claude_interrupt_observation(&checks[0], 2, 2),
+            Err(CoreError::CapabilityDenied)
+        ));
+        runtime
+            .agent_observations
+            .get_mut("claude-live")
+            .unwrap()
+            .runtime_epoch = 1;
+        runtime
+            .claude_turn_watches
+            .get_mut("claude-live")
+            .unwrap()
+            .runtime_epoch = 1;
+        assert!(matches!(
+            runtime.apply_claude_interrupt_observation(&checks[0], 1, 1),
+            Err(CoreError::CapabilityDenied)
+        ));
+
         assert!(
             runtime
                 .apply_claude_interrupt_observation(&checks[0], 2, 2)
@@ -2915,8 +2964,7 @@ mod tests {
             Err(CoreError::CapabilityDenied)
         ));
 
-        // A finished turn also retires it, and a stale runtime epoch never
-        // answers for the current one.
+        // A later prompt arms its own check.
         runtime
             .record_claude_turn_watch(
                 "token-live",
@@ -2938,11 +2986,17 @@ mod tests {
             .unwrap();
         assert_eq!(runtime.plan_claude_interrupt_checks().len(), 1);
 
-        // Compaction happens inside the turn, so it reports its own status
-        // without answering the interrupt question or retiring the watch.
+        let before_compact = runtime.plan_claude_interrupt_checks().remove(0);
+        // `/compact` does not submit a new prompt. An interrupt record for the
+        // previous prompt must not overwrite its newer compacting status.
         runtime
             .record_agent_observation("token-live", "claude-live", "PreCompact", None, None, 5, 5)
             .unwrap();
+        assert!(runtime.plan_claude_interrupt_checks().is_empty());
+        assert!(matches!(
+            runtime.apply_claude_interrupt_observation(&before_compact, 6, 6),
+            Err(CoreError::CapabilityDenied)
+        ));
         let projected = runtime.agent_status_list().unwrap();
         assert_eq!(
             projected
@@ -2953,11 +3007,56 @@ mod tests {
                 .unwrap()["status"],
             "compacting"
         );
-        assert_eq!(runtime.plan_claude_interrupt_checks().len(), 1);
-
+        // Auto compaction preserves the watch for a real interruption after
+        // work resumes, but a read planned before compaction remains stale.
         runtime
-            .record_agent_observation("token-live", "claude-live", "Stop", None, None, 6, 6)
+            .record_agent_observation("token-live", "claude-live", "PreToolUse", None, None, 7, 7)
             .unwrap();
+        assert!(matches!(
+            runtime.apply_claude_interrupt_observation(&before_compact, 8, 8),
+            Err(CoreError::CapabilityDenied)
+        ));
+        let after_compact = runtime.plan_claude_interrupt_checks().remove(0);
+        assert!(
+            runtime
+                .apply_claude_interrupt_observation(&after_compact, 9, 9)
+                .unwrap()
+        );
+        assert!(runtime.plan_claude_interrupt_checks().is_empty());
+
+        // Starting a manual compact clears Interrupted, and its SessionStart
+        // completion clears Compacting without a client click or idle timer.
+        assert!(
+            runtime
+                .record_agent_observation(
+                    "token-live",
+                    "claude-live",
+                    "PreCompact",
+                    None,
+                    None,
+                    10,
+                    10,
+                )
+                .unwrap()
+        );
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["status"],
+            "compacting"
+        );
+        assert!(
+            runtime
+                .record_agent_observation(
+                    "token-live",
+                    "claude-live",
+                    "SessionStart",
+                    None,
+                    None,
+                    11,
+                    11,
+                )
+                .unwrap()
+        );
+        assert_eq!(runtime.agent_status_list().unwrap()[0]["status"], "idle");
         assert!(runtime.plan_claude_interrupt_checks().is_empty());
         let _ = std::fs::remove_file(path);
     }
