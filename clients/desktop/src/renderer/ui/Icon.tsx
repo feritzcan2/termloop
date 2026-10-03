@@ -1,4 +1,5 @@
 import type { ReactNode, SVGProps } from "react";
+import geminiIcon from "../../assets/gemini.svg";
 
 export type IconName =
   | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "opencode" | "gemini" | "fileGear" | "fileText"
@@ -22,7 +23,7 @@ export function agentIconName(agentId: string): IconName {
 }
 
 const paths: Record<IconName, ReactNode> = {
-  gemini: <path fill="currentColor" stroke="none" d="M10 1c1.2 5.3 3.7 7.8 9 9-5.3 1.2-7.8 3.7-9 9-1.2-5.3-3.7-7.8-9-9 5.3-1.2 7.8-3.7 9-9Z" />,
+  gemini: <image href={geminiIcon} x="1" y="1" width="18" height="18" />,
   add: <><path d="M10 4v12M4 10h12" /></>,
   alert: <><path d="M10 3 17.5 16.5h-15z" /><path d="M10 8v4" /><circle cx="10" cy="14.2" r=".6" fill="currentColor" stroke="none" /></>,
   power: <><path d="M10 3v6.5" /><path d="M6.2 5.6a6 6 0 1 0 7.6 0" /></>,

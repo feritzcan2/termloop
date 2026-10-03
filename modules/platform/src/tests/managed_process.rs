@@ -41,7 +41,11 @@ fn tracked_process_records_are_create_new_and_corruption_is_fail_closed() {
     assert!(register_existing_tracked_process(&root, "session", std::process::id()).is_err());
     drop(record);
     std_fs::create_dir_all(&root).unwrap();
-    std_fs::write(root.join("corrupt.process"), b"truncated").unwrap();
+    std_fs::write(
+        root.join("corrupt.process"),
+        b"secret-invalid-record-content",
+    )
+    .unwrap();
     let report = reap_tracked_managed_processes(&root).unwrap();
     assert_eq!(report.failures, 1);
     assert_eq!(report.uncertain_record_ids, vec!["corrupt"]);
@@ -51,6 +55,28 @@ fn tracked_process_records_are_create_new_and_corruption_is_fail_closed() {
     assert_eq!(targeted.failures, 1);
     assert_eq!(targeted.uncertain_record_ids, vec!["corrupt"]);
     assert!(root.join("corrupt.process").exists());
+    let diagnostics = std_fs::read_to_string(root.join("recovery-diagnostics.jsonl")).unwrap();
+    assert!(!diagnostics.contains("secret-invalid-record-content"));
+    let events = diagnostics
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    for mode in ["startup", "targeted"] {
+        assert!(events.iter().any(|event| {
+            event["mode"] == mode
+                && event["phase"] == "invalidRecord"
+                && event["recordId"] == "corrupt"
+                && event["daemonPid"] == std::process::id()
+                && event["elapsedMs"].is_number()
+        }));
+    }
+    std_fs::remove_file(root.join("recovery-diagnostics.jsonl")).unwrap();
+    std_fs::create_dir(root.join("recovery-diagnostics.jsonl")).unwrap();
+    assert_eq!(reap_tracked_managed_processes(&root).unwrap(), report);
+    assert_eq!(
+        recover_tracked_managed_process(&root, "corrupt").unwrap(),
+        targeted
+    );
     let _ = std_fs::remove_dir_all(root);
 }
 
