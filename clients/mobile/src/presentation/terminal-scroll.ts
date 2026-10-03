@@ -42,11 +42,11 @@ export function reduceInitialTerminalPosition(
 
 const ESC = String.fromCharCode(0x1b);
 
-/// A phone has no pointer, so a wheel report has to name some cell. The top-left one is
-/// the safest available: in a single-pane agent TUI it falls inside the transcript
-/// rather than inside the composer, which is the region a reader dragging upward means
-/// to scroll.
-const WHEEL_REPORT_CELL = 1;
+/// Target the transcript below its first row. Codex can pin a prompt header on
+/// row one while reading older output and excludes that header from wheel input.
+/// Reporting to row one then stops scrolling as soon as the header appears.
+const WHEEL_REPORT_COLUMN = 1;
+const WHEEL_REPORT_ROW = 2;
 
 /// One page per three lines of gesture, so an overscroll does not fling the reader
 /// through the whole history at once.
@@ -104,7 +104,7 @@ export function scrollSequence(
   /// that a program tracks the mouse is exactly the guess that types garbage into it.
   if (supportsTerminalWheel(tracking, sgrEncoding)) {
     const code = back ? 64 : 65;
-    return `${ESC}[<${code};${WHEEL_REPORT_CELL};${WHEEL_REPORT_CELL}M`.repeat(count);
+    return `${ESC}[<${code};${WHEEL_REPORT_COLUMN};${WHEEL_REPORT_ROW}M`.repeat(count);
   }
   const pages = Math.max(1, Math.round(count / LINES_PER_PAGE));
   return `${ESC}[${back ? "5" : "6"}~`.repeat(pages);

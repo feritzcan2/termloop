@@ -87,18 +87,18 @@ describe("scroll-back sequence", () => {
   });
 
   it("sends SGR wheel reports once a program has said it tracks the mouse", () => {
-    expect(scrollSequence(-2, "any", true)).toBe(`${esc}[<64;1;1M${esc}[<64;1;1M`);
-    expect(scrollSequence(1, "any", true)).toBe(`${esc}[<65;1;1M`);
+    expect(scrollSequence(-2, "any", true)).toBe(`${esc}[<64;1;2M${esc}[<64;1;2M`);
+    expect(scrollSequence(1, "any", true)).toBe(`${esc}[<65;1;2M`);
   });
 
   it("accepts the other wheel-capable tracking modes", () => {
-    expect(scrollSequence(-1, "normal", true)).toBe(`${esc}[<64;1;1M`);
-    expect(scrollSequence(-1, "button", true)).toBe(`${esc}[<64;1;1M`);
+    expect(scrollSequence(-1, "normal", true)).toBe(`${esc}[<64;1;2M`);
+    expect(scrollSequence(-1, "button", true)).toBe(`${esc}[<64;1;2M`);
   });
 
   it("never sends a wheel report to a program that has not asked for one", () => {
     /// A late attach has never seen the enable sequence. Guessing wrong types
-    /// `ESC[<64;1;1M` into a shell prompt, or runs it as commands in vim.
+    /// `ESC[<64;1;2M` into a shell prompt, or runs it as commands in vim.
     const unknown = scrollSequence(-3, "unknown", false);
     expect(unknown).not.toContain("<64");
     expect(unknown).toBe(`${esc}[5~`);
