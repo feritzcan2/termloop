@@ -51,7 +51,7 @@ it("keeps scrolling older output after Codex pins a prompt header above the tran
       harness.render();
       const gesture = harness.gesture();
       gesture.onPanResponderGrant({}, finger(0));
-      gesture.onPanResponderMove({}, finger(height));
+      gesture.onPanResponderMove({}, finger(3 * height));
       gesture.onPanResponderRelease();
       await state.whenIdle();
       props.buffer = state.buffer;
@@ -95,7 +95,11 @@ it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after
     gesture.onPanResponderMove({}, finger(height));
     gesture.onPanResponderMove({}, finger(height * 1.5));
     gesture.onPanResponderMove({}, finger(height * 2));
-    gesture.onPanResponderMove({}, finger(height));
+    expect(onScrollBack).not.toHaveBeenCalled();
+    gesture.onPanResponderMove({}, finger(height * 3));
+    gesture.onPanResponderMove({}, finger(height * 4.5));
+    gesture.onPanResponderMove({}, finger(height * 6));
+    gesture.onPanResponderMove({}, finger(height * 3));
     expect(onScrollBack.mock.calls).toEqual([[-1], [-1], [1]]);
     expect(onScrollBack.mock.results.map((result) => result.value)).toEqual([
       "\x1b[<64;1;2M", "\x1b[<64;1;2M", "\x1b[<65;1;2M",
@@ -106,11 +110,11 @@ it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after
     expect(onScrollBack).toHaveBeenCalledTimes(3);
     gesture.onPanResponderRelease();
     gesture.onPanResponderGrant({}, finger(0));
-    gesture.onPanResponderMove({}, finger(-height));
+    gesture.onPanResponderMove({}, finger(-3 * height));
     expect(onScrollBack).toHaveBeenLastCalledWith(1);
     gesture.onPanResponderTerminate();
     gesture.onPanResponderGrant({}, finger(0));
-    gesture.onPanResponderMove({}, finger(height));
+    gesture.onPanResponderMove({}, finger(3 * height));
     expect(onScrollBack).toHaveBeenLastCalledWith(-1);
   } finally {
     state.dispose();
@@ -141,11 +145,11 @@ it("pans a tall terminal frame and scrolls the program at its edge in the same d
   // Delayed native callbacks must not undo the position owned by the gesture.
   view.onScroll(scrollEvent(bottom, contentHeight));
   harness.render();
-  gesture.onPanResponderMove({}, finger(bottom + 2 * height));
+  gesture.onPanResponderMove({}, finger(bottom + 6 * height));
   expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
   expect(onScrollBack.mock.calls).toEqual([[-2]]);
   harness.render();
-  gesture.onPanResponderMove({}, finger(-height));
+  gesture.onPanResponderMove({}, finger(-3 * height));
   expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: bottom, animated: false });
   expect(onScrollBack.mock.calls).toEqual([[-2], [3]]);
 });
