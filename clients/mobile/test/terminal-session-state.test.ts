@@ -16,7 +16,7 @@ describe("cached terminal state", () => {
     state.push({ type: "replay", bytes, mouseModes: 0x104 });
     await state.whenIdle();
     expect(scrollSequence(-2, state.projection.mouseTracking, state.projection.sgrMouseEncoding))
-      .toBe("\x1b[<64;1;1M".repeat(2));
+      .toBe("\x1b[<64;1;2M".repeat(2));
     expect(state.outputTail).toEqual(bytes);
     const screen = state.buffer.screen;
 

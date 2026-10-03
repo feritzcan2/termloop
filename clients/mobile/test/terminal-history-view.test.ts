@@ -15,6 +15,53 @@ type Props = Record<string, any>;
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("keeps scrolling older output after Codex pins a prompt header above the transcript", async () => {
+  const state = new TerminalSessionState("mac", "pinned-header");
+  const encoder = new TextEncoder();
+  const height = terminalGeometry.lineHeights[1]!;
+  let olderRows = 0;
+  state.begin();
+  state.push({ type: "replay", mouseModes: 0x104,
+    bytes: encoder.encode("\x1b[?1049h\x1b[1;1HLatest answer\x1b[24;1HComposer") });
+  state.push({ type: "state", state: "connected" });
+  state.push({ type: "ready" });
+  await state.whenIdle();
+  const props = {
+    buffer: state.buffer, fontSizeIndex: 1, capNotice: undefined, programScroll: true,
+    onScrollBack: (lines: number) => {
+      const sequence = scrollSequence(lines, state.projection.mouseTracking, state.projection.sgrMouseEncoding);
+      // Codex 0.160.0 transcript_view.rs reserves its first row for a prompt
+      // header. input.rs ignores wheel events outside the remaining body.
+      for (const report of sequence.matchAll(/\x1b\[<(64|65);(\d+);(\d+)M/g)) {
+        const row = Number(report[3]) - 1;
+        const bodyTop = olderRows === 0 ? 0 : 1;
+        if (row < bodyTop || row >= 20) continue;
+        olderRows += report[1] === "64" ? 3 : -3;
+        state.push({ type: "live", bytes: encoder.encode(
+          `\x1b[1;1HPinned prompt\x1b[K\x1b[2;1HEarlier row ${olderRows}\x1b[K`,
+        ) });
+      }
+    },
+  };
+  const harness = await terminalHarness(props);
+  try {
+    harness.render().onContentSizeChange();
+    harness.frames();
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      harness.render();
+      const gesture = harness.gesture();
+      gesture.onPanResponderGrant({}, finger(0));
+      gesture.onPanResponderMove({}, finger(height));
+      gesture.onPanResponderRelease();
+      await state.whenIdle();
+      props.buffer = state.buffer;
+      expect(olderRows).toBe(attempt * 3);
+    }
+  } finally {
+    state.dispose();
+  }
+});
+
 it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after %s without native overscroll", async (attach) => {
   const state = new TerminalSessionState("mac", "touch-scroll");
   state.begin();
@@ -51,7 +98,7 @@ it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after
     gesture.onPanResponderMove({}, finger(height));
     expect(onScrollBack.mock.calls).toEqual([[-1], [-1], [1]]);
     expect(onScrollBack.mock.results.map((result) => result.value)).toEqual([
-      "\x1b[<64;1;1M", "\x1b[<64;1;1M", "\x1b[<65;1;1M",
+      "\x1b[<64;1;2M", "\x1b[<64;1;2M", "\x1b[<65;1;2M",
     ]);
     // A native bounce must not duplicate the input already sent by the drag.
     view.onScrollBeginDrag();
