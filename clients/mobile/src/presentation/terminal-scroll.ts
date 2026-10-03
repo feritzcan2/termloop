@@ -48,6 +48,10 @@ const ESC = String.fromCharCode(0x1b);
 const WHEEL_REPORT_COLUMN = 1;
 const WHEEL_REPORT_ROW = 2;
 
+/// Codex moves three rows per wheel report. Wait for that much finger travel
+/// so the transcript follows the drag distance instead of moving three times faster.
+const DRAG_LINES_PER_WHEEL = 3;
+
 /// One page per three lines of gesture, so an overscroll does not fling the reader
 /// through the whole history at once.
 const LINES_PER_PAGE = 3;
@@ -58,6 +62,7 @@ export function supportsTerminalWheel(tracking: TerminalMouseTracking, sgrEncodi
 
 /// Pan a desktop-sized frame on the phone first, then send motion beyond its
 /// edges to the program. This also works on platforms without native bounce.
+/// Remainder is finger travel in line heights; lines counts emitted wheel steps.
 export function terminalDragScroll(
   deltaY: number,
   lineHeight: number,
@@ -68,8 +73,8 @@ export function terminalDragScroll(
   const target = offset - deltaY;
   const nextOffset = Math.max(0, Math.min(maxOffset, target));
   const total = (nextOffset === offset ? remainder : 0) + (target - nextOffset) / Math.max(1, lineHeight);
-  const lines = Math.trunc(total) || 0;
-  return { offset: nextOffset, lines, remainder: total - lines };
+  const lines = Math.trunc(total / DRAG_LINES_PER_WHEEL) || 0;
+  return { offset: nextOffset, lines, remainder: total - lines * DRAG_LINES_PER_WHEEL };
 }
 
 /// Describes a drag beyond the locally-rendered frame. A projected terminal screen has

@@ -25,15 +25,34 @@ describe("direct terminal drag", () => {
     const first = terminalDragScroll(6, 13, 0, 0, 0);
     expect(first.lines).toBe(0);
     const second = terminalDragScroll(20, 13, first.remainder, 0, 0);
-    expect(second).toEqual({ offset: 0, lines: -2, remainder: 0 });
-    expect(terminalDragScroll(-13, 13, second.remainder, 0, 0)).toEqual({ offset: 0, lines: 1, remainder: 0 });
+    expect(second).toEqual({ offset: 0, lines: 0, remainder: -2 });
+    const third = terminalDragScroll(13, 13, second.remainder, 0, 0);
+    expect(third).toEqual({ offset: 0, lines: -1, remainder: 0 });
+    expect(terminalDragScroll(-39, 13, third.remainder, 0, 0)).toEqual({ offset: 0, lines: 1, remainder: 0 });
     expect(terminalDragScroll(0, 13, 0, 0, 0)).toEqual({ offset: 0, lines: 0, remainder: 0 });
+  });
+
+  it.each([15, 18, 20])("matches Codex content movement to finger distance at line height %i", (height) => {
+    for (const direction of [-1, 1]) {
+      for (const events of [1, 6, 60]) {
+        let remainder = 0;
+        let movedRows = 0;
+        for (let event = 0; event < events; event += 1) {
+          const motion = terminalDragScroll(direction * 30 * height / events, height, remainder, 0, 0);
+          remainder = motion.remainder;
+          // Codex moves three rows for each wheel report.
+          movedRows += motion.lines * 3;
+        }
+        expect(movedRows).toBe(-direction * 30);
+        expect(remainder).toBe(0);
+      }
+    }
   });
 
   it("pans a taller frame before sending either edge's remaining motion to the program", () => {
     expect(terminalDragScroll(50, 10, 0, 100, 200)).toEqual({ offset: 50, lines: 0, remainder: 0 });
-    expect(terminalDragScroll(100, 10, 0, 50, 200)).toEqual({ offset: 0, lines: -5, remainder: 0 });
-    expect(terminalDragScroll(-250, 10, 0, 0, 200)).toEqual({ offset: 200, lines: 5, remainder: 0 });
+    expect(terminalDragScroll(100, 10, 0, 50, 200)).toEqual({ offset: 0, lines: -1, remainder: -2 });
+    expect(terminalDragScroll(-250, 10, 0, 0, 200)).toEqual({ offset: 200, lines: 1, remainder: 2 });
     // Leaving the edge clears its fractional wheel motion.
     expect(terminalDragScroll(-10, 10, -0.5, 0, 200)).toEqual({ offset: 10, lines: 0, remainder: 0 });
   });
