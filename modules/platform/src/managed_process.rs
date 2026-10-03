@@ -7,6 +7,9 @@ use crate::env::apply_launch_environment;
 use crate::process_tree::SignalDelivery;
 use crate::{LaunchEnvironment, PlatformError};
 
+mod recovery_diagnostics;
+use recovery_diagnostics::RecoveryDiagnostics;
+
 pub struct ManagedProcess {
     child: Child,
     record_path: Option<PathBuf>,
@@ -387,11 +390,14 @@ pub fn reap_tracked_managed_processes(
         std_fs::set_permissions(registry_directory, std_fs::Permissions::from_mode(0o700))?;
     }
 
+    let diagnostics = RecoveryDiagnostics::open(registry_directory, "startup");
+    diagnostics.record("recoveryStarted", None, None, None);
     let mut report = ManagedProcessRecovery::default();
     let mut live = Vec::new();
     let entries = match std_fs::read_dir(registry_directory) {
         Ok(entries) => entries,
-        Err(_) => {
+        Err(error) => {
+            diagnostics.record("directoryReadFailed", None, None, Some(&error.into()));
             report.failures = 1;
             report.unscoped_failures = 1;
             return Ok(report);
@@ -400,7 +406,8 @@ pub fn reap_tracked_managed_processes(
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => {
+            Err(error) => {
+                diagnostics.record("directoryEntryFailed", None, None, Some(&error.into()));
                 report.failures += 1;
                 report.unscoped_failures += 1;
                 continue;
@@ -413,6 +420,7 @@ pub fn reap_tracked_managed_processes(
         let record = match read_tracked_process_record(path.clone()) {
             Ok(Some(record)) => record,
             Ok(None) => {
+                diagnostics.record("invalidRecord", Some(&path), None, None);
                 // A malformed record may have been torn after a child was
                 // spawned. Its PID is not authority, so neither signal nor
                 // deletion is safe; bind the uncertainty to its record id.
@@ -420,7 +428,8 @@ pub fn reap_tracked_managed_processes(
                 push_uncertain_record_id(&mut report, &path);
                 continue;
             }
-            Err(_) => {
+            Err(error) => {
+                diagnostics.record("recordReadFailed", Some(&path), None, Some(&error));
                 // Never signal a PID parsed from a corrupt or unreadable record.
                 report.failures += 1;
                 push_uncertain_record_id(&mut report, &path);
@@ -428,14 +437,40 @@ pub fn reap_tracked_managed_processes(
             }
         };
         match tracked_process_state(&record) {
-            Err(_) => {
+            Err(error) => {
+                diagnostics.record(
+                    "identityProbeFailed",
+                    Some(&record.path),
+                    Some(record.process_id),
+                    Some(&error),
+                );
                 report.failures += 1;
                 push_uncertain_record_id(&mut report, &record.path);
             }
-            Ok(TrackedProcessState::OwnedTreeRunning) => live.push(record),
+            Ok(TrackedProcessState::OwnedTreeRunning) => {
+                diagnostics.record(
+                    "ownedTreeRunning",
+                    Some(&record.path),
+                    Some(record.process_id),
+                    None,
+                );
+                live.push(record);
+            }
             Ok(TrackedProcessState::Stale) => {
+                diagnostics.record(
+                    "staleRecord",
+                    Some(&record.path),
+                    Some(record.process_id),
+                    None,
+                );
                 report.stale_records += 1;
-                if remove_if_present(&record.path).is_err() {
+                if let Err(error) = remove_if_present(&record.path) {
+                    diagnostics.record(
+                        "recordRemovalFailed",
+                        Some(&record.path),
+                        Some(record.process_id),
+                        Some(&error),
+                    );
                     report.failures += 1;
                     push_uncertain_record_id(&mut report, &record.path);
                 }
@@ -447,7 +482,7 @@ pub fn reap_tracked_managed_processes(
     let mut graceful_signalled = false;
     for record in live {
         if !matches!(
-            signal_process_tree(record.process_id, ProcessTreeSignal::Terminate),
+            diagnostics.signal(&record, ProcessTreeSignal::Terminate),
             Ok(SignalDelivery::GracefulUnsupported)
         ) {
             graceful_signalled = true;
@@ -459,18 +494,26 @@ pub fn reap_tracked_managed_processes(
             &mut remaining,
             std::time::Duration::from_secs(2),
             &mut report,
+            &diagnostics,
         );
     }
     for record in &remaining {
-        let _ = signal_process_tree(record.process_id, ProcessTreeSignal::Kill);
+        let _ = diagnostics.signal(record, ProcessTreeSignal::Kill);
     }
     report.terminated += wait_for_tracked_processes(
         &mut remaining,
         std::time::Duration::from_secs(2),
         &mut report,
+        &diagnostics,
     );
 
     for record in remaining {
+        diagnostics.record(
+            "treeStillRunningAfterKill",
+            Some(&record.path),
+            Some(record.process_id),
+            None,
+        );
         report.failures += 1;
         push_uncertain_record_id(&mut report, &record.path);
     }
@@ -483,48 +526,88 @@ pub fn recover_tracked_managed_process(
 ) -> Result<ManagedProcessRecovery, PlatformError> {
     validate_process_record_id(record_id)?;
     std_fs::create_dir_all(registry_directory)?;
+    let diagnostics = RecoveryDiagnostics::open(registry_directory, "targeted");
     let path = registry_directory.join(format!("{record_id}.process"));
+    diagnostics.record("recoveryStarted", Some(&path), None, None);
     if !path.exists() {
+        diagnostics.record("recordAbsent", Some(&path), None, None);
         return Ok(ManagedProcessRecovery::default());
     }
     let mut report = ManagedProcessRecovery::default();
-    let Some(record) = read_tracked_process_record(path.clone())? else {
+    let Some(record) = read_tracked_process_record(path.clone()).inspect_err(|error| {
+        diagnostics.record("recordReadFailed", Some(&path), None, Some(error));
+    })?
+    else {
+        diagnostics.record("invalidRecord", Some(&path), None, None);
         report.failures = 1;
         push_uncertain_record_id(&mut report, &path);
         return Ok(report);
     };
     match tracked_process_state(&record) {
-        Err(_) => {
+        Err(error) => {
+            diagnostics.record(
+                "identityProbeFailed",
+                Some(&record.path),
+                Some(record.process_id),
+                Some(&error),
+            );
             report.failures = 1;
             push_uncertain_record_id(&mut report, &record.path);
         }
         Ok(TrackedProcessState::OwnedTreeRunning) => {
+            diagnostics.record(
+                "ownedTreeRunning",
+                Some(&record.path),
+                Some(record.process_id),
+                None,
+            );
             let mut remaining = vec![record];
             if !matches!(
-                signal_process_tree(remaining[0].process_id, ProcessTreeSignal::Terminate),
+                diagnostics.signal(&remaining[0], ProcessTreeSignal::Terminate),
                 Ok(SignalDelivery::GracefulUnsupported)
             ) {
                 report.terminated += wait_for_tracked_processes(
                     &mut remaining,
                     std::time::Duration::from_secs(2),
                     &mut report,
+                    &diagnostics,
                 );
             }
             if let Some(record) = remaining.first() {
-                let _ = signal_process_tree(record.process_id, ProcessTreeSignal::Kill);
+                let _ = diagnostics.signal(record, ProcessTreeSignal::Kill);
             }
             report.terminated += wait_for_tracked_processes(
                 &mut remaining,
                 std::time::Duration::from_secs(2),
                 &mut report,
+                &diagnostics,
             );
             if let Some(record) = remaining.first() {
+                diagnostics.record(
+                    "treeStillRunningAfterKill",
+                    Some(&record.path),
+                    Some(record.process_id),
+                    None,
+                );
                 report.failures += 1;
                 push_uncertain_record_id(&mut report, &record.path);
             }
         }
         Ok(TrackedProcessState::Stale) => {
-            remove_if_present(&record.path)?;
+            diagnostics.record(
+                "staleRecord",
+                Some(&record.path),
+                Some(record.process_id),
+                None,
+            );
+            remove_if_present(&record.path).inspect_err(|error| {
+                diagnostics.record(
+                    "recordRemovalFailed",
+                    Some(&record.path),
+                    Some(record.process_id),
+                    Some(error),
+                );
+            })?;
             report.stale_records = 1;
         }
     }
@@ -571,6 +654,7 @@ fn wait_for_tracked_processes(
     records: &mut Vec<TrackedProcessRecord>,
     timeout: std::time::Duration,
     report: &mut ManagedProcessRecovery,
+    diagnostics: &RecoveryDiagnostics,
 ) -> usize {
     let deadline = std::time::Instant::now() + timeout;
     let mut terminated = 0;
@@ -582,14 +666,32 @@ fn wait_for_tracked_processes(
                 Ok(true) => index += 1,
                 Ok(false) => {
                     let record = records.swap_remove(index);
+                    diagnostics.record(
+                        "treeExited",
+                        Some(&record.path),
+                        Some(record.process_id),
+                        None,
+                    );
                     terminated += 1;
-                    if remove_if_present(&record.path).is_err() {
+                    if let Err(error) = remove_if_present(&record.path) {
+                        diagnostics.record(
+                            "recordRemovalFailed",
+                            Some(&record.path),
+                            Some(record.process_id),
+                            Some(&error),
+                        );
                         report.failures += 1;
                         push_uncertain_record_id(report, &record.path);
                     }
                 }
-                Err(_) => {
+                Err(error) => {
                     let record = records.swap_remove(index);
+                    diagnostics.record(
+                        "treeProbeFailed",
+                        Some(&record.path),
+                        Some(record.process_id),
+                        Some(&error),
+                    );
                     report.failures += 1;
                     push_uncertain_record_id(report, &record.path);
                 }

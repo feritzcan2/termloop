@@ -31,8 +31,6 @@
 .quick-action-shortcut-editor [role="alert"], .shortcut-launch-error { color: var(--danger); }
 .quick-action-shortcut-launcher { position: relative; display: inline-flex; flex: none; }
 .workspace-agent-launch-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; }
-.workspace-launch-actions .saved-agent-shortcut { border-color: color-mix(in srgb, var(--shortcut-icon-color) 25%, transparent); background: color-mix(in srgb, var(--shortcut-icon-color) 8%, transparent); }
-.workspace-launch-actions .shortcut-provider-icon { width: 16px; height: 16px; }
 .workspace-launch-actions button[aria-disabled="true"] { opacity: .45; }
 .workspace-launch-actions button { touch-action: manipulation; }
 .agent-shortcut-settings .quick-action-options { height: auto; min-height: 42px; flex-wrap: wrap; padding: 10px 12px; }

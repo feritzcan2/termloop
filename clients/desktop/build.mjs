@@ -28,7 +28,7 @@ await Promise.all([
   build({ entryPoints: ["src/main.ts"], outfile: "dist/main.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws", "ssh2"], define: mainDefines, banner: { js: esmRequireBanner } }),
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),
   build({ entryPoints: ["src/utility/terminal-gateway.ts"], outfile: "dist/terminal-gateway.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws"] }),
-  build({ entryPoints: ["src/renderer/index.tsx"], outfile: "dist/renderer.js", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file" }, assetNames: "[name]" }),
+  build({ entryPoints: ["src/renderer/index.tsx"], outfile: "dist/renderer.js", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" }, assetNames: "[name]" }),
   build({ entryPoints: ["src/renderer/file-highlight-worker.ts"], outfile: "dist/file-highlight-worker.js", bundle: true, platform: "browser", format: "esm", minify: true }),
   cp("src/index.html", "dist/index.html"),
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
