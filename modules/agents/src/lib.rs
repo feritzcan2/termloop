@@ -1114,6 +1114,15 @@ impl CodexAppServerThreadScope {
                 }
             }
             Some("thread/start" | "thread/fork") => {
+                // The TUI also forks ephemeral threads for internal work. They
+                // share this connection but do not select a new conversation.
+                if message
+                    .pointer("/params/ephemeral")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
+                    return;
+                }
                 let Some(id) = message.get("id").and_then(json_rpc_id_key) else {
                     return;
                 };
@@ -1141,6 +1150,13 @@ impl CodexAppServerThreadScope {
             return;
         };
         self.pending_new_thread_requests.remove(position);
+        if message
+            .pointer("/result/thread/ephemeral")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            return;
+        }
         if let Some(native_thread_id) = message
             .pointer("/result/thread/id")
             .and_then(serde_json::Value::as_str)
@@ -1158,6 +1174,17 @@ impl CodexAppServerThreadScope {
         let Some(method) = message.get("method").and_then(serde_json::Value::as_str) else {
             return true;
         };
+        // This notification can precede the fork response, including while a
+        // real start/fork is pending. Never let it replace the main thread or
+        // publish an ephemeral resume reference.
+        if method == "thread/started"
+            && message
+                .pointer("/params/thread/ephemeral")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+        {
+            return false;
+        }
         let Some(native_thread_id) = codex_app_server_message_thread_id(message) else {
             // Older App Server notifications do not always carry a thread ID.
             // Preserve their existing behavior because they cannot be scoped.
@@ -2779,6 +2806,111 @@ mod tests {
         drop(client);
         bridge.shutdown().unwrap();
         upstream.join().unwrap();
+    }
+
+    #[test]
+    fn codex_bridge_keeps_observing_the_main_thread_after_an_ephemeral_fork() {
+        use tokio_tungstenite::tungstenite::{Message, accept, connect};
+
+        for notification_first in [true, false] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let upstream_endpoint = format!("ws://{}", listener.local_addr().unwrap());
+            let resume = r#"{"id":1,"method":"thread/resume","params":{"threadId":"thread-main"}}"#;
+            let resumed = r#"{"id":1,"result":{"thread":{"id":"thread-main","status":{"type":"active","activeFlags":[]}}}}"#;
+            let fork = r#"{"id":2,"method":"thread/fork","params":{"threadId":"thread-main","ephemeral":true}}"#;
+            let forked =
+                r#"{"id":2,"result":{"thread":{"id":"thread-internal","ephemeral":true}}}"#;
+            let started = r#"{"method":"thread/started","params":{"thread":{"id":"thread-internal","ephemeral":true,"status":{"type":"idle"}}}}"#;
+            let interrupted = r#"{"method":"turn/completed","params":{"threadId":"thread-internal","turn":{"status":"interrupted"}}}"#;
+            let unloaded = r#"{"method":"thread/status/changed","params":{"threadId":"thread-internal","status":{"type":"notLoaded"}}}"#;
+            let progress = r#"{"method":"item/started","params":{"threadId":"thread-main","turnId":"turn-main","item":{"type":"reasoning","id":"item-next"}}}"#;
+            let frames = if notification_first {
+                [started, forked, interrupted, unloaded, progress]
+            } else {
+                [forked, started, interrupted, unloaded, progress]
+            };
+            let upstream = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut socket = accept(stream).unwrap();
+                assert_eq!(socket.read().unwrap(), Message::Text(resume.into()));
+                socket.send(Message::Text(resumed.into())).unwrap();
+                assert_eq!(socket.read().unwrap(), Message::Text(fork.into()));
+                for frame in frames {
+                    socket.send(Message::Text(frame.into())).unwrap();
+                }
+                let _ = socket.close(None);
+            });
+            let (signals, received) = std::sync::mpsc::channel();
+            let bridge =
+                CodexAppServerBridge::start(upstream_endpoint, "session-codex".into(), 77, signals)
+                    .unwrap();
+            let (mut client, _) = connect(bridge.endpoint()).unwrap();
+            client.send(Message::Text(resume.into())).unwrap();
+            assert_eq!(client.read().unwrap(), Message::Text(resumed.into()));
+            client.send(Message::Text(fork.into())).unwrap();
+            for frame in frames {
+                assert_eq!(client.read().unwrap(), Message::Text(frame.into()));
+            }
+            let events = received
+                .try_iter()
+                .map(|signal| signal.event)
+                .collect::<Vec<_>>();
+            drop(client);
+            bridge.shutdown().unwrap();
+            upstream.join().unwrap();
+            assert_eq!(
+                events,
+                vec![
+                    AgentRuntimeEvent::ResumeRefObserved(
+                        ResumeRef::for_provider(ResumeProvider::Codex, "thread-main".into())
+                            .unwrap(),
+                    ),
+                    AgentRuntimeEvent::Observation(AgentSignal::ToolStarted),
+                    AgentRuntimeEvent::Observation(AgentSignal::ToolStarted),
+                ],
+                "notification_first={notification_first}"
+            );
+        }
+    }
+
+    #[test]
+    fn codex_thread_scope_ignores_ephemeral_starts_during_a_durable_fork() {
+        let mut scope = CodexAppServerThreadScope::default();
+        scope.observe_downstream_request(
+            r#"{"id":1,"method":"thread/resume","params":{"threadId":"thread-main"}}"#,
+        );
+        scope.observe_downstream_request(r#"{"id":2,"method":"thread/fork","params":{"threadId":"thread-main","ephemeral":false}}"#);
+        assert!(!scope.admits_notification(&serde_json::json!({
+            "method": "thread/started",
+            "params": { "thread": { "id": "thread-internal", "ephemeral": true } },
+        })));
+        assert_eq!(scope.native_thread_id.as_deref(), Some("thread-main"));
+        assert!(scope.admits_notification(&serde_json::json!({
+            "method": "thread/started",
+            "params": { "thread": { "id": "thread-fork", "ephemeral": false } },
+        })));
+        scope.observe_upstream_response(
+            r#"{"id":2,"result":{"thread":{"id":"thread-fork","ephemeral":false}}}"#,
+        );
+        assert_eq!(scope.native_thread_id.as_deref(), Some("thread-fork"));
+        assert!(scope.pending_new_thread_requests.is_empty());
+
+        let mut fresh = CodexAppServerThreadScope::default();
+        fresh.observe_downstream_request(
+            r#"{"id":1,"method":"thread/start","params":{"ephemeral":true}}"#,
+        );
+        assert!(!fresh.admits_notification(&serde_json::json!({
+            "method": "thread/started",
+            "params": { "thread": { "id": "thread-internal", "ephemeral": true } },
+        })));
+        fresh.observe_upstream_response(
+            r#"{"id":1,"result":{"thread":{"id":"thread-internal","ephemeral":true}}}"#,
+        );
+        assert!(fresh.native_thread_id.is_none());
+        assert!(fresh.pending_new_thread_requests.is_empty());
     }
 
     #[test]
