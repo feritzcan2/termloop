@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { emptyTerminalBuffer } from "../src/presentation/terminal-buffer";
 import { TerminalSessionState } from "../src/features/terminal/terminal-session-state";
 import { terminalGeometry } from "../src/theme/tokens";
-import { scrollSequence, supportsTerminalWheel } from "../src/presentation/terminal-scroll";
+import { scrollSequence, supportsTerminalWheel, terminalLiveSequence } from "../src/presentation/terminal-scroll";
 
 const require = createRequire(import.meta.url);
 type Props = Record<string, any>;
@@ -28,6 +28,10 @@ it("keeps scrolling older output after Codex pins a prompt header above the tran
   await state.whenIdle();
   const props = {
     buffer: state.buffer, fontSizeIndex: 1, capNotice: undefined, programScroll: true,
+    onReturnToLive: vi.fn(() => {
+      const sequence = terminalLiveSequence("codex", state.projection.mouseTracking, state.projection.sgrMouseEncoding);
+      if (sequence === "\x1b[1;5F") olderRows = 0;
+    }),
     onScrollBack: (lines: number) => {
       const sequence = scrollSequence(lines, state.projection.mouseTracking, state.projection.sgrMouseEncoding);
       // Codex 0.160.0 transcript_view.rs reserves its first row for a prompt
@@ -57,6 +61,16 @@ it("keeps scrolling older output after Codex pins a prompt header above the tran
       props.buffer = state.buffer;
       expect(olderRows).toBe(attempt * 3);
     }
+    // The local frame fits the phone, but Codex is still reading its own history.
+    const view = harness.render();
+    view.onScroll(scrollEvent(0, 24 * height));
+    harness.render();
+    expect(harness.liveButton()).toBeDefined();
+    harness.liveButton()!.props.onPress();
+    harness.render();
+    expect(props.onReturnToLive).toHaveBeenCalledTimes(1);
+    expect(olderRows).toBe(0);
+    expect(harness.liveButton()).toBeUndefined();
   } finally {
     state.dispose();
   }
@@ -288,6 +302,44 @@ function scrollEvent(y: number, contentHeight: number) {
   return { nativeEvent: { contentOffset: { y }, contentSize: { height: contentHeight }, layoutMeasurement: { height: 600 } } };
 }
 
+it.each([false, true])("returns to the latest rows after reading history (expanded page: %s)", async (expanded) => {
+  const screen = Array.from({ length: 510 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const buffer = { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" as const };
+  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined });
+  const height = terminalGeometry.lineHeights[1]!;
+  const recentHeight = 200 * height + 2 * terminalGeometry.contentPadding;
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScroll(scrollEvent(recentHeight - 600, recentHeight));
+  view = harness.render();
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(expanded ? 20 : 1000, recentHeight));
+  view = harness.render();
+  view.onContentSizeChange();
+  harness.scrollToEnd.mockClear();
+  harness.liveButton()!.props.onPress();
+  view = harness.render();
+  // No new measurement is needed for a same-height page; render the latest rows
+  // immediately, and ignore an in-flight callback from the old reading position.
+  expect(harness.renderedKeys()).toContain("510");
+  expect(harness.scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  view.onScroll(scrollEvent(1000, expanded ? 400 * height : recentHeight));
+  view = harness.render();
+  expect(harness.liveButton()).toBeUndefined();
+  expect(harness.renderedKeys()).toContain("510");
+  view.onContentSizeChange();
+  view.onScroll(scrollEvent(recentHeight - 600, recentHeight));
+  view = harness.render();
+  expect(harness.liveButton()).toBeUndefined();
+  // A new intentional drag still leaves live mode.
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(1000, recentHeight));
+  harness.render();
+  expect(harness.liveButton()).toBeDefined();
+});
+
 function finger(dy: number, dx = 0) {
   return { dy, dx, numberActiveTouches: 1 };
 }
@@ -345,6 +397,7 @@ async function terminalHarness(props: Props) {
     scrollTo,
     scrollToEnd,
     gesture: () => nodes(tree)[0]!.props,
+    liveButton: () => nodes(tree).find((node) => node.props.accessibilityLabel === "Return to live output"),
     frames: () => { while (frames.length) frames.shift()!(); },
     renderedKeys: () => nodes(tree).filter((node) => node.props.spans).map((node) => node.key),
     render: () => {

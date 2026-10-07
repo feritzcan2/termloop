@@ -8,7 +8,7 @@ import {
   terminalCapNotice,
   type TerminalBuffer,
 } from "@/presentation/terminal-buffer";
-import { scrollSequence, supportsTerminalWheel } from "@/presentation/terminal-scroll";
+import { scrollSequence, supportsTerminalWheel, terminalLiveSequence } from "@/presentation/terminal-scroll";
 import { attachedImageMessage } from "@/presentation/terminal-image-message";
 import { submitTerminalTurn } from "./submit-terminal-turn";
 import { TerminalOutputBatcher } from "./output-batcher";
@@ -76,6 +76,7 @@ export interface TerminalSession {
   /// scrollback: the program owns the grid and repaints it, so rows that left the frame
   /// were never held on the phone to scroll back to.
   scrollBack: (lines: number) => void;
+  returnToLive: () => void;
   /// The program requested wheel input, so touch drags should move its viewport.
   readonly programScroll: boolean;
 }
@@ -277,6 +278,14 @@ export function useTerminalSession(
   }, [canSend, deliver, encoder]);
 
   const projection = continuity.current?.projection;
+  const returnToLive = useCallback(() => {
+    const open = attachment.current;
+    const current = continuity.current?.projection;
+    if (!canSend || open === undefined || current === undefined) return;
+    const sequence = terminalLiveSequence(session?.process.agent_id, current.mouseTracking, current.sgrMouseEncoding);
+    if (sequence) void deliver(open, encoder.encode(sequence));
+  }, [canSend, deliver, encoder, session?.process.agent_id]);
+
   const programScroll = canSend && projection !== undefined
     && supportsTerminalWheel(projection.mouseTracking, projection.sgrMouseEncoding);
 
@@ -292,6 +301,7 @@ export function useTerminalSession(
     reconnect,
     sendKey,
     scrollBack,
+    returnToLive,
     programScroll,
   };
 }

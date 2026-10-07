@@ -6,9 +6,21 @@ import {
   scrollSequence,
   supportsTerminalWheel,
   terminalDragScroll,
+  terminalLiveSequence,
 } from "../../src/presentation/terminal-scroll";
 
 const esc = String.fromCharCode(0x1b);
+
+it("returns Codex to its live transcript without sending shortcuts to other programs", () => {
+  expect(terminalLiveSequence("codex", "any", true)).toBe(`${esc}[1;5F`);
+  for (const agent of ["claude", "shell", undefined, null]) {
+    expect(terminalLiveSequence(agent, "any", true)).toBe("");
+  }
+  for (const tracking of ["unknown", "none", "x10"] as const) {
+    expect(terminalLiveSequence("codex", tracking, true)).toBe("");
+  }
+  expect(terminalLiveSequence("codex", "any", false)).toBe("");
+});
 
 describe("direct terminal drag", () => {
   it("only captures drags for a program with a supported wheel protocol", () => {
