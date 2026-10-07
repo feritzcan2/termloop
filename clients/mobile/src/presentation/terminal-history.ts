@@ -25,8 +25,12 @@ export function reconcileTerminalHistory(
   rows: readonly HistoryRow[],
   kind: HistoryKind,
   followingLive: boolean,
+  programReading = false,
 ): TerminalHistoryPage {
   if (current.rows === rows && current.kind === kind) return current;
+  // Once a drag reaches the program, show its entire repainted frame. Row
+  // identities move during terminal scrolling; they are not reading anchors.
+  if (programReading && kind === "screen") return { rows, kind, start: 0 };
   if (followingLive || current.kind !== kind || current.rows.length === 0) {
     return recentTerminalHistory(rows, kind);
   }

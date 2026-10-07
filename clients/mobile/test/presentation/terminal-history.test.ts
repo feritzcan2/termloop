@@ -65,4 +65,15 @@ describe("incremental terminal history", () => {
     const anchor = terminalReadingAnchor(short, 24, 16)!;
     expect(terminalReadingOffset(short, anchor, 20)).toBe(30);
   });
+
+  it.each([24, 510])("keeps all %i rows visible while the program scrolls its own frame", (count) => {
+    const source = rows(count);
+    const page = { rows: source, kind: "screen" as const, start: 0 };
+    const repainted = [...rows(3, 10000), ...source.slice(0, -3)];
+    const next = reconcileTerminalHistory(page, repainted, "screen", false, true);
+    expect(next.start).toBe(0);
+    expect(next.rows).toBe(repainted);
+    // Local history still preserves a reading anchor across prepends.
+    expect(reconcileTerminalHistory(page, repainted, "screen", false).start).toBe(3);
+  });
 });

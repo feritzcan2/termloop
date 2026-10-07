@@ -135,6 +135,56 @@ it.each(["startup", "late attach"])("scrolls a mouse-tracking TUI directly after
   }
 });
 
+it("keeps program scrolling active when Codex inserts older rows into its frame, including after returning live", async () => {
+  const state = new TerminalSessionState("mac", "scrolling-frame");
+  const encoder = new TextEncoder();
+  const height = terminalGeometry.lineHeights[1]!;
+  state.begin();
+  state.push({ type: "replay", mouseModes: 0x104, bytes: encoder.encode(
+    "\x1b[?1049h\x1b[1;1H" + Array.from({ length: 24 }, (_, i) => `Answer ${i}`).join("\r\n"),
+  ) });
+  state.push({ type: "state", state: "connected" });
+  state.push({ type: "ready" });
+  await state.whenIdle();
+  const onScrollBack = vi.fn();
+  const props = { buffer: state.buffer, fontSizeIndex: 1, capNotice: undefined, programScroll: true, onScrollBack };
+  const harness = await terminalHarness(props);
+  try {
+    harness.render().onContentSizeChange();
+    harness.frames();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      harness.render();
+      const gesture = harness.gesture();
+      expect(gesture.onMoveShouldSetPanResponderCapture({}, finger(3 * height))).toBe(true);
+      gesture.onPanResponderGrant({}, finger(0));
+      gesture.onPanResponderMove({}, finger(3 * height));
+      gesture.onPanResponderRelease();
+      expect(onScrollBack).toHaveBeenLastCalledWith(-1);
+      // Terminal scroll-down preserves old row identities below newly inserted
+      // history. Those identities are screen cells, not local reading anchors.
+      state.push({ type: "live", bytes: encoder.encode(
+        `\x1b[3T\x1b[1;1HEarlier ${attempt}\r\nEarlier\r\nEarlier`,
+      ) });
+      await state.whenIdle();
+      props.buffer = state.buffer;
+      harness.scrollTo.mockClear();
+      const view = harness.render();
+      expect(view.scrollEnabled).toBe(false);
+      expect(harness.renderedKeys()).toContain(String(state.buffer.screen![0]!.id));
+      expect(harness.scrollTo).not.toHaveBeenCalled();
+      expect(harness.liveButton()).toBeDefined();
+      if (attempt === 1) {
+        harness.liveButton()!.props.onPress();
+        harness.render();
+        expect(harness.liveButton()).toBeUndefined();
+      }
+    }
+    expect(onScrollBack).toHaveBeenCalledTimes(4);
+  } finally {
+    state.dispose();
+  }
+});
+
 it("pans a tall terminal frame and scrolls the program at its edge in the same drag", async () => {
   const height = terminalGeometry.lineHeights[1]!;
   const screen = Array.from({ length: 80 }, (_, index) => ({ id: index + 1, spans: [] }));
