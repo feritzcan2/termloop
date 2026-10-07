@@ -60,6 +60,12 @@ export function supportsTerminalWheel(tracking: TerminalMouseTracking, sgrEncodi
   return sgrEncoding && (tracking === "normal" || tracking === "button" || tracking === "any");
 }
 
+/// Codex owns its transcript position. Ctrl+End returns it to following new
+/// output; a native ScrollView command only moves the phone's current frame.
+export function terminalLiveSequence(agentId: string | null | undefined, tracking: TerminalMouseTracking, sgrEncoding: boolean): string {
+  return agentId === "codex" && supportsTerminalWheel(tracking, sgrEncoding) ? `${ESC}[1;5F` : "";
+}
+
 /// Pan a desktop-sized frame on the phone first, then send motion beyond its
 /// edges to the program. This also works on platforms without native bounce.
 /// Remainder is finger travel in line heights; lines counts emitted wheel steps.

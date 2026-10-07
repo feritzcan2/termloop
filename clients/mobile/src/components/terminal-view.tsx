@@ -46,13 +46,14 @@ import { fontFamily } from "@/theme/typography";
 ///
 /// Long lines scroll horizontally rather than wrapping, because wrapping a 300-column
 /// diff at 39 characters produces a column of fragments nobody can read.
-export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScroll = false }: {
+export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLive, programScroll = false }: {
   buffer: TerminalBuffer;
   fontSizeIndex: number;
   capNotice: string | undefined;
   /// Asks the running program to scroll its own history. Absent for a stream with no
   /// history of its own to ask about.
   onScrollBack?: (lines: number) => void;
+  onReturnToLive?: () => void;
   programScroll?: boolean;
 }) {
   const theme = useTheme();
@@ -61,6 +62,8 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  const programReading = useRef(false);
+  const returningToLive = useRef(false);
   const [unread, setUnread] = useState(false);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });
   const [initialPosition, setInitialPosition] = useState<InitialTerminalPosition>("waitingForContent");
@@ -96,6 +99,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
     const reset = () => { drag.current = { y: 0, remainder: 0, active: false }; };
     const move = (y: number) => {
       if (!directScroll || initialPosition !== "ready") return;
+      returningToLive.current = false;
       const frame = dragViewport.current;
       const { offset, lines, remainder } = terminalDragScroll(
         y - drag.current.y, lineHeight, drag.current.remainder, frame.offset, frame.maxOffset,
@@ -103,12 +107,17 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
       drag.current = { y, remainder, active: true };
       if (offset !== frame.offset) {
         frame.offset = offset;
-        const bottom = offset >= frame.maxOffset;
+        const bottom = offset >= frame.maxOffset && !programReading.current;
         atBottomRef.current = bottom;
         setAtBottom(bottom);
         if (bottom) setUnread(false);
         setViewport((current) => ({ ...current, offset }));
         scroll.current?.scrollTo({ y: offset, animated: false });
+      }
+      if (lines < 0) {
+        programReading.current = true;
+        atBottomRef.current = false;
+        setAtBottom(false);
       }
       if (lines !== 0) onScrollBack?.(lines);
     };
@@ -132,6 +141,15 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
   }, [buffer.outputRevision]);
 
   useLayoutEffect(() => {
+    if (returningToLive.current) {
+      const offset = Math.max(0, count * lineHeight + 2 * terminalGeometry.contentPadding
+        + (buffer.screen === undefined && buffer.pending.length !== 0 ? lineHeight : 0) - viewport.height);
+      if (offset !== viewport.offset) setViewport((current) => ({ ...current, offset }));
+      reading.current = { page, offset, lineHeight };
+      // The recent page must be committed before native scrolling can target it.
+      scroll.current?.scrollToEnd({ animated: false });
+      return;
+    }
     const previous = reading.current;
     let offset = viewport.offset;
     if (previous && previous.page.kind === page.kind && !atBottomRef.current
@@ -147,7 +165,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
       }
     }
     reading.current = { page, offset, lineHeight };
-  }, [page, viewport.offset, lineHeight]);
+  }, [page, viewport.offset, viewport.height, lineHeight, count, buffer.screen, buffer.pending]);
 
   const loadEarlier = useCallback(() => {
     if (initialPosition !== "ready" || loadingPage.current || page.start === 0) return;
@@ -159,22 +177,33 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
   }, [initialPosition, page]);
 
   const jumpToLive = useCallback(() => {
+    returningToLive.current = true;
+    programReading.current = false;
+    scrolling.current = false;
+    requested.current = { direction: 0, lines: 0 };
     setUnread(false);
     setAtBottom(true);
     atBottomRef.current = true;
     loadingPage.current = false;
     pendingPosition.current = undefined;
     setHistory(recentTerminalHistory(historyLines, historyKind));
-    scroll.current?.scrollToEnd({ animated: false });
-  }, [historyLines, historyKind]);
+    onReturnToLive?.();
+  }, [historyLines, historyKind, onReturnToLive]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (loadingPage.current || drag.current.active) return;
     pendingPosition.current = undefined;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    if (returningToLive.current) {
+      const expectedHeight = count * lineHeight + 2 * terminalGeometry.contentPadding
+        + (buffer.screen === undefined && buffer.pending.length !== 0 ? lineHeight : 0);
+      if (Math.abs(contentSize.height - expectedHeight) > 1
+        || Math.abs(contentOffset.y - Math.max(0, expectedHeight - layoutMeasurement.height)) > 1) return;
+      returningToLive.current = false;
+    }
     const movingUp = contentOffset.y < viewport.offset;
     reading.current = { page, offset: Math.max(0, contentOffset.y), lineHeight };
-    const bottom = contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
+    const bottom = !programReading.current && contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     if (bottom) setUnread(false);
@@ -197,7 +226,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page.start, viewport.offset]);
+  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page, viewport.offset, count, buffer.screen, buffer.pending]);
 
   const onContentChange = useCallback(() => {
     if (pendingPosition.current !== undefined) {
@@ -245,6 +274,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, programScrol
         }}
         onScroll={onScroll} scrollEventThrottle={16}
         onScrollBeginDrag={() => {
+          returningToLive.current = false;
           scrolling.current = true;
           pagedDuringGesture.current = false;
           pendingPosition.current = undefined;
