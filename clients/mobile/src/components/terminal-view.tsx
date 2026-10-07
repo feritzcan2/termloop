@@ -62,7 +62,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
-  const programReading = useRef(false);
+  const [programReading, setProgramReading] = useState(false);
   const returningToLive = useRef(false);
   const [unread, setUnread] = useState(false);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });
@@ -78,7 +78,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const historyLines = buffer.screen ?? outputLines;
   const historyKind = buffer.screen === undefined ? "stream" : "screen";
   const [history, setHistory] = useState(() => recentTerminalHistory(historyLines, historyKind));
-  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom);
+  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom, programReading);
   if (page !== history) setHistory(page);
   const count = page.rows.length - page.start;
   const directScroll = canScrollBack && programScroll && page.start === 0;
@@ -107,18 +107,14 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
       drag.current = { y, remainder, active: true };
       if (offset !== frame.offset) {
         frame.offset = offset;
-        const bottom = offset >= frame.maxOffset && !programReading.current;
+        const bottom = offset >= frame.maxOffset;
         atBottomRef.current = bottom;
         setAtBottom(bottom);
         if (bottom) setUnread(false);
         setViewport((current) => ({ ...current, offset }));
         scroll.current?.scrollTo({ y: offset, animated: false });
       }
-      if (lines < 0) {
-        programReading.current = true;
-        atBottomRef.current = false;
-        setAtBottom(false);
-      }
+      if (lines < 0) setProgramReading(true);
       if (lines !== 0) onScrollBack?.(lines);
     };
     return PanResponder.create({
@@ -136,9 +132,9 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   }, [directScroll, initialPosition, lineHeight, onScrollBack]);
 
   useEffect(() => {
-    if (lastRevision.current !== buffer.outputRevision && !atBottomRef.current) setUnread(true);
+    if (lastRevision.current !== buffer.outputRevision && (!atBottomRef.current || programReading)) setUnread(true);
     lastRevision.current = buffer.outputRevision;
-  }, [buffer.outputRevision]);
+  }, [buffer.outputRevision, programReading]);
 
   useLayoutEffect(() => {
     if (returningToLive.current) {
@@ -152,7 +148,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     }
     const previous = reading.current;
     let offset = viewport.offset;
-    if (previous && previous.page.kind === page.kind && !atBottomRef.current
+    if (previous && previous.page.kind === page.kind && !atBottomRef.current && !programReading
       && (previous.page !== page || previous.lineHeight !== lineHeight)) {
       const anchor = terminalReadingAnchor(previous.page, previous.offset, previous.lineHeight);
       if (anchor !== undefined) offset = terminalReadingOffset(page, anchor, lineHeight);
@@ -165,7 +161,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
       }
     }
     reading.current = { page, offset, lineHeight };
-  }, [page, viewport.offset, viewport.height, lineHeight, count, buffer.screen, buffer.pending]);
+  }, [page, viewport.offset, viewport.height, lineHeight, count, buffer.screen, buffer.pending, programReading]);
 
   const loadEarlier = useCallback(() => {
     if (initialPosition !== "ready" || loadingPage.current || page.start === 0) return;
@@ -178,7 +174,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
 
   const jumpToLive = useCallback(() => {
     returningToLive.current = true;
-    programReading.current = false;
+    setProgramReading(false);
     scrolling.current = false;
     requested.current = { direction: 0, lines: 0 };
     setUnread(false);
@@ -203,7 +199,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     }
     const movingUp = contentOffset.y < viewport.offset;
     reading.current = { page, offset: Math.max(0, contentOffset.y), lineHeight };
-    const bottom = !programReading.current && contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
+    const bottom = contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     if (bottom) setUnread(false);
@@ -247,8 +243,8 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
       });
       return;
     }
-    if (atBottomRef.current) scroll.current?.scrollToEnd({ animated: false });
-  }, [hasContent, initialPosition, loading?.label]);
+    if (atBottomRef.current && !programReading) scroll.current?.scrollToEnd({ animated: false });
+  }, [hasContent, initialPosition, loading?.label, programReading]);
 
   useEffect(() => {
     if (!hasContent && !loading) setInitialPosition("ready");
@@ -301,7 +297,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         <Text style={styles.loadingLabel}>{loading.label}</Text>
         {loading.percent === undefined ? null : <Text style={styles.loadingProgress}>{loading.percent}%</Text>}
       </View> : null}
-      {atBottom ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={styles.jump}>
+      {atBottom && !programReading ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={styles.jump}>
         <Text style={styles.jumpGlyph}>{unread ? "New output · " : ""}↓ Live</Text>
       </Pressable>}
     </View>
