@@ -2,7 +2,7 @@
   "expo": {
     "name": "TermLoop",
     "slug": "termloop-mobile",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "scheme": "termloop",
@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "20261002060648",
+      "buildNumber": "20261008093649",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
