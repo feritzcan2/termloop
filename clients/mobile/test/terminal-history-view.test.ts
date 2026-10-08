@@ -394,6 +394,94 @@ function finger(dy: number, dx = 0) {
   return { dy, dx, numberActiveTouches: 1 };
 }
 
+it("keeps following live through delayed native scroll events and a later viewport resize", async () => {
+  const screen = Array.from({ length: 180 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const buffer = { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" as const };
+  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined });
+  const contentHeight = 180 * terminalGeometry.lineHeights[1]! + 2 * terminalGeometry.contentPadding;
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(1000, contentHeight));
+  view.onScrollEndDrag();
+  harness.render();
+  harness.liveButton()!.props.onPress();
+  view = harness.render();
+  // Native acknowledges the jump, then delivers an older momentum event.
+  view.onScroll(scrollEvent(contentHeight - 600, contentHeight));
+  view = harness.render();
+  harness.scrollToEnd.mockClear();
+  view.onScroll(scrollEvent(1000, contentHeight));
+  view = harness.render();
+  harness.frames();
+  expect(harness.liveButton()).toBeUndefined();
+  expect(harness.renderedKeys()).toContain("180");
+  expect(harness.scrollToEnd).toHaveBeenCalled();
+  // Keyboard/layout changes do not resize the content, but change its live edge.
+  harness.scrollToEnd.mockClear();
+  view.onLayout({ nativeEvent: { layout: { height: 350 } } });
+  view = harness.render();
+  expect(harness.scrollToEnd).toHaveBeenCalled();
+  expect(harness.renderedKeys()).toContain("180");
+  // Only a new user drag may leave live-follow mode.
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(1000, contentHeight));
+  harness.render();
+  expect(harness.liveButton()).toBeDefined();
+});
+
+it("retries a jump clamped by native layout even when there is no content-size event", async () => {
+  const screen = Array.from({ length: 180 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const onReturnToLive = vi.fn();
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" },
+    fontSizeIndex: 1, capNotice: undefined, onReturnToLive,
+  });
+  const contentHeight = 180 * terminalGeometry.lineHeights[1]! + 2 * terminalGeometry.contentPadding;
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScroll(scrollEvent(1000, contentHeight));
+  harness.render();
+  let nativeOffset = 1000;
+  let nativeLayoutReady = false;
+  harness.scrollToEnd.mockImplementation(() => {
+    if (nativeLayoutReady) nativeOffset = contentHeight - 600;
+  });
+  harness.liveButton()!.props.onPress();
+  harness.render();
+  expect(nativeOffset).toBe(1000);
+  nativeLayoutReady = true;
+  harness.frames();
+  expect(nativeOffset).toBe(contentHeight - 600);
+  expect(onReturnToLive).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])("cancels queued live positioning when a new drag starts (program: %s)", async (programScroll) => {
+  const screen = Array.from({ length: 80 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" },
+    fontSizeIndex: 1, capNotice: undefined, onScrollBack: vi.fn(), programScroll,
+  });
+  const contentHeight = 80 * terminalGeometry.lineHeights[1]! + 2 * terminalGeometry.contentPadding;
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScroll(scrollEvent(100, contentHeight));
+  harness.render();
+  harness.liveButton()!.props.onPress();
+  view = harness.render();
+  if (programScroll) harness.gesture().onPanResponderGrant({}, finger(0));
+  else view.onScrollBeginDrag();
+  harness.scrollToEnd.mockClear();
+  harness.frames();
+  expect(harness.scrollToEnd).not.toHaveBeenCalled();
+});
+
 async function terminalHarness(props: Props) {
   const slots: any[] = [];
   let cursor = 0;
