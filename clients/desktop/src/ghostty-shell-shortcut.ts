@@ -4,6 +4,7 @@ export type GhosttyShellShortcut =
   | "commandPalette"
   | "newTerminal"
   | "renameSession"
+  | "forkSession"
   | "focusPreviousPane"
   | "focusNextPane"
   | "project.1"
@@ -22,6 +23,7 @@ const GHOSTTY_SHELL_SHORTCUTS: ReadonlySet<string> = new Set([
   "commandPalette",
   "newTerminal",
   "renameSession",
+  "forkSession",
   "focusPreviousPane",
   "focusNextPane",
   ...Array.from({ length: 9 }, (_, index) => `project.${index + 1}`),
@@ -40,6 +42,7 @@ export const TERMLOOP_NATIVE_INPUT_POLICY = {
     { keyCode: 0x23, modifiers: 9, action: "commandPalette" },
     { keyCode: 0x11, modifiers: 8, action: "newTerminal" },
     { keyCode: 0x0f, modifiers: 8, action: "renameSession" },
+    { keyCode: 0x03, modifiers: 8, action: "forkSession" },
     { keyCode: 0x7b, modifiers: 12, action: "focusPreviousPane" },
     { keyCode: 0x7c, modifiers: 12, action: "focusNextPane" },
     ...[0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1a, 0x1c, 0x19].map((keyCode, index) => ({

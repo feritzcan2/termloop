@@ -37,6 +37,7 @@ import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
+import { selectedAgentForkCommand } from "./session-fork-command.js";
 import { QuickActionComposer } from "./QuickActionComposer.js";
 import { readProviderShortcuts, readQuickActionShortcuts, removeQuickActionShortcut, saveProviderShortcut, saveQuickActionShortcut, updateQuickActionShortcut, type QuickActionShortcut, type QuickActionShortcutSelection } from "../quick-action-shortcuts.js";
 import { AgentShortcutSettings } from "./AgentShortcutSettings.js";
@@ -392,6 +393,17 @@ export function openWorkspaceSession(
   dismissChanges();
   if (!preserveStagePage) dismissStagePages();
   navigate(sessionId);
+}
+
+export function resumeWorkspaceSession(
+  selectSession: (sessionId: string) => void,
+  resumeSession: (sessionId: string) => Promise<void>,
+  sessionId: string,
+): void {
+  selectSession(sessionId);
+  // Start recovery in the click itself. A delayed paint must not leave a
+  // selected, exited Session waiting for another click on Retry.
+  void resumeSession(sessionId);
 }
 
 /// An improver chip lives inside an assistant page, but its destination is the
@@ -936,11 +948,7 @@ export function Shell(props: ShellProps) {
     };
   }, [menuSession, props.agentCapabilities, props.projectSessions, props.requestAgentAskTo, props.requestAgentHandoverTo]);
   const retrySession = useCallback((sessionId: string) => {
-    // Put the preserved terminal on screen before handing its PTY from the
-    // continuation shell back to the provider. This makes the actual Claude
-    // or Codex retry output visible even when Retry was clicked on another row.
-    selectSession(sessionId);
-    requestAnimationFrame(() => { void props.resumeSession(sessionId); });
+    resumeWorkspaceSession(selectSession, props.resumeSession, sessionId);
   }, [props.resumeSession, selectSession]);
   const navigateSession = useCallback(
     (sessionId: string) => openWorkspaceSession(
@@ -1233,6 +1241,7 @@ export function Shell(props: ShellProps) {
       danger: true,
       perform: () => { if (props.selectedSession) void props.dismissSession(props.selectedSession.id); },
     },
+    selectedAgentForkCommand(props.selectedSession, disabled, props.forkSession, setProviderHistoryRepairSessionId),
     {
       id: "layout.splitRight", title: "Split Pane Right", detail: "Create an empty pane beside the active pane.", group: "Layout", keywords: ["horizontal"],
       disabled: !props.layout || layoutPanes.length >= MAX_LAYOUT_PANES, perform: () => props.splitActivePane("horizontal"),
@@ -1263,7 +1272,7 @@ export function Shell(props: ShellProps) {
   selectProjectRef.current = selectProject;
 
   useEffect(() => {
-    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "focusPreviousPane", "focusNextPane"];
+    const shortcutIds: readonly ShellShortcutId[] = ["newTerminal", "renameSession", "forkSession", "focusPreviousPane", "focusNextPane"];
     const keyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (matchesShellShortcut(event, "commandPalette", platform)) {
@@ -1292,6 +1301,7 @@ export function Shell(props: ShellProps) {
       const command = shortcutId ? commandsRef.current.find((candidate) => candidate.shortcutId === shortcutId) : undefined;
       if (!command || command.disabled) return;
       event.preventDefault();
+      if (shortcutId === "forkSession" && event.repeat) return;
       void command.perform();
     };
     const keyUp = (event: KeyboardEvent) => doubleShiftRef.current.keyUp(event);

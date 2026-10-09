@@ -3,9 +3,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import type { DeletedSessionDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
+import type { AgentLaunchPreviewResult, DeletedSessionDto, SessionDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { Session } from "../src/renderer/model.js";
 import { HistoryRail, inactiveHistorySessions } from "../src/renderer/ui/HistoryRail.js";
+import { resumeWorkspaceSession } from "../src/renderer/ui/Shell.js";
+import { retryAgentSession, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
 
 function agent(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -77,6 +79,74 @@ function externalEntries(count: number): SessionHistoryListResult["entries"] {
 }
 
 describe("Session History rail", () => {
+  it("resumes an exited Agent from History without waiting for terminal paint or a second Retry", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const animationFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", animationFrame);
+    const calls: string[] = [];
+    const session = agent("exited-codex");
+    const api: SessionResumeApi = {
+      sessionPreviewResumeAgent: vi.fn(async (id) => {
+        calls.push(`preview:${id}`);
+        return { launch_ticket: "history-resume-ticket", manifest: { digest: "sha256:test" } } as AgentLaunchPreviewResult;
+      }),
+      sessionResumeAgent: vi.fn(async (id, ticket) => {
+        calls.push(`resume:${id}:${ticket}`);
+        return { ...session, lifecycle_state: "running", runtime_epoch: 2 } as SessionDto;
+      }),
+    };
+    const selectSession = (id: string) => { calls.push(`select:${id}`); };
+    let resumed: SessionDto | undefined;
+    const resumeSession = async (id: string) => { resumed = await retryAgentSession(api, id); };
+
+    try {
+      await act(async () => root.render(createElement(HistoryRail, {
+        projectId: "project-1",
+        projectPath: "/repo/exited-codex",
+        projectBranch: "develop",
+        currentCwd: "/repo/exited-codex",
+        sessions: [session],
+        archivedSessions: [],
+        deletedSessions: [],
+        favoriteSessionIds: new Set<string>(),
+        termLoopHistoryLoading: false,
+        selectedSessionId: undefined,
+        disabled: false,
+        load: async () => ({ ...externalHistory, entries: [] }),
+        loadTermLoopPreview: async () => termLoopPreview,
+        resumeExternal: async () => undefined,
+        selectSession,
+        resumeSession: (id) => resumeWorkspaceSession(selectSession, resumeSession, id),
+        restoreArchivedSession: vi.fn(),
+        deleteArchivedSession: vi.fn(),
+        restoreDeletedSession: vi.fn(),
+      })));
+
+      const button = container.querySelector<HTMLButtonElement>(".history-row .history-action")!;
+      expect(button.textContent).toBe("Resume");
+      await act(async () => {
+        button.click();
+        // No animation frame is dispatched: the request belongs to the click.
+        expect(calls).toEqual(["select:exited-codex", "preview:exited-codex"]);
+      });
+      expect(calls).toEqual([
+        "select:exited-codex",
+        "preview:exited-codex",
+        "resume:exited-codex:history-resume-ticket",
+      ]);
+      expect(resumed).toMatchObject({ lifecycle_state: "running", runtime_epoch: 2 });
+      expect(animationFrame).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    }
+  });
+
   it("projects inactive ordinary, Ask-To, and forked TermLoop Agents", () => {
     const stopped = agent("stopped");
     const helper = agent("helper", { ask_to_source_session_id: "stopped" });

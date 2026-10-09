@@ -60,6 +60,22 @@ describe("keyboard command surface", () => {
     expect(nativeShellCommandId("renameSession")).toBe("renameSession");
   });
 
+  it("forks with Cmd+F on macOS and rejects conflicting modifiers", () => {
+    expect(shortcutLabel("forkSession", "mac")).toBe("⌘F");
+    expect(matchesShellShortcut(key("mac", "KeyF"), "forkSession", "mac")).toBe(true);
+    for (const modifiers of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true }, { metaKey: false }]) {
+      expect(matchesShellShortcut(key("mac", "KeyF", modifiers), "forkSession", "mac")).toBe(false);
+    }
+    expect(nativeShellCommandId("forkSession")).toBe("forkSession");
+  });
+
+  it.each(["windows", "linux"] as const)("preserves Ctrl+F terminal cursor movement on %s", (platform) => {
+    expect(shortcutLabel("forkSession", platform)).toBe("Ctrl+Shift+F");
+    expect(matchesShellShortcut(key(platform, "KeyF"), "forkSession", platform)).toBe(false);
+    expect(matchesShellShortcut(key(platform, "KeyF", { shiftKey: true }), "forkSession", platform)).toBe(true);
+    expect(matchesShellShortcut(key(platform, "KeyF", { shiftKey: true, altKey: true }), "forkSession", platform)).toBe(false);
+  });
+
   it.each(["windows", "linux"] as const)("preserves Ctrl+R terminal history search on %s", (platform) => {
     expect(shortcutLabel("renameSession", platform)).toBe("Ctrl+Shift+R");
     expect(matchesShellShortcut(key(platform, "KeyR"), "renameSession", platform)).toBe(false);
