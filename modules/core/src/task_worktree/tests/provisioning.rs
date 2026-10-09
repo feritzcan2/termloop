@@ -68,6 +68,167 @@ fn worktree_provisioning_is_durable_and_completed_retries_do_not_write() {
 }
 
 #[test]
+fn fresh_create_provisioning_fetches_the_remote_base_before_resolving_it() {
+    let mut fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&runner, &fixture.project_directory)
+        .unwrap();
+    let upstream = fixture.fixture_root.join("checkouts/upstream");
+    std::fs::create_dir_all(&upstream).unwrap();
+    termloop_gitio::test_support::initialize_repository(&runner, &upstream).unwrap();
+    termloop_gitio::test_support::set_remote_url(
+        &runner,
+        &fixture.project_directory,
+        "origin",
+        &upstream,
+    )
+    .unwrap();
+    termloop_gitio::test_support::commit_empty(&runner, &upstream, "upstream advanced").unwrap();
+    let main = GitRefName::from_bytes(b"refs/heads/main".to_vec()).unwrap();
+    let upstream_tip = runner.resolve_ref(&upstream, &main).unwrap().unwrap();
+    let tracking = GitRefName::from_bytes(b"refs/remotes/origin/main".to_vec()).unwrap();
+    let stale = runner
+        .resolve_ref(&fixture.project_directory, &tracking)
+        .unwrap()
+        .unwrap();
+    assert_ne!(
+        stale, upstream_tip,
+        "the local tracking ref starts out stale"
+    );
+
+    let task = fixture.create_task("Fetch before provision", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    let destination = fixture
+        .project_directory
+        .with_file_name(format!("fetched-worktree-{}", Uuid::new_v4()));
+    let result = fixture
+        .runtime
+        .provision_task_worktree(json!({
+            "operationId": Uuid::new_v4().to_string(),
+            "taskId": task_id,
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": "feature/fetched",
+            "branchMode": "create",
+            "baseRef": "refs/remotes/origin/main",
+        }))
+        .unwrap();
+    assert!(result["provisioning"].is_null());
+
+    let expected = String::from_utf8(upstream_tip.as_bytes().to_vec()).unwrap();
+    let managed = fixture.runtime.store.managed_worktrees();
+    assert_eq!(managed.len(), 1);
+    assert_eq!(
+        managed[0].normalized_spec.base_oid.as_deref(),
+        Some(expected.as_str())
+    );
+    assert_eq!(
+        runner
+            .resolve_ref(&fixture.project_directory, &tracking)
+            .unwrap()
+            .unwrap(),
+        upstream_tip,
+        "the tracking ref is refreshed from the remote"
+    );
+    let created = GitRefName::from_bytes(b"refs/heads/feature/fetched".to_vec()).unwrap();
+    assert_eq!(
+        runner
+            .resolve_ref(&fixture.project_directory, &created)
+            .unwrap()
+            .unwrap(),
+        upstream_tip,
+        "the new branch starts at the remote tip, not the stale tracking ref"
+    );
+
+    drop(fixture);
+    let _ = std::fs::remove_dir_all(destination);
+}
+
+#[test]
+fn fresh_create_provisioning_fails_closed_when_the_remote_cannot_be_fetched() {
+    let mut fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&runner, &fixture.project_directory)
+        .unwrap();
+    let absent = fixture.fixture_root.join("checkouts/absent-upstream");
+    termloop_gitio::test_support::set_remote_url(
+        &runner,
+        &fixture.project_directory,
+        "origin",
+        &absent,
+    )
+    .unwrap();
+    let task = fixture.create_task("Unreachable remote", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    let destination = fixture
+        .project_directory
+        .with_file_name(format!("unreachable-worktree-{}", Uuid::new_v4()));
+    let revision = fixture.runtime.state_revision();
+
+    let error = fixture
+        .runtime
+        .provision_task_worktree(json!({
+            "operationId": Uuid::new_v4().to_string(),
+            "taskId": task_id,
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": "feature/unreachable",
+            "branchMode": "create",
+            "baseRef": "refs/remotes/origin/main",
+        }))
+        .unwrap_err();
+    assert!(matches!(error, CoreError::RemoteUnavailable), "{error:?}");
+    assert_eq!(fixture.runtime.state_revision(), revision);
+    assert!(fixture.runtime.store.provisioning_operations().is_empty());
+    assert!(fixture.runtime.store.managed_worktrees().is_empty());
+    let created = GitRefName::from_bytes(b"refs/heads/feature/unreachable".to_vec()).unwrap();
+    assert!(
+        runner
+            .resolve_ref(&fixture.project_directory, &created)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!destination.exists());
+}
+
+#[test]
+fn fresh_create_provisioning_rejects_a_base_branch_the_remote_no_longer_has() {
+    let mut fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::initialize_repository(&runner, &fixture.project_directory)
+        .unwrap();
+    // A stale tracking ref for a branch that does not exist upstream any more.
+    termloop_gitio::test_support::update_ref(
+        &runner,
+        &fixture.project_directory,
+        "refs/remotes/origin/gone",
+        "HEAD",
+    )
+    .unwrap();
+    let task = fixture.create_task("Deleted upstream branch", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    let destination = fixture
+        .project_directory
+        .with_file_name(format!("gone-worktree-{}", Uuid::new_v4()));
+
+    let error = fixture
+        .runtime
+        .provision_task_worktree(json!({
+            "operationId": Uuid::new_v4().to_string(),
+            "taskId": task_id,
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": "feature/gone",
+            "branchMode": "create",
+            "baseRef": "refs/remotes/origin/gone",
+        }))
+        .unwrap_err();
+    assert!(matches!(error, CoreError::BranchNotFound), "{error:?}");
+    assert!(fixture.runtime.store.provisioning_operations().is_empty());
+    assert!(!destination.exists());
+}
+
+#[test]
 fn fresh_existing_destination_is_rejected_before_journaling() {
     let mut fixture = Fixture::new();
     let runner = GitRunner::discover().unwrap();

@@ -18,6 +18,7 @@ pub enum GitOperation {
     ReadReflog,
     DeleteRef,
     AddWorktree,
+    FetchRemoteBranch,
     RemoveWorktree,
     RepairWorktree,
     ListChanges,
@@ -46,6 +47,7 @@ impl std::fmt::Display for GitOperation {
             Self::ReadReflog => "readReflog",
             Self::DeleteRef => "deleteRef",
             Self::AddWorktree => "addWorktree",
+            Self::FetchRemoteBranch => "fetchRemoteBranch",
             Self::RemoveWorktree => "removeWorktree",
             Self::RepairWorktree => "repairWorktree",
             Self::ListChanges => "listChanges",
@@ -86,6 +88,10 @@ pub enum GitError {
     PathConflict,
     WorktreeLocked,
     MissingRegistration,
+    /// The remote reported that the requested branch does not exist.
+    RemoteRefMissing,
+    /// The remote could not be reached, authenticated, or read.
+    RemoteUnavailable,
     PermissionDenied {
         operation: GitOperation,
     },
@@ -127,6 +133,10 @@ impl std::fmt::Display for GitError {
             Self::MissingRegistration => {
                 formatter.write_str("the worktree registration is missing")
             }
+            Self::RemoteRefMissing => {
+                formatter.write_str("the requested branch does not exist on the remote")
+            }
+            Self::RemoteUnavailable => formatter.write_str("the remote could not be fetched"),
             Self::PermissionDenied { operation } => {
                 write!(
                     formatter,

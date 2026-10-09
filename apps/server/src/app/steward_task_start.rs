@@ -506,6 +506,7 @@ fn retryable_for(error: &CoreError, fallback: bool) -> bool {
             | CoreError::ConversationBusy
             | CoreError::GitObservationTimedOut
             | CoreError::RepositoryUnavailable
+            | CoreError::RemoteUnavailable
             | CoreError::GitUnavailable
             | CoreError::Store(_)
             | CoreError::Terminal(_)

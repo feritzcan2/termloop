@@ -14,7 +14,7 @@ use termloop_store::{BeginProvisioningOutcome, ProvisioningCommit};
 use uuid::Uuid;
 
 use super::git_mapping::{
-    local_branch_ref, map_git_mutation_error, map_git_observation_error,
+    local_branch_ref, map_git_fetch_error, map_git_mutation_error, map_git_observation_error,
     map_repository_input_error, path_entry_is_absent, path_string, provisioning_failure_kind,
     worktree_registered_at,
 };
@@ -993,6 +993,13 @@ pub(super) fn observe_provisioning_spec(
             .map_err(map_git_observation_error)?;
             prior.base_oid.clone()
         } else {
+            // A fresh `create` always starts from the remote's current tip,
+            // never from whatever the last manual fetch left behind. The fetch
+            // is mandatory and fails closed: without a successful refresh the
+            // stale tracking ref is not resolved at all.
+            runner
+                .fetch_remote_branch(&identity.resolved_path, &reference)
+                .map_err(map_git_fetch_error)?;
             let oid = runner
                 .resolve_ref(&identity.resolved_path, &reference)
                 .map_err(map_git_observation_error)?

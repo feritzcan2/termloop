@@ -38,7 +38,7 @@ pub use health::{
     ChangeState, ContentState, LockState, SubmoduleFacts, SubmoduleState, UpstreamState,
     WorktreeHealthObservation, WorktreeObservationBudget, WorktreeStatusFacts,
 };
-pub use mutation::{GitReflogMessage, RefRecoveryFacts, ReflogEntry};
+pub use mutation::{FETCH_GIT_DEADLINE, GitReflogMessage, RefRecoveryFacts, ReflogEntry};
 pub use pre_image::{PreImageContent, PreImageObservation, PreImageRevision};
 pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;

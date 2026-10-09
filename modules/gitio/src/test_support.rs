@@ -14,9 +14,68 @@ pub fn initialize_repository(runner: &GitRunner, path: &Path) -> Result<(), GitE
         path,
         ["init", "--initial-branch=main"],
     )?;
+    commit_empty(runner, path, "fixture")?;
+    // Provisioning fetches the base branch from its remote before resolving it,
+    // so the fixture needs a reachable `origin`. Pointing the remote at the
+    // repository itself keeps the fixture hermetic: no network, no second
+    // checkout, and `refs/remotes/origin/main` always has a real upstream.
     runner.checked(
         GitOperation::CreateRef,
         path,
+        [
+            OsString::from("remote"),
+            OsString::from("add"),
+            OsString::from("origin"),
+            termloop_platform::subprocess_path_argument(path).into_os_string(),
+        ],
+    )?;
+    update_ref(runner, path, "refs/remotes/origin/main", "HEAD")?;
+    Ok(())
+}
+
+/// Repoints an existing remote at another local repository so a test can
+/// model an upstream that advanced, lost a branch, or disappeared.
+pub fn set_remote_url(
+    runner: &GitRunner,
+    repository: &Path,
+    remote: &str,
+    url_path: &Path,
+) -> Result<(), GitError> {
+    runner.checked(
+        GitOperation::CreateRef,
+        repository,
+        [
+            OsString::from("remote"),
+            OsString::from("set-url"),
+            OsString::from(remote),
+            termloop_platform::subprocess_path_argument(url_path).into_os_string(),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_ref(
+    runner: &GitRunner,
+    repository: &Path,
+    reference: &str,
+    target: &str,
+) -> Result<(), GitError> {
+    runner.checked(
+        GitOperation::CreateRef,
+        repository,
+        [
+            OsString::from("update-ref"),
+            OsString::from(reference),
+            OsString::from(target),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn commit_empty(runner: &GitRunner, repository: &Path, message: &str) -> Result<(), GitError> {
+    runner.checked(
+        GitOperation::CreateRef,
+        repository,
         [
             OsString::from("-c"),
             OsString::from("user.name=TermLoop Fixture"),
@@ -25,13 +84,8 @@ pub fn initialize_repository(runner: &GitRunner, path: &Path) -> Result<(), GitE
             OsString::from("commit"),
             OsString::from("--allow-empty"),
             OsString::from("-m"),
-            OsString::from("fixture"),
+            OsString::from(message),
         ],
-    )?;
-    runner.checked(
-        GitOperation::CreateRef,
-        path,
-        ["update-ref", "refs/remotes/origin/main", "HEAD"],
     )?;
     Ok(())
 }

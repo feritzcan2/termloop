@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::path::Path;
+use std::time::Duration;
 
 use termloop_platform::CommandTermination;
 
@@ -7,6 +8,12 @@ use crate::command::strip_git_line_cr;
 use crate::error::{command_failure, is_permission_denied};
 use crate::repository::{GitRefName, ObjectId, parse_oid};
 use crate::{GitError, GitOperation, GitRunner};
+
+/// Network-bound fetch of one exact remote branch gets its own bound: it is a
+/// mutation stage that talks to a remote, so the interactive observation
+/// budget would be far too small, while an unbounded transfer would stall
+/// provisioning indefinitely.
+pub const FETCH_GIT_DEADLINE: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitReflogMessage(Vec<u8>);
@@ -145,6 +152,66 @@ impl GitRunner {
         }
         Err(command_failure(
             GitOperation::AddWorktree,
+            outcome.termination,
+            &outcome.stderr,
+        ))
+    }
+
+    /// Refreshes exactly one remote-tracking ref from its remote before a
+    /// caller resolves it as a base.
+    ///
+    /// `reference` must be the exact `refs/remotes/<remote>/<branch>` ref the
+    /// caller is about to resolve. Only that single refspec is fetched: no
+    /// tags, no submodules, no pruning, no `FETCH_HEAD` write, no automatic
+    /// maintenance, and no configured-refspec side effects. The remote-tracking
+    /// ref is force-updated so a rewritten upstream branch still lands exactly
+    /// where the remote currently points.
+    pub fn fetch_remote_branch(
+        &self,
+        repository_path: &Path,
+        reference: &GitRefName,
+    ) -> Result<(), GitError> {
+        let (remote, branch) = split_remote_tracking_ref(reference.as_bytes())?;
+        let mut refspec = b"+refs/heads/".to_vec();
+        refspec.extend_from_slice(branch);
+        refspec.push(b':');
+        refspec.extend_from_slice(reference.as_bytes());
+        let remote = process_value(remote, GitOperation::FetchRemoteBranch)?;
+        let refspec = process_value(&refspec, GitOperation::FetchRemoteBranch)?;
+        let outcome = self.execute_with_limits(
+            GitOperation::FetchRemoteBranch,
+            repository_path,
+            [
+                OsString::from("fetch"),
+                OsString::from("--quiet"),
+                OsString::from("--no-tags"),
+                OsString::from("--no-recurse-submodules"),
+                OsString::from("--no-write-fetch-head"),
+                OsString::from("--no-auto-maintenance"),
+                remote,
+                refspec,
+            ],
+            FETCH_GIT_DEADLINE,
+            self.output_limit(),
+        )?;
+        if outcome.success() {
+            return Ok(());
+        }
+        if contains(&outcome.stderr, b"couldn't find remote ref")
+            || contains(&outcome.stderr, b"no such ref was fetched")
+        {
+            return Err(GitError::RemoteRefMissing);
+        }
+        if is_remote_unavailable(&outcome.stderr) {
+            return Err(GitError::RemoteUnavailable);
+        }
+        if is_permission_denied(&outcome.stderr) {
+            return Err(GitError::PermissionDenied {
+                operation: GitOperation::FetchRemoteBranch,
+            });
+        }
+        Err(command_failure(
+            GitOperation::FetchRemoteBranch,
             outcome.termination,
             &outcome.stderr,
         ))
@@ -351,6 +418,60 @@ impl GitRunner {
             ))
         }
     }
+}
+
+/// Splits an exact `refs/remotes/<remote>/<branch>` ref into its remote name
+/// and branch name. The branch may itself contain `/`. `HEAD` is refused
+/// because `refs/remotes/<remote>/HEAD` is a symbolic pointer, not a branch,
+/// and leading `-` components are refused so neither value can be read as an
+/// option by `git fetch`.
+pub(crate) fn split_remote_tracking_ref(reference: &[u8]) -> Result<(&[u8], &[u8]), GitError> {
+    let error = || GitError::ParseFailed {
+        operation: GitOperation::FetchRemoteBranch,
+    };
+    let rest = reference.strip_prefix(b"refs/remotes/").ok_or_else(error)?;
+    let separator = rest
+        .iter()
+        .position(|byte| *byte == b'/')
+        .ok_or_else(error)?;
+    let (remote, branch) = (&rest[..separator], &rest[separator + 1..]);
+    if remote.is_empty()
+        || branch.is_empty()
+        || branch == b"HEAD"
+        || remote.starts_with(b"-")
+        || branch.starts_with(b"-")
+    {
+        return Err(error());
+    }
+    Ok((remote, branch))
+}
+
+/// Transport, resolution, authentication, and missing-remote failures all mean
+/// the same thing to a caller: the remote's current state could not be read.
+/// They stay one typed classification so no URL, host, or credential detail
+/// leaks past this boundary.
+fn is_remote_unavailable(stderr: &[u8]) -> bool {
+    [
+        &b"Could not read from remote repository"[..],
+        b"does not appear to be a git repository",
+        b"Could not resolve host",
+        b"unable to access",
+        b"Connection refused",
+        b"Connection timed out",
+        b"Connection reset",
+        b"Network is unreachable",
+        b"Authentication failed",
+        b"Permission denied (publickey",
+        b"Host key verification failed",
+        b"could not read Username",
+        b"could not read Password",
+        b"terminal prompts disabled",
+        b"remote error:",
+        b"The remote end hung up unexpectedly",
+        b"early EOF",
+    ]
+    .iter()
+    .any(|needle| contains(stderr, needle))
 }
 
 fn process_value(bytes: &[u8], operation: GitOperation) -> Result<OsString, GitError> {

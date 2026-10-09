@@ -156,6 +156,10 @@ impl GitRunner {
         self.capabilities
     }
 
+    pub(crate) fn output_limit(&self) -> usize {
+        self.output_limit
+    }
+
     pub fn with_limits(mut self, timeout: Duration, output_limit: usize) -> Self {
         self.timeout = timeout;
         self.output_limit = output_limit;
@@ -208,7 +212,7 @@ impl GitRunner {
         self.execute_with_limits(operation, cwd, args, self.timeout, self.output_limit)
     }
 
-    fn execute_with_limits<I, S>(
+    pub(crate) fn execute_with_limits<I, S>(
         &self,
         operation: GitOperation,
         cwd: &Path,

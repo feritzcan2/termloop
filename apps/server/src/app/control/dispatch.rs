@@ -2064,6 +2064,7 @@ async fn dispatch_inner(
             }
             Err(
                 error @ (termloop_core::CoreError::RepositoryUnavailable
+                | termloop_core::CoreError::RemoteUnavailable
                 | termloop_core::CoreError::GitUnavailable
                 | termloop_core::CoreError::GitUnsupportedVersion
                 | termloop_core::CoreError::RepositoryPermissionDenied

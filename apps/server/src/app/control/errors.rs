@@ -65,6 +65,10 @@ pub(in crate::app::control) fn git_observation_error_response(
         CoreError::RepositoryUnavailable => {
             (ErrorCode::OperationFailed, "repository is unavailable")
         }
+        CoreError::RemoteUnavailable => (
+            ErrorCode::OperationFailed,
+            "remote branch could not be fetched",
+        ),
         _ => unreachable!("non-Git error passed to Git response mapper"),
     };
     response_error(id, code, message)
@@ -135,6 +139,11 @@ mod tests {
                 CoreError::UnsupportedRepository,
                 ErrorCode::OperationFailed,
                 "repository format is unsupported",
+            ),
+            (
+                CoreError::RemoteUnavailable,
+                ErrorCode::OperationFailed,
+                "remote branch could not be fetched",
             ),
         ];
         for (error, code, message) in cases {
