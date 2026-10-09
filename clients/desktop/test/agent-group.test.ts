@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Session } from "../src/renderer/model.js";
+import { presentationStore } from "../src/renderer/state/presentation-store.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters } from "../src/renderer/ui/AgentGroup.js";
 
 function agent(id: string): Session {
@@ -63,6 +64,42 @@ describe("Agent group controls", () => {
     expect(clusters.flatMap((cluster) => agentSessionClusterMembers(cluster).map((session) => session.id)).sort())
       .toEqual(["first", "second"]);
   });
+
+  it.each([
+    ["ask_to_source_session_id", false], ["ask_to_source_session_id", true],
+    ["fork_source_session_id", false], ["fork_source_session_id", true],
+  ] as const)(
+    "groups a %s helper without moving its source or losing its children (helper is target: %s)",
+    (relationship, helperIsTarget) => {
+      const source = agent("source");
+      const helper = { ...agent("helper"), [relationship]: source.id };
+      const child = { ...agent("child"), fork_source_session_id: helper.id };
+      const peer = agent("peer");
+      const sessions = [source, helper, child, peer];
+      presentationStore.setState({
+        sessionOrderByProject: { [source.project_id]: sessions.map((session) => session.id) },
+        agentGroupsByProject: {},
+        detachedAgentRelationshipsByProject: {},
+      });
+      expect(presentationStore.getState().groupAgentSessions(
+        source.project_id, helperIsTarget ? peer.id : helper.id, helperIsTarget ? helper.id : peer.id,
+      )).toBe(true);
+      const clusters = () => agentSessionClusters(
+        sessions,
+        presentationStore.getState().agentGroupsByProject[source.project_id],
+        new Set(presentationStore.getState().detachedAgentRelationshipsByProject[source.project_id]),
+      );
+      expect(clusters().map((cluster) => agentSessionClusterMembers(cluster).map((session) => session.id)))
+        .toEqual([["source"], helperIsTarget ? ["helper", "child", "peer"] : ["peer", "helper", "child"]]);
+      expect(clusters()[1]?.manuallyGrouped).toBe(true);
+      expect(helper[relationship]).toBe(source.id);
+
+      expect(presentationStore.getState().ungroupAgentGroup(source.project_id, helper.id)).toBe(true);
+      expect(clusters().map((cluster) => agentSessionClusterMembers(cluster).map((session) => session.id)))
+        .toEqual([["source"], ["helper", "child"], ["peer"]]);
+      expect(helper[relationship]).toBe(source.id);
+    },
+  );
 
   it("renames a group inline and ungroups it from the leading close button", async () => {
     const first = agent("first-agent");

@@ -1,5 +1,5 @@
-import { useDraggable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type Ref } from "react";
+import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type Ref } from "react";
 import type { SplitDirection } from "../../layout/model.js";
 import type { AgentStatus, Session } from "../model.js";
 import { sessionDismissCommand, sessionLabel, sessionResumeActionLabel } from "../model.js";
@@ -13,6 +13,7 @@ import {
   type SessionState,
 } from "../session-presentation.js";
 import { Icon, type IconName } from "./Icon.js";
+import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 
 export type SessionMenuState = { sessionId: string; x: number; y: number; invoker: HTMLElement };
 
@@ -251,13 +252,28 @@ export function AskToHelperRow({ source, helper, depth = 1, agentStatus, reviewR
   detachRelationship?(): void;
 }) {
   const sourceLabel = relationshipLabel ?? sessionRelationshipLabel(source, helper);
+  const sidebarDnd = useOptionalSidebarSessionDnd();
+  const draggableAgent = relocatable || Boolean(sidebarDnd);
   const draggable = useDraggable({
     id: `task-session:${helper.id}`,
     data: { kind: "session", sessionId: helper.id },
-    disabled: !relocatable,
+    disabled: !draggableAgent,
   });
+  const droppable = useDroppable({
+    id: `task-session-target:${helper.id}`,
+    data: { kind: "session", sessionId: helper.id },
+    disabled: !sidebarDnd,
+  });
+  const setNodeRef = useCallback((node: HTMLDivElement | null) => {
+    draggable.setNodeRef(node);
+    droppable.setNodeRef(node);
+  }, [draggable.setNodeRef, droppable.setNodeRef]);
+  const dropPlacement = sidebarDnd?.sessionDropTarget?.surface !== "group"
+    && sidebarDnd?.sessionDropTarget?.sessionId === helper.id
+    ? sidebarDnd.sessionDropTarget.placement
+    : undefined;
   return (
-    <div ref={draggable.setNodeRef} className={`ask-to-helper${compact ? " compact" : ""}${draggable.isDragging ? " dragging" : ""}`} role="listitem" style={depth > 1 ? { marginLeft: `${7 + (depth - 1) * 12}px` } : undefined}>
+    <div ref={setNodeRef} data-session-drop-target={helper.id} className={`ask-to-helper${compact ? " compact" : ""}${draggable.isDragging ? " dragging" : ""}`} role="listitem" style={depth > 1 ? { marginLeft: `${7 + (depth - 1) * 12}px` } : undefined}>
       {detachRelationship ? <button
         type="button"
         className="ask-to-helper-detach"
@@ -271,9 +287,9 @@ export function AskToHelperRow({ source, helper, depth = 1, agentStatus, reviewR
       {/* The drag handle occupies its own grid column; without the matching
           class the two-column template wraps the row content into a broken
           stack, so the class and the handle must appear together. */}
-      <div className={`session-row ask-to-helper-row${compact ? " task-session" : ""}${relocatable ? " with-drag-handle" : ""}`}>
+      <div className={`session-row ask-to-helper-row${compact ? " task-session" : ""}${draggableAgent ? " with-drag-handle" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <span className="ask-to-helper-connector" aria-hidden="true" />
-        {relocatable ? <button
+        {draggableAgent ? <button
           className="session-drag-handle"
           type="button"
           aria-label={`Move ${sessionLabel(helper)}`}
@@ -290,7 +306,7 @@ export function AskToHelperRow({ source, helper, depth = 1, agentStatus, reviewR
           active={active}
           visible={visible}
           menuOpen={menuOpen}
-          {...(relocatable ? {
+          {...(draggableAgent ? {
             dragAttributes: draggable.attributes,
             dragListeners: draggable.listeners,
           } : {})}

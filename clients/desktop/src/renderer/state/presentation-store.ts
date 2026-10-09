@@ -264,13 +264,20 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
     const targetIndex = next.indexOf(targetAnchor);
     next.splice(targetIndex + (placement === "after" ? 1 : 0), 0, sessionId);
     next = groupedSessionOrder(next, nextGroups);
-    if (arraysEqual(order, next) && agentGroupsEqual(groups, nextGroups)) return false;
+    const detached = current.detachedAgentRelationshipsByProject[projectId] ?? [];
+    // Explicit placement overrides automatic source nesting, including when
+    // the underlying flat order already matches this edge drop.
+    if (arraysEqual(order, next) && agentGroupsEqual(groups, nextGroups) && detached.includes(sessionId)) return false;
     const agentGroupsByProject = { ...current.agentGroupsByProject };
     if (nextGroups.length > 0) agentGroupsByProject[projectId] = nextGroups;
     else delete agentGroupsByProject[projectId];
     set({
       sessionOrderByProject: { ...current.sessionOrderByProject, [projectId]: next },
       agentGroupsByProject,
+      detachedAgentRelationshipsByProject: {
+        ...current.detachedAgentRelationshipsByProject,
+        [projectId]: [...new Set([...detached, sessionId])],
+      },
       layoutRevision: current.layoutRevision + 1,
     });
     return true;
@@ -315,6 +322,16 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
     set({
       sessionOrderByProject: { ...current.sessionOrderByProject, [projectId]: nextOrder },
       agentGroupsByProject: { ...current.agentGroupsByProject, [projectId]: nextGroups },
+      // Persist manual placement independently of group membership so helpers
+      // do not snap back to their projected sources after ungrouping or reload.
+      detachedAgentRelationshipsByProject: {
+        ...current.detachedAgentRelationshipsByProject,
+        [projectId]: [...new Set([
+          ...current.detachedAgentRelationshipsByProject[projectId] ?? [],
+          ...movingSessionIds,
+          targetSessionId,
+        ])],
+      },
       layoutRevision: current.layoutRevision + 1,
     });
     return true;

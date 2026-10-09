@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
 import { ActiveAgentRail, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
 import { SidebarSessionDndProvider } from "../src/renderer/ui/SidebarSessionDnd.js";
+import { AskToHelperRow } from "../src/renderer/ui/SessionRow.js";
 
 function agent(id: string): Session {
   return {
@@ -219,9 +220,21 @@ describe("Active Agent selection stability", () => {
     await act(async () => { document.dispatchEvent(pointerEvent("pointerup", 15)); });
   });
 
-  it("groups Agents when one row is dropped on the middle of another", async () => {
-    const source = agent("source-agent");
-    const target = agent("target-agent");
+  it.each([
+    ["ordinary Agents", null, null, false, false],
+    ["an Ask-To helper onto a peer", "ask_to_source_session_id", null, false, false],
+    ["a fork onto a peer", "fork_source_session_id", null, false, false],
+    ["a peer onto an Ask-To helper", null, "ask_to_source_session_id", false, false],
+    ["a peer onto a fork", null, "fork_source_session_id", false, false],
+    ["two helpers", "ask_to_source_session_id", "fork_source_session_id", false, false],
+    ["a detached Ask-To helper onto a peer", "ask_to_source_session_id", null, true, false],
+    ["a detached fork onto a peer", "fork_source_session_id", null, true, false],
+    ["Task helper rows without worktree relocation", "ask_to_source_session_id", "fork_source_session_id", false, true],
+  ] as const)("groups %s by dropping in the middle of a row", async (_label, sourceRelationship, targetRelationship, detached, taskHelpers) => {
+    const parent = agent("parent-agent");
+    const source = { ...agent("source-agent"), ...(sourceRelationship ? { [sourceRelationship]: parent.id } : {}) };
+    const target = { ...agent("target-agent"), ...(targetRelationship ? { [targetRelationship]: parent.id } : {}) };
+    const sessions = [parent, source, target];
     const grouped: [string, string][] = [];
     container = document.createElement("div");
     document.body.append(container);
@@ -240,16 +253,30 @@ describe("Active Agent selection stability", () => {
     await act(async () => root!.render(createElement(
       SidebarSessionDndProvider,
       {
-        sessions: [source, target],
+        sessions,
         reorderSession: () => false,
         groupAgentSessions: (sessionId: string, targetSessionId: string) => {
           grouped.push([sessionId, targetSessionId]);
           return true;
         },
-        children: createElement(ActiveAgentRail, props(
-          [source, target],
-          [status(source.id, "working"), status(target.id, "working")],
-        )),
+        children: taskHelpers ? createElement(Fragment, null, ...[source, target].map((helper) => createElement(AskToHelperRow, {
+          key: helper.id,
+          source: parent,
+          helper,
+          agentStatus: status(helper.id, "working"),
+          subtitle: "",
+          active: false,
+          visible: false,
+          menuOpen: false,
+          compact: true,
+          relocatable: false,
+          select: () => {},
+          openMenu: () => {},
+          dismiss: () => {},
+        }))) : createElement(ActiveAgentRail, {
+          ...props(sessions, sessions.map((session) => status(session.id, "working"))),
+          detachedRelationshipSessionIds: new Set(detached ? [source.id] : []),
+        }),
       },
     )));
 
@@ -269,10 +296,14 @@ describe("Active Agent selection stability", () => {
     expect([...container.querySelectorAll<HTMLElement>(".drop-on, .drop-before, .drop-after")].map((node) => ({
       className: node.className,
       sessionId: node.closest<HTMLElement>("[data-session-drop-target]")?.dataset.sessionDropTarget,
-    }))).toEqual([{ className: "session-row active-agent-row drop-on", sessionId: target.id }]);
+    }))).toEqual([{
+      className: taskHelpers ? "session-row ask-to-helper-row task-session with-drag-handle drop-on" : "session-row active-agent-row drop-on",
+      sessionId: target.id,
+    }]);
     await act(async () => { document.dispatchEvent(pointerEvent("pointerup", 10, 80)); });
 
     expect(grouped).toEqual([[source.id, target.id]]);
+    expect(container.querySelector(".drop-notice")).toBeNull();
   });
 
   it("adds another Agent by dropping it on an existing group", async () => {
