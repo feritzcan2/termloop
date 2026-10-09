@@ -252,6 +252,8 @@ pub enum CoreError {
     },
     #[error("branch was not found")]
     BranchNotFound,
+    #[error("remote branch could not be fetched")]
+    RemoteUnavailable,
     #[error("repository is unavailable")]
     RepositoryUnavailable,
     #[error("Git is unavailable")]

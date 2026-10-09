@@ -44,8 +44,10 @@ pub struct BranchCommitSummaryObservation {
 
 /// Exact branch plus an optional caller-proven base. A recorded base OID is an
 /// immutable managed-branch creation point and takes precedence over remote
-/// resolution. A current base maps the exact local base branch into the selected
-/// remote when one exists and otherwise uses that local ref. The legacy base-ref
+/// resolution. A current base that already names an exact
+/// `refs/remotes/<remote>/<branch>` ref is used verbatim; a local
+/// `refs/heads/<branch>` base is mapped into the selected remote when one
+/// exists and otherwise used as that local ref. The legacy base-ref
 /// constructor remains only a no-remote fallback; configured-but-ambiguous or
 /// incomplete remote facts continue to fail closed.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -571,6 +573,13 @@ fn resolve_remote_base(
     scope: &mut GitCommandScope<'_>,
 ) -> Result<Option<GitRefName>, GitError> {
     if let Some(local_base_ref) = local_base_ref {
+        // A caller-proven base that already names an exact remote-tracking ref
+        // (a managed branch records `refs/remotes/<remote>/<branch>` at
+        // creation) is used verbatim; only a local `refs/heads/<branch>` base
+        // is mapped into the selected remote.
+        if crate::mutation::split_remote_tracking_ref(local_base_ref).is_ok() {
+            return GitRefName::from_bytes(local_base_ref.to_vec()).map(Some);
+        }
         let Some(branch) = local_base_ref.strip_prefix(b"refs/heads/") else {
             return Ok(None);
         };

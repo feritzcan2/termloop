@@ -448,6 +448,132 @@ fn exact_link_repair_supports_a_stale_backlink_at_the_current_path() {
     );
 }
 
+#[test]
+fn fetch_remote_branch_force_updates_exactly_one_stale_tracking_ref() {
+    let fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    let upstream = fixture.root.join("upstream");
+    git(
+        &fixture.root,
+        ["init", "--initial-branch=main", upstream.to_str().unwrap()],
+    );
+    git(&upstream, ["config", "user.name", "TermLoop Fixture"]);
+    git(
+        &upstream,
+        ["config", "user.email", "fixture@termloop.invalid"],
+    );
+    git(&upstream, ["commit", "--allow-empty", "-m", "upstream one"]);
+    git(&upstream, ["branch", "feature/other"]);
+    git(
+        &fixture.repository,
+        ["remote", "add", "origin", upstream.to_str().unwrap()],
+    );
+    // A stale tracking ref that points at an unrelated local commit, so the
+    // update cannot be a fast-forward.
+    git(
+        &fixture.repository,
+        ["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    git(&upstream, ["commit", "--allow-empty", "-m", "upstream two"]);
+    let upstream_main = GitRefName::from_bytes(b"refs/heads/main".to_vec()).unwrap();
+    let expected = runner
+        .resolve_ref(&upstream, &upstream_main)
+        .unwrap()
+        .unwrap();
+
+    let tracking = GitRefName::from_bytes(b"refs/remotes/origin/main".to_vec()).unwrap();
+    runner
+        .fetch_remote_branch(&fixture.repository, &tracking)
+        .unwrap();
+
+    let updated = runner
+        .resolve_ref(&fixture.repository, &tracking)
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated, expected);
+    let other = GitRefName::from_bytes(b"refs/remotes/origin/feature/other".to_vec()).unwrap();
+    assert!(
+        runner
+            .resolve_ref(&fixture.repository, &other)
+            .unwrap()
+            .is_none(),
+        "only the requested branch is fetched"
+    );
+    assert!(
+        !fixture.repository.join(".git/FETCH_HEAD").exists(),
+        "fetch must not write FETCH_HEAD"
+    );
+}
+
+#[test]
+fn fetch_remote_branch_reports_missing_and_unreachable_remotes_as_typed_errors() {
+    let fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    let upstream = fixture.root.join("upstream");
+    git(
+        &fixture.root,
+        ["init", "--initial-branch=main", upstream.to_str().unwrap()],
+    );
+    git(&upstream, ["config", "user.name", "TermLoop Fixture"]);
+    git(
+        &upstream,
+        ["config", "user.email", "fixture@termloop.invalid"],
+    );
+    git(&upstream, ["commit", "--allow-empty", "-m", "upstream"]);
+    git(
+        &fixture.repository,
+        ["remote", "add", "origin", upstream.to_str().unwrap()],
+    );
+
+    let missing = GitRefName::from_bytes(b"refs/remotes/origin/gone".to_vec()).unwrap();
+    assert!(matches!(
+        runner.fetch_remote_branch(&fixture.repository, &missing),
+        Err(GitError::RemoteRefMissing)
+    ));
+
+    let unknown_remote = GitRefName::from_bytes(b"refs/remotes/nowhere/main".to_vec()).unwrap();
+    assert!(matches!(
+        runner.fetch_remote_branch(&fixture.repository, &unknown_remote),
+        Err(GitError::RemoteUnavailable)
+    ));
+
+    let absent = fixture.root.join("absent-upstream");
+    git(
+        &fixture.repository,
+        ["remote", "set-url", "origin", absent.to_str().unwrap()],
+    );
+    let tracking = GitRefName::from_bytes(b"refs/remotes/origin/main".to_vec()).unwrap();
+    let error = runner
+        .fetch_remote_branch(&fixture.repository, &tracking)
+        .unwrap_err();
+    assert!(matches!(error, GitError::RemoteUnavailable));
+    let rendered = format!("{error} {error:?}");
+    assert!(!rendered.contains("absent-upstream"));
+}
+
+#[test]
+fn fetch_remote_branch_rejects_refs_that_are_not_an_exact_remote_branch() {
+    let fixture = Fixture::new();
+    let runner = GitRunner::discover().unwrap();
+    for reference in [
+        &b"refs/heads/main"[..],
+        b"refs/remotes/origin/HEAD",
+        b"refs/remotes/origin",
+        b"refs/remotes/-origin/main",
+        b"refs/remotes/origin/-main",
+    ] {
+        let reference = GitRefName::from_bytes(reference.to_vec()).unwrap();
+        assert!(
+            matches!(
+                runner.fetch_remote_branch(&fixture.repository, &reference),
+                Err(GitError::ParseFailed { .. })
+            ),
+            "{}",
+            String::from_utf8_lossy(reference.as_bytes())
+        );
+    }
+}
+
 fn git<const N: usize>(cwd: &Path, args: [&str; N]) {
     let status = Command::new("git")
         .args(args)

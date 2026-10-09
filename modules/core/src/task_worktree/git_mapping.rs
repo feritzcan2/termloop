@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use termloop_domain::ProvisioningFailureKind;
-use termloop_gitio::{GitError, GitFailureKind, GitRefName, RegisteredPathState, WorktreeFacts};
+use termloop_gitio::{
+    GitError, GitFailureKind, GitOperation, GitRefName, RegisteredPathState, WorktreeFacts,
+};
 
 use crate::CoreError;
 
@@ -53,12 +55,29 @@ pub(super) fn map_git_mutation_error(error: GitError) -> CoreError {
     }
 }
 
+/// A base-branch fetch runs before any ref is resolved for a fresh `create`
+/// provisioning. Its failures name the remote, not the repository: a missing
+/// upstream branch is the same refusal as a missing local ref, and any
+/// transport/auth/timeout failure fails closed as `RemoteUnavailable` so a
+/// stale tracking ref is never silently used as the base.
+pub(super) fn map_git_fetch_error(error: GitError) -> CoreError {
+    match error {
+        GitError::RemoteRefMissing => CoreError::BranchNotFound,
+        GitError::RemoteUnavailable
+        | GitError::Timeout {
+            operation: GitOperation::FetchRemoteBranch,
+        } => CoreError::RemoteUnavailable,
+        error => map_git_observation_error(error),
+    }
+}
+
 pub(super) fn provisioning_failure_kind(error: &CoreError) -> ProvisioningFailureKind {
     match error {
         CoreError::GitUnavailable => ProvisioningFailureKind::GitUnavailable,
         CoreError::GitUnsupportedVersion => ProvisioningFailureKind::UnsupportedGit,
         CoreError::RepositoryPermissionDenied => ProvisioningFailureKind::PermissionDenied,
         CoreError::RepositoryUnavailable
+        | CoreError::RemoteUnavailable
         | CoreError::CorruptRepository
         | CoreError::UnsupportedRepository => ProvisioningFailureKind::RepositoryUnavailable,
         CoreError::BranchHeldByTask { .. }

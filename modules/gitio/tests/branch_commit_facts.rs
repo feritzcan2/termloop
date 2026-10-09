@@ -224,6 +224,63 @@ fn no_remote_uses_only_the_caller_proven_exact_local_base() {
 }
 
 #[test]
+fn current_base_uses_an_exact_remote_tracking_ref_verbatim_when_a_remote_exists() {
+    let repository = TestRepository::init("branch-commit-exact-remote-base");
+    repository.create_commit("managed base");
+    let recorded_base_oid = repository.git(["rev-parse", "HEAD"]).stdout;
+    let recorded_base_oid = recorded_base_oid.strip_suffix(b"\n").unwrap();
+    repository.git([
+        "remote",
+        "add",
+        "origin",
+        "https://example.invalid/repository.git",
+    ]);
+    repository.git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    repository.git(["checkout", "-b", "feature/exact"]);
+    for index in 1..=2 {
+        fs::write(
+            repository.root().join("tracked.txt"),
+            format!("feature {index}\n"),
+        )
+        .unwrap();
+        repository.git(["add", "--", "tracked.txt"]);
+        repository.git(["commit", "-m", &format!("feature {index}")]);
+    }
+
+    let observed = GitRunner::discover()
+        .unwrap()
+        .observe_branch_commit_summary_requests(
+            repository.root(),
+            &[
+                termloop_gitio::BranchCommitSummaryRequest::with_current_base_and_recorded_base(
+                    b"feature/exact".to_vec(),
+                    b"refs/remotes/origin/main".to_vec(),
+                    recorded_base_oid.to_vec(),
+                ),
+            ],
+        )
+        .unwrap()
+        .observations
+        .pop()
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        matches!(
+            &observed.state,
+            BranchCommitState::Available { count: 2, base_ref }
+                if base_ref.as_bytes() == b"refs/remotes/origin/main"
+        ),
+        "{:?}",
+        observed.state
+    );
+    assert!(matches!(
+        &observed.not_in_base,
+        BranchCommitState::Available { count: 2, .. }
+    ));
+}
+
+#[test]
 fn current_base_count_fails_closed_when_the_managed_branch_lost_its_recorded_base() {
     let repository = TestRepository::init("branch-commit-diverged");
     repository.create_commit("managed base");
