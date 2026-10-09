@@ -6,6 +6,7 @@ export type ShellShortcutId =
   | "commandPalette"
   | "newTerminal"
   | "renameSession"
+  | "forkSession"
   | "focusPreviousPane"
   | "focusNextPane";
 
@@ -62,13 +63,14 @@ const SHORTCUTS: Record<ShellShortcutId, Shortcut> = {
   commandPalette: { code: "KeyP", shift: true },
   newTerminal: { code: "KeyT" },
   renameSession: { code: "KeyR" },
+  forkSession: { code: "KeyF" },
   focusPreviousPane: { code: "ArrowLeft", alt: true },
   focusNextPane: { code: "ArrowRight", alt: true },
 };
 
 function shortcutFor(id: ShellShortcutId, platform: KeyboardPlatform): Shortcut {
-  // Ctrl+R belongs to terminal history search on Windows and Linux.
-  return id === "renameSession" && platform !== "mac"
+  // Preserve Ctrl+R history search and Ctrl+F cursor movement in terminals.
+  return (id === "renameSession" || id === "forkSession") && platform !== "mac"
     ? { ...SHORTCUTS[id], shift: true }
     : SHORTCUTS[id];
 }
@@ -91,8 +93,9 @@ export function shortcutLabel(id: ShellShortcutId, platform: KeyboardPlatform): 
   const key = shortcut.code === "KeyP" ? "P"
     : shortcut.code === "KeyT" ? "T"
       : shortcut.code === "KeyR" ? "R"
-        : shortcut.code === "ArrowLeft" ? "←"
-          : "→";
+        : shortcut.code === "KeyF" ? "F"
+          : shortcut.code === "ArrowLeft" ? "←"
+            : "→";
   if (platform === "mac") {
     return `${shortcut.alt ? "⌥" : ""}${shortcut.shift ? "⇧" : ""}⌘${key}`;
   }
@@ -140,6 +143,7 @@ export function nativeShellCommandId(shortcut: GhosttyShellShortcut): ShellShort
   return shortcut === "commandPalette"
     || shortcut === "newTerminal"
     || shortcut === "renameSession"
+    || shortcut === "forkSession"
     || shortcut === "focusPreviousPane"
     || shortcut === "focusNextPane"
     ? shortcut
