@@ -177,8 +177,6 @@ export function SidebarSessionDndProvider({ sessions, reorderSession, groupAgent
         if (target.placement === "on") {
           if (source.kind !== "Agent" || targetSession.kind !== "Agent") {
             showNotice("Only Agents can be grouped.");
-          } else if (isNestedAgent(source) || isNestedAgent(targetSession)) {
-            showNotice("Ask-To and fork helpers stay with their source Agent.");
           } else if (!groupAgentSessions?.(source.id, targetSession.id)) {
             showNotice(`${sessionLabel(source)} and ${sessionLabel(targetSession)} could not be grouped.`);
           }
@@ -219,10 +217,6 @@ export function SidebarSessionDndProvider({ sessions, reorderSession, groupAgent
       </DndContext>
     </SidebarSessionDndContext.Provider>
   );
-}
-
-function isNestedAgent(session: Session): boolean {
-  return Boolean(session.ask_to_source_session_id || session.fork_source_session_id);
 }
 
 function SessionDragPreview({ session }: { session: Session }) {

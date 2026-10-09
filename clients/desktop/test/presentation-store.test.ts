@@ -313,6 +313,48 @@ describe("presentation store", () => {
       .toEqual(["session-a1", "session-a3", "session-a2"]);
   });
 
+  it("persists manual placement for both grouped Agents after reload and ungroup", () => {
+    presentationStore.getState().ensureSelection(
+      ["project-a"], new Map([["project-a", ["source", "helper", "peer"]]]),
+    );
+    expect(presentationStore.getState().groupAgentSessions("project-a", "peer", "helper")).toBe(true);
+    const saved = presentationStore.getState().layoutDocument();
+    expect(saved.profiles.local?.detachedAgentRelationshipsByProject?.["project-a"])
+      .toEqual(["peer", "helper"]);
+
+    presentationStore.getState().hydrateLayouts(saved);
+    const projectId = connectionEntityKey("local", "project-a");
+    const helperId = connectionEntityKey("local", "helper");
+    expect(presentationStore.getState().ungroupAgentGroup(projectId, helperId)).toBe(true);
+    expect(presentationStore.getState().detachedAgentRelationshipsByProject[projectId])
+      .toEqual([connectionEntityKey("local", "peer"), helperId]);
+  });
+
+  it("detaches an edge-dropped helper even when the flat order already matches", () => {
+    presentationStore.getState().ensureSelection(
+      ["project-a"], new Map([["project-a", ["source", "helper", "peer"]]]),
+    );
+    const selection = presentationStore.getState().selectedSessionByProject;
+    expect(presentationStore.getState().reorderSession("project-a", "helper", "peer", "before")).toBe(true);
+    expect(presentationStore.getState().detachedAgentRelationshipsByProject["project-a"]).toEqual(["helper"]);
+    expect(presentationStore.getState().sessionOrderByProject["project-a"]).toEqual(["source", "helper", "peer"]);
+    expect(presentationStore.getState().selectedSessionByProject).toBe(selection);
+    expect(presentationStore.getState().reorderSession("project-a", "helper", "peer", "before")).toBe(false);
+  });
+
+  it("does not detach Agents for invalid or self drops", () => {
+    presentationStore.getState().ensureSelection(
+      ["project-a"], new Map([["project-a", ["source", "helper"]]]),
+    );
+    const revision = presentationStore.getState().layoutRevision;
+    expect(presentationStore.getState().groupAgentSessions("project-a", "helper", "missing")).toBe(false);
+    expect(presentationStore.getState().groupAgentSessions("project-a", "helper", "helper")).toBe(false);
+    expect(presentationStore.getState().reorderSession("project-a", "helper", "missing", "before")).toBe(false);
+    expect(presentationStore.getState().reorderSession("project-a", "helper", "helper", "before")).toBe(false);
+    expect(presentationStore.getState().detachedAgentRelationshipsByProject).toEqual({});
+    expect(presentationStore.getState().layoutRevision).toBe(revision);
+  });
+
   it("dissolves a group when projection refresh leaves fewer than two Sessions", () => {
     presentationStore.getState().ensureSelection(
       ["project-a"],
