@@ -47,7 +47,9 @@ const keyBytes: Record<TerminalKey, readonly number[]> = {
 };
 
 const INITIAL_ATTACH_RETRY_MS = 1_000;
-const MAX_ATTACH_RETRY_MS = 30_000;
+/// A visible terminal is interactive demand, like the transport's own reconnect
+/// cap: once the Tailnet path heals, the next attach must not sit out a long backoff.
+const MAX_ATTACH_RETRY_MS = 5_000;
 
 export interface TerminalSession {
   readonly buffer: TerminalBuffer;

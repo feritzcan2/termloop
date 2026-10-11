@@ -46,6 +46,11 @@ const MIN_RECONNECT_MS = 500;
 /// app. Connections used only for overview invalidations do not enter this loop.
 const MAX_TERMINAL_RECONNECT_MS = 5_000;
 const RECONNECT_STALLED_MS = 15_000;
+/// A resumed iPhone often loses its first Tailnet request while the tunnel
+/// re-establishes its path; the retry then succeeds within a few seconds. Only an
+/// outage that outlasts this window is evidence for "check Tailscale". It matches
+/// the saved-computer catalog's reconnect grace.
+const GATEWAY_UNREACHABLE_GRACE_MS = 12_000;
 const PREFLIGHT_STALLED_FAILURES = 3;
 const PREFLIGHT_LATE_SETTLEMENT_OBSERVATION_MS = 5_000;
 const STABLE_CONNECTION_MS = 30_000;
@@ -157,6 +162,7 @@ export class MobileConnectionCoordinator {
   private preflightFailuresSinceReady = 0;
   private preflightFailureStartedAtEpochMs: number | undefined;
   private preflightStallReported = false;
+  private unreachableSinceEpochMs: number | undefined;
   private lastReadyAtEpochMs: number | undefined;
   private lastDisconnectAtEpochMs: number | undefined;
   private lastDisconnectReason: string | undefined;
@@ -344,6 +350,9 @@ export class MobileConnectionCoordinator {
   resetTransport(reconnect = false): void {
     if (this.stopped) return;
     this.suspended = !reconnect;
+    // Time spent suspended is not reachability evidence. A resume starts a fresh
+    // grace window instead of inheriting an outage observed before backgrounding.
+    this.unreachableSinceEpochMs = undefined;
     this.preparing?.abort();
     // Fence pending reads before closing their channel. An intentional lifecycle
     // reset must not trigger the control client's network-error retry.
@@ -527,13 +536,19 @@ export class MobileConnectionCoordinator {
           ...this.connectionDiagnosticState(failedAtEpochMs),
         });
         if (!attemptSuperseded && cause instanceof GatewayReachabilityError) {
-          for (const subscription of this.subscriptions.values()) {
-            if (!subscription.detached) {
-              subscription.onEvent({
-                type: "state",
-                state: "connectionLost",
-                issue: "gatewayUnreachable",
-              });
+          // A timed-out preflight already waited its full window. Growing the retry
+          // delay on top only widens the gap in which a healed route goes unnoticed.
+          if (cause.reason === "timeout") this.reconnectDelay = MIN_RECONNECT_MS;
+          this.unreachableSinceEpochMs ??= preflightStartedAtEpochMs;
+          if (failedAtEpochMs - this.unreachableSinceEpochMs >= GATEWAY_UNREACHABLE_GRACE_MS) {
+            for (const subscription of this.subscriptions.values()) {
+              if (!subscription.detached) {
+                subscription.onEvent({
+                  type: "state",
+                  state: "connectionLost",
+                  issue: "gatewayUnreachable",
+                });
+              }
             }
           }
         }
@@ -660,6 +675,7 @@ export class MobileConnectionCoordinator {
             this.preflightFailuresSinceReady = 0;
             this.preflightFailureStartedAtEpochMs = undefined;
             this.preflightStallReported = false;
+            this.unreachableSinceEpochMs = undefined;
             this.inputReceiptSource = ready.inputReceiptSource;
             this.connecting = undefined;
             clearTimeout(timer);
