@@ -406,4 +406,29 @@ describe("grid editing", () => {
     const snapshot = projection.write(encoder.encode(`${esc}[1;1H${esc}Mnew`));
     expect(plain(snapshot)).toEqual(["new", "first", "second"]);
   });
+
+  it("keeps scrollback rows' span arrays stable across snapshots of a streaming transcript", () => {
+    const projection = new TerminalScreenProjection();
+    // Claim the grid, then stream past the bottom so rows enter scrollback.
+    projection.write(encoder.encode(`${esc}[1;1Hfirst`));
+    for (let index = 0; index < 60; index += 1) projection.write(encoder.encode(`\r\nline ${index}`));
+    const before = projection.snapshot();
+    expect(before.lines.length).toBeGreaterThan(24);
+    expect(projection.alternateScreen).toBe(false);
+    const after = projection.write(encoder.encode("\r\nnext"))!;
+    expect(plain(after)).toEqual([...plain(before), "next"]);
+    // Every scrollback row is handed out as the very same array it was projected to.
+    const scrollbackCount = before.lines.length - 24;
+    for (let index = 0; index < scrollbackCount; index += 1) {
+      expect(after.lines[index]!.spans).toBe(before.lines[index]!.spans);
+    }
+  });
+
+  it("reports the alternate screen so the owner knows the program holds the history", () => {
+    const projection = new TerminalScreenProjection();
+    projection.write(encoder.encode(`${esc}[?1049h${esc}[1;1Hvim`));
+    expect(projection.alternateScreen).toBe(true);
+    projection.write(encoder.encode(`${esc}[?1049l`));
+    expect(projection.alternateScreen).toBe(false);
+  });
 });

@@ -103,10 +103,17 @@ export function overscrollRequest(
 }
 
 /// `lines` is negative to move backwards, matching a wheel delta.
+///
+/// `programOwnsHistory` says whether older output lives only inside the program —
+/// true on the alternate screen, where nothing reaches this client's scrollback. On
+/// the normal screen the phone already holds the history, so a program that does not
+/// track the mouse gets nothing: Claude streams onto the normal screen and has no
+/// viewport of its own, and the page keys a bounce used to send it were pure noise.
 export function scrollSequence(
   lines: number,
   tracking: TerminalMouseTracking,
   sgrEncoding: boolean,
+  programOwnsHistory = true,
 ): string {
   const back = lines < 0;
   const count = Math.abs(lines);
@@ -117,6 +124,7 @@ export function scrollSequence(
     const code = back ? 64 : 65;
     return `${ESC}[<${code};${WHEEL_REPORT_COLUMN};${WHEEL_REPORT_ROW}M`.repeat(count);
   }
+  if (!programOwnsHistory) return "";
   const pages = Math.max(1, Math.round(count / LINES_PER_PAGE));
   return `${ESC}[${back ? "5" : "6"}~`.repeat(pages);
 }

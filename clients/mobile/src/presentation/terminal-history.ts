@@ -12,6 +12,8 @@ export interface TerminalHistoryPage {
 export interface TerminalReadingAnchor {
   readonly id: number;
   readonly fraction: number;
+  /// Where the row sat when the anchor was taken; a hint for finding it again.
+  readonly index?: number;
 }
 
 export function recentTerminalHistory(rows: readonly HistoryRow[], kind: HistoryKind): TerminalHistoryPage {
@@ -34,12 +36,36 @@ export function reconcileTerminalHistory(
   if (followingLive || current.kind !== kind || current.rows.length === 0) {
     return recentTerminalHistory(rows, kind);
   }
-  const positions = new Map(rows.map((row, index) => [row.id, index]));
   for (let index = current.start; index < current.rows.length; index += 1) {
-    const position = positions.get(current.rows[index]!.id);
+    const position = terminalRowIndex(rows, current.rows[index]!.id, index);
     if (position !== undefined) return { rows, kind, start: position };
   }
   return recentTerminalHistory(rows, kind);
+}
+
+/// Locates a row by id, starting from where it was last seen.
+///
+/// Rows are only ever appended or evicted from the front, so between two frames a row
+/// sits at its previous index or a little before it. Checking there first keeps the
+/// per-frame cost of reading during a stream constant instead of walking every
+/// retained row to build a lookup table sixty times a second.
+export function terminalRowIndex(rows: readonly HistoryRow[], id: number, hint: number): number | undefined {
+  const from = Math.max(0, Math.min(rows.length - 1, hint));
+  for (let index = from; index >= 0; index -= 1) {
+    const row = rows[index]!;
+    if (row.id === id) return index;
+    if (row.id < id) break;
+  }
+  for (let index = from + 1; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    if (row.id === id) return index;
+    if (row.id > id) break;
+  }
+  /// Ids are usually monotonic, but a program that inserts rows above its cursor can
+  /// push a newer row into history ahead of an older one. Finish with a full scan
+  /// before concluding the row is gone.
+  const index = rows.findIndex((row) => row.id === id);
+  return index < 0 ? undefined : index;
 }
 
 export function earlierTerminalHistory(current: TerminalHistoryPage): TerminalHistoryPage {
@@ -53,8 +79,9 @@ export function terminalReadingAnchor(
   lineHeight: number,
 ): TerminalReadingAnchor | undefined {
   const position = Math.max(0, offset) / Math.max(1, lineHeight);
-  const row = page.rows[Math.min(page.rows.length - 1, page.start + Math.floor(position))];
-  return row === undefined ? undefined : { id: row.id, fraction: position % 1 };
+  const index = Math.min(page.rows.length - 1, page.start + Math.floor(position));
+  const row = page.rows[index];
+  return row === undefined ? undefined : { id: row.id, fraction: position % 1, index };
 }
 
 export function terminalReadingOffset(
@@ -62,6 +89,6 @@ export function terminalReadingOffset(
   anchor: TerminalReadingAnchor,
   lineHeight: number,
 ): number {
-  const index = page.rows.findIndex((row) => row.id === anchor.id);
+  const index = terminalRowIndex(page.rows, anchor.id, anchor.index ?? page.start) ?? -1;
   return index < page.start ? 0 : (index - page.start + anchor.fraction) * Math.max(1, lineHeight);
 }

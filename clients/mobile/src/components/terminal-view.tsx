@@ -20,7 +20,7 @@ import {
   terminalDragScroll,
   type InitialTerminalPosition,
 } from "@/presentation/terminal-scroll";
-import { terminalRowWindow } from "@/presentation/terminal-window";
+import { sameTerminalRowWindow, terminalRowWindow } from "@/presentation/terminal-window";
 import {
   earlierTerminalHistory, recentTerminalHistory, reconcileTerminalHistory,
   terminalReadingAnchor, terminalReadingOffset, type TerminalHistoryPage,
@@ -46,10 +46,14 @@ import { fontFamily } from "@/theme/typography";
 ///
 /// Long lines scroll horizontally rather than wrapping, because wrapping a 300-column
 /// diff at 39 characters produces a column of fragments nobody can read.
-export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLive, programScroll = false }: {
+export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLive, onCopyLine, programScroll = false }: {
   buffer: TerminalBuffer;
   fontSizeIndex: number;
   capNotice: string | undefined;
+  /// Receives the text of a long-pressed row. Rows are not natively selectable: on
+  /// iOS every selectable Text is a full text view, and a hundred of them mounting
+  /// and unmounting under a scroll was most of what made the transcript stutter.
+  onCopyLine?: (text: string) => void;
   /// Asks the running program to scroll its own history. Absent for a stream with no
   /// history of its own to ask about.
   onScrollBack?: (lines: number) => void;
@@ -63,9 +67,13 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
   const [programReading, setProgramReading] = useState(false);
-  // An explicit Live tap keeps following until the next user scroll. Native
-  // momentum/layout callbacks cannot revoke that intent after an acknowledgement.
-  const returningToLive = useRef(false);
+  // Following the live edge is the default and is sticky: only a user gesture ends
+  // it. Native momentum and layout callbacks cannot revoke that intent, and neither
+  // can a scroll event reporting an offset that a burst of new rows just left behind.
+  // Before this was sticky, a tool result that appended forty rows in one batch
+  // landed the clamped scroll command forty rows short of the new end, the next
+  // scroll event read as "no longer at the bottom", and following quietly stopped.
+  const returningToLive = useRef(true);
   const liveFrame = useRef<number | undefined>(undefined);
   const scheduleLiveScroll = useCallback(() => {
     if (liveFrame.current !== undefined) return;
@@ -75,6 +83,15 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     });
   }, []);
   const [unread, setUnread] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const copyLine = useCallback((text: string) => {
+    if (onCopyLine === undefined) return;
+    onCopyLine(text);
+    setCopied(true);
+    if (copiedTimer.current !== undefined) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => { copiedTimer.current = undefined; setCopied(false); }, 1500);
+  }, [onCopyLine]);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });
   const [initialPosition, setInitialPosition] = useState<InitialTerminalPosition>("waitingForContent");
   const revealFrame = useRef<number | undefined>(undefined);
@@ -224,7 +241,13 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     if (bottom) setUnread(false);
-    setViewport({ offset: Math.max(0, contentOffset.y), height: layoutMeasurement.height });
+    const offset = Math.max(0, contentOffset.y);
+    // Commit the offset only when it moves the mounted window. The precise position
+    // is already in `reading`; React only needs to hear about it per block.
+    if (layoutMeasurement.height !== viewport.height
+      || !sameTerminalRowWindow(rows, terminalRowWindow(count, offset, layoutMeasurement.height, lineHeight))) {
+      setViewport({ offset, height: layoutMeasurement.height });
+    }
     if (initialPosition === "ready" && scrolling.current && movingUp
       && contentOffset.y <= lineHeight * 4 && page.start > 0) {
       loadEarlier();
@@ -243,7 +266,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page, viewport.offset, count, buffer.screen, buffer.pending, scheduleLiveScroll]);
+  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page, viewport.offset, viewport.height, rows, count, buffer.screen, buffer.pending, scheduleLiveScroll]);
 
   const onContentChange = useCallback(() => {
     if (pendingPosition.current !== undefined) {
@@ -264,8 +287,12 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
       });
       return;
     }
-    if (atBottomRef.current && !programReading) scroll.current?.scrollToEnd({ animated: false });
-  }, [hasContent, initialPosition, loading?.label, programReading]);
+    if (atBottomRef.current && !programReading) {
+      scroll.current?.scrollToEnd({ animated: false });
+      // The first command can land on the previous layout; repeat once it settles.
+      scheduleLiveScroll();
+    }
+  }, [hasContent, initialPosition, loading?.label, programReading, scheduleLiveScroll]);
 
   useEffect(() => {
     if (!hasContent && !loading) setInitialPosition("ready");
@@ -273,6 +300,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   useEffect(() => () => {
     if (revealFrame.current !== undefined) cancelAnimationFrame(revealFrame.current);
     if (liveFrame.current !== undefined) cancelAnimationFrame(liveFrame.current);
+    if (copiedTimer.current !== undefined) clearTimeout(copiedTimer.current);
   }, []);
 
   return (
@@ -305,10 +333,10 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
           <View>
             <View style={{ height: rows.before }} />
             {buffer.screen === undefined
-              ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} />)
-              : buffer.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} />)}
+              ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />)
+              : buffer.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />)}
             <View style={{ height: rows.after }} />
-            {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }], theme)}</Text> : null}
+            {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1}>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }], theme)}</Text> : null}
           </View>
         </ScrollView>
       </ScrollView>
@@ -319,7 +347,8 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         <Text style={styles.loadingLabel}>{loading.label}</Text>
         {loading.percent === undefined ? null : <Text style={styles.loadingProgress}>{loading.percent}%</Text>}
       </View> : null}
-      {atBottom && !programReading ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={styles.jump}>
+      {copied ? <View pointerEvents="none" style={[styles.pill, styles.copied]}><Text style={styles.jumpGlyph}>Line copied</Text></View> : null}
+      {atBottom && !programReading ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={[styles.pill, styles.jump]}>
         <Text style={styles.jumpGlyph}>{unread ? "New output · " : ""}↓ Live</Text>
       </Pressable>}
     </View>
@@ -354,15 +383,17 @@ function spanStyle(style: TerminalStyle, theme: MobileTheme): TextStyle {
 /// Memoised on the span array, which the projector keeps referentially stable for any
 /// row a redraw left unchanged. Without that, every frame of a full-screen redraw would
 /// reconcile every row on the screen.
-const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lineHeight }: {
+const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lineHeight, onCopyLine }: {
   spans: readonly TerminalSpan[];
   fontSize: number;
   lineHeight: number;
+  onCopyLine: (text: string) => void;
 }) {
   const styles = useStyles();
   const theme = useTheme();
+  const copy = useCallback(() => { onCopyLine(spans.map((span) => span.text).join("").trimEnd()); }, [onCopyLine, spans]);
   return (
-    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
+    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} onLongPress={copy}>
       {spans.length === 0
         ? " "
         : renderSpans(spans, theme)}
@@ -370,17 +401,18 @@ const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lin
   );
 });
 
-function TerminalLineText({ line, fontSize, lineHeight }: {
+function TerminalLineText({ line, fontSize, lineHeight, onCopyLine }: {
   line: TerminalLine;
   fontSize: number;
   lineHeight: number;
+  onCopyLine: (text: string) => void;
 }) {
   const styles = useStyles();
   const theme = useTheme();
-  /// Selectable so a long-press can copy a line without the view owning a clipboard
-  /// dependency of its own.
+  /// A long-press hands the line to the owner, which holds the clipboard; the view
+  /// itself owns no clipboard dependency.
   return (
-    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} selectable>
+    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} onLongPress={() => onCopyLine(line.text)}>
       {line.text.length === 0 ? " " : renderSpans([{ text: line.text, style: DEFAULT_TERMINAL_STYLE }], theme)}
     </Text>
   );
@@ -414,9 +446,8 @@ const useStyles = createThemedStyles(({ color }) => ({
   horizontal: { minWidth: "100%" },
   output: { color: color.text, fontFamily: fontFamily.mono },
   notice: { color: color.textMuted, fontFamily: fontFamily.mono },
-  jump: {
+  pill: {
     position: "absolute",
-    right: space.md,
     bottom: space.md,
     paddingHorizontal: space.md,
     height: 38,
@@ -427,5 +458,7 @@ const useStyles = createThemedStyles(({ color }) => ({
     borderColor: color.borderStrong,
     backgroundColor: color.bgRaised,
   },
+  jump: { right: space.md },
   jumpGlyph: { color: color.text, fontSize: 12, lineHeight: 20 },
+  copied: { left: space.md },
 }));

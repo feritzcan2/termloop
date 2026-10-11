@@ -275,7 +275,8 @@ export function useTerminalSession(
     const open = attachment.current;
     const current = continuity.current?.projection;
     if (!canSend || open === undefined || current === undefined || lines === 0) return;
-    const sequence = scrollSequence(lines, current.mouseTracking, current.sgrMouseEncoding);
+    const sequence = scrollSequence(lines, current.mouseTracking, current.sgrMouseEncoding, current.alternateScreen);
+    if (sequence.length === 0) return;
     void deliver(open, encoder.encode(sequence));
   }, [canSend, deliver, encoder]);
 

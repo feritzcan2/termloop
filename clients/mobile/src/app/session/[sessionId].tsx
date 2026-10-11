@@ -2,7 +2,7 @@ import { createTextStyles, fontFamily } from "@/theme/typography";
 import { useTheme, createThemedStyles } from "@/theme/context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -108,6 +108,7 @@ export default function SessionRoute() {
   const [imageSending, setImageSending] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
+  const copyLine = useCallback((text: string) => { void clipboardBridge.copyText(text).catch(() => undefined); }, []);
   const [actionsOpen, setActionsOpen] = useState(false);
   const lastRouteDiagnostic = useRef<string | undefined>(undefined);
 
@@ -486,6 +487,7 @@ export default function SessionRoute() {
           capNotice={terminal.capNotice}
           onScrollBack={terminal.scrollBack}
           onReturnToLive={terminal.returnToLive}
+          onCopyLine={copyLine}
           programScroll={terminal.programScroll}
         />
       </View>
