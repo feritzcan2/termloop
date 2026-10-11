@@ -809,7 +809,14 @@ impl CoreRuntime {
         {
             return Err(CoreError::CapabilityDenied);
         }
-        let signal = normalized.signal;
+        // The closing `SessionStart` of a compaction is still a synchronous
+        // hook response that deferred generated input waits for.
+        let session_started = normalized.signal == termloop_agents::AgentSignal::SessionStarted;
+        let signal = if session_started && self.compaction_runs_inside_live_turn(session_id) {
+            termloop_agents::AgentSignal::CompactResumedTurn
+        } else {
+            normalized.signal
+        };
         let plan_changed = if let Some(plan) = normalized.plan {
             let mut current_plan = self
                 .store
@@ -837,7 +844,6 @@ impl CoreRuntime {
             .agent_observations
             .get_mut(session_id)
             .expect("authenticated observation capability remains present");
-        let resume_started = signal == termloop_agents::AgentSignal::SessionStarted;
         let previous = capability.observation;
         let next = termloop_agents::reduce_observation(
             previous,
@@ -850,7 +856,7 @@ impl CoreRuntime {
         capability.last_signal = Some(signal);
         capability.last_notification_type = hook_notification_type;
         let defer_generated_input_until_hook_response =
-            resume_started && capability.pending_generated_input.is_some();
+            session_started && capability.pending_generated_input.is_some();
         if defer_generated_input_until_hook_response {
             capability.defer_generated_input_until_hook_response = true;
         }
@@ -882,7 +888,7 @@ impl CoreRuntime {
         if !turn_is_running(next.state) {
             self.claude_turn_watches.remove(session_id);
         }
-        if (resume_started
+        if (session_started
             || (agent_id == "opencode"
                 && normalized.resume_ref.as_ref() == durable_session.resume_ref.as_ref()))
             && self.resume_reservations.contains(session_id)
@@ -967,7 +973,7 @@ impl CoreRuntime {
             status_changed,
             session_changed,
             provider_session_replaced,
-            session_started: resume_started,
+            session_started,
         })
     }
 
@@ -2141,6 +2147,24 @@ impl CoreRuntime {
         Ok(())
     }
 
+    /// Whether this Session is compacting inside a turn that is still running.
+    /// Claude closes an auto compact with the same `SessionStart` as a manual
+    /// `/compact`; only the turn watch, which outlives `PreCompact` and retires
+    /// at every turn outcome, tells the resumed turn apart from the composer.
+    fn compaction_runs_inside_live_turn(&self, session_id: &str) -> bool {
+        self.agent_observations
+            .get(session_id)
+            .is_some_and(|capability| {
+                capability
+                    .observation
+                    .is_some_and(|observation| observation.state == AgentState::Compacting)
+                    && self
+                        .claude_turn_watches
+                        .get(session_id)
+                        .is_some_and(|watch| watch.runtime_epoch == capability.runtime_epoch)
+            })
+    }
+
     /// Plans bounded transcript reads for working Claude turns. Compacting
     /// pauses the check: manual `/compact` does not submit a new prompt, so the
     /// watched prompt may already have an interruption record. Keep the watch
@@ -2551,6 +2575,7 @@ fn provider_signal_proves_turn_progress(signal: termloop_agents::AgentSignal) ->
             | termloop_agents::AgentSignal::Notification
             | termloop_agents::AgentSignal::IdleNotified
             | termloop_agents::AgentSignal::CompactStarted
+            | termloop_agents::AgentSignal::CompactResumedTurn
             | termloop_agents::AgentSignal::Stopped
             | termloop_agents::AgentSignal::Failed
             | termloop_agents::AgentSignal::Interrupted
@@ -3007,19 +3032,33 @@ mod tests {
                 .unwrap()["status"],
             "compacting"
         );
+        // Claude closes an auto compact with `SessionStart`. Inside the live
+        // turn that resumes the work instead of returning to the composer.
+        runtime
+            .record_agent_observation(
+                "token-live",
+                "claude-live",
+                "SessionStart",
+                None,
+                None,
+                7,
+                7,
+            )
+            .unwrap();
+        assert_eq!(runtime.agent_status_list().unwrap()[0]["status"], "working");
         // Auto compaction preserves the watch for a real interruption after
         // work resumes, but a read planned before compaction remains stale.
         runtime
-            .record_agent_observation("token-live", "claude-live", "PreToolUse", None, None, 7, 7)
+            .record_agent_observation("token-live", "claude-live", "PreToolUse", None, None, 8, 8)
             .unwrap();
         assert!(matches!(
-            runtime.apply_claude_interrupt_observation(&before_compact, 8, 8),
+            runtime.apply_claude_interrupt_observation(&before_compact, 9, 9),
             Err(CoreError::CapabilityDenied)
         ));
         let after_compact = runtime.plan_claude_interrupt_checks().remove(0);
         assert!(
             runtime
-                .apply_claude_interrupt_observation(&after_compact, 9, 9)
+                .apply_claude_interrupt_observation(&after_compact, 10, 10)
                 .unwrap()
         );
         assert!(runtime.plan_claude_interrupt_checks().is_empty());
@@ -3034,8 +3073,8 @@ mod tests {
                     "PreCompact",
                     None,
                     None,
-                    10,
-                    10,
+                    11,
+                    11,
                 )
                 .unwrap()
         );
@@ -3051,8 +3090,8 @@ mod tests {
                     "SessionStart",
                     None,
                     None,
-                    11,
-                    11,
+                    12,
+                    12,
                 )
                 .unwrap()
         );
