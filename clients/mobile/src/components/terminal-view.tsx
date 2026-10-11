@@ -21,11 +21,8 @@ import {
   type InitialTerminalPosition,
 } from "@/presentation/terminal-scroll";
 import { sameTerminalRowWindow, terminalRowWindow } from "@/presentation/terminal-window";
-import {
-  earlierTerminalHistory, recentTerminalHistory, reconcileTerminalHistory,
-  terminalReadingAnchor, terminalReadingOffset, type TerminalHistoryPage,
-} from "@/presentation/terminal-history";
-import { DEFAULT_TERMINAL_STYLE, type TerminalSpan, type TerminalStyle } from "@/presentation/terminal-screen";
+import { liveTerminalRowsById, terminalReadingRows } from "@/presentation/terminal-history";
+import { DEFAULT_TERMINAL_STYLE, type TerminalScreenLine, type TerminalSpan, type TerminalStyle } from "@/presentation/terminal-screen";
 import { terminalStyleColors } from "@/presentation/terminal-colors";
 import type { MobileTheme } from "@/theme/tokens";
 import { terminalLinkSpans } from "@/presentation/terminal-links";
@@ -102,26 +99,40 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const requested = useRef({ direction: 0, lines: 0 });
   const canScrollBack = onScrollBack !== undefined && buffer.screen !== undefined;
   const outputLines = useMemo(() => buffer.lines.filter((line) => line.kind === "output"), [buffer.lines]);
-  const historyLines = buffer.screen ?? outputLines;
-  const historyKind = buffer.screen === undefined ? "stream" : "screen";
-  const [history, setHistory] = useState(() => recentTerminalHistory(historyLines, historyKind));
-  const page = reconcileTerminalHistory(history, historyLines, historyKind, atBottom, programReading);
-  if (page !== history) setHistory(page);
-  const count = page.rows.length - page.start;
-  const directScroll = canScrollBack && programScroll && page.start === 0;
+  const historyLines: readonly HistoryLine[] = buffer.screen ?? outputLines;
+  const historyKind: HistoryKind = buffer.screen === undefined ? "stream" : "screen";
+  // The rows on display when the reader left the live edge. While set, nothing above
+  // the reader moves: evicted rows stay, new rows append, and a row the program is
+  // still painting shows its live content in its frozen place.
+  const [frozen, setFrozen] = useState<{ rows: readonly HistoryLine[]; kind: HistoryKind } | undefined>(undefined);
+  if (frozen !== undefined && frozen.kind !== historyKind) {
+    // A replaced renderer numbers its rows from a different space. Start it live.
+    setFrozen(undefined);
+    returningToLive.current = true;
+  }
+  const reading = useMemo(() => frozen === undefined || frozen.kind !== historyKind ? undefined
+    : terminalReadingRows(frozen.rows, historyLines), [frozen, historyKind, historyLines]);
+  const liveById = useMemo(() => reading === undefined ? undefined : liveTerminalRowsById(historyLines), [reading, historyLines]);
+  const displayed = reading?.rows ?? historyLines;
+  const count = displayed.length;
+  const directScroll = canScrollBack && programScroll;
   const rows = terminalRowWindow(count, viewport.offset, viewport.height, lineHeight);
   const lastRevision = useRef(buffer.outputRevision);
-  const reading = useRef<{ page: TerminalHistoryPage; offset: number; lineHeight: number } | undefined>(undefined);
-  const pendingPosition = useRef<number | undefined>(undefined);
-  const loadingPage = useRef(false);
   const scrolling = useRef(false);
-  const pagedDuringGesture = useRef(false);
   const drag = useRef({ y: 0, remainder: 0, active: false });
   const dragViewport = useRef({ offset: 0, maxOffset: 0 });
   dragViewport.current = {
     offset: viewport.offset,
     maxOffset: Math.max(0, count * lineHeight + 2 * terminalGeometry.contentPadding - viewport.height),
   };
+  const historyRef = useRef(historyLines);
+  historyRef.current = historyLines;
+  /// Native scrolling leaves live. The program-scroll path never freezes: there the
+  /// program owns the frame and repaints it in place, so the rows must stay live.
+  const leaveLive = useCallback(() => {
+    returningToLive.current = false;
+    setFrozen((current) => current ?? { rows: historyRef.current, kind: historyKind });
+  }, [historyKind]);
   const scrollGesture = useMemo(() => {
     const reset = () => { drag.current = { y: 0, remainder: 0, active: false }; };
     const move = (y: number) => {
@@ -152,7 +163,6 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         && Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
       onPanResponderGrant: () => {
         returningToLive.current = false;
-        pendingPosition.current = undefined;
         reset();
         drag.current.active = true;
       },
@@ -169,44 +179,16 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   }, [buffer.outputRevision, programReading]);
 
   useLayoutEffect(() => {
-    if (returningToLive.current) {
-      const offset = Math.max(0, count * lineHeight + 2 * terminalGeometry.contentPadding
-        + (buffer.screen === undefined && buffer.pending.length !== 0 ? lineHeight : 0) - viewport.height);
-      if (offset !== viewport.offset) setViewport((current) => ({ ...current, offset }));
-      reading.current = { page, offset, lineHeight };
-      // The recent page must be committed before native scrolling can target it.
-      scroll.current?.scrollToEnd({ animated: false });
-      // Fabric may still clamp the first command to its previous layout, even
-      // when the content height is unchanged and no size callback will follow.
-      scheduleLiveScroll();
-      return;
-    }
-    const previous = reading.current;
-    let offset = viewport.offset;
-    if (previous && previous.page.kind === page.kind && !atBottomRef.current && !programReading
-      && (previous.page !== page || previous.lineHeight !== lineHeight)) {
-      const anchor = terminalReadingAnchor(previous.page, previous.offset, previous.lineHeight);
-      if (anchor !== undefined) offset = terminalReadingOffset(page, anchor, lineHeight);
-      if (offset !== viewport.offset) {
-        pendingPosition.current = offset;
-        setViewport((current) => ({ ...current, offset }));
-        // Repeat after native content measurement: the old content height can
-        // clamp a scroll command issued in the same commit as a prepend.
-        scroll.current?.scrollTo({ y: offset, animated: false });
-      }
-    }
-    reading.current = { page, offset, lineHeight };
-  }, [page, viewport.offset, viewport.height, lineHeight, count, buffer.screen, buffer.pending, programReading, scheduleLiveScroll]);
-
-  const loadEarlier = useCallback(() => {
-    if (initialPosition !== "ready" || loadingPage.current || page.start === 0) return;
-    returningToLive.current = false;
-    loadingPage.current = true;
-    pagedDuringGesture.current = true;
-    atBottomRef.current = false;
-    setAtBottom(false);
-    setHistory(earlierTerminalHistory(page));
-  }, [initialPosition, page]);
+    if (!returningToLive.current) return;
+    const offset = Math.max(0, count * lineHeight + 2 * terminalGeometry.contentPadding
+      + (buffer.screen === undefined && buffer.pending.length !== 0 ? lineHeight : 0) - viewport.height);
+    if (offset !== viewport.offset) setViewport((current) => ({ ...current, offset }));
+    // The rows must be committed before native scrolling can target them.
+    scroll.current?.scrollToEnd({ animated: false });
+    // Fabric may still clamp the first command to its previous layout, even
+    // when the content height is unchanged and no size callback will follow.
+    scheduleLiveScroll();
+  }, [viewport.offset, viewport.height, lineHeight, count, buffer.screen, buffer.pending, scheduleLiveScroll]);
 
   const jumpToLive = useCallback(() => {
     returningToLive.current = true;
@@ -216,15 +198,12 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     setUnread(false);
     setAtBottom(true);
     atBottomRef.current = true;
-    loadingPage.current = false;
-    pendingPosition.current = undefined;
-    setHistory(recentTerminalHistory(historyLines, historyKind));
+    setFrozen(undefined);
     onReturnToLive?.();
-  }, [historyLines, historyKind, onReturnToLive]);
+  }, [onReturnToLive]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (loadingPage.current || drag.current.active) return;
-    pendingPosition.current = undefined;
+    if (drag.current.active) return;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     if (returningToLive.current) {
       const expectedHeight = count * lineHeight + 2 * terminalGeometry.contentPadding
@@ -235,29 +214,23 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         return;
       }
     }
-    const movingUp = contentOffset.y < viewport.offset;
-    reading.current = { page, offset: Math.max(0, contentOffset.y), lineHeight };
     const bottom = contentSize.height - layoutMeasurement.height - contentOffset.y < 24;
+    if (bottom && !atBottomRef.current && !programReading) {
+      // Scrolling back down to the edge resumes following, as sticky as a Live tap.
+      returningToLive.current = true;
+      setFrozen(undefined);
+    }
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     if (bottom) setUnread(false);
     const offset = Math.max(0, contentOffset.y);
-    // Commit the offset only when it moves the mounted window. The precise position
-    // is already in `reading`; React only needs to hear about it per block.
+    // Commit the offset only when it moves the mounted window; React only needs to
+    // hear about it per block.
     if (layoutMeasurement.height !== viewport.height
       || !sameTerminalRowWindow(rows, terminalRowWindow(count, offset, layoutMeasurement.height, lineHeight))) {
       setViewport({ offset, height: layoutMeasurement.height });
     }
-    if (initialPosition === "ready" && scrolling.current && movingUp
-      && contentOffset.y <= lineHeight * 4 && page.start > 0) {
-      loadEarlier();
-      return;
-    }
-    // Native bounce events from revealing cached rows must never become input
-    // to the program, including the gesture that revealed the final page.
-    if (pagedDuringGesture.current) return;
     if (directScroll || !canScrollBack || !scrolling.current) return;
-    if (contentOffset.y < 0 && page.start > 0) return;
     const total = overscrollRequest(contentOffset.y, contentSize.height, layoutMeasurement.height, lineHeight);
     const direction = Math.sign(total);
     if (direction === 0) { requested.current = { direction: 0, lines: 0 }; return; }
@@ -266,14 +239,9 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     if (lines <= 0) return;
     requested.current = { direction, lines: Math.abs(total) };
     onScrollBack?.(direction * lines);
-  }, [canScrollBack, directScroll, initialPosition, lineHeight, loadEarlier, onScrollBack, page, viewport.offset, viewport.height, rows, count, buffer.screen, buffer.pending, scheduleLiveScroll]);
+  }, [canScrollBack, directScroll, lineHeight, onScrollBack, programReading, viewport.height, rows, count, buffer.screen, buffer.pending, scheduleLiveScroll]);
 
   const onContentChange = useCallback(() => {
-    if (pendingPosition.current !== undefined) {
-      scroll.current?.scrollTo({ y: pendingPosition.current, animated: false });
-      pendingPosition.current = undefined;
-    }
-    loadingPage.current = false;
     if (initialPosition !== "ready") {
       if (!hasContent && loading) return;
       scroll.current?.scrollToEnd({ animated: false });
@@ -305,11 +273,6 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
 
   return (
     <View style={styles.surface} {...scrollGesture.panHandlers}>
-      {page.start > 0 ? <View style={styles.historyBar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Load earlier output" onPress={loadEarlier}>
-          <Text style={styles.notice}>↑ Scroll up for earlier output</Text>
-        </Pressable>
-      </View> : null}
       <ScrollView ref={scroll} style={styles.scroll}
         scrollEnabled={!directScroll}
         contentContainerStyle={[styles.content, initialPosition === "ready" ? null : styles.initiallyHidden]}
@@ -320,10 +283,8 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         }}
         onScroll={onScroll} scrollEventThrottle={16}
         onScrollBeginDrag={() => {
-          returningToLive.current = false;
+          leaveLive();
           scrolling.current = true;
-          pagedDuringGesture.current = false;
-          pendingPosition.current = undefined;
         }}
         onScrollEndDrag={() => { scrolling.current = false; requested.current = { direction: 0, lines: 0 }; }}
         onMomentumScrollBegin={() => { scrolling.current = true; }}
@@ -332,9 +293,12 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         <ScrollView horizontal contentContainerStyle={styles.horizontal} showsHorizontalScrollIndicator={false}>
           <View>
             <View style={{ height: rows.before }} />
-            {buffer.screen === undefined
-              ? outputLines.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />)
-              : buffer.screen.slice(page.start + rows.start, page.start + rows.end).map((line) => <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />)}
+            {displayed.slice(rows.start, rows.end).map((row) => {
+              const line = liveById?.get(row.id) ?? row;
+              return "spans" in line
+                ? <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />
+                : <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />;
+            })}
             <View style={{ height: rows.after }} />
             {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1}>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }], theme)}</Text> : null}
           </View>
@@ -354,6 +318,9 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     </View>
   );
 }
+
+type HistoryLine = TerminalScreenLine | TerminalLine;
+type HistoryKind = "stream" | "screen";
 
 /// Resolved styles are cached against the interned cell style they came from, so a
 /// frame that reuses a dozen colours allocates a dozen style objects rather than one
@@ -425,7 +392,6 @@ function renderSpans(spans: readonly TerminalSpan[], theme: MobileTheme) {
 }
 
 const useStyles = createThemedStyles(({ color }) => ({
-  historyBar: { paddingHorizontal: space.sm, paddingVertical: space.xs, alignItems: "center" },
   surface: { flex: 1, backgroundColor: color.bgTerminal },
   scroll: { flex: 1 },
   /// No `gap` here. A gap between the notice and the output block is fine, but the block
@@ -445,7 +411,6 @@ const useStyles = createThemedStyles(({ color }) => ({
   /// line is free to push the content box past the screen and become scrollable.
   horizontal: { minWidth: "100%" },
   output: { color: color.text, fontFamily: fontFamily.mono },
-  notice: { color: color.textMuted, fontFamily: fontFamily.mono },
   pill: {
     position: "absolute",
     bottom: space.md,

@@ -290,68 +290,6 @@ it("lets a connected reader scroll back through output received during live comp
   }
 });
 
-it("reveals one cached page per layout, anchors the reader, and sends no program input", async () => {
-  const screen = Array.from({ length: 510 }, (_, index) => ({ id: index + 1, spans: [] }));
-  const buffer = { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" as const };
-  const onScrollBack = vi.fn();
-  const height = terminalGeometry.lineHeights[1]!;
-  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined, onScrollBack });
-  let view = harness.render();
-  view.onContentSizeChange();
-  harness.frames();
-  view = harness.render();
-  view.onScroll(scrollEvent(200 * height - 600, 200 * height));
-  view = harness.render();
-  view.onScrollBeginDrag();
-  view.onScroll(scrollEvent(40, 200 * height));
-  // More events can arrive before React commits the added rows.
-  view.onScroll(scrollEvent(-40, 200 * height));
-  view = harness.render();
-  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 200 * height + 40, animated: false });
-  expect(onScrollBack).not.toHaveBeenCalled();
-  expect(harness.renderedKeys()).toContain(String(311 + Math.floor(40 / height)));
-  expect(harness.renderedKeys().length).toBeLessThan(160);
-  view.onContentSizeChange();
-  view.onScroll(scrollEvent(200 * height + 40, 400 * height));
-  view = harness.render();
-  view.onScroll(scrollEvent(20, 400 * height));
-  view = harness.render();
-  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 110 * height + 20, animated: false });
-  view.onContentSizeChange();
-  // The final page's bounce still belongs to local history, not the agent TUI.
-  view.onScroll(scrollEvent(-60, 510 * height));
-  expect(onScrollBack).not.toHaveBeenCalled();
-});
-
-it("does not reapply an old eviction correction after the reader has moved again", async () => {
-  const rows = (count: number, start: number) => Array.from({ length: count }, (_, i) => ({ id: start + i, spans: [] }));
-  const buffer = { ...emptyTerminalBuffer(), screen: rows(200, 1), ready: true, stream: "live" as const };
-  const height = terminalGeometry.lineHeights[1]!;
-  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined });
-  let view = harness.render();
-  view.onContentSizeChange();
-  harness.frames();
-  view = harness.render();
-  view.onScrollBeginDrag();
-  view.onScroll(scrollEvent(1000, 200 * height));
-  view = harness.render();
-  buffer.screen = rows(200, 21);
-  view = harness.render();
-  expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 1000 - 20 * height, animated: false });
-  // Same-height eviction has no onContentSizeChange callback. Momentum continues.
-  view.onScroll(scrollEvent(500, 200 * height));
-  harness.render();
-  harness.scrollTo.mockClear();
-  buffer.screen = rows(201, 21);
-  view = harness.render();
-  view.onContentSizeChange();
-  expect(harness.scrollTo).not.toHaveBeenCalled();
-});
-
-function scrollEvent(y: number, contentHeight: number) {
-  return { nativeEvent: { contentOffset: { y }, contentSize: { height: contentHeight }, layoutMeasurement: { height: 600 } } };
-}
-
 it.each([false, true])("returns to the latest rows after reading history (expanded page: %s)", async (expanded) => {
   const screen = Array.from({ length: 510 }, (_, index) => ({ id: index + 1, spans: [] }));
   const buffer = { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" as const };
@@ -389,6 +327,10 @@ it.each([false, true])("returns to the latest rows after reading history (expand
   harness.render();
   expect(harness.liveButton()).toBeDefined();
 });
+
+function scrollEvent(y: number, contentHeight: number) {
+  return { nativeEvent: { contentOffset: { y }, contentSize: { height: contentHeight }, layoutMeasurement: { height: 600 } } };
+}
 
 function finger(dy: number, dx = 0) {
   return { dy, dx, numberActiveTouches: 1 };
@@ -485,6 +427,46 @@ it.each([false, true])("cancels queued live positioning when a new drag starts (
   harness.scrollToEnd.mockClear();
   harness.frames();
   expect(harness.scrollToEnd).not.toHaveBeenCalled();
+});
+
+it("holds frozen rows in place while live output evicts, appends, and repaints", async () => {
+  const rows = (count: number, start: number, text = "") => Array.from({ length: count }, (_, i) => ({
+    id: start + i, spans: text ? [{ text, style: { foreground: "x", background: undefined, bold: false, italic: false, underline: false } }] : [],
+  }));
+  const buffer = { ...emptyTerminalBuffer(), screen: rows(300, 1), ready: true, stream: "live" as const };
+  const height = terminalGeometry.lineHeights[1]!;
+  const harness = await terminalHarness({ buffer, fontSizeIndex: 1, capNotice: undefined });
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScrollBeginDrag();
+  view.onScroll(scrollEvent(1000, 300 * height));
+  view = harness.render();
+  const before = harness.renderedKeys();
+  harness.scrollTo.mockClear();
+  harness.scrollToEnd.mockClear();
+  // Live evicts 20 rows from the front, repaints row 300, and appends 5 rows.
+  buffer.screen = [...rows(279, 21), ...rows(1, 300, "painted"), ...rows(5, 301)];
+  view = harness.render();
+  view.onContentSizeChange();
+  expect(harness.renderedKeys()).toEqual(before);
+  expect(harness.scrollTo).not.toHaveBeenCalled();
+  expect(harness.scrollToEnd).not.toHaveBeenCalled();
+  expect(harness.liveButton()).toBeDefined();
+  // The frozen row that the program is still painting shows its live content.
+  view.onScroll(scrollEvent(290 * height, 305 * height));
+  harness.render();
+  const painted = nodes(harness.tree()).find((node) => node.key === "300")!;
+  expect(painted.props.spans[0].text).toBe("painted");
+  expect(harness.renderedKeys()).toContain("305");
+  // Reaching the bottom by hand resumes following, and the rows go live again.
+  buffer.screen = [...rows(279, 21), ...rows(1, 300, "painted"), ...rows(6, 301)];
+  view.onScroll(scrollEvent(305 * height + 2 * terminalGeometry.contentPadding - 600, 305 * height + 2 * terminalGeometry.contentPadding));
+  view = harness.render();
+  expect(harness.liveButton()).toBeUndefined();
+  expect(harness.renderedKeys()).not.toContain("1");
+  expect(harness.renderedKeys()).toContain("306");
 });
 
 async function terminalHarness(props: Props) {
