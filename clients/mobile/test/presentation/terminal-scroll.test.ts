@@ -163,4 +163,15 @@ describe("scroll-back sequence", () => {
   it("always moves at least one page when asked to move at all", () => {
     expect(scrollSequence(-1, "unknown", false)).toBe(`${esc}[5~`);
   });
+
+  it("sends nothing to a normal-screen program that does not track the mouse", () => {
+    // Claude streams onto the normal screen: the phone holds its history, and page
+    // keys would only be typed into a program with no viewport of its own.
+    expect(scrollSequence(-3, "unknown", false, false)).toBe("");
+    expect(scrollSequence(3, "none", false, false)).toBe("");
+    // A wheel-tracking program on the normal screen (Codex) still gets wheel reports.
+    expect(scrollSequence(-1, "any", true, false)).toBe(`${esc}[<64;1;2M`);
+    // The alternate screen keeps the page-key fallback: nothing else can reach back.
+    expect(scrollSequence(-3, "none", false, true)).toBe(`${esc}[5~`);
+  });
 });

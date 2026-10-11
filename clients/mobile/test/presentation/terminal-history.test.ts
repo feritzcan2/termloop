@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   earlierTerminalHistory, recentTerminalHistory, reconcileTerminalHistory,
-  terminalReadingAnchor, terminalReadingOffset,
+  terminalReadingAnchor, terminalReadingOffset, terminalRowIndex,
 } from "../../src/presentation/terminal-history";
 import { terminalRowWindow } from "../../src/presentation/terminal-window";
 
@@ -29,7 +29,7 @@ describe("incremental terminal history", () => {
     expect(offset).toBe(3242);
     expect(terminalReadingAnchor(earlier, offset, 16)).toEqual(anchor);
     const window = terminalRowWindow(earlier.rows.length - earlier.start, offset, 600, 16);
-    expect(window.end - window.start).toBeLessThan(100);
+    expect(window.end - window.start).toBeLessThan(160);
   });
 
   it("does not shift the reader when live output evicts only unseen cached rows", () => {
@@ -75,5 +75,28 @@ describe("incremental terminal history", () => {
     expect(next.rows).toBe(repainted);
     // Local history still preserves a reading anchor across prepends.
     expect(reconcileTerminalHistory(page, repainted, "screen", false).start).toBe(3);
+  });
+
+  it("finds a row from its last index without scanning, and still finds a reordered row", () => {
+    const source = rows(4800);
+    expect(terminalRowIndex(source, 4000, 3999)).toBe(3999);
+    // Front eviction moved it a few places back.
+    expect(terminalRowIndex(source.slice(5), 4000, 3999)).toBe(3994);
+    // A prepend moved it forward.
+    expect(terminalRowIndex([...rows(3, 9001), ...source], 4000, 3999)).toBe(4002);
+    expect(terminalRowIndex(source, 99999, 3999)).toBeUndefined();
+    // A row inserted above the cursor can sit out of id order; it is still found.
+    const reordered = [{ id: 1 }, { id: 50 }, { id: 2 }, { id: 3 }];
+    expect(terminalRowIndex(reordered, 50, 3)).toBe(1);
+    expect(terminalRowIndex(reordered, 2, 0)).toBe(2);
+  });
+
+  it("moves the mounted window in blocks so most scroll events change nothing", () => {
+    const a = terminalRowWindow(4800, 10000, 600, 16);
+    const b = terminalRowWindow(4800, 10000 + 5 * 16, 600, 16);
+    expect(b).toEqual(a);
+    const c = terminalRowWindow(4800, 10000 + 40 * 16, 600, 16);
+    expect(c.start).toBeGreaterThan(a.start);
+    expect(c.start % 16).toBe(0);
   });
 });

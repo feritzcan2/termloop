@@ -297,9 +297,15 @@ export class TerminalScreenProjection {
   #rows = DEFAULT_ROWS;
   #nextRowId = 0;
   #grid: Row[] = [];
-  /// Rows that left the top of the normal screen. Inline TUIs such as Codex rely on
-  /// the terminal emulator's scrollback instead of accepting mouse-wheel input.
-  #scrollback: Row[] = [];
+  /// Rows that left the top of the normal screen, already projected to spans. Inline
+  /// TUIs such as Codex rely on the terminal emulator's scrollback instead of
+  /// accepting mouse-wheel input.
+  ///
+  /// Projected once, at the moment the row leaves the grid: it never changes again.
+  /// Re-projecting it on every snapshot was the single largest per-frame cost of a
+  /// long streaming transcript — thousands of rows walked sixty times a second to
+  /// rebuild lines that were already correct.
+  #scrollbackLines: TerminalScreenLine[] = [];
   #row = 0;
   #column = 0;
   #savedRow = 0;
@@ -327,6 +333,13 @@ export class TerminalScreenProjection {
     return this.#sgrMouseEncoding;
   }
 
+  /// Whether the program owns the whole display. On the alternate screen nothing
+  /// scrolls into this projector's scrollback, so reaching older output means asking
+  /// the program; on the normal screen the history is already held here.
+  get alternateScreen(): boolean {
+    return this.#alternateScreen;
+  }
+
   restoreMouseModes(modes: number): void {
     this.#mouseTracking = (["none", "x10", "normal", "button", "any"] as const)[modes & 0xff] ?? "unknown";
     this.#sgrMouseEncoding = (modes & 0x100) !== 0;
@@ -345,22 +358,31 @@ export class TerminalScreenProjection {
   }
 
   snapshot(): TerminalScreenSnapshot {
-    const lines: TerminalScreenLine[] = [];
-    const visibleRows = [...this.#scrollback, ...this.#grid.slice(0, this.#rows)];
-    for (const row of visibleRows) {
+    const grid: TerminalScreenLine[] = [];
+    for (let index = 0; index < this.#rows; index += 1) {
+      const row = this.#grid[index];
       if (row === undefined) continue;
-      if (row.dirty || row.spans === undefined) {
-        const next = toSpans(row, this.#columns);
-        /// A redraw repaints most rows with the same content. Keeping the previous
-        /// array when it still matches is what lets the view skip those rows.
-        row.spans = row.spans !== undefined && spansEqual(row.spans, next) ? row.spans : next;
-        row.dirty = false;
-      }
-      lines.push({ id: row.id, spans: row.spans });
+      grid.push(this.#projectRow(row));
     }
-    while (lines.length > 0 && isBlankLine(lines[0])) lines.shift();
-    while (lines.length > 0 && isBlankLine(lines.at(-1))) lines.pop();
+    /// Scrollback never holds a blank row, so only a grid-only display can start
+    /// with one; trailing blanks are always the grid's.
+    if (this.#scrollbackLines.length === 0) {
+      while (grid.length > 0 && isBlankLine(grid[0])) grid.shift();
+    }
+    while (grid.length > 0 && isBlankLine(grid.at(-1))) grid.pop();
+    const lines = this.#scrollbackLines.length === 0 ? grid : this.#scrollbackLines.concat(grid);
     return { lines, droppedLines: this.#droppedLines };
+  }
+
+  #projectRow(row: Row): TerminalScreenLine {
+    if (row.dirty || row.spans === undefined) {
+      const next = toSpans(row, this.#columns);
+      /// A redraw repaints most rows with the same content. Keeping the previous
+      /// array when it still matches is what lets the view skip those rows.
+      row.spans = row.spans !== undefined && spansEqual(row.spans, next) ? row.spans : next;
+      row.dirty = false;
+    }
+    return { id: row.id, spans: row.spans };
   }
 
   #createRow(): Row {
@@ -725,15 +747,15 @@ export class TerminalScreenProjection {
     const meaningful = row.chars.some((char, index) =>
       char.trim().length > 0 || row.cellStyles[index]?.background !== undefined);
     if (!meaningful) return;
-    this.#scrollback.push(row);
+    this.#scrollbackLines.push(this.#projectRow(row));
     this.#trimScrollback();
   }
 
   #trimScrollback(): void {
     const limit = Math.max(0, SCREEN_MAX_ROWS - this.#rows);
-    const overflow = Math.max(0, this.#scrollback.length - limit);
+    const overflow = Math.max(0, this.#scrollbackLines.length - limit);
     if (overflow === 0) return;
-    this.#scrollback.splice(0, overflow);
+    this.#scrollbackLines.splice(0, overflow);
     this.#droppedLines += overflow;
   }
 
@@ -814,7 +836,7 @@ export class TerminalScreenProjection {
     if (mode === 2 || mode === 3) {
       for (const row of this.#grid) this.#clearRow(row, style);
       if (mode === 3) {
-        this.#scrollback = [];
+        this.#scrollbackLines = [];
         this.#droppedLines = 0;
       }
       return;
@@ -840,7 +862,7 @@ export class TerminalScreenProjection {
   /// the PTY did not change size — but nothing else survives the switch.
   #clear(): void {
     for (const row of this.#grid) this.#clearRow(row, DEFAULT_TERMINAL_STYLE);
-    this.#scrollback = [];
+    this.#scrollbackLines = [];
     this.#droppedLines = 0;
     this.#row = 0;
     this.#column = 0;

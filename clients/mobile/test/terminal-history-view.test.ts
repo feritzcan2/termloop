@@ -310,7 +310,7 @@ it("reveals one cached page per layout, anchors the reader, and sends no program
   expect(harness.scrollTo).toHaveBeenLastCalledWith({ y: 200 * height + 40, animated: false });
   expect(onScrollBack).not.toHaveBeenCalled();
   expect(harness.renderedKeys()).toContain(String(311 + Math.floor(40 / height)));
-  expect(harness.renderedKeys().length).toBeLessThan(100);
+  expect(harness.renderedKeys().length).toBeLessThan(160);
   view.onContentSizeChange();
   view.onScroll(scrollEvent(200 * height + 40, 400 * height));
   view = harness.render();
@@ -444,7 +444,10 @@ it("retries a jump clamped by native layout even when there is no content-size e
   view.onContentSizeChange();
   harness.frames();
   view = harness.render();
+  // Only a user drag leaves live-follow; a bare offset report is native noise.
+  view.onScrollBeginDrag();
   view.onScroll(scrollEvent(1000, contentHeight));
+  view.onScrollEndDrag();
   harness.render();
   let nativeOffset = 1000;
   let nativeLayoutReady = false;
@@ -471,7 +474,9 @@ it.each([false, true])("cancels queued live positioning when a new drag starts (
   view.onContentSizeChange();
   harness.frames();
   view = harness.render();
+  view.onScrollBeginDrag();
   view.onScroll(scrollEvent(100, contentHeight));
+  view.onScrollEndDrag();
   harness.render();
   harness.liveButton()!.props.onPress();
   view = harness.render();
@@ -534,6 +539,7 @@ async function terminalHarness(props: Props) {
   return {
     scrollTo,
     scrollToEnd,
+    tree: () => tree,
     gesture: () => nodes(tree)[0]!.props,
     liveButton: () => nodes(tree).find((node) => node.props.accessibilityLabel === "Return to live output"),
     frames: () => { while (frames.length) frames.shift()!(); },
@@ -563,3 +569,42 @@ function nodes(node: ReactNode): Array<React.ReactElement<Props>> {
   const children = Array.isArray(node.props.children) ? node.props.children.flat() : [node.props.children];
   return [node, ...children.flatMap((child: ReactNode) => nodes(child))];
 }
+
+it("keeps following live when a burst of rows lands the clamped scroll short of the new end", async () => {
+  const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ id: index + 1, spans: [] }));
+  const props: Props = { buffer: { ...emptyTerminalBuffer(), screen: rows(100), ready: true, stream: "live" }, fontSizeIndex: 1, capNotice: undefined };
+  const harness = await terminalHarness(props);
+  const height = terminalGeometry.lineHeights[1]!;
+  const contentHeight = (count: number) => count * height + 2 * terminalGeometry.contentPadding;
+  let view = harness.render();
+  view.onContentSizeChange();
+  harness.frames();
+  view = harness.render();
+  view.onScroll(scrollEvent(contentHeight(100) - 600, contentHeight(100)));
+  harness.render();
+  expect(harness.liveButton()).toBeUndefined();
+  // A tool result appends forty rows at once. Native clamps the first scroll-to-end
+  // to the previous layout and reports an offset forty rows short of the new edge.
+  props.buffer = { ...props.buffer, screen: rows(140), outputRevision: 2 };
+  view = harness.render();
+  harness.scrollToEnd.mockClear();
+  view.onContentSizeChange();
+  view.onScroll(scrollEvent(contentHeight(100) - 600, contentHeight(140)));
+  view = harness.render();
+  harness.frames();
+  expect(harness.liveButton()).toBeUndefined();
+  expect(harness.scrollToEnd).toHaveBeenCalled();
+  expect(harness.renderedKeys()).toContain("140");
+});
+
+it("copies a long-pressed row through the owner and never marks rows selectable", async () => {
+  const onCopyLine = vi.fn();
+  const screen = [{ id: 1, spans: [{ text: "pnpm ", style: { foreground: "x", background: undefined, bold: true, italic: false, underline: false } }, { text: "test   ", style: { foreground: "x", background: undefined, bold: false, italic: false, underline: false } }] }];
+  const harness = await terminalHarness({ buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" }, fontSizeIndex: 1, capNotice: undefined, onCopyLine });
+  harness.render();
+  const row = nodes(harness.tree()).find((node) => node.props.spans)!;
+  const text = (row.type as unknown as { type: (props: Props) => React.ReactElement<Props> }).type(row.props);
+  expect(text.props.selectable).toBeUndefined();
+  text.props.onLongPress();
+  expect(onCopyLine).toHaveBeenCalledWith("pnpm test");
+});

@@ -30,9 +30,9 @@ describe("terminal stream UX", () => {
     expect(events).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
-  it("mounts fewer than 100 rows from a 4800-row terminal and preserves total height", () => {
+  it("mounts fewer than 160 rows from a 4800-row terminal and preserves total height", () => {
     const window = terminalRowWindow(4800, 10000, 600, 16);
-    expect(window.end - window.start).toBeLessThan(100);
+    expect(window.end - window.start).toBeLessThan(160);
     expect(window.before + (window.end - window.start) * 16 + window.after).toBe(4800 * 16);
   });
   it("keeps the draft unconfirmed when Enter fails, without retrying", async () => {
