@@ -93,6 +93,10 @@ pub enum AgentSignal {
     IdleNotified,
     AmbientNotification,
     CompactStarted,
+    /// Claude closes every compaction with `SessionStart`. Core reports that
+    /// close as this signal only when the compaction ran inside a live turn,
+    /// which then continues instead of returning to the composer.
+    CompactResumedTurn,
     Stopped,
     Failed,
     Interrupted,
@@ -498,19 +502,19 @@ pub fn reduce_observation(
     let state = match signal {
         AgentSignal::SignalUnavailable => AgentState::Unknown,
         AgentSignal::SessionStarted => AgentState::Idle,
-        AgentSignal::PromptSubmitted | AgentSignal::ToolStarted | AgentSignal::ToolFinished => {
-            AgentState::Working
-        }
+        AgentSignal::PromptSubmitted
+        | AgentSignal::ToolStarted
+        | AgentSignal::ToolFinished
+        | AgentSignal::CompactResumedTurn => AgentState::Working,
         AgentSignal::PermissionRequested | AgentSignal::Notification => AgentState::AwaitingInput,
         AgentSignal::AmbientNotification => {
             previous.map_or(AgentState::Unknown, |previous| previous.state)
         }
         // `PreCompact` announces the intent, not the outcome: it fires before
-        // the provider decides whether there is anything to compact, and
-        // nothing at all fires when compaction ends. The state is therefore
-        // held only until the next authoritative signal — the resumed turn's
-        // tool/stop events after an auto compact, or the idle nudge after a
-        // manual one.
+        // the provider decides whether there is anything to compact. Claude
+        // closes the compaction with `SessionStart`, which leaves a resting
+        // Session idle and arrives as `CompactResumedTurn` inside a live turn.
+        // Otherwise the state is held until the next authoritative signal.
         AgentSignal::CompactStarted => AgentState::Compacting,
         AgentSignal::Stopped | AgentSignal::IdleNotified => AgentState::Idle,
         AgentSignal::Failed => AgentState::Failed,
@@ -1638,8 +1642,26 @@ mod tests {
             11,
         );
         assert_eq!(compacting.state, AgentState::Compacting);
-        // Nothing fires when compaction ends, so the resumed turn's own tool
-        // event is what retires the state.
+        // Claude's closing `SessionStart` inside the live turn resumes work,
+        // while the same event after a manual compact rests the Session.
+        let continued = reduce_observation(
+            Some(compacting),
+            AgentSignal::CompactResumedTurn,
+            AgentSignalSource::Hook,
+            3,
+            12,
+        );
+        assert_eq!(continued.state, AgentState::Working);
+        let closed = reduce_observation(
+            Some(compacting),
+            AgentSignal::SessionStarted,
+            AgentSignalSource::Hook,
+            3,
+            12,
+        );
+        assert_eq!(closed.state, AgentState::Idle);
+        // A provider without a closing event leaves the resumed turn's own
+        // tool event to retire the state.
         let resumed = reduce_observation(
             Some(compacting),
             AgentSignal::ToolFinished,

@@ -122,6 +122,10 @@ struct TranscriptEntry {
     entry_type: String,
     #[serde(default, rename = "isSidechain")]
     is_sidechain: bool,
+    #[serde(default, rename = "isMeta")]
+    is_meta: bool,
+    #[serde(default, rename = "isCompactSummary")]
+    is_compact_summary: bool,
     #[serde(default, rename = "sessionId")]
     session_id: Option<String>,
     #[serde(default, rename = "promptId")]
@@ -132,10 +136,53 @@ struct TranscriptEntry {
     message: Option<TranscriptMessage>,
 }
 
+impl TranscriptEntry {
+    fn records_interruption(&self) -> bool {
+        self.interrupted_message_id
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+    }
+
+    /// A submitted prompt opens its turn. Tool results, injected meta notices,
+    /// and compaction summaries carry the same `promptId` without starting one.
+    fn starts_turn(&self) -> bool {
+        if self.is_meta || self.is_compact_summary || self.records_interruption() {
+            return false;
+        }
+        match self
+            .message
+            .as_ref()
+            .and_then(|message| message.content.as_ref())
+        {
+            Some(TranscriptContent::Text(text)) => !text.is_empty(),
+            Some(TranscriptContent::Blocks(blocks)) => {
+                !blocks.is_empty() && blocks.iter().all(|block| block.kind != "tool_result")
+            }
+            Some(TranscriptContent::Other(_)) | None => false,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct TranscriptMessage {
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    content: Option<TranscriptContent>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TranscriptContent {
+    Text(String),
+    Blocks(Vec<TranscriptContentBlock>),
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Deserialize)]
+struct TranscriptContentBlock {
+    #[serde(default, rename = "type")]
+    kind: String,
 }
 
 /// Reads the newest provider model id out of a bounded transcript tail. The
@@ -167,24 +214,33 @@ pub fn normalize_claude_transcript_model(tail: &str, native_session_id: &str) ->
 ///
 /// `interruptedMessageId` is the structured marker; the accompanying
 /// `[Request interrupted by user]` text is display copy and is never matched.
-/// The prompt identity is what makes the answer exact: an older turn's
-/// interruption still sitting in the tail carries a different `promptId`.
+/// The prompt identity alone is not exact: a message submitted while a turn is
+/// still working cuts that turn short, and Claude files the interruption under
+/// the new message's `promptId` immediately before the message itself. Only the
+/// newest record for the prompt therefore decides; a prompt submitted after the
+/// interruption means the running turn began after it.
 pub fn claude_turn_interrupted(tail: &str, native_session_id: &str, prompt_id: &str) -> bool {
     if prompt_id.is_empty() {
         return false;
     }
-    tail.lines().rev().any(|line| {
-        let Ok(entry) = serde_json::from_str::<TranscriptEntry>(line) else {
-            return false;
-        };
-        entry.entry_type == "user"
-            && !entry.is_sidechain
-            && entry.session_id.as_deref() == Some(native_session_id)
-            && entry.prompt_id.as_deref() == Some(prompt_id)
-            && entry
-                .interrupted_message_id
-                .is_some_and(|value| !value.is_empty())
-    })
+    tail.lines()
+        .rev()
+        .find_map(|line| {
+            let entry = serde_json::from_str::<TranscriptEntry>(line).ok()?;
+            if entry.entry_type != "user"
+                || entry.is_sidechain
+                || entry.session_id.as_deref() != Some(native_session_id)
+                || entry.prompt_id.as_deref() != Some(prompt_id)
+            {
+                return None;
+            }
+            if entry.records_interruption() {
+                Some(true)
+            } else {
+                entry.starts_turn().then_some(false)
+            }
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -297,6 +353,74 @@ mod tests {
         ]
         .join("\n");
         assert!(!claude_turn_interrupted(&tail, "session-a", "prompt-1"));
+    }
+
+    fn typed_prompt(session_id: &str, prompt_id: &str) -> String {
+        format!(
+            r#"{{"type":"user","isSidechain":false,"sessionId":"{session_id}","promptId":"{prompt_id}","promptSource":"typed","message":{{"role":"user","content":"keep going"}}}}"#
+        )
+    }
+
+    fn tool_result(session_id: &str, prompt_id: &str) -> String {
+        format!(
+            r#"{{"type":"user","isSidechain":false,"sessionId":"{session_id}","promptId":"{prompt_id}","message":{{"role":"user","content":[{{"tool_use_id":"toolu_01","type":"tool_result","content":"ok"}}]}},"toolUseResult":{{}}}}"#
+        )
+    }
+
+    #[test]
+    fn a_message_submitted_mid_turn_is_not_its_own_interruption() {
+        // Claude files the cut-short turn's interruption under the new
+        // message's prompt id, immediately before the message itself.
+        let mut tail = vec![
+            turn_start("session-a", "prompt-1"),
+            tool_result("session-a", "prompt-1"),
+            interrupt("session-a", "prompt-2"),
+            typed_prompt("session-a", "prompt-2"),
+            assistant("session-a", "claude-opus-5", false),
+            tool_result("session-a", "prompt-2"),
+        ];
+        assert!(!claude_turn_interrupted(
+            &tail.join("\n"),
+            "session-a",
+            "prompt-2"
+        ));
+
+        // The new turn is still answerable: its own `Esc` lands after it.
+        tail.push(interrupt("session-a", "prompt-2"));
+        assert!(claude_turn_interrupted(
+            &tail.join("\n"),
+            "session-a",
+            "prompt-2"
+        ));
+    }
+
+    #[test]
+    fn a_reused_prompt_id_is_decided_by_its_newest_turn() {
+        let tail = [
+            typed_prompt("session-a", "prompt-1"),
+            interrupt("session-a", "prompt-1"),
+            typed_prompt("session-a", "prompt-1"),
+        ]
+        .join("\n");
+        assert!(!claude_turn_interrupted(&tail, "session-a", "prompt-1"));
+    }
+
+    #[test]
+    fn records_that_do_not_start_a_turn_never_hide_its_interruption() {
+        let compact_summary = r#"{"type":"user","isSidechain":false,"isCompactSummary":true,"sessionId":"session-a","promptId":"prompt-1","message":{"role":"user","content":"This session is being continued"}}"#;
+        let meta = r#"{"type":"user","isSidechain":false,"isMeta":true,"sessionId":"session-a","promptId":"prompt-1","message":{"role":"user","content":[{"type":"text","text":"notice"}]}}"#;
+        let subagent = r#"{"type":"user","isSidechain":true,"sessionId":"session-a","promptId":"prompt-1","message":{"role":"user","content":"subagent task"}}"#;
+        let tail = [
+            typed_prompt("session-a", "prompt-1"),
+            interrupt("session-a", "prompt-1"),
+            tool_result("session-a", "prompt-1"),
+            compact_summary.into(),
+            meta.into(),
+            subagent.into(),
+            typed_prompt("session-b", "prompt-1"),
+        ]
+        .join("\n");
+        assert!(claude_turn_interrupted(&tail, "session-a", "prompt-1"));
     }
 
     #[test]
