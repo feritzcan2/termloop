@@ -18,6 +18,7 @@ import type {
   GitHostPullRequestIdentityDto,
 } from "@termloop/contract/current";
 import { sessionLabel, type GitHostProjection, type Session } from "../model.js";
+import { changesReviewOwner, changesReviewScope, changesReviewEntryKeys, readChangesReviewed, writeChangesReviewed } from "../changes-reviewed-memory.js";
 import {
   localChangeKey,
   recoverLocalChange,
@@ -85,6 +86,7 @@ export type ChangesSubject = {
 
 export type ChangesOverlayProps = {
   subject: ChangesSubject;
+  connectionProfileId?: string | undefined;
   initialSource: ChangesOpenSource;
   close(): void;
   list(subjectId: string): Promise<LocalChangeListResult>;
@@ -102,6 +104,7 @@ export type ChangesOverlayProps = {
 
 export function ChangesOverlay({
   subject,
+  connectionProfileId,
   initialSource,
   close,
   list,
@@ -147,7 +150,9 @@ export function ChangesOverlay({
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
   const [reviewNotes, setReviewNotes] = useState<ReadonlyMap<string, ChangeReviewNote>>(new Map());
-  const [reviewedEntryKeys, setReviewedEntryKeys] = useState<ReadonlySet<string>>(new Set());
+  const reviewOwner = changesReviewOwner(subject, connectionProfileId);
+  const [reviewedEntryKeys, setReviewedEntryKeys] = useState(() => readChangesReviewed(reviewOwner));
+  useEffect(() => { writeChangesReviewed(reviewOwner, reviewedEntryKeys); }, [reviewOwner, reviewedEntryKeys]);
   const [reviewDraft, setReviewDraft] = useState<ChangeReviewDraft>();
   const [targetSessionId, setTargetSessionId] = useState<string>();
   const [sendingReview, setSendingReview] = useState(false);
@@ -175,7 +180,7 @@ export function ChangesOverlay({
     setPreImageError(undefined);
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (resetReviewed = true) => {
     const { list, listCommits } = readsRef.current;
     const initialSource = initialSourceRef.current;
     setLoadingSources(true);
@@ -185,7 +190,7 @@ export function ChangesOverlay({
     setPreImageError(undefined);
     setCommitChanges(new Map());
     setPullRequestChanges(new Map());
-    setReviewedEntryKeys(new Set());
+    if (resetReviewed) setReviewedEntryKeys(new Set());
     const [localResult, commitResult] = await Promise.allSettled([
       hasWorktree ? list(subject.id) : Promise.resolve(undefined),
       hasBranch ? listCommits(
@@ -211,7 +216,7 @@ export function ChangesOverlay({
     setLoadingSources(false);
   }, [hasBranch, hasWorktree, initialSourceKey, subject.id]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refresh(false); }, [refresh]);
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement
@@ -316,10 +321,12 @@ export function ChangesOverlay({
     : selectedSource.kind === "commit"
       ? currentCommitChanges?.observation_id
       : currentPullRequestChanges?.observation_id ?? undefined;
-  const reviewScopeKey = currentObservationId ? `${selectedSourceKey}\u0000${currentObservationId}` : undefined;
+  const reviewScopeKey = changesReviewScope(selectedSource, localChanges, commitList, subject.branchName);
+  const entryReviewKeys = useMemo(() => changesReviewEntryKeys(reviewScopeKey, currentObservationId, currentEntries),
+    [reviewScopeKey, currentObservationId, currentEntries]);
   const reviewedEntryIds = useMemo(() => new Set(currentEntries
-    .filter((entry) => reviewScopeKey && reviewedEntryKeys.has(reviewedEntryKey(reviewScopeKey, entry.entry_id)))
-    .map((entry) => entry.entry_id)), [currentEntries, reviewScopeKey, reviewedEntryKeys]);
+    .filter((entry) => reviewedEntryKeys.has(entryReviewKeys.get(entry.entry_id) ?? ""))
+    .map((entry) => entry.entry_id)), [currentEntries, entryReviewKeys, reviewedEntryKeys]);
   const changeTreeSections = useMemo<readonly ChangeTreeSection[]>(() => {
     const pending = currentEntries.filter((entry) => !reviewedEntryIds.has(entry.entry_id));
     const reviewed = currentEntries.filter((entry) => reviewedEntryIds.has(entry.entry_id));
@@ -597,10 +604,10 @@ export function ChangesOverlay({
     });
   };
   const setEntryReviewed = (entryId: string, reviewed: boolean) => {
-    if (!reviewScopeKey) return;
+    const key = entryReviewKeys.get(entryId);
+    if (!key) return;
     setReviewedEntryKeys((current) => {
       const next = new Set(current);
-      const key = reviewedEntryKey(reviewScopeKey, entryId);
       if (reviewed) next.add(key);
       else next.delete(key);
       return next;
@@ -614,8 +621,7 @@ export function ChangesOverlay({
     if (!reviewScopeKey) return;
     setReviewedEntryKeys((current) => {
       const next = new Set(current);
-      for (const entry of currentEntries) {
-        const key = reviewedEntryKey(reviewScopeKey, entry.entry_id);
+      for (const key of entryReviewKeys.values()) {
         if (allReviewed) next.delete(key);
         else next.add(key);
       }
@@ -1066,10 +1072,6 @@ function withoutKeyPrefix<T>(
 ): ReadonlyMap<string, T> {
   if (![...current.keys()].some((key) => key.startsWith(prefix))) return current;
   return new Map([...current].filter(([key]) => !key.startsWith(prefix)));
-}
-
-function reviewedEntryKey(scopeKey: string, entryId: string): string {
-  return `${scopeKey}\u0000${entryId}`;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
