@@ -23,10 +23,11 @@ export type ChangeTreeSection = {
   entryCount: number;
 };
 
-export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, selectedId, select, toggleFolder, setReviewed }: {
+export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, reviewDisabled, selectedId, select, toggleFolder, setReviewed }: {
   section: ChangeTreeSection;
   collapsedFolders: ReadonlySet<string>;
   reviewedEntryIds: ReadonlySet<string>;
+  reviewDisabled?: boolean | undefined;
   selectedId: string | undefined;
   select(id: string): void;
   toggleFolder(id: string): void;
@@ -50,6 +51,7 @@ export function ChangeSection({ section, collapsedFolders, reviewedEntryIds, sel
           sectionId={section.id}
           collapsedFolders={collapsedFolders}
           reviewedEntryIds={reviewedEntryIds}
+          reviewDisabled={reviewDisabled}
           depth={0}
           selectedId={selectedId}
           select={select}
@@ -66,11 +68,12 @@ export function ChangeBadge({ entry }: { entry: ChangeEntry }) {
   return <span className={`change-badge ${entry.kind}`} aria-label={label} title={label}>{changeKindSymbol(entry.kind)}</span>;
 }
 
-function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds, depth, selectedId, select, toggleFolder, setReviewed }: {
+function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds, reviewDisabled, depth, selectedId, select, toggleFolder, setReviewed }: {
   nodes: readonly ChangeTreeNode<ChangeEntry>[];
   sectionId: string;
   collapsedFolders: ReadonlySet<string>;
   reviewedEntryIds: ReadonlySet<string>;
+  reviewDisabled?: boolean | undefined;
   depth: number;
   selectedId: string | undefined;
   select(id: string): void;
@@ -100,6 +103,7 @@ function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds,
           <button
             type="button"
             className="changes-file-reviewed-toggle"
+            disabled={reviewDisabled}
             aria-label={`Mark ${entry.display_path} as ${reviewed ? "unreviewed" : "reviewed"}`}
             aria-pressed={reviewed}
             title={reviewed ? "Move back to files to review" : "Mark file as reviewed"}
@@ -140,6 +144,7 @@ function ChangeTreeNodes({ nodes, sectionId, collapsedFolders, reviewedEntryIds,
               sectionId={sectionId}
               collapsedFolders={collapsedFolders}
               reviewedEntryIds={reviewedEntryIds}
+              reviewDisabled={reviewDisabled}
               depth={depth + 1}
               selectedId={selectedId}
               select={select}

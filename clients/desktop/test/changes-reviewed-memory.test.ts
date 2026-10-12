@@ -9,6 +9,7 @@ const entry: TaskWorktreeChangeEntryDto = {
 const local: TaskWorktreeChangeListResult = {
   task_id: "task", observation_id: "changes-1", worktree_generation: 1, entries: [entry], truncated: false,
 };
+const digest = "a".repeat(64);
 const commits: TaskBranchCommitListResult = {
   task_id: "task", observation_id: "commits-1", branch_id: "branch", branch_name: "feature",
   branch_role: "primary", held_by_task_id: null, base_ref: "main", base_oid: "base-oid", base_evidence: null,
@@ -26,11 +27,11 @@ describe("reviewed file memory", () => {
     const target = storage();
     const task = changesReviewOwner({ kind: "task", id: "one" });
     const project = changesReviewOwner({ kind: "project", id: "one" });
-    writeChangesReviewed(task, new Set(["local\u0000file-a"]), target);
-    writeChangesReviewed(project, new Set(["local\u0000file-b"]), target);
-    expect(readChangesReviewed(task, target)).toEqual(new Set(["local\u0000file-a"]));
-    expect(readChangesReviewed(project, target)).toEqual(new Set(["local\u0000file-b"]));
-    writeChangesReviewed(task, new Set(), target);
+    writeChangesReviewed(task, new Map([["local\u0000file-a", digest]]), target);
+    writeChangesReviewed(project, new Map([["local\u0000file-b", digest]]), target);
+    expect(readChangesReviewed(task, target)).toEqual(new Map([["local\u0000file-a", digest]]));
+    expect(readChangesReviewed(project, target)).toEqual(new Map([["local\u0000file-b", digest]]));
+    writeChangesReviewed(task, new Map(), target);
     expect(readChangesReviewed(task, target).size).toBe(0);
     expect(readChangesReviewed(project, target).size).toBe(1);
   });
@@ -38,14 +39,15 @@ describe("reviewed file memory", () => {
   it.each(["broken", "null", "[]", '{"owner":false}'])("tolerates malformed storage: %s", (value) => {
     const target = storage(value);
     expect(readChangesReviewed("owner", target).size).toBe(0);
-    writeChangesReviewed("owner", new Set(["file"]), target);
-    expect(readChangesReviewed("owner", target)).toEqual(new Set(["file"]));
+    writeChangesReviewed("owner", new Map([["file", digest]]), target);
+    expect(readChangesReviewed("owner", target)).toEqual(new Map([["file", digest]]));
   });
 
   it("bounds stored subjects and review marks", () => {
     const target = storage();
-    const keys = new Set(Array.from({ length: 2100 }, (_, index) => `file-${index}`));
-    for (let i = 0; i < 65; i++) writeChangesReviewed(`owner-${i}`, keys, target);
+    const keys = new Map(Array.from({ length: 2100 }, (_, index) => [`file-${index}`, digest]));
+    for (let i = 0; i < 64; i++) writeChangesReviewed(`owner-${i}`, new Map([["file", digest]]), target);
+    writeChangesReviewed("owner-64", keys, target);
     expect(readChangesReviewed("owner-0", target).size).toBe(0);
     expect(readChangesReviewed("owner-64", target).size).toBe(2048);
   });
@@ -68,7 +70,7 @@ describe("reviewed file memory", () => {
       const keys = changesReviewEntryKeys("local", "obs-1", entries);
       expect(new Set(keys.values()).size).toBe(entries.length);
       const target = storage();
-      writeChangesReviewed("owner", new Set(keys.values()), target);
+      writeChangesReviewed("owner", new Map([...keys.values()].map((key) => [key, digest])), target);
       expect(readChangesReviewed("owner", target).size).toBe(0);
     }
   });
@@ -80,24 +82,30 @@ describe("reviewed file memory", () => {
     expect(changesReviewScope({ kind: "local" }, local, undefined, "other")).not.toBe(scope);
   });
 
-  it("tracks commit revisions across reordered ordinal IDs and isolates aggregate/base changes", () => {
+  it("tracks commit revisions and keeps aggregate scope stable for per-file content verification", () => {
     const scope = changesReviewScope({ kind: "commit", commitId: "commit-0" }, undefined, commits, undefined);
     const reordered = { ...commits, observation_id: "commits-2", commits: [{ ...commits.commits[0]!, commit_id: "commit-3" }] };
     expect(changesReviewScope({ kind: "commit", commitId: "commit-3" }, undefined, reordered, undefined)).toBe(scope);
     const source = { kind: "commit", commitId: "all" } as const;
     const aggregate = changesReviewScope(source, undefined, commits, undefined);
     expect(changesReviewScope(source, undefined, reordered, undefined)).toBe(aggregate);
-    expect(changesReviewScope(source, undefined, { ...commits, base_oid: "new-base" }, undefined)).not.toBe(aggregate);
+    expect(changesReviewScope(source, undefined, { ...commits, base_oid: "new-base" }, undefined)).toBe(aggregate);
     expect(changesReviewScope(source, undefined, { ...commits, branch_id: "other" }, undefined)).not.toBe(aggregate);
-    expect(changesReviewScope(source, undefined, { ...commits, commits: [{ ...commits.commits[0]!, short_oid: "new-revision" }] }, undefined)).not.toBe(aggregate);
+    expect(changesReviewScope(source, undefined, { ...commits, commits: [{ ...commits.commits[0]!, short_oid: "new-revision" }] }, undefined)).toBe(aggregate);
   });
 
-  it("isolates pull request identity and freshness generations", () => {
+  it("isolates pull requests but rechecks file content across freshness generations", () => {
     const source = { kind: "pullRequest", freshnessGeneration: 1, pullRequest: {
       provider: "github", repository_owner: "owner", repository_name: "repo", repository_project: null, number: 1,
     } } as const;
     const scope = changesReviewScope(source, undefined, undefined, undefined);
-    expect(changesReviewScope({ ...source, freshnessGeneration: 2 }, undefined, undefined, undefined)).not.toBe(scope);
+    expect(changesReviewScope({ ...source, freshnessGeneration: 2 }, undefined, undefined, undefined)).toBe(scope);
     expect(changesReviewScope({ ...source, pullRequest: { ...source.pullRequest, number: 2 } }, undefined, undefined, undefined)).not.toBe(scope);
+  });
+
+  it("rejects legacy marks and invalid content digests", () => {
+    for (const values of [["legacy-file-key"], [["file", "binary"]], [["file", 123]], [["file", "a".repeat(63)]]]) {
+      expect(readChangesReviewed("owner", storage(JSON.stringify({ owner: values }))).size).toBe(0);
+    }
   });
 });
