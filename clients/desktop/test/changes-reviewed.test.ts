@@ -94,6 +94,78 @@ describe("Changes reviewed files", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  async function reopen(editorProps: ChangesOverlayProps): Promise<void> {
+    if (root) await act(async () => root?.unmount());
+    container?.remove();
+    ({ container, root } = await renderEditor(editorProps));
+  }
+
+  it.each(["task", "project"] as const)("restores %s review marks after reopening with a new observation and reordered entry IDs", async (kind) => {
+    let observation = 0;
+    const editorProps = props(async () => {
+      observation += 1;
+      const nextEntries = observation === 1 ? entries : [
+        entry("entry-1", "new.txt", "untracked"),
+        entry("entry-2", "src/alpha.ts", "unstaged"),
+        entry("entry-3", "src/bravo.ts", "staged"),
+        entry("entry-4", "notes.txt", "untracked"),
+      ];
+      return kind === "task"
+        ? { ...changeList(`local-${observation}`), entries: nextEntries }
+        : { project_id: "task-1", observation_id: `project-${observation}`, entries: nextEntries, truncated: false };
+    });
+    editorProps.subject = { ...editorProps.subject, kind };
+    await reopen(editorProps);
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/4 reviewed");
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-section-toggle")!.click());
+    expect(container!.querySelector('[aria-label="Mark src/alpha.ts as unreviewed"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(container!.querySelector('[aria-label="Mark new.txt as reviewed"]')?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as unreviewed"]')!.click());
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/4 reviewed");
+  });
+
+  it("persists mark-all and clear-all across editor remounts", async () => {
+    const editorProps = props(async () => changeList("local-1"));
+    await reopen(editorProps);
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-review-progress button")!.click());
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("3/3 reviewed");
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-review-progress button")!.click());
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+  });
+
+  it("isolates marks by subject and connection profile", async () => {
+    const editorProps = props(async () => changeList("local-1"));
+    await reopen(editorProps);
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    for (const otherProps of [
+      { ...editorProps, subject: { ...editorProps.subject, id: "task-2" } },
+      { ...editorProps, subject: { ...editorProps.subject, kind: "project" as const } },
+      { ...editorProps, connectionProfileId: "remote" },
+    ]) {
+      await reopen(otherProps);
+      expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+    }
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
+  });
+
+  it("keeps review controls usable when preference storage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Full"); });
+    await reopen(props(async () => changeList("local-1")));
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
   });
 
   it("moves checked files into Reviewed and supports mark-all and reset", async () => {
@@ -122,7 +194,7 @@ describe("Changes reviewed files", () => {
   it("clears reviewed state when Refresh creates a new observation", async () => {
     const list = vi.fn<ChangesOverlayProps["list"]>()
       .mockResolvedValueOnce(changeList("local-1"))
-      .mockResolvedValueOnce(changeList("local-2"));
+      .mockResolvedValue(changeList("local-2"));
     ({ container, root } = await renderEditor(props(list)));
     await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
@@ -135,6 +207,8 @@ describe("Changes reviewed files", () => {
     });
     expect(list).toHaveBeenCalledTimes(2);
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+    await reopen(props(list));
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
   });
 
   it("does not reload when composition rebuilds read adapters", async () => {
