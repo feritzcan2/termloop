@@ -4,15 +4,16 @@ import type {
   TaskBranchCommitListResult,
   TaskWorktreeChangeEntryDto,
 } from "@termloop/contract/current";
-import { ALL_BRANCH_CHANGES_ID, sourceKey, type ChangesSource } from "./change-source.js";
+import { ALL_BRANCH_CHANGES_ID, pullRequestKey, type ChangesSource } from "./change-source.js";
 import type { LocalChangeListResult } from "./changes-local-recovery.js";
 
-const STORAGE_KEY = "termloop.changesReviewed.v1";
+// v1 had no content evidence, so its marks cannot be restored safely.
+const STORAGE_KEY = "termloop.changesReviewed.v2";
 const MAX_SUBJECTS = 64;
 const MAX_KEYS_PER_SUBJECT = 2048;
 const VOLATILE_PREFIX = "volatile:";
 type ReviewEntry = TaskWorktreeChangeEntryDto | TaskBranchCommitChangeEntryDto | GitHostPullRequestChangeEntryDto;
-type ReviewMemory = Record<string, string[]>;
+type ReviewMemory = Record<string, [string, string][]>;
 
 export function changesReviewOwner(
   subject: { kind: "project" | "task"; id: string },
@@ -22,8 +23,8 @@ export function changesReviewOwner(
 }
 
 /** Read observations and entry/commit ordinals are temporary capabilities, not
- * identities. Review marks are client-local file annotations; Refresh starts a
- * new review. Store no patches or pre-images with these preferences. */
+ * identities. Each persisted file mark has a digest of the reviewed patch;
+ * never store patches or pre-images with these preferences. */
 export function changesReviewScope(
   source: ChangesSource,
   local: LocalChangeListResult | undefined,
@@ -34,10 +35,10 @@ export function changesReviewScope(
     if (!local) return undefined;
     return `local\u0000${JSON.stringify([branchName ?? null, "worktree_generation" in local ? local.worktree_generation : null])}`;
   }
-  if (source.kind === "pullRequest") return sourceKey(source);
+  if (source.kind === "pullRequest") return `pullRequest:${pullRequestKey(source.pullRequest)}`;
   if (!commits) return undefined;
   const revision = source.commitId === ALL_BRANCH_CHANGES_ID
-    ? [commits.base_oid, commits.commits.map((commit) => commit.short_oid)]
+    ? ALL_BRANCH_CHANGES_ID
     : commits.commits.find((commit) => commit.commit_id === source.commitId)?.short_oid;
   if (!revision) return undefined;
   return `commit:${JSON.stringify([commits.branch_id, revision])}`;
@@ -75,18 +76,23 @@ function readMemory(storage: Pick<Storage, "getItem"> | undefined): ReviewMemory
   }
 }
 
-function persistentKeys(keys: readonly unknown[]): string[] {
-  return keys.filter((key): key is string => typeof key === "string"
-    && key.length > 0 && key.length <= 16_384 && !key.startsWith(VOLATILE_PREFIX)).slice(-MAX_KEYS_PER_SUBJECT);
+export function persistableChangesReviewKey(key: string): boolean {
+  return key.length > 0 && key.length <= 16_384 && !key.startsWith(VOLATILE_PREFIX);
 }
 
-export function readChangesReviewed(owner: string, storage?: Pick<Storage, "getItem">): ReadonlySet<string> {
-  return new Set(readMemory(storage)[owner] ?? []);
+function persistentKeys(keys: readonly unknown[]): [string, string][] {
+  return keys.filter((entry): entry is [string, string] => Array.isArray(entry) && entry.length === 2
+    && typeof entry[0] === "string" && persistableChangesReviewKey(entry[0])
+    && typeof entry[1] === "string" && /^[a-f0-9]{64}$/.test(entry[1])).slice(-MAX_KEYS_PER_SUBJECT);
+}
+
+export function readChangesReviewed(owner: string, storage?: Pick<Storage, "getItem">): ReadonlyMap<string, string> {
+  return new Map(readMemory(storage)[owner] ?? []);
 }
 
 export function writeChangesReviewed(
   owner: string,
-  keys: ReadonlySet<string>,
+  keys: ReadonlyMap<string, string>,
   storage?: Pick<Storage, "getItem" | "setItem">,
 ): void {
   try {
