@@ -1,4 +1,5 @@
 import { FilesOverlay } from "./FilesOverlay.js";
+import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesRail } from "./FilesRail.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
@@ -641,8 +642,8 @@ export function Shell(props: ShellProps) {
   /// so the page follows the live projection instead of a snapshot taken at the
   /// click, and drops itself when the Task leaves the Project.
   const [detailTaskId, setDetailTaskId] = useState<string>();
-  const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useState(false);
-  const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useState(false);
+  const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useOverlayLeaseCount();
+  const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useOverlayLeaseCount();
   /// Tab-bar state for the two rails that lost their title rows: the Agents
   /// search toggle and the Tasks create request both live beside the tabs.
   const [agentSearchOpen, setAgentSearchOpen] = useState(false);
@@ -650,7 +651,7 @@ export function Shell(props: ShellProps) {
   useEffect(() => {
     if (railMode !== "workspace" || workspaceView !== "agents") setAgentSearchOpen(false);
   }, [railMode, workspaceView]);
-  const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useState(false);
+  const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
   const projectTriggerRef = useRef<HTMLButtonElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const commandInvokerRef = useRef<HTMLElement | null>(null);

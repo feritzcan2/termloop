@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useOverlayLease } from "./overlay-lease.js";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview, type WorkflowConfiguration, type WorkflowExecution } from "../model.js";
@@ -535,10 +536,7 @@ export function TaskRail(props: TaskRailProps) {
       top: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)),
     });
   }, [menu, menuTask]);
-  useEffect(() => {
-    props.overlayVisibilityChanged(overlayVisible);
-    return () => props.overlayVisibilityChanged(false);
-  }, [overlayVisible, props.overlayVisibilityChanged]);
+  useOverlayLease(overlayVisible, props.overlayVisibilityChanged);
   useEffect(() => {
     if (!menu) return;
     requestAnimationFrame(() => taskMenuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus());
