@@ -1825,6 +1825,7 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             saveTaskNotes={props.updateTaskDeveloperNotes}
+            taskDecisionActions={props.assistantActions}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
