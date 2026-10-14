@@ -18,7 +18,6 @@ import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type P
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
 import { newestPullRequests, taskCardTitle } from "../task-card-copy.js";
-import { pullRequestIdentity } from "../change-source.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
@@ -1768,15 +1767,6 @@ export function Shell(props: ShellProps) {
             toggleFavoriteSession={toggleFavoriteAgentSession}
             openTaskChanges={(taskId) => setChangesPresentation({ kind: "task", taskId, source: { kind: "local" } })}
             openExternal={(url) => { void props.openExternal(url); }}
-            openTaskPullRequest={(taskId, pullRequest) => setChangesPresentation({
-              kind: "task",
-              taskId,
-              source: {
-                kind: "pullRequest",
-                pullRequest: pullRequestIdentity(pullRequest),
-                freshnessGeneration: props.gitHostProjections.find((projection) => projection.task_id === taskId)?.freshness_generation ?? 0,
-              },
-            })}
             openQuickAction={disabled ? undefined : () => openQuickAction()}
           />
           <SessionRail

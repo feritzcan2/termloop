@@ -322,7 +322,6 @@ export type ActiveAgentRailProps = {
   toggleFavoriteSession(sessionId: string): void;
   openTaskChanges(taskId: string): void;
   openExternal?: ((url: string) => void) | undefined;
-  openTaskPullRequest?: ((taskId: string, pullRequest: GitHostProjection["matches"][number]) => void) | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
   openQuickAction?: (() => void) | undefined;
@@ -710,10 +709,10 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
               type="button"
               className="active-agent-pull-request"
               data-tone={chip.tone}
-              aria-label={`Review pull request ${pullRequest.number}, ${pullRequest.state}, in ${taskIdentity!.title}`}
-              title={chip.title}
-              disabled={!props.openTaskPullRequest}
-              onClick={(event) => { event.stopPropagation(); props.openTaskPullRequest?.(taskIdentity!.taskId, pullRequest); }}
+              aria-label={`Open pull request ${pullRequest.number}, ${pullRequest.state}, in browser`}
+              title={`${chip.title}\nOpen in browser`}
+              disabled={!props.openExternal}
+              onClick={(event) => { event.stopPropagation(); props.openExternal?.(pullRequest.url); }}
             >{chip.label}{more > 0 ? <span className="active-agent-pull-request-more">+{more}</span> : null}</button>;
           })}
         </div> : null}
