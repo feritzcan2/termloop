@@ -30,6 +30,31 @@ pub struct PlaybookWaitingTask {
     pub due_at_epoch_ms: u64,
     /// What the last run said about this Task, if it has been asked before.
     pub last_evidence: Option<String>,
+    /// The steps before this question that the Task has already passed, in
+    /// pipeline order, so a check never re-derives its own prerequisites.
+    pub passed_earlier_steps: Vec<PlaybookPassedStep>,
+}
+
+/// One earlier step a Task has passed, as recorded. A step set by the user
+/// from Task details is passed exactly like a checked one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaybookPassedStep {
+    pub milestone_id: String,
+    pub title: String,
+    pub evidence: String,
+    pub decided_at_epoch_ms: u64,
+}
+
+impl PlaybookPassedStep {
+    pub(crate) fn to_json(&self) -> Value {
+        json!({
+            "milestoneId": self.milestone_id,
+            "title": self.title,
+            "verdict": PlaybookStepVerdict::Passed,
+            "evidence": self.evidence,
+            "decidedAtEpochMs": self.decided_at_epoch_ms,
+        })
+    }
 }
 
 /// One question and the exact focused Task waiting at it.
@@ -74,6 +99,29 @@ impl<'a> PipelineStanding<'a> {
         self.answer_for(milestone_id)
             .and_then(|answer| answer.next_attempt_at_epoch_ms)
             .unwrap_or(0)
+    }
+
+    /// The passed answers for every step before `index`, in pipeline order.
+    fn passed_earlier_steps(
+        &self,
+        milestones: &[PlaybookMilestone],
+        index: usize,
+    ) -> Vec<PlaybookPassedStep> {
+        milestones
+            .iter()
+            .take(index)
+            .filter_map(|milestone| {
+                let answer = self.answer_for(&milestone.id)?;
+                (answer.routine_id == milestone.routine_id
+                    && answer.verdict == PlaybookStepVerdict::Passed)
+                    .then(|| PlaybookPassedStep {
+                        milestone_id: milestone.id.clone(),
+                        title: milestone.title.clone(),
+                        evidence: answer.evidence.clone(),
+                        decided_at_epoch_ms: answer.decided_at_epoch_ms,
+                    })
+            })
+            .collect()
     }
 }
 
@@ -285,6 +333,8 @@ impl CoreRuntime {
                         .answer_for(&milestone.id)
                         .map(|answer| answer.evidence.clone())
                         .filter(|evidence| !evidence.is_empty()),
+                    passed_earlier_steps: standing
+                        .passed_earlier_steps(&playbook.milestones, index),
                 }],
                 due_at_epoch_ms,
             };
@@ -329,6 +379,7 @@ impl CoreRuntime {
                     .answer_for(&milestone.id)
                     .map(|answer| answer.evidence.clone())
                     .filter(|evidence| !evidence.is_empty()),
+                passed_earlier_steps: standing.passed_earlier_steps(&playbook.milestones, index),
             }],
             due_at_epoch_ms,
         })
@@ -395,6 +446,29 @@ impl CoreRuntime {
                 PlaybookPosition::Done => None,
             })
             .unwrap_or(false)
+    }
+
+    /// The steps the Task of a current step-waiting finding has already
+    /// passed, so the Steward reads its prerequisites instead of inferring
+    /// them from the evidence text. `None` for any other finding.
+    pub(crate) fn step_finding_passed_earlier_steps(
+        &self,
+        configuration: &TrackerConfiguration,
+        finding: &PendingRoutineFinding,
+    ) -> Option<Vec<PlaybookPassedStep>> {
+        if configuration.trigger_mode.is_scheduled() || finding.related_task_ids.len() != 1 {
+            return None;
+        }
+        let playbook = self.store.playbook_for_project(&configuration.project_id)?;
+        let standing = self
+            .pipeline_standings(playbook)
+            .into_iter()
+            .find(|standing| standing.task.id == finding.related_task_ids[0])?;
+        let PlaybookPosition::At(index) = standing.position else {
+            return None;
+        };
+        (playbook.milestones[index].routine_id == configuration.id)
+            .then(|| standing.passed_earlier_steps(&playbook.milestones, index))
     }
 
     /// Records one run's answer for its exact focused Task and finishes the
@@ -1200,6 +1274,10 @@ pub(crate) mod tests {
             false
         );
         assert_eq!(
+            old_claim.result["step"]["tasks"][0]["passedEarlierSteps"],
+            json!([])
+        );
+        assert_eq!(
             old_claim.result["step"]["taskRead"],
             json!({
                 "requiredBeforeVerdict": true,
@@ -1863,6 +1941,75 @@ pub(crate) mod tests {
         // Only task-1 backs off. task-2 at the same question is independent.
         assert_eq!(next.result["routine"]["id"], "routine-pr");
         assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-2");
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_check_and_its_waiting_finding_carry_the_tasks_passed_earlier_steps() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        for task_id in ["task-1", "task-2"] {
+            let revision = runtime.state_revision();
+            runtime
+                .set_task_playbook_position(&project_id, task_id, 1, 1, revision, NOW - 1)
+                .unwrap();
+        }
+        let mut routine = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|routine| routine.id == "routine-deploy")
+            .cloned()
+            .unwrap();
+        routine.action_handling = termloop_domain::RoutineActionHandling::Ask;
+        routine.steward_instructions = "Ask the Task Agent to deploy.".into();
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_tracker_configuration(&runtime.write_authority, routine, revision)
+            .unwrap();
+
+        // A step set manually from Task details is passed like a checked one,
+        // and the check is told so instead of re-deriving it.
+        let manual_step = json!([{
+            "milestoneId": "pr-open",
+            "title": "pr-open completed",
+            "verdict": "passed",
+            "evidence": "Position set manually from Task details.",
+            "decidedAtEpochMs": NOW - 1,
+        }]);
+        let claim = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .unwrap();
+        assert_eq!(claim.result["step"]["milestoneId"], "deployed");
+        assert_eq!(claim.result["step"]["tasks"][0]["taskId"], "task-1");
+        assert_eq!(
+            claim.result["step"]["tasks"][0]["passedEarlierSteps"],
+            manual_step
+        );
+
+        runtime
+            .report_steward_step_verdicts(
+                &claim.capability.unwrap(),
+                vec![StewardStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict: PlaybookStepVerdict::Waiting,
+                    evidence: "No deployment after the merge.".into(),
+                }],
+                "report-1".into(),
+                NOW + 1_000,
+            )
+            .unwrap();
+        let findings = runtime.read_routine_findings(&project_id).unwrap();
+        assert_eq!(findings["routines"][0]["routineId"], "routine-deploy");
+        assert_eq!(
+            findings["routines"][0]["findings"][0]["relatedTaskIds"],
+            json!(["task-1"])
+        );
+        assert_eq!(
+            findings["routines"][0]["findings"][0]["passedEarlierSteps"],
+            manual_step
+        );
 
         std::fs::remove_dir_all(root).ok();
     }

@@ -1684,6 +1684,11 @@ fn assigned_routine_result(
                         "lastEvidence": task.last_evidence,
                         "lastEvidenceKind": "previousStewardVerdict",
                         "lastEvidenceIndependentlyVerified": false,
+                        "passedEarlierSteps": task
+                            .passed_earlier_steps
+                            .iter()
+                            .map(super::playbook_runtime::PlaybookPassedStep::to_json)
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect::<Vec<_>>(),

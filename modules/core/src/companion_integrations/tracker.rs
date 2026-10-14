@@ -35,6 +35,16 @@ impl CoreRuntime {
                     .pending_routine_findings
                     .iter()
                     .filter(|finding| self.routine_finding_is_current(configuration, finding))
+                    .map(|finding| {
+                        let mut value = json!(finding);
+                        if let Some(steps) =
+                            self.step_finding_passed_earlier_steps(configuration, finding)
+                        {
+                            value["passedEarlierSteps"] =
+                                steps.iter().map(|step| step.to_json()).collect();
+                        }
+                        value
+                    })
                     .collect::<Vec<_>>();
                 (!findings.is_empty()).then(|| {
                     json!({
