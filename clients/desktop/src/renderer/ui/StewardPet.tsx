@@ -254,27 +254,6 @@ export function stewardPetUtteranceHolds(utterance: StewardPetUtterance): boolea
   return Boolean(utterance.interaction) || stewardPetBubbleHolds(utterance.kind);
 }
 
-export function stewardPetBubbleDismissMs(kind: StewardPetUtteranceKind): number | null {
-  if (stewardPetBubbleHolds(kind)) return null;
-  return kind === "update" || kind === "acceptance" || kind === "approval" || kind === "decline"
-    ? 5_000
-    : 7_000;
-}
-
-/**
- * Muted keeps the face honest but the bubble closed, and terminal typing defers
- * anything that is not already waiting on the user.
- */
-export function stewardPetSpeaks(
-  utterance: StewardPetUtterance | null,
-  options: { muted: boolean; userBusy: boolean },
-): boolean {
-  if (!utterance) return false;
-  if (options.muted) return false;
-  if (options.userBusy && !stewardPetUtteranceHolds(utterance)) return false;
-  return true;
-}
-
 export type StewardPetCorner = "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
 export type StewardPetPosition = { x: number; y: number };
 
@@ -363,12 +342,10 @@ export function StewardPet(props: Props) {
   const state = stewardPetState(props.signal, props.nowEpochMs);
   const face = stewardPetFace(state);
   const ticker = stewardPetTicker(state, props.signal.activeCommandLabel);
-  const speaking = stewardPetSpeaks(props.utterance, { muted: props.muted, userBusy: props.userBusy });
   const thinking = state === "thinking";
-  const thinkingKey = props.thinkingMessage ?? "thinking";
-  const [dismissedThinkingKey, setDismissedThinkingKey] = useState<string>();
-  const thinkingOpen = thinking && !props.muted && dismissedThinkingKey !== thinkingKey;
-  const bubbleOpen = thinkingOpen || props.inlineOpen || speaking;
+  // The bubble opens only on an explicit click. New messages and thinking show
+  // on the pet itself (notification mark and animated face), never as a popup.
+  const bubbleOpen = props.inlineOpen;
   const utterance = thinking ? null : props.utterance;
   const [frame, setFrame] = useState(0);
   const [blinking, setBlinking] = useState(false);
@@ -383,10 +360,6 @@ export function StewardPet(props: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!thinking) setDismissedThinkingKey(undefined);
-  }, [thinking]);
-
-  useEffect(() => {
     if (!bubbleOpen) return;
     const root = rootRef.current;
     const ownerDocument = root?.ownerDocument;
@@ -396,12 +369,11 @@ export function StewardPet(props: Props) {
       const target = event.target;
       if (target instanceof OwnerNode && root.contains(target)) return;
       props.setInlineOpen(false);
-      if (thinking) setDismissedThinkingKey(thinkingKey);
-      else if (utterance) props.dismissUtterance(utterance.id);
+      if (!thinking && utterance) props.dismissUtterance(utterance.id);
     };
     ownerDocument.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => ownerDocument.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [bubbleOpen, thinking, thinkingKey, utterance?.id]);
+  }, [bubbleOpen, thinking, utterance?.id]);
 
   useEffect(() => {
     if (state !== "thinking" || prefersReducedMotion()) return;
@@ -432,16 +404,6 @@ export function StewardPet(props: Props) {
     }, 4_200);
     return () => window.clearInterval(handle);
   }, [state]);
-
-  useEffect(() => {
-    if (!speaking || props.inlineOpen || !utterance) return;
-    const timeout = stewardPetUtteranceHolds(utterance)
-      ? null
-      : stewardPetBubbleDismissMs(utterance.kind);
-    if (timeout === null) return;
-    const handle = window.setTimeout(() => props.dismissUtterance(utterance.id), timeout);
-    return () => window.clearTimeout(handle);
-  }, [speaking, props.inlineOpen, utterance?.id, utterance?.kind, utterance?.interaction?.id]);
 
   const runNotificationAction = async (action: () => Promise<void>) => {
     if (acting) return;

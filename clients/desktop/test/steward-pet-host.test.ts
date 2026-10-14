@@ -263,6 +263,51 @@ describe("StewardPetHost Project transcript baseline", () => {
     expect(setEnabled).toHaveBeenCalledWith(true);
   });
 
+  it("never pops the bubble on its own: new messages and thinking show only on the pet until clicked", async () => {
+    const baseline = message("project-a", "baseline", "Earlier status.");
+    const proposal = message("project-a", "proposal-2", "Send the Slack review request?", {
+      sequence: 2, kind: "proposal", refs: { taskId: "task-1" },
+    });
+    let transcript = [baseline];
+    const render = async (refreshToken: number) => {
+      await act(async () => {
+        root.render(createElement(StewardPetHost, {
+          projectId: "project-a",
+          refreshToken,
+          sessions: [{ id: "session-1", lifecycle_state: "running" }] as never,
+          agentStatuses: [],
+          compact: true,
+          userBusy: false,
+          getSteward: async () => ({
+            configuration: { enabled: true, executorSessionId: "session-1" },
+            presence: { lastActivityAtEpochMs: Date.now(), activeCommandLabel: null, pendingProposal: false },
+          }) as never,
+          listTranscript: async () => ({ messages: transcript }) as never,
+          respondToProposal: vi.fn(),
+          acceptSuggestion: vi.fn(),
+          listRuntime: async () => ({ reports: [] }) as never,
+          openSteward: vi.fn(),
+          dismissUtterance: vi.fn(),
+          openReference: vi.fn(),
+        }));
+      });
+    };
+
+    await render(0);
+    expect(container.querySelector(".steward-pet")?.getAttribute("data-steward-pet-state")).toBe("thinking");
+    expect(container.querySelector(".steward-pet-bubble")).toBeNull();
+
+    transcript = [proposal, baseline];
+    await render(1);
+    expect(container.querySelector(".steward-pet-bubble")).toBeNull();
+    expect(container.querySelector(".steward-pet-notification-mark")?.textContent).toBe("!");
+
+    await act(async () => {
+      (container.querySelector(".steward-pet-body") as HTMLButtonElement).click();
+    });
+    expect(container.querySelector(".steward-pet-bubble")).not.toBeNull();
+  });
+
   it("pauses presence polling while the document is hidden and refreshes on resume", async () => {
     vi.useFakeTimers();
     const getPresence = vi.fn(async () => ({
