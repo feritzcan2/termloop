@@ -438,6 +438,8 @@ fn the_board_reads_where_every_task_is_standing() {
             "activePipelineName": "Ship to production",
             "evaluation": null,
             "processingTaskId": "task-2",
+            "processingTaskIds": ["task-2", "task-1"],
+            "evaluations": [],
             "steps": [step],
             "doneTaskIds": [],
             "stateRevision": 9
@@ -449,6 +451,21 @@ fn the_board_reads_where_every_task_is_standing() {
             "activePipelineName": "Ship to production",
             "evaluation": null,
             "processingTaskId": null,
+            "processingTaskIds": [],
+            "evaluations": [],
+            "steps": [],
+            "doneTaskIds": [],
+            "stateRevision": 9
+        })
+    ));
+    assert!(!validate_method_result(
+        "playbook.runtime",
+        &json!({
+            "activePipelineName": "Ship to production",
+            "evaluation": null,
+            "processingTaskId": null,
+            "processingTaskIds": ["task-1", "task-1"],
+            "evaluations": [],
             "steps": [],
             "doneTaskIds": [],
             "stateRevision": 9
@@ -474,6 +491,8 @@ fn the_board_reads_where_every_task_is_standing() {
             "activePipelineName": "Ship to production",
             "evaluation": null,
             "processingTaskId": null,
+            "processingTaskIds": [],
+            "evaluations": [],
             "steps": [invented],
             "doneTaskIds": [],
             "stateRevision": 9

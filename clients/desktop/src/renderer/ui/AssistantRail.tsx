@@ -853,8 +853,8 @@ export function AssistantRail(props: Props) {
   const stepNode = (node: PlaybookStepNode) => {
     const { routine, step, keptPipeline } = node;
     const current = healthByRoutine.get(routine.id);
-    const evaluation = props.playbookRuntime?.evaluation?.routineId === routine.id
-      ? props.playbookRuntime.evaluation : null;
+    const evaluations = props.playbookRuntime?.evaluations
+      .filter((value) => value.routineId === routine.id) ?? [];
     const selection = { kind: "routine" as const, routineId: routine.id };
     const improver = routinePromptImproverSession(props.projectId, routine, routines, props.sessions);
     const improverAgent = improver?.process.agent_id === "claude"
@@ -931,7 +931,7 @@ export function AssistantRail(props: Props) {
                 void removeStep(step);
               }}><Icon name="trash" /></button>
           </span> : null}
-          {status.tone === "checking" && !evaluation ? <span className="ar-flag checking">{status.label}</span>
+          {status.tone === "checking" && evaluations.length === 0 ? <span className="ar-flag checking">{status.label}</span>
             : null}
           {improver ? <span className={`ar-step-improver-group${props.selectedSessionId === improver.id ? " selected" : ""}`}>
             <button type="button"
@@ -953,11 +953,12 @@ export function AssistantRail(props: Props) {
           </span> : null}
         </span>
       </div>
-      {evaluation ? <PlaybookEvaluationStatus
+      {evaluations.map((evaluation) => <PlaybookEvaluationStatus
+        key={evaluation.taskId}
         evaluation={evaluation}
         sessions={props.sessions}
         openAgentTerminal={props.openImproverTerminal}
-      /> : null}
+      />)}
       {dropRoutineId === routine.id ? <div className="ar-step-drop-hint" role="status">
         Move here and check now
       </div> : null}
@@ -965,7 +966,7 @@ export function AssistantRail(props: Props) {
         {tasksAtStep.map((task) => <AssistantTaskRow
           key={task.id}
           task={task}
-          processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
+          processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}
@@ -1107,7 +1108,7 @@ export function AssistantRail(props: Props) {
           </div>}
         <AssistantTaskTail
           placement={taskPlacement}
-          processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
+          processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}

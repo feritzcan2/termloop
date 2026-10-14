@@ -48,7 +48,8 @@ export function assistantTaskPlacement(
 
 export function AssistantTaskRow(props: {
   task: Task;
-  processingTaskId: string | null;
+  /** Every Task whose own step check is running; each is checked independently. */
+  processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
@@ -59,7 +60,7 @@ export function AssistantTaskRow(props: {
   openSteward?: (() => void) | undefined;
 }) {
   const decision = props.decision?.decision.taskIds.includes(props.task.id) ? props.decision : null;
-  const processing = props.processingTaskId === props.task.id;
+  const processing = props.processingTaskIds.includes(props.task.id);
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
   return <div className="assistant-task-item" role="listitem"><button
     type="button"
@@ -89,7 +90,7 @@ export function AssistantTaskRow(props: {
 
 export function AssistantTaskTail(props: {
   placement: AssistantTaskPlacement;
-  processingTaskId: string | null;
+  processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
@@ -113,7 +114,7 @@ export function AssistantTaskTail(props: {
     <div role="list">{group.tasks.map((task) => <AssistantTaskRow
       key={task.id}
       task={task}
-      processingTaskId={props.processingTaskId}
+      processingTaskIds={props.processingTaskIds}
       openTask={props.openTask}
       saveTaskNotes={props.saveTaskNotes}
       notesDisabled={props.notesDisabled}
