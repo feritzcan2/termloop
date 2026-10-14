@@ -18,6 +18,8 @@ import type {
   GitHostPullRequestIdentityDto,
 } from "@termloop/contract/current";
 import { sessionLabel, type GitHostProjection, type Session } from "../model.js";
+import { changesReviewOwner, changesReviewScope } from "../changes-reviewed-memory.js";
+import { useChangesReviewed } from "./useChangesReviewed.js";
 import {
   localChangeKey,
   recoverLocalChange,
@@ -85,6 +87,7 @@ export type ChangesSubject = {
 
 export type ChangesOverlayProps = {
   subject: ChangesSubject;
+  connectionProfileId?: string | undefined;
   initialSource: ChangesOpenSource;
   close(): void;
   list(subjectId: string): Promise<LocalChangeListResult>;
@@ -102,6 +105,7 @@ export type ChangesOverlayProps = {
 
 export function ChangesOverlay({
   subject,
+  connectionProfileId,
   initialSource,
   close,
   list,
@@ -147,7 +151,6 @@ export function ChangesOverlay({
   const [loadingPreImage, setLoadingPreImage] = useState(false);
   const [preImageError, setPreImageError] = useState<string>();
   const [reviewNotes, setReviewNotes] = useState<ReadonlyMap<string, ChangeReviewNote>>(new Map());
-  const [reviewedEntryKeys, setReviewedEntryKeys] = useState<ReadonlySet<string>>(new Set());
   const [reviewDraft, setReviewDraft] = useState<ChangeReviewDraft>();
   const [targetSessionId, setTargetSessionId] = useState<string>();
   const [sendingReview, setSendingReview] = useState(false);
@@ -158,7 +161,6 @@ export function ChangesOverlay({
   const clearPullRequestArtifacts = useCallback(() => {
     setPullRequestChanges((current) => withoutKeyPrefix(current, "pullRequest:"));
     setDiffs((current) => withoutKeyPrefix(current, "pullRequest:"));
-    setReviewedEntryKeys((current) => new Set([...current].filter((key) => !key.startsWith("pullRequest:"))));
     setReviewNotes((current) => withoutKeyPrefix(current, "pullRequest:"));
     setReviewDraft((current) => current?.key.startsWith("pullRequest:") ? undefined : current);
   }, []);
@@ -170,7 +172,6 @@ export function ChangesOverlay({
     setPreImages((current) => recovered.preImage
       ? cachePreImage(withoutKeyPrefix(current, "local:"), key, recovered.preImage)
       : withoutKeyPrefix(current, "local:"));
-    setReviewedEntryKeys((current) => new Set([...current].filter((key) => !key.startsWith("local\u0000"))));
     setError(undefined);
     setPreImageError(undefined);
   }, []);
@@ -185,7 +186,6 @@ export function ChangesOverlay({
     setPreImageError(undefined);
     setCommitChanges(new Map());
     setPullRequestChanges(new Map());
-    setReviewedEntryKeys(new Set());
     const [localResult, commitResult] = await Promise.allSettled([
       hasWorktree ? list(subject.id) : Promise.resolve(undefined),
       hasBranch ? listCommits(
@@ -316,10 +316,23 @@ export function ChangesOverlay({
     : selectedSource.kind === "commit"
       ? currentCommitChanges?.observation_id
       : currentPullRequestChanges?.observation_id ?? undefined;
-  const reviewScopeKey = currentObservationId ? `${selectedSourceKey}\u0000${currentObservationId}` : undefined;
-  const reviewedEntryIds = useMemo(() => new Set(currentEntries
-    .filter((entry) => reviewScopeKey && reviewedEntryKeys.has(reviewedEntryKey(reviewScopeKey, entry.entry_id)))
-    .map((entry) => entry.entry_id)), [currentEntries, reviewScopeKey, reviewedEntryKeys]);
+  const reviewScopeKey = changesReviewScope(selectedSource, localChanges, commitList, subject.branchName);
+  const { reviewedEntryIds, busy: reviewing, notice: reviewNotice, setReviewed } = useChangesReviewed({
+    owner: changesReviewOwner(subject, connectionProfileId),
+    scope: reviewScopeKey,
+    observationId: currentObservationId,
+    entries: currentEntries,
+    loading: loadingSources || loadingSourceKey === selectedSourceKey,
+    truncated: (selectedSource.kind === "local" ? localChanges?.truncated
+      : selectedSource.kind === "commit" ? currentCommitChanges?.truncated : currentPullRequestChanges?.truncated) ?? true,
+    readDiff: (entryId) => selectedSource.kind === "local"
+      ? readsRef.current.diff(subject.id, currentObservationId!, entryId)
+      : selectedSource.kind === "commit"
+        ? readsRef.current.commitDiff(subject.id, currentObservationId!, selectedSource.commitId, entryId)
+        : readsRef.current.pullRequestDiff(subject.id, currentObservationId!, entryId),
+    cachedDiff: (entryId) => diffs.get(selectedSource.kind === "local"
+      ? localChangeKey(currentObservationId, entryId) : `${selectedSourceKey}:${entryId}`),
+  });
   const changeTreeSections = useMemo<readonly ChangeTreeSection[]>(() => {
     const pending = currentEntries.filter((entry) => !reviewedEntryIds.has(entry.entry_id));
     const reviewed = currentEntries.filter((entry) => reviewedEntryIds.has(entry.entry_id));
@@ -347,10 +360,11 @@ export function ChangesOverlay({
   );
 
   useEffect(() => {
+    if (reviewing) return;
     setSelectedId((current) => visibleEntries.some((entry) => entry.entry_id === current)
       ? current
       : visibleEntries[0]?.entry_id);
-  }, [selectedSourceKey, visibleEntries]);
+  }, [reviewing, selectedSourceKey, visibleEntries]);
 
   useEffect(() => { setCollapsedFolders(new Set([changeTreeFolderId("reviewed", "")])); }, [selectedSourceKey]);
 
@@ -359,7 +373,7 @@ export function ChangesOverlay({
     ? localChangeKey(localChanges?.observation_id, selectedId)
     : `${selectedSourceKey}:${selectedId}` : undefined;
   useEffect(() => {
-    if (loadingSources || !selected || !diffKey || selected.render_state === "notShown" || diffs.has(diffKey)) {
+    if (loadingSources || reviewing || !selected || !diffKey || selected.render_state === "notShown" || diffs.has(diffKey)) {
       setLoadingDiff(false);
       return;
     }
@@ -394,7 +408,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingDiff(false); });
     return () => { active = false; };
-  }, [applyRecoveredLocalChange, commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, loadingSources, localChanges, selected, selectedSource, subject.id]);
+  }, [applyRecoveredLocalChange, commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, loadingSources, reviewing, localChanges, selected, selectedSource, subject.id]);
 
   const selectedDiff = diffKey
     && (selectedSource.kind !== "pullRequest" || selectedPullRequestIsCurrent)
@@ -597,30 +611,11 @@ export function ChangesOverlay({
     });
   };
   const setEntryReviewed = (entryId: string, reviewed: boolean) => {
-    if (!reviewScopeKey) return;
-    setReviewedEntryKeys((current) => {
-      const next = new Set(current);
-      const key = reviewedEntryKey(reviewScopeKey, entryId);
-      if (reviewed) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-    if (reviewed && selectedId === entryId) {
-      setSelectedId(currentEntries.find((entry) => entry.entry_id !== entryId && !reviewedEntryIds.has(entry.entry_id))?.entry_id);
-    }
+    void setReviewed([entryId], reviewed);
   };
   const allReviewed = currentEntries.length > 0 && reviewedEntryIds.size === currentEntries.length;
   const toggleAllReviewed = () => {
-    if (!reviewScopeKey) return;
-    setReviewedEntryKeys((current) => {
-      const next = new Set(current);
-      for (const entry of currentEntries) {
-        const key = reviewedEntryKey(reviewScopeKey, entry.entry_id);
-        if (allReviewed) next.delete(key);
-        else next.add(key);
-      }
-      return next;
-    });
+    void setReviewed(currentEntries.map((entry) => entry.entry_id), !allReviewed);
   };
 
   return (
@@ -689,8 +684,9 @@ export function ChangesOverlay({
         <aside className="changes-files" aria-label="Changed files">
           {currentEntries.length > 0 && reviewScopeKey ? <div className="changes-file-review-progress" aria-live="polite">
             <span><strong>{reviewedEntryIds.size}/{currentEntries.length}</strong> reviewed</span>
-            <button type="button" onClick={toggleAllReviewed}>{allReviewed ? "Clear reviewed" : "Mark all reviewed"}</button>
+            <button type="button" disabled={reviewing} onClick={toggleAllReviewed}>{reviewing ? "Checking…" : allReviewed ? "Clear reviewed" : "Mark all reviewed"}</button>
           </div> : null}
+          {reviewNotice ? <p className="changes-warning" role="status">{reviewNotice}</p> : null}
           {loadingSources || loadingSourceKey === selectedSourceKey ? <p className="changes-placeholder">Loading changes…</p> : null}
           {!loadingSources && selectedSource.kind === "local" && localChanges?.entries.length === 0 ? <p className="changes-placeholder">This worktree is clean.</p> : null}
           {currentCommitChanges?.state === "notShown" ? <p className="changes-placeholder">Merge commit details are not shown in this read-only viewer.</p> : null}
@@ -701,6 +697,7 @@ export function ChangesOverlay({
               section={section}
               collapsedFolders={collapsedFolders}
               reviewedEntryIds={reviewedEntryIds}
+              reviewDisabled={reviewing}
               selectedId={selectedId}
               select={setSelectedId}
               toggleFolder={toggleFolder}
@@ -1066,10 +1063,6 @@ function withoutKeyPrefix<T>(
 ): ReadonlyMap<string, T> {
   if (![...current.keys()].some((key) => key.startsWith(prefix))) return current;
   return new Map([...current].filter(([key]) => !key.startsWith(prefix)));
-}
-
-function reviewedEntryKey(scopeKey: string, entryId: string): string {
-  return `${scopeKey}\u0000${entryId}`;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
