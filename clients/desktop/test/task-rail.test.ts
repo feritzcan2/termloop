@@ -747,7 +747,7 @@ describe("Task rail row anatomy", () => {
     expect(markup).toContain('class="task-signal issue"');
     expect(markup).toContain("Open Jira UKIE-697 in browser");
     /// The card leads with the key; the meta line keeps only the link.
-    expect(markup).toContain('<span class="task-card-key">UKIE-697</span>');
+    expect(markup).toContain('<span class="task-card-key linked" data-issue-link="" title="Open UKIE-697 in browser">UKIE-697</span>');
     expect(markup).toContain(">Jira ↗</button>");
     expect(markup).not.toContain(">UKIE-697</button>");
     /// The folder no longer spends meta-line width; the full path rides the
@@ -764,8 +764,24 @@ describe("Task rail row anatomy", () => {
         jira_url: "https://example.atlassian.net/browse/UKIE-697",
       },
     });
-    expect(titled).toContain('<span class="task-card-key">UKIE-697</span>');
+    expect(titled).toContain('<span class="task-card-key linked" data-issue-link="" title="Open UKIE-697 in browser">UKIE-697</span>');
     expect(titled).toContain('<strong class="task-title">Expired list automation</strong>');
+  });
+
+  it("opens the Jira issue from the card key instead of the Task", async () => {
+    const openExternal = vi.fn(async () => {});
+    const openTaskDetail = vi.fn();
+    const task = { ...launchableTask(), jira_url: "https://example.atlassian.net/browse/UKIE-697" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ tasks: [task], openTaskDetail }), openExternal })));
+    await act(async () => container.querySelector<HTMLElement>(".task-card-key")!.click());
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://example.atlassian.net/browse/UKIE-697");
+    expect(openTaskDetail).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    container.remove();
   });
 
   it("splits a scope tag off the title, flattens Jira markup, and shows the branch leaf", () => {

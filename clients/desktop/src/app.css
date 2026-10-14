@@ -2775,6 +2775,9 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
    line rather than truncate to a few words. */
 .row-title.with-key { display: -webkit-box; overflow: hidden; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .row-title-key { margin-right: 5px; color: var(--warning); font: 700 10.5px/1.3 var(--font-mono); letter-spacing: .01em; }
+/* A linked key opens the issue in the browser; it says so on hover. */
+.row-title-key.linked, .task-card-key.linked { cursor: pointer; }
+.row-title-key.linked:hover, .task-card-key.linked:hover { text-decoration: underline; text-underline-offset: 2px; }
 .active-agent-row .session-state-line { gap: 6px; font-size: 9.5px; }
 .active-agent-row .row-subtitle { color: light-dark(#61768b, #9bbddf); font-size: 10.5px; font-weight: 600; }
 .active-agent-row .session-presence { width: 10px; }

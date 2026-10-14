@@ -40,6 +40,7 @@ type ActiveAgentGroupSections = {
 export type ActiveAgentTaskIdentity = {
   taskId: string;
   issueKey: string | undefined;
+  issueUrl: string | undefined;
   title: string;
   /// At most the two newest pull requests, already ordered by the caller.
   pullRequests: readonly GitHostProjection["matches"][number][];
@@ -320,6 +321,7 @@ export type ActiveAgentRailProps = {
   archiveSession(sessionId: string): void;
   toggleFavoriteSession(sessionId: string): void;
   openTaskChanges(taskId: string): void;
+  openExternal?: ((url: string) => void) | undefined;
   openTaskPullRequest?: ((taskId: string, pullRequest: GitHostProjection["matches"][number]) => void) | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
@@ -658,6 +660,9 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         session={session}
         displayName={taskTitled ? taskIdentity!.title : workflowLabel}
         titleKey={taskTitled ? taskIdentity!.issueKey : undefined}
+        openTitleKey={taskTitled && taskIdentity!.issueUrl && props.openExternal
+          ? () => props.openExternal!(taskIdentity!.issueUrl!)
+          : undefined}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
         /// The Task title already says which checkout this is; a helper under a
