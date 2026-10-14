@@ -5646,6 +5646,46 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
             .record_claude_resume_ref(&claude_token, "working-claude", &claude_native_session_id,)
             .unwrap()
     );
+    // The resumed Claude's `SessionStart` keeps the restart interruption
+    // visible but proves a live resting composer, so queued generated input
+    // such as a Steward wake is no longer held for an idle signal that a
+    // resumed Claude never sends.
+    let session_start_sequence = restarted.next_observation_sequence().unwrap();
+    restarted
+        .record_provider_hook_observation(
+            &claude_token,
+            "working-claude",
+            crate::ProviderHookObservationInput {
+                event_name: "SessionStart".into(),
+                notification_type: None,
+                native_session_id: Some(claude_native_session_id.clone()),
+                provider_model_id: None,
+                permission_mode: None,
+                reasoning_level: None,
+                transcript_path: None,
+                prompt_id: None,
+                plan: None,
+            },
+            session_start_sequence,
+            201,
+        )
+        .unwrap();
+    let resumed_claude = restarted.agent_observations["working-claude"]
+        .observation
+        .unwrap();
+    assert_eq!(
+        resumed_claude.state,
+        termloop_agents::AgentState::Interrupted
+    );
+    assert_eq!(
+        resumed_claude.source,
+        termloop_agents::AgentSignalSource::Hook
+    );
+    assert!(crate::generated_input_composer_may_accept(
+        "claude",
+        Some(resumed_claude.state),
+        Some(resumed_claude.source),
+    ));
 
     let codex_plan = restarted
         .plan_daemon_restart_agent_resume(json!({"sessionId": "working-codex-daemon"}), 201)

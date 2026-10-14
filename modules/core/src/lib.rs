@@ -1485,7 +1485,8 @@ impl CoreRuntime {
             provider_state,
         );
         let composer_ready =
-            generated_input_composer_may_accept(agent_id, provider_state) || provider_queue_ready;
+            generated_input_composer_may_accept(agent_id, provider_state, provider_source)
+                || provider_queue_ready;
         if !composer_ready {
             if provider_state.is_some() {
                 self.generated_input_deliveries

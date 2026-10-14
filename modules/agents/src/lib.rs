@@ -466,6 +466,24 @@ pub fn reduce_observation(
     {
         return previous;
     }
+    // A resumed Claude announces its new live process with `SessionStart` and
+    // no idle signal follows until another turn ends. Keep the restart
+    // interruption visible, but record that a live hook confirmed it so
+    // generated-input readiness can tell a resting resumed composer from a
+    // process that has not come back yet.
+    if let Some(previous) = previous
+        && previous.state == AgentState::Interrupted
+        && previous.source == AgentSignalSource::Process
+        && signal == AgentSignal::SessionStarted
+        && source == AgentSignalSource::Hook
+    {
+        return AgentObservation {
+            state: AgentState::Interrupted,
+            source,
+            sequence,
+            observed_at_epoch_ms,
+        };
+    }
     if let Some(previous) = previous
         && previous.state == AgentState::Interrupted
         && (matches!(signal, AgentSignal::Stopped | AgentSignal::IdleNotified)
@@ -1841,6 +1859,85 @@ mod tests {
         );
         assert_eq!(resumed_work.state, AgentState::Working);
         assert_eq!(resumed_work.source, AgentSignalSource::DaemonBridge);
+    }
+
+    #[test]
+    fn a_resumed_claude_session_start_confirms_but_keeps_the_restart_interruption() {
+        let seeded = reduce_observation(
+            None,
+            AgentSignal::DaemonRestartInterrupted,
+            AgentSignalSource::Process,
+            1,
+            10,
+        );
+        let confirmed = reduce_observation(
+            Some(seeded),
+            AgentSignal::SessionStarted,
+            AgentSignalSource::Hook,
+            2,
+            11,
+        );
+        assert_eq!(
+            confirmed,
+            AgentObservation {
+                state: AgentState::Interrupted,
+                source: AgentSignalSource::Hook,
+                sequence: 2,
+                observed_at_epoch_ms: 11,
+            }
+        );
+        // A stale or duplicate start never moves the confirmation backwards.
+        assert_eq!(
+            reduce_observation(
+                Some(confirmed),
+                AgentSignal::SessionStarted,
+                AgentSignalSource::Hook,
+                2,
+                12,
+            ),
+            confirmed
+        );
+        // Only a structured new turn leaves the interruption.
+        assert_eq!(
+            reduce_observation(
+                Some(confirmed),
+                AgentSignal::Stopped,
+                AgentSignalSource::Hook,
+                3,
+                12,
+            ),
+            confirmed
+        );
+        assert_eq!(
+            reduce_observation(
+                Some(confirmed),
+                AgentSignal::PromptSubmitted,
+                AgentSignalSource::Hook,
+                4,
+                13,
+            )
+            .state,
+            AgentState::Working
+        );
+        // A user interrupt read from the transcript is not a restart seed.
+        let user_interrupt = reduce_observation(
+            None,
+            AgentSignal::Interrupted,
+            AgentSignalSource::Transcript,
+            5,
+            14,
+        );
+        assert_eq!(
+            reduce_observation(
+                Some(user_interrupt),
+                AgentSignal::SessionStarted,
+                AgentSignalSource::Hook,
+                6,
+                15,
+            )
+            .state,
+            AgentState::Idle
+        );
     }
 
     #[test]

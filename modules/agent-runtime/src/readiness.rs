@@ -4,8 +4,18 @@ use termloop_agents::{AgentSignalSource, AgentState};
 pub fn generated_input_composer_may_accept(
     agent_id: &str,
     provider_state: Option<AgentState>,
+    provider_source: Option<AgentSignalSource>,
 ) -> bool {
     provider_state == Some(AgentState::Idle)
+        // A Claude Session interrupted by a graceful restart resumes at an
+        // empty composer and emits no idle signal until another turn ends.
+        // Its resumed process's `SessionStart` hook replaces the process
+        // seed's source, so only a confirmed live composer qualifies. A user
+        // interrupt read from the transcript stays excluded because Claude
+        // may restore the interrupted prompt into the composer.
+        || (agent_id == "claude"
+            && provider_state == Some(AgentState::Interrupted)
+            && provider_source == Some(AgentSignalSource::Hook))
         // `turn/completed: interrupted` ends the Codex turn and returns the
         // TUI to its composer, but App Server does not follow it with a second
         // `thread/status: idle` notification. Keep the interruption visible as
@@ -63,5 +73,46 @@ pub struct QueueAdmission {
 impl QueueAdmission {
     pub fn permits(self, state: Option<AgentState>) -> bool {
         self.while_working && matches!(state, Some(AgentState::Working | AgentState::Compacting))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interrupted_claude_accepts_input_only_after_its_resumed_process_confirms() {
+        let interrupted = Some(AgentState::Interrupted);
+        assert!(generated_input_composer_may_accept(
+            "claude",
+            interrupted,
+            Some(AgentSignalSource::Hook)
+        ));
+        for source in [
+            AgentSignalSource::Process,
+            AgentSignalSource::Transcript,
+            AgentSignalSource::DaemonBridge,
+        ] {
+            assert!(!generated_input_composer_may_accept(
+                "claude",
+                interrupted,
+                Some(source)
+            ));
+        }
+        assert!(!generated_input_composer_may_accept(
+            "claude",
+            Some(AgentState::Working),
+            Some(AgentSignalSource::Hook)
+        ));
+        assert!(!generated_input_composer_may_accept(
+            "gemini",
+            interrupted,
+            Some(AgentSignalSource::Hook)
+        ));
+        assert!(generated_input_composer_may_accept(
+            "codex",
+            interrupted,
+            Some(AgentSignalSource::Process)
+        ));
     }
 }
