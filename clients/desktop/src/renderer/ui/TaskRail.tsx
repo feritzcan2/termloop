@@ -27,6 +27,7 @@ import { TaskWorkflowLaunchers } from "./TaskWorkflows.js";
 import { TaskWorkflowActivity } from "./TaskWorkflowActivity.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 import { TaskDeveloperNotes } from "./TaskDeveloperNotes.js";
+import { compactBranchName, plainTaskBrief, taskCardStatus, taskCardTitle } from "../task-card-copy.js";
 
 type MenuState = { taskId: string; x: number; y: number; invoker: HTMLElement };
 let taskRowRenderCount = 0;
@@ -35,10 +36,13 @@ let taskRowRenderCount = 0;
 /// every row at once; search appears once the list outgrows a single glance.
 const ARCHIVE_PAGE_SIZE = 30;
 const ARCHIVE_SEARCH_THRESHOLD = 8;
+/// The active board stays a glanceable stack of cards until it no longer fits
+/// one glance; past that a filter finds a Task faster than scrolling does.
+const ACTIVE_SEARCH_THRESHOLD = 4;
 
-/// Case-insensitive match over the facts a person remembers a closed Task by:
-/// its title, branch, and ticket key. Every whitespace-separated word must hit.
-export function filterArchivedTasks(tasks: readonly Task[], query: string): Task[] {
+/// Case-insensitive match over the facts a person remembers a Task by: its
+/// title, brief, branch, and ticket key. Every whitespace-separated word must hit.
+export function filterTasks(tasks: readonly Task[], query: string): Task[] {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [...tasks];
   return tasks.filter((task) => {
@@ -299,6 +303,7 @@ export function TaskRail(props: TaskRailProps) {
   /// many of the (potentially hundreds of) closed rows have been paged in.
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
   const [archivePageCount, setArchivePageCount] = useState(1);
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
@@ -355,19 +360,21 @@ export function TaskRail(props: TaskRailProps) {
     () => new Map(props.branchCommitSummaries.map((summary) => [summary.task_id, summary])),
     [props.branchCommitSummaries],
   );
-  const openTasks = openTasksByActivity(
+  const allOpenTasks = openTasksByActivity(
     props.tasks.filter((task) => task.status === "open"),
     props.sessionsById,
     props.statusesById,
     props.reviewReadySessionIds,
     favoriteTaskIds,
   );
+  const activeSearchVisible = allOpenTasks.length >= ACTIVE_SEARCH_THRESHOLD;
+  const openTasks = activeSearchVisible ? filterTasks(allOpenTasks, activeQuery) : allOpenTasks;
   /// Newest-closed first: `updated_at_epoch_ms` is the last write Core made to
   /// the Task, and closing is that write for an archived-by-closing Task.
   const closedTasks = useMemo(() => props.tasks
     .filter((task) => task.status === "closed")
     .sort((left, right) => right.updated_at_epoch_ms - left.updated_at_epoch_ms), [props.tasks]);
-  const archiveMatches = useMemo(() => filterArchivedTasks(closedTasks, archiveQuery), [closedTasks, archiveQuery]);
+  const archiveMatches = useMemo(() => filterTasks(closedTasks, archiveQuery), [closedTasks, archiveQuery]);
   const archiveVisible = archiveMatches.slice(0, archivePageCount * ARCHIVE_PAGE_SIZE);
   const archiveRemaining = archiveMatches.length - archiveVisible.length;
   const menuTask = menu ? props.tasks.find((task) => task.id === menu.taskId) : undefined;
@@ -451,6 +458,7 @@ export function TaskRail(props: TaskRailProps) {
   useEffect(() => {
     setArchiveOpen(false);
     setArchiveQuery("");
+    setActiveQuery("");
     setArchivePageCount(1);
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
     setRenamingTaskTab(undefined);
@@ -600,10 +608,21 @@ export function TaskRail(props: TaskRailProps) {
       <div className="task-board-head">
         <h3 className="task-board-title">
           Active
-          {openTasks.length > 0 ? <span className="task-board-count" aria-label={`${openTasks.length} active ${openTasks.length === 1 ? "Task" : "Tasks"}`}>{openTasks.length}</span> : null}
+          {allOpenTasks.length > 0 ? <span className="task-board-count" aria-label={`${allOpenTasks.length} active ${allOpenTasks.length === 1 ? "Task" : "Tasks"}`}>{allOpenTasks.length}</span> : null}
         </h3>
         <button type="button" className="task-board-create" aria-label="Create Task" title="Create Task" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" /></button>
       </div>
+      {activeSearchVisible ? (
+        <input
+          type="search"
+          className="task-archive-search task-board-search"
+          placeholder="Filter by key, title, or branch"
+          aria-label="Filter active Tasks"
+          value={activeQuery}
+          onChange={(event) => setActiveQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Escape" && activeQuery) { event.preventDefault(); setActiveQuery(""); } }}
+        />
+      ) : null}
       {/* Every active Task is on the board at once: with a handful open there is
           nothing to select between, so each one renders as its own full card. */}
       <div className="task-list task-board" role="list" aria-label="Active Tasks">
@@ -611,7 +630,8 @@ export function TaskRail(props: TaskRailProps) {
         {/* A first-ever visitor gets the one-sentence model and the primary
             action; anyone with existing closed or archived Tasks already
             knows it and gets the quiet line back. */}
-        {openTasks.length === 0 ? (
+        {openTasks.length === 0 && allOpenTasks.length > 0 ? <p className="rail-empty">No active Tasks match.</p> : null}
+        {allOpenTasks.length === 0 ? (
           props.tasks.length === 0 && props.archivedTaskCount === 0 ? (
             <div className="task-empty">
               <p className="task-empty-copy">A Task is one piece of work with its own Git checkout — a worktree. Terminals and agents you start inside it stay grouped under it.</p>
@@ -995,6 +1015,17 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   /// sits directly below and the cue would say the same thing twice. Structural
   /// next steps have no expanded counterpart and stay on every row.
   const action = props.deleting ? undefined : taskPrimaryAction(stage, collapsed ? attention : undefined);
+  const issueKey = task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined;
+  const cardTitle = taskCardTitle(task.title, issueKey);
+  const cardBrief = plainTaskBrief(task.brief);
+  const cardStatus = props.deleting || task.status !== "open" ? undefined : taskCardStatus({
+    stage,
+    attention,
+    integration,
+    hasLocalChanges: Boolean(changeCount),
+    attentionShownElsewhere: action?.kind === "agent",
+  });
+  const [noteAddRequest, setNoteAddRequest] = useState(0);
   const workflowManageable = props.workflowConfigurations.length > 0;
   const taskLaunch = launchable || workflowExecutionVisible || workflowManageable ? (
       <TaskWorkflowLaunchers
@@ -1063,6 +1094,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       role="listitem"
       className={`task-group${props.focused ? " focused" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
       data-task-stage={stage.id}
+      data-status-tone={cardStatus?.tone}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}
       data-session-drop-target={task.status === "open" && task.archived_at_epoch_ms === null && !props.deleting ? task.id : undefined}
       /* The whole card is the click target — pointing at the title is never
@@ -1146,8 +1178,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           <span className="task-headline">
             <i className={`task-dot ${taskRowTone(stage, attention)}`} aria-hidden="true" />
             {props.focused ? <span className="task-focus-copy">
-              <strong className="task-title">{task.title}</strong>
-              {task.brief ? <small className="task-focus-brief">{task.brief}</small> : null}
+              {cardTitle.key || cardTitle.scope || cardStatus ? <span className="task-card-ids">
+                {cardTitle.key ? <span className="task-card-key">{cardTitle.key}</span> : null}
+                {cardStatus ? <span className="task-card-status" data-tone={cardStatus.tone} title={cardStatus.title}>{cardStatus.label}</span> : null}
+                {cardTitle.scope ? <span className="task-card-scope" title={cardTitle.scope}>{cardTitle.scope}</span> : null}
+              </span> : null}
+              <strong className="task-title">{cardTitle.title}</strong>
+              {cardBrief && !collapsed ? <small className="task-focus-brief">{cardBrief}</small> : null}
             </span> : <strong className="task-title">{task.title}</strong>}
             {/* The lingering checkout still blocks Project deletion, so the
                 archive row keeps that one fact as a compact badge. */}
@@ -1198,6 +1235,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             title={props.favorite ? "Remove from favorites" : "Favorite Task"}
             onClick={() => props.toggleFavorite!(task.id)}
           ><Icon name="star" /></button> : null}
+          {props.focused && task.status === "open" && !props.deleting ? <button
+            type="button"
+            className="row-action task-note-add"
+            aria-label={`Add a developer note to ${task.title}`}
+            title="Add developer note"
+            onClick={() => setNoteAddRequest((current) => current + 1)}
+          ><Icon name="edit" /></button> : null}
           {props.beginClose && !props.deleting ? <button
             type="button"
             className="row-action task-close"
@@ -1245,6 +1289,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         openChanges={() => props.openChanges(task.id, { kind: "local" })}
         openIntegration={openIntegration}
         openIssue={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
+        issueInHeadline={props.focused}
+        compactBranch={props.focused}
       />}
       {action ? (
         action.kind === "nextStep" ? (
@@ -1275,6 +1321,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         taskId={task.id}
         taskTitle={task.title}
         notes={task.developer_notes ?? []}
+        addRequest={noteAddRequest}
         save={(expected, next) => props.updateDeveloperNotes(task.id, expected, next)}
       /> : null}
       {collapsed || props.deleting ? null : (
@@ -1452,6 +1499,11 @@ export type TaskMetaLineProps = {
   /// label describes; `undefined` when the fact is not openable.
   openIntegration: (() => void) | undefined;
   openIssue(): void;
+  /// The board card already leads with the issue key, so the meta line keeps
+  /// only the link affordance instead of printing the key twice.
+  issueInHeadline?: boolean | undefined;
+  /// The board card shows the branch leaf; the detail page keeps the full name.
+  compactBranch?: boolean | undefined;
 };
 
 const nextStepIcons: Record<TaskNextStepKind, "add" | "focus"> = {
@@ -1495,7 +1547,7 @@ export function TaskMetaLine(props: TaskMetaLineProps) {
   /// The Jira key is a click affordance, not identity — when the user already
   /// put the key in the title, printing it again is pure repetition.
   const jiraKey = task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined;
-  const showJira = Boolean(task.jira_url && jiraKey && !task.title.includes(jiraKey));
+  const showJira = Boolean(task.jira_url && jiraKey && (props.issueInHeadline || !task.title.includes(jiraKey)));
   /// Active Tasks keep the worktree path in the branch tooltip. Closed Tasks
   /// surface the binding as a badge because that lingering checkout blocks
   /// Project deletion and needs to remain obvious even while the row is folded.
@@ -1531,7 +1583,7 @@ export function TaskMetaLine(props: TaskMetaLineProps) {
           className={`task-meta-branch${task.branch ? "" : " none"}`}
           title={task.branch ? `Task branch ${task.branch.name}${worktreeSuffix}` : `No branch is bound to this Task${worktreeSuffix}`}
         >
-          {task.branch ? task.branch.name : "No branch"}
+          {task.branch ? props.compactBranch ? compactBranchName(task.branch.name) : task.branch.name : "No branch"}
         </small>
       )}
       {deleting || quiet ? null : (
@@ -1576,7 +1628,7 @@ export function TaskMetaLine(props: TaskMetaLineProps) {
               {separator}
               <Signal
                 tone="issue"
-                label={jiraKey!}
+                label={props.issueInHeadline ? "Jira ↗" : jiraKey!}
                 title={`Open ${task.jira_url} in browser`}
                 ariaLabel={`Open Jira ${jiraKey} in browser`}
                 onClick={props.openIssue}
