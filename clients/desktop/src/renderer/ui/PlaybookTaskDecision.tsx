@@ -1,26 +1,44 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   CompanionMessageDto, CompanionProposalDecision, CompanionProposalRespondResult,
-  CompanionSuggestionAcceptResult, CompanionTranscriptListResult,
+  CompanionSuggestionAcceptResult, CompanionTranscriptListResult, RoutineConfigurationDto,
 } from "@termloop/contract/current";
 import { currentStewardInteraction } from "./companion-chat.js";
 import "./playbook-task-decision.css";
 
-/** The one Steward question Core still accepts an answer for, when it names a
-    Task. Core keeps a single open interaction per Project, so at most one Task
-    row can ever carry a decision; earlier proposals were answered or replaced. */
+/** The one Steward question Core still accepts an answer for, with every Task
+    it covers. Core keeps a single open interaction per Project, so a Steward
+    that batches several Playbook findings asks once for all of their Tasks;
+    each covered Task row shows that same decision. */
 export type PlaybookTaskDecision = Readonly<{
-  taskId: string;
+  taskIds: readonly string[];
   kind: "proposal" | "suggestion";
   message: CompanionMessageDto;
 }>;
 
-export function pendingPlaybookTaskDecision(messages: readonly CompanionMessageDto[]): PlaybookTaskDecision | null {
+/** Maps a pending Playbook finding to the Tasks Core recorded for it. */
+export type RoutineFindingTasks = (findingId: string) => readonly string[];
+
+export function routineFindingTasks(routines: readonly RoutineConfigurationDto[]): RoutineFindingTasks {
+  const byFinding = new Map(routines.flatMap((routine) => routine.pendingRoutineFindings
+    .map((finding) => [finding.id, finding.relatedTaskIds] as const)));
+  return (findingId) => byFinding.get(findingId) ?? [];
+}
+
+export function pendingPlaybookTaskDecision(
+  messages: readonly CompanionMessageDto[],
+  findingTasks: RoutineFindingTasks = () => [],
+): PlaybookTaskDecision | null {
   const interaction = currentStewardInteraction(messages);
-  const taskId = interaction?.refs?.taskId;
-  if (!interaction || !taskId) return null;
-  if (interaction.kind !== "proposal" && interaction.kind !== "suggestion") return null;
-  return { taskId, kind: interaction.kind, message: interaction };
+  if (!interaction || (interaction.kind !== "proposal" && interaction.kind !== "suggestion")) return null;
+  const refs = interaction.refs;
+  const findingIds = [...(refs?.routineFindingId ? [refs.routineFindingId] : []), ...(refs?.routineFindingIds ?? [])];
+  const taskIds = [...new Set([
+    ...(refs?.taskId ? [refs.taskId] : []),
+    ...findingIds.flatMap(findingTasks),
+  ])];
+  if (taskIds.length === 0) return null;
+  return { taskIds, kind: interaction.kind, message: interaction };
 }
 
 export type PlaybookTaskDecisionActions = Readonly<{
@@ -36,37 +54,39 @@ export type PlaybookTaskDecisionHandle = Readonly<{
 }>;
 
 /** Reads the Steward transcript on the same coalesced projection token the
-    rail already follows, and settles locally after an answer so the row does
+    rail already follows, and settles locally after an answer so the rows do
     not keep offering a decision Core has already recorded. */
 export function usePlaybookTaskDecision(
   projectId: string,
   refreshToken: number,
   actions: PlaybookTaskDecisionActions | undefined,
+  routines: readonly RoutineConfigurationDto[] = [],
 ): PlaybookTaskDecisionHandle | null {
-  const [decision, setDecision] = useState<PlaybookTaskDecision | null>(null);
+  const [messages, setMessages] = useState<readonly CompanionMessageDto[] | null>(null);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
   const enabled = actions !== undefined;
   useEffect(() => {
-    setDecision(null);
+    setMessages(null);
     const loader = actionsRef.current;
     if (!loader) return;
     let current = true;
     void loader.listTranscript()
-      .then((transcript) => { if (current) setDecision(pendingPlaybookTaskDecision(transcript.messages)); })
+      .then((transcript) => { if (current) setMessages(transcript.messages); })
       .catch(() => undefined);
     return () => { current = false; };
   }, [enabled, projectId, refreshToken]);
+  const decision = messages ? pendingPlaybookTaskDecision(messages, routineFindingTasks(routines)) : null;
   if (!actions || !decision) return null;
   return {
     decision,
     respond: async (answer) => {
       await actions.respondToProposal(decision.message.id, answer);
-      setDecision(null);
+      setMessages(null);
     },
     accept: async () => {
       await actions.acceptSuggestion(decision.message.id);
-      setDecision(null);
+      setMessages(null);
     },
   };
 }
@@ -98,16 +118,22 @@ export function PlaybookTaskDecisionStrip(props: {
     } finally { setBusy(false); }
   };
   const label = proposal ? "Needs your approval" : "Steward suggestion";
+  const otherTasks = decision.taskIds.length - 1;
+  const shared = otherTasks > 0
+    ? `One ${proposal ? "approval" : "acceptance"} answers this for this Task and ${otherTasks} other${otherTasks === 1 ? "" : "s"}.`
+    : null;
   return <div className={`playbook-task-decision ${decision.kind}`} role="group"
     aria-label={`${label} for ${props.taskTitle}`} aria-busy={busy}>
     <button type="button" className="playbook-task-decision-head" aria-expanded={expanded}
       title={expanded ? "Hide the Steward's message" : "Read the Steward's message before deciding"}
       onClick={() => setExpanded(!expanded)}>
       <span className="playbook-task-decision-flag">{label}</span>
+      {otherTasks > 0 ? <span className="playbook-task-decision-shared">{decision.taskIds.length} Tasks</span> : null}
       {expanded ? null : <span className="playbook-task-decision-summary">{summaryLine(decision.message.content)}</span>}
     </button>
     {expanded ? <>
       <p className="playbook-task-decision-content">{decision.message.content}</p>
+      {shared ? <p className="playbook-task-decision-scope">{shared}</p> : null}
       {error ? <p role="alert" className="playbook-task-decision-error">{error}</p> : null}
       <footer>
         <button type="button" className="link" onClick={props.openSteward}>Open Steward</button>

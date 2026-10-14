@@ -533,7 +533,7 @@ export function AssistantRail(props: Props) {
       .catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
   }, [applySnapshot, props.projectId, props.refreshToken]);
-  const taskDecision = usePlaybookTaskDecision(props.projectId, props.refreshToken, props.taskDecisionActions);
+  const taskDecision = usePlaybookTaskDecision(props.projectId, props.refreshToken, props.taskDecisionActions, routines);
   const openStewardChat = () => props.openDetails({ kind: "steward", initialView: "chat" });
   const sessions = useMemo(() => new Map(props.sessions.map((session) => [session.id, session])), [props.sessions]);
   const healthByRoutine = useMemo(() => new Map(health.map((value) => [value.routineId, value])), [health]);

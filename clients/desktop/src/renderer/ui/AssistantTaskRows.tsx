@@ -58,7 +58,7 @@ export function AssistantTaskRow(props: {
   decision?: PlaybookTaskDecisionHandle | null | undefined;
   openSteward?: (() => void) | undefined;
 }) {
-  const decision = props.decision?.decision.taskId === props.task.id ? props.decision : null;
+  const decision = props.decision?.decision.taskIds.includes(props.task.id) ? props.decision : null;
   const processing = props.processingTaskId === props.task.id;
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
   return <div className="assistant-task-item" role="listitem"><button
