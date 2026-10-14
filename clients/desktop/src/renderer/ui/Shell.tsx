@@ -15,7 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
-import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
+import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
+import { taskCardTitle } from "../task-card-copy.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
@@ -719,6 +720,15 @@ export function Shell(props: ShellProps) {
       }
     }
     return changes;
+  }, [props.projectTasks, sessionsById]);
+  const taskIdentityBySessionId = useMemo(() => {
+    const identities = new Map<string, { issueKey: string | undefined; title: string }>();
+    for (const task of props.projectTasks) {
+      if (task.status !== "open") continue;
+      const { key, title } = taskCardTitle(task.title, task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined);
+      for (const sessionId of taskAttachedSessionIds([task], sessionsById)) identities.set(sessionId, { issueKey: key, title });
+    }
+    return identities;
   }, [props.projectTasks, sessionsById]);
   const taskNestedHelperIds = useMemo(
     () => askToHelpersForSources(attachedSessionIds, sessionsById),
@@ -1725,6 +1735,7 @@ export function Shell(props: ShellProps) {
             favoriteSessionIds={favoriteAgentSessionIds}
             taskAttachedSessionIds={attachedSessionIds}
             worktreeChangesBySessionId={worktreeChangesBySessionId}
+            taskIdentityBySessionId={taskIdentityBySessionId}
             workflowsBySessionId={workflowsBySessionId}
             workflowAgentLabelsBySessionId={workflowAgentLabelsBySessionId}
             workflowGroupsBySessionId={workflowGroupsBySessionId}

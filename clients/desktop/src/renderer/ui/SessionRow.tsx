@@ -164,12 +164,14 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// The row shared by the Project Session sections and the Sessions nested under
 /// a Task. Presentation only — the caller owns selection, ordering, and the
 /// context menu it opens.
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
   subtitle: string;
   displayName?: string | undefined;
+  /// A short identity token (a ticket key) printed before the title.
+  titleKey?: string | undefined;
   relationshipLabel?: string;
   active: boolean;
   visible: boolean;
@@ -190,7 +192,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   const currentPlanKey = currentPlan ? `${session.id}:${currentPlan.updatedAtEpochMs}` : undefined;
   const [dismissedPlanKey, setDismissedPlanKey] = useState<string>();
   const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
-  const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel, displayName });
+  const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel, displayName: titleKey && displayName ? `${titleKey} ${displayName}` : displayName });
   const planProgress = plan ? agentPlanProgress(plan) : undefined;
   return (
     <button
@@ -227,7 +229,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} visible={visible} active={active} runCommand={runCommand} />
     </button>
   );
 }
@@ -376,7 +378,7 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, visible, active, runCommand }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, visible, active, runCommand }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
@@ -384,6 +386,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
   reviewReady: boolean;
   subtitle: string;
   displayName?: string | undefined;
+  titleKey?: string | undefined;
   visible: boolean;
   active: boolean;
   runCommand?: string | undefined;
@@ -418,7 +421,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
         )}
       </span>
       <span className="row-copy">
-        <strong className="row-title">{displayName ?? sessionLabel(session)}</strong>
+        <strong className="row-title">{titleKey ? <span className="row-title-key">{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
         <span className="session-state-line">
           {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}
