@@ -103,6 +103,35 @@ pub enum TaskSourceImportPolicy {
     AutoAdd,
 }
 
+/// How a managed worktree branch is named for a Task imported from this
+/// source. `IssueKey` uses the exact issue key, so repository conventions that
+/// require `<KEY>` branches match the Task branch that PR composition follows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskSourceBranchNaming {
+    #[default]
+    Title,
+    IssueKey,
+}
+
+/// Returns the issue key when it is a plain Jira key that is also a portable
+/// single-component branch name, such as `UKIE-931`.
+pub fn issue_key_branch_name(external_ref: &str) -> Option<&str> {
+    let (project, number) = external_ref.split_once('-')?;
+    let project_valid = project.len() <= 32
+        && project
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_uppercase)
+        && project
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_');
+    let number_valid = (1..=16).contains(&number.len())
+        && !number.starts_with('0')
+        && number.bytes().all(|byte| byte.is_ascii_digit());
+    (project_valid && number_valid).then_some(external_ref)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TaskSourceConfiguration {
@@ -123,6 +152,8 @@ pub struct TaskSourceConfiguration {
     pub refresh_interval_seconds: u64,
     #[serde(default)]
     pub ignored_external_ids: Vec<String>,
+    #[serde(default)]
+    pub branch_naming: TaskSourceBranchNaming,
     pub created_at_epoch_ms: u64,
     pub updated_at_epoch_ms: u64,
 }
@@ -206,8 +237,27 @@ mod tests {
             auto_import_active_task_limit: TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,
             refresh_interval_seconds: 900,
             ignored_external_ids: vec![],
+            branch_naming: TaskSourceBranchNaming::Title,
             created_at_epoch_ms: 1,
             updated_at_epoch_ms: 1,
+        }
+    }
+
+    #[test]
+    fn issue_key_branch_names_accept_only_plain_jira_keys() {
+        assert_eq!(issue_key_branch_name("UKIE-931"), Some("UKIE-931"));
+        assert_eq!(issue_key_branch_name("AB_2-7"), Some("AB_2-7"));
+        for invalid in [
+            "ukie-931",
+            "UKIE-0931",
+            "UKIE-",
+            "-1",
+            "2UK-1",
+            "UK-1-MASTER",
+            "UK/X-1",
+            "UKIE-93a",
+        ] {
+            assert_eq!(issue_key_branch_name(invalid), None, "{invalid}");
         }
     }
 

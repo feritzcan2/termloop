@@ -531,9 +531,9 @@ async fn provision_worktree(
         .get("repository_root")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
-    let checkout_names = termloop_core::managed_task_checkout_names(
-        &action.title,
+    let checkout_names = state.core.lock().await.task_managed_checkout_names(
         &action.task_id,
+        &action.title,
         &action.worktree_prefix,
     );
     let branch_name = checkout_names.branch_name;

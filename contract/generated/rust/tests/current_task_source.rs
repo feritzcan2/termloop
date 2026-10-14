@@ -19,6 +19,7 @@ fn source() -> serde_json::Value {
         "importPolicy": "review",
         "autoImportActiveTaskLimit": 5,
         "refreshIntervalSeconds": 900,
+        "branchNaming": "title",
         "credentialState": "present",
         "runtimeState": "idle",
         "failureReason": null,
@@ -75,6 +76,17 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
         "expectedRevision": 0
     });
     assert!(validate_method_params("taskSource.create", &assigned));
+    let mut issue_key_branches = assigned.clone();
+    issue_key_branches["branchNaming"] = json!("issueKey");
+    assert!(validate_method_params(
+        "taskSource.create",
+        &issue_key_branches
+    ));
+    issue_key_branches["branchNaming"] = json!("ticket");
+    assert!(!validate_method_params(
+        "taskSource.create",
+        &issue_key_branches
+    ));
     let mut assigned_with_jql = assigned.clone();
     assigned_with_jql["jql"] = json!("project = TERM");
     assert!(!validate_method_params(
@@ -242,6 +254,12 @@ fn task_source_results_reject_invalid_scope_and_candidate_identity() {
     assert!(validate_method_result(
         "taskSource.list",
         &json!({"sources":[source()], "stateRevision":1, "observationSequence":0})
+    ));
+    let mut unnamed = source();
+    unnamed.as_object_mut().unwrap().remove("branchNaming");
+    assert!(!validate_method_result(
+        "taskSource.list",
+        &json!({"sources":[unnamed], "stateRevision":1, "observationSequence":0})
     ));
     let mut invalid_source = source();
     invalid_source["jql"] = json!("project = TERM");
