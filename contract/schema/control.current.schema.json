@@ -15723,12 +15723,27 @@
       "required": [
         "activePipelineName",
         "processingTaskId",
+        "processingTaskIds",
         "evaluation",
+        "evaluations",
         "steps",
         "doneTaskIds",
         "stateRevision"
       ],
       "properties": {
+        "processingTaskIds": {
+          "description": "Every Task whose own Playbook step check is running. Each Task is checked independently.",
+          "type": "array",
+          "maxItems": 512,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "evaluations": {
+          "description": "One entry per Task whose step check is running in an evaluation fork or is waiting for its Task Agent.",
+          "type": "array",
+          "maxItems": 512,
+          "items": { "$ref": "#/$defs/playbookEvaluationDto" }
+        },
         "activePipelineName": {
           "type": "string",
           "maxLength": 120

@@ -339,9 +339,24 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
         assert!(projection["evaluation"]["sessionId"].is_null());
         assert!(
             runtime
-                .current_step_check(&claim.capability.as_ref().unwrap().tracker_id)
-                .is_none()
+                .current_step_checks(&claim.capability.as_ref().unwrap().tracker_id)
+                .is_empty()
         );
+        // The skipped Task waits out its own retry. The other Task at the step
+        // is independent and is claimed, and skipped, on its own.
+        let other = runtime
+            .claim_next_steward_routine(
+                &project,
+                "steward-session",
+                "other-task".into(),
+                termloop_platform::current_epoch_ms(),
+            )
+            .unwrap();
+        assert_eq!(other.result["step"]["tasks"][0]["taskId"], "task-2");
+        assert!(matches!(
+            runtime.plan_playbook_evaluation(&other).unwrap(),
+            PlaybookEvaluationLaunch::Skipped(_)
+        ));
         let next = runtime
             .claim_next_steward_routine(
                 &project,

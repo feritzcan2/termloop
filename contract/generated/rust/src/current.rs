@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:db201e156a073590dc6e82b993c0ab09a28dc552c038489dc8ce2ad1390e62bd";
+    "sha256:b2351f68d5ef92d904063532da839fea4fe0991a9ace61c46c4d2e098f34f653";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -7269,6 +7269,9 @@ pub struct PlaybookEvaluationDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PlaybookRuntimeResult {
+    #[serde(rename = "processingTaskIds")]
+    pub processing_task_ids: Vec<String>,
+    pub evaluations: Vec<PlaybookEvaluationDto>,
     #[serde(rename = "activePipelineName")]
     pub active_pipeline_name: String,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -27277,7 +27280,24 @@ fn validate_playbook_evaluation_dto(value: &Value) -> bool {
 )]
 fn validate_playbook_runtime_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
-        object.get("activePipelineName").is_some_and(|field| {
+        object.get("processingTaskIds").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 512
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1 && text.chars().count() <= 256
+                        })
+                    })
+            })
+        }) && object.get("evaluations").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 512
+                    && items
+                        .iter()
+                        .all(|item| validate_playbook_evaluation_dto(item))
+            })
+        }) && object.get("activePipelineName").is_some_and(|field| {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() <= 120)
@@ -27316,6 +27336,8 @@ fn validate_playbook_runtime_result(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "processingTaskIds",
+                    "evaluations",
                     "activePipelineName",
                     "evaluation",
                     "processingTaskId",

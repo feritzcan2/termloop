@@ -122,7 +122,7 @@ describe("Active Agent rows inside a Task", () => {
     const lead = agentSession("lead");
     const fork = agentSession("fork", { name: "Playbook evaluation", fork_source_session_id: "lead" } as Partial<Session>);
     const view = await renderRail([lead, fork], {
-      playbookEvaluation: { sessionId: "fork", sourceSessionId: "lead" },
+      playbookEvaluations: [{ sessionId: "fork", sourceSessionId: "lead" }],
       selectSession: (sessionId) => selected.push(sessionId),
     });
     expect(view.container.querySelector('[data-session-id="fork"]')).toBeNull();
@@ -134,9 +134,29 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
 
     /// Without its source row the fork keeps an ordinary row of its own.
-    const orphan = await renderRail([fork], { playbookEvaluation: { sessionId: "fork", sourceSessionId: "lead" } });
+    const orphan = await renderRail([fork], { playbookEvaluations: [{ sessionId: "fork", sourceSessionId: "lead" }] });
     expect(orphan.container.querySelector('[data-session-id="fork"]')).not.toBeNull();
     await orphan.dispose();
+  });
+
+  it("folds each independent Task's evaluation fork into its own source row", async () => {
+    const leads = [agentSession("lead-a"), agentSession("lead-b")];
+    const forks = [
+      agentSession("fork-a", { name: "Playbook evaluation", fork_source_session_id: "lead-a" } as Partial<Session>),
+      agentSession("fork-b", { name: "Playbook evaluation", fork_source_session_id: "lead-b" } as Partial<Session>),
+    ];
+    const view = await renderRail([...leads, ...forks], {
+      playbookEvaluations: [
+        { sessionId: "fork-a", sourceSessionId: "lead-a" },
+        { sessionId: "fork-b", sourceSessionId: "lead-b" },
+      ],
+    });
+    expect(view.container.querySelector('[data-session-id="fork-a"]')).toBeNull();
+    expect(view.container.querySelector('[data-session-id="fork-b"]')).toBeNull();
+    for (const lead of ["lead-a", "lead-b"]) {
+      expect(view.container.querySelector(`[data-session-id="${lead}"] .presence-badge`)?.textContent).toBe("✦");
+    }
+    await view.dispose();
   });
 
   it("opens the Jira issue from the key without selecting the row", async () => {

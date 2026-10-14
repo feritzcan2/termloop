@@ -82,7 +82,7 @@ afterEach(async () => {
 
 function Rows(props: { refreshToken?: number; disabled?: boolean; routines?: RoutineConfigurationDto[] }) {
   const decision = usePlaybookTaskDecision("p", props.refreshToken ?? 0, actions as unknown as PlaybookTaskDecisionActions, props.routines);
-  return <>{[task, otherTask].map((value) => <AssistantTaskRow key={value.id} task={value} processingTaskId={null}
+  return <>{[task, otherTask].map((value) => <AssistantTaskRow key={value.id} task={value} processingTaskIds={[]}
     openTask={() => undefined} decision={decision} openSteward={openSteward} notesDisabled={props.disabled} />)}</>;
 }
 async function render(props: { refreshToken?: number; disabled?: boolean; routines?: RoutineConfigurationDto[] } = {}) {

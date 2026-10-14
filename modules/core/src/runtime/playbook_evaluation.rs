@@ -15,7 +15,8 @@ const MAX_ACTIVITY_ENTRIES: usize = 4096;
 #[derive(Default)]
 pub(crate) struct PlaybookEvaluationRuntime {
     pub(crate) evaluations: HashMap<String, PlaybookEvaluation>,
-    pub(crate) waiting: HashMap<String, PlaybookEvaluationWait>,
+    /// Deferred step checks, keyed by Routine and Task.
+    pub(crate) waiting: HashMap<(String, String), PlaybookEvaluationWait>,
     activity: HashMap<String, TaskAgentActivity>,
 }
 
@@ -84,28 +85,52 @@ impl TaskAgentActivity {
 }
 
 impl CoreRuntime {
-    /// UI routing is derived from the exact live claim, never Session names or cwd.
-    pub(crate) fn playbook_evaluation_projection(&self, routine_id: &str) -> Option<Value> {
-        let Some(capability) = self.current_step_check(routine_id) else {
-            let waiting = self.playbook_evaluation.waiting.get(routine_id)?;
-            let assignment = self.playbook_step_assignment(routine_id)?;
-            let playbook = self.store.playbook_for_project(&waiting.project_id)?;
-            if assignment.waiting[0].task_id != waiting.task_id
-                || playbook.revision != waiting.playbook_revision
-                || !self
-                    .store
-                    .tracker_configurations()
-                    .iter()
-                    .any(|r| r.id == routine_id && r.generation == waiting.routine_generation)
-            {
-                return None;
-            }
-            return Some(json!({
-                "routineId": routine_id, "taskId": waiting.task_id, "mode": "waitingForTaskAgent",
-                "sessionId": null, "sourceSessionId": null, "reason": waiting.reason,
-            }));
-        };
-        let task_id = self.tracker_check_task_id(&capability).ok()??;
+    /// UI routing is derived from the exact live claims, never Session names or
+    /// cwd. A step reports one entry per Task it is checking or deferring.
+    pub(crate) fn playbook_evaluation_projections(&self, routine_id: &str) -> Vec<Value> {
+        let mut projections = self
+            .current_step_checks(routine_id)
+            .into_iter()
+            .filter_map(|capability| self.running_evaluation_projection(routine_id, &capability))
+            .collect::<Vec<_>>();
+        let mut waiting = self
+            .playbook_evaluation
+            .waiting
+            .iter()
+            .filter(|((routine, task_id), wait)| {
+                routine == routine_id
+                    && !self.step_task_is_checked(routine_id, task_id)
+                    && self
+                        .playbook_step_assignment_for_task(routine_id, task_id)
+                        .is_some()
+                    && self
+                        .store
+                        .playbook_for_project(&wait.project_id)
+                        .is_some_and(|playbook| playbook.revision == wait.playbook_revision)
+                    && self
+                        .store
+                        .tracker_configurations()
+                        .iter()
+                        .any(|r| r.id == routine_id && r.generation == wait.routine_generation)
+            })
+            .map(|(_, wait)| wait)
+            .collect::<Vec<_>>();
+        waiting.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        projections.extend(waiting.into_iter().map(|wait| {
+            json!({
+                "routineId": routine_id, "taskId": wait.task_id, "mode": "waitingForTaskAgent",
+                "sessionId": null, "sourceSessionId": null, "reason": wait.reason,
+            })
+        }));
+        projections
+    }
+
+    fn running_evaluation_projection(
+        &self,
+        routine_id: &str,
+        capability: &TrackerCheckCapability,
+    ) -> Option<Value> {
+        let task_id = self.tracker_check_task_id(capability).ok()??;
         let mut projection = json!({
             "routineId": routine_id, "taskId": task_id, "mode": "starting",
             "sessionId": null, "sourceSessionId": null, "reason": null,
@@ -152,7 +177,7 @@ impl CoreRuntime {
             .revision;
         self.finish_steward_routine_check(capability, None, now, &configuration);
         self.playbook_evaluation.waiting.insert(
-            capability.tracker_id.clone(),
+            (capability.tracker_id.clone(), task_id.clone()),
             PlaybookEvaluationWait {
                 project_id: capability.project_id.clone(),
                 task_id,
@@ -565,7 +590,7 @@ impl CoreRuntime {
             .collect::<std::collections::HashSet<_>>();
         self.playbook_evaluation
             .waiting
-            .retain(|id, _| current.contains(id.as_str()));
+            .retain(|(id, _), _| current.contains(id.as_str()));
         let stale = self
             .playbook_evaluation
             .evaluations

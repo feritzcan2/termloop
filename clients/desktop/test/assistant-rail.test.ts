@@ -205,7 +205,7 @@ describe("Assistant rail Session classification", () => {
     expect(persistentAssistantIsActive(undefined)).toBe(false);
   });
 
-  it("places every Assistant Task once and animates only the claimed one", () => {
+  it("places every Assistant Task once and animates every independently claimed one", () => {
     const task = (id: string, title: string, status: Task["status"] = "open") => ({
       id,
       project_id: "project-1",
@@ -217,7 +217,9 @@ describe("Assistant rail Session classification", () => {
     const runtime = {
       activePipelineName: "Dev PR to production",
       evaluation: null,
+      evaluations: [],
       processingTaskId: "task-2",
+      processingTaskIds: ["task-2", "task-5"],
       steps: [
         { milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["task-1", "task-2"], progress: [], nextAttemptAtEpochMs: null },
         { milestoneId: "deploy", routineId: "routine-deploy", waitingTaskIds: ["task-6"], progress: [], nextAttemptAtEpochMs: null },
@@ -251,7 +253,7 @@ describe("Assistant rail Session classification", () => {
     const stepMarkup = (placement.byRoutineId.get("routine-code") ?? [])
       .map((placedTask) => renderToStaticMarkup(AssistantTaskRow({
         task: placedTask,
-        processingTaskId: runtime.processingTaskId,
+        processingTaskIds: runtime.processingTaskIds,
         openTask: () => undefined,
         beginDrag: () => undefined,
         endDrag: () => undefined,
@@ -259,14 +261,14 @@ describe("Assistant rail Session classification", () => {
       .join("");
     const tailMarkup = renderToStaticMarkup(AssistantTaskTail({
       placement,
-      processingTaskId: runtime.processingTaskId,
+      processingTaskIds: runtime.processingTaskIds,
       openTask: () => undefined,
       beginDrag: () => undefined,
       endDrag: () => undefined,
     }));
     const markup = `${stepMarkup}${tailMarkup}`;
     expect(markup.match(/class="assistant-task-row/g)).toHaveLength(tasks.length);
-    expect(markup.match(/data-playbook-processing="true"/g)).toHaveLength(1);
+    expect(markup.match(/data-playbook-processing="true"/g)).toHaveLength(2);
     expect(markup.match(/draggable="true"/g)).toHaveLength(5);
     expect(markup.match(/data-playbook-task-id=/g)).toHaveLength(5);
     expect(markup).toContain("assistant-task-row processing");

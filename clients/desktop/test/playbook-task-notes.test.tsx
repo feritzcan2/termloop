@@ -22,7 +22,7 @@ afterEach(async () => {
   delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
 });
 async function render(value = task, disabled = false) {
-  await act(async () => root.render(<AssistantTaskRow task={value} processingTaskId="task-1" openTask={openTask} saveTaskNotes={save} notesDisabled={disabled} />));
+  await act(async () => root.render(<AssistantTaskRow task={value} processingTaskIds={["task-1"]} openTask={openTask} saveTaskNotes={save} notesDisabled={disabled} />));
 }
 async function typeNote(text: string) {
   await act(async () => {

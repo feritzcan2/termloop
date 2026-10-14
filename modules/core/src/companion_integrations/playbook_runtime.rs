@@ -178,13 +178,8 @@ impl CoreRuntime {
         // A check running for a different Task at that step is independent of
         // this move and keeps its claim.
         if let PlaybookPosition::At(index) = previous_position {
-            let routine_id = &playbook.milestones[index].routine_id;
-            if self
-                .claimed_step_task_id(routine_id)
-                .is_none_or(|claimed| claimed == task_id)
-            {
-                self.tracker_runtime.cancel_tracker_check(routine_id);
-            }
+            self.tracker_runtime
+                .cancel_step_task_check(&playbook.milestones[index].routine_id, task_id);
         }
         if let Some(milestone) = playbook.milestones.get(passed_milestone_count) {
             self.tracker_runtime
@@ -241,18 +236,20 @@ impl CoreRuntime {
         self.store.playbook_for_project(&routine.project_id)
     }
 
-    /// The question this Routine answers next for the Project's focused Task.
+    /// The next question this step Routine asks, for the next Task standing at
+    /// it whose own check is not already running.
     ///
-    /// Ready Tasks sort before delayed Tasks, then by the same rank/id ordering
-    /// used on the Task board. A Task that passes remains immediately due at
-    /// its next question and therefore keeps focus. A waiting Task receives a
-    /// future due time, allowing the next ready Task to take focus instead.
-    /// A single run contains exactly one Task and one question.
+    /// Each Task is independent: Tasks at other steps never compete for this
+    /// step, and a Task being checked never blocks another. Ready Tasks sort
+    /// before delayed Tasks, then by the same rank/id ordering used on the
+    /// Task board. A single run contains exactly one Task and one question.
     pub(crate) fn playbook_step_assignment(
         &self,
         routine_id: &str,
     ) -> Option<PlaybookStepAssignment> {
-        if let Some(task_id) = self.step_run_now_task_id(routine_id) {
+        if let Some(task_id) = self.step_run_now_task_id(routine_id)
+            && !self.step_task_is_checked(routine_id, task_id)
+        {
             return self.playbook_step_assignment_for_task(routine_id, task_id);
         }
         let playbook = self.routine_playbook(routine_id)?;
@@ -263,12 +260,15 @@ impl CoreRuntime {
                 continue;
             };
             let milestone = &playbook.milestones[index];
-            // A failed or expired check can delay its Routine without a Task
-            // verdict. Include that delay in focus selection so it cannot hide
-            // ready work at a different stage behind an unschedulable focus.
+            if milestone.routine_id != routine_id
+                || self.step_task_is_checked(routine_id, &standing.task.id)
+            {
+                continue;
+            }
+            // A failed or expired check delays only its own Task.
             let due_at_epoch_ms = standing
                 .due_at_epoch_ms(&milestone.id)
-                .max(self.step_retry_not_before_epoch_ms(&milestone.routine_id));
+                .max(self.step_retry_not_before_epoch_ms(routine_id, &standing.task.id));
             let priority = (
                 due_at_epoch_ms,
                 standing.task.rank,
@@ -295,9 +295,7 @@ impl CoreRuntime {
                 focused = Some((priority, assignment));
             }
         }
-        focused
-            .map(|(_, assignment)| assignment)
-            .filter(|assignment| assignment.milestone.routine_id == routine_id)
+        focused.map(|(_, assignment)| assignment)
     }
 
     /// The current question for one explicitly selected Task, provided this
@@ -346,11 +344,14 @@ impl CoreRuntime {
             .map(|assignment| assignment.due_at_epoch_ms)
     }
 
-    /// The question the Routine's current claim was issued for, as the exact
-    /// step of the pipeline it belongs to.
-    pub(crate) fn claimed_step_milestone(&self, routine_id: &str) -> Option<&PlaybookMilestone> {
-        let milestone_id = self.claimed_step_milestone_id(routine_id)?;
-        self.routine_playbook(routine_id)?
+    /// The question this exact claim was issued for, as the step of the
+    /// pipeline it belongs to.
+    pub(crate) fn claimed_step_milestone(
+        &self,
+        capability: &super::tracker_runtime::TrackerCheckCapability,
+    ) -> Option<&PlaybookMilestone> {
+        let milestone_id = self.claimed_step_milestone_id(capability)?;
+        self.routine_playbook(&capability.tracker_id)?
             .milestones
             .iter()
             .find(|milestone| milestone.id == milestone_id)
@@ -433,10 +434,10 @@ impl CoreRuntime {
         // Only the claimed Task's own position decides that. Another Task
         // moving or becoming due never invalidates this Task's answer.
         let milestone_id = self
-            .claimed_step_milestone_id(&capability.tracker_id)
+            .claimed_step_milestone_id(capability)
             .ok_or(CoreError::TrackerReportStale)?;
         let task_id = self
-            .claimed_step_task_id(&capability.tracker_id)
+            .claimed_step_task_id(capability)
             .ok_or(CoreError::TrackerReportStale)?;
         let assignment = self
             .playbook_step_assignment_for_task(&capability.tracker_id, &task_id)
@@ -667,7 +668,9 @@ impl CoreRuntime {
             return Ok(json!({
                 "activePipelineName": "",
                 "processingTaskId": null,
+                "processingTaskIds": [],
                 "evaluation": null,
+                "evaluations": [],
                 "steps": [],
                 "doneTaskIds": [],
                 "stateRevision": self.store.revision(),
@@ -722,21 +725,32 @@ impl CoreRuntime {
                 })
             })
             .collect::<Vec<_>>();
-        let processing_task_id = playbook
+        // Every Task with its own running check is processing at once.
+        let processing_task_ids = playbook
             .milestones
             .iter()
-            .find_map(|milestone| self.claimed_step_task_id(&milestone.routine_id));
-        let evaluation = playbook
+            .flat_map(|milestone| self.current_step_checks(&milestone.routine_id))
+            .filter_map(|capability| self.claimed_step_task_id(&capability))
+            .fold(Vec::new(), |mut ids, task_id| {
+                if !ids.contains(&task_id) {
+                    ids.push(task_id);
+                }
+                ids
+            });
+        let mut evaluations = playbook
             .milestones
             .iter()
-            .filter_map(|milestone| self.playbook_evaluation_projection(&milestone.routine_id))
-            .min_by_key(|value| value["mode"] == "waitingForTaskAgent");
+            .flat_map(|milestone| self.playbook_evaluation_projections(&milestone.routine_id))
+            .collect::<Vec<_>>();
+        evaluations.sort_by_key(|value| value["mode"] == "waitingForTaskAgent");
         // A pipeline that asks nothing has nobody standing on it; every open
         // Task is reported as done rather than invented into a first step.
         Ok(json!({
             "activePipelineName": playbook.active_pipeline_name,
-            "processingTaskId": processing_task_id,
-            "evaluation": evaluation,
+            "processingTaskId": processing_task_ids.first(),
+            "processingTaskIds": processing_task_ids,
+            "evaluation": evaluations.first(),
+            "evaluations": evaluations,
             "steps": steps,
             "doneTaskIds": done_task_ids,
             "stateRevision": self.store.revision(),
@@ -1076,7 +1090,7 @@ pub(crate) mod tests {
             .capability
             .unwrap();
         assert_eq!(
-            runtime.claimed_step_task_id(&second.tracker_id).as_deref(),
+            runtime.claimed_step_task_id(&second).as_deref(),
             Some("task-2")
         );
         // Resetting Task 1 makes it due again and the board's focus moves to
@@ -1287,7 +1301,8 @@ pub(crate) mod tests {
                 first.result["step"]["taskRead"]["arguments"]["taskId"],
                 "task-1"
             );
-            let reused = runtime
+            // The other Task at the step gets its own independent claim.
+            let second = runtime
                 .claim_next_steward_routine(
                     &project_id,
                     "steward-session",
@@ -1295,46 +1310,65 @@ pub(crate) mod tests {
                     NOW + 1,
                 )
                 .unwrap();
+            assert_ne!(second.capability, first.capability);
             assert_eq!(
-                reused.capability, first.capability,
-                "get-next cannot issue a second live claim"
+                second.result["step"]["taskRead"]["arguments"]["taskId"],
+                "task-2"
             );
-            assert_eq!(reused.result["step"]["whileWaiting"], expected);
+            assert_eq!(second.result["step"]["whileWaiting"], expected);
             drop(runtime);
             std::fs::remove_dir_all(root).unwrap();
         }
     }
 
     #[test]
-    fn failed_step_cooldown_does_not_hide_another_ready_stage() {
+    fn failed_step_cooldown_holds_back_only_its_own_task() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         runtime
             .set_task_playbook_position(&project_id, "task-2", 1, 1, runtime.state_revision(), NOW)
             .unwrap();
-        let first = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "failed-step".into(), NOW)
-            .unwrap();
-        assert_eq!(first.result["step"]["tasks"][0]["taskId"], "task-1");
+        // Each Task at its own step gets an independent claim.
+        let mut claims = (0..2)
+            .map(|index| {
+                runtime
+                    .claim_next_steward_routine(
+                        &project_id,
+                        "steward-session",
+                        format!("stage-{index}"),
+                        NOW,
+                    )
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        claims.sort_by_key(|claim| claim.result["step"]["tasks"][0]["taskId"].to_string());
+        assert_eq!(claims[0].result["step"]["tasks"][0]["taskId"], "task-1");
+        assert_eq!(claims[0].result["routine"]["id"], "routine-pr");
+        assert_eq!(claims[1].result["step"]["tasks"][0]["taskId"], "task-2");
+        assert_eq!(claims[1].result["routine"]["id"], "routine-deploy");
+        assert_eq!(
+            runtime
+                .playbook_runtime(json!({"projectId": project_id}))
+                .unwrap()["processingTaskIds"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         runtime
             .report_steward_routine_problem(
-                &first.capability.unwrap(),
+                claims[0].capability.as_ref().unwrap(),
                 "PR provider is unavailable".into(),
                 vec![],
                 "problem".into(),
                 NOW + 1,
             )
             .unwrap();
+        // task-1 now waits out its own cooldown; task-2's check is untouched.
         let next = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "ready-stage".into(),
-                NOW + 2,
-            )
+            .claim_next_steward_routine(&project_id, "steward-session", "idle".into(), NOW + 2)
             .unwrap();
-        assert_eq!(next.result["status"], "assigned");
-        assert_eq!(next.result["routine"]["id"], "routine-deploy");
-        assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-2");
+        assert_eq!(next.result["status"], "idle");
+        assert!(runtime.tracker_check_is_current(claims[1].capability.as_ref().unwrap()));
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1394,11 +1428,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn one_task_keeps_focus_across_steps_before_the_next_task_starts() {
+    fn tasks_advance_through_steps_independently() {
         let (mut runtime, root, project_id) = pipeline_runtime();
 
-        // Both Tasks are at the first stage, but the claim carries only the
-        // first Task in board order.
+        // Both Tasks are at the first stage. Each claim carries exactly one
+        // Task, the first in board order first.
         let claim = runtime
             .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
             .unwrap();
@@ -1428,7 +1462,20 @@ pub(crate) mod tests {
         );
         let capability = claim.capability.expect("a step check issues a capability");
 
-        // Passing advances only the focused Task.
+        // task-2 does not wait for task-1: it gets its own claim at once.
+        let second = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "check-2".into(), NOW)
+            .unwrap();
+        assert_eq!(second.result["routine"]["id"], "routine-pr");
+        assert_eq!(second.result["step"]["tasks"][0]["taskId"], "task-2");
+        assert_eq!(
+            runtime
+                .playbook_runtime(json!({"projectId": project_id}))
+                .unwrap()["processingTaskIds"],
+            json!(["task-1", "task-2"])
+        );
+
+        // Passing advances only the Task it answered for.
         let recorded = runtime
             .report_steward_step_verdicts(
                 &capability,
@@ -1442,65 +1489,66 @@ pub(crate) mod tests {
             )
             .unwrap();
         assert_eq!(recorded["passedCount"], 1);
-        assert_eq!(recorded["waitingCount"], 0);
-        assert_eq!(
-            runtime
-                .playbook_runtime(json!({"projectId": project_id}))
-                .unwrap()["processingTaskId"],
-            Value::Null
-        );
-
-        // Position remains per Task: task-1 moved, task-2 has not started.
         let runtime_view = runtime
             .playbook_runtime(json!({"projectId": project_id}))
             .unwrap();
+        assert_eq!(runtime_view["processingTaskIds"], json!(["task-2"]));
         let steps = runtime_view["steps"].as_array().unwrap();
         assert_eq!(steps[0]["waitingTaskIds"], json!(["task-2"]));
         assert_eq!(steps[1]["waitingTaskIds"], json!(["task-1"]));
-        assert_eq!(runtime_view["doneTaskIds"], json!([]));
 
-        // task-1 stays focused at its next question instead of sweeping
-        // task-2 through the first question.
+        // task-1 moves on to its next question while task-2's check runs.
         let next = runtime
             .claim_next_steward_routine(
                 &project_id,
                 "steward-session",
-                "check-2".into(),
+                "check-3".into(),
                 NOW + 2_000,
             )
             .unwrap();
         assert_eq!(next.result["routine"]["id"], "routine-deploy");
         assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-1");
-        assert_eq!(
-            next.result["step"]["tasks"].as_array().unwrap().len(),
-            1,
-            "a step claim always carries one focused Task"
-        );
+        assert!(runtime.tracker_check_is_current(second.capability.as_ref().unwrap()));
         runtime
             .report_steward_step_verdicts(
-                &next.capability.unwrap(),
+                second.capability.as_ref().unwrap(),
                 vec![StewardStepVerdict {
-                    task_id: "task-1".into(),
+                    task_id: "task-2".into(),
                     verdict: PlaybookStepVerdict::Passed,
-                    evidence: "The deployed commit matches task-1 HEAD.".into(),
+                    evidence: "PR #13 is open against main.".into(),
                 }],
                 "report-2".into(),
                 NOW + 3_000,
             )
             .unwrap();
+        assert!(runtime.store.playbook_step_progress().iter().any(|answer| {
+            answer.task_id == "task-2" && answer.verdict == PlaybookStepVerdict::Passed
+        }));
 
-        // Only after task-1 finishes does task-2 begin at the first step.
-        let following = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-3".into(),
-                NOW + 4_000,
-            )
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_running_step_check_does_not_hold_back_the_next_tasks_wake() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let first = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "first".into(), NOW)
             .unwrap();
-        assert_eq!(following.result["routine"]["id"], "routine-pr");
-        assert_eq!(following.result["step"]["tasks"][0]["taskId"], "task-2");
-
+        assert_eq!(first.result["step"]["tasks"][0]["taskId"], "task-1");
+        // task-1's check is still running in its own fork. task-2 is due and
+        // must still be dispatched.
+        let wakes = runtime.admit_due_steward_wakes(NOW + 1);
+        assert_eq!(wakes.len(), 1);
+        let second = runtime
+            .claim_due_steward_routine(&wakes[0], "second".into(), NOW + 1)
+            .unwrap();
+        assert_eq!(second.result["step"]["tasks"][0]["taskId"], "task-2");
+        // A Task already being checked is never claimed twice.
+        let idle = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "third".into(), NOW + 2)
+            .unwrap();
+        assert_eq!(idle.result["status"], "idle");
+        assert!(runtime.tracker_check_is_current(first.capability.as_ref().unwrap()));
         std::fs::remove_dir_all(root).ok();
     }
 
@@ -1715,19 +1763,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn task_detail_run_now_targets_that_task_instead_of_the_global_focus() {
+    fn task_detail_run_now_targets_that_exact_task() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let revision = runtime.state_revision();
         runtime
             .set_task_playbook_position(&project_id, "task-1", 1, 1, revision, NOW)
             .unwrap();
 
-        // Normal scheduling keeps task-1 focused at the second question, so a
-        // general request for the first Routine correctly has no focused work.
-        assert!(matches!(
-            runtime.run_routine_now("routine-pr", NOW + 1_000),
-            Err(CoreError::PlaybookStepIdle)
-        ));
+        // task-1 stands at the second question, so the first question cannot
+        // be run for it.
         assert!(matches!(
             runtime.run_task_routine_now("routine-pr", "task-1", NOW + 1_000),
             Err(CoreError::PlaybookStepIdle)
@@ -1816,7 +1860,9 @@ pub(crate) mod tests {
                 NOW + 2_000,
             )
             .unwrap();
-        assert_ne!(next.result["routine"]["id"], "routine-pr");
+        // Only task-1 backs off. task-2 at the same question is independent.
+        assert_eq!(next.result["routine"]["id"], "routine-pr");
+        assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-2");
 
         std::fs::remove_dir_all(root).ok();
     }

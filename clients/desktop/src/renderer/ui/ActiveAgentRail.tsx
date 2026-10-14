@@ -324,7 +324,8 @@ export type ActiveAgentRailProps = {
   openExternal?: ((url: string) => void) | undefined;
   /// Core's exact Playbook evaluation fork and the agent it checks. The fork
   /// folds into its source's row instead of taking a row of its own.
-  playbookEvaluation?: { sessionId: string; sourceSessionId: string } | undefined;
+  /** Running Playbook evaluation forks, one per independently checked Task. */
+  playbookEvaluations?: readonly { sessionId: string; sourceSessionId: string }[] | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
   openQuickAction?: (() => void) | undefined;
@@ -354,15 +355,13 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   /// Workflow members live only in their run's entry, never also in a bucket.
   /// Only folded while the source row exists to carry it; otherwise the fork
   /// stays an ordinary row so it is never unreachable.
-  const foldedEvaluationId = props.playbookEvaluation
-    && props.sessions.some((session) => session.id === props.playbookEvaluation!.sessionId)
-    && props.sessions.some((session) => session.id === props.playbookEvaluation!.sourceSessionId)
-    ? props.playbookEvaluation.sessionId
-    : undefined;
-  const rowSessions = useMemo(
-    () => foldedEvaluationId ? props.sessions.filter((session) => session.id !== foldedEvaluationId) : props.sessions,
-    [foldedEvaluationId, props.sessions],
-  );
+  const foldedEvaluations = useMemo(() => (props.playbookEvaluations ?? []).filter((evaluation) =>
+    props.sessions.some((session) => session.id === evaluation.sessionId)
+    && props.sessions.some((session) => session.id === evaluation.sourceSessionId)), [props.playbookEvaluations, props.sessions]);
+  const rowSessions = useMemo(() => {
+    const folded = new Set(foldedEvaluations.map((evaluation) => evaluation.sessionId));
+    return folded.size ? props.sessions.filter((session) => !folded.has(session.id)) : props.sessions;
+  }, [foldedEvaluations, props.sessions]);
   const workflowRuns = useMemo(() => orderWorkflowRuns(
     workflowAgentRuns(rowSessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
     props.statusesById, props.reviewReadySessionIds,
@@ -653,8 +652,10 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const taskTitled = Boolean(taskIdentity) && !nested;
   const pullRequests = taskTitled ? taskIdentity!.pullRequests : [];
   const delivery = Boolean(rowChanges) || pullRequests.length > 0;
-  const evaluation = props.playbookEvaluation?.sourceSessionId === session.id
-    ? props.sessions.find((candidate) => candidate.id === props.playbookEvaluation!.sessionId)
+  const evaluationFork = props.playbookEvaluations
+    ?.find((candidate) => candidate.sourceSessionId === session.id);
+  const evaluation = evaluationFork
+    ? props.sessions.find((candidate) => candidate.id === evaluationFork.sessionId)
     : undefined;
   const evaluationState = evaluation
     ? sessionState(evaluation, props.statusesById.get(evaluation.id), props.reviewReadySessionIds.has(evaluation.id))

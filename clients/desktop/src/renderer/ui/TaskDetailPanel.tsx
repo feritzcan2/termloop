@@ -552,7 +552,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     step={step}
                     nowEpochMs={nowEpochMs}
                     running={running === step.milestone.routineId
-                      || (runtime?.processingTaskId === task.id
+                      || (runtime?.processingTaskIds.includes(task.id) === true
                         && checkingRoutineIds.has(step.milestone.routineId))}
                     settingPosition={settingPosition}
                     controlsBusy={running !== undefined || settingPosition !== undefined}

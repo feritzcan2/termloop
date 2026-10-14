@@ -43,7 +43,7 @@ impl CoreRuntime {
         }
         self.playbook_evaluation
             .waiting
-            .remove(&capability.tracker_id);
+            .remove(&(capability.tracker_id.clone(), task_id.clone()));
         let Some(source) = self.select_playbook_source(&capability.project_id, &task_id, now)?
         else {
             return Ok(PlaybookEvaluationLaunch::Skipped(

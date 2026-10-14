@@ -28,8 +28,8 @@ fn steward_accepts_optional_bounded_evaluator_settings() {
 fn playbook_runtime_exposes_bounded_current_evaluation_routing() {
     use termloop_contract::current::validate_method_result;
     let mut runtime = json!({
-        "activePipelineName":"Delivery", "processingTaskId":"task", "steps":[],
-        "doneTaskIds":[], "stateRevision":1,
+        "activePipelineName":"Delivery", "processingTaskId":"task", "processingTaskIds":["task"],
+        "steps":[], "doneTaskIds":[], "stateRevision":1, "evaluations": [],
         "evaluation": {"routineId":"routine", "taskId":"task", "mode":"taskAgentFork",
             "sessionId":"fork", "sourceSessionId":"source", "reason":null}
     });
@@ -44,6 +44,16 @@ fn playbook_runtime_exposes_bounded_current_evaluation_routing() {
     assert!(!validate_method_result("playbook.runtime", &runtime));
     runtime["evaluation"] = json!(null);
     assert!(validate_method_result("playbook.runtime", &runtime));
+    // Independent Task checks project one evaluation entry each.
+    runtime["evaluations"] = json!([
+        {"routineId":"routine", "taskId":"task", "mode":"taskAgentFork",
+            "sessionId":"fork", "sourceSessionId":"source", "reason":null},
+        {"routineId":"routine", "taskId":"other", "mode":"waitingForTaskAgent",
+            "sessionId":null, "sourceSessionId":null, "reason":"forkUnavailable"}
+    ]);
+    assert!(validate_method_result("playbook.runtime", &runtime));
+    runtime["evaluations"][1]["reason"] = json!("arbitrary provider output");
+    assert!(!validate_method_result("playbook.runtime", &runtime));
 }
 
 #[test]
