@@ -686,6 +686,77 @@ mod tests {
     use termloop_contract::current::ControlResponse;
 
     #[test]
+    fn companion_user_answers_return_the_generated_transcript_append_result() {
+        let directory = std::env::temp_dir().join(format!(
+            "termloop-companion-answer-{}",
+            termloop_platform::generate_uuid_v4()
+        ));
+        let project_directory = directory.join("project");
+        std::fs::create_dir_all(&project_directory).unwrap();
+        let mut core = termloop_core::CoreRuntime::open(
+            directory.join("state.json"),
+            termloop_terminal::TerminalService::default(),
+            1,
+        )
+        .unwrap();
+        let project_id = core
+            .handle(
+                "project.create",
+                json!({"name": "Project", "folderPath": project_directory}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let steward = |core: &mut termloop_core::CoreRuntime, kind: &str, at: u64| {
+            core.append_companion_message(
+                &project_id,
+                "steward",
+                kind,
+                Default::default(),
+                format!("A {kind}."),
+                at,
+            )
+            .unwrap()["message"]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+
+        let proposal_id = steward(&mut core, "proposal", 1);
+        let approved = core
+            .respond_to_companion_proposal(&project_id, &proposal_id, "approve", 2)
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.proposalRespond", &approved),
+            "{approved}"
+        );
+        let suggestion_id = steward(&mut core, "suggestion", 3);
+        let accepted = core
+            .accept_companion_suggestion(&project_id, &suggestion_id, 4)
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.suggestionAccept", &accepted),
+            "{accepted}"
+        );
+        let reply = core
+            .append_companion_message(
+                &project_id,
+                "user",
+                "reply",
+                Default::default(),
+                "Hello.".into(),
+                5,
+            )
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.transcriptAppend", &reply),
+            "{reply}"
+        );
+        std::fs::remove_dir_all(directory).ok();
+    }
+
+    #[test]
     fn workspace_file_observations_require_full_control_on_every_connection() {
         for method in ["workspace.directoryList", "workspace.fileRead"] {
             assert!(scope_allows_method(ClientScope::Full, method));
