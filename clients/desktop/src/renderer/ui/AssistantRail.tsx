@@ -49,6 +49,7 @@ import {
   routinePromptImproverSession,
 } from "../prompt-improver-session-link.js";
 import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement } from "./AssistantTaskRows.js";
+import { usePlaybookTaskDecision, type PlaybookTaskDecisionActions } from "./PlaybookTaskDecision.js";
 import { Icon } from "./Icon.js";
 import {
   ConfigurationVersions,
@@ -390,6 +391,8 @@ type Props = {
   dismissImproverSession(sessionId: string): void;
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  /** The Steward's open proposal or suggestion is answerable from its Task row. */
+  taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
   openDetails(selection: AssistantSelection): void;
 };
 
@@ -530,6 +533,8 @@ export function AssistantRail(props: Props) {
       .catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
   }, [applySnapshot, props.projectId, props.refreshToken]);
+  const taskDecision = usePlaybookTaskDecision(props.projectId, props.refreshToken, props.taskDecisionActions);
+  const openStewardChat = () => props.openDetails({ kind: "steward", initialView: "chat" });
   const sessions = useMemo(() => new Map(props.sessions.map((session) => [session.id, session])), [props.sessions]);
   const healthByRoutine = useMemo(() => new Map(health.map((value) => [value.routineId, value])), [health]);
   const capabilityByAgent = useMemo(() => new Map(props.agentCapabilities.map((capability) => [capability.agent_id, capability])), [props.agentCapabilities]);
@@ -967,6 +972,8 @@ export function AssistantRail(props: Props) {
           dragging={draggedTaskId === task.id}
           beginDrag={taskDragEnabled ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
+          decision={taskDecision}
+          openSteward={openStewardChat}
         />)}
       </div> : null}
     </div>;
@@ -1107,6 +1114,8 @@ export function AssistantRail(props: Props) {
           draggingTaskId={draggedTaskId}
           beginDrag={!props.disabled && mutatingKey === undefined ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
+          decision={taskDecision}
+          openSteward={openStewardChat}
         />
         {board.offBoard.length > 0 ? <div className="ar-offboard">
           <span className="ar-routines-label">Off the board · {board.offBoard.length}</span>

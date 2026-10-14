@@ -3,6 +3,7 @@ import type { DragEvent } from "react";
 import type { Task } from "../model.js";
 import { PlaybookTaskNotes, type SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { Icon } from "./Icon.js";
+import { PlaybookTaskDecisionStrip, type PlaybookTaskDecisionHandle } from "./PlaybookTaskDecision.js";
 
 export type AssistantTaskPlacement = Readonly<{
   byRoutineId: ReadonlyMap<string, readonly Task[]>;
@@ -54,7 +55,10 @@ export function AssistantTaskRow(props: {
   dragging?: boolean;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
+  decision?: PlaybookTaskDecisionHandle | null | undefined;
+  openSteward?: (() => void) | undefined;
 }) {
+  const decision = props.decision?.decision.taskId === props.task.id ? props.decision : null;
   const processing = props.processingTaskId === props.task.id;
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
   return <div className="assistant-task-item" role="listitem"><button
@@ -74,7 +78,13 @@ export function AssistantTaskRow(props: {
       <small>{props.task.branch?.name ?? (props.task.worktree ? "Worktree ready" : "No worktree")}</small>
     </span>
     {processing ? <em>Active</em> : null}
-  </button>{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}</div>;
+  </button>{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}
+  {decision ? <PlaybookTaskDecisionStrip
+    taskTitle={props.task.title}
+    handle={decision}
+    disabled={props.notesDisabled}
+    openSteward={props.openSteward ?? (() => props.openTask(props.task.id))}
+  /> : null}</div>;
 }
 
 export function AssistantTaskTail(props: {
@@ -86,6 +96,8 @@ export function AssistantTaskTail(props: {
   draggingTaskId?: string | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
+  decision?: PlaybookTaskDecisionHandle | null | undefined;
+  openSteward?: (() => void) | undefined;
 }) {
   const groups = [
     { key: "completed", label: "Completed Tasks", tasks: props.placement.completed },
@@ -108,6 +120,8 @@ export function AssistantTaskTail(props: {
       dragging={props.draggingTaskId === task.id}
       beginDrag={props.beginDrag}
       endDrag={props.endDrag}
+      decision={props.decision}
+      openSteward={props.openSteward}
     />)}</div>
   </section> : null)}</>;
 }
