@@ -1023,6 +1023,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     attention,
     integration,
     hasLocalChanges: Boolean(changeCount),
+    hasOpenPullRequest: props.gitHostProjection?.matches.some((match) => match.state === "open" || match.state === "draft") ?? false,
     attentionShownElsewhere: action?.kind === "agent",
   });
   const [noteAddRequest, setNoteAddRequest] = useState(0);

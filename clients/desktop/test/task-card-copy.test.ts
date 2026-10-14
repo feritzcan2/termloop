@@ -48,7 +48,7 @@ describe("Task card branch", () => {
 });
 
 describe("Task card status", () => {
-  const base = { stage: ready, attention: undefined, integration: undefined, hasLocalChanges: false, attentionShownElsewhere: false };
+  const base = { stage: ready, attention: undefined, integration: undefined, hasLocalChanges: false, hasOpenPullRequest: false, attentionShownElsewhere: false };
 
   it("prefers a waiting agent unless the card's action already names it", () => {
     const attention = { sessionId: "s", label: "Needs input", agent: "Claude", tone: "attention" as const };
@@ -64,6 +64,9 @@ describe("Task card status", () => {
     expect(taskCardStatus({ ...base, integration: integration({ action: "pullRequest" }) })).toMatchObject({ label: "In review", tone: "review" });
     expect(taskCardStatus({ ...base, integration: integration({ action: "pullRequest", tone: "attention" }) })?.tone).toBe("attention");
     expect(taskCardStatus({ ...base, integration: integration({ tone: "attention", action: "commits" }) })).toBeUndefined();
+    /// An open pull request outranks a local "in base" verdict.
+    expect(taskCardStatus({ ...base, hasOpenPullRequest: true, integration: integration({ tone: "done", label: "In base" }) }))
+      .toMatchObject({ label: "In review", tone: "review" });
   });
 
   it("leaves structural trouble to the meta-line flag", () => {

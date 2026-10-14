@@ -66,13 +66,20 @@ export function taskCardStatus(options: {
   attention: AgentAttention | undefined;
   integration: TaskIntegration | undefined;
   hasLocalChanges: boolean;
+  /// A pull request still open or in draft means the work is not done, even
+  /// when the local base comparison already reports the commits as in base.
+  hasOpenPullRequest: boolean;
   /// The collapsed card already shows a waiting agent as its action button.
   attentionShownElsewhere: boolean;
 }): TaskCardStatus | undefined {
-  const { stage, attention, integration, hasLocalChanges, attentionShownElsewhere } = options;
+  const { stage, attention, integration, hasLocalChanges, hasOpenPullRequest, attentionShownElsewhere } = options;
   if (stage.id !== "ready" && stage.id !== "branchOnly" && stage.id !== "planning") return undefined;
   if (attention && (attention.tone === "working" || !attentionShownElsewhere)) {
     return { label: attention.label, tone: attention.tone, title: `${attention.agent}: ${attention.label}` };
+  }
+  if (hasOpenPullRequest) {
+    const tone = integration?.action === "pullRequest" && integration.tone === "attention" ? "attention" : "review";
+    return { label: "In review", tone, title: integration?.title ?? "A pull request is still open." };
   }
   if (!integration) return undefined;
   if (integration.tone === "done" && !hasLocalChanges) {
