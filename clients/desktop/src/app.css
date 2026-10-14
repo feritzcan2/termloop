@@ -2789,6 +2789,17 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .active-agent-favorite svg { width: 12px; height: 12px; }
 .active-agent-worktree-changes { z-index: 2; width: 64px; min-width: 0; padding: 2px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 700 9px/1.3 var(--font-mono); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .active-agent-worktree-changes:hover, .active-agent-worktree-changes:focus-visible { outline: 0; background: rgba(102,179,255,.12); color: var(--accent-strong); text-decoration: underline; }
+/* Change count and up to two pull requests stack in the row's right column. */
+.active-agent-delivery { z-index: 2; display: flex; min-width: 0; flex-direction: column; align-items: stretch; gap: 1px; }
+.active-agent-delivery .active-agent-worktree-changes { width: 100%; }
+.active-agent-row.has-pull-requests { grid-template-columns: minmax(0,1fr) 20px 82px; }
+.active-agent-row.has-pull-requests .row-actions { right: 110px; }
+.active-agent-pull-request { min-width: 0; padding: 1px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9px/1.3 var(--font-mono); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.active-agent-pull-request[data-tone="review"] { color: var(--agent-status-review); }
+.active-agent-pull-request[data-tone="attention"] { color: var(--state-attention); }
+.active-agent-pull-request[data-tone="done"] { color: var(--sidebar-dim); }
+.active-agent-pull-request:hover:not(:disabled), .active-agent-pull-request:focus-visible { outline: 0; background: rgba(102,179,255,.12); color: var(--accent-strong); text-decoration: underline; }
+.active-agent-pull-request-more { margin-left: 3px; color: var(--sidebar-dimmer); }
 .active-agent-section[data-active-agent-section="Favs"] .rail-subhead > span:first-child { color: light-dark(#79683f, #c7ad69); }
 .active-agent-section[data-active-agent-section="10m+ ago"] { opacity: .76; }
 .active-agent-row .agent-status-awaitingInput, .active-agent-row .agent-status-compacting { animation: none; }
