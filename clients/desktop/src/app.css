@@ -512,7 +512,24 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-headline { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; }
 .task-focus-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
 .task-focus-copy .task-title { display: -webkit-box; overflow: hidden; font-size: 12.5px; line-height: 1.35; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+/* The identity line a person scans for: ticket key first, then where the Task
+   stands, then its scope tag. Everything below it is detail. */
+.task-card-ids { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+.task-card-key { flex: none; color: var(--warning); font: 700 10.5px/1.5 var(--font-mono); letter-spacing: .01em; }
+.task-card-scope { min-width: 0; overflow: hidden; padding: 0 5px; border: 1px solid light-dark(rgba(15,23,42,.1), rgba(255,255,255,.1)); border-radius: 4px; color: var(--sidebar-dim); font: 600 9px/14px var(--font-ui); text-overflow: ellipsis; }
+.task-card-status { flex: none; padding: 0 6px; border-radius: 999px; background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.07)); color: var(--sidebar-dim); font: 700 9px/15px var(--font-ui); letter-spacing: .02em; }
+.task-card-status[data-tone="working"] { background: rgba(92,201,149,.13); color: var(--agent-status-working); }
+.task-card-status[data-tone="review"] { background: rgba(102,179,255,.13); color: var(--agent-status-review); }
+.task-card-status[data-tone="attention"] { background: rgba(255,143,107,.14); color: var(--agent-status-awaiting); }
+.task-card-status[data-tone="done"] { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+/* The card edge repeats the status tone so a long board can be scanned by
+   colour alone; a quiet Task keeps a plain edge. */
+.task-group.focused[data-status-tone="working"] { box-shadow: inset 2px 0 0 var(--agent-status-working); }
+.task-group.focused[data-status-tone="review"] { box-shadow: inset 2px 0 0 var(--agent-status-review); }
+.task-group.focused[data-status-tone="attention"] { box-shadow: inset 2px 0 0 var(--agent-status-awaiting); }
+.task-group.focused[data-status-tone="done"] { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--success) 70%, transparent); }
+.task-board-search { margin: 2px 12px 6px; }
 /* One dot answers "what does this Task want" for the whole row; the same tone
    vocabulary as `.row-rail` (see `renderer/row-tone.ts`), rendered as a point
    so every row spends the same three pixels on it. */
