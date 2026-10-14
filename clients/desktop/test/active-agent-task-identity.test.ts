@@ -148,27 +148,27 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
-  it("lists the newest two pull requests under the change count and opens the one clicked", async () => {
+  it("lists the newest two pull requests under the change count and opens the one clicked in the browser", async () => {
     const projection = { matches: [pullRequest(1, "merged", 10), pullRequest(3, "open", 30), pullRequest(2, "open", 20, { check_rollup: "failing" })] } as GitHostProjection;
     const newest = newestPullRequests(projection, 2);
     expect(newest.map((match) => match.number)).toEqual([3, 2]);
     expect(pullRequestChip(newest[1]!)).toMatchObject({ label: "#2 open", tone: "attention" });
     expect(pullRequestChip(projection.matches[0]!).tone).toBe("done");
 
-    const opened: Array<[string, number]> = [];
+    const opened: string[] = [];
     const lead = agentSession("lead");
     const helper = agentSession("helper", { ask_to_source_session_id: "lead" });
     const identity = { taskId: "task-1", issueKey: "UKIE-931", issueUrl: "https://apcoa.atlassian.net/browse/UKIE-931", title: "UK ANPR payment deadline", pullRequests: newest, morePullRequests: 1 };
     const view = await renderRail([lead, helper], {
       taskIdentityBySessionId: new Map([["lead", identity], ["helper", identity]]),
-      openTaskPullRequest: (taskId, match) => opened.push([taskId, match.number]),
+      openExternal: (url) => opened.push(url),
     });
     const leadRow = view.container.querySelector('[data-session-id="lead"]')!.closest(".active-agent-row")!;
     const chips = [...leadRow.querySelectorAll<HTMLButtonElement>(".active-agent-pull-request")];
     expect(chips.map((chip) => chip.textContent)).toEqual(["#3 open", "#2 open+1"]);
     expect(leadRow.querySelector(".active-agent-worktree-changes")?.textContent).toBe("0 changes");
     await act(async () => chips[1]!.click());
-    expect(opened).toEqual([["task-1", 2]]);
+    expect(opened).toEqual(["https://github.com/apcoa/nucleus/pull/2"]);
     /// The helper row is the same Task; its pull requests are not repeated.
     const helperRow = view.container.querySelector('[data-session-id="helper"]')!.closest(".active-agent-row")!;
     expect(helperRow.querySelector(".active-agent-pull-request")).toBeNull();
