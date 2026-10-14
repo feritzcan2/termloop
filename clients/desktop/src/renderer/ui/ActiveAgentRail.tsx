@@ -35,6 +35,12 @@ type ActiveAgentGroupSections = {
   stopped: readonly AgentSessionCluster[];
 };
 
+/// The Task an Agent works inside, named the way the Task board names it.
+export type ActiveAgentTaskIdentity = {
+  issueKey: string | undefined;
+  title: string;
+};
+
 export type ActiveAgentWorktreeChanges = {
   taskId: string;
   taskTitle: string;
@@ -286,6 +292,9 @@ export type ActiveAgentRailProps = {
   favoriteSessionIds: ReadonlySet<string>;
   taskAttachedSessionIds: ReadonlySet<string>;
   worktreeChangesBySessionId: ReadonlyMap<string, ActiveAgentWorktreeChanges>;
+  /// A Task Agent's row is titled by its Task, not by the provider name every
+  /// row would otherwise share. Helpers nest under that row and keep their name.
+  taskIdentityBySessionId?: ReadonlyMap<string, ActiveAgentTaskIdentity> | undefined;
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
   workflowGroupsBySessionId?: ReadonlyMap<string, WorkflowAgentGroup> | undefined;
@@ -613,6 +622,13 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const workflows = props.workflowsBySessionId?.get(session.id) ?? [];
   const workflowAction = activeAgentWorkflowAction(session);
   const rowChanges = sharedChanges ? undefined : worktreeChanges;
+  const nested = Boolean(source || projectedSource);
+  /// A name the user gave the Session, or a workflow role, still wins.
+  const workflowLabel = props.workflowAgentLabelsBySessionId?.get(session.id);
+  const taskIdentity = compactWorkflow || session.name?.trim() || workflowLabel
+    ? undefined
+    : props.taskIdentityBySessionId?.get(session.id);
+  const taskTitled = Boolean(taskIdentity) && !nested;
   const workflowActions = workflows.map((workflow) => <button
     key={workflow.executionId}
     type="button"
@@ -631,10 +647,13 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
       <div className={`session-row active-agent-row${rowChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
-        displayName={props.workflowAgentLabelsBySessionId?.get(session.id)}
+        displayName={taskTitled ? taskIdentity!.title : workflowLabel}
+        titleKey={taskTitled ? taskIdentity!.issueKey : undefined}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
-        subtitle={sharedCheckout || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
+        /// The Task title already says which checkout this is; a helper under a
+        /// Task row inherits that and needs no folder either.
+        subtitle={sharedCheckout || taskIdentity || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
         {...(projectedSource?.kind === "Agent"
           ? { relationshipLabel: source ? sessionRelationshipLabel(source, session) : sessionRelationshipLabel(projectedSource, session) }
           : {})}
