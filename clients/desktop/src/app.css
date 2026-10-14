@@ -433,6 +433,9 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group.focused .task-rename { height: 26px; }
 .task-rename[aria-invalid="true"] { border-color: var(--danger); }
 .task-row:has(.task-rename) .row-actions, .task-row:has(.task-rename) .task-agents { display: none; }
+/* The close confirmation takes the same corner as the hover actions; while it
+   is asking, it is the only control there. */
+.task-row:has(.task-close-confirm) .row-actions { display: none; }
 /* Closing asks once, in place, without a modal for a worktree-less Task. */
 .task-close-confirm { position: absolute; z-index: 2; top: 3px; right: 6px; display: flex; align-items: center; gap: 3px; height: 21px; padding: 0 4px 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--danger)); color: var(--sidebar-text); }
 .task-close-confirm > span { font: 600 9px/1 var(--font-ui); }
