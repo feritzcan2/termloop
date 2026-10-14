@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { act, createElement } from "react";
+import { webcrypto } from "node:crypto";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskWorktreeChangeEntryDto, TaskWorktreeChangeListResult } from "@termloop/contract/current";
 import { ChangesOverlay, type ChangesOverlayProps } from "../src/renderer/ui/ChangesOverlay.js";
 
@@ -24,6 +25,10 @@ const entries = [
   entry("entry-3", "notes.txt", "untracked"),
 ];
 
+function patch(content = "after"): string {
+  return `diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-before\n+${content}\n`;
+}
+
 function changeList(observationId: string): TaskWorktreeChangeListResult {
   return {
     task_id: "task-1",
@@ -44,8 +49,8 @@ function props(list: ChangesOverlayProps["list"]): ChangesOverlayProps {
       task_id: subjectId,
       observation_id: observationId,
       entry_id: entryId,
-      state: "binary",
-      patch: null,
+      state: "patch",
+      patch: patch(),
     }),
     preImage: async (subjectId, observationId, entryId) => ({
       task_id: subjectId,
@@ -76,7 +81,20 @@ async function renderEditor(editorProps: ChangesOverlayProps): Promise<{ contain
     await Promise.resolve();
     await Promise.resolve();
   });
+  await settleReview(container);
   return { container, root };
+}
+
+async function settleReview(container: HTMLElement): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(container.querySelector<HTMLButtonElement>(".changes-file-review-progress button")?.disabled).not.toBe(true);
+  });
+}
+
+async function clickReview(container: HTMLElement, selector: string): Promise<void> {
+  await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click());
+  await settleReview(container);
 }
 
 function sectionText(container: HTMLElement, title: string): string | undefined {
@@ -89,42 +107,269 @@ describe("Changes reviewed files", () => {
   let root: Root | undefined;
   let container: HTMLElement | undefined;
 
+  beforeEach(() => { vi.stubGlobal("crypto", webcrypto); });
+
   afterEach(async () => {
     if (root) await act(async () => root?.unmount());
     container?.remove();
     root = undefined;
     container = undefined;
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  async function reopen(editorProps: ChangesOverlayProps): Promise<void> {
+    if (root) await act(async () => root?.unmount());
+    container?.remove();
+    ({ container, root } = await renderEditor(editorProps));
+  }
+
+  it.each(["task", "project"] as const)("restores %s review marks after reopening with a new observation and reordered entry IDs", async (kind) => {
+    let observation = 0;
+    const editorProps = props(async () => {
+      observation += 1;
+      const nextEntries = observation === 1 ? entries : [
+        entry("entry-1", "new.txt", "untracked"),
+        entry("entry-2", "src/alpha.ts", "unstaged"),
+        entry("entry-3", "src/bravo.ts", "staged"),
+        entry("entry-4", "notes.txt", "untracked"),
+      ];
+      return kind === "task"
+        ? { ...changeList(`local-${observation}`), entries: nextEntries }
+        : { project_id: "task-1", observation_id: `project-${observation}`, entries: nextEntries, truncated: false };
+    });
+    editorProps.subject = { ...editorProps.subject, kind };
+    await reopen(editorProps);
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
+
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/4 reviewed");
+    await clickReview(container!, ".changes-file-section-toggle");
+    expect(container!.querySelector('[aria-label="Mark src/alpha.ts as unreviewed"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(container!.querySelector('[aria-label="Mark new.txt as reviewed"]')?.getAttribute("aria-pressed")).toBe("false");
+
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as unreviewed"]');
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/4 reviewed");
+  });
+
+  it("persists mark-all and clear-all across editor remounts", async () => {
+    const editorProps = props(async () => changeList("local-1"));
+    await reopen(editorProps);
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    await clickReview(container!, ".changes-file-review-progress button");
+    expect(writes).toHaveBeenCalledTimes(1);
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("3/3 reviewed");
+    await clickReview(container!, ".changes-file-review-progress button");
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+  });
+
+  it.each(["reopen", "refresh"] as const)("drops only changed file reviews on %s and never revives their old marks", async (action) => {
+    let observation = 0;
+    const editorProps = props(async () => changeList(`local-${++observation}`));
+    const readDiff = editorProps.diff;
+    editorProps.diff = async (...args) => ({
+      ...await readDiff(...args),
+      patch: patch(args[1] === "local-2" && args[2] === "entry-1" ? "changed alpha" : "after"),
+    });
+    await reopen(editorProps);
+    await clickReview(container!, ".changes-file-review-progress button");
+    expect(container!.textContent).toContain("3/3 reviewed");
+    if (action === "reopen") await reopen(editorProps);
+    else {
+      await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-header-actions button")]
+        .find((button) => button.textContent?.includes("Refresh"))!.click());
+      await settleReview(container!);
+    }
+    expect(container!.textContent).toContain("2/3 reviewed");
+    expect(container!.querySelector('[aria-label="Mark src/alpha.ts as reviewed"]')).not.toBeNull();
+    expect(sectionText(container!, "Working tree")).toContain("alpha.ts");
+    await reopen(editorProps);
+    expect(container!.textContent).toContain("2/3 reviewed");
+    expect(container!.querySelector('[aria-label="Mark src/alpha.ts as reviewed"]')).not.toBeNull();
+    expect(window.localStorage.getItem("termloop.changesReviewed.v2")).not.toContain("diff --git");
+  });
+
+  it("reuses viewed diffs and per-observation digests without polling or reading unreviewed files", async () => {
+    const editorProps = props(vi.fn(async () => changeList("local-1")));
+    const readDiff = vi.fn(editorProps.diff);
+    editorProps.diff = readDiff;
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    await reopen(editorProps);
+    const loadedId = readDiff.mock.calls[0]![2];
+    const path = entries.find((entry) => entry.entry_id === loadedId)!.display_path;
+    await clickReview(container!, `[aria-label="Mark ${path} as reviewed"]`);
+    // The only new diff read is the next selected file, not another read for
+    // the reviewed file. Re-renders must not revalidate the same observation.
+    expect(readDiff.mock.calls.filter((args) => args[2] === loadedId)).toHaveLength(1);
+    expect(digest).toHaveBeenCalledTimes(1);
+    await act(async () => root!.render(createElement(ChangesOverlay, { ...editorProps, subject: { ...editorProps.subject, title: "Renamed task" } })));
+    await settleReview(container!);
+    expect(digest).toHaveBeenCalledTimes(1);
+    expect(editorProps.list).toHaveBeenCalledTimes(1);
+    expect(readDiff.mock.calls.some((args) => args[2] === "entry-3")).toBe(false);
+    await clickReview(container!, ".changes-file-section-toggle");
+    await clickReview(container!, `[aria-label="Mark ${path} as unreviewed"]`);
+    await clickReview(container!, `[aria-label="Mark ${path} as reviewed"]`);
+    expect(digest).toHaveBeenCalledTimes(1);
+    await reopen(editorProps);
+    expect(digest).toHaveBeenCalledTimes(2);
+    expect(readDiff.mock.calls.some((args) => args[2] === "entry-3")).toBe(false);
+  });
+
+  it("stops queued review reads and hashing when the editor closes", async () => {
+    const manyEntries = Array.from({ length: 8 }, (_, index) => entry(`entry-${index}`, `file-${index}.ts`, "untracked"));
+    const editorProps = props(async () => ({ ...changeList("local-1"), entries: manyEntries }));
+    const readDiff = editorProps.diff;
+    const pending: (() => void)[] = [];
+    editorProps.diff = vi.fn<ChangesOverlayProps["diff"]>(async (...args) => {
+      if (args[2] !== "entry-0") await new Promise<void>((resolve) => pending.push(resolve));
+      return readDiff(...args);
+    });
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    await reopen(editorProps);
+    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-review-progress button")!.click());
+    await vi.waitFor(async () => {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(pending.length).toBeGreaterThanOrEqual(2);
+    });
+    await act(async () => root!.unmount());
+    root = undefined;
+    const readsAtClose = vi.mocked(editorProps.diff).mock.calls.length;
+    const digestsAtClose = digest.mock.calls.length;
+    const persistedAtClose = window.localStorage.getItem("termloop.changesReviewed.v2");
+    await act(async () => { for (const finish of pending) finish(); });
+    expect(editorProps.diff).toHaveBeenCalledTimes(readsAtClose);
+    expect(digest).toHaveBeenCalledTimes(digestsAtClose);
+    expect(window.localStorage.getItem("termloop.changesReviewed.v2")).toBe(persistedAtClose);
+    expect(readsAtClose).toBeLessThan(manyEntries.length);
+    expect(readsAtClose).toBe(3); // One displayed diff plus two concurrent review reads.
+  });
+
+  it("does not restore marks for unreadable content", async () => {
+    const editorProps = props(async () => changeList("local-1"));
+    const readDiff = editorProps.diff;
+    editorProps.diff = async (...args) => ({ ...await readDiff(...args), state: "binary", patch: null });
+    await reopen(editorProps);
+    await clickReview(container!, ".changes-file-review-progress button");
+    expect(container!.textContent).toContain("3/3 reviewed");
+    expect(container!.textContent).toContain("last until the next refresh");
+    await reopen(editorProps);
+    expect(container!.textContent).toContain("0/3 reviewed");
+  });
+
+  it.each([false, true])("prunes missing files only when the list is complete (truncated: %s)", async (truncated) => {
+    let observation = 0;
+    const editorProps = props(async () => {
+      observation += 1;
+      return { ...changeList(`local-${observation}`), entries: observation === 2 ? entries.slice(1) : entries,
+        truncated: observation === 2 && truncated };
+    });
+    await reopen(editorProps);
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
+    await reopen(editorProps);
+    expect(container!.textContent).toContain("0/2 reviewed");
+    await reopen(editorProps);
+    expect(container!.textContent).toContain(`${truncated ? 1 : 0}/3 reviewed`);
+  });
+
+  it("leaves failed verification pending and can retry it on the next refresh", async () => {
+    let observation = 0;
+    const editorProps = props(async () => changeList(`local-${++observation}`));
+    const readDiff = editorProps.diff;
+    editorProps.diff = async (...args) => {
+      if (args[1] === "local-2" && args[2] === "entry-1") throw new Error("Temporarily unavailable");
+      return readDiff(...args);
+    };
+    await reopen(editorProps);
+    await clickReview(container!, ".changes-file-review-progress button");
+    await reopen(editorProps);
+    expect(container!.textContent).toContain("2/3 reviewed");
+    expect(container!.textContent).toContain("Some review marks could not be checked");
+    await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-header-actions button")]
+      .find((button) => button.textContent?.includes("Refresh"))!.click());
+    await settleReview(container!);
+    expect(container!.textContent).toContain("3/3 reviewed");
+  });
+
+  it("discards pending review capture when Refresh replaces its observation", async () => {
+    let observation = 0;
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    const editorProps = props(async () => changeList(`local-${++observation}`));
+    const readDiff = editorProps.diff;
+    editorProps.diff = async (...args) => {
+      if (args[1] === "local-1" && args[2] === "entry-1") await pending;
+      return readDiff(...args);
+    };
+    await reopen(editorProps);
+    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-header-actions button")]
+      .find((button) => button.textContent?.includes("Refresh"))!.click());
+    await settleReview(container!);
+    await act(async () => finish());
+    expect(container!.textContent).toContain("0/3 reviewed");
+    await reopen(editorProps);
+    expect(container!.textContent).toContain("0/3 reviewed");
+  });
+
+  it("isolates marks by subject and connection profile", async () => {
+    const editorProps = props(async () => changeList("local-1"));
+    await reopen(editorProps);
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
+    for (const otherProps of [
+      { ...editorProps, subject: { ...editorProps.subject, id: "task-2" } },
+      { ...editorProps, subject: { ...editorProps.subject, kind: "project" as const } },
+      { ...editorProps, connectionProfileId: "remote" },
+    ]) {
+      await reopen(otherProps);
+      expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+    }
+    await reopen(editorProps);
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
+  });
+
+  it("keeps review controls usable when preference storage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Full"); });
+    await reopen(props(async () => changeList("local-1")));
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
   });
 
   it("moves checked files into Reviewed and supports mark-all and reset", async () => {
     ({ container, root } = await renderEditor(props(async () => changeList("local-1"))));
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
 
-    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
     expect(sectionText(container, "Reviewed")).not.toContain("alpha.ts");
-    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-section-toggle")!.click());
+    await clickReview(container!, ".changes-file-section-toggle");
     expect(sectionText(container, "Reviewed")).toContain("alpha.ts");
     expect(container.querySelector('[aria-label="Mark src/alpha.ts as unreviewed"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector('[data-change-entry-id="entry-2"]')?.getAttribute("aria-current")).toBe("true");
 
     await act(async () => [...container!.querySelectorAll<HTMLButtonElement>(".changes-file-review-progress button")]
       .find((button) => button.textContent === "Mark all reviewed")!.click());
+    await settleReview(container!);
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("3/3 reviewed");
     expect(sectionText(container, "Reviewed")).toContain("bravo.ts");
     expect(sectionText(container, "Reviewed")).toContain("notes.txt");
 
-    await act(async () => container!.querySelector<HTMLButtonElement>(".changes-file-review-progress button")!.click());
+    await clickReview(container!, ".changes-file-review-progress button");
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
     expect(sectionText(container, "Reviewed")).toBeUndefined();
   });
 
-  it("clears reviewed state when Refresh creates a new observation", async () => {
+  it("preserves unchanged reviewed files when Refresh creates a new observation", async () => {
     const list = vi.fn<ChangesOverlayProps["list"]>()
       .mockResolvedValueOnce(changeList("local-1"))
-      .mockResolvedValueOnce(changeList("local-2"));
+      .mockResolvedValue(changeList("local-2"));
     ({ container, root } = await renderEditor(props(list)));
-    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
 
     await act(async () => {
@@ -133,8 +378,11 @@ describe("Changes reviewed files", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleReview(container!);
     expect(list).toHaveBeenCalledTimes(2);
-    expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
+    expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
+    await reopen(props(list));
+    expect(container!.querySelector(".changes-file-review-progress")?.textContent).toContain("1/3 reviewed");
   });
 
   it("does not reload when composition rebuilds read adapters", async () => {
@@ -174,13 +422,13 @@ describe("Changes reviewed files", () => {
       return readDiff(...args);
     });
     ({ container, root } = await renderEditor(editorProps));
-    await act(async () => container!.querySelector<HTMLButtonElement>('[aria-label="Mark src/alpha.ts as reviewed"]')!.click());
-    await act(async () => container!.querySelector<HTMLButtonElement>('[data-change-entry-id="entry-3"]')!.click());
+    await clickReview(container!, '[aria-label="Mark src/alpha.ts as reviewed"]');
+    await clickReview(container!, '[data-change-entry-id="entry-3"]');
 
     expect(list).toHaveBeenCalledTimes(2);
-    expect(editorProps.diff).toHaveBeenLastCalledWith("task-1", "local-2", "entry-4");
+    expect(editorProps.diff).toHaveBeenCalledWith("task-1", "local-2", "entry-4");
     expect(container.querySelector('[data-change-entry-id="entry-4"]')?.getAttribute("aria-current")).toBe("true");
-    expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/4 reviewed");
+    expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("1/4 reviewed");
     expect(container.textContent).not.toContain("The diff became stale");
   });
 

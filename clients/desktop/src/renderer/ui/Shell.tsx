@@ -2090,8 +2090,9 @@ export function Shell(props: ShellProps) {
             /> : null}
             {changesSubject ? (
               <ChangesOverlay
-                key={`${changesSubject.kind}:${changesSubject.id}`}
+                key={`${props.selectedProject?.connectionProfileId}:${changesSubject.kind}:${changesSubject.id}`}
                 subject={changesSubject}
+                connectionProfileId={props.selectedProject?.connectionProfileId}
                 initialSource={changesPresentation?.kind === "task" ? changesPresentation.source : { kind: "local" }}
                 close={() => setChangesPresentation(undefined)}
                 list={changesSubject.kind === "project" ? props.listProjectWorktreeChanges : props.listTaskWorktreeChanges}
