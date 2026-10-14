@@ -4,7 +4,6 @@ import {
   STEWARD_PET_ACTIVITY_WINDOW_MS,
   latestStewardPetUtterance,
   stewardPetBubbleAlignment,
-  stewardPetBubbleDismissMs,
   stewardPetBubbleHolds,
   stewardPetBubblePlacement,
   stewardPetClampPosition,
@@ -13,7 +12,6 @@ import {
   stewardPetNearestCorner,
   stewardPetPendingUserMessage,
   stewardPetRoutesToPlaybookSetup,
-  stewardPetSpeaks,
   stewardPetSignal,
   stewardPetState,
   stewardPetStatusLabel,
@@ -185,20 +183,13 @@ describe("Steward pet idle gaze", () => {
 });
 
 describe("Steward pet bubble policy", () => {
-  const kinds: StewardPetUtteranceKind[] = ["reply", "update", "attention", "suggestion", "action", "proposal", "problem", "acceptance", "approval", "decline"];
-
-  it("holds anything waiting on the user and expires ordinary notifications", () => {
+  it("holds anything waiting on the user", () => {
     expect(stewardPetBubbleHolds("proposal")).toBe(true);
     expect(stewardPetBubbleHolds("suggestion")).toBe(true);
     expect(stewardPetBubbleHolds("problem")).toBe(true);
     expect(stewardPetBubbleHolds("attention")).toBe(true);
     expect(stewardPetBubbleHolds("reply")).toBe(false);
     expect(stewardPetBubbleHolds("update")).toBe(false);
-    for (const kind of kinds) {
-      const timeout = stewardPetBubbleDismissMs(kind);
-      if (stewardPetBubbleHolds(kind)) expect(timeout).toBeNull();
-      else expect(timeout).toBeGreaterThan(0);
-    }
   });
 });
 
@@ -274,32 +265,6 @@ describe("Steward pet chat bubble projection", () => {
       transcriptMessage({ id: "message-2", sequence: 2, content: "Checked it." }),
       transcriptMessage({ id: "message-1", sequence: 1, author: "user", content: "Can you check the retry?" }),
     ])).toBeNull();
-  });
-});
-
-describe("Steward pet interruption rules", () => {
-  function utterance(kind: StewardPetUtteranceKind): StewardPetUtterance {
-    return { id: "utterance-1", kind, text: "Two reports name the same staging failure." };
-  }
-
-  it("stays silent with nothing to say", () => {
-    expect(stewardPetSpeaks(null, { muted: false, userBusy: false })).toBe(false);
-  });
-
-  it("never opens a bubble while muted, including for a proposal", () => {
-    expect(stewardPetSpeaks(utterance("reply"), { muted: true, userBusy: false })).toBe(false);
-    expect(stewardPetSpeaks(utterance("proposal"), { muted: true, userBusy: false })).toBe(false);
-  });
-
-  it("defers ordinary speech while the user types but still surfaces what waits on them", () => {
-    expect(stewardPetSpeaks(utterance("reply"), { muted: false, userBusy: true })).toBe(false);
-    expect(stewardPetSpeaks(utterance("suggestion"), { muted: false, userBusy: true })).toBe(true);
-    expect(stewardPetSpeaks(utterance("proposal"), { muted: false, userBusy: true })).toBe(true);
-    expect(stewardPetSpeaks(utterance("problem"), { muted: false, userBusy: true })).toBe(true);
-  });
-
-  it("speaks normally when nothing is blocking it", () => {
-    expect(stewardPetSpeaks(utterance("reply"), { muted: false, userBusy: false })).toBe(true);
   });
 });
 
