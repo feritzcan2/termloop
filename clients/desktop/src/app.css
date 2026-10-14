@@ -2781,6 +2781,12 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .active-agent-row .session-state-line { gap: 6px; font-size: 9.5px; }
 .active-agent-row .row-subtitle { color: light-dark(#61768b, #9bbddf); font-size: 10.5px; font-weight: 600; }
 .active-agent-row .session-presence { width: 10px; }
+/* Steward's glyph, turning, stands in for the presence dot while a Playbook
+   evaluation fork checks this agent's work; it opens that fork. */
+.presence-badge { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: -2px; color: var(--accent-strong); font: 700 12px/1 var(--font-ui); cursor: pointer; animation: presence-badge-spin 2.4s linear infinite; }
+.presence-badge:hover { color: light-dark(#1f70b5, #cfe7ff); animation-play-state: paused; }
+@keyframes presence-badge-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .presence-badge { animation: none; } }
 .active-agent-row .row-actions { right: 27px; }
 .active-agent-favorite { position: absolute; top: 4px; right: 6px; z-index: 3; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: light-dark(rgba(15,23,42,.22), rgba(255,255,255,.22)); }
 .active-agent-favorite:hover, .active-agent-favorite:focus-visible { outline: 0; background: rgba(217,170,95,.1); color: light-dark(#79683f, #c7ad69); }

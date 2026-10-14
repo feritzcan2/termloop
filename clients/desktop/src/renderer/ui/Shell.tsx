@@ -1767,6 +1767,11 @@ export function Shell(props: ShellProps) {
             toggleFavoriteSession={toggleFavoriteAgentSession}
             openTaskChanges={(taskId) => setChangesPresentation({ kind: "task", taskId, source: { kind: "local" } })}
             openExternal={(url) => { void props.openExternal(url); }}
+            playbookEvaluation={props.playbookRuntime?.evaluation?.mode === "taskAgentFork"
+              && props.playbookRuntime.evaluation.sessionId
+              && props.playbookRuntime.evaluation.sourceSessionId
+              ? { sessionId: props.playbookRuntime.evaluation.sessionId, sourceSessionId: props.playbookRuntime.evaluation.sourceSessionId }
+              : undefined}
             openQuickAction={disabled ? undefined : () => openQuickAction()}
           />
           <SessionRail
