@@ -421,7 +421,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
         )}
       </span>
       <span className="row-copy">
-        <strong className="row-title">{titleKey ? <span className="row-title-key">{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
+        <strong className={`row-title${titleKey ? " with-key" : ""}`}>{titleKey ? <span className="row-title-key">{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
         <span className="session-state-line">
           {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}
