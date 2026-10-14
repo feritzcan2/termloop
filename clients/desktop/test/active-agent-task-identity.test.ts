@@ -117,6 +117,28 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
+  it("folds the Playbook evaluation fork into its source row behind a Steward badge", async () => {
+    const selected: string[] = [];
+    const lead = agentSession("lead");
+    const fork = agentSession("fork", { name: "Playbook evaluation", fork_source_session_id: "lead" } as Partial<Session>);
+    const view = await renderRail([lead, fork], {
+      playbookEvaluation: { sessionId: "fork", sourceSessionId: "lead" },
+      selectSession: (sessionId) => selected.push(sessionId),
+    });
+    expect(view.container.querySelector('[data-session-id="fork"]')).toBeNull();
+    const badge = view.container.querySelector<HTMLElement>('[data-session-id="lead"] .presence-badge')!;
+    expect(badge.textContent).toBe("✦");
+    expect(view.container.querySelector('[data-session-id="lead"] .live-dot')).toBeNull();
+    await act(async () => badge.click());
+    expect(selected).toEqual(["fork"]);
+    await view.dispose();
+
+    /// Without its source row the fork keeps an ordinary row of its own.
+    const orphan = await renderRail([fork], { playbookEvaluation: { sessionId: "fork", sourceSessionId: "lead" } });
+    expect(orphan.container.querySelector('[data-session-id="fork"]')).not.toBeNull();
+    await orphan.dispose();
+  });
+
   it("opens the Jira issue from the key without selecting the row", async () => {
     const opened: string[] = [];
     const selected: string[] = [];

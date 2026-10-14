@@ -322,6 +322,9 @@ export type ActiveAgentRailProps = {
   toggleFavoriteSession(sessionId: string): void;
   openTaskChanges(taskId: string): void;
   openExternal?: ((url: string) => void) | undefined;
+  /// Core's exact Playbook evaluation fork and the agent it checks. The fork
+  /// folds into its source's row instead of taking a row of its own.
+  playbookEvaluation?: { sessionId: string; sourceSessionId: string } | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
   openQuickAction?: (() => void) | undefined;
@@ -349,14 +352,25 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   }, [props.nowEpochMs]);
   const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
   /// Workflow members live only in their run's entry, never also in a bucket.
+  /// Only folded while the source row exists to carry it; otherwise the fork
+  /// stays an ordinary row so it is never unreachable.
+  const foldedEvaluationId = props.playbookEvaluation
+    && props.sessions.some((session) => session.id === props.playbookEvaluation!.sessionId)
+    && props.sessions.some((session) => session.id === props.playbookEvaluation!.sourceSessionId)
+    ? props.playbookEvaluation.sessionId
+    : undefined;
+  const rowSessions = useMemo(
+    () => foldedEvaluationId ? props.sessions.filter((session) => session.id !== foldedEvaluationId) : props.sessions,
+    [foldedEvaluationId, props.sessions],
+  );
   const workflowRuns = useMemo(() => orderWorkflowRuns(
-    workflowAgentRuns(props.sessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
+    workflowAgentRuns(rowSessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
     props.statusesById, props.reviewReadySessionIds,
-  ), [props.sessions, props.workflowGroupsBySessionId, props.statusesById, props.reviewReadySessionIds]);
+  ), [rowSessions, props.workflowGroupsBySessionId, props.statusesById, props.reviewReadySessionIds]);
   const bucketSessions = useMemo(() => {
     const members = new Set(workflowRuns.flatMap(({ run }) => run.sessions.map((session) => session.id)));
-    return members.size ? props.sessions.filter((session) => !members.has(session.id)) : props.sessions;
-  }, [props.sessions, workflowRuns]);
+    return members.size ? rowSessions.filter((session) => !members.has(session.id)) : rowSessions;
+  }, [rowSessions, workflowRuns]);
   const naturalSections = useMemo(
     () => activeAgentGroupSections(bucketSessions, props.statusesById, props.reviewReadySessionIds, props.favoriteSessionIds, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.rememberedActivityBySessionId),
     [bucketSessions, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.favoriteSessionIds, props.rememberedActivityBySessionId, props.reviewReadySessionIds, props.statusesById],
@@ -639,6 +653,12 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const taskTitled = Boolean(taskIdentity) && !nested;
   const pullRequests = taskTitled ? taskIdentity!.pullRequests : [];
   const delivery = Boolean(rowChanges) || pullRequests.length > 0;
+  const evaluation = props.playbookEvaluation?.sourceSessionId === session.id
+    ? props.sessions.find((candidate) => candidate.id === props.playbookEvaluation!.sessionId)
+    : undefined;
+  const evaluationState = evaluation
+    ? sessionState(evaluation, props.statusesById.get(evaluation.id), props.reviewReadySessionIds.has(evaluation.id))
+    : undefined;
   const workflowActions = workflows.map((workflow) => <button
     key={workflow.executionId}
     type="button"
@@ -662,6 +682,11 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         openTitleKey={taskTitled && taskIdentity!.issueUrl && props.openExternal
           ? () => props.openExternal!(taskIdentity!.issueUrl!)
           : undefined}
+        presenceBadge={evaluation ? {
+          glyph: "✦",
+          title: `Steward is evaluating this work${evaluationState?.label ? ` · ${evaluationState.label}` : ""}. Click to open the evaluation agent.`,
+          open: () => props.selectSession(evaluation.id),
+        } : undefined}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
         /// The Task title already says which checkout this is; a helper under a

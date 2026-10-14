@@ -164,7 +164,9 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// The row shared by the Project Session sections and the Sessions nested under
 /// a Task. Presentation only — the caller owns selection, ordering, and the
 /// context menu it opens.
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, openTitleKey, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export type SessionPresenceBadge = { glyph: string; title: string; open(): void };
+
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, openTitleKey, presenceBadge, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
@@ -174,6 +176,9 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   titleKey?: string | undefined;
   /// Clicking the key opens what it names (a Jira issue) instead of the row.
   openTitleKey?: (() => void) | undefined;
+  /// Replaces the presence dot with a glyph that opens a related Session, such
+  /// as the Playbook evaluation fork checking this agent's work.
+  presenceBadge?: SessionPresenceBadge | undefined;
   relationshipLabel?: string;
   active: boolean;
   visible: boolean;
@@ -209,11 +214,15 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
       aria-expanded={menuOpen}
       data-session-id={session.id}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss], [data-title-key-link]")) return;
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss], [data-title-key-link], [data-presence-badge]")) return;
         dragListeners?.onPointerDown?.(event);
       }}
       title={session.process.cwd}
       onClick={(event) => {
+        if (presenceBadge && (event.target as HTMLElement).closest("[data-presence-badge]")) {
+          presenceBadge.open();
+          return;
+        }
         if (openTitleKey && (event.target as HTMLElement).closest("[data-title-key-link]")) {
           openTitleKey();
           return;
@@ -235,7 +244,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} presenceBadge={presenceBadge} visible={visible} active={active} runCommand={runCommand} />
     </button>
   );
 }
@@ -384,7 +393,7 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, visible, active, runCommand }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, presenceBadge, visible, active, runCommand }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
@@ -394,6 +403,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
   displayName?: string | undefined;
   titleKey?: string | undefined;
   titleKeyLinked?: boolean;
+  presenceBadge?: SessionPresenceBadge | undefined;
   visible: boolean;
   active: boolean;
   runCommand?: string | undefined;
@@ -413,7 +423,9 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
     <>
       <i className={`row-rail ${state.tone}`} aria-hidden="true" />
       <span className="session-presence">
-        {run ? (
+        {presenceBadge ? (
+          <span className="presence-badge" data-presence-badge="" title={presenceBadge.title}>{presenceBadge.glyph}</span>
+        ) : run ? (
           <span className="run-badge" title={state.summary}><Icon name="play" /></span>
         ) : improver ? (
           <span className="improve-badge" title={state.summary}><Icon name="sparkles" /></span>
