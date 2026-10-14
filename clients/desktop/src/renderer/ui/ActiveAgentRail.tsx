@@ -653,7 +653,7 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
       {!compactWorkflow ? workflowActions : null}
-      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${pullRequests.length ? " has-pull-requests" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
+      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
         displayName={taskTitled ? taskIdentity!.title : workflowLabel}

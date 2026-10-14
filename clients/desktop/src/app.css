@@ -2747,8 +2747,10 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workflow-agent-group-changes { flex: none; padding: 2px 4px; border: 0; border-radius: 4px; background: transparent; color: var(--accent-strong); font: 600 9px/1.4 var(--font-mono); }
 .workflow-agent-group-changes:hover { background: var(--accent-wash); }
 .workflow-agent-group-changes:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
-.active-agent-row { grid-template-columns: minmax(0,1fr) 20px; gap: 1px; padding-right: 4px; }
-.active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
+/* The title owns the row's whole width. The favorite star and the change and
+   pull-request strip float over the row instead of reserving side columns
+   that left a gap beside every title. */
+.active-agent-row { grid-template-columns: minmax(0,1fr); gap: 1px; padding-right: 4px; }
 .active-agent-entry { min-width: 0; }
 .active-agent-workflow { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); min-width: 0; min-height: 24px; margin: 2px 4px 0; padding: 3px 7px; border: 0; border-radius: 5px; background: var(--accent-wash); color: var(--accent-strong); text-align: left; }
 .active-agent-workflow-action { flex: 0 0 auto; font: 600 10px/1.4 var(--font-ui); }
@@ -2777,24 +2779,23 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .active-agent-row .row-subtitle { color: light-dark(#61768b, #9bbddf); font-size: 10.5px; font-weight: 600; }
 .active-agent-row .session-presence { width: 10px; }
 .active-agent-row .row-actions { right: 27px; }
-.active-agent-row.has-worktree-changes .row-actions { right: 92px; }
-.active-agent-favorite { z-index: 2; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: light-dark(rgba(15,23,42,.22), rgba(255,255,255,.22)); }
+.active-agent-favorite { position: absolute; top: 4px; right: 6px; z-index: 3; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: light-dark(rgba(15,23,42,.22), rgba(255,255,255,.22)); }
 .active-agent-favorite:hover, .active-agent-favorite:focus-visible { outline: 0; background: rgba(217,170,95,.1); color: light-dark(#79683f, #c7ad69); }
 .active-agent-favorite.favorite { color: var(--warning); }
 /* Twelve identical stars read as noise; an unset star appears only on the
    row being pointed at or focused. */
 .active-agent-favorite:not(.favorite) { opacity: 0; }
-.active-agent-row:hover .active-agent-favorite, .active-agent-favorite:focus-visible { opacity: 1; }
+.active-agent-row:hover .active-agent-favorite, .active-agent-favorite:focus-visible { opacity: 1; background: var(--bg-sidebar); }
+.active-agent-row:has(.active-agent-favorite.favorite) .row-title { padding-right: 18px; }
 .active-agent-favorite.favorite svg { fill: currentColor; }
 .active-agent-favorite svg { width: 12px; height: 12px; }
-.active-agent-worktree-changes { z-index: 2; width: 64px; min-width: 0; padding: 2px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 700 9px/1.3 var(--font-mono); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.active-agent-worktree-changes { flex: none; padding: 1px 3px; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 700 9px/1.3 var(--font-mono); white-space: nowrap; }
 .active-agent-worktree-changes:hover, .active-agent-worktree-changes:focus-visible { outline: 0; background: rgba(102,179,255,.12); color: var(--accent-strong); text-decoration: underline; }
-/* Change count and up to two pull requests stack in the row's right column. */
-.active-agent-delivery { z-index: 2; display: flex; min-width: 0; flex-direction: column; align-items: stretch; gap: 1px; }
-.active-agent-delivery .active-agent-worktree-changes { width: 100%; }
-.active-agent-row.has-pull-requests { grid-template-columns: minmax(0,1fr) 20px 82px; }
-.active-agent-row.has-pull-requests .row-actions { right: 110px; }
-.active-agent-pull-request { min-width: 0; padding: 1px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9px/1.3 var(--font-mono); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+/* Change count and up to two pull requests share the state line's free right
+   side. The state line is short ("Working Claude"), so the strip sits on the
+   same baseline; under width pressure the strip shrinks, never the title. */
+.active-agent-delivery { position: absolute; right: 20px; bottom: 4px; z-index: 2; display: flex; max-width: calc(100% - 120px); align-items: center; justify-content: flex-end; gap: 2px; overflow: hidden; }
+.active-agent-pull-request { min-width: 0; padding: 1px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .active-agent-pull-request[data-tone="review"] { color: var(--agent-status-review); }
 .active-agent-pull-request[data-tone="attention"] { color: var(--state-attention); }
 .active-agent-pull-request[data-tone="done"] { color: var(--sidebar-dim); }
@@ -2812,6 +2813,12 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workflow-agent-group .active-agent-row .row-state { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-agent-group .active-agent-row .row-agent { display: none; }
 .workflow-agent-group .active-agent-row .row-actions { top: 3px; }
+/* One-line workflow members keep the star and change count in columns. */
+.workflow-agent-group .active-agent-row { grid-template-columns: minmax(0,1fr) 20px; }
+.workflow-agent-group .active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
+.workflow-agent-group .active-agent-favorite, .workflow-agent-group .active-agent-delivery { position: static; }
+.workflow-agent-group .active-agent-delivery { max-width: none; }
+.workflow-agent-group .active-agent-row:has(.active-agent-favorite.favorite) .row-title { padding-right: 0; }
 .workflow-agent-group .active-agent-row:has(.active-agent-workflow) { grid-template-columns: minmax(0,1fr) 20px 24px; }
 .workflow-agent-group .active-agent-row.has-worktree-changes:has(.active-agent-workflow) { grid-template-columns: minmax(0,1fr) 20px 24px 64px; }
 .workflow-agent-group .active-agent-row:has(.active-agent-workflow) .row-actions { right: 51px; }
