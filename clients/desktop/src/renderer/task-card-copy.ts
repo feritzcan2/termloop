@@ -1,3 +1,4 @@
+import type { GitHostProjection } from "./model.js";
 import type { RowTone } from "./row-tone.js";
 import type { AgentAttention } from "./session-presentation.js";
 import type { TaskIntegration, TaskStage } from "./task-presentation.js";
@@ -89,4 +90,37 @@ export function taskCardStatus(options: {
     return { label: "In review", tone: integration.tone === "attention" ? "attention" : "review", title: integration.title };
   }
   return undefined;
+}
+
+type PullRequest = GitHostProjection["matches"][number];
+
+/// The newest pull requests first, by the provider's last activity, so a Task
+/// that opened a follow-up PR shows that one rather than the first it ever had.
+export function newestPullRequests(projection: GitHostProjection | undefined, limit: number): PullRequest[] {
+  if (!projection) return [];
+  return [...projection.matches]
+    .sort((left, right) => right.activity_at_epoch_ms - left.activity_at_epoch_ms || right.number - left.number)
+    .slice(0, limit);
+}
+
+/// One pull request as a compact chip: its own state word, coloured only when
+/// it wants something — the same "colour means it needs you" rule as Task rows.
+export function pullRequestChip(pullRequest: PullRequest): { label: string; tone: "quiet" | "review" | "attention" | "done"; title: string } {
+  const problem = pullRequest.state === "open" && (pullRequest.check_rollup === "failing"
+    ? "checks failing"
+    : pullRequest.merge_conflict === "conflicting"
+      ? "merge conflicts"
+      : pullRequest.review_signal === "changesRequested"
+        ? "changes requested"
+        : undefined);
+  const tone = problem ? "attention"
+    : pullRequest.state === "open" ? "review"
+      : pullRequest.state === "merged" ? "done"
+        : "quiet";
+  const detail = problem ? ` · ${problem}` : "";
+  return {
+    label: `#${pullRequest.number} ${pullRequest.state}`,
+    tone,
+    title: `#${pullRequest.number} ${pullRequest.head_branch} → ${pullRequest.base_branch} · ${pullRequest.state}${detail} · ${pullRequest.title}`,
+  };
 }

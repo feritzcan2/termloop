@@ -16,7 +16,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
-import { taskCardTitle } from "../task-card-copy.js";
+import { newestPullRequests, taskCardTitle } from "../task-card-copy.js";
+import { pullRequestIdentity } from "../change-source.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
@@ -69,7 +70,7 @@ import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
 import { WorkflowCloseDialog, type WorkflowCloseTarget } from "./WorkflowCloseDialog.js";
 import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
-import { ActiveAgentRail } from "./ActiveAgentRail.js";
+import { ActiveAgentRail, type ActiveAgentTaskIdentity } from "./ActiveAgentRail.js";
 import { activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels } from "./active-agent-workflows.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
@@ -722,14 +723,24 @@ export function Shell(props: ShellProps) {
     return changes;
   }, [props.projectTasks, sessionsById]);
   const taskIdentityBySessionId = useMemo(() => {
-    const identities = new Map<string, { issueKey: string | undefined; title: string }>();
+    const identities = new Map<string, ActiveAgentTaskIdentity>();
+    const projections = new Map(props.gitHostProjections.map((projection) => [projection.task_id, projection]));
     for (const task of props.projectTasks) {
       if (task.status !== "open") continue;
       const { key, title } = taskCardTitle(task.title, task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined);
-      for (const sessionId of taskAttachedSessionIds([task], sessionsById)) identities.set(sessionId, { issueKey: key, title });
+      const projection = projections.get(task.id);
+      const pullRequests = newestPullRequests(projection, 2);
+      const identity: ActiveAgentTaskIdentity = {
+        taskId: task.id,
+        issueKey: key,
+        title,
+        pullRequests,
+        morePullRequests: (projection?.matches.length ?? 0) - pullRequests.length,
+      };
+      for (const sessionId of taskAttachedSessionIds([task], sessionsById)) identities.set(sessionId, identity);
     }
     return identities;
-  }, [props.projectTasks, sessionsById]);
+  }, [props.gitHostProjections, props.projectTasks, sessionsById]);
   const taskNestedHelperIds = useMemo(
     () => askToHelpersForSources(attachedSessionIds, sessionsById),
     [attachedSessionIds, sessionsById],
@@ -1754,6 +1765,15 @@ export function Shell(props: ShellProps) {
             archiveSession={(sessionId) => { void props.archiveSession(sessionId).then((failure) => { if (!failure) archived.reload(); }); }}
             toggleFavoriteSession={toggleFavoriteAgentSession}
             openTaskChanges={(taskId) => setChangesPresentation({ kind: "task", taskId, source: { kind: "local" } })}
+            openTaskPullRequest={(taskId, pullRequest) => setChangesPresentation({
+              kind: "task",
+              taskId,
+              source: {
+                kind: "pullRequest",
+                pullRequest: pullRequestIdentity(pullRequest),
+                freshnessGeneration: props.gitHostProjections.find((projection) => projection.task_id === taskId)?.freshness_generation ?? 0,
+              },
+            })}
             openQuickAction={disabled ? undefined : () => openQuickAction()}
           />
           <SessionRail

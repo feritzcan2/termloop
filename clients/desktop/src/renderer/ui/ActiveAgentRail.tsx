@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
-import type { AgentStatus, Session } from "../model.js";
+import type { AgentStatus, GitHostProjection, Session } from "../model.js";
+import { pullRequestChip } from "../task-card-copy.js";
 import { basename, isLiveSession, sessionLabel } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { isAssistantSession } from "./AssistantRail.js";
@@ -37,8 +38,13 @@ type ActiveAgentGroupSections = {
 
 /// The Task an Agent works inside, named the way the Task board names it.
 export type ActiveAgentTaskIdentity = {
+  taskId: string;
   issueKey: string | undefined;
   title: string;
+  /// At most the two newest pull requests, already ordered by the caller.
+  pullRequests: readonly GitHostProjection["matches"][number][];
+  /// Matches beyond `pullRequests`, shown only as a count.
+  morePullRequests: number;
 };
 
 export type ActiveAgentWorktreeChanges = {
@@ -314,6 +320,7 @@ export type ActiveAgentRailProps = {
   archiveSession(sessionId: string): void;
   toggleFavoriteSession(sessionId: string): void;
   openTaskChanges(taskId: string): void;
+  openTaskPullRequest?: ((taskId: string, pullRequest: GitHostProjection["matches"][number]) => void) | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
   openQuickAction?: (() => void) | undefined;
@@ -629,6 +636,8 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
     ? undefined
     : props.taskIdentityBySessionId?.get(session.id);
   const taskTitled = Boolean(taskIdentity) && !nested;
+  const pullRequests = taskTitled ? taskIdentity!.pullRequests : [];
+  const delivery = Boolean(rowChanges) || pullRequests.length > 0;
   const workflowActions = workflows.map((workflow) => <button
     key={workflow.executionId}
     type="button"
@@ -644,7 +653,7 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
       {!compactWorkflow ? workflowActions : null}
-      <div className={`session-row active-agent-row${rowChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
+      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${pullRequests.length ? " has-pull-requests" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
         displayName={taskTitled ? taskIdentity!.title : workflowLabel}
@@ -680,13 +689,29 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         onClick={() => props.toggleFavoriteSession(session.id)}
         ><Icon name="star" /></button>
         {compactWorkflow ? workflowActions : null}
-        {rowChanges ? <button
-        type="button"
-        className="active-agent-worktree-changes"
-        aria-label={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
-        title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
-        onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
-        >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
+        {delivery ? <div className="active-agent-delivery">
+          {rowChanges ? <button
+          type="button"
+          className="active-agent-worktree-changes"
+          aria-label={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+          title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+          onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
+          >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
+          {pullRequests.map((pullRequest, index) => {
+            const chip = pullRequestChip(pullRequest);
+            const more = index === pullRequests.length - 1 ? taskIdentity!.morePullRequests : 0;
+            return <button
+              key={`${pullRequest.repository_owner}/${pullRequest.repository_name}#${pullRequest.number}`}
+              type="button"
+              className="active-agent-pull-request"
+              data-tone={chip.tone}
+              aria-label={`Review pull request ${pullRequest.number}, ${pullRequest.state}, in ${taskIdentity!.title}`}
+              title={chip.title}
+              disabled={!props.openTaskPullRequest}
+              onClick={(event) => { event.stopPropagation(); props.openTaskPullRequest?.(taskIdentity!.taskId, pullRequest); }}
+            >{chip.label}{more > 0 ? <span className="active-agent-pull-request-more">+{more}</span> : null}</button>;
+          })}
+        </div> : null}
       </div>
     </div>
   );
