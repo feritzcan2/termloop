@@ -234,12 +234,18 @@ impl CoreRuntime {
         }
         .map_err(store_error)?;
         let usage = self.companion_transcript_usage(project_id);
-        Ok(json!({
+        let mut result = json!({
             "message": companion_message_projection(&message)?,
-            "dismissedRoutineFindingIds": routine_finding_ids,
             "usage": usage,
             "stateRevision": self.store.revision(),
-        }))
+        });
+        // Only a Steward status message dismisses findings, and its MCP reply
+        // is composed separately. User-facing control results stay exactly
+        // the generated transcript-append shape.
+        if !routine_finding_ids.is_empty() {
+            result["dismissedRoutineFindingIds"] = json!(routine_finding_ids);
+        }
+        Ok(result)
     }
 
     pub fn companion_has_pending_proposal(&self, project_id: &str) -> bool {
