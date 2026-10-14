@@ -38,6 +38,9 @@ pub(crate) struct PlaybookEvaluation {
     pub(crate) worktree_generation: u64,
     pub(crate) assignment: Value,
     read: bool,
+    /// Core refused this fork's report because its check no longer matched.
+    /// The fork stops on that answer, so cleanup must not wait for expiry.
+    report_rejected: bool,
 }
 
 #[derive(Default)]
@@ -350,6 +353,7 @@ impl CoreRuntime {
                 worktree_generation: task.worktree_generation,
                 assignment,
                 read: false,
+                report_rejected: false,
             },
         );
         Ok(())
@@ -439,17 +443,29 @@ impl CoreRuntime {
             return Err(CoreError::CapabilityDenied);
         }
         let now = termloop_platform::current_epoch_ms();
-        self.validate_playbook_evaluation(&evaluation, now)?;
-        let result = self.apply_playbook_step_verdicts(
-            &evaluation.capability,
-            vec![StewardStepVerdict {
-                task_id: evaluation.task_id,
-                verdict,
-                evidence,
-            }],
-            termloop_platform::generate_opaque_id(),
-            now,
-        )?;
+        let result = self
+            .validate_playbook_evaluation(&evaluation, now)
+            .and_then(|()| {
+                self.apply_playbook_step_verdicts(
+                    &evaluation.capability,
+                    vec![StewardStepVerdict {
+                        task_id: evaluation.task_id,
+                        verdict,
+                        evidence,
+                    }],
+                    termloop_platform::generate_opaque_id(),
+                    now,
+                )
+            });
+        let result = match result {
+            Err(CoreError::TrackerReportStale) => {
+                if let Some(evaluation) = self.playbook_evaluation.evaluations.get_mut(check_id) {
+                    evaluation.report_rejected = true;
+                }
+                return Err(CoreError::TrackerReportStale);
+            }
+            result => result?,
+        };
         self.playbook_evaluation.evaluations.remove(check_id);
         self.mcp_authorizer.remove(&evaluation.session_id);
         Ok(
@@ -562,6 +578,8 @@ impl CoreRuntime {
                 });
                 let reason = if exited {
                     "The fork agent exited before recording a result."
+                } else if evaluation.report_rejected {
+                    "The check changed before its result was recorded, so the step will be checked again."
                 } else if self.validate_playbook_evaluation(evaluation, now).is_err() {
                     "The check expired or its Task, pipeline, or Steward changed before a result was recorded."
                 } else {
@@ -576,7 +594,23 @@ impl CoreRuntime {
                 termloop_domain::PlaybookEvaluationOutcome::Interrupted,
                 reason,
             )?;
-            self.fail_playbook_evaluation_launch(&id)?;
+            let rejected = self
+                .playbook_evaluation
+                .evaluations
+                .get(&id)
+                .filter(|evaluation| evaluation.report_rejected)
+                .cloned();
+            if let Some(evaluation) = rejected {
+                // The fork worked and answered a question that no longer
+                // matched. Hand the claim back so the step is asked again on
+                // its own cadence instead of waiting for another fork.
+                self.release_steward_routine_claim(&evaluation.capability);
+                self.playbook_evaluation.evaluations.remove(&id);
+                self.mcp_authorizer.remove(&evaluation.session_id);
+                self.pending_agent_forks.remove(&evaluation.session_id);
+            } else {
+                self.fail_playbook_evaluation_launch(&id)?;
+            }
         }
         self.playbook_evaluation
             .activity

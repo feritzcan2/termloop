@@ -175,9 +175,16 @@ impl CoreRuntime {
         // A report claimed before this explicit user decision must not arrive
         // later and move the Task again. Cancelling the old standing question
         // fences that claim; the newly selected question is due immediately.
+        // A check running for a different Task at that step is independent of
+        // this move and keeps its claim.
         if let PlaybookPosition::At(index) = previous_position {
-            self.tracker_runtime
-                .cancel_tracker_check(&playbook.milestones[index].routine_id);
+            let routine_id = &playbook.milestones[index].routine_id;
+            if self
+                .claimed_step_task_id(routine_id)
+                .is_none_or(|claimed| claimed == task_id)
+            {
+                self.tracker_runtime.cancel_tracker_check(routine_id);
+            }
         }
         if let Some(milestone) = playbook.milestones.get(passed_milestone_count) {
             self.tracker_runtime
@@ -423,6 +430,8 @@ impl CoreRuntime {
         // The question answered is the one this claim was issued for. The
         // board may have moved on since; answering the newest question with a
         // run that read the old one would record a verdict nobody asked for.
+        // Only the claimed Task's own position decides that. Another Task
+        // moving or becoming due never invalidates this Task's answer.
         let milestone_id = self
             .claimed_step_milestone_id(&capability.tracker_id)
             .ok_or(CoreError::TrackerReportStale)?;
@@ -430,7 +439,7 @@ impl CoreRuntime {
             .claimed_step_task_id(&capability.tracker_id)
             .ok_or(CoreError::TrackerReportStale)?;
         let assignment = self
-            .playbook_step_assignment(&capability.tracker_id)
+            .playbook_step_assignment_for_task(&capability.tracker_id, &task_id)
             .filter(|assignment| {
                 assignment.milestone.id == milestone_id && assignment.waiting[0].task_id == task_id
             })
@@ -1037,6 +1046,62 @@ pub(crate) mod tests {
             2
         );
 
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn another_task_taking_focus_never_rejects_the_claimed_tasks_answer() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let first = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "first".into(), NOW)
+            .unwrap()
+            .capability
+            .unwrap();
+        runtime
+            .report_steward_step_verdicts(
+                &first,
+                vec![StewardStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict: PlaybookStepVerdict::Waiting,
+                    evidence: "No PR yet.".into(),
+                }],
+                "first-report".into(),
+                NOW + 1,
+            )
+            .unwrap();
+        // Task 1 now waits for its retry, so Task 2 takes the next claim.
+        let second = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "second".into(), NOW + 2)
+            .unwrap()
+            .capability
+            .unwrap();
+        assert_eq!(
+            runtime.claimed_step_task_id(&second.tracker_id).as_deref(),
+            Some("task-2")
+        );
+        // Resetting Task 1 makes it due again and the board's focus moves to
+        // it while Task 2's check is still running.
+        let revision = runtime.state_revision();
+        runtime
+            .set_task_playbook_position(&project_id, "task-1", 0, 1, revision, NOW + 3)
+            .unwrap();
+        runtime
+            .report_steward_step_verdicts(
+                &second,
+                vec![StewardStepVerdict {
+                    task_id: "task-2".into(),
+                    verdict: PlaybookStepVerdict::Passed,
+                    evidence: "PR 7 is open.".into(),
+                }],
+                "second-report".into(),
+                NOW + 4,
+            )
+            .unwrap();
+        assert!(runtime.store.playbook_step_progress().iter().any(|answer| {
+            answer.task_id == "task-2"
+                && answer.milestone_id == "pr-open"
+                && answer.verdict == PlaybookStepVerdict::Passed
+        }));
         std::fs::remove_dir_all(root).ok();
     }
 

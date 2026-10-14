@@ -564,11 +564,21 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
             ),
             Err(CoreError::TrackerReportStale)
         ));
-        runtime.obsolete_playbook_evaluator_sessions().unwrap();
+        // The rejected fork is retired on the next sweep, not at claim expiry.
+        assert_eq!(
+            runtime.obsolete_playbook_evaluator_sessions().unwrap(),
+            vec!["reviewer"]
+        );
         assert_eq!(
             runtime.store.playbook_evaluations()[0].outcome,
             termloop_domain::PlaybookEvaluationOutcome::Interrupted
         );
+        assert_eq!(
+            runtime.store.playbook_evaluations()[0].evidence,
+            "The check changed before its result was recorded, so the step will be checked again."
+        );
+        assert!(runtime.playbook_evaluation.evaluations.is_empty());
+        assert!(runtime.playbook_evaluation.waiting.is_empty());
         assert!(
             runtime
                 .mcp_authorizer
