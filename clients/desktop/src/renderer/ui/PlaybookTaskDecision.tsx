@@ -62,31 +62,35 @@ export function usePlaybookTaskDecision(
   actions: PlaybookTaskDecisionActions | undefined,
   routines: readonly RoutineConfigurationDto[] = [],
 ): PlaybookTaskDecisionHandle | null {
-  const [messages, setMessages] = useState<readonly CompanionMessageDto[] | null>(null);
+  // A refresh keeps the current decision on screen until its replacement
+  // arrives. Clearing it first made every coalesced refresh remove and redraw
+  // the strip, shifting the whole rail below it. Only another Project's
+  // transcript is never shown.
+  const [loaded, setLoaded] = useState<Readonly<{ projectId: string; messages: readonly CompanionMessageDto[] }> | null>(null);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
   const enabled = actions !== undefined;
   useEffect(() => {
-    setMessages(null);
     const loader = actionsRef.current;
     if (!loader) return;
     let current = true;
     void loader.listTranscript()
-      .then((transcript) => { if (current) setMessages(transcript.messages); })
+      .then((transcript) => { if (current) setLoaded({ projectId, messages: transcript.messages }); })
       .catch(() => undefined);
     return () => { current = false; };
   }, [enabled, projectId, refreshToken]);
+  const messages = loaded?.projectId === projectId ? loaded.messages : null;
   const decision = messages ? pendingPlaybookTaskDecision(messages, routineFindingTasks(routines)) : null;
   if (!actions || !decision) return null;
   return {
     decision,
     respond: async (answer) => {
       await actions.respondToProposal(decision.message.id, answer);
-      setMessages(null);
+      setLoaded(null);
     },
     accept: async () => {
       await actions.acceptSuggestion(decision.message.id);
-      setMessages(null);
+      setLoaded(null);
     },
   };
 }
