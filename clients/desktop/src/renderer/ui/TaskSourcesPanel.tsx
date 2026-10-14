@@ -88,6 +88,7 @@ import { Icon } from "./Icon.js";
 import { WorktreeAgentChoice, type ProjectTaskAutomationActions } from "./ProjectTaskAutomation.js";
 import { sortRemoteBranches } from "./worktree-path-suggestion.js";
 import { SourceIntakeSettings } from "./task-sources/SourceIntakeSettings.js";
+import { SourceBranchNamingSettings } from "./task-sources/SourceBranchNamingSettings.js";
 
 /// Named generated operations the panel may raise. Composition binds them to
 /// the selected Project's connection source; the panel never sees a transport.
@@ -348,10 +349,16 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
     };
   });
 
+  const saveSourceBranchNaming = (source: TaskSourceDto, branchNaming: TaskSourceDto["branchNaming"]) => mutate(`branches:${source.id}`, async () => {
+    await props.actions.update(sourceUpdateParams(source, stateRevision, { branchNaming }));
+    await loadSources();
+    return { tone: "info", text: `${source.name} will name new Task branches after the ${branchNaming === "issueKey" ? "Jira issue key" : "Task title"}.` };
+  });
+
   function sourceUpdateParams(
     source: TaskSourceDto,
     expectedRevision: number,
-    overrides: Partial<Pick<TaskSourceUpdateParams, "enabled" | "importPolicy" | "autoImportActiveTaskLimit">>,
+    overrides: Partial<Pick<TaskSourceUpdateParams, "enabled" | "importPolicy" | "autoImportActiveTaskLimit" | "branchNaming">>,
   ): TaskSourceUpdateParams {
     return {
       sourceId: source.id,
@@ -365,6 +372,7 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       importPolicy: source.importPolicy,
       autoImportActiveTaskLimit: source.autoImportActiveTaskLimit,
       refreshIntervalSeconds: source.refreshIntervalSeconds,
+      branchNaming: source.branchNaming,
       expectedGeneration: source.generation,
       expectedRevision,
       ...overrides,
@@ -642,6 +650,12 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
               source={selectedSource}
               busy={disabled}
               save={(importPolicy, activeTaskLimit) => void saveSourceIntake(selectedSource, importPolicy, activeTaskLimit)}
+            />
+            <SourceBranchNamingSettings
+              key={`branches:${selectedSource.id}:${selectedSource.generation}`}
+              source={selectedSource}
+              busy={disabled}
+              save={(branchNaming) => void saveSourceBranchNaming(selectedSource, branchNaming)}
             />
 
             <div className="task-source-queue-bar">

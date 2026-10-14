@@ -14103,6 +14103,12 @@
       "type": "string",
       "enum": ["review", "autoAdd"]
     },
+    "taskSourceBranchNaming": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskSourceBranchNaming",
+      "type": "string",
+      "enum": ["title", "issueKey"]
+    },
     "taskSourceCredentialState": {
       "x-codegen": true,
       "x-codegen-name": "TaskSourceCredentialState",
@@ -14132,7 +14138,7 @@
       "x-codegen-name": "TaskSourceDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "projectId", "provider", "name", "enabled", "generation", "siteBaseUrl", "scopeKind", "boards", "statuses", "jql", "importPolicy", "autoImportActiveTaskLimit", "refreshIntervalSeconds", "credentialState", "runtimeState", "failureReason", "lastAttemptAtEpochMs", "lastSuccessfulAtEpochMs", "retryAfterEpochMs", "candidateCount", "truncated", "createdAtEpochMs", "updatedAtEpochMs"],
+      "required": ["id", "projectId", "provider", "name", "enabled", "generation", "siteBaseUrl", "scopeKind", "boards", "statuses", "jql", "importPolicy", "autoImportActiveTaskLimit", "refreshIntervalSeconds", "branchNaming", "credentialState", "runtimeState", "failureReason", "lastAttemptAtEpochMs", "lastSuccessfulAtEpochMs", "retryAfterEpochMs", "candidateCount", "truncated", "createdAtEpochMs", "updatedAtEpochMs"],
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "projectId": { "type": "string", "minLength": 1 },
@@ -14148,6 +14154,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "credentialState": { "$ref": "#/$defs/taskSourceCredentialState" },
         "runtimeState": { "$ref": "#/$defs/taskSourceRuntimeState" },
         "failureReason": { "anyOf": [{ "$ref": "#/$defs/taskSourceFailureReason" }, { "type": "null" }] },
@@ -14347,6 +14354,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },
       "allOf": [
@@ -14386,6 +14394,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "expectedGeneration": { "type": "integer", "minimum": 1, "x-rust-type": "u64" },
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },

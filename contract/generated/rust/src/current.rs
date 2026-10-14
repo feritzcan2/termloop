@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:1db701a2c93b180148a80da3008c7e384764e33f8ed26740da355f9789da5121";
+    "sha256:db201e156a073590dc6e82b993c0ab09a28dc552c038489dc8ce2ad1390e62bd";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -6324,6 +6324,14 @@ pub enum TaskSourceImportPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TaskSourceBranchNaming {
+    #[serde(rename = "title")]
+    Title,
+    #[serde(rename = "issueKey")]
+    IssueKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TaskSourceCredentialState {
     #[serde(rename = "none")]
     None,
@@ -6407,6 +6415,8 @@ pub struct TaskSourceDto {
     pub auto_import_active_task_limit: u64,
     #[serde(rename = "refreshIntervalSeconds")]
     pub refresh_interval_seconds: u64,
+    #[serde(rename = "branchNaming")]
+    pub branch_naming: TaskSourceBranchNaming,
     #[serde(rename = "credentialState")]
     pub credential_state: TaskSourceCredentialState,
     #[serde(rename = "runtimeState")]
@@ -6607,6 +6617,8 @@ pub struct TaskSourceCreateParams {
     pub auto_import_active_task_limit: u64,
     #[serde(rename = "refreshIntervalSeconds")]
     pub refresh_interval_seconds: u64,
+    #[serde(rename = "branchNaming", skip_serializing_if = "Option::is_none")]
+    pub branch_naming: Option<TaskSourceBranchNaming>,
     #[serde(rename = "expectedRevision")]
     pub expected_revision: u64,
 }
@@ -6632,6 +6644,8 @@ pub struct TaskSourceUpdateParams {
     pub auto_import_active_task_limit: u64,
     #[serde(rename = "refreshIntervalSeconds")]
     pub refresh_interval_seconds: u64,
+    #[serde(rename = "branchNaming", skip_serializing_if = "Option::is_none")]
+    pub branch_naming: Option<TaskSourceBranchNaming>,
     #[serde(rename = "expectedGeneration")]
     pub expected_generation: u64,
     #[serde(rename = "expectedRevision")]
@@ -24351,6 +24365,21 @@ fn validate_task_source_import_policy(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_task_source_branch_naming(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["title", "issueKey"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_task_source_credential_state(value: &Value) -> bool {
     value
         .as_str()
@@ -24511,6 +24540,9 @@ fn validate_task_source_dto(value: &Value) -> bool {
                 })
             })
             && object
+                .get("branchNaming")
+                .is_some_and(|field| validate_task_source_branch_naming(field))
+            && object
                 .get("credentialState")
                 .is_some_and(|field| validate_task_source_credential_state(field))
             && object
@@ -24575,6 +24607,7 @@ fn validate_task_source_dto(value: &Value) -> bool {
                     "importPolicy",
                     "autoImportActiveTaskLimit",
                     "refreshIntervalSeconds",
+                    "branchNaming",
                     "credentialState",
                     "runtimeState",
                     "failureReason",
@@ -25072,6 +25105,9 @@ fn validate_task_source_create_params(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number <= 86400_u64))
                 })
             })
+            && object
+                .get("branchNaming")
+                .is_none_or(|field| validate_task_source_branch_naming(field))
             && object.get("expectedRevision").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -25090,6 +25126,7 @@ fn validate_task_source_create_params(value: &Value) -> bool {
                     "importPolicy",
                     "autoImportActiveTaskLimit",
                     "refreshIntervalSeconds",
+                    "branchNaming",
                     "expectedRevision",
                 ]
                 .contains(&key.as_str())
@@ -25207,6 +25244,9 @@ fn validate_task_source_update_params(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number <= 86400_u64))
                 })
             })
+            && object
+                .get("branchNaming")
+                .is_none_or(|field| validate_task_source_branch_naming(field))
             && object.get("expectedGeneration").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -25232,6 +25272,7 @@ fn validate_task_source_update_params(value: &Value) -> bool {
                     "importPolicy",
                     "autoImportActiveTaskLimit",
                     "refreshIntervalSeconds",
+                    "branchNaming",
                     "expectedGeneration",
                     "expectedRevision",
                 ]

@@ -134,6 +134,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
       calls.push(`updateScope:${params.scopeKind}:${boards}:${params.jql}`);
       calls.push(`updateIntake:${params.importPolicy}`);
       calls.push(`updateAutoImportLimit:${params.autoImportActiveTaskLimit}`);
+      calls.push(`updateBranchNaming:${params.branchNaming ?? "-"}`);
       const current = state.sources.find((source) => source.id === params.sourceId)!;
       const updated = {
         ...current,
@@ -148,6 +149,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
         importPolicy: params.importPolicy,
         autoImportActiveTaskLimit: params.autoImportActiveTaskLimit,
         refreshIntervalSeconds: params.refreshIntervalSeconds,
+        branchNaming: params.branchNaming ?? current.branchNaming,
       };
       state.sources = state.sources.map((source) => source.id === params.sourceId ? updated : source);
       return { source: updated, stateRevision: 10 };
@@ -1059,6 +1061,32 @@ describe("Task Sources panel", () => {
     expect(api.calls).toContain("delete:source-1");
     expect(host.textContent).toContain("No Task Sources yet");
     await act(async () => { ([...host.querySelectorAll("button")].find((button) => button.textContent === "Disable") as HTMLButtonElement | undefined)?.click(); });
+  });
+
+  it("saves issue-key Task branches for a source and keeps them on other updates", async () => {
+    const api = actions({ sources: [source({ name: "Example Jira" })], candidates: [] });
+    await render(api);
+    await flush();
+
+    const settings = host.querySelector('section[aria-label="Task branch naming"]') as HTMLElement;
+    expect(settings.textContent).toContain("named after its title");
+    const save = () => [...settings.querySelectorAll("button")].find((button) => button.textContent === "Save branches") as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    await setInput("task-source-branch-naming-source-1", "issueKey");
+    expect(settings.textContent).toContain("named exactly after its issue");
+    await act(async () => { save().click(); });
+    await flush();
+    await flush();
+
+    expect(api.calls).toContain("updateBranchNaming:issueKey");
+    expect(host.textContent).toContain("will name new Task branches after the Jira issue key");
+    const reloaded = host.querySelector('section[aria-label="Task branch naming"]') as HTMLElement;
+    expect(reloaded.querySelector("strong")?.textContent).toBe("Jira issue key");
+
+    api.calls.length = 0;
+    await act(async () => { ([...host.querySelectorAll("button")].find((button) => button.textContent === "Disable") as HTMLButtonElement).click(); });
+    await flush();
+    expect(api.calls).toContain("updateBranchNaming:issueKey");
   });
 
   it("toggles enabled through update with unchanged scope fields", async () => {
