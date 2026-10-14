@@ -137,6 +137,23 @@ it("rereads the transcript on a new projection token and drops an answered propo
   expect(host.querySelector(".playbook-task-decision")).toBeNull();
 });
 
+it("keeps the open strip in place while a refresh rereads the transcript", async () => {
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>(".playbook-task-decision-head")!.click());
+  expect(host.textContent).toContain("idle for two days");
+  let finish: (() => void) | undefined;
+  actions.listTranscript.mockImplementationOnce(() => new Promise((resolve) => {
+    finish = () => resolve({ messages });
+  }));
+  await render({ refreshToken: 1 });
+  // The reread is still in flight: the strip and its expanded text stay put.
+  expect(host.querySelectorAll(".playbook-task-decision")).toHaveLength(1);
+  expect(host.textContent).toContain("idle for two days");
+  await act(async () => finish!());
+  expect(host.querySelectorAll(".playbook-task-decision")).toHaveLength(1);
+  expect(host.textContent).toContain("idle for two days");
+});
+
 it("shows one batched proposal on each covered Task row and one approval answers all of them", async () => {
   messages = [batched(["f1", "f2"])];
   await render({ routines: [routine({ f1: ["t1"], f2: ["t2"] })] });
