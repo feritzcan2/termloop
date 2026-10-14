@@ -91,7 +91,21 @@ pub(super) async fn complete(
         &params.check_id,
         verdict,
         params.evidence,
-    )?;
+    );
+    let completion = match completion {
+        Err(CoreError::TrackerReportStale) => {
+            // The fork stops on a stale answer. Retire it and re-queue the
+            // step now instead of leaving the Task shown as checking until
+            // the claim deadline.
+            let cleanup_state = state.clone();
+            tokio::spawn(async move {
+                reap_obsolete_evaluators(&cleanup_state).await;
+                cleanup_state.tracker_runtime_wake.notify_one();
+            });
+            return Err(CoreError::TrackerReportStale);
+        }
+        completion => completion?,
+    };
     let project_id = completion["projectId"]
         .as_str()
         .expect("Core completion project");
