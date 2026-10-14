@@ -80,7 +80,7 @@ async function renderRail(sessions: Session[], overrides: Partial<ActiveAgentRai
     favoriteSessionIds: new Set<string>(),
     taskAttachedSessionIds: new Set(sessions.map((session) => session.id)),
     worktreeChangesBySessionId: new Map(sessions.map((session) => [session.id, { taskId: "task-1", taskTitle: "UK ANPR", changeCount: 0 }])),
-    taskIdentityBySessionId: new Map(sessions.map((session) => [session.id, { taskId: "task-1", issueKey: "UKIE-931", title: "UK ANPR payment deadline", pullRequests: [] as PullRequest[], morePullRequests: 0 }])),
+    taskIdentityBySessionId: new Map(sessions.map((session) => [session.id, { taskId: "task-1", issueKey: "UKIE-931", issueUrl: "https://apcoa.atlassian.net/browse/UKIE-931", title: "UK ANPR payment deadline", pullRequests: [] as PullRequest[], morePullRequests: 0 }])),
     menuSessionId: undefined,
     selectSession: () => {},
     navigateSession: () => {},
@@ -117,6 +117,23 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
+  it("opens the Jira issue from the key without selecting the row", async () => {
+    const opened: string[] = [];
+    const selected: string[] = [];
+    const view = await renderRail([agentSession("lead")], {
+      openExternal: (url) => opened.push(url),
+      selectSession: (sessionId) => selected.push(sessionId),
+    });
+    const key = view.container.querySelector<HTMLElement>('[data-session-id="lead"] .row-title-key')!;
+    expect(key.title).toBe("Open UKIE-931 in browser");
+    await act(async () => key.click());
+    expect(opened).toEqual(["https://apcoa.atlassian.net/browse/UKIE-931"]);
+    expect(selected).toEqual([]);
+    await act(async () => view.container.querySelector<HTMLElement>('[data-session-id="lead"] .row-title')!.click());
+    expect(selected).toEqual(["lead"]);
+    await view.dispose();
+  });
+
   it("keeps a user-given Session name and an Ask-To helper's own name", async () => {
     const named = agentSession("named", { name: "Payments lead" });
     const lead = agentSession("lead");
@@ -141,7 +158,7 @@ describe("Active Agent rows inside a Task", () => {
     const opened: Array<[string, number]> = [];
     const lead = agentSession("lead");
     const helper = agentSession("helper", { ask_to_source_session_id: "lead" });
-    const identity = { taskId: "task-1", issueKey: "UKIE-931", title: "UK ANPR payment deadline", pullRequests: newest, morePullRequests: 1 };
+    const identity = { taskId: "task-1", issueKey: "UKIE-931", issueUrl: "https://apcoa.atlassian.net/browse/UKIE-931", title: "UK ANPR payment deadline", pullRequests: newest, morePullRequests: 1 };
     const view = await renderRail([lead, helper], {
       taskIdentityBySessionId: new Map([["lead", identity], ["helper", identity]]),
       openTaskPullRequest: (taskId, match) => opened.push([taskId, match.number]),

@@ -164,7 +164,7 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// The row shared by the Project Session sections and the Sessions nested under
 /// a Task. Presentation only — the caller owns selection, ordering, and the
 /// context menu it opens.
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, openTitleKey, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
@@ -172,6 +172,8 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   displayName?: string | undefined;
   /// A short identity token (a ticket key) printed before the title.
   titleKey?: string | undefined;
+  /// Clicking the key opens what it names (a Jira issue) instead of the row.
+  openTitleKey?: (() => void) | undefined;
   relationshipLabel?: string;
   active: boolean;
   visible: boolean;
@@ -207,11 +209,15 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
       aria-expanded={menuOpen}
       data-session-id={session.id}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]")) return;
+        if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss], [data-title-key-link]")) return;
         dragListeners?.onPointerDown?.(event);
       }}
       title={session.process.cwd}
       onClick={(event) => {
+        if (openTitleKey && (event.target as HTMLElement).closest("[data-title-key-link]")) {
+          openTitleKey();
+          return;
+        }
         if ((event.target as HTMLElement).closest("[data-agent-todo-dismiss]") && currentPlanKey) {
           setDismissedPlanKey(currentPlanKey);
           return;
@@ -229,7 +235,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} visible={visible} active={active} runCommand={runCommand} />
     </button>
   );
 }
@@ -378,7 +384,7 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, visible, active, runCommand }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, visible, active, runCommand }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
@@ -387,6 +393,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
   subtitle: string;
   displayName?: string | undefined;
   titleKey?: string | undefined;
+  titleKeyLinked?: boolean;
   visible: boolean;
   active: boolean;
   runCommand?: string | undefined;
@@ -421,7 +428,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
         )}
       </span>
       <span className="row-copy">
-        <strong className={`row-title${titleKey ? " with-key" : ""}`}>{titleKey ? <span className="row-title-key">{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
+        <strong className={`row-title${titleKey ? " with-key" : ""}`}>{titleKey ? <span className={`row-title-key${titleKeyLinked ? " linked" : ""}`} {...(titleKeyLinked ? { "data-title-key-link": "", title: `Open ${titleKey} in browser` } : {})}>{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
         <span className="session-state-line">
           {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}

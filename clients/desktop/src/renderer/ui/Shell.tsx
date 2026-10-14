@@ -733,6 +733,7 @@ export function Shell(props: ShellProps) {
       const identity: ActiveAgentTaskIdentity = {
         taskId: task.id,
         issueKey: key,
+        issueUrl: task.jira_url ?? undefined,
         title,
         pullRequests,
         morePullRequests: (projection?.matches.length ?? 0) - pullRequests.length,
@@ -1765,6 +1766,7 @@ export function Shell(props: ShellProps) {
             archiveSession={(sessionId) => { void props.archiveSession(sessionId).then((failure) => { if (!failure) archived.reload(); }); }}
             toggleFavoriteSession={toggleFavoriteAgentSession}
             openTaskChanges={(taskId) => setChangesPresentation({ kind: "task", taskId, source: { kind: "local" } })}
+            openExternal={(url) => { void props.openExternal(url); }}
             openTaskPullRequest={(taskId, pullRequest) => setChangesPresentation({
               kind: "task",
               taskId,

@@ -1113,7 +1113,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         const target = event.target as HTMLElement;
         const control = target.closest("button, input, a, summary");
         if (control && !control.classList.contains("task-item")) return;
-        if (target.closest(".task-children")) return;
+        if (target.closest(".task-children, [data-issue-link]")) return;
         props.openDetail(task.id);
       }}
     >
@@ -1166,7 +1166,15 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           aria-current={props.detailOpen ? "true" : undefined}
           aria-label={`Open ${primaryLabel ? `${primaryLabel} in ` : ""}${taskRowAccessibleName({ task, stage, attention, divergence, changeCount, integration, commitCount })}`}
           title={task.brief ? `${task.title} — ${task.brief}` : task.title}
-          onClick={rowClick}
+          onClick={(event) => {
+            /// The key sits inside the title button, so it is routed here
+            /// rather than nested as a second button.
+            if (task.jira_url && (event.target as HTMLElement).closest("[data-issue-link]")) {
+              void props.openExternal(task.jira_url);
+              return;
+            }
+            rowClick();
+          }}
           onContextMenu={(event) => { event.preventDefault(); props.openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
           onKeyDown={(event) => {
             if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
@@ -1180,7 +1188,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             <i className={`task-dot ${taskRowTone(stage, attention)}`} aria-hidden="true" />
             {props.focused ? <span className="task-focus-copy">
               {cardTitle.key || cardTitle.scope || cardStatus ? <span className="task-card-ids">
-                {cardTitle.key ? <span className="task-card-key">{cardTitle.key}</span> : null}
+                {cardTitle.key ? <span className={`task-card-key${task.jira_url ? " linked" : ""}`} {...(task.jira_url ? { "data-issue-link": "", title: `Open ${cardTitle.key} in browser` } : {})}>{cardTitle.key}</span> : null}
                 {cardStatus ? <span className="task-card-status" data-tone={cardStatus.tone} title={cardStatus.title}>{cardStatus.label}</span> : null}
                 {cardTitle.scope ? <span className="task-card-scope" title={cardTitle.scope}>{cardTitle.scope}</span> : null}
               </span> : null}
