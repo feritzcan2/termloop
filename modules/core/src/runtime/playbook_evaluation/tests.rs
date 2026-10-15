@@ -544,20 +544,8 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
         evaluator(&mut runtime, &claim);
         runtime.read_playbook_evaluation("reviewer-token").unwrap();
         if policy_change {
-            let mut playbook = runtime
-                .store
-                .playbook_for_project(&project)
-                .unwrap()
-                .clone();
-            playbook.revision += 1;
-            runtime
-                .store
-                .set_playbook_configuration(
-                    &runtime.write_authority,
-                    playbook,
-                    runtime.state_revision(),
-                )
-                .unwrap();
+            // Editing the claimed step's own question retires its answer.
+            edit_routine(&mut runtime, "routine-pr");
         } else {
             runtime
                 .set_task_playbook_position(
@@ -602,6 +590,75 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+fn edit_routine(runtime: &mut CoreRuntime, routine_id: &str) {
+    let revision = runtime.state_revision();
+    runtime
+        .update_tracker_configuration(
+            routine_id,
+            termloop_domain::RoutineTriggerMode::OnDemand,
+            routine_id.into(),
+            "Answer the edited pipeline question for the focused Task.".into(),
+            "Ask the reviewer.".into(),
+            true,
+            60,
+            termloop_domain::RoutineActionHandling::Ask,
+            revision,
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn editing_another_step_advances_the_playbook_but_keeps_the_running_evaluation() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    runtime.read_playbook_evaluation("reviewer-token").unwrap();
+    let playbook_revision = runtime
+        .store
+        .playbook_for_project(&project)
+        .unwrap()
+        .revision;
+
+    edit_routine(&mut runtime, "routine-deploy");
+
+    // The Playbook document shows every step's question, so a draft read
+    // before the edit can no longer write the old question back.
+    assert_eq!(
+        runtime
+            .store
+            .playbook_for_project(&project)
+            .unwrap()
+            .revision,
+        playbook_revision + 1
+    );
+    assert!(matches!(
+        runtime.update_playbook(
+            json!({
+                "projectId": project,
+                "activePipelineName": "Delivery",
+                "milestones": [],
+                "savedPipelines": [],
+                "expectedPlaybookRevision": playbook_revision,
+                "expectedRevision": runtime.state_revision(),
+            }),
+            vec![],
+            termloop_platform::current_epoch_ms(),
+        ),
+        Err(CoreError::RevisionConflict)
+    ));
+    // The running check asks another step's unchanged question.
+    runtime
+        .complete_playbook_evaluation(
+            "reviewer-token",
+            "evaluation-check",
+            PlaybookStepVerdict::Passed,
+            "PR 42 verified".into(),
+        )
+        .unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

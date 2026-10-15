@@ -1068,3 +1068,53 @@ fn playbook_apply_replaces_existing_answers_and_refuses_unknown_ones() {
     assert_eq!(store.revision(), before);
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn editing_a_step_routine_advances_its_playbook_in_the_same_commit() {
+    let (path, mut store, authority) = project_with_pipeline("step-routine-edit");
+    let playbook_revision = store.playbook_configurations()[0].revision;
+
+    // A Routine nobody's step asks has no Playbook to advance.
+    let revision = store.revision();
+    assert!(matches!(
+        store.set_step_routine_configuration(
+            &authority,
+            step_routine("project-a", "routine-unused"),
+            revision,
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+
+    let mut edited = store.tracker_configurations()[0].clone();
+    edited.prompt = "Report whether the pull request is merged.".into();
+    edited.generation += 1;
+    edited.updated_at_epoch_ms = 50;
+    let revision = store.revision();
+    store
+        .set_step_routine_configuration(&authority, edited, revision)
+        .unwrap();
+    assert_eq!(store.revision(), revision + 1);
+    let playbook = &store.playbook_configurations()[0];
+    assert_eq!(playbook.revision, playbook_revision + 1);
+    assert_eq!(playbook.updated_at_epoch_ms, 50);
+    assert_eq!(
+        store.tracker_configurations()[0].prompt,
+        "Report whether the pull request is merged."
+    );
+
+    // Runtime bookkeeping on the same Routine is not a Playbook edit.
+    let mut observed = store.tracker_configurations()[0].clone();
+    observed.last_attempt_at_epoch_ms = Some(60);
+    let revision = store.revision();
+    store
+        .set_tracker_configuration(&authority, observed, revision)
+        .unwrap();
+    assert_eq!(
+        store.playbook_configurations()[0].revision,
+        playbook_revision + 1
+    );
+
+    drop(store);
+    std::fs::remove_dir_all(path).ok();
+}

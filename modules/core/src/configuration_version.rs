@@ -751,8 +751,7 @@ impl CoreRuntime {
         }
         let routine_id = candidate.id.clone();
         let enabled = candidate.enabled;
-        self.store
-            .set_tracker_configuration(&self.write_authority, candidate, self.store.revision())
+        self.save_routine_configuration(candidate, self.store.revision())
             .map_err(store_error)?;
         self.tracker_runtime.cancel_tracker_check(&routine_id);
         if enabled {

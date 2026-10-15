@@ -83,8 +83,9 @@ fn publish_tracker_mutation(
 ) -> Result<serde_json::Value, termloop_core::CoreError> {
     if result.is_ok() {
         state.tracker_runtime_wake.notify_one();
+        // A step Routine's question is part of the Playbook document.
         let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Routine],
+            topics: vec![ProjectionTopic::Routine, ProjectionTopic::Playbook],
             state_revision: core.state_revision(),
             observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
         });
