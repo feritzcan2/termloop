@@ -115,7 +115,7 @@ fn routines_use_one_provider_neutral_evidence_policy() {
         (
             ExecutorRole::StepCheckTracker,
             "builtin.tracker.step-check",
-            12,
+            13,
         ),
     ];
 
@@ -129,10 +129,16 @@ fn routines_use_one_provider_neutral_evidence_policy() {
             delivered.contains("cached UI projection is display-only"),
             "{template_ref}"
         );
-        assert!(
-            delivered.contains("steward_complete_assignment"),
-            "{template_ref}"
-        );
+        if role == ExecutorRole::Routine {
+            assert!(
+                delivered.contains("steward_complete_assignment"),
+                "{template_ref}"
+            );
+        } else {
+            // A step is evaluated by TermLoop's evaluator, never the Steward.
+            assert!(!delivered.contains("steward_complete_assignment"));
+            assert!(!delivered.contains("task_agent_request"));
+        }
         assert!(delivered.contains("satisfied"), "{template_ref}");
         assert!(delivered.contains("pending"), "{template_ref}");
         assert!(delivered.contains("blocked"), "{template_ref}");
@@ -1201,9 +1207,9 @@ fn persistent_assistants_apply_their_selected_permission() {
         assert!(
             instructions
                 .content
-                .contains("canonical Session ID returned by the scoped `task_read`")
+                .contains("The fresh `task_read.coordinationAgent` projection is authoritative")
         );
-        assert!(instructions.content.contains("task_agent_request"));
+        assert!(!instructions.content.contains("task_agent_request"));
         match agent_id {
             "codex" => assert!(steward.args().iter().any(|argument| {
                 argument.starts_with("developer_instructions=")
@@ -2370,7 +2376,7 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 41);
+    assert_eq!(prompt.provenance().template_version, 42);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -2453,7 +2459,8 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     assert!(
         prompt
             .authored_preview()
-            .contains("Call `task_close` only when the Task-level outcome is complete")
+            .replace('\n', " ")
+            .contains("`task_close` directly when the Task-level outcome is complete")
     );
     assert!(
         prompt
@@ -2579,7 +2586,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     assert!(
         prompt
             .authored_preview()
-            .contains("evidence is not state drift")
+            .contains("inaccessible evidence is not state\ndrift")
     );
     assert!(
         prompt
@@ -2589,7 +2596,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     assert!(
         prompt
             .authored_preview()
-            .contains("a later exact assignment must independently")
+            .contains("TermLoop's next evaluation of the active step decides it")
     );
     assert!(
         prompt
@@ -2618,7 +2625,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         default_steward_system_prompt()
     );
     let latest_retired =
-        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v36.md")
+        include_str!("../../../resources/prompts/retired/builtin.steward.executor.v41.md")
             .splitn(3, "\n\n")
             .nth(2)
             .unwrap()
@@ -2660,31 +2667,40 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 41);
+    assert_eq!(steward.provenance().template_version, 42);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));
     assert!(steward.contains("`satisfied`"));
     assert!(steward.contains("`pending`"));
     assert!(steward.contains("`blocked`"));
-    assert!(steward.contains("task_agent_request"));
+    assert!(!steward.contains("task_agent_request"));
+    assert!(!steward.contains("stewardFallback"));
     assert!(!steward.contains("pullRequestCandidatesByBaseBranch"));
     assert!(!steward.contains("Azure"));
 
     assert!(steward.contains("provider connectors, CLIs"));
-    assert!(steward.contains("canonical Session ID returned by the scoped `task_read`"));
+    assert!(
+        steward
+            .replace('\n', " ")
+            .contains("Session ID of the fresh `task_read.coordinationAgent` projection")
+    );
 
     let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-    assert_eq!(step.provenance().template_version, 12);
+    assert_eq!(step.provenance().template_version, 13);
     assert!(step.delivered_preview().contains("purpose-built connector"));
     assert!(step.delivered_preview().contains("observed branch family"));
     assert!(step.delivered_preview().contains("title is only a label"));
-    assert!(step.delivered_preview().contains("`completeWhen`"));
     assert!(
         step.delivered_preview()
-            .contains("steward_complete_assignment")
+            .contains("The evaluation observes only")
     );
-    assert!(step.delivered_preview().contains("canonical Agent"));
+    assert!(step.delivered_preview().contains("`completeWhen`"));
+    assert!(
+        !step
+            .delivered_preview()
+            .contains("Finish exactly once through `steward_complete_assignment`")
+    );
     assert!(
         step.delivered_preview()
             .contains("cached UI projection is display-only")
@@ -2698,6 +2714,12 @@ fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract(
     let steward = steward.replace('\n', " ");
     assert!(steward.contains("A step finding's `passedEarlierSteps`"));
     assert!(steward.contains("Never treat a manual pass"));
+    // The Steward acts on a step verdict; it never re-judges it.
+    assert!(steward.contains("Its verdict is settled"));
+    assert!(steward.contains("You never claim, evaluate, or record a Playbook step verdict"));
+    // A Task that finished the pipeline is proposed for closing, once.
+    assert!(steward.contains("send one `proposal` to close that TermLoop Task"));
+    assert!(steward.contains("Do not propose it again for that Task"));
 }
 
 #[test]
@@ -2716,12 +2738,11 @@ fn steward_delivery_unifies_action_verification_and_continuation() {
     for required in [
         "stewardReviewRequired: true",
         "continue one claim at a time",
-        "same assignment satisfied after a fresh verification",
+        "TermLoop's next evaluation of the step verifies the result",
         "retired field being absent",
-        "Missing scope evidence is not non-applicability",
-        "canonical Agent",
+        "coordinationAgent",
         "named approver",
-        "do not poll or resend unchanged work",
+        "resend unchanged work",
     ] {
         assert!(
             delivered.contains(required),
