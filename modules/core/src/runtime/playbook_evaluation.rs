@@ -21,9 +21,7 @@ pub(crate) struct PlaybookEvaluationRuntime {
 }
 
 pub(crate) struct PlaybookEvaluationWait {
-    project_id: String,
     task_id: String,
-    playbook_revision: u64,
     routine_generation: u64,
     reason: String,
 }
@@ -35,7 +33,6 @@ pub(crate) struct PlaybookEvaluation {
     pub(crate) source_session_id: String,
     pub(crate) session_id: String,
     pub(crate) runtime_epoch: u64,
-    pub(crate) playbook_revision: u64,
     pub(crate) worktree_generation: u64,
     pub(crate) assignment: Value,
     read: bool,
@@ -105,10 +102,6 @@ impl CoreRuntime {
                         .is_some()
                     && self
                         .store
-                        .playbook_for_project(&wait.project_id)
-                        .is_some_and(|playbook| playbook.revision == wait.playbook_revision)
-                    && self
-                        .store
                         .tracker_configurations()
                         .iter()
                         .any(|r| r.id == routine_id && r.generation == wait.routine_generation)
@@ -170,18 +163,11 @@ impl CoreRuntime {
         let task_id = self
             .tracker_check_task_id(capability)?
             .ok_or(CoreError::TrackerReportStale)?;
-        let playbook_revision = self
-            .store
-            .playbook_for_project(&capability.project_id)
-            .ok_or(CoreError::TrackerReportStale)?
-            .revision;
         self.finish_steward_routine_check(capability, None, now, &configuration);
         self.playbook_evaluation.waiting.insert(
             (capability.tracker_id.clone(), task_id.clone()),
             PlaybookEvaluationWait {
-                project_id: capability.project_id.clone(),
                 task_id,
-                playbook_revision,
                 routine_generation: configuration.generation,
                 reason: reason.into(),
             },
@@ -358,11 +344,6 @@ impl CoreRuntime {
             .iter()
             .find(|t| t.id == task_id)
             .ok_or(CoreError::NotFound)?;
-        let playbook_revision = self
-            .store
-            .playbook_for_project(&capability.project_id)
-            .ok_or(CoreError::TrackerReportStale)?
-            .revision;
         let mut assignment = claim.result.clone();
         assignment["step"]["finishWith"] = json!("playbook_evaluation_complete");
         assignment["step"]["taskRead"] = json!({"requiredBeforeVerdict": true, "tool": "playbook_evaluation_read", "arguments": {}});
@@ -374,7 +355,6 @@ impl CoreRuntime {
                 source_session_id: source,
                 session_id,
                 runtime_epoch,
-                playbook_revision,
                 worktree_generation: task.worktree_generation,
                 assignment,
                 read: false,
@@ -390,10 +370,16 @@ impl CoreRuntime {
         now: u64,
     ) -> Result<(), CoreError> {
         self.validate_current_check(&evaluation.capability, now)?;
+        // The check's own question is fenced by its Routine generation above.
+        // The Task must still stand at the step it was claimed for; an edit to
+        // another step of the same Playbook leaves this evaluation valid.
+        let claimed_milestone_id = self.claimed_step_milestone_id(&evaluation.capability);
         if self
-            .store
-            .playbook_for_project(&evaluation.capability.project_id)
-            .is_none_or(|p| p.revision != evaluation.playbook_revision)
+            .playbook_step_assignment_for_task(
+                &evaluation.capability.tracker_id,
+                &evaluation.task_id,
+            )
+            .is_none_or(|assignment| Some(assignment.milestone.id) != claimed_milestone_id)
             || self
                 .tracker_check_task_id(&evaluation.capability)?
                 .as_deref()
