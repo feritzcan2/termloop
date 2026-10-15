@@ -562,6 +562,12 @@ fn archive_records_are_invalid(state: &CurrentState) -> bool {
                                         && task.status == TaskStatus::Closed
                                         && task.worktree.is_none()
                                 }
+                                // A closed Task may later be archived; its
+                                // close-parked Agents stay with it until reopen.
+                                TaskSuspensionReason::Closed => {
+                                    suspension.task_id.as_deref() == Some(task.id.as_str())
+                                        && task.status == TaskStatus::Closed
+                                }
                             }
                     })
                 }) || state.task_archive_suspensions[index + 1..]

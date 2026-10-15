@@ -201,3 +201,108 @@ fn archive_commit_and_restore_replace_one_bounded_current_state_atomically() {
     assert_eq!(reopened.tasks()[0].archived_at_epoch_ms, None);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn close_parks_retired_agents_durably_and_reopen_consumes_them() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-close-park-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(
+            &authority,
+            ProjectRecord {
+                id: "project-cleanup".into(),
+                name: "Project".into(),
+                folder_path: "/repo".into(),
+            },
+        )
+        .unwrap();
+    insert_cleanup_task(&mut store, &authority, "task-close");
+    let proof = provision_cleanup_task(&mut store, &authority, "task-close", "provision-close", 1);
+    store
+        .insert_session(
+            &authority,
+            SessionRecord {
+                id: "agent-close".into(),
+                project_id: "project-cleanup".into(),
+                name: Some("Agent".into()),
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "codex".into(),
+                    args: vec![],
+                    cwd: proof.registered_worktree_path.clone(),
+                    agent_id: Some("codex".into()),
+                    template_ref: None,
+                    template_version: None,
+                },
+                lifecycle_state: "running".into(),
+                runtime_epoch: 3,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(ResumeProvider::Codex, "thread-close".into()),
+                resume_launch_guard: None,
+                resume_failure: None,
+                launch_selection: Default::default(),
+            },
+        )
+        .unwrap();
+    let target = |runtime_epoch| termloop_domain::TaskArchiveTarget {
+        session_id: "agent-close".into(),
+        runtime_epoch,
+        prior_lifecycle_state: "running".into(),
+        prior_resume_failure: None,
+        was_live_agent: true,
+    };
+    let revision = store.revision();
+    assert!(matches!(
+        store.close_task_with_suspended_sessions(&authority, "task-close", &[target(2)], 50),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(matches!(
+        store.close_task_with_suspended_sessions(
+            &authority,
+            "task-close",
+            &[target(3), target(3)],
+            50,
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+
+    let closed = store
+        .close_task_with_suspended_sessions(&authority, "task-close", &[target(3)], 50)
+        .unwrap();
+    assert_eq!(closed.status, TaskStatus::Closed);
+    let reopened_store = Store::open(&path).unwrap();
+    assert_eq!(reopened_store.sessions()[0].lifecycle_state, "exited");
+    assert_eq!(
+        reopened_store.task_archive_suspensions()[0].reason,
+        termloop_domain::TaskSuspensionReason::Closed,
+    );
+    assert!(matches!(
+        store.close_task_with_suspended_sessions(&authority, "task-close", &[target(3)], 60),
+        Err(StoreError::ConstraintViolation)
+    ));
+
+    let (reopened, resumable) = store
+        .reopen_task_with_suspended_sessions(&authority, "task-close", 70)
+        .unwrap();
+    assert_eq!(reopened.status, TaskStatus::Open);
+    assert_eq!(resumable, vec!["agent-close".to_owned()]);
+    assert!(store.task_archive_suspensions().is_empty());
+    assert_eq!(
+        store.sessions()[0].process.cwd,
+        proof.registered_worktree_path
+    );
+    let _ = std::fs::remove_file(path);
+}

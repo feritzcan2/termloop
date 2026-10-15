@@ -72,6 +72,8 @@ mod branch_binding;
 mod branch_commits;
 mod changes;
 mod cleanup;
+mod close;
+pub use close::{TaskClosePlan, TaskClosePreparation};
 mod commit_changes;
 mod git_mapping;
 mod health;

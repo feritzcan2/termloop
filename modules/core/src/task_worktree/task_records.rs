@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::path::Path;
 use termloop_domain::{
     IssueLinkProvider, TASK_DEVELOPER_NOTES_MAX, TaskDeveloperNote, TaskRecord, TaskStatus,
-    TaskSuspensionReason,
 };
 
 use super::cleanup::{
@@ -526,10 +525,6 @@ impl CoreRuntime {
         self.task_projection(&task)
     }
 
-    pub(crate) fn close_task(&mut self, params: Value) -> Result<Value, CoreError> {
-        self.change_task_status(params, TaskStatus::Closed)
-    }
-
     pub(crate) fn reopen_task(&mut self, params: Value) -> Result<Value, CoreError> {
         self.reopen_task_with_resume_plan(params)
             .map(|(result, _)| result)
@@ -547,7 +542,7 @@ impl CoreRuntime {
                 .iter()
                 .any(|suspension| {
                     suspension.task_id.as_deref() == Some(task_id.as_str())
-                        && suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+                        && suspension.reason.parks_closed_task()
                 });
         if has_suspended_sessions {
             let (task, resume_session_ids) = self
@@ -651,7 +646,7 @@ impl CoreRuntime {
         Ok(json!({ "taskId": task_id, "deleted": true }))
     }
 
-    fn change_task_status(
+    pub(super) fn change_task_status(
         &mut self,
         params: Value,
         status: TaskStatus,

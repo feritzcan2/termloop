@@ -376,6 +376,7 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
     if matches!(
         method,
         "project.delete"
+            | "task.close"
             | "task.archive"
             | "task.restore"
             | "task.reopen"
@@ -531,6 +532,7 @@ mod tests {
         );
         for dedicated in [
             "project.delete",
+            "task.close",
             "task.archive",
             "task.restore",
             "task.reopen",

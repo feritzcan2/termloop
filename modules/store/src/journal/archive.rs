@@ -432,13 +432,25 @@ impl Store {
         {
             return Err(StoreError::ConstraintViolation);
         }
+        // A checkout removed after close leaves close-parked Agents without
+        // their directory; resume them from the durable Project root instead.
+        let relocated_cwd = if self.state.tasks[task_index].worktree.is_none() {
+            let project_id = &self.state.tasks[task_index].project_id;
+            self.state
+                .projects
+                .iter()
+                .find(|project| project.id == *project_id)
+                .map(|project| project.folder_path.clone())
+        } else {
+            None
+        };
         let session_ids = self
             .state
             .task_archive_suspensions
             .iter()
             .filter(|suspension| {
                 suspension.task_id.as_deref() == Some(task_id)
-                    && suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+                    && suspension.reason.parks_closed_task()
             })
             .map(|suspension| suspension.session_id.clone())
             .collect::<Vec<_>>();
@@ -452,7 +464,7 @@ impl Store {
                 .position(|suspension| {
                     suspension.session_id == *session_id
                         && suspension.task_id.as_deref() == Some(task_id)
-                        && suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+                        && suspension.reason.parks_closed_task()
                 })
                 .ok_or(StoreError::ConstraintViolation)?;
             let suspension = self.state.task_archive_suspensions.remove(suspension_index);
@@ -462,6 +474,11 @@ impl Store {
                 .iter_mut()
                 .find(|session| session.id == *session_id)
                 .ok_or(StoreError::NotFound)?;
+            if suspension.reason == TaskSuspensionReason::Closed
+                && let Some(cwd) = relocated_cwd.as_ref()
+            {
+                session.process.cwd = cwd.clone();
+            }
             if suspension.prior_lifecycle_state == "running" {
                 session.lifecycle_state = "resumeFailed".into();
                 session.resume_failure = Some(ResumeFailureReason::DaemonInterrupted);
