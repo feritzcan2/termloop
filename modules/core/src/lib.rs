@@ -196,6 +196,10 @@ pub struct CoreRuntime {
     /// keep the terminal exit reconciler from reclassifying that intentional
     /// PTY reap before the exact typed failure is committed.
     pub(crate) resume_failure_reaps: HashSet<String>,
+    /// Task ID to the live Agent Session IDs its close is retiring outside the
+    /// Core lock. The exit reconciler must not open a continuation shell for
+    /// them before the close parks them.
+    pub(crate) pending_task_closes: HashMap<String, Vec<String>>,
     pub(crate) pending_agent_forks: HashSet<String>,
     /// Runtime-only fork presentation provenance. Native fork deliberately
     /// does not create durable parentage; this bounded map lets the current
@@ -694,6 +698,7 @@ impl CoreRuntime {
             provider_history_repair_reservations: HashSet::new(),
             resume_ready: HashSet::new(),
             resume_failure_reaps: HashSet::new(),
+            pending_task_closes: HashMap::new(),
             pending_agent_forks: HashSet::new(),
             fork_source_session_ids: HashMap::new(),
             agent_terminal_holds: HashSet::new(),

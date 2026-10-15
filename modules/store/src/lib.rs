@@ -70,7 +70,8 @@ use termloop_domain::{
 // Version 61 removes orphan conversation readiness left by archived Task deletion.
 // Version 63 removes orphan branch sets left by Project deletion.
 // Version 64 adds bounded, user-requested Playbook fork evaluation receipts.
-const CURRENT_SCHEMA_VERSION: u32 = 64;
+// Version 65 adds close-parked Agent sidecars for Tasks closed with a checkout.
+const CURRENT_SCHEMA_VERSION: u32 = 65;
 
 pub struct CoreWriteAuthority {
     _private: (),

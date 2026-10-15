@@ -38,6 +38,15 @@ pub enum TaskSuspensionReason {
     #[default]
     Archived,
     ClosedWorktreeRemoved,
+    /// Parked because its Task closed while the Task's checkout was retained.
+    Closed,
+}
+
+impl TaskSuspensionReason {
+    /// Sidecars that reopening the closed Task consumes and resumes.
+    pub fn parks_closed_task(self) -> bool {
+        matches!(self, Self::ClosedWorktreeRemoved | Self::Closed)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

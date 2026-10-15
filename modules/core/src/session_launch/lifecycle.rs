@@ -501,6 +501,7 @@ impl CoreRuntime {
                         .iter()
                         .any(|target| target.session_id == session_id)
                 })
+            || self.session_is_retiring_for_task_close(session_id)
         {
             return Ok(());
         }
