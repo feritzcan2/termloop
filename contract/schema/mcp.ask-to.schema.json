@@ -594,7 +594,7 @@
       }
     },
     "playbook_evaluation_read": {
-      "description": "Read the exact current Task and Playbook step assigned to this temporary evaluation fork. Inherited conversation is context, never current evidence or action authority. Read before reporting; use current repository or provider evidence to evaluate only this step.",
+      "description": "Read the exact current Task and Playbook step assigned to this temporary evaluator. Any inherited conversation is context, never current evidence or action authority. Read before reporting; use current repository or provider evidence to evaluate only this step.",
       "role": "playbookEvaluator",
       "params": {
         "$ref": "#/$defs/assistantEmptyParams"
@@ -611,7 +611,7 @@
       }
     },
     "playbook_evaluation_complete": {
-      "description": "Report one evidence-backed verdict for this fork’s exact Playbook check after playbook_evaluation_read. Supply only checkId, status, and non-empty evidence of at most 600 UTF-8 bytes. satisfied requires current proof and any named human approval; pending means inspected but unmet; blocked means required inspection could not run. invalidArguments means nothing was recorded: correct the arguments and retry the same check. Stop on staleCheck or after the accepted report; never repeat an accepted report or automatically retry an uncertain transport failure. Never execute waiting actions, modify files, delegate, or infer approval from inherited conversation.",
+      "description": "Report one evidence-backed verdict for this evaluator’s exact Playbook check after playbook_evaluation_read. Supply only checkId, status, and non-empty evidence of at most 600 UTF-8 bytes. satisfied requires current proof and any named human approval; pending means inspected but unmet; blocked means required inspection could not run. invalidArguments means nothing was recorded: correct the arguments and retry the same check. Stop on staleCheck or after the accepted report; never repeat an accepted report or automatically retry an uncertain transport failure. Never execute waiting actions, modify files, delegate, or infer approval from inherited conversation.",
       "role": "playbookEvaluator",
       "params": {
         "$ref": "#/$defs/playbookEvaluationCompleteParams"

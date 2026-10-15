@@ -30,7 +30,8 @@ pub(crate) struct PlaybookEvaluationWait {
 pub(crate) struct PlaybookEvaluation {
     pub(crate) capability: TrackerCheckCapability,
     pub(crate) task_id: String,
-    pub(crate) source_session_id: String,
+    /// The forked Task Agent, or `None` for a fresh evaluator.
+    pub(crate) source_session_id: Option<String>,
     pub(crate) session_id: String,
     pub(crate) runtime_epoch: u64,
     pub(crate) worktree_generation: u64,
@@ -142,7 +143,11 @@ impl CoreRuntime {
                     && session.lifecycle_state == "running"
             }) && !self.pending_agent_forks.contains(&evaluation.session_id)
             {
-                projection["mode"] = json!("taskAgentFork");
+                projection["mode"] = json!(if evaluation.source_session_id.is_some() {
+                    "taskAgentFork"
+                } else {
+                    "freshEvaluator"
+                });
                 projection["sessionId"] = json!(evaluation.session_id);
             }
         }
@@ -323,7 +328,7 @@ impl CoreRuntime {
     pub(crate) fn reserve_playbook_evaluation(
         &mut self,
         claim: &StewardRoutineClaim,
-        source: String,
+        source: Option<String>,
         session_id: String,
         runtime_epoch: u64,
     ) -> Result<(), CoreError> {
@@ -344,9 +349,7 @@ impl CoreRuntime {
             .iter()
             .find(|t| t.id == task_id)
             .ok_or(CoreError::NotFound)?;
-        let mut assignment = claim.result.clone();
-        assignment["step"]["finishWith"] = json!("playbook_evaluation_complete");
-        assignment["step"]["taskRead"] = json!({"requiredBeforeVerdict": true, "tool": "playbook_evaluation_read", "arguments": {}});
+        let assignment = claim.result.clone();
         self.playbook_evaluation.evaluations.insert(
             capability.check_id.clone(),
             PlaybookEvaluation {
@@ -485,10 +488,19 @@ impl CoreRuntime {
     }
 
     pub fn fail_playbook_evaluation_launch(&mut self, check_id: &str) -> Result<Value, CoreError> {
+        let fresh = self
+            .playbook_evaluation
+            .evaluations
+            .get(check_id)
+            .is_some_and(|evaluation| evaluation.source_session_id.is_none());
         self.interrupt_evaluation_record(
             check_id,
             termloop_domain::PlaybookEvaluationOutcome::Failed,
-            "The evaluation fork could not start.",
+            if fresh {
+                "The evaluator could not start."
+            } else {
+                "The evaluation fork could not start."
+            },
         )?;
         let result = if let Some(evaluation) =
             self.playbook_evaluation.evaluations.get(check_id).cloned()
@@ -502,7 +514,11 @@ impl CoreRuntime {
                         capability: Some(evaluation.capability),
                         result: evaluation.assignment,
                     },
-                    "forkUnavailable",
+                    if fresh {
+                        "evaluatorUnavailable"
+                    } else {
+                        "forkUnavailable"
+                    },
                 )?
             } else {
                 self.release_steward_routine_claim(&evaluation.capability);

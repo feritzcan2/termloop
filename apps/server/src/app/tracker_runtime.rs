@@ -184,7 +184,7 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
         let delay = Duration::from_millis(next_wake.saturating_sub(now));
         tokio::select! {
             _ = tokio::time::sleep(delay) => {
-                let (changed, due, state_revision) = {
+                let (changed, due, steps, state_revision) = {
                     let mut core = state.core.lock().await;
                     let now = termloop_platform::current_epoch_ms();
                     let advance = core.advance_tracker_deadlines(now).unwrap_or_else(|error| {
@@ -194,13 +194,19 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
                         }
                     });
                     let due = core.admit_due_steward_wakes(now);
+                    // Playbook steps go to their own evaluators and never
+                    // wait for the Steward to be idle.
+                    let steps = core.admit_due_playbook_steps(now);
                     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
                         capabilities.retain_current(&core, now);
                     }
-                    (advance, due, core.state_revision())
+                    (advance, due, steps, core.state_revision())
                 };
-                if changed.changed {
+                if changed.changed || !steps.is_empty() {
                     publish_tracker_runtime_invalidation(&state, state_revision);
+                }
+                for claim in steps {
+                    tokio::spawn(super::playbook_evaluation::route_playbook_step(state.clone(), claim));
                 }
                 for wake in due {
                     deliver_due_steward_wake(&state, wake).await;

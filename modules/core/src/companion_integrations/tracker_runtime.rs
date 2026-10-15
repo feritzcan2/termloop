@@ -8,6 +8,7 @@ use std::collections::{HashMap, VecDeque};
 
 mod report;
 mod run_now;
+mod step_claims;
 mod steward_claims;
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
@@ -413,13 +414,19 @@ impl CoreRuntime {
         let active = self
             .claimed_check(capability)
             .ok_or(CoreError::TrackerReportStale)?;
-        let steward_current = self.store.steward_configurations().iter().any(|steward| {
-            steward.project_id == capability.project_id
-                && steward.enabled
-                && steward.generation == capability.steward_generation
-                && steward.executor_session_id.as_deref()
-                    == Some(capability.steward_session_id.as_str())
-        });
+        // A step check belongs to its evaluator, not to the Steward session
+        // that happened to be current when it was claimed.
+        let steward_current = if active.step_task_id.is_some() {
+            self.playbook_automation_enabled(&capability.project_id)
+        } else {
+            self.store.steward_configurations().iter().any(|steward| {
+                steward.project_id == capability.project_id
+                    && steward.enabled
+                    && steward.generation == capability.steward_generation
+                    && steward.executor_session_id.as_deref()
+                        == Some(capability.steward_session_id.as_str())
+            })
+        };
         if !configuration.enabled
             || configuration.project_id != capability.project_id
             || configuration.generation != capability.generation

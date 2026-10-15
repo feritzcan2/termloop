@@ -117,7 +117,7 @@ describe("Active Agent rows inside a Task", () => {
     await view.dispose();
   });
 
-  it("folds the Playbook evaluation fork into its source row behind a Steward badge", async () => {
+  it("folds the Playbook evaluation fork into its source row behind an evaluator badge", async () => {
     const selected: string[] = [];
     const lead = agentSession("lead");
     const fork = agentSession("fork", { name: "Playbook evaluation", fork_source_session_id: "lead" } as Partial<Session>);
@@ -128,6 +128,7 @@ describe("Active Agent rows inside a Task", () => {
     expect(view.container.querySelector('[data-session-id="fork"]')).toBeNull();
     const badge = view.container.querySelector<HTMLElement>('[data-session-id="lead"] .presence-badge')!;
     expect(badge.textContent).toBe("✦");
+    expect(badge.getAttribute("title") ?? badge.getAttribute("aria-label") ?? "").not.toContain("Steward");
     expect(view.container.querySelector('[data-session-id="lead"] .live-dot')).toBeNull();
     await act(async () => badge.click());
     expect(selected).toEqual(["fork"]);

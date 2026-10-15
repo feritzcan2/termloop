@@ -9,6 +9,8 @@ use termloop_core::session_launch::PlaybookEvaluationLaunch;
 
 use super::AppState;
 
+const STEP_ROUTING_RETRY_MS: u64 = 30_000;
+
 pub(super) fn invalid_report_message(arguments: &Value) -> String {
     let evidence_size = arguments["evidence"]
         .as_str()
@@ -38,22 +40,18 @@ pub(super) async fn route_assignment(
             plan,
             check_id,
             result,
-        } => match super::control::launch_playbook_evaluation_fork(*plan, state).await {
-            Ok(_) => {
-                claim.result = result;
-                Ok(true)
-            }
-            Err(error) => {
-                tracing::warn!(%error, "Task Playbook evaluation fork unavailable; leaving the step waiting");
-                claim.result = state
-                    .core
-                    .lock()
-                    .await
-                    .fail_playbook_evaluation_launch(&check_id)?;
-                reap_obsolete_evaluators(state).await;
-                Ok(true)
-            }
-        },
+        } => {
+            let launched = super::control::launch_playbook_evaluation_fork(*plan, state).await;
+            settle_evaluator_launch(state, claim, launched, check_id, result).await
+        }
+        PlaybookEvaluationLaunch::Fresh {
+            plan,
+            check_id,
+            result,
+        } => {
+            let launched = super::agent_launch::execute_agent_launch(state, *plan).await;
+            settle_evaluator_launch(state, claim, launched, check_id, result).await
+        }
     }?;
     if delegated || claim.result.get("step").is_some_and(Value::is_object) {
         let state_revision = state.core.lock().await.state_revision();
@@ -68,6 +66,48 @@ pub(super) async fn route_assignment(
         .await;
     }
     Ok(delegated)
+}
+
+async fn settle_evaluator_launch(
+    state: &AppState,
+    claim: &mut StewardRoutineClaim,
+    launched: Result<Value, CoreError>,
+    check_id: String,
+    result: Value,
+) -> Result<bool, CoreError> {
+    match launched {
+        Ok(_) => {
+            claim.result = result;
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Task Playbook evaluator unavailable; leaving the step waiting");
+            claim.result = state
+                .core
+                .lock()
+                .await
+                .fail_playbook_evaluation_launch(&check_id)?;
+            reap_obsolete_evaluators(state).await;
+        }
+    }
+    Ok(true)
+}
+
+/// Routes one admitted step claim to its evaluator. A claim that cannot be
+/// routed is handed back with a short floor so it is retried, not spun.
+pub(super) async fn route_playbook_step(state: AppState, mut claim: StewardRoutineClaim) {
+    if let Err(error) = route_assignment(&state, &mut claim).await {
+        tracing::warn!(%error, "Playbook step routing failed");
+        if let Some(capability) = claim.capability.as_ref() {
+            let retry_at =
+                termloop_platform::current_epoch_ms().saturating_add(STEP_ROUTING_RETRY_MS);
+            state
+                .core
+                .lock()
+                .await
+                .postpone_playbook_step(capability, retry_at);
+        }
+    }
+    state.tracker_runtime_wake.notify_one();
 }
 
 pub(super) async fn complete(
