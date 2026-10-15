@@ -124,9 +124,8 @@ pub(crate) fn attach_agents(runtime: &mut CoreRuntime, root: &std::path::Path, i
 
 fn claim(runtime: &mut CoreRuntime, project: &str) -> StewardRoutineClaim {
     runtime
-        .claim_next_steward_routine(
+        .claim_next_playbook_step_or_idle(
             project,
-            "steward-session",
             "evaluation-check".into(),
             termloop_platform::current_epoch_ms(),
         )
@@ -135,7 +134,7 @@ fn claim(runtime: &mut CoreRuntime, project: &str) -> StewardRoutineClaim {
 
 fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
     runtime
-        .reserve_playbook_evaluation(claim, "source".into(), "reviewer".into(), 1)
+        .reserve_playbook_evaluation(claim, Some("source".into()), "reviewer".into(), 1)
         .unwrap();
     let capability = claim.capability.as_ref().unwrap();
     runtime
@@ -149,8 +148,8 @@ fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
                 task_title: "Task snapshot".into(),
                 milestone_id: claim.result["step"]["milestoneId"].as_str().unwrap().into(),
                 milestone_title: "Step snapshot".into(),
-                source_session_id: "source".into(),
-                source_name: "Implementer".into(),
+                source_session_id: Some("source".into()),
+                source_name: Some("Implementer".into()),
                 session_id: "reviewer".into(),
                 agent_id: "codex".into(),
                 model: "gpt-6-luna".into(),
@@ -345,9 +344,8 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
         // The skipped Task waits out its own retry. The other Task at the step
         // is independent and is claimed, and skipped, on its own.
         let other = runtime
-            .claim_next_steward_routine(
+            .claim_next_playbook_step_or_idle(
                 &project,
-                "steward-session",
                 "other-task".into(),
                 termloop_platform::current_epoch_ms(),
             )
@@ -358,9 +356,8 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
             PlaybookEvaluationLaunch::Skipped(_)
         ));
         let next = runtime
-            .claim_next_steward_routine(
+            .claim_next_playbook_step_or_idle(
                 &project,
-                "steward-session",
                 "no-retry".into(),
                 termloop_platform::current_epoch_ms(),
             )
@@ -374,14 +371,9 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
         );
         if !ambiguous {
             attach_agents(&mut runtime, &root, &["new-source"]);
-            let due = next.result["nextWakeAtEpochMs"].as_u64().unwrap();
+            let due = runtime.next_tracker_schedule_epoch_ms().unwrap();
             let retry = runtime
-                .claim_next_steward_routine(
-                    &project,
-                    "steward-session",
-                    "retry-with-agent".into(),
-                    due + 1,
-                )
+                .claim_next_playbook_step_or_idle(&project, "retry-with-agent".into(), due + 1)
                 .unwrap();
             assert!(matches!(
                 runtime.plan_playbook_evaluation(&retry).unwrap(),

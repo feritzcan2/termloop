@@ -1,4 +1,4 @@
-//! Steward wake admission and Routine claims.
+//! Steward wake admission and scheduled Routine claims.
 
 use super::*;
 
@@ -41,9 +41,12 @@ impl CoreRuntime {
                 .executor_session_id
                 .as_deref()
                 .expect("filtered above");
+            // Playbook steps are admitted separately and never wake the
+            // Steward; only its own scheduled Routines do.
             let has_due_assignment = self.store.tracker_configurations().iter().any(|routine| {
                 routine.enabled
                     && routine.project_id == steward.project_id
+                    && routine.trigger_mode.is_scheduled()
                     && self
                         .tracker_runtime
                         .next_due_epoch_ms
@@ -80,6 +83,15 @@ impl CoreRuntime {
 
     pub fn next_tracker_schedule_epoch_ms(&mut self) -> Option<u64> {
         self.initialize_routine_schedules();
+        let steps = self.next_playbook_step_epoch_ms();
+        let stewards = self.next_steward_wake_epoch_ms();
+        match (steps, stewards) {
+            (Some(left), Some(right)) => Some(left.min(right)),
+            (left, right) => left.or(right),
+        }
+    }
+
+    fn next_steward_wake_epoch_ms(&self) -> Option<u64> {
         let busy_projects = self.busy_project_ids();
         let stewards = self
             .store
@@ -108,7 +120,9 @@ impl CoreRuntime {
                         .tracker_configurations()
                         .iter()
                         .filter(|routine| {
-                            routine.enabled && routine.project_id == steward.project_id
+                            routine.enabled
+                                && routine.project_id == steward.project_id
+                                && routine.trigger_mode.is_scheduled()
                         })
                         .filter_map(|routine| {
                             self.tracker_runtime
@@ -139,8 +153,8 @@ impl CoreRuntime {
         self.pending_assistant_wake_deliveries.remove(session_id);
 
         // A scheduled Routine's check is held by the Steward itself, so the
-        // Steward gets it back until it reports. Step checks run in their own
-        // evaluation forks and are never handed back here.
+        // Steward gets it back until it reports. Playbook steps are claimed
+        // by TermLoop for its evaluators and never reach the Steward.
         if let Some((routine_id, active)) = self.steward_held_check_for_project(project_id) {
             let mut capability = active_capability(&routine_id, &active);
             capability.steward_session_id = session_id.to_owned();
@@ -161,43 +175,32 @@ impl CoreRuntime {
         }
 
         self.initialize_routine_schedules();
-        let step_checks = self.project_step_check_count(project_id);
+        let scheduled = |routine: &&TrackerConfiguration| {
+            routine.enabled
+                && routine.project_id == project_id
+                && routine.trigger_mode.is_scheduled()
+        };
         let selected = self
             .store
             .tracker_configurations()
             .iter()
-            .filter(|routine| routine.enabled && routine.project_id == project_id)
-            .filter(|routine| {
-                if routine.trigger_mode.is_scheduled() {
-                    !self.tracker_runtime.tracker_is_active(&routine.id)
-                } else {
-                    step_checks < PROJECT_STEP_CHECKS_MAX
-                }
-            })
+            .filter(scheduled)
+            .filter(|routine| !self.tracker_runtime.tracker_is_active(&routine.id))
             .filter_map(|routine| {
                 let due = self
                     .tracker_runtime
                     .next_due_epoch_ms
                     .get(&routine.id)
                     .copied()?;
-                let explicitly_requested =
-                    self.tracker_runtime.step_run_now.contains_key(&routine.id);
-                (due <= now_epoch_ms).then(|| {
-                    (
-                        !explicitly_requested,
-                        due,
-                        routine.id.clone(),
-                        routine.clone(),
-                    )
-                })
+                (due <= now_epoch_ms).then(|| (due, routine.id.clone(), routine.clone()))
             })
-            .min_by(|left, right| (left.0, left.1, &left.2).cmp(&(right.0, right.1, &right.2)));
-        let Some((_, _, _, routine)) = selected else {
+            .min_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
+        let Some((_, _, routine)) = selected else {
             let next_wake = self
                 .store
                 .tracker_configurations()
                 .iter()
-                .filter(|routine| routine.enabled && routine.project_id == project_id)
+                .filter(scheduled)
                 .filter_map(|routine| {
                     self.tracker_runtime
                         .next_due_epoch_ms
@@ -226,28 +229,29 @@ impl CoreRuntime {
             steward_generation: steward.generation,
             steward_session_id: session_id.to_owned(),
         };
-        let step = (!routine.trigger_mode.is_scheduled())
-            .then(|| self.playbook_step_assignment(&routine.id))
-            .flatten();
-        if !routine.trigger_mode.is_scheduled() && step.is_none() {
-            return Ok(StewardRoutineClaim {
-                capability: None,
-                result: json!({"status": "idle", "nextWakeAtEpochMs": null}),
-            });
-        }
+        self.hold_routine_check(&routine.id, &capability, None);
+        Ok(StewardRoutineClaim {
+            result: assigned_routine_result(&routine, &capability, now_epoch_ms, None),
+            capability: Some(capability),
+        })
+    }
+
+    /// Records a claimed check as the one Core holds for its Routine.
+    pub(super) fn hold_routine_check(
+        &mut self,
+        routine_id: &str,
+        capability: &TrackerCheckCapability,
+        step: Option<&super::super::playbook_runtime::PlaybookStepAssignment>,
+    ) {
         self.tracker_runtime
             .health
-            .entry(routine.id.clone())
+            .entry(routine_id.to_owned())
             .or_default()
             .checks
             .push(ActiveTrackerCheck {
                 check_id: capability.check_id.clone(),
-                step_milestone_id: step
-                    .as_ref()
-                    .map(|assignment| assignment.milestone.id.clone()),
-                step_task_id: step
-                    .as_ref()
-                    .map(|assignment| assignment.waiting[0].task_id.clone()),
+                step_milestone_id: step.map(|assignment| assignment.milestone.id.clone()),
+                step_task_id: step.map(|assignment| assignment.waiting[0].task_id.clone()),
                 generation: capability.generation,
                 claimed_at_epoch_ms: capability.claimed_at_epoch_ms,
                 deadline_epoch_ms: capability.deadline_epoch_ms,
@@ -256,10 +260,6 @@ impl CoreRuntime {
                 steward_generation: capability.steward_generation,
                 steward_session_id: capability.steward_session_id.clone(),
             });
-        Ok(StewardRoutineClaim {
-            result: assigned_routine_result(&routine, &capability, now_epoch_ms, step.as_ref()),
-            capability: Some(capability),
-        })
     }
 
     /// Claims the exact due assignment before its scheduled wake is delivered.
@@ -295,7 +295,7 @@ impl CoreRuntime {
     }
 }
 
-fn assigned_routine_result(
+pub(super) fn assigned_routine_result(
     routine: &TrackerConfiguration,
     capability: &TrackerCheckCapability,
     now_epoch_ms: u64,
@@ -327,29 +327,22 @@ fn assigned_routine_result(
         "claimedAtEpochMs": capability.claimed_at_epoch_ms,
         "leaseExpiresAtEpochMs": capability.deadline_epoch_ms,
     });
-    // A step Routine evaluates one stage for a named set of Tasks. It finishes
-    // with verdicts rather than findings, so the assignment says so instead of
-    // leaving the Steward to infer it from the trigger mode.
+    // A step Routine evaluates one stage for one Task in TermLoop's
+    // evaluator. It observes only, so the step's `whileWaiting` response,
+    // which belongs to the Steward, is not part of its assignment.
     if let Some(step) = step {
         result["step"] = json!({
             "milestoneId": step.milestone.id,
             "title": step.milestone.title,
             "gate": step.milestone.gate,
             "completeWhen": routine.prompt,
-            "whileWaiting": {
-                "mode": routine.action_handling,
-                "instructions": routine.steward_instructions,
-            },
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
-            "finishWith": "steward_complete_assignment",
+            "finishWith": "playbook_evaluation_complete",
             "taskRead": {
                 "requiredBeforeVerdict": true,
-                "tool": "task_read",
-                "arguments": {
-                    "taskId": step.waiting[0].task_id,
-                    "checkId": capability.check_id,
-                },
+                "tool": "playbook_evaluation_read",
+                "arguments": {},
             },
             "tasks": step
                 .waiting
@@ -360,7 +353,7 @@ fn assigned_routine_result(
                         "title": task.title,
                         "dueAtEpochMs": task.due_at_epoch_ms,
                         "lastEvidence": task.last_evidence,
-                        "lastEvidenceKind": "previousStewardVerdict",
+                        "lastEvidenceKind": "previousEvaluation",
                         "lastEvidenceIndependentlyVerified": false,
                         "passedEarlierSteps": task
                             .passed_earlier_steps

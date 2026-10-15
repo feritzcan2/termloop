@@ -28,11 +28,19 @@ it("shows fork provenance, outcome and full evidence without requiring a live Se
   const load = vi.fn(async () => result([entry]));
   await act(async () => root.render(<PlaybookEvaluationHistory load={load} refreshToken={0} />));
   expect(load).toHaveBeenCalledOnce();
-  for (const text of [entry.taskTitle, entry.milestoneTitle, entry.sourceName, entry.model, entry.evidence, "Pending", "fork-1", "last 200"]) {
+  for (const text of [entry.taskTitle, entry.milestoneTitle, "Fork of Implementer", entry.model, entry.evidence, "Pending", "fork-1", "last 200"]) {
     expect(host.textContent).toContain(text);
   }
   expect(host.querySelectorAll("ol > li")).toHaveLength(1);
   expect(host.querySelector("time")!.dateTime).toBe(new Date(1000).toISOString());
+});
+
+it("names a fresh evaluator instead of a missing fork source", async () => {
+  const fresh = { ...entry, sourceSessionId: null, sourceName: null, sessionId: "evaluator-1" };
+  await act(async () => root.render(<PlaybookEvaluationHistory load={async () => result([fresh])} refreshToken={0} />));
+  expect(host.textContent).toContain("Fresh evaluator");
+  expect(host.textContent).not.toContain("Fork of");
+  expect(host.textContent).toContain("evaluator-1");
 });
 
 it("refreshes on invalidation and on request, recovers from errors and explains empty history", async () => {
@@ -44,7 +52,7 @@ it("refreshes on invalidation and on request, recovers from errors and explains 
   expect(host.querySelector('[role="alert"]')!.textContent).toContain("could not be loaded");
   await act(async () => host.querySelector("button")!.click());
   expect(host.querySelector('[role="alert"]')).toBeNull();
-  expect(host.textContent).toContain("No fork checks recorded yet");
+  expect(host.textContent).toContain("No checks recorded yet");
   await act(async () => root.render(<PlaybookEvaluationHistory load={load} refreshToken={1} />));
   expect(host.textContent).toContain("Passed");
   expect(load).toHaveBeenCalledTimes(3);

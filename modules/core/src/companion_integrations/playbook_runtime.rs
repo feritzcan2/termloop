@@ -1086,12 +1086,7 @@ pub(crate) mod tests {
             .set_task_playbook_position(&project_id, "task-1", 0, 1, revision, NOW + 2)
             .unwrap();
         let claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "position-claim".into(),
-                NOW + 2,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "position-claim".into(), NOW + 2)
             .unwrap();
         let capability = claim.capability.unwrap();
         assert_eq!(capability.tracker_id, "routine-pr");
@@ -1141,7 +1136,7 @@ pub(crate) mod tests {
     fn another_task_taking_focus_never_rejects_the_claimed_tasks_answer() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let first = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "first".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "first".into(), NOW)
             .unwrap()
             .capability
             .unwrap();
@@ -1159,7 +1154,7 @@ pub(crate) mod tests {
             .unwrap();
         // Task 1 now waits for its retry, so Task 2 takes the next claim.
         let second = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "second".into(), NOW + 2)
+            .claim_next_playbook_step_or_idle(&project_id, "second".into(), NOW + 2)
             .unwrap()
             .capability
             .unwrap();
@@ -1197,12 +1192,7 @@ pub(crate) mod tests {
     fn get_next_retires_a_claim_for_a_step_the_playbook_replaced() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let old_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "old-step-check".into(),
-                NOW,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "old-step-check".into(), NOW)
             .unwrap();
         let old_capability = old_claim.capability.unwrap();
         assert_eq!(old_claim.result["step"]["milestoneId"], "pr-open");
@@ -1225,12 +1215,7 @@ pub(crate) mod tests {
             .unwrap();
 
         let fresh_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "fresh-step-check".into(),
-                NOW + 2,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "fresh-step-check".into(), NOW + 2)
             .unwrap();
         let fresh_capability = fresh_claim.capability.unwrap();
         assert_eq!(fresh_capability.check_id, "fresh-step-check");
@@ -1260,14 +1245,14 @@ pub(crate) mod tests {
     fn get_next_retires_a_claim_when_focus_changes_at_the_same_step() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let old_claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "task-1-check".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "task-1-check".into(), NOW)
             .unwrap();
         let old_capability = old_claim.capability.unwrap();
         assert_eq!(old_claim.result["step"]["milestoneId"], "pr-open");
         assert_eq!(old_claim.result["step"]["tasks"][0]["taskId"], "task-1");
         assert_eq!(
             old_claim.result["step"]["tasks"][0]["lastEvidenceKind"],
-            "previousStewardVerdict"
+            "previousEvaluation"
         );
         assert_eq!(
             old_claim.result["step"]["tasks"][0]["lastEvidenceIndependentlyVerified"],
@@ -1281,11 +1266,8 @@ pub(crate) mod tests {
             old_claim.result["step"]["taskRead"],
             json!({
                 "requiredBeforeVerdict": true,
-                "tool": "task_read",
-                "arguments": {
-                    "taskId": "task-1",
-                    "checkId": "task-1-check",
-                },
+                "tool": "playbook_evaluation_read",
+                "arguments": {},
             })
         );
         assert_eq!(
@@ -1310,12 +1292,7 @@ pub(crate) mod tests {
             .unwrap();
 
         let fresh_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "task-2-check".into(),
-                NOW + 2,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "task-2-check".into(), NOW + 2)
             .unwrap();
         assert_eq!(
             fresh_claim.capability.as_ref().unwrap().check_id,
@@ -1341,7 +1318,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn each_step_claim_carries_its_current_waiting_policy() {
+    fn a_step_claim_leaves_the_waiting_policy_to_the_steward() {
         for mode in [
             RoutineActionHandling::Off,
             RoutineActionHandling::Ask,
@@ -1362,7 +1339,6 @@ pub(crate) mod tests {
                 "Restore this Task's linked issue through its authorized forward transitions."
                     .into()
             };
-            let expected = json!({"mode": mode, "instructions": routine.steward_instructions});
             runtime
                 .store
                 .set_tracker_configuration(
@@ -1372,28 +1348,19 @@ pub(crate) mod tests {
                 )
                 .unwrap();
             let first = runtime
-                .claim_next_steward_routine(&project_id, "steward-session", "policy-1".into(), NOW)
+                .claim_next_playbook_step_or_idle(&project_id, "policy-1".into(), NOW)
                 .unwrap();
-            assert_eq!(first.result["step"]["whileWaiting"], expected);
-            assert_eq!(
-                first.result["step"]["taskRead"]["arguments"]["taskId"],
-                "task-1"
-            );
+            // The evaluator observes only; the waiting response is the
+            // Steward's and never reaches the evaluation assignment.
+            assert!(first.result["step"].get("whileWaiting").is_none());
+            assert_eq!(first.result["step"]["tasks"][0]["taskId"], "task-1");
             // The other Task at the step gets its own independent claim.
             let second = runtime
-                .claim_next_steward_routine(
-                    &project_id,
-                    "steward-session",
-                    "policy-2".into(),
-                    NOW + 1,
-                )
+                .claim_next_playbook_step_or_idle(&project_id, "policy-2".into(), NOW + 1)
                 .unwrap();
             assert_ne!(second.capability, first.capability);
-            assert_eq!(
-                second.result["step"]["taskRead"]["arguments"]["taskId"],
-                "task-2"
-            );
-            assert_eq!(second.result["step"]["whileWaiting"], expected);
+            assert_eq!(second.result["step"]["tasks"][0]["taskId"], "task-2");
+            assert!(second.result["step"].get("whileWaiting").is_none());
             drop(runtime);
             std::fs::remove_dir_all(root).unwrap();
         }
@@ -1409,12 +1376,7 @@ pub(crate) mod tests {
         let mut claims = (0..2)
             .map(|index| {
                 runtime
-                    .claim_next_steward_routine(
-                        &project_id,
-                        "steward-session",
-                        format!("stage-{index}"),
-                        NOW,
-                    )
+                    .claim_next_playbook_step_or_idle(&project_id, format!("stage-{index}"), NOW)
                     .unwrap()
             })
             .collect::<Vec<_>>();
@@ -1443,7 +1405,7 @@ pub(crate) mod tests {
             .unwrap();
         // task-1 now waits out its own cooldown; task-2's check is untouched.
         let next = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "idle".into(), NOW + 2)
+            .claim_next_playbook_step_or_idle(&project_id, "idle".into(), NOW + 2)
             .unwrap();
         assert_eq!(next.result["status"], "idle");
         assert!(runtime.tracker_check_is_current(claims[1].capability.as_ref().unwrap()));
@@ -1464,12 +1426,7 @@ pub(crate) mod tests {
         {
             let now = NOW + index as u64 * 1_000;
             let claim = runtime
-                .claim_next_steward_routine(
-                    &project_id,
-                    "steward-session",
-                    format!("drain-{index}"),
-                    now,
-                )
+                .claim_next_playbook_step_or_idle(&project_id, format!("drain-{index}"), now)
                 .unwrap();
             assert_eq!(claim.result["step"]["tasks"][0]["taskId"], task_id);
             assert_eq!(claim.result["routine"]["id"], routine_id);
@@ -1487,12 +1444,7 @@ pub(crate) mod tests {
                 .unwrap();
         }
         let idle = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "drain-idle".into(),
-                NOW + 3_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "drain-idle".into(), NOW + 3_000)
             .unwrap();
         assert_eq!(idle.result["status"], "idle");
         assert!(idle.capability.is_none());
@@ -1512,7 +1464,7 @@ pub(crate) mod tests {
         // Both Tasks are at the first stage. Each claim carries exactly one
         // Task, the first in board order first.
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         assert_eq!(claim.result["status"], "assigned");
         assert_eq!(claim.result["routine"]["id"], "routine-pr");
@@ -1521,7 +1473,7 @@ pub(crate) mod tests {
         assert!(claim.result["step"].get("question").is_none());
         assert_eq!(
             claim.result["step"]["finishWith"],
-            "steward_complete_assignment"
+            "playbook_evaluation_complete"
         );
         assert_eq!(
             claim.result["step"]["tasks"]
@@ -1542,7 +1494,7 @@ pub(crate) mod tests {
 
         // task-2 does not wait for task-1: it gets its own claim at once.
         let second = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-2".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-2".into(), NOW)
             .unwrap();
         assert_eq!(second.result["routine"]["id"], "routine-pr");
         assert_eq!(second.result["step"]["tasks"][0]["taskId"], "task-2");
@@ -1577,12 +1529,7 @@ pub(crate) mod tests {
 
         // task-1 moves on to its next question while task-2's check runs.
         let next = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-3".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-3".into(), NOW + 2_000)
             .unwrap();
         assert_eq!(next.result["routine"]["id"], "routine-deploy");
         assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-1");
@@ -1607,26 +1554,87 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_running_step_check_does_not_hold_back_the_next_tasks_wake() {
+    fn steps_reach_their_evaluators_without_waking_or_waiting_for_the_steward() {
         let (mut runtime, root, project_id) = pipeline_runtime();
-        let first = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "first".into(), NOW)
+        // The Steward's own next-assignment call never hands it a step.
+        let steward_claim = runtime
+            .claim_next_steward_routine(&project_id, "steward-session", "steward".into(), NOW)
             .unwrap();
-        assert_eq!(first.result["step"]["tasks"][0]["taskId"], "task-1");
-        // task-1's check is still running in its own fork. task-2 is due and
-        // must still be dispatched.
-        let wakes = runtime.admit_due_steward_wakes(NOW + 1);
-        assert_eq!(wakes.len(), 1);
-        let second = runtime
-            .claim_due_steward_routine(&wakes[0], "second".into(), NOW + 1)
-            .unwrap();
-        assert_eq!(second.result["step"]["tasks"][0]["taskId"], "task-2");
+        assert!(steward_claim.capability.is_none());
+        // The Steward is in the middle of a long turn.
+        runtime.agent_observations.insert(
+            "steward-session".into(),
+            crate::AgentObservationCapability {
+                token: Some("steward-token".into()),
+                runtime_epoch: 1,
+                last_signal: None,
+                defer_generated_input_until_hook_response: false,
+                last_notification_type: None,
+                observation: Some(termloop_agents::reduce_observation(
+                    None,
+                    termloop_agents::AgentSignal::PromptSubmitted,
+                    termloop_agents::AgentSignalSource::Hook,
+                    1,
+                    NOW,
+                )),
+                pending_generated_input: None,
+            },
+        );
+        // A due step never wakes the Steward, and its busy turn never hides
+        // the step from the supervisor.
+        assert!(runtime.admit_due_steward_wakes(NOW).is_empty());
+        assert!(
+            runtime
+                .next_tracker_schedule_epoch_ms()
+                .is_some_and(|due| due <= NOW)
+        );
+        let claims = runtime.admit_due_playbook_steps(NOW);
+        let mut tasks = claims
+            .iter()
+            .map(|claim| claim.result["step"]["tasks"][0]["taskId"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        tasks.sort_unstable();
+        assert_eq!(tasks, ["task-1", "task-2"]);
         // A Task already being checked is never claimed twice.
-        let idle = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "third".into(), NOW + 2)
+        assert!(runtime.admit_due_playbook_steps(NOW + 1).is_empty());
+
+        // A claim whose evaluator could not be routed is handed back with a
+        // floor, so it is retried later instead of at once.
+        let postponed = claims.last().unwrap().capability.clone().unwrap();
+        let postponed_task = runtime.claimed_step_task_id(&postponed).unwrap();
+        runtime.postpone_playbook_step(&postponed, NOW + 30_000);
+        assert!(runtime.admit_due_playbook_steps(NOW + 2).is_empty());
+        let retried = runtime.admit_due_playbook_steps(NOW + 30_000);
+        assert_eq!(retried.len(), 1);
+        assert_eq!(
+            retried[0].result["step"]["tasks"][0]["taskId"],
+            postponed_task.as_str()
+        );
+        let claims = [claims[0].clone(), retried[0].clone()];
+
+        // Retiring the Steward's session for a relaunch keeps every running
+        // step check valid.
+        let mut steward = runtime.store.steward_configurations()[0].clone();
+        steward.executor_session_id = None;
+        steward.generation += 1;
+        runtime
+            .store
+            .set_steward_configuration(&runtime.write_authority, steward, runtime.state_revision())
             .unwrap();
-        assert_eq!(idle.result["status"], "idle");
-        assert!(runtime.tracker_check_is_current(first.capability.as_ref().unwrap()));
+        for claim in &claims {
+            assert!(runtime.tracker_check_is_current(claim.capability.as_ref().unwrap()));
+        }
+
+        // Turning the Steward off pauses the Project's Playbook automation.
+        let mut steward = runtime.store.steward_configurations()[0].clone();
+        steward.enabled = false;
+        runtime
+            .store
+            .set_steward_configuration(&runtime.write_authority, steward, runtime.state_revision())
+            .unwrap();
+        for claim in &claims {
+            assert!(!runtime.tracker_check_is_current(claim.capability.as_ref().unwrap()));
+        }
         std::fs::remove_dir_all(root).ok();
     }
 
@@ -1649,12 +1657,7 @@ pub(crate) mod tests {
         // Both Tasks moved to the second question, but it still claims them
         // one at a time.
         let next = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-2".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-2".into(), NOW + 2_000)
             .unwrap();
         assert_eq!(next.result["routine"]["id"], "routine-deploy");
         assert_eq!(next.result["step"]["tasks"][0]["taskId"], "task-1");
@@ -1671,12 +1674,7 @@ pub(crate) mod tests {
             )
             .unwrap();
         let final_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-3".into(),
-                NOW + 4_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-3".into(), NOW + 4_000)
             .unwrap();
         assert_eq!(final_claim.result["step"]["tasks"][0]["taskId"], "task-2");
         runtime
@@ -1695,12 +1693,7 @@ pub(crate) mod tests {
         // With every question answered the pipeline has no work left, so the
         // Steward is idle rather than looping on a clock.
         let idle = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-4".into(),
-                NOW + 6_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-4".into(), NOW + 6_000)
             .unwrap();
         assert_eq!(idle.result["status"], "idle");
         assert!(idle.capability.is_none());
@@ -1718,7 +1711,7 @@ pub(crate) mod tests {
     fn run_now_overrides_the_step_delay_but_invents_no_work() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         let capability = claim.capability.unwrap();
         runtime
@@ -1737,12 +1730,7 @@ pub(crate) mod tests {
         // A waiting focused Task yields immediately to the next ready Task,
         // even though both use the same Routine.
         let switched = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-2".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-2".into(), NOW + 2_000)
             .unwrap();
         assert_eq!(switched.result["step"]["tasks"][0]["taskId"], "task-2");
         runtime
@@ -1760,19 +1748,14 @@ pub(crate) mod tests {
 
         // Both Tasks now wait out their own 10-minute delay.
         let idle = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "idle".into(), NOW + 4_000)
+            .claim_next_playbook_step_or_idle(&project_id, "idle".into(), NOW + 4_000)
             .unwrap();
         assert_eq!(idle.result["status"], "idle");
 
         // "Run now" is the user overriding exactly that delay.
         assert!(runtime.run_routine_now("routine-pr", NOW + 5_000).unwrap());
         let forced = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-3".into(),
-                NOW + 5_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-3".into(), NOW + 5_000)
             .unwrap();
         assert_eq!(forced.result["routine"]["id"], "routine-pr");
         assert_eq!(forced.result["step"]["tasks"][0]["taskId"], "task-1");
@@ -1794,12 +1777,7 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(
             runtime
-                .claim_next_steward_routine(
-                    &project_id,
-                    "steward-session",
-                    "check-4".into(),
-                    NOW + 7_000,
-                )
+                .claim_next_playbook_step_or_idle(&project_id, "check-4".into(), NOW + 7_000,)
                 .unwrap()
                 .result["status"],
             "idle"
@@ -1809,22 +1787,12 @@ pub(crate) mod tests {
         // the user's "Run now" is still waiting to.
         assert!(runtime.run_routine_now("routine-pr", NOW + 8_000).unwrap());
         let handed_back = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-5".into(),
-                NOW + 8_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-5".into(), NOW + 8_000)
             .unwrap();
         assert!(runtime.release_steward_routine_claim(&handed_back.capability.unwrap()));
         assert_eq!(
             runtime
-                .claim_next_steward_routine(
-                    &project_id,
-                    "steward-session",
-                    "check-6".into(),
-                    NOW + 9_000,
-                )
+                .claim_next_playbook_step_or_idle(&project_id, "check-6".into(), NOW + 9_000,)
                 .unwrap()
                 .result["routine"]["id"],
             "routine-pr"
@@ -1863,12 +1831,7 @@ pub(crate) mod tests {
                 .unwrap()
         );
         let claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "task-detail-check".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "task-detail-check".into(), NOW + 2_000)
             .unwrap();
         assert_eq!(claim.result["routine"]["id"], "routine-pr");
         assert_eq!(claim.result["step"]["tasks"][0]["taskId"], "task-2");
@@ -1886,7 +1849,7 @@ pub(crate) mod tests {
     fn a_verdict_answers_only_the_claimed_question_for_the_focused_task() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         let capability = claim.capability.unwrap();
 
@@ -1931,12 +1894,7 @@ pub(crate) mod tests {
             .unwrap();
         runtime.finish_steward_routine_check(&capability, None, NOW + 1_000, &configuration);
         let next = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-2".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-2".into(), NOW + 2_000)
             .unwrap();
         // Only task-1 backs off. task-2 at the same question is independent.
         assert_eq!(next.result["routine"]["id"], "routine-pr");
@@ -1979,7 +1937,7 @@ pub(crate) mod tests {
             "decidedAtEpochMs": NOW - 1,
         }]);
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         assert_eq!(claim.result["step"]["milestoneId"], "deployed");
         assert_eq!(claim.result["step"]["tasks"][0]["taskId"], "task-1");
@@ -2038,7 +1996,7 @@ pub(crate) mod tests {
             .unwrap();
 
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         assert!(claim.result["routine"].get("actionHandling").is_none());
         assert!(claim.result["routine"].get("stewardInstructions").is_none());
@@ -2070,12 +2028,7 @@ pub(crate) mod tests {
 
         assert!(runtime.run_routine_now("routine-pr", NOW + 2_000).unwrap());
         let changed_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-2".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-2".into(), NOW + 2_000)
             .unwrap();
         let changed = runtime
             .report_steward_step_verdicts(
@@ -2111,12 +2064,7 @@ pub(crate) mod tests {
 
         assert!(runtime.run_routine_now("routine-pr", NOW + 4_000).unwrap());
         let duplicate_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-3".into(),
-                NOW + 4_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-3".into(), NOW + 4_000)
             .unwrap();
         let duplicate = runtime
             .report_steward_step_verdicts(
@@ -2156,12 +2104,7 @@ pub(crate) mod tests {
             .unwrap();
         assert!(runtime.run_routine_now("routine-pr", NOW + 6_000).unwrap());
         let proposed_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-4".into(),
-                NOW + 6_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-4".into(), NOW + 6_000)
             .unwrap();
         let proposed = runtime
             .report_steward_step_verdicts(
@@ -2180,12 +2123,7 @@ pub(crate) mod tests {
 
         assert!(runtime.run_routine_now("routine-pr", NOW + 8_000).unwrap());
         let passed_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "check-5".into(),
-                NOW + 8_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "check-5".into(), NOW + 8_000)
             .unwrap();
         let passed = runtime
             .report_steward_step_verdicts(
@@ -2228,7 +2166,7 @@ pub(crate) mod tests {
             .unwrap();
 
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "blocked-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "blocked-1".into(), NOW)
             .unwrap();
         let completed = runtime
             .report_steward_step_verdicts(
@@ -2275,7 +2213,7 @@ pub(crate) mod tests {
             .unwrap();
 
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "problem-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "problem-1".into(), NOW)
             .unwrap()
             .capability
             .unwrap();
@@ -2300,12 +2238,7 @@ pub(crate) mod tests {
 
         assert!(runtime.run_routine_now("routine-pr", NOW + 2_000).unwrap());
         let duplicate_claim = runtime
-            .claim_next_steward_routine(
-                &project_id,
-                "steward-session",
-                "problem-2".into(),
-                NOW + 2_000,
-            )
+            .claim_next_playbook_step_or_idle(&project_id, "problem-2".into(), NOW + 2_000)
             .unwrap()
             .capability
             .unwrap();
@@ -2352,7 +2285,7 @@ pub(crate) mod tests {
             .set_tracker_configuration(&runtime.write_authority, routine, revision)
             .unwrap();
         let claim = runtime
-            .claim_next_steward_routine(&project_id, "steward-session", "check-1".into(), NOW)
+            .claim_next_playbook_step_or_idle(&project_id, "check-1".into(), NOW)
             .unwrap();
         runtime
             .report_steward_step_verdicts(

@@ -685,7 +685,7 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
           : undefined}
         presenceBadge={evaluation ? {
           glyph: "✦",
-          title: `Steward is evaluating this work${evaluationState?.label ? ` · ${evaluationState.label}` : ""}. Click to open the evaluation agent.`,
+          title: `A Playbook evaluator is checking this work${evaluationState?.label ? ` · ${evaluationState.label}` : ""}. Click to open the evaluator.`,
           open: () => props.selectSession(evaluation.id),
         } : undefined}
         agentStatus={agentStatus}

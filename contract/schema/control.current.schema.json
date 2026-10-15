@@ -15568,8 +15568,8 @@
         "taskTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "milestoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "milestoneTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "sourceSessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "sourceName": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sourceSessionId": { "description": "The forked Task Agent, or null for a fresh evaluator.", "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "sourceName": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 },
         "sessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "agentId": { "$ref": "#/$defs/stewardAgentId" },
         "model": { "type": "string", "minLength": 1, "maxLength": 80 },
@@ -15685,6 +15685,7 @@
           "enum": [
             "starting",
             "taskAgentFork",
+            "freshEvaluator",
             "waitingForTaskAgent"
           ]
         },
@@ -15708,7 +15709,7 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": ["noUnambiguousTaskAgent", "forkUnsupported", "forkUnavailable", "evaluationCapacity"]
+              "enum": ["noUnambiguousTaskAgent", "forkUnsupported", "forkUnavailable", "evaluatorUnavailable", "evaluationCapacity"]
             },
             { "type": "null" }
           ]
@@ -15739,7 +15740,7 @@
           "items": { "type": "string", "minLength": 1, "maxLength": 256 }
         },
         "evaluations": {
-          "description": "One entry per Task whose step check is running in an evaluation fork or is waiting for its Task Agent.",
+          "description": "One entry per Task whose step check is running in an evaluation fork or a fresh evaluator, or is waiting for an evaluator.",
           "type": "array",
           "maxItems": 512,
           "items": { "$ref": "#/$defs/playbookEvaluationDto" }
