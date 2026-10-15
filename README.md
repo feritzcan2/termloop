@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Keep every coding agent in the loop.</strong><br>
-  Run Claude Code, Codex, and terminals in one workspace.<br>
+  Run Claude Code, Codex, and terminals in one workspace, on this computer or any server.<br>
   Give agents context, ask for a second opinion, and keep the work connected.
 </p>
 
@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="#download"><strong>Download</strong></a> ·
+  <a href="#remote-servers">Remote servers</a> ·
   <a href="https://termloop.ai">Website</a> ·
   <a href="https://termloop.ai/#features">Video tour</a> ·
   <a href="docs/features.md">Feature guide</a> ·
@@ -27,6 +28,7 @@
 ## Why TermLoop
 
 - **No more copy-paste between agents.** Ask Codex to review what Claude Code wrote, or hand a brief to a Session that is already running. Answers come back to the agent that asked.
+- **Remote servers feel local.** Connect a Linux server, cloud VM, or another computer over SSH or Tailscale. Its Projects and live terminals appear in the same sidebar as your local ones.
 - **Sessions survive the window.** A background daemon owns every terminal and process. Close the app, reopen it, and reattach to the same live Sessions.
 - **Work stays organized.** Projects, Tasks with acceptance criteria, optional Git worktrees, diffs, and review notes live next to the agents doing the work.
 - **Bring your own agents.** TermLoop launches the Claude Code and Codex CLIs with your existing subscriptions and sign-ins. It does not proxy model traffic.
@@ -42,9 +44,29 @@ Get the latest installer from [Releases](https://github.com/feritzcan2/termloop/
 | Windows (x64) | `.exe` installer |
 | Linux (x86_64) | `.AppImage` or `.deb` |
 
-Each release also ships a standalone `termloop-server` daemon archive for macOS and Linux, plus a `SHA256SUMS` file for verifying downloads.
+Each release also ships a headless `termloop-server` archive for [remote servers](#remote-servers), plus a `SHA256SUMS` file for verifying downloads.
 
 **Requirements:** to run agent Sessions, install and sign in to the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) CLI on the computer running TermLoop. Ordinary terminal Sessions need nothing extra.
+
+## Remote servers
+
+Run agents on a Linux server, a cloud VM, or another desktop, and drive them from your laptop as if they were local. Remote Projects appear in the same sidebar, grouped under each computer's name.
+
+- **One window, many computers.** Use this computer plus up to eight remote computers at the same time. If one goes offline, work on the others continues.
+- **Agents keep running when you disconnect.** The remote daemon runs as a background service and owns its terminals. Close the laptop, reconnect later, and the same Sessions are still running.
+- **Set up from the app.** Open **Settings → Computers → Add a Linux server**, verify the server's SSH fingerprint, and TermLoop installs the server, starts it as a background service, and connects.
+- **Kept up to date.** Managed Linux servers check hourly for new stable releases and roll back automatically if an update fails.
+- **Private by default.** The server listens only on `127.0.0.1`. You reach it through an SSH tunnel or Tailscale Serve over HTTPS, and every connecting device gets its own credential that the server can revoke.
+- **Dev servers open locally.** Opening a remote dev-server URL forwards it to a local port.
+
+| How to connect | Use it when |
+| --- | --- |
+| **Add a Linux server** (Settings → Computers) | You have SSH access to a Debian or Ubuntu x64 server with systemd. The first setup needs root or passwordless sudo. |
+| **On your Tailscale network** | The server shares over Tailscale. TermLoop finds it on your tailnet and connects with one click. |
+| **Share this computer** | You want to reach another Mac, Windows, or Linux desktop running TermLoop over SSH or Tailscale. |
+| **Headless install** | You prefer the terminal. Extract the `termloop-server-linux-x64` archive from [Releases](https://github.com/feritzcan2/termloop/releases/latest), run `./install.sh install` as the user that will own the server, then enable access with `termloopctl access enable`. |
+
+Claude Code and Codex run on the server, so sign them in there from **Settings → Computers → Agent accounts**. The desktop and server must run matching TermLoop versions; the setup wizard installs the version that matches your desktop.
 
 ## Quick start
 
