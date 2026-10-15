@@ -251,6 +251,16 @@ impl CoreRuntime {
                 )
             })
             .unwrap_or_default();
+        let progress_inserts = current
+            .as_ref()
+            .map(|current| {
+                self.passes_for_steps_added_behind_tasks(
+                    current,
+                    &configuration.milestones,
+                    updated_at_epoch_ms,
+                )
+            })
+            .unwrap_or_default();
         let changed_routine_ids = upsert_routines
             .iter()
             .filter(|routine| current_routines.get(&routine.id) != Some(routine))
@@ -266,6 +276,7 @@ impl CoreRuntime {
                     upsert_routines,
                     delete_routine_ids: delete_routine_ids.clone(),
                     progress_updates,
+                    progress_inserts,
                 },
                 draft.expected_revision,
             )
@@ -280,6 +291,82 @@ impl CoreRuntime {
             "playbook": playbook_projection(&configuration, self.store.tracker_configurations())?,
             "stateRevision": self.store.revision(),
         }))
+    }
+
+    /// Passes for steps this save adds behind where a Task already stands.
+    ///
+    /// A Task's position is the first step it has not passed, so a new step
+    /// inserted before that position would send the Task back and ask about a
+    /// stage it is already past. Such a step counts as passed for every Task
+    /// that has started the pipeline, and every new step counts as passed for
+    /// a Task that had finished it. A Task that has not passed any step yet is
+    /// asked new steps normally, and the user can still move a Task back.
+    fn passes_for_steps_added_behind_tasks(
+        &self,
+        current: &PlaybookConfiguration,
+        next_milestones: &[PlaybookMilestone],
+        decided_at_epoch_ms: u64,
+    ) -> Vec<PlaybookStepProgress> {
+        let same_step = |left: &PlaybookMilestone, right: &PlaybookMilestone| {
+            left.id == right.id && left.routine_id == right.routine_id
+        };
+        let added = next_milestones
+            .iter()
+            .enumerate()
+            .filter(|(_, next)| !current.milestones.iter().any(|old| same_step(old, next)))
+            .collect::<Vec<_>>();
+        if added.is_empty() {
+            return Vec::new();
+        }
+        let mut answers_by_task: HashMap<&str, Vec<&PlaybookStepProgress>> = HashMap::new();
+        for answer in self.store.playbook_step_progress() {
+            answers_by_task
+                .entry(answer.task_id.as_str())
+                .or_default()
+                .push(answer);
+        }
+        let mut inserts = Vec::new();
+        for task in self.store.tasks().iter().filter(|task| {
+            task.project_id == current.project_id
+                && task.status == termloop_domain::TaskStatus::Open
+                && task.archived_at_epoch_ms.is_none()
+        }) {
+            let answers = answers_by_task
+                .get(task.id.as_str())
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            // Where the Task stands in the next pipeline: before the first kept
+            // step it has not passed. A finished Task stands past every step.
+            let standing_at = match termloop_domain::pipeline_position(&current.milestones, answers)
+            {
+                termloop_domain::PlaybookPosition::Done => next_milestones.len(),
+                termloop_domain::PlaybookPosition::At(0) => continue,
+                termloop_domain::PlaybookPosition::At(index) => {
+                    let Some(at) = current.milestones[index..].iter().find_map(|old| {
+                        next_milestones.iter().position(|next| same_step(old, next))
+                    }) else {
+                        continue;
+                    };
+                    at
+                }
+            };
+            for (index, milestone) in &added {
+                if *index < standing_at {
+                    inserts.push(PlaybookStepProgress {
+                        task_id: task.id.clone(),
+                        milestone_id: milestone.id.clone(),
+                        routine_id: milestone.routine_id.clone(),
+                        verdict: PlaybookStepVerdict::Passed,
+                        evidence:
+                            "Added to the pipeline after this Task had already moved past it."
+                                .into(),
+                        decided_at_epoch_ms,
+                        next_attempt_at_epoch_ms: None,
+                    });
+                }
+            }
+        }
+        inserts
     }
 
     /// The waiting answers an edited step must reschedule. Passed answers are
@@ -1411,6 +1498,130 @@ mod tests {
         assert_eq!(
             routine.prompt,
             "All required CI checks pass on the PR head."
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_new_step_behind_a_task_counts_as_passed_and_never_sends_it_back() {
+        let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
+        for task_id in ["fresh", "at-ci", "done"] {
+            runtime
+                .store
+                .insert_task(
+                    &runtime.write_authority,
+                    termloop_domain::TaskRecord {
+                        id: task_id.into(),
+                        project_id: project_id.clone(),
+                        title: task_id.into(),
+                        brief: None,
+                        developer_notes: vec![],
+                        status: termloop_domain::TaskStatus::Open,
+                        archived_at_epoch_ms: None,
+                        branch: None,
+                        worktree: None,
+                        worktree_generation: 0,
+                        steward_brief_markdown: String::new(),
+                        steward_brief_revision: 1,
+                        rank: 0,
+                        created_at_epoch_ms: 1,
+                        updated_at_epoch_ms: 1,
+                    },
+                )
+                .unwrap();
+        }
+        let created = save_two_steps(
+            &mut runtime,
+            &project_id,
+            two_step_milestones(300, 300, "CI checks pass."),
+            1,
+        );
+        let routine = |index: usize| {
+            created["playbook"]["milestones"][index]["routineId"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let passed = |task_id: &str, milestone_id: &str, routine_id: String| PlaybookStepProgress {
+            task_id: task_id.into(),
+            milestone_id: milestone_id.into(),
+            routine_id,
+            verdict: PlaybookStepVerdict::Passed,
+            evidence: "Checked.".into(),
+            decided_at_epoch_ms: 1_000,
+            next_attempt_at_epoch_ms: None,
+        };
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .record_playbook_step_progress(
+                &runtime.write_authority,
+                &project_id,
+                vec![
+                    passed("at-ci", "pr-open", routine(0)),
+                    passed("done", "pr-open", routine(0)),
+                    passed("done", "ci-green", routine(1)),
+                ],
+                revision,
+            )
+            .unwrap();
+
+        // One step goes between the two, and one after the last.
+        let mut milestones = two_step_milestones(300, 300, "CI checks pass.");
+        let step = |id: &str| {
+            json!({
+                "id": id,
+                "title": id,
+                "gate": "automatic",
+                "retryDelaySeconds": 300,
+                "completeWhen": format!("The {id} condition holds."),
+                "whileWaiting": {"mode":"off","instructions":""}
+            })
+        };
+        milestones
+            .as_array_mut()
+            .unwrap()
+            .insert(1, step("reviewed"));
+        milestones.as_array_mut().unwrap().push(step("shipped"));
+        save_two_steps(&mut runtime, &project_id, milestones, 9_000);
+
+        let standing = runtime
+            .handle("playbook.runtime", json!({"projectId": project_id}))
+            .unwrap();
+        let waiting = |index: usize| standing["steps"][index]["waitingTaskIds"].clone();
+        // A Task that has not started is asked the new step like any other.
+        assert_eq!(waiting(0), json!(["fresh"]));
+        assert_eq!(waiting(1), json!([]));
+        // A Task past the insertion point keeps its place.
+        assert_eq!(waiting(2), json!(["at-ci"]));
+        // A finished Task stays finished, even with a step added at the end.
+        assert_eq!(waiting(3), json!([]));
+        assert_eq!(standing["doneTaskIds"], json!(["done"]));
+        let inserted = runtime
+            .store
+            .playbook_step_progress()
+            .iter()
+            .filter(|answer| answer.decided_at_epoch_ms == 9_000)
+            .map(|answer| (answer.task_id.as_str(), answer.milestone_id.as_str()))
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            inserted,
+            HashSet::from([
+                ("at-ci", "reviewed"),
+                ("done", "reviewed"),
+                ("done", "shipped")
+            ])
+        );
+        assert!(
+            runtime
+                .store
+                .playbook_step_progress()
+                .iter()
+                .filter(|answer| answer.decided_at_epoch_ms == 9_000)
+                .all(|answer| answer.evidence
+                    == "Added to the pipeline after this Task had already moved past it.")
         );
 
         let _ = std::fs::remove_file(path);

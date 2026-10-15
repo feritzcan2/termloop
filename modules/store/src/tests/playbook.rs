@@ -111,6 +111,7 @@ fn atomic_playbook_apply_creates_capacity_checks_and_document_in_one_revision() 
                 upsert_routines: vec![step_routine("project-a", "routine-pr")],
                 delete_routine_ids: Vec::new(),
                 progress_updates: Vec::new(),
+                progress_inserts: Vec::new(),
             },
             before,
         )
@@ -156,6 +157,7 @@ fn atomic_playbook_apply_rolls_back_the_entire_invalid_replacement() {
                 upsert_routines: vec![routine],
                 delete_routine_ids: Vec::new(),
                 progress_updates: Vec::new(),
+                progress_inserts: Vec::new(),
             },
             before,
         ),
@@ -1039,6 +1041,7 @@ fn playbook_apply_replaces_existing_answers_and_refuses_unknown_ones() {
                 upsert_routines: vec![step_routine("project-a", "routine-pr")],
                 delete_routine_ids: Vec::new(),
                 progress_updates: vec![rescheduled.clone()],
+                progress_inserts: Vec::new(),
             },
             before,
         )
@@ -1060,6 +1063,7 @@ fn playbook_apply_replaces_existing_answers_and_refuses_unknown_ones() {
                 upsert_routines: vec![step_routine("project-a", "routine-pr")],
                 delete_routine_ids: Vec::new(),
                 progress_updates: vec![unknown],
+                progress_inserts: Vec::new(),
             },
             before,
         ),
@@ -1117,4 +1121,53 @@ fn editing_a_step_routine_advances_its_playbook_in_the_same_commit() {
 
     drop(store);
     std::fs::remove_dir_all(path).ok();
+}
+
+#[test]
+fn a_save_inserts_only_new_passes_for_steps_it_asks() {
+    let (path, mut store, authority) = project_with_pipeline("progress-inserts");
+    let apply = |inserts: Vec<PlaybookStepProgress>, revision: u64| PlaybookApply {
+        configuration: playbook("project-a", revision),
+        steward_configuration: None,
+        upsert_routines: vec![step_routine("project-a", "routine-pr")],
+        delete_routine_ids: Vec::new(),
+        progress_updates: Vec::new(),
+        progress_inserts: inserts,
+    };
+
+    // Only a pass may be inserted.
+    let before = store.revision();
+    assert!(matches!(
+        store.apply_playbook(
+            &authority,
+            apply(vec![answer("task-1", PlaybookStepVerdict::Waiting)], 2),
+            before,
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), before);
+
+    store
+        .apply_playbook(
+            &authority,
+            apply(vec![answer("task-1", PlaybookStepVerdict::Passed)], 2),
+            before,
+        )
+        .unwrap();
+    assert_eq!(store.playbook_step_progress().len(), 1);
+
+    // An insert never replaces an answer the Task already has.
+    let before = store.revision();
+    assert!(matches!(
+        store.apply_playbook(
+            &authority,
+            apply(vec![answer("task-1", PlaybookStepVerdict::Passed)], 3),
+            before,
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), before);
+
+    drop(store);
+    let _ = std::fs::remove_file(&path);
 }

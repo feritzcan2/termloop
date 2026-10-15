@@ -18,6 +18,10 @@ pub struct PlaybookApply {
     /// waiting answers; every replaced answer must already exist and still be
     /// asked by the next document.
     pub progress_updates: Vec<PlaybookStepProgress>,
+    /// New passed answers for steps this save adds behind a Task's current
+    /// position. Each must be a pass for a step the next document asks, and
+    /// that Task must not already have an answer for it.
+    pub progress_inserts: Vec<PlaybookStepProgress>,
 }
 
 /// Whether one answer contradicts the state it is stored in.
@@ -169,6 +173,18 @@ impl Store {
             !project_task_ids.contains(progress.task_id.as_str())
                 || apply.configuration.progress_matches_current_step(progress)
         });
+        for insert in apply.progress_inserts {
+            if !project_task_ids.contains(insert.task_id.as_str())
+                || insert.verdict != termloop_domain::PlaybookStepVerdict::Passed
+                || !apply.configuration.progress_matches_current_step(&insert)
+                || next.playbook_step_progress.iter().any(|current| {
+                    current.task_id == insert.task_id && current.milestone_id == insert.milestone_id
+                })
+            {
+                return Err(StoreError::ConstraintViolation);
+            }
+            next.playbook_step_progress.push(insert);
+        }
         for update in apply.progress_updates {
             if !project_task_ids.contains(update.task_id.as_str()) {
                 return Err(StoreError::ConstraintViolation);
