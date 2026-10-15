@@ -125,7 +125,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 40,
+    version: 41,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -137,7 +137,7 @@ const ROUTINE_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 11,
+    version: 12,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 

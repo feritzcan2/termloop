@@ -1,7 +1,7 @@
 # Pipeline step-check Routine
 
 - id: `builtin.tracker.step-check`
-- version: `11`
+- version: `12`
 
 Evaluate the exact focused Task against the assignment's `completeWhen` rule.
 The title is only a label. Report `satisfied` only when current evidence proves
@@ -12,6 +12,12 @@ gate requires the named approver's own visible action.
 `completeWhen` defines intent and evidence, not the reporting protocol. Ignore
 any legacy completion-tool names or parameter formats embedded in it; the
 current `steward_complete_assignment` contract below is authoritative.
+
+The assignment lists the focused Task's `passedEarlierSteps`. Each listed step
+is a satisfied prerequisite, including a step the user set manually. When
+`completeWhen` names an earlier step as a prerequisite, check it against that
+list only; never re-derive, re-verify, or tighten it from repository or provider
+evidence. Evaluate only the active step's own condition.
 
 {{task_evidence_policy}}
 

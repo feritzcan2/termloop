@@ -115,7 +115,7 @@ fn routines_use_one_provider_neutral_evidence_policy() {
         (
             ExecutorRole::StepCheckTracker,
             "builtin.tracker.step-check",
-            11,
+            12,
         ),
     ];
 
@@ -2370,7 +2370,7 @@ fn ask_to_reply_is_one_visible_terminal_safe_delivery() {
 #[test]
 fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
     let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(prompt.provenance().template_version, 40);
+    assert_eq!(prompt.provenance().template_version, 41);
     assert!(prompt.authored_preview().contains("routine_finding_read"));
     assert!(prompt.authored_preview().contains("playbook_read"));
     assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -2660,7 +2660,7 @@ fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
 #[test]
 fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract() {
     let steward = executor_prompt(ExecutorRole::Steward).unwrap();
-    assert_eq!(steward.provenance().template_version, 40);
+    assert_eq!(steward.provenance().template_version, 41);
     let steward = steward.authored_preview();
     assert!(steward.contains("stage title is only a label"));
     assert!(steward.contains("steward_complete_assignment"));
@@ -2675,7 +2675,7 @@ fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract(
     assert!(steward.contains("canonical Session ID returned by the scoped `task_read`"));
 
     let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-    assert_eq!(step.provenance().template_version, 11);
+    assert_eq!(step.provenance().template_version, 12);
     assert!(step.delivered_preview().contains("purpose-built connector"));
     assert!(step.delivered_preview().contains("observed branch family"));
     assert!(step.delivered_preview().contains("title is only a label"));
@@ -2690,6 +2690,14 @@ fn pipeline_prompts_use_live_provider_neutral_evidence_and_one_outcome_contract(
             .contains("cached UI projection is display-only")
     );
     assert!(!step.delivered_preview().contains("one yes/no question"));
+    // A prerequisite step is read from the Task's recorded passes, never re-proven.
+    let step = step.delivered_preview().replace('\n', " ");
+    assert!(step.contains("`passedEarlierSteps`"));
+    assert!(step.contains("including a step the user set manually"));
+    assert!(step.contains("never re-derive, re-verify, or tighten it"));
+    let steward = steward.replace('\n', " ");
+    assert!(steward.contains("A step finding's `passedEarlierSteps`"));
+    assert!(steward.contains("Never treat a manual pass"));
 }
 
 #[test]
