@@ -114,6 +114,19 @@ describe("Session state", () => {
     ).generatedInputDelivery)).toMatchObject({
       detail: "agent requested permission",
     });
+    expect(generatedInputDeliveryPresentation(deliveryStatus(
+      "blocked",
+      "composerUnavailable",
+      { pasteReceipted: false, cancelCause: "providerTurnFailed" },
+    ).generatedInputDelivery)).toMatchObject({
+      state: {
+        id: "promptBlocked",
+        label: "Previous turn failed",
+        summary: expect.stringContaining("previous turn ended with an error"),
+      },
+      detail: "agent's previous turn failed",
+      nextAction: "Open its Terminal and send any input to continue.",
+    });
   });
 
   it("presents only the exact acknowledged interruption as idle", () => {

@@ -24,6 +24,24 @@ pub fn generated_input_composer_may_accept(
         || (agent_id == "codex" && provider_state == Some(AgentState::Interrupted))
 }
 
+/// A failed turn stays `Failed` until new work starts, so ordinary generated
+/// input waits for the user. Callers may admit a specific prompt kind after a
+/// failure only when the provider is known to be back at its composer: Claude's
+/// `StopFailure` hook and Codex's `turn/completed: failed` both end the turn
+/// there, and the same settlement gates as an idle composer still apply.
+pub fn generated_input_composer_may_accept_after_failed_turn(
+    agent_id: &str,
+    provider_state: Option<AgentState>,
+    provider_source: Option<AgentSignalSource>,
+) -> bool {
+    provider_state == Some(AgentState::Failed)
+        && match agent_id {
+            "claude" => provider_source == Some(AgentSignalSource::Hook),
+            "codex" => true,
+            _ => false,
+        }
+}
+
 pub fn generated_input_settlement(
     agent_id: &str,
     provider_source: Option<AgentSignalSource>,
@@ -61,6 +79,9 @@ pub fn unavailable_composer_cause(
         }
         _ if provider_state == Some(AgentState::AwaitingInput) => {
             GeneratedInputDeliveryCancelCause::ProviderAwaitingInput
+        }
+        _ if provider_state == Some(AgentState::Failed) => {
+            GeneratedInputDeliveryCancelCause::ProviderTurnFailed
         }
         _ => GeneratedInputDeliveryCancelCause::ProviderBusy,
     }
@@ -113,6 +134,56 @@ mod tests {
             "codex",
             interrupted,
             Some(AgentSignalSource::Process)
+        ));
+    }
+
+    #[test]
+    fn a_failed_turn_is_reported_as_failed_and_only_admits_known_composer_returns() {
+        let failed = Some(AgentState::Failed);
+        assert_eq!(
+            unavailable_composer_cause(failed, Some(termloop_agents::AgentSignal::Failed)),
+            GeneratedInputDeliveryCancelCause::ProviderTurnFailed
+        );
+        assert_eq!(
+            unavailable_composer_cause(Some(AgentState::Working), None),
+            GeneratedInputDeliveryCancelCause::ProviderBusy
+        );
+        for source in [
+            AgentSignalSource::Hook,
+            AgentSignalSource::Process,
+            AgentSignalSource::Transcript,
+            AgentSignalSource::DaemonBridge,
+        ] {
+            assert!(!generated_input_composer_may_accept(
+                "claude",
+                failed,
+                Some(source)
+            ));
+        }
+        assert!(generated_input_composer_may_accept_after_failed_turn(
+            "claude",
+            failed,
+            Some(AgentSignalSource::Hook)
+        ));
+        assert!(!generated_input_composer_may_accept_after_failed_turn(
+            "claude",
+            failed,
+            Some(AgentSignalSource::Transcript)
+        ));
+        assert!(generated_input_composer_may_accept_after_failed_turn(
+            "codex",
+            failed,
+            Some(AgentSignalSource::DaemonBridge)
+        ));
+        assert!(!generated_input_composer_may_accept_after_failed_turn(
+            "opencode",
+            failed,
+            Some(AgentSignalSource::Hook)
+        ));
+        assert!(!generated_input_composer_may_accept_after_failed_turn(
+            "claude",
+            Some(AgentState::Working),
+            Some(AgentSignalSource::Hook)
         ));
     }
 }

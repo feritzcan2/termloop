@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:9c10c9b4905a333ad0a348bf2bc6241d36b0a6b8c5fed1e1d720bedb946ed1a0";
+    "sha256:bbd60da3cc3755e51666f0222771266d954239f31bcfb4ca356eb06737dab226";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -2510,6 +2510,8 @@ pub enum GeneratedInputDeliveryCancelCause {
     ProviderAwaitingInput,
     #[serde(rename = "providerBusy")]
     ProviderBusy,
+    #[serde(rename = "providerTurnFailed")]
+    ProviderTurnFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -13666,6 +13668,7 @@ fn validate_generated_input_delivery_cancel_cause(value: &Value) -> bool {
             "notification",
             "providerAwaitingInput",
             "providerBusy",
+            "providerTurnFailed",
         ]
         .contains(&text)
     })
