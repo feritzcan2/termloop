@@ -240,11 +240,19 @@ impl CoreRuntime {
             match self.playbook_step_due_epoch_ms(&routine_id) {
                 Some(due) => {
                     // "Run now" is the user overriding exactly the wait this
-                    // would otherwise sit out.
+                    // would otherwise sit out. Once its Task is being checked,
+                    // the step returns to the next Task's own due time.
                     let next = self
                         .tracker_runtime
                         .step_run_now
                         .get(&routine_id)
+                        .filter(|run_now| {
+                            run_now.task_id.as_deref().is_none_or(|task_id| {
+                                !self
+                                    .tracker_runtime
+                                    .step_task_is_checked(&routine_id, task_id)
+                            })
+                        })
                         .map_or(due, |run_now| run_now.at_epoch_ms.min(due));
                     self.tracker_runtime
                         .next_due_epoch_ms

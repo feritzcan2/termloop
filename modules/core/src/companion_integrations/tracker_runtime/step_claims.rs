@@ -68,6 +68,23 @@ impl CoreRuntime {
             let Some(step) = self.playbook_step_assignment(&routine.id) else {
                 continue;
             };
+            let Some(task_id) = step.waiting.first().map(|task| task.task_id.clone()) else {
+                continue;
+            };
+            // "Run now" overrides exactly one Task's wait: the Task named in
+            // Task details, or the first Task claimed for an unnamed request.
+            // Every other Task at the step still waits for its own due time.
+            let overrides_wait = match self.tracker_runtime.step_run_now.get_mut(&routine.id) {
+                Some(run_now) if run_now.task_id.is_none() => {
+                    run_now.task_id = Some(task_id);
+                    true
+                }
+                Some(run_now) => run_now.task_id.as_deref() == Some(task_id.as_str()),
+                None => false,
+            };
+            if !overrides_wait && step.due_at_epoch_ms > now_epoch_ms {
+                continue;
+            }
             let capability = TrackerCheckCapability {
                 project_id: project_id.to_owned(),
                 tracker_id: routine.id.clone(),
