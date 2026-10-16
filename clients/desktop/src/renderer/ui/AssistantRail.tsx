@@ -48,7 +48,7 @@ import {
   routineBuilderSession,
   routinePromptImproverSession,
 } from "../prompt-improver-session-link.js";
-import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement } from "./AssistantTaskRows.js";
+import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement, type CloseCompletedTask } from "./AssistantTaskRows.js";
 import { usePlaybookTaskDecision, type PlaybookTaskDecisionActions } from "./PlaybookTaskDecision.js";
 import { Icon } from "./Icon.js";
 import {
@@ -393,6 +393,7 @@ type Props = {
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   /** The Steward's open proposal or suggestion is answerable from its Task row. */
   taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
+  closeTask?: CloseCompletedTask | undefined;
   openDetails(selection: AssistantSelection): void;
 };
 
@@ -1117,6 +1118,7 @@ export function AssistantRail(props: Props) {
           endDrag={endTaskDrag}
           decision={taskDecision}
           openSteward={openStewardChat}
+          closeTask={props.closeTask}
         />
         {board.offBoard.length > 0 ? <div className="ar-offboard">
           <span className="ar-routines-label">Off the board · {board.offBoard.length}</span>
