@@ -57,6 +57,7 @@ export function keepAwakeLimitationLabel(limitation: KeepAwakeLimitation): strin
     case "userInitiatedSleep": return "sleeping it yourself";
     case "lowBattery": return "critically low battery";
     case "thermalEmergency": return "a thermal emergency";
+    case "lidClosedPowerOrDisplayChange": return "power or display changes with the lid closed";
   }
 }
 
