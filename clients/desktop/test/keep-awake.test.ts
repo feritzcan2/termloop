@@ -92,6 +92,8 @@ describe("keep-awake presentation", () => {
       .toBe("It can still sleep from closing the lid.");
     expect(keepAwakeLimitationSentence(["lidClose", "lowBattery", "thermalEmergency"]))
       .toBe("It can still sleep from closing the lid, critically low battery and a thermal emergency.");
+    expect(keepAwakeLimitationSentence(["userInitiatedSleep", "lidClosedPowerOrDisplayChange", "lowBattery"]))
+      .toBe("It can still sleep from sleeping it yourself, power or display changes with the lid closed and critically low battery.");
   });
 
   it("renders a collapsed trigger that reveals the options only once opened", () => {

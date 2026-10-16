@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:bbd60da3cc3755e51666f0222771266d954239f31bcfb4ca356eb06737dab226";
+    "sha256:8b29f3c7a2d73e7efa26f797bb28cccb268cb9d751b182b4453f99b00e2315a1";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -2773,6 +2773,8 @@ pub enum KeepAwakeLimitation {
     LowBattery,
     #[serde(rename = "thermalEmergency")]
     ThermalEmergency,
+    #[serde(rename = "lidClosedPowerOrDisplayChange")]
+    LidClosedPowerOrDisplayChange,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14314,6 +14316,7 @@ fn validate_keep_awake_limitation(value: &Value) -> bool {
             "userInitiatedSleep",
             "lowBattery",
             "thermalEmergency",
+            "lidClosedPowerOrDisplayChange",
         ]
         .contains(&text)
     })
