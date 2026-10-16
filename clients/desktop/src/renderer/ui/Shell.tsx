@@ -1823,6 +1823,12 @@ export function Shell(props: ShellProps) {
             openTask={openTaskDetail}
             saveTaskNotes={props.updateTaskDeveloperNotes}
             taskDecisionActions={props.assistantActions}
+            closeTask={{
+              inspect: props.inspectTaskWorktreeCleanup,
+              closeTaskAndWorktree: props.closeTaskAndWorktree,
+              busyTaskIds: props.deletingTaskIds,
+              overlayContainer: props.overlayContainer,
+            }}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
