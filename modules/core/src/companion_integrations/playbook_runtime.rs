@@ -1846,6 +1846,80 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn run_now_skips_only_its_own_tasks_wait() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        // Both Tasks at the first step answer waiting and sit out their delay.
+        for (index, task_id) in ["task-1", "task-2"].into_iter().enumerate() {
+            let claim = runtime
+                .claim_next_playbook_step_or_idle(&project_id, format!("check-{index}"), NOW)
+                .unwrap();
+            assert_eq!(claim.result["step"]["tasks"][0]["taskId"], task_id);
+            runtime
+                .report_steward_step_verdicts(
+                    claim.capability.as_ref().unwrap(),
+                    vec![StewardStepVerdict {
+                        task_id: task_id.into(),
+                        verdict: PlaybookStepVerdict::Waiting,
+                        evidence: "No branch pushed yet.".into(),
+                    }],
+                    format!("report-{index}"),
+                    NOW + 1_000,
+                )
+                .unwrap();
+        }
+        let waiting_until = runtime.next_tracker_schedule_epoch_ms().unwrap();
+        assert!(waiting_until > NOW + 2_000);
+
+        // Task details checks task-2 now. task-1 keeps waiting even though the
+        // same step was made due, and the schedule returns to task-1's own time
+        // instead of staying hot while task-2 is checked.
+        assert!(
+            runtime
+                .run_task_routine_now("routine-pr", "task-2", NOW + 2_000)
+                .unwrap()
+        );
+        let mut claims = Vec::new();
+        while let Some(claim) = runtime
+            .claim_next_playbook_step(&project_id, format!("run-{}", claims.len()), NOW + 2_000)
+            .unwrap()
+        {
+            claims.push(claim);
+        }
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].result["step"]["tasks"][0]["taskId"], "task-2");
+        assert_eq!(
+            runtime.next_tracker_schedule_epoch_ms(),
+            Some(waiting_until)
+        );
+
+        // An unnamed "Run now" from the step likewise starts a single check.
+        runtime
+            .report_steward_step_verdicts(
+                claims[0].capability.as_ref().unwrap(),
+                vec![StewardStepVerdict {
+                    task_id: "task-2".into(),
+                    verdict: PlaybookStepVerdict::Waiting,
+                    evidence: "Still nothing pushed.".into(),
+                }],
+                "report-run".into(),
+                NOW + 3_000,
+            )
+            .unwrap();
+        assert!(runtime.run_routine_now("routine-pr", NOW + 4_000).unwrap());
+        let mut unnamed = Vec::new();
+        while let Some(claim) = runtime
+            .claim_next_playbook_step(&project_id, format!("step-{}", unnamed.len()), NOW + 4_000)
+            .unwrap()
+        {
+            unnamed.push(claim);
+        }
+        assert_eq!(unnamed.len(), 1);
+        assert!(runtime.next_tracker_schedule_epoch_ms().unwrap() > NOW + 4_000);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn a_verdict_answers_only_the_claimed_question_for_the_focused_task() {
         let (mut runtime, root, project_id) = pipeline_runtime();
         let claim = runtime

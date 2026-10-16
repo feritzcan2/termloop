@@ -14,6 +14,11 @@ use super::invalidation::InvalidationRequest;
 const REPORT_CAPABILITIES_MAX: usize = 256;
 const REPORT_CAPABILITY_GRACE_MS: u64 = 60 * 1_000;
 const WAKE_DELIVERY_RETRY_MS: u64 = 5_000;
+/// Deadlines are wall-clock epochs, but `tokio::time::sleep` follows a
+/// monotonic clock that stops while the computer sleeps (macOS). Waking at
+/// least this often lets checks that fell due during system sleep run soon
+/// after the computer wakes instead of a full sleep-length later.
+const TRACKER_WAKE_MAX: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub(super) struct TrackerReportCapabilityRegistry {
@@ -181,7 +186,7 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
             continue;
         };
         let now = termloop_platform::current_epoch_ms();
-        let delay = Duration::from_millis(next_wake.saturating_sub(now));
+        let delay = tracker_sleep(next_wake, now);
         tokio::select! {
             _ = tokio::time::sleep(delay) => {
                 let (changed, due, steps, state_revision) = {
@@ -215,6 +220,10 @@ pub(super) async fn run_tracker_deadlines(state: AppState) {
             _ = state.tracker_runtime_wake.notified() => {}
         }
     }
+}
+
+fn tracker_sleep(next_wake_epoch_ms: u64, now_epoch_ms: u64) -> Duration {
+    Duration::from_millis(next_wake_epoch_ms.saturating_sub(now_epoch_ms)).min(TRACKER_WAKE_MAX)
 }
 
 fn publish_tracker_runtime_invalidation(state: &AppState, state_revision: u64) {
@@ -351,6 +360,22 @@ async fn deliver_due_steward_wake(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_far_deadline_still_rechecks_the_wall_clock_within_a_minute() {
+        assert_eq!(
+            super::tracker_sleep(3 * 60 * 60 * 1_000, 0),
+            super::TRACKER_WAKE_MAX
+        );
+        assert_eq!(
+            super::tracker_sleep(10_000, 4_000),
+            std::time::Duration::from_millis(6_000)
+        );
+        assert_eq!(
+            super::tracker_sleep(1_000, 5_000),
+            std::time::Duration::ZERO
+        );
+    }
+
     use super::*;
 
     fn capability(
