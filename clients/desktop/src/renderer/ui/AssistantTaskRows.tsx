@@ -3,6 +3,7 @@ import { useState, type DragEvent } from "react";
 import type { Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
 import { OverlayPortal } from "./OverlayPortal.js";
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
+import { useOverlayLease } from "./overlay-lease.js";
 import { PlaybookTaskNotes, type SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { Icon } from "./Icon.js";
 import { PlaybookTaskDecisionStrip, type PlaybookTaskDecisionHandle } from "./PlaybookTaskDecision.js";
@@ -56,10 +57,14 @@ export type CloseCompletedTask = Readonly<{
   closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   busyTaskIds: ReadonlySet<string>;
   overlayContainer: Element | undefined;
+  /** The native terminal sits above the page; while the dialog is open it
+      must hold an overlay lease or the terminal keeps its clicks and focus. */
+  overlayVisibilityChanged(visible: boolean): void;
 }>;
 
 function CloseCompletedTaskButton(props: { task: Task; close: CloseCompletedTask; disabled?: boolean | undefined }) {
   const [reviewing, setReviewing] = useState(false);
+  useOverlayLease(reviewing, props.close.overlayVisibilityChanged);
   const busy = props.close.busyTaskIds.has(props.task.id);
   const label = props.task.worktree
     ? `Close ${props.task.title} and remove its worktree`
