@@ -523,7 +523,6 @@ pub fn take_bounded_file(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, P
     }
 }
 
-#[allow(unsafe_code)]
 pub fn atomic_replace_private_file(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
     let parent = path
         .parent()
@@ -564,27 +563,7 @@ pub fn atomic_replace_private_file(path: &Path, bytes: &[u8]) -> Result<(), Plat
     #[cfg(target_os = "windows")]
     {
         if path.exists() {
-            use std::os::windows::ffi::OsStrExt;
-            use windows_sys::Win32::Storage::FileSystem::{
-                REPLACEFILE_WRITE_THROUGH, ReplaceFileW,
-            };
-
-            let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let replacement: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
-            // SAFETY: Both paths are owned, null-terminated UTF-16 buffers that live
-            // for the duration of the call. Optional backup/exclusion pointers are null.
-            let replaced = unsafe {
-                ReplaceFileW(
-                    destination.as_ptr(),
-                    replacement.as_ptr(),
-                    std::ptr::null(),
-                    REPLACEFILE_WRITE_THROUGH,
-                    std::ptr::null(),
-                    std::ptr::null(),
-                )
-            };
-            if replaced == 0 {
-                let error = io::Error::last_os_error();
+            if let Err(error) = replace_file_through_transient_holds(path, &temp) {
                 let _ = fs::remove_file(&temp);
                 return Err(error.into());
             }
@@ -605,7 +584,6 @@ pub fn atomic_replace_private_file(path: &Path, bytes: &[u8]) -> Result<(), Plat
 /// files; private TermLoop state must continue to use
 /// [`atomic_replace_private_file`]. Symlinks must be resolved and bounded by
 /// the caller before invoking this primitive.
-#[allow(unsafe_code)]
 pub fn atomic_replace_file_preserving_permissions(
     path: &Path,
     bytes: &[u8],
@@ -667,14 +645,45 @@ pub fn atomic_replace_file_preserving_permissions(
     }
 
     #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+    if let Err(error) = replace_file_through_transient_holds(path, &temp) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.into());
+    }
 
-        let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let replacement: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+    Ok(())
+}
+
+/// Delays between `ReplaceFileW` attempts, about 1.3 seconds in total.
+#[cfg(windows)]
+const TRANSIENT_HOLD_RETRY_DELAYS_MS: [u64; 7] = [10, 20, 40, 80, 160, 320, 640];
+
+/// Replaces `destination` with `replacement`, retrying while another process
+/// such as an antivirus scanner or the search indexer briefly holds the
+/// destination open. Those refusals leave both files under their original
+/// names, so a retry is safe; every other failure returns immediately.
+#[cfg(windows)]
+fn replace_file_through_transient_holds(destination: &Path, replacement: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_UNABLE_TO_REMOVE_REPLACED,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let replacement: Vec<u16> = replacement
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let mut delays = TRANSIENT_HOLD_RETRY_DELAYS_MS.iter();
+    loop {
         // SAFETY: Both owned buffers are null-terminated UTF-16 paths and live
         // for the duration of ReplaceFileW. Optional pointer arguments are null.
+        #[allow(unsafe_code)]
         let replaced = unsafe {
             ReplaceFileW(
                 destination.as_ptr(),
@@ -685,14 +694,21 @@ pub fn atomic_replace_file_preserving_permissions(
                 std::ptr::null(),
             )
         };
-        if replaced == 0 {
-            let error = io::Error::last_os_error();
-            let _ = fs::remove_file(&temp);
-            return Err(error.into());
+        if replaced != 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        let transient = matches!(
+            error.raw_os_error().map(|code| code as u32),
+            Some(ERROR_UNABLE_TO_REMOVE_REPLACED | ERROR_SHARING_VIOLATION | ERROR_ACCESS_DENIED)
+        );
+        match delays.next() {
+            Some(delay) if transient => {
+                std::thread::sleep(std::time::Duration::from_millis(*delay))
+            }
+            _ => return Err(error),
         }
     }
-
-    Ok(())
 }
 
 /// Creates an exclusive private sibling backup and atomically replaces the
@@ -905,6 +921,37 @@ mod tests {
         let log = crate::BoundedPrivateLog::open(&log_path, 4096).unwrap();
         log.append_line("fixture").unwrap();
         assert_protected_single_ace_dacl(&log_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_replace_waits_out_a_reader_that_briefly_blocks_deletion() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+
+        let root = std::env::temp_dir().join(format!(
+            "termloop-replace-hold-{}-{}",
+            std::process::id(),
+            crate::current_epoch_ms()
+        ));
+        let path = root.join("state.json");
+        super::atomic_replace_private_file(&path, b"first").unwrap();
+        // Like an antivirus scan, this handle refuses FILE_SHARE_DELETE.
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&path)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            drop(holder);
+        });
+
+        super::atomic_replace_private_file(&path, b"second").unwrap();
+        release.join().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        assert_protected_single_ace_dacl(&path);
         let _ = std::fs::remove_dir_all(root);
     }
 
