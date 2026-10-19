@@ -81,18 +81,21 @@ fn opencode_v2_uses_private_server_configuration_for_every_model_and_permission(
                         && entry.visibility == "redacted"),
                 has_config
             );
-            assert_eq!(
-                manifest
-                    .arguments
-                    .iter()
-                    .map(|arg| arg.display.as_str())
-                    .collect::<Vec<_>>(),
-                payload
-                    .args()
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-            );
+            let displayed = manifest
+                .arguments
+                .iter()
+                .map(|arg| arg.display.as_str())
+                .collect::<Vec<_>>();
+            let delivered = payload
+                .args()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            // The Windows `.cmd` fixture is spawned as `cmd.exe /d /s /c <shim>`;
+            // the manifest shows only the provider's own arguments.
+            let shim_prefix = if cfg!(windows) { 4 } else { 0 };
+            assert_eq!(delivered.len(), displayed.len() + shim_prefix);
+            assert_eq!(delivered[shim_prefix..], displayed[..]);
         }
     }
     std::fs::remove_dir_all(directory).unwrap();
