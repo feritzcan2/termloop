@@ -38,6 +38,8 @@ export async function verifyWorktreeChangeCount(call, temporary) {
   for (const name of tracked) await writeFile(path.join(repository, name), "baseline\n");
   git(repository, "add", "--", ...tracked);
   git(repository, "commit", "-m", "baseline");
+  // Fresh provisioning fetches its remote base first; a self origin keeps that hermetic.
+  git(repository, "remote", "add", "origin", repository);
   git(repository, "update-ref", "refs/remotes/origin/main", "HEAD");
 
   const project = await call("project.create", { name: "Change count", folderPath: repository });
