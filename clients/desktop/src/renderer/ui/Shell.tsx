@@ -480,6 +480,7 @@ export function shellNativeOverlayOpen(state: {
   projectWorkflow?: boolean;
   workflowClose?: boolean;
   archivedRail: boolean;
+  playbook?: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
 }
@@ -651,6 +652,7 @@ export function Shell(props: ShellProps) {
     if (railMode !== "workspace" || workspaceView !== "agents") setAgentSearchOpen(false);
   }, [railMode, workspaceView]);
   const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
+  const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
   const projectTriggerRef = useRef<HTMLButtonElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const commandInvokerRef = useRef<HTMLElement | null>(null);
@@ -1124,6 +1126,7 @@ export function Shell(props: ShellProps) {
     projectWorkflow: projectWorkflowOverlayOpen,
     workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
+    playbook: playbookOverlayOpen,
   });
   useEffect(() => {
     props.setNativeOverlayOpen(nativeOverlayOpen);
@@ -1828,6 +1831,7 @@ export function Shell(props: ShellProps) {
               closeTaskAndWorktree: props.closeTaskAndWorktree,
               busyTaskIds: props.deletingTaskIds,
               overlayContainer: props.overlayContainer,
+              overlayVisibilityChanged: setPlaybookOverlayOpen,
             }}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail

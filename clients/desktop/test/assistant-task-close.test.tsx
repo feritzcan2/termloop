@@ -13,12 +13,14 @@ const waiting = { id: "waiting", title: "Waiting fix", status: "open", developer
 const closed = { id: "closed", title: "Closed fix", status: "closed", developer_notes: [] } as unknown as Task;
 const inspect = vi.fn<CloseCompletedTask["inspect"]>();
 const closeTaskAndWorktree = vi.fn<CloseCompletedTask["closeTaskAndWorktree"]>();
+const overlayVisibilityChanged = vi.fn<CloseCompletedTask["overlayVisibilityChanged"]>();
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   inspect.mockReset().mockReturnValue(new Promise(() => undefined));
   closeTaskAndWorktree.mockReset().mockResolvedValue({ status: "completed" });
+  overlayVisibilityChanged.mockReset();
 });
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove();
@@ -30,7 +32,7 @@ async function render(busyTaskIds: ReadonlySet<string> = new Set()) {
     placement={{ byRoutineId: new Map(), completed: [plain, isolated], unplaced: [waiting], closed: [closed] }}
     processingTaskIds={[]}
     openTask={() => undefined}
-    closeTask={{ inspect, closeTaskAndWorktree, busyTaskIds, overlayContainer: undefined }}
+    closeTask={{ inspect, closeTaskAndWorktree, busyTaskIds, overlayContainer: undefined, overlayVisibilityChanged }}
   />));
 }
 const button = (label: string) => host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
@@ -63,4 +65,22 @@ it("disables the action while that Task is already closing", async () => {
   await render(new Set(["plain"]));
   expect(button("Close Plain fix")!.disabled).toBe(true);
   expect(button("Close Isolated fix and remove its worktree")!.disabled).toBe(false);
+});
+
+it("holds an overlay lease while the dialog is open so the native terminal yields its clicks", async () => {
+  await render();
+  expect(overlayVisibilityChanged).not.toHaveBeenCalled();
+  await act(async () => button("Close Isolated fix and remove its worktree")!.click());
+  expect(overlayVisibilityChanged.mock.calls).toEqual([[true]]);
+  const cancel = [...host.querySelectorAll("button")].find((value) => value.textContent === "Cancel")!;
+  await act(async () => cancel.click());
+  expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(overlayVisibilityChanged.mock.calls).toEqual([[true], [false]]);
+});
+
+it("releases the lease when the row unmounts with the dialog open", async () => {
+  await render();
+  await act(async () => button("Close Isolated fix and remove its worktree")!.click());
+  await act(async () => root.render(<></>));
+  expect(overlayVisibilityChanged.mock.calls).toEqual([[true], [false]]);
 });
