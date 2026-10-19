@@ -43,7 +43,7 @@ import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { createSessionRename } from "./session-rename.js";
 import { closeWorkflowAgents as closeWorkflowAgentGroup } from "./workflow-close.js";
-import { retryAgentSession } from "./session-resume.js";
+import { restoreDeletedAgent, retryAgentSession } from "./session-resume.js";
 import {
   createSessionActivation,
   type SessionActivationContext,
@@ -1934,8 +1934,9 @@ export function DesktopApp() {
   }, []);
   const restoreDeletedSession = useCallback(async (sessionId: string) => {
     try {
-      await sourceApiForSession(sessionId).sessionRestoreDeleted(sessionId);
+      const { resumeError } = await restoreDeletedAgent(sourceApiForSession(sessionId), sessionId);
       await refreshProjection();
+      if (resumeError) projectionStore.setMessage(controlErrorMessage(resumeError));
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);

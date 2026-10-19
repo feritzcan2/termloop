@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentLaunchPreviewResult, SessionDto } from "@termloop/contract/current";
-import { retryAgentSession, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
+import { restoreDeletedAgent, retryAgentSession, type DeletedSessionRestoreApi, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
 
 function preview(): AgentLaunchPreviewResult {
   return {
@@ -43,5 +43,47 @@ describe("single-action Session Retry", () => {
     releasePreview?.(preview());
     await Promise.all([first, second]);
     expect(api.sessionResumeAgent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deleted Agent restore", () => {
+  function restoreApi(restored: Partial<SessionDto>, resume: () => Promise<SessionDto>): DeletedSessionRestoreApi {
+    return {
+      sessionRestoreDeleted: vi.fn(async (sessionId) => ({ id: sessionId, ...restored } as SessionDto)),
+      sessionPreviewResumeAgent: vi.fn(async () => preview()),
+      sessionResumeAgent: vi.fn(resume),
+    };
+  }
+
+  it("resumes a retryable Agent instead of leaving it exited", async () => {
+    const api = restoreApi(
+      { lifecycle_state: "exited", retryable: true },
+      async () => ({ id: "deleted-1", lifecycle_state: "running" } as SessionDto),
+    );
+
+    const { session, resumeError } = await restoreDeletedAgent(api, "deleted-1");
+
+    expect(api.sessionResumeAgent).toHaveBeenCalledWith("deleted-1", "resume-ticket");
+    expect(session.lifecycle_state).toBe("running");
+    expect(resumeError).toBeUndefined();
+  });
+
+  it("keeps a non-resumable restore as returned", async () => {
+    const api = restoreApi({ lifecycle_state: "exited", retryable: false }, async () => ({} as SessionDto));
+
+    const { session } = await restoreDeletedAgent(api, "deleted-2");
+
+    expect(api.sessionPreviewResumeAgent).not.toHaveBeenCalled();
+    expect(session.lifecycle_state).toBe("exited");
+  });
+
+  it("reports a resume failure without hiding the committed restore", async () => {
+    const failure = new Error("resume failed");
+    const api = restoreApi({ lifecycle_state: "exited", retryable: true }, async () => { throw failure; });
+
+    const { session, resumeError } = await restoreDeletedAgent(api, "deleted-3");
+
+    expect(session.id).toBe("deleted-3");
+    expect(resumeError).toBe(failure);
   });
 });
