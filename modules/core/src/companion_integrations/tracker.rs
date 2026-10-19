@@ -35,6 +35,16 @@ impl CoreRuntime {
                     .pending_routine_findings
                     .iter()
                     .filter(|finding| self.routine_finding_is_current(configuration, finding))
+                    .map(|finding| {
+                        let mut value = json!(finding);
+                        if let Some(steps) =
+                            self.step_finding_passed_earlier_steps(configuration, finding)
+                        {
+                            value["passedEarlierSteps"] =
+                                steps.iter().map(|step| step.to_json()).collect();
+                        }
+                        value
+                    })
                     .collect::<Vec<_>>();
                 (!findings.is_empty()).then(|| {
                     json!({
@@ -324,8 +334,7 @@ impl CoreRuntime {
             updated_at_epoch_ms,
         };
         let configuration = self
-            .store
-            .set_tracker_configuration(&self.write_authority, configuration, expected_revision)
+            .save_routine_configuration(configuration, expected_revision)
             .map_err(store_error)?;
         self.tracker_runtime.cancel_tracker_check(tracker_id);
         if enabled {
@@ -335,6 +344,33 @@ impl CoreRuntime {
         Ok(
             json!({"configuration": tracker_projection(&configuration)?, "stateRevision": self.store.revision()}),
         )
+    }
+
+    /// Saves an edited Routine. A Routine a Playbook step asks is part of
+    /// that Playbook's document, so the edit advances the Playbook revision in
+    /// the same commit and a Playbook draft read earlier cannot write the old
+    /// question back.
+    pub(crate) fn save_routine_configuration(
+        &mut self,
+        configuration: TrackerConfiguration,
+        expected_revision: u64,
+    ) -> Result<TrackerConfiguration, termloop_store::StoreError> {
+        if self
+            .playbook_step_holding_routine(&configuration.id)
+            .is_some()
+        {
+            self.store.set_step_routine_configuration(
+                &self.write_authority,
+                configuration,
+                expected_revision,
+            )
+        } else {
+            self.store.set_tracker_configuration(
+                &self.write_authority,
+                configuration,
+                expected_revision,
+            )
+        }
     }
 
     pub fn update_routine_context(

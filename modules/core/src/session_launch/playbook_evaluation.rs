@@ -1,12 +1,19 @@
 use serde_json::{Value, json};
 
-use super::{AgentLaunchPlan, AgentMcpRole};
+use super::{AgentLaunchPlan, AgentMcpRole, TaskLaunchGuard};
 use crate::companion_integrations::tracker_runtime::StewardRoutineClaim;
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use termloop_domain::{PlaybookEvaluationOutcome as Outcome, PlaybookEvaluationRecord};
 
 pub enum PlaybookEvaluationLaunch {
     Fork {
+        plan: Box<AgentLaunchPlan>,
+        check_id: String,
+        result: Value,
+    },
+    /// A fresh evaluator in the Task's checkout, for a Task without an Agent
+    /// that can be forked.
+    Fresh {
         plan: Box<AgentLaunchPlan>,
         check_id: String,
         result: Value,
@@ -37,41 +44,36 @@ impl CoreRuntime {
             self.validate_playbook_evaluation(evaluation, now)?;
             return Ok(PlaybookEvaluationLaunch::Delegated(delegated_result(
                 &capability.check_id,
-                &evaluation.source_session_id,
+                evaluation.source_session_id.as_deref(),
                 &evaluation.session_id,
             )));
         }
         self.playbook_evaluation
             .waiting
-            .remove(&capability.tracker_id);
-        let Some(source) = self.select_playbook_source(&capability.project_id, &task_id, now)?
-        else {
-            return Ok(PlaybookEvaluationLaunch::Skipped(
-                self.defer_playbook_evaluation(claim, "noUnambiguousTaskAgent")?,
-            ));
-        };
-        let provider = self
-            .store
-            .sessions()
-            .iter()
-            .find(|s| s.id == source)
-            .and_then(|s| s.process.agent_id.as_deref());
-        if !provider.is_some_and(|id| {
-            self.observation_transport
-                .as_ref()
-                .is_some_and(|t| t.native_fork_supported(id))
-        }) {
-            return Ok(PlaybookEvaluationLaunch::Skipped(
-                self.defer_playbook_evaluation(claim, "forkUnsupported")?,
-            ));
-        }
-        let mut plan = match self.plan_agent_fork(json!({"sessionId": source})) {
-            Ok(plan) if plan.mcp_token.is_some() => plan,
-            _ => {
-                return Ok(PlaybookEvaluationLaunch::Skipped(
-                    self.defer_playbook_evaluation(claim, "forkUnavailable")?,
-                ));
-            }
+            .remove(&(capability.tracker_id.clone(), task_id.clone()));
+        // Prefer a fork of the Agent that did the work: it knows where the
+        // evidence is. Without one, a fresh evaluator checks the same rule.
+        let (fork, unavailable) =
+            match self.select_playbook_source(&capability.project_id, &task_id, now)? {
+                Some(source) => match self.plan_evaluation_fork(&source) {
+                    Ok(plan) => (Some((plan, source)), None),
+                    Err(reason) => (None, Some(reason)),
+                },
+                None => (None, Some("noUnambiguousTaskAgent")),
+            };
+        let (mut plan, source) = match fork {
+            Some((plan, source)) => (plan, Some(source)),
+            None => match self.plan_fresh_playbook_evaluator(&capability.project_id, &task_id)? {
+                Some(plan) => (plan, None),
+                None => {
+                    return Ok(PlaybookEvaluationLaunch::Skipped(
+                        self.defer_playbook_evaluation(
+                            claim,
+                            unavailable.expect("no fork has a reason"),
+                        )?,
+                    ));
+                }
+            },
         };
         plan.mcp_role = AgentMcpRole::PlaybookEvaluator {
             check_id: capability.check_id.clone(),
@@ -93,6 +95,7 @@ impl CoreRuntime {
             selection.model = model;
         }
         selection.permission = settings.permission;
+        // The generated Session name; a fresh evaluator is not a fork.
         plan.fork_name = Some("Playbook evaluation".into());
         match self.reserve_playbook_evaluation(
             claim,
@@ -114,11 +117,119 @@ impl CoreRuntime {
                 .remove(&capability.check_id);
             return Err(error);
         }
-        Ok(PlaybookEvaluationLaunch::Fork {
-            result: delegated_result(&capability.check_id, &source, &plan.session_id),
-            check_id: capability.check_id.clone(),
-            plan: Box::new(plan),
+        let result = delegated_result(&capability.check_id, source.as_deref(), &plan.session_id);
+        let check_id = capability.check_id.clone();
+        Ok(match source {
+            Some(_) => PlaybookEvaluationLaunch::Fork {
+                result,
+                check_id,
+                plan: Box::new(plan),
+            },
+            None => PlaybookEvaluationLaunch::Fresh {
+                result,
+                check_id,
+                plan: Box::new(plan),
+            },
         })
+    }
+
+    fn plan_evaluation_fork(&self, source: &str) -> Result<AgentLaunchPlan, &'static str> {
+        let provider = self
+            .store
+            .sessions()
+            .iter()
+            .find(|s| s.id == source)
+            .and_then(|s| s.process.agent_id.as_deref());
+        if !provider.is_some_and(|id| {
+            self.observation_transport
+                .as_ref()
+                .is_some_and(|t| t.native_fork_supported(id))
+        }) {
+            return Err("forkUnsupported");
+        }
+        match self.plan_agent_fork(json!({"sessionId": source})) {
+            Ok(plan) if plan.mcp_token.is_some() => Ok(plan),
+            _ => Err("forkUnavailable"),
+        }
+    }
+
+    /// Plans a fresh evaluator with the last ordinary Agent provider and
+    /// launch selection, in the Task's managed worktree or else the Project
+    /// checkout. `None` when no provider is known or it cannot carry the
+    /// evaluator's MCP tools.
+    fn plan_fresh_playbook_evaluator(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Option<AgentLaunchPlan>, CoreError> {
+        let Some(saved) = self.store.last_agent_launch_selection().cloned() else {
+            return Ok(None);
+        };
+        if termloop_agents::executable_for(&saved.agent_id).is_none()
+            || !self
+                .observation_transport
+                .as_ref()
+                .is_some_and(|transport| transport.mcp_http_supported(&saved.agent_id))
+        {
+            return Ok(None);
+        }
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id)
+            .ok_or(CoreError::NotFound)?;
+        let guard = task.worktree.as_ref().and_then(|binding| {
+            self.store
+                .managed_worktrees()
+                .iter()
+                .find(|proof| {
+                    proof.task_id == task.id
+                        && proof.worktree_generation == task.worktree_generation
+                })
+                .map(|proof| TaskLaunchGuard {
+                    task_id: task.id.clone(),
+                    managed_worktree_operation_id: proof.operation_id.clone(),
+                    worktree_generation: proof.worktree_generation,
+                    cwd: binding.path.clone(),
+                    repository_common_dir: proof.repository_common_dir.clone(),
+                    branch_ref: proof.branch_ref.clone(),
+                })
+        });
+        let cwd = match &guard {
+            Some(guard) => guard.cwd.clone(),
+            None => self
+                .store
+                .projects()
+                .iter()
+                .find(|project| project.id == project_id)
+                .ok_or(CoreError::NotFound)?
+                .folder_path
+                .clone(),
+        };
+        if self
+            .ensure_launch_not_reserved(std::path::Path::new(&cwd))
+            .is_err()
+        {
+            return Ok(None);
+        }
+        let mut plan = match self.plan_agent_launch_at(
+            project_id.to_owned(),
+            cwd,
+            saved.agent_id.clone(),
+            uuid::Uuid::new_v4().to_string(),
+            AgentMcpRole::Interactive,
+        ) {
+            Ok(plan) if plan.mcp_token.is_some() => plan,
+            _ => return Ok(None),
+        };
+        plan.set_account(
+            self.resolve_agent_account(&saved.agent_id, saved.selection.account_id.as_deref())?,
+        );
+        plan.interactive_options = Some(saved.selection);
+        plan.task_guard_requires_observation = guard.is_some();
+        plan.task_guard = guard;
+        Ok(Some(plan))
     }
 
     fn record_playbook_evaluation_start(
@@ -131,12 +242,16 @@ impl CoreRuntime {
             .evaluations
             .get(check_id)
             .ok_or(CoreError::TrackerReportStale)?;
-        let source = self
-            .store
-            .sessions()
-            .iter()
-            .find(|s| s.id == evaluation.source_session_id)
-            .ok_or(CoreError::NotFound)?;
+        let source = match &evaluation.source_session_id {
+            Some(id) => Some(
+                self.store
+                    .sessions()
+                    .iter()
+                    .find(|s| &s.id == id)
+                    .ok_or(CoreError::NotFound)?,
+            ),
+            None => None,
+        };
         let task = self
             .store
             .tasks()
@@ -152,8 +267,9 @@ impl CoreRuntime {
             task_title: task.title.clone(),
             milestone_id: required_string(step, "milestoneId")?,
             milestone_title: required_string(step, "title")?,
-            source_session_id: source.id.clone(),
-            source_name: source.name.clone().unwrap_or_else(|| plan.agent_id.clone()),
+            source_session_id: source.map(|source| source.id.clone()),
+            source_name: source
+                .map(|source| source.name.clone().unwrap_or_else(|| plan.agent_id.clone())),
             session_id: plan.session_id.clone(),
             agent_id: plan.agent_id.clone(),
             model: selection.model,
@@ -187,10 +303,10 @@ impl CoreRuntime {
     }
 }
 
-fn delegated_result(check_id: &str, source: &str, evaluator: &str) -> Value {
+fn delegated_result(check_id: &str, source: Option<&str>, evaluator: &str) -> Value {
     json!({"status": "delegated", "checkId": check_id, "evaluation": {
         "sourceSessionId": source, "sessionId": evaluator,
-        "selection": "observedTaskWorkOrCanonicalAgent",
+        "selection": if source.is_some() { "observedTaskWorkOrCanonicalAgent" } else { "freshEvaluator" },
     }})
 }
 
@@ -220,9 +336,8 @@ mod tests {
                     )
                     .unwrap();
                 let claim = runtime
-                    .claim_next_steward_routine(
+                    .claim_next_playbook_step_or_idle(
                         &project,
-                        "steward-session",
                         "evaluation-check".into(),
                         termloop_platform::current_epoch_ms(),
                     )
@@ -261,5 +376,62 @@ mod tests {
                 std::fs::remove_dir_all(root).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn a_task_without_an_agent_gets_a_fresh_evaluator_from_the_last_launch_selection() {
+        let (mut runtime, root, project) = pipeline_runtime();
+        runtime.configure_agent_observations(crate::test_agent_observation_transport(root.clone()));
+        let mut remembered = runtime
+            .store
+            .sessions()
+            .iter()
+            .find(|s| s.id == "steward-session")
+            .unwrap()
+            .clone();
+        remembered.id = "remembered".into();
+        remembered.process.template_ref = Some("builtin.agent.interactive".into());
+        remembered.launch_selection =
+            termloop_domain::AgentLaunchSelection::new("gpt-6-astra", "bypassPermissions", "high");
+        runtime
+            .store
+            .insert_session_and_remember_agent_launch(&runtime.write_authority, remembered)
+            .unwrap();
+
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(
+                &project,
+                "evaluation-check".into(),
+                termloop_platform::current_epoch_ms(),
+            )
+            .unwrap();
+        let PlaybookEvaluationLaunch::Fresh {
+            plan,
+            check_id,
+            result,
+        } = runtime.plan_playbook_evaluation(&claim).unwrap()
+        else {
+            panic!("a Task without an Agent must still be evaluated");
+        };
+        assert_eq!(plan.agent_id, "codex");
+        assert!(matches!(
+            plan.mcp_role,
+            AgentMcpRole::PlaybookEvaluator { ref check_id } if check_id == "evaluation-check"
+        ));
+        assert!(plan.fork_source_ref.is_none());
+        let selection = plan.interactive_options.as_ref().unwrap();
+        assert_eq!(selection.model, "gpt-6-astra");
+        // The evaluator's own permission applies, never the remembered one.
+        assert_eq!(selection.permission, "plan");
+        assert!(result["evaluation"]["sourceSessionId"].is_null());
+        assert_eq!(result["evaluation"]["selection"], "freshEvaluator");
+        let record = &runtime.store.playbook_evaluations()[0];
+        assert!(record.source_session_id.is_none() && record.source_name.is_none());
+
+        // A fresh evaluator that cannot start leaves the step waiting with its
+        // own reason instead of a fork's.
+        let deferred = runtime.fail_playbook_evaluation_launch(&check_id).unwrap();
+        assert_eq!(deferred["evaluation"]["reason"], "evaluatorUnavailable");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

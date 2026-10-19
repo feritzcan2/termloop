@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) const PLAYBOOK_EVALUATOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.playbook-evaluator",
-    version: 2,
+    version: 4,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.playbook-evaluator.md"),
 };
 

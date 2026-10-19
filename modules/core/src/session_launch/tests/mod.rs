@@ -1555,6 +1555,125 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn only_an_assistant_wake_follows_a_failed_claude_turn() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-failed-turn-wake-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 9).unwrap();
+    runtime.configure_agent_observations(crate::test_agent_observation_transport(
+        root.join("provider"),
+    ));
+    let wake = termloop_invocation::assistant_wake_message(
+        termloop_invocation::ExecutorRole::Steward,
+        termloop_invocation::AssistantWakeReason::StewardRoutineFinding,
+        None,
+        None,
+    )
+    .unwrap()
+    .terminal_submission();
+    for (session_id, submission) in [
+        ("failed-steward", wake),
+        (
+            "failed-agent",
+            crate::test_generated_terminal_submission("Wait for the user"),
+        ),
+    ] {
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    launch_selection: Default::default(),
+                    id: session_id.into(),
+                    project_id: "project-1".into(),
+                    name: None,
+                    kind: SessionKind::Agent,
+                    process: ProcessDescriptor {
+                        program: "claude".into(),
+                        args: vec![],
+                        cwd: root.display().to_string(),
+                        agent_id: Some("claude".into()),
+                        template_ref: None,
+                        template_version: None,
+                    },
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 9,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
+        runtime.agent_observations.insert(
+            session_id.into(),
+            crate::AgentObservationCapability {
+                token: Some(format!("{session_id}-token")),
+                runtime_epoch: 9,
+                last_signal: None,
+                defer_generated_input_until_hook_response: false,
+                last_notification_type: None,
+                observation: None,
+                pending_generated_input: Some(submission),
+            },
+        );
+        runtime
+            .record_agent_observation(
+                &format!("{session_id}-token"),
+                session_id,
+                "StopFailure",
+                None,
+                None,
+                1,
+                1,
+            )
+            .unwrap();
+    }
+
+    // The wake reaches its transport attempt; this unit seam has no PTY, so
+    // TerminalUnavailable proves Core did not hold it behind the failed turn.
+    assert_eq!(
+        runtime.generated_input_delivery_failure("failed-steward", 9),
+        Some(crate::GeneratedInputDeliveryFailure::TerminalUnavailable)
+    );
+    assert_eq!(
+        runtime.generated_input_delivery_state("failed-agent", 9),
+        Some(crate::GeneratedInputDeliveryState::Blocked)
+    );
+    assert_eq!(
+        runtime.generated_input_delivery_failure("failed-agent", 9),
+        Some(crate::GeneratedInputDeliveryFailure::ComposerUnavailable)
+    );
+    assert!(
+        runtime.agent_observations["failed-agent"]
+            .pending_generated_input
+            .is_some()
+    );
+    let projection = runtime.agent_status_list().unwrap();
+    let agent = projection
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|status| status["sessionId"] == "failed-agent")
+        .unwrap();
+    assert_eq!(agent["status"], "failed");
+    assert_eq!(
+        agent["generatedInputDelivery"]["cancelCause"],
+        "providerTurnFailed"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[tokio::test]
 async fn steward_activation_waits_for_post_hook_and_confirms_once() {
     let root = std::env::temp_dir().join(format!(
@@ -5646,6 +5765,46 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
             .record_claude_resume_ref(&claude_token, "working-claude", &claude_native_session_id,)
             .unwrap()
     );
+    // The resumed Claude's `SessionStart` keeps the restart interruption
+    // visible but proves a live resting composer, so queued generated input
+    // such as a Steward wake is no longer held for an idle signal that a
+    // resumed Claude never sends.
+    let session_start_sequence = restarted.next_observation_sequence().unwrap();
+    restarted
+        .record_provider_hook_observation(
+            &claude_token,
+            "working-claude",
+            crate::ProviderHookObservationInput {
+                event_name: "SessionStart".into(),
+                notification_type: None,
+                native_session_id: Some(claude_native_session_id.clone()),
+                provider_model_id: None,
+                permission_mode: None,
+                reasoning_level: None,
+                transcript_path: None,
+                prompt_id: None,
+                plan: None,
+            },
+            session_start_sequence,
+            201,
+        )
+        .unwrap();
+    let resumed_claude = restarted.agent_observations["working-claude"]
+        .observation
+        .unwrap();
+    assert_eq!(
+        resumed_claude.state,
+        termloop_agents::AgentState::Interrupted
+    );
+    assert_eq!(
+        resumed_claude.source,
+        termloop_agents::AgentSignalSource::Hook
+    );
+    assert!(crate::generated_input_composer_may_accept(
+        "claude",
+        Some(resumed_claude.state),
+        Some(resumed_claude.source),
+    ));
 
     let codex_plan = restarted
         .plan_daemon_restart_agent_resume(json!({"sessionId": "working-codex-daemon"}), 201)

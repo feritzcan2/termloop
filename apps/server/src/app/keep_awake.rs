@@ -128,9 +128,12 @@ impl KeepAwakeSupervisor {
         if state.hold.is_some() && state.keeps_display_awake == keep_display_awake {
             return;
         }
-        // Release first so this process never overlaps two holds, and so a
-        // display-preference change actually takes effect.
-        state.hold = None;
+        // Take the replacement before releasing the previous hold. Releasing
+        // first opened a gap with no assertion and, on macOS, ended the lid
+        // override: with the lid already closed the host slept at once, just
+        // because a client changed the display preference. Overlapping holds
+        // are safe on every backend, and the assignment below drops the old
+        // one only after the new one exists.
         match KeepAwakeHold::acquire(KeepAwakeRequest { keep_display_awake }) {
             Ok(hold) => {
                 state.hold = Some(hold);
@@ -138,6 +141,7 @@ impl KeepAwakeSupervisor {
                 state.failure = None;
             }
             Err(error) => {
+                state.hold = None;
                 // Also reported through the status DTO; this line exists so an
                 // operator can see the OS reason, which the DTO reduces to a
                 // single typed value.
@@ -216,6 +220,9 @@ fn limitations() -> Vec<KeepAwakeLimitation> {
             KeepAwakeOverride::UserInitiatedSleep => KeepAwakeLimitation::UserInitiatedSleep,
             KeepAwakeOverride::LowBattery => KeepAwakeLimitation::LowBattery,
             KeepAwakeOverride::ThermalEmergency => KeepAwakeLimitation::ThermalEmergency,
+            KeepAwakeOverride::LidClosedPowerOrDisplayChange => {
+                KeepAwakeLimitation::LidClosedPowerOrDisplayChange
+            }
         })
         .collect()
 }

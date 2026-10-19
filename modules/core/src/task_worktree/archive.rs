@@ -251,7 +251,9 @@ impl CoreRuntime {
                     continue;
                 }
             };
-            if !worktree_key.contains_or_equals(&session_key) {
+            if !worktree_key.contains_or_equals(&session_key)
+                || self.session_is_parked_by_task_close(&task.id, &session.id)
+            {
                 continue;
             }
             if self
@@ -494,6 +496,7 @@ impl CoreRuntime {
                             .filter(|session| {
                                 session.project_id == preview.operation.project_id
                                     && session.archived_at_epoch_ms.is_none()
+                                    && !self.session_is_parked_by_task_close(&task_id, &session.id)
                             })
                             .filter_map(|session| {
                                 comparison_key(Path::new(&session.process.cwd))

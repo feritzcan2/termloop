@@ -124,9 +124,8 @@ pub(crate) fn attach_agents(runtime: &mut CoreRuntime, root: &std::path::Path, i
 
 fn claim(runtime: &mut CoreRuntime, project: &str) -> StewardRoutineClaim {
     runtime
-        .claim_next_steward_routine(
+        .claim_next_playbook_step_or_idle(
             project,
-            "steward-session",
             "evaluation-check".into(),
             termloop_platform::current_epoch_ms(),
         )
@@ -135,7 +134,7 @@ fn claim(runtime: &mut CoreRuntime, project: &str) -> StewardRoutineClaim {
 
 fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
     runtime
-        .reserve_playbook_evaluation(claim, "source".into(), "reviewer".into(), 1)
+        .reserve_playbook_evaluation(claim, Some("source".into()), "reviewer".into(), 1)
         .unwrap();
     let capability = claim.capability.as_ref().unwrap();
     runtime
@@ -149,8 +148,8 @@ fn evaluator(runtime: &mut CoreRuntime, claim: &StewardRoutineClaim) {
                 task_title: "Task snapshot".into(),
                 milestone_id: claim.result["step"]["milestoneId"].as_str().unwrap().into(),
                 milestone_title: "Step snapshot".into(),
-                source_session_id: "source".into(),
-                source_name: "Implementer".into(),
+                source_session_id: Some("source".into()),
+                source_name: Some("Implementer".into()),
                 session_id: "reviewer".into(),
                 agent_id: "codex".into(),
                 model: "gpt-6-luna".into(),
@@ -339,13 +338,26 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
         assert!(projection["evaluation"]["sessionId"].is_null());
         assert!(
             runtime
-                .current_step_check(&claim.capability.as_ref().unwrap().tracker_id)
-                .is_none()
+                .current_step_checks(&claim.capability.as_ref().unwrap().tracker_id)
+                .is_empty()
         );
-        let next = runtime
-            .claim_next_steward_routine(
+        // The skipped Task waits out its own retry. The other Task at the step
+        // is independent and is claimed, and skipped, on its own.
+        let other = runtime
+            .claim_next_playbook_step_or_idle(
                 &project,
-                "steward-session",
+                "other-task".into(),
+                termloop_platform::current_epoch_ms(),
+            )
+            .unwrap();
+        assert_eq!(other.result["step"]["tasks"][0]["taskId"], "task-2");
+        assert!(matches!(
+            runtime.plan_playbook_evaluation(&other).unwrap(),
+            PlaybookEvaluationLaunch::Skipped(_)
+        ));
+        let next = runtime
+            .claim_next_playbook_step_or_idle(
+                &project,
                 "no-retry".into(),
                 termloop_platform::current_epoch_ms(),
             )
@@ -359,14 +371,9 @@ fn missing_or_ambiguous_task_agent_skips_without_verdict_wake_or_hot_retry() {
         );
         if !ambiguous {
             attach_agents(&mut runtime, &root, &["new-source"]);
-            let due = next.result["nextWakeAtEpochMs"].as_u64().unwrap();
+            let due = runtime.next_tracker_schedule_epoch_ms().unwrap();
             let retry = runtime
-                .claim_next_steward_routine(
-                    &project,
-                    "steward-session",
-                    "retry-with-agent".into(),
-                    due + 1,
-                )
+                .claim_next_playbook_step_or_idle(&project, "retry-with-agent".into(), due + 1)
                 .unwrap();
             assert!(matches!(
                 runtime.plan_playbook_evaluation(&retry).unwrap(),
@@ -529,20 +536,8 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
         evaluator(&mut runtime, &claim);
         runtime.read_playbook_evaluation("reviewer-token").unwrap();
         if policy_change {
-            let mut playbook = runtime
-                .store
-                .playbook_for_project(&project)
-                .unwrap()
-                .clone();
-            playbook.revision += 1;
-            runtime
-                .store
-                .set_playbook_configuration(
-                    &runtime.write_authority,
-                    playbook,
-                    runtime.state_revision(),
-                )
-                .unwrap();
+            // Editing the claimed step's own question retires its answer.
+            edit_routine(&mut runtime, "routine-pr");
         } else {
             runtime
                 .set_task_playbook_position(
@@ -564,11 +559,21 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
             ),
             Err(CoreError::TrackerReportStale)
         ));
-        runtime.obsolete_playbook_evaluator_sessions().unwrap();
+        // The rejected fork is retired on the next sweep, not at claim expiry.
+        assert_eq!(
+            runtime.obsolete_playbook_evaluator_sessions().unwrap(),
+            vec!["reviewer"]
+        );
         assert_eq!(
             runtime.store.playbook_evaluations()[0].outcome,
             termloop_domain::PlaybookEvaluationOutcome::Interrupted
         );
+        assert_eq!(
+            runtime.store.playbook_evaluations()[0].evidence,
+            "The check changed before its result was recorded, so the step will be checked again."
+        );
+        assert!(runtime.playbook_evaluation.evaluations.is_empty());
+        assert!(runtime.playbook_evaluation.waiting.is_empty());
         assert!(
             runtime
                 .mcp_authorizer
@@ -577,6 +582,75 @@ fn changing_policy_or_manually_moving_task_rejects_the_in_flight_answer() {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+fn edit_routine(runtime: &mut CoreRuntime, routine_id: &str) {
+    let revision = runtime.state_revision();
+    runtime
+        .update_tracker_configuration(
+            routine_id,
+            termloop_domain::RoutineTriggerMode::OnDemand,
+            routine_id.into(),
+            "Answer the edited pipeline question for the focused Task.".into(),
+            "Ask the reviewer.".into(),
+            true,
+            60,
+            termloop_domain::RoutineActionHandling::Ask,
+            revision,
+            termloop_platform::current_epoch_ms(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn editing_another_step_advances_the_playbook_but_keeps_the_running_evaluation() {
+    let (mut runtime, root, project) = pipeline_runtime();
+    let claim = claim(&mut runtime, &project);
+    evaluator(&mut runtime, &claim);
+    runtime.read_playbook_evaluation("reviewer-token").unwrap();
+    let playbook_revision = runtime
+        .store
+        .playbook_for_project(&project)
+        .unwrap()
+        .revision;
+
+    edit_routine(&mut runtime, "routine-deploy");
+
+    // The Playbook document shows every step's question, so a draft read
+    // before the edit can no longer write the old question back.
+    assert_eq!(
+        runtime
+            .store
+            .playbook_for_project(&project)
+            .unwrap()
+            .revision,
+        playbook_revision + 1
+    );
+    assert!(matches!(
+        runtime.update_playbook(
+            json!({
+                "projectId": project,
+                "activePipelineName": "Delivery",
+                "milestones": [],
+                "savedPipelines": [],
+                "expectedPlaybookRevision": playbook_revision,
+                "expectedRevision": runtime.state_revision(),
+            }),
+            vec![],
+            termloop_platform::current_epoch_ms(),
+        ),
+        Err(CoreError::RevisionConflict)
+    ));
+    // The running check asks another step's unchanged question.
+    runtime
+        .complete_playbook_evaluation(
+            "reviewer-token",
+            "evaluation-check",
+            PlaybookStepVerdict::Passed,
+            "PR 42 verified".into(),
+        )
+        .unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

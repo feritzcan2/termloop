@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useOverlayLease } from "./overlay-lease.js";
 import type { AgentLibraryEntry, WorkflowConfigurationDto, WorkflowStepDto, WorkflowStepResultDto } from "@termloop/contract/current";
 import type { Project, Task, WorkflowConfiguration, WorkflowExecution } from "../model.js";
 import type { RowTone } from "../row-tone.js";
@@ -62,10 +63,10 @@ export function WorkflowLaunchers(props: WorkflowLaunchScope & {
     ? progressPreference.expanded
     : executionActive);
   const { overlayVisibilityChanged } = props;
-  useEffect(() => {
-    overlayVisibilityChanged(Boolean(templatesOpen || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)));
-    return () => overlayVisibilityChanged(false);
-  }, [execution, inspectedResult, inspectedStep, inspectingExecution, overlayVisibilityChanged, running, templatesOpen]);
+  useOverlayLease(
+    Boolean(templatesOpen || running || (inspectingExecution && execution) || (inspectedStep && inspectedResult)),
+    overlayVisibilityChanged,
+  );
   useEffect(() => {
     if (!props.showLaunchers || props.disabled) {
       setTemplateTrigger(undefined); setRunning(undefined); setInspectingExecution(false); setInspectingResult(undefined);

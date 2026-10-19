@@ -16,7 +16,7 @@ export function PlaybookEvaluatorSettings(props: {
   return <section className="ap-form ap-launch-settings" aria-label="Playbook evaluation forks">
     <div className="ap-editor">
       <div className="ap-editor-head"><label>Playbook evaluation forks</label></div>
-      <p className="ap-hint">Choose the model and permissions for new evaluation forks. Each fork keeps its source agent’s provider and conversation. Changes apply to the next check.</p>
+      <p className="ap-hint">Choose the model and permissions for new evaluators. A fork keeps its source agent’s provider and conversation. A task without an agent gets a fresh evaluator with your last agent’s provider. Changes apply to the next check.</p>
       <div className="ap-launch-fields">
         {(["codex", "claude"] as const).map((provider) => {
           const field = provider === "codex" ? "codexModel" : "claudeModel";

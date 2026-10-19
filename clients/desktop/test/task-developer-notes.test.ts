@@ -82,6 +82,27 @@ describe("Task developer notes in the sidebar", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
+  it("renders nothing for an empty card checklist until a note is requested", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const view = (addRequest: number) => createElement(TaskDeveloperNotes, {
+      projectId: "project-1",
+      taskId: "task-1",
+      taskTitle: "Quiet card",
+      notes: [],
+      addRequest,
+      save: async () => undefined,
+    });
+    await act(async () => root.render(view(0)));
+    expect(container.querySelector(".task-developer-notes")).toBeNull();
+    await act(async () => root.render(view(1)));
+    expect(container.querySelector('[aria-label="New developer note for Quiet card"]')).not.toBeNull();
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
   it("migrates an existing local checklist into the shared Task projection", async () => {
     const local = [{ id: "legacy-note", text: "Keep this note", completed: false }];
     writeTaskDeveloperNotes("project-1", "task-1", local);

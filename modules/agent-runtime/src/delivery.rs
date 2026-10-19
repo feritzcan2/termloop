@@ -68,6 +68,9 @@ pub enum GeneratedInputDeliveryCancelCause {
     Notification,
     ProviderAwaitingInput,
     ProviderBusy,
+    /// The provider's previous turn ended with an error. The state persists
+    /// until new work starts, so the queued prompt needs user input to move.
+    ProviderTurnFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

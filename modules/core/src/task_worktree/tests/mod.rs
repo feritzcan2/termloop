@@ -21,6 +21,7 @@ mod branch_binding;
 mod branch_commits;
 mod changes;
 mod cleanup;
+mod close;
 mod health_presence;
 mod provisioning;
 mod provisioning_revalidation;

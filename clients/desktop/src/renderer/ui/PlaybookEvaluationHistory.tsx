@@ -44,19 +44,19 @@ export function PlaybookEvaluationHistory(props: {
 }
 
 export function PlaybookEvaluationList({ entries }: { entries: readonly PlaybookEvaluationRecordDto[] }) {
-  if (entries.length === 0) return <p className="peh-empty">No fork checks recorded yet. New task agent checks and their results will appear here.</p>;
+  if (entries.length === 0) return <p className="peh-empty">No checks recorded yet. New task checks and their results will appear here.</p>;
   return <ol className="peh-list">{entries.map((entry) => <li key={entry.id} className="peh-entry">
     <div className="peh-entry-heading"><h3>{entry.taskTitle}</h3><span className={`peh-outcome ${entry.outcome}`}>{outcomeLabels[entry.outcome]}</span></div>
     <p className="peh-step">{entry.milestoneTitle}</p>
-    <p className="peh-agent"><Icon name={entry.agentId} /><span>Fork of <strong>{entry.sourceName}</strong> · {entry.model === "default" ? "Provider default model" : entry.model}</span></p>
-    <p className="peh-evidence">{entry.evidence || "Waiting for the fork agent’s result…"}</p>
+    <p className="peh-agent"><Icon name={entry.agentId} /><span>{entry.sourceName === null ? <>Fresh evaluator</> : <>Fork of <strong>{entry.sourceName}</strong></>} · {entry.model === "default" ? "Provider default model" : entry.model}</span></p>
+    <p className="peh-evidence">{entry.evidence || "Waiting for the evaluator’s result…"}</p>
     <details className="peh-details">
       <summary><time dateTime={new Date(entry.startedAtEpochMs).toISOString()}>{new Date(entry.startedAtEpochMs).toLocaleString()}</time></summary>
       <dl>
         <dt>Finished</dt><dd>{entry.finishedAtEpochMs === null ? "Still running" : new Date(entry.finishedAtEpochMs).toLocaleString()}</dd>
         <dt>Permission</dt><dd>{entry.permission}</dd>
-        <dt>Source agent</dt><dd>{entry.sourceSessionId}</dd>
-        <dt>Fork agent</dt><dd>{entry.sessionId}</dd>
+        <dt>Source agent</dt><dd>{entry.sourceSessionId ?? "None"}</dd>
+        <dt>Evaluator</dt><dd>{entry.sessionId}</dd>
         <dt>Check</dt><dd>{entry.id}</dd>
       </dl>
     </details>

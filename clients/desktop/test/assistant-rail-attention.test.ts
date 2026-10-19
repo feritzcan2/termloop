@@ -93,8 +93,9 @@ describe("Assistant rail Playbook Routine status", () => {
     const properties = props();
     properties.sessions = [{ id: "fork", name: "Playbook evaluation", lifecycle_state: "running", process: { agent_id: "codex" } } as Session];
     properties.playbookRuntime = {
-      activePipelineName: "Delivery", processingTaskId: "task", steps: [], doneTaskIds: [], stateRevision: 1,
+      activePipelineName: "Delivery", processingTaskId: "task", processingTaskIds: ["task"], steps: [], doneTaskIds: [], stateRevision: 1,
       evaluation: { routineId: routine.id, taskId: "task", mode: "taskAgentFork", sessionId: "fork", sourceSessionId: "source", reason: null },
+      evaluations: [{ routineId: routine.id, taskId: "task", mode: "taskAgentFork", sessionId: "fork", sourceSessionId: "source", reason: null }],
     };
     properties.listRuntime = async () => ({ health: [{ ...attention, state: "checking", attentionMessage: null }], reports: [], reportsTruncated: false, stateRevision: 1 });
     await act(async () => { root.render(createElement(AssistantRail, properties)); await Promise.resolve(); await Promise.resolve(); });
@@ -103,7 +104,15 @@ describe("Assistant rail Playbook Routine status", () => {
     button!.click();
     expect(properties.openImproverTerminal).toHaveBeenCalledExactlyOnceWith("fork");
     expect(properties.openDetails).not.toHaveBeenCalled();
-    properties.playbookRuntime.evaluation!.routineId = "another-routine";
+    // Two Tasks checked independently at the same step each show their own status.
+    properties.playbookRuntime!.evaluations = [
+      ...properties.playbookRuntime!.evaluations,
+      { routineId: routine.id, taskId: "other-task", mode: "waitingForTaskAgent", sessionId: null, sourceSessionId: null, reason: "forkUnavailable" },
+    ];
+    await act(async () => root.render(createElement(AssistantRail, { ...properties })));
+    expect(host.querySelectorAll('[data-evaluation-mode]')).toHaveLength(2);
+    properties.playbookRuntime!.evaluations = properties.playbookRuntime!.evaluations.slice(0, 1);
+    properties.playbookRuntime!.evaluations[0]!.routineId = "another-routine";
     await act(async () => root.render(createElement(AssistantRail, { ...properties })));
     expect(host.querySelector('[data-evaluation-mode]')).toBeNull();
   });

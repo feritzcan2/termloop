@@ -1,7 +1,7 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[cfg(target_os = "macos")]
-use crate::keep_awake::keep_awake_lid_close_causes_sleep;
+use crate::keep_awake::{coordination_marker_records_override, keep_awake_coordination_marker};
 use crate::{
     KeepAwakeError, KeepAwakeHold, KeepAwakeRequest, keep_awake_overrides, keep_awake_supported,
 };
@@ -32,9 +32,16 @@ fn support_matches_the_host() {
     );
     assert_eq!(keep_awake_overrides().is_empty(), !keep_awake_supported());
     // macOS takes the clamshell override as part of acquisition, so an active
-    // hold no longer reports lid close as an uncovered transition.
+    // hold no longer reports lid close as an uncovered transition. powerd can
+    // still clear that override during hot-plug, which has to be reported.
     #[cfg(target_os = "macos")]
-    assert!(!keep_awake_overrides().contains(&crate::KeepAwakeOverride::LidClose));
+    {
+        assert!(!keep_awake_overrides().contains(&crate::KeepAwakeOverride::LidClose));
+        assert!(
+            keep_awake_overrides()
+                .contains(&crate::KeepAwakeOverride::LidClosedPowerOrDisplayChange)
+        );
+    }
 }
 
 /// A build with no mechanism must say so. A build that has one may still be
@@ -134,22 +141,67 @@ fn macos_assertion_is_visible_to_the_operating_system() {
     );
 }
 
-/// Runtime proof for the bug this adapter exists to prevent: while the hold is
-/// active, IOPMrootDomain must report that closing the lid does not cause
-/// sleep. Releasing the final TermLoop hold restores the exact pre-test fact,
-/// including when another clamshell utility already owned the override.
+/// Only an empty marker is a clean release. The legacy `external-owner`
+/// marker was written by a TermLoop holder after it set the override itself,
+/// so treating it as foreign left lid-close sleep disabled after Off.
 #[cfg(target_os = "macos")]
 #[test]
-fn macos_hold_covers_lid_close_and_restores_the_previous_state() {
+fn macos_every_written_marker_records_a_termloop_override() {
+    assert!(!coordination_marker_records_override(b""));
+    assert!(coordination_marker_records_override(b"termloop-owned\n"));
+    assert!(coordination_marker_records_override(b"external-owner\n"));
+}
+
+/// The clamshell override is part of the hold: while one is active the shared
+/// coordination marker records it, and the last release clears the marker so
+/// the next first holder starts clean. `AppleClamshellCausesSleep` is not
+/// asserted because IOPMrootDomain refreshes it only on lid, power and display
+/// events, not when the override changes.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_hold_records_the_lid_override_and_the_last_release_clears_it() {
     let _exclusive = exclusive_hold();
-    let Some(before) = keep_awake_lid_close_causes_sleep() else {
-        eprintln!("skipped: this Mac exposes no clamshell sleep property");
+    let Some(before) = keep_awake_coordination_marker() else {
+        eprintln!("skipped: the keep-awake coordination file is unavailable here");
         return;
     };
 
     let hold = KeepAwakeHold::acquire(KeepAwakeRequest::default()).unwrap();
-    assert_eq!(keep_awake_lid_close_causes_sleep(), Some(false));
+    let during = keep_awake_coordination_marker().expect("the file was readable once");
+    assert!(coordination_marker_records_override(&during));
 
     drop(hold);
-    assert_eq!(keep_awake_lid_close_causes_sleep(), Some(before));
+    let after = keep_awake_coordination_marker().expect("the file was readable once");
+    if before.is_empty() {
+        // No other holder existed, so this release was the last one. A live
+        // TermLoop daemon on this machine keeps its marker instead.
+        assert!(after.is_empty(), "the last release left marker {after:?}");
+    } else {
+        assert_eq!(after, before, "a live holder's marker changed");
+    }
+}
+
+/// Changing the display preference retakes the hold while the old one is still
+/// alive. Overlap must work, and dropping the older hold must not end the lid
+/// override the newer one still holds.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_overlapping_holds_keep_the_lid_override_until_the_last_release() {
+    let _exclusive = exclusive_hold();
+    if keep_awake_coordination_marker().is_none() {
+        eprintln!("skipped: the keep-awake coordination file is unavailable here");
+        return;
+    }
+    let older = KeepAwakeHold::acquire(KeepAwakeRequest::default()).unwrap();
+    let newer = KeepAwakeHold::acquire(KeepAwakeRequest {
+        keep_display_awake: true,
+    })
+    .unwrap();
+    drop(older);
+    let marker = keep_awake_coordination_marker().expect("the file was readable once");
+    assert!(
+        coordination_marker_records_override(&marker),
+        "the older release cleared the override a newer hold still needs"
+    );
+    drop(newer);
 }

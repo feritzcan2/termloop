@@ -1,6 +1,15 @@
-//! Bounded Routine scheduling, one-at-a-time Steward claims, and current reports.
+//! Bounded Routine scheduling, Steward claims, and current reports.
+//!
+//! A scheduled Routine runs one Steward-held check at a time. A Playbook step
+//! runs one independent check per Task standing at it, so one Task's check,
+//! verdict, retry, or move never waits on or invalidates another Task's.
 
 use std::collections::{HashMap, VecDeque};
+
+mod report;
+mod run_now;
+mod step_claims;
+mod steward_claims;
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde_json::{Value, json};
@@ -19,6 +28,9 @@ const CHECK_TIMEOUT_RETRY_MS: u64 = 60 * 1_000;
 const WAKE_REDELIVERY_MS: u64 = 60 * 1_000;
 const ROUTINE_SCAN_OVERLAP_MS: u64 = 5 * 60 * 1_000;
 const ROUTINE_REPORT_PROJECTION_MAX_ENCODED_BYTES: usize = 3 * 1024 * 1024;
+/// Independent Playbook step checks one Project may run at once. Each runs in
+/// its own evaluation fork, so this bounds concurrent agent processes.
+const PROJECT_STEP_CHECKS_MAX: usize = 8;
 
 #[derive(Debug, Clone)]
 struct ActiveTrackerCheck {
@@ -42,9 +54,27 @@ struct ActiveTrackerCheck {
 
 #[derive(Debug, Clone, Default)]
 struct TrackerHealth {
-    active: Option<ActiveTrackerCheck>,
+    /// A scheduled Routine holds at most one check. A step Routine holds at
+    /// most one check per Task.
+    checks: Vec<ActiveTrackerCheck>,
     pending_trigger: bool,
     attention_message: Option<String>,
+}
+
+impl TrackerHealth {
+    fn check(&self, check_id: &str) -> Option<&ActiveTrackerCheck> {
+        self.checks.iter().find(|check| check.check_id == check_id)
+    }
+
+    fn checks_task(&self, task_id: &str) -> bool {
+        self.checks
+            .iter()
+            .any(|check| check.step_task_id.as_deref() == Some(task_id))
+    }
+
+    fn remove_check(&mut self, check_id: &str) {
+        self.checks.retain(|check| check.check_id != check_id);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -59,49 +89,67 @@ pub(crate) struct TrackerRuntimeState {
     reports: VecDeque<TrackerReport>,
     next_due_epoch_ms: HashMap<String, u64>,
     pending_steward_wakes: HashMap<String, PendingStewardWake>,
-    /// What holds a step check back from, or pushes it into, its next run. A
+    /// "Run now": the user overriding a step's own delay for one run.
+    step_run_now: HashMap<String, StepRunNow>,
+    /// Earliest moment one Task's check at one step may be claimed again. A
     /// step's due time is otherwise derived entirely from stored verdicts, so
     /// without this a run that answered nothing would be due again the instant
-    /// it finished.
-    step_gate: HashMap<String, StepGate>,
+    /// it finished. It holds back only that Task, never others at the step.
+    step_task_not_before: HashMap<(String, String), u64>,
 }
 
-/// The one runtime fact that can move a step check off its derived due time.
-/// The two are mutually exclusive by construction: an override is what a user
-/// pressing "Run now" replaces the wait with, and finishing that run puts the
-/// wait back.
 #[derive(Debug, Clone)]
-enum StepGate {
-    /// Earliest moment this Routine may be claimed again.
-    NotBefore(u64),
-    /// "Run now": the user overriding the step's own delay for one run.
-    RunNow {
-        at_epoch_ms: u64,
-        /// An exact Task selected from Task details. `None` preserves the
-        /// general Routine action, which follows the pipeline's current focus.
-        task_id: Option<String>,
-    },
+struct StepRunNow {
+    at_epoch_ms: u64,
+    /// An exact Task selected from Task details. `None` runs the step's next
+    /// Task.
+    task_id: Option<String>,
 }
 
 impl TrackerRuntimeState {
     pub(crate) fn tracker_is_active(&self, routine_id: &str) -> bool {
         self.health
             .get(routine_id)
-            .is_some_and(|health| health.active.is_some())
+            .is_some_and(|health| !health.checks.is_empty())
+    }
+
+    pub(crate) fn step_task_is_checked(&self, routine_id: &str, task_id: &str) -> bool {
+        self.health
+            .get(routine_id)
+            .is_some_and(|health| health.checks_task(task_id))
     }
 
     pub(crate) fn cancel_tracker_check(&mut self, routine_id: &str) {
         self.health.remove(routine_id);
         self.next_due_epoch_ms.remove(routine_id);
-        self.step_gate.remove(routine_id);
+        self.step_run_now.remove(routine_id);
+        self.step_task_not_before
+            .retain(|(routine, _), _| routine != routine_id);
+    }
+
+    /// Cancels only one Task's check and wait at a step. Checks running for
+    /// other Tasks at the same step keep their claims.
+    pub(crate) fn cancel_step_task_check(&mut self, routine_id: &str, task_id: &str) {
+        if let Some(health) = self.health.get_mut(routine_id) {
+            health
+                .checks
+                .retain(|check| check.step_task_id.as_deref() != Some(task_id));
+        }
+        self.step_task_not_before
+            .remove(&(routine_id.to_owned(), task_id.to_owned()));
+        if self
+            .step_run_now
+            .get(routine_id)
+            .is_some_and(|run_now| run_now.task_id.as_deref() == Some(task_id))
+        {
+            self.step_run_now.remove(routine_id);
+        }
     }
 
     pub(crate) fn remove_tracker(&mut self, routine_id: &str) {
-        self.health.remove(routine_id);
+        self.cancel_tracker_check(routine_id);
         self.reports
             .retain(|report| report.routine_id != routine_id);
-        self.next_due_epoch_ms.remove(routine_id);
-        self.step_gate.remove(routine_id);
     }
 
     pub(crate) fn schedule_tracker_now(&mut self, routine_id: &str, now_epoch_ms: u64) {
@@ -187,30 +235,34 @@ impl CoreRuntime {
                     .or_insert(cadence_due);
                 continue;
             }
+            // The due time already includes each Task's own wait and skips
+            // Tasks whose check is running.
             match self.playbook_step_due_epoch_ms(&routine_id) {
                 Some(due) => {
                     // "Run now" is the user overriding exactly the wait this
-                    // would otherwise sit out.
-                    let next = match self.tracker_runtime.step_gate.get(&routine_id) {
-                        Some(StepGate::RunNow { at_epoch_ms, .. }) => *at_epoch_ms,
-                        Some(StepGate::NotBefore(floor)) => due.max(*floor),
-                        None => due,
-                    };
+                    // would otherwise sit out. Once its Task is being checked,
+                    // the step returns to the next Task's own due time.
+                    let next = self
+                        .tracker_runtime
+                        .step_run_now
+                        .get(&routine_id)
+                        .filter(|run_now| {
+                            run_now.task_id.as_deref().is_none_or(|task_id| {
+                                !self
+                                    .tracker_runtime
+                                    .step_task_is_checked(&routine_id, task_id)
+                            })
+                        })
+                        .map_or(due, |run_now| run_now.at_epoch_ms.min(due));
                     self.tracker_runtime
                         .next_due_epoch_ms
                         .insert(routine_id, next);
                 }
-                // Nobody is waiting at this question, so there is no job. An
-                // override with nothing to run is dropped; a wait is kept,
-                // because the Task that arrives next has not served it.
+                // No unchecked Task is waiting at this question, so there is no
+                // job. An override with nothing to run is dropped.
                 None => {
                     self.tracker_runtime.next_due_epoch_ms.remove(&routine_id);
-                    if matches!(
-                        self.tracker_runtime.step_gate.get(&routine_id),
-                        Some(StepGate::RunNow { .. })
-                    ) {
-                        self.tracker_runtime.step_gate.remove(&routine_id);
-                    }
+                    self.tracker_runtime.step_run_now.remove(&routine_id);
                 }
             }
         }
@@ -223,63 +275,67 @@ impl CoreRuntime {
             .copied()
     }
 
-    /// The question the Routine's current claim was issued for.
-    pub(crate) fn claimed_step_milestone_id(&self, routine_id: &str) -> Option<String> {
+    fn claimed_check(&self, capability: &TrackerCheckCapability) -> Option<&ActiveTrackerCheck> {
+        self.tracker_runtime
+            .health
+            .get(&capability.tracker_id)?
+            .check(&capability.check_id)
+    }
+
+    /// The question this exact claim was issued for.
+    pub(crate) fn claimed_step_milestone_id(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> Option<String> {
+        self.claimed_check(capability)?.step_milestone_id.clone()
+    }
+
+    /// The earliest moment this Task's check at this step may run again.
+    pub(crate) fn step_retry_not_before_epoch_ms(&self, routine_id: &str, task_id: &str) -> u64 {
+        self.tracker_runtime
+            .step_task_not_before
+            .get(&(routine_id.to_owned(), task_id.to_owned()))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The exact Task this step claim was issued for.
+    pub(crate) fn claimed_step_task_id(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> Option<String> {
+        self.claimed_check(capability)?.step_task_id.clone()
+    }
+
+    pub(crate) fn step_task_is_checked(&self, routine_id: &str, task_id: &str) -> bool {
+        self.tracker_runtime
+            .step_task_is_checked(routine_id, task_id)
+    }
+
+    /// Every current step check of this Routine, one per Task. Expiry is the
+    /// deadline supervisor's decision, so this checks only that each claim is
+    /// still the one Core holds.
+    pub(crate) fn current_step_checks(&self, routine_id: &str) -> Vec<TrackerCheckCapability> {
         self.tracker_runtime
             .health
             .get(routine_id)
-            .and_then(|health| health.active.as_ref())
-            .and_then(|active| active.step_milestone_id.clone())
-    }
-
-    pub(crate) fn step_retry_not_before_epoch_ms(&self, routine_id: &str) -> u64 {
-        match self.tracker_runtime.step_gate.get(routine_id) {
-            Some(StepGate::NotBefore(at)) => *at,
-            _ => 0,
-        }
-    }
-
-    /// The exact Task the Routine's current step claim was issued for.
-    pub(crate) fn claimed_step_task_id(&self, routine_id: &str) -> Option<String> {
-        self.tracker_runtime
-            .health
-            .get(routine_id)
-            .and_then(|health| health.active.as_ref())
-            .and_then(|active| active.step_task_id.clone())
-    }
-
-    pub(crate) fn current_step_check(&self, routine_id: &str) -> Option<TrackerCheckCapability> {
-        let active = self
-            .tracker_runtime
-            .health
-            .get(routine_id)?
-            .active
-            .as_ref()?;
-        active.step_task_id.as_ref()?;
-        let capability = TrackerCheckCapability {
-            project_id: active.project_id.clone(),
-            tracker_id: routine_id.to_owned(),
-            check_id: active.check_id.clone(),
-            generation: active.generation,
-            claimed_at_epoch_ms: active.claimed_at_epoch_ms,
-            deadline_epoch_ms: active.deadline_epoch_ms,
-            steward_generation: active.steward_generation,
-            steward_session_id: active.steward_session_id.clone(),
-        };
-        self.validate_current_check(&capability, termloop_platform::current_epoch_ms())
-            .ok()?;
-        Some(capability)
+            .into_iter()
+            .flat_map(|health| health.checks.iter())
+            .filter(|active| active.step_task_id.is_some())
+            .map(|active| active_capability(routine_id, active))
+            .filter(|capability| {
+                self.validate_current_check(capability, capability.claimed_at_epoch_ms)
+                    .is_ok()
+            })
+            .collect()
     }
 
     /// A Task-detail override waiting to be claimed by this step Routine.
     pub(crate) fn step_run_now_task_id(&self, routine_id: &str) -> Option<&str> {
-        match self.tracker_runtime.step_gate.get(routine_id) {
-            Some(StepGate::RunNow {
-                task_id: Some(task_id),
-                ..
-            }) => Some(task_id),
-            _ => None,
-        }
+        self.tracker_runtime
+            .step_run_now
+            .get(routine_id)
+            .and_then(|run_now| run_now.task_id.as_deref())
     }
 
     /// Finishes one claim and decides when its Routine may be claimed again.
@@ -293,18 +349,19 @@ impl CoreRuntime {
         completed_at_epoch_ms: u64,
         configuration: &TrackerConfiguration,
     ) -> bool {
-        if !configuration.trigger_mode.is_scheduled() {
+        if !configuration.trigger_mode.is_scheduled()
+            && let Some(task_id) = self.claimed_step_task_id(capability)
+        {
             // Setting the wait also ends any "Run now": the override lasts
-            // exactly one run.
-            let retry_delay_seconds = self.claimed_step_milestone(&capability.tracker_id).map_or(
+            // exactly one run. The wait holds back only this Task.
+            let retry_delay_seconds = self.claimed_step_milestone(capability).map_or(
                 termloop_domain::PLAYBOOK_RETRY_DELAY_MIN_SECONDS,
                 |milestone| milestone.retry_delay_seconds,
             );
-            self.tracker_runtime.step_gate.insert(
-                capability.tracker_id.clone(),
-                StepGate::NotBefore(
-                    completed_at_epoch_ms.saturating_add(retry_delay_seconds.saturating_mul(1_000)),
-                ),
+            self.end_step_run_now(&capability.tracker_id, &task_id);
+            self.tracker_runtime.step_task_not_before.insert(
+                (capability.tracker_id.clone(), task_id),
+                completed_at_epoch_ms.saturating_add(retry_delay_seconds.saturating_mul(1_000)),
             );
         }
         self.finish_runtime_check(
@@ -316,17 +373,19 @@ impl CoreRuntime {
     }
 
     /// Finishes a valid per-Task step verdict. The verdict itself carries the
-    /// Task's retry time, so unlike an unanswered/failed run this must not put
-    /// a Routine-wide floor in front of another ready Task at the same step.
+    /// Task's retry time, so no separate wait is kept for it.
     pub(crate) fn finish_steward_step_check(
         &mut self,
         capability: &TrackerCheckCapability,
         completed_at_epoch_ms: u64,
         configuration: &TrackerConfiguration,
     ) -> bool {
-        self.tracker_runtime
-            .step_gate
-            .remove(&capability.tracker_id);
+        if let Some(task_id) = self.claimed_step_task_id(capability) {
+            self.end_step_run_now(&capability.tracker_id, &task_id);
+            self.tracker_runtime
+                .step_task_not_before
+                .remove(&(capability.tracker_id.clone(), task_id));
+        }
         self.finish_runtime_check(
             capability,
             None,
@@ -335,709 +394,17 @@ impl CoreRuntime {
         )
     }
 
-    fn current_steward(
-        &self,
-        project_id: &str,
-        session_id: &str,
-    ) -> Result<termloop_domain::StewardConfiguration, CoreError> {
-        self.store
-            .steward_configurations()
-            .iter()
-            .find(|steward| {
-                steward.project_id == project_id
-                    && steward.enabled
-                    && steward.executor_session_id.as_deref() == Some(session_id)
-            })
-            .cloned()
-            .ok_or(CoreError::CapabilityDenied)
-    }
-
-    /// Produces at most one wake per Project Steward, exactly when that
-    /// Project has a due assignment. No periodic assistant ping is involved.
-    pub fn admit_due_steward_wakes(&mut self, now_epoch_ms: u64) -> Vec<DueStewardWake> {
-        self.initialize_routine_schedules();
-        let busy_projects = self.busy_project_ids();
-        let stewards = self
-            .store
-            .steward_configurations()
-            .iter()
-            .filter(|steward| steward.enabled && steward.executor_session_id.is_some())
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut wakes = Vec::new();
-        for steward in stewards {
-            if busy_projects.contains(&steward.project_id) {
-                continue;
-            }
-            let session_id = steward
-                .executor_session_id
-                .as_deref()
-                .expect("filtered above");
-            let has_due_assignment = self.store.tracker_configurations().iter().any(|routine| {
-                routine.enabled
-                    && routine.project_id == steward.project_id
-                    && self
-                        .tracker_runtime
-                        .next_due_epoch_ms
-                        .get(&routine.id)
-                        .is_some_and(|due| *due <= now_epoch_ms)
-            });
-            if !has_due_assignment || self.session_turn_is_running(session_id) {
-                continue;
-            }
-            if let Some(pending) = self
-                .tracker_runtime
-                .pending_steward_wakes
-                .get(&steward.project_id)
-                && pending.steward_session_id == session_id
-                && pending.retry_at_epoch_ms > now_epoch_ms
-            {
-                continue;
-            }
-            self.tracker_runtime.pending_steward_wakes.insert(
-                steward.project_id.clone(),
-                PendingStewardWake {
-                    steward_session_id: session_id.to_owned(),
-                    retry_at_epoch_ms: now_epoch_ms.saturating_add(WAKE_REDELIVERY_MS),
-                },
-            );
-            wakes.push(DueStewardWake {
-                project_id: steward.project_id,
-                steward_generation: steward.generation,
-                steward_session_id: session_id.to_owned(),
-            });
-        }
-        wakes
-    }
-
-    pub fn next_tracker_schedule_epoch_ms(&mut self) -> Option<u64> {
-        self.initialize_routine_schedules();
-        let busy_projects = self.busy_project_ids();
-        let stewards = self
-            .store
-            .steward_configurations()
-            .iter()
-            .filter(|steward| steward.enabled)
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut next = None;
-        for steward in stewards {
-            let Some(session_id) = steward.executor_session_id.as_deref() else {
-                continue;
-            };
-            if busy_projects.contains(&steward.project_id)
-                || self.session_turn_is_running(session_id)
-            {
-                continue;
-            }
-            let candidate = self
-                .tracker_runtime
-                .pending_steward_wakes
-                .get(&steward.project_id)
-                .map(|pending| pending.retry_at_epoch_ms)
-                .or_else(|| {
-                    self.store
-                        .tracker_configurations()
-                        .iter()
-                        .filter(|routine| {
-                            routine.enabled && routine.project_id == steward.project_id
-                        })
-                        .filter_map(|routine| {
-                            self.tracker_runtime
-                                .next_due_epoch_ms
-                                .get(&routine.id)
-                                .copied()
-                        })
-                        .min()
-                });
-            if let Some(candidate) = candidate {
-                next = Some(next.map_or(candidate, |current: u64| current.min(candidate)));
-            }
-        }
-        next
-    }
-
-    pub fn claim_next_steward_routine(
-        &mut self,
-        project_id: &str,
-        session_id: &str,
-        check_id: String,
-        now_epoch_ms: u64,
-    ) -> Result<StewardRoutineClaim, CoreError> {
-        let steward = self.current_steward(project_id, session_id)?;
-        self.tracker_runtime
-            .pending_steward_wakes
-            .remove(project_id);
-        self.pending_assistant_wake_deliveries.remove(session_id);
-
-        if let Some((routine_id, active)) = self.active_check_for_project(project_id) {
-            let capability = TrackerCheckCapability {
-                project_id: project_id.to_owned(),
-                tracker_id: routine_id.clone(),
-                check_id: active.check_id.clone(),
-                generation: active.generation,
-                claimed_at_epoch_ms: active.claimed_at_epoch_ms,
-                deadline_epoch_ms: active.deadline_epoch_ms,
-                steward_generation: active.steward_generation,
-                steward_session_id: session_id.to_owned(),
-            };
-            let reusable = self
-                .validate_current_check(&capability, now_epoch_ms)
-                .ok()
-                .and_then(|routine| {
-                    if routine.trigger_mode.is_scheduled() {
-                        active
-                            .step_milestone_id
-                            .is_none()
-                            .then_some((routine, None))
-                    } else {
-                        active
-                            .step_milestone_id
-                            .as_ref()
-                            .zip(active.step_task_id.as_ref())
-                            .and_then(|(milestone_id, task_id)| {
-                                self.playbook_step_assignment(&routine.id)
-                                    .filter(|assignment| {
-                                        assignment.milestone.id == *milestone_id
-                                            && assignment.waiting[0].task_id == *task_id
-                                    })
-                                    .map(|assignment| (routine, Some(assignment)))
-                            })
-                    }
-                });
-            if let Some((routine, step)) = reusable {
-                return Ok(StewardRoutineClaim {
-                    result: assigned_routine_result(
-                        &routine,
-                        &capability,
-                        now_epoch_ms,
-                        step.as_ref(),
-                    ),
-                    capability: Some(capability),
-                });
-            }
-
-            // A Playbook edit or Task reset can invalidate an in-flight claim.
-            // Release the exact stale claim before selecting fresh work.
-            self.release_steward_routine_claim(&capability);
-        }
-
-        self.initialize_routine_schedules();
-        let selected = self
-            .store
-            .tracker_configurations()
-            .iter()
-            .filter(|routine| routine.enabled && routine.project_id == project_id)
-            .filter_map(|routine| {
-                let due = self
-                    .tracker_runtime
-                    .next_due_epoch_ms
-                    .get(&routine.id)
-                    .copied()?;
-                let explicitly_requested = matches!(
-                    self.tracker_runtime.step_gate.get(&routine.id),
-                    Some(StepGate::RunNow { .. })
-                );
-                (due <= now_epoch_ms).then(|| {
-                    (
-                        !explicitly_requested,
-                        due,
-                        routine.id.clone(),
-                        routine.clone(),
-                    )
-                })
-            })
-            .min_by(|left, right| (left.0, left.1, &left.2).cmp(&(right.0, right.1, &right.2)));
-        let Some((_, _, _, routine)) = selected else {
-            let next_wake = self
-                .store
-                .tracker_configurations()
-                .iter()
-                .filter(|routine| routine.enabled && routine.project_id == project_id)
-                .filter_map(|routine| {
-                    self.tracker_runtime
-                        .next_due_epoch_ms
-                        .get(&routine.id)
-                        .copied()
-                })
-                .min();
-            return Ok(StewardRoutineClaim {
-                capability: None,
-                result: json!({
-                    "status": "idle",
-                    "nextWakeAtEpochMs": next_wake,
-                }),
-            });
-        };
-        if check_id.trim().is_empty() || check_id.len() > 128 {
-            return Err(CoreError::InvalidParams("checkId".into()));
-        }
-        let capability = TrackerCheckCapability {
-            project_id: project_id.to_owned(),
-            tracker_id: routine.id.clone(),
-            check_id,
-            generation: routine.generation,
-            claimed_at_epoch_ms: now_epoch_ms,
-            deadline_epoch_ms: now_epoch_ms.saturating_add(CHECK_DEADLINE_MAX_MS),
-            steward_generation: steward.generation,
-            steward_session_id: session_id.to_owned(),
-        };
-        let step = (!routine.trigger_mode.is_scheduled())
-            .then(|| self.playbook_step_assignment(&routine.id))
-            .flatten();
-        self.tracker_runtime
-            .health
-            .entry(routine.id.clone())
-            .or_default()
-            .active = Some(ActiveTrackerCheck {
-            check_id: capability.check_id.clone(),
-            step_milestone_id: step
-                .as_ref()
-                .map(|assignment| assignment.milestone.id.clone()),
-            step_task_id: step
-                .as_ref()
-                .map(|assignment| assignment.waiting[0].task_id.clone()),
-            generation: capability.generation,
-            claimed_at_epoch_ms: capability.claimed_at_epoch_ms,
-            deadline_epoch_ms: capability.deadline_epoch_ms,
-            ping_sent: false,
-            project_id: capability.project_id.clone(),
-            steward_generation: capability.steward_generation,
-            steward_session_id: capability.steward_session_id.clone(),
-        });
-        Ok(StewardRoutineClaim {
-            result: assigned_routine_result(&routine, &capability, now_epoch_ms, step.as_ref()),
-            capability: Some(capability),
-        })
-    }
-
-    /// Claims the exact due assignment before its scheduled wake is delivered.
-    /// The pending wake stays live until terminal delivery succeeds so a failed
-    /// submission can release the claim and retry without losing work.
-    pub fn claim_due_steward_routine(
-        &mut self,
-        wake: &DueStewardWake,
-        check_id: String,
-        now_epoch_ms: u64,
-    ) -> Result<StewardRoutineClaim, CoreError> {
-        if !self.steward_assignment_is_current(wake) {
-            return Err(CoreError::TrackerReportStale);
-        }
-        let pending = self
+    /// A "Run now" lasts one run: the run for its exact Task, or the next run
+    /// at the step when no Task was named.
+    fn end_step_run_now(&mut self, routine_id: &str, task_id: &str) {
+        if self
             .tracker_runtime
-            .pending_steward_wakes
-            .get(&wake.project_id)
-            .cloned()
-            .ok_or(CoreError::TrackerReportStale)?;
-        let claim = self.claim_next_steward_routine(
-            &wake.project_id,
-            &wake.steward_session_id,
-            check_id,
-            now_epoch_ms,
-        )?;
-        if claim.capability.is_some() {
-            self.tracker_runtime
-                .pending_steward_wakes
-                .insert(wake.project_id.clone(), pending);
-        }
-        Ok(claim)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn complete_steward_routine(
-        &mut self,
-        capability: &TrackerCheckCapability,
-        expected_context_revision: u64,
-        context_markdown: String,
-        update_summary: Option<String>,
-        findings: Vec<RoutineFinding>,
-        related_task_ids: Vec<String>,
-        report_id: String,
-        completed_at_epoch_ms: u64,
-    ) -> Result<Value, CoreError> {
-        let mut configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
-        if expected_context_revision > configuration.context_revision {
-            return Err(CoreError::RevisionConflict);
-        }
-        // A user may edit or clear this Routine's visible context while its
-        // Steward is inspecting sources. The findings still belong to the live
-        // claimed check, but its replacement Markdown came from an older
-        // source document. Preserve the newer user document and finish the
-        // check instead of overwriting it or making the Steward retry forever.
-        let context_markdown_applied = configuration.context_revision == expected_context_revision;
-        if context_markdown.len() > ROUTINE_CONTEXT_MAX_BYTES
-            || update_summary
-                .as_ref()
-                .is_some_and(|summary| summary.trim().is_empty() || summary.len() > 4_096)
-            || findings.len() > 16
-            || !unique_bounded(&related_task_ids, ROUTINE_RELATED_TASKS_MAX, 256)
-            || !self.same_project_tasks_exist(&configuration.project_id, &related_task_ids)
+            .step_run_now
+            .get(routine_id)
+            .is_some_and(|run_now| run_now.task_id.as_deref().is_none_or(|id| id == task_id))
         {
-            return Err(CoreError::InvalidParams("routineContext".into()));
+            self.tracker_runtime.step_run_now.remove(routine_id);
         }
-        let mut finding_ids = Vec::with_capacity(findings.len());
-        let mut finding_keys = Vec::with_capacity(findings.len());
-        for finding in &findings {
-            let value = PendingRoutineFinding {
-                id: finding.id.clone(),
-                source_key: finding.source_key.clone(),
-                routine_generation: configuration.generation,
-                summary: finding.summary.clone(),
-                evidence: finding.evidence.clone(),
-                source_references: finding.source_references.clone(),
-                related_task_ids: finding.related_task_ids.clone(),
-                created_at_epoch_ms: completed_at_epoch_ms,
-            };
-            if !value.is_valid()
-                || !valid_source_key(&finding.source_key)
-                || finding.summary.trim().is_empty()
-                || finding.summary.len() > ROUTINE_FINDING_SUMMARY_MAX_BYTES
-                || finding.evidence.trim().is_empty()
-                || finding.evidence.len() > ROUTINE_FINDING_EVIDENCE_MAX_BYTES
-                || !unique_bounded(
-                    &finding.source_references,
-                    TRACKER_REPORT_SOURCE_REFS_MAX,
-                    TRACKER_REPORT_SOURCE_REF_MAX_BYTES,
-                )
-                || !unique_bounded(&finding.related_task_ids, ROUTINE_RELATED_TASKS_MAX, 256)
-                || finding_ids.contains(&finding.id)
-                || finding_keys.contains(&finding.source_key)
-                || !self
-                    .same_project_tasks_exist(&configuration.project_id, &finding.related_task_ids)
-            {
-                return Err(CoreError::TrackerReportInvalid);
-            }
-            finding_ids.push(finding.id.clone());
-            finding_keys.push(finding.source_key.clone());
-        }
-
-        let novel_findings = findings
-            .into_iter()
-            .filter(|finding| {
-                !configuration
-                    .recent_source_keys
-                    .contains(&finding.source_key)
-            })
-            .collect::<Vec<_>>();
-        let mut recent_source_keys = configuration.recent_source_keys.clone();
-        for finding in &novel_findings {
-            if !recent_source_keys.contains(&finding.source_key) {
-                recent_source_keys.push(finding.source_key.clone());
-            }
-        }
-        if recent_source_keys.len() > ROUTINE_RECENT_SOURCE_KEYS_MAX {
-            recent_source_keys.drain(
-                ..recent_source_keys
-                    .len()
-                    .saturating_sub(ROUTINE_RECENT_SOURCE_KEYS_MAX),
-            );
-        }
-        let pending_findings = if configuration.trigger_mode.is_scheduled()
-            && configuration.action_handling != RoutineActionHandling::Off
-        {
-            novel_findings
-                .iter()
-                .map(|finding| PendingRoutineFinding {
-                    id: finding.id.clone(),
-                    source_key: finding.source_key.clone(),
-                    routine_generation: configuration.generation,
-                    summary: finding.summary.trim().to_owned(),
-                    evidence: finding.evidence.trim().to_owned(),
-                    source_references: finding.source_references.clone(),
-                    related_task_ids: finding.related_task_ids.clone(),
-                    created_at_epoch_ms: completed_at_epoch_ms,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
-        if configuration
-            .pending_routine_findings
-            .len()
-            .saturating_add(pending_findings.len())
-            > ROUTINE_PENDING_FINDINGS_MAX
-        {
-            return Err(CoreError::TrackerReportInvalid);
-        }
-        configuration
-            .pending_routine_findings
-            .extend(pending_findings.iter().cloned());
-        let context_changed = (context_markdown_applied
-            && configuration.context_markdown != context_markdown)
-            || configuration.recent_source_keys != recent_source_keys
-            || configuration.related_task_ids != related_task_ids;
-        if context_changed {
-            configuration.context_revision = configuration
-                .context_revision
-                .checked_add(1)
-                .ok_or(CoreError::RevisionConflict)?;
-        }
-        if context_markdown_applied {
-            configuration.context_markdown = context_markdown;
-        }
-        configuration.recent_source_keys = recent_source_keys;
-        configuration.related_task_ids = related_task_ids.clone();
-        configuration.last_check_started_at_epoch_ms = Some(capability.claimed_at_epoch_ms);
-        configuration.last_attempt_at_epoch_ms = Some(completed_at_epoch_ms);
-        configuration.last_successful_report_at_epoch_ms = Some(completed_at_epoch_ms);
-        configuration.updated_at_epoch_ms = completed_at_epoch_ms;
-
-        let update_summary = update_summary.map(|summary| summary.trim().to_owned());
-        let report = if update_summary.is_none() && novel_findings.is_empty() {
-            None
-        } else {
-            let mut message_parts = Vec::new();
-            if let Some(summary) = update_summary.as_ref() {
-                message_parts.push(summary.clone());
-            }
-            message_parts.extend(novel_findings.iter().map(|finding| {
-                format!(
-                    "- {}\n  Evidence: {}",
-                    finding.summary.trim(),
-                    finding.evidence.trim()
-                )
-            }));
-            let message = message_parts.join("\n");
-            let source_references = novel_findings
-                .iter()
-                .flat_map(|finding| finding.source_references.iter().cloned())
-                .fold(Vec::new(), |mut values, reference| {
-                    if !values.contains(&reference) {
-                        values.push(reference);
-                    }
-                    values
-                });
-            let report_task_ids = update_summary
-                .as_ref()
-                .map_or_else(Vec::new, |_| related_task_ids.clone())
-                .into_iter()
-                .chain(
-                    novel_findings
-                        .iter()
-                        .flat_map(|finding| finding.related_task_ids.iter().cloned()),
-                )
-                .fold(Vec::new(), |mut values, task_id| {
-                    if !values.contains(&task_id) {
-                        values.push(task_id);
-                    }
-                    values
-                });
-            let report = TrackerReport {
-                id: report_id,
-                project_id: capability.project_id.clone(),
-                routine_id: capability.tracker_id.clone(),
-                check_id: capability.check_id.clone(),
-                generation: capability.generation,
-                kind: TrackerReportKind::Success,
-                message,
-                source_references,
-                related_task_ids: report_task_ids,
-                created_at_epoch_ms: completed_at_epoch_ms,
-            };
-            if !report.is_valid() {
-                return Err(CoreError::TrackerReportInvalid);
-            }
-            Some(report)
-        };
-        self.store
-            .set_tracker_configuration(
-                &self.write_authority,
-                configuration.clone(),
-                self.store.revision(),
-            )
-            .map_err(store_error)?;
-        let pending_trigger = self.finish_steward_routine_check(
-            capability,
-            None,
-            completed_at_epoch_ms,
-            &configuration,
-        );
-        if let Some(report) = report.as_ref() {
-            self.push_runtime_report(report.clone());
-        }
-        Ok(json!({
-            "status": "completed",
-            "newFindingCount": novel_findings.len(),
-            "newPendingFindingCount": pending_findings.len(),
-            "contextChanged": context_changed,
-            "contextMarkdownApplied": context_markdown_applied,
-            "contextRevision": configuration.context_revision,
-            "pendingTrigger": pending_trigger,
-            "reportCreated": report.is_some(),
-            "stateRevision": self.store.revision(),
-        }))
-    }
-
-    pub fn report_steward_routine_problem(
-        &mut self,
-        capability: &TrackerCheckCapability,
-        message: String,
-        source_references: Vec<String>,
-        report_id: String,
-        completed_at_epoch_ms: u64,
-    ) -> Result<Value, CoreError> {
-        let mut configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
-        let related_task_ids: Vec<String> = if configuration.trigger_mode.is_scheduled() {
-            configuration
-                .related_task_ids
-                .iter()
-                .filter(|task_id| {
-                    self.store.tasks().iter().any(|task| {
-                        task.id == **task_id && task.project_id == configuration.project_id
-                    })
-                })
-                .cloned()
-                .collect()
-        } else {
-            self.claimed_step_task_id(&capability.tracker_id)
-                .into_iter()
-                .collect()
-        };
-        let message = message.trim().to_owned();
-        let report = TrackerReport {
-            id: report_id,
-            project_id: capability.project_id.clone(),
-            routine_id: capability.tracker_id.clone(),
-            check_id: capability.check_id.clone(),
-            generation: capability.generation,
-            kind: TrackerReportKind::Problem,
-            message: message.clone(),
-            source_references: source_references.clone(),
-            related_task_ids: related_task_ids.clone(),
-            created_at_epoch_ms: completed_at_epoch_ms,
-        };
-        if !report.is_valid() {
-            return Err(CoreError::TrackerReportInvalid);
-        }
-        let duplicate_report = self
-            .tracker_runtime
-            .reports
-            .iter()
-            .rev()
-            .find(|candidate| {
-                candidate.project_id == report.project_id
-                    && candidate.routine_id == report.routine_id
-            })
-            .is_some_and(|candidate| {
-                candidate.kind == TrackerReportKind::Problem
-                    && candidate.message == report.message
-                    && candidate.source_references == report.source_references
-                    && candidate.related_task_ids == report.related_task_ids
-            });
-        let problem_episode = configuration
-            .last_successful_report_at_epoch_ms
-            .unwrap_or(0)
-            .to_string();
-        let source_key = routine_problem_source_key(
-            &configuration.id,
-            &problem_episode,
-            &message,
-            &source_references,
-            &related_task_ids,
-        );
-        let mut new_pending_finding_count = 0;
-        let mut steward_review_required = false;
-        if configuration.action_handling != RoutineActionHandling::Off {
-            if configuration
-                .pending_routine_findings
-                .iter()
-                .any(|finding| finding.source_key == source_key)
-            {
-                steward_review_required =
-                    !self.companion_has_pending_proposal(&configuration.project_id);
-            } else if !configuration.recent_source_keys.contains(&source_key) {
-                let summary = format!(
-                    "{} could not complete its evidence check.",
-                    configuration.name
-                );
-                let evidence = truncate_utf8(&message, ROUTINE_FINDING_EVIDENCE_MAX_BYTES);
-                let replacement_index = if related_task_ids.is_empty() {
-                    None
-                } else {
-                    configuration
-                        .pending_routine_findings
-                        .iter()
-                        .position(|finding| {
-                            finding
-                                .related_task_ids
-                                .iter()
-                                .any(|task_id| related_task_ids.contains(task_id))
-                        })
-                };
-                if let Some(index) = replacement_index {
-                    let finding_id = configuration.pending_routine_findings[index].id.clone();
-                    configuration.pending_routine_findings[index] = PendingRoutineFinding {
-                        id: finding_id.clone(),
-                        source_key: source_key.clone(),
-                        routine_generation: configuration.generation,
-                        summary,
-                        evidence,
-                        source_references: source_references.clone(),
-                        related_task_ids: related_task_ids.clone(),
-                        created_at_epoch_ms: completed_at_epoch_ms,
-                    };
-                    steward_review_required =
-                        !self.companion_has_pending_proposal(&configuration.project_id);
-                } else if configuration.pending_routine_findings.len()
-                    < ROUTINE_PENDING_FINDINGS_MAX
-                {
-                    configuration
-                        .pending_routine_findings
-                        .push(PendingRoutineFinding {
-                            id: report.id.clone(),
-                            source_key: source_key.clone(),
-                            routine_generation: configuration.generation,
-                            summary,
-                            evidence,
-                            source_references: source_references.clone(),
-                            related_task_ids: related_task_ids.clone(),
-                            created_at_epoch_ms: completed_at_epoch_ms,
-                        });
-                    new_pending_finding_count = 1;
-                    steward_review_required = true;
-                }
-                if steward_review_required {
-                    configuration.recent_source_keys.push(source_key);
-                }
-            }
-        }
-        if configuration.recent_source_keys.len() > ROUTINE_RECENT_SOURCE_KEYS_MAX {
-            configuration.recent_source_keys.drain(
-                ..configuration
-                    .recent_source_keys
-                    .len()
-                    .saturating_sub(ROUTINE_RECENT_SOURCE_KEYS_MAX),
-            );
-        }
-        configuration.last_check_started_at_epoch_ms = Some(capability.claimed_at_epoch_ms);
-        configuration.last_attempt_at_epoch_ms = Some(completed_at_epoch_ms);
-        configuration.updated_at_epoch_ms = completed_at_epoch_ms;
-        self.store
-            .set_tracker_configuration(
-                &self.write_authority,
-                configuration.clone(),
-                self.store.revision(),
-            )
-            .map_err(store_error)?;
-        let pending_trigger = self.finish_steward_routine_check(
-            capability,
-            Some(message),
-            completed_at_epoch_ms,
-            &configuration,
-        );
-        if !duplicate_report {
-            self.push_runtime_report(report);
-        }
-        Ok(json!({
-            "status": "problemReported",
-            "pendingTrigger": pending_trigger,
-            "problemChanged": !duplicate_report,
-            "reportCreated": !duplicate_report,
-            "relatedTaskIds": related_task_ids,
-            "newPendingFindingCount": new_pending_finding_count,
-            "stewardReviewRequired": steward_review_required,
-            "stateRevision": self.store.revision(),
-        }))
     }
 
     pub(crate) fn validate_current_check(
@@ -1053,18 +420,21 @@ impl CoreRuntime {
             .cloned()
             .ok_or(CoreError::TrackerReportStale)?;
         let active = self
-            .tracker_runtime
-            .health
-            .get(&capability.tracker_id)
-            .and_then(|health| health.active.as_ref())
+            .claimed_check(capability)
             .ok_or(CoreError::TrackerReportStale)?;
-        let steward_current = self.store.steward_configurations().iter().any(|steward| {
-            steward.project_id == capability.project_id
-                && steward.enabled
-                && steward.generation == capability.steward_generation
-                && steward.executor_session_id.as_deref()
-                    == Some(capability.steward_session_id.as_str())
-        });
+        // A step check belongs to its evaluator, not to the Steward session
+        // that happened to be current when it was claimed.
+        let steward_current = if active.step_task_id.is_some() {
+            self.playbook_automation_enabled(&capability.project_id)
+        } else {
+            self.store.steward_configurations().iter().any(|steward| {
+                steward.project_id == capability.project_id
+                    && steward.enabled
+                    && steward.generation == capability.steward_generation
+                    && steward.executor_session_id.as_deref()
+                        == Some(capability.steward_session_id.as_str())
+            })
+        };
         if !configuration.enabled
             || configuration.project_id != capability.project_id
             || configuration.generation != capability.generation
@@ -1097,7 +467,7 @@ impl CoreRuntime {
             .health
             .get_mut(&capability.tracker_id)
             .expect("validated active Routine check");
-        health.active = None;
+        health.remove_check(&capability.check_id);
         health.attention_message = attention_message;
         let pending_trigger = std::mem::take(&mut health.pending_trigger);
         let next_due = if pending_trigger {
@@ -1137,41 +507,46 @@ impl CoreRuntime {
         let mut changed = false;
         let mut expired = Vec::new();
         for (routine_id, health) in &mut self.tracker_runtime.health {
-            let Some(active) = health.active.as_mut() else {
-                continue;
-            };
-            if !active.ping_sent && now_epoch_ms >= active.deadline_epoch_ms {
-                active.ping_sent = true;
-                changed = true;
-            } else if active.ping_sent
-                && now_epoch_ms
-                    >= active
-                        .deadline_epoch_ms
-                        .saturating_add(OVERDUE_PING_GRACE_MS)
-            {
-                health.active = None;
+            for active in &mut health.checks {
+                if !active.ping_sent && now_epoch_ms >= active.deadline_epoch_ms {
+                    active.ping_sent = true;
+                    changed = true;
+                }
+            }
+            let before = health.checks.len();
+            health.checks.retain(|active| {
+                let overdue = active.ping_sent
+                    && now_epoch_ms
+                        >= active
+                            .deadline_epoch_ms
+                            .saturating_add(OVERDUE_PING_GRACE_MS);
+                if overdue {
+                    expired.push((routine_id.clone(), active.step_task_id.clone()));
+                }
+                !overdue
+            });
+            if health.checks.len() != before {
                 health.pending_trigger = false;
-                expired.push(routine_id.clone());
                 changed = true;
             }
         }
-        for routine_id in expired {
+        for (routine_id, step_task_id) in expired {
             let retry_at = now_epoch_ms.saturating_add(CHECK_TIMEOUT_RETRY_MS);
-            self.tracker_runtime
-                .next_due_epoch_ms
-                .insert(routine_id.clone(), retry_at);
-            // A step check's due time is otherwise derived from Tasks that are
-            // still waiting, which would make the abandoned claim due again at
-            // once; the floor is what actually holds it back.
-            if self
-                .store
-                .tracker_configurations()
-                .iter()
-                .any(|routine| routine.id == routine_id && !routine.trigger_mode.is_scheduled())
-            {
-                self.tracker_runtime
-                    .step_gate
-                    .insert(routine_id, StepGate::NotBefore(retry_at));
+            match step_task_id {
+                // A step check's due time is otherwise derived from the Task
+                // that is still waiting, which would make the abandoned claim
+                // due again at once; the floor is what actually holds that
+                // Task back. Other Tasks at the step are unaffected.
+                Some(task_id) => {
+                    self.tracker_runtime
+                        .step_task_not_before
+                        .insert((routine_id, task_id), retry_at);
+                }
+                None => {
+                    self.tracker_runtime
+                        .next_due_epoch_ms
+                        .insert(routine_id, retry_at);
+                }
             }
         }
         Ok(TrackerDeadlineAdvance { changed })
@@ -1181,7 +556,7 @@ impl CoreRuntime {
         self.tracker_runtime
             .health
             .values()
-            .filter_map(|health| health.active.as_ref())
+            .flat_map(|health| health.checks.iter())
             .map(|active| {
                 if active.ping_sent {
                     active
@@ -1207,44 +582,38 @@ impl CoreRuntime {
         capability: &TrackerCheckCapability,
     ) -> Result<Option<String>, CoreError> {
         self.validate_current_check(capability, capability.claimed_at_epoch_ms)?;
-        Ok(self.claimed_step_task_id(&capability.tracker_id))
+        Ok(self.claimed_step_task_id(capability))
     }
 
     pub fn release_steward_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
-        let exact_active_claim = self
-            .tracker_runtime
-            .health
-            .get(&capability.tracker_id)
-            .and_then(|health| health.active.as_ref())
-            .is_some_and(|active| {
-                active.check_id == capability.check_id
-                    && active.generation == capability.generation
-                    && active.claimed_at_epoch_ms == capability.claimed_at_epoch_ms
-                    && active.deadline_epoch_ms == capability.deadline_epoch_ms
-                    && active.project_id == capability.project_id
-                    && active.steward_generation == capability.steward_generation
-                    && active.steward_session_id == capability.steward_session_id
-            });
-        if !exact_active_claim {
+        let Some(active) = self.claimed_check(capability).cloned().filter(|active| {
+            active.generation == capability.generation
+                && active.claimed_at_epoch_ms == capability.claimed_at_epoch_ms
+                && active.deadline_epoch_ms == capability.deadline_epoch_ms
+                && active.project_id == capability.project_id
+                && active.steward_generation == capability.steward_generation
+                && active.steward_session_id == capability.steward_session_id
+        }) else {
             return false;
-        }
+        };
         if let Some(health) = self.tracker_runtime.health.get_mut(&capability.tracker_id) {
-            health.active = None;
+            health.remove_check(&capability.check_id);
         }
-        self.tracker_runtime.next_due_epoch_ms.insert(
-            capability.tracker_id.clone(),
-            capability.claimed_at_epoch_ms,
-        );
         // A claim handed back unused answered nothing, so the wait it would
         // have earned is dropped. A "Run now" the user is still waiting on is
         // not: this run never happened.
-        if matches!(
-            self.tracker_runtime.step_gate.get(&capability.tracker_id),
-            Some(StepGate::NotBefore(_))
-        ) {
-            self.tracker_runtime
-                .step_gate
-                .remove(&capability.tracker_id);
+        match active.step_task_id {
+            Some(task_id) => {
+                self.tracker_runtime
+                    .step_task_not_before
+                    .remove(&(capability.tracker_id.clone(), task_id));
+            }
+            None => {
+                self.tracker_runtime.next_due_epoch_ms.insert(
+                    capability.tracker_id.clone(),
+                    capability.claimed_at_epoch_ms,
+                );
+            }
         }
         true
     }
@@ -1283,178 +652,6 @@ impl CoreRuntime {
             .remove(&wake.project_id);
     }
 
-    pub fn list_tracker_runtime(&self, params: Value) -> Result<Value, CoreError> {
-        let project_id = required_string(&params, "projectId")?;
-        if !self.project_exists(&project_id) {
-            return Err(CoreError::NotFound);
-        }
-        let health = self
-            .store
-            .tracker_configurations()
-            .iter()
-            .filter(|configuration| configuration.project_id == project_id)
-            .map(|configuration| {
-                let current = self.tracker_runtime.health.get(&configuration.id);
-                let active = current.and_then(|health| health.active.as_ref());
-                json!({
-                    "routineId": configuration.id,
-                    "generation": configuration.generation,
-                    "triggerMode": configuration.trigger_mode,
-                    "name": configuration.name,
-                    "contextMarkdown": configuration.context_markdown,
-                    "contextRevision": configuration.context_revision,
-                    "relatedTaskIds": configuration.related_task_ids,
-                    "state": if active.is_some_and(|check| check.ping_sent) {
-                        "overdue"
-                    } else if active.is_some() {
-                        "checking"
-                    } else if current.is_some_and(|health| health.attention_message.is_some()) {
-                        "attention"
-                    } else {
-                        "idle"
-                    },
-                    "checkId": active.map(|check| &check.check_id),
-                    "deadlineEpochMs": active.map(|check| check.deadline_epoch_ms),
-                    "pingSent": active.is_some_and(|check| check.ping_sent),
-                    "pendingTrigger": current.is_some_and(|health| health.pending_trigger),
-                    "attentionMessage": current.and_then(|health| health.attention_message.as_deref()),
-                    "lastAttemptAtEpochMs": configuration.last_attempt_at_epoch_ms,
-                    "lastSuccessfulReportAtEpochMs": configuration.last_successful_report_at_epoch_ms,
-                    "nextDueAtEpochMs": self.tracker_runtime.next_due_epoch_ms.get(&configuration.id).copied().or_else(|| Some(routine_next_due(configuration))),
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut reports = Vec::new();
-        let mut encoded_bytes = 0_usize;
-        let mut reports_truncated = false;
-        for report in self
-            .tracker_runtime
-            .reports
-            .iter()
-            .rev()
-            .filter(|report| report.project_id == project_id)
-        {
-            let report_bytes = serde_json::to_vec(report)
-                .map_err(|_| CoreError::Store("Routine report projection encoding failed".into()))?
-                .len();
-            if encoded_bytes.saturating_add(report_bytes)
-                > ROUTINE_REPORT_PROJECTION_MAX_ENCODED_BYTES
-            {
-                reports_truncated = true;
-                break;
-            }
-            encoded_bytes = encoded_bytes.saturating_add(report_bytes);
-            reports.push(report.clone());
-        }
-        Ok(json!({
-            "health": health,
-            "reports": reports,
-            "reportsTruncated": reports_truncated,
-            "stateRevision": self.store.revision(),
-        }))
-    }
-
-    pub fn run_routine_now(
-        &mut self,
-        routine_id: &str,
-        now_epoch_ms: u64,
-    ) -> Result<bool, CoreError> {
-        self.run_routine_now_target(routine_id, None, now_epoch_ms)
-    }
-
-    /// Runs one pipeline question for the exact Task selected in Task details.
-    /// This is a one-shot runtime override; it does not reorder or persist the
-    /// Project's normal focused-Task scheduler.
-    pub fn run_task_routine_now(
-        &mut self,
-        routine_id: &str,
-        task_id: &str,
-        now_epoch_ms: u64,
-    ) -> Result<bool, CoreError> {
-        if task_id.trim().is_empty() || task_id.len() > 64 {
-            return Err(CoreError::InvalidParams("taskId".into()));
-        }
-        self.run_routine_now_target(routine_id, Some(task_id), now_epoch_ms)
-    }
-
-    fn run_routine_now_target(
-        &mut self,
-        routine_id: &str,
-        task_id: Option<&str>,
-        now_epoch_ms: u64,
-    ) -> Result<bool, CoreError> {
-        let routine = self
-            .store
-            .tracker_configurations()
-            .iter()
-            .find(|routine| routine.id == routine_id)
-            .ok_or(CoreError::NotFound)?;
-        if !routine.enabled {
-            return Err(CoreError::TrackerReportStale);
-        }
-        let project_id = routine.project_id.clone();
-        let on_demand = !routine.trigger_mode.is_scheduled();
-        if task_id.is_some() && !on_demand {
-            return Err(CoreError::InvalidParams("taskId".into()));
-        }
-        if let Some(task_id) = task_id
-            && self.tracker_runtime.tracker_is_active(routine_id)
-        {
-            return if self.claimed_step_task_id(routine_id).as_deref() == Some(task_id) {
-                Ok(false)
-            } else {
-                Err(CoreError::InvalidParams(
-                    "Routine is already checking another Task".into(),
-                ))
-            };
-        }
-        // A step check has nothing to run when no Task stands at its question.
-        // Say so rather than reporting a run that the derived schedule would
-        // silently drop on the next pass.
-        let step_has_work = task_id.map_or_else(
-            || self.playbook_step_due_epoch_ms(routine_id).is_some(),
-            |task_id| {
-                self.playbook_step_assignment_for_task(routine_id, task_id)
-                    .is_some()
-            },
-        );
-        if on_demand && !step_has_work {
-            return Err(CoreError::PlaybookStepIdle);
-        }
-        let already_pending = self.tracker_runtime.tracker_is_active(routine_id)
-            || self
-                .tracker_runtime
-                .next_due_epoch_ms
-                .get(routine_id)
-                .is_some_and(|due| *due <= now_epoch_ms);
-        self.tracker_runtime
-            .schedule_tracker_now(routine_id, now_epoch_ms);
-        if on_demand {
-            self.tracker_runtime.step_gate.insert(
-                routine_id.to_owned(),
-                StepGate::RunNow {
-                    at_epoch_ms: now_epoch_ms,
-                    task_id: task_id.map(str::to_owned),
-                },
-            );
-        }
-        if self.tracker_runtime.tracker_is_active(routine_id) {
-            self.tracker_runtime
-                .health
-                .entry(routine_id.to_owned())
-                .or_default()
-                .pending_trigger = true;
-        }
-        if let Some(pending) = self
-            .tracker_runtime
-            .pending_steward_wakes
-            .get_mut(&project_id)
-        {
-            pending.retry_at_epoch_ms = now_epoch_ms;
-        }
-        Ok(!already_pending)
-    }
-
     pub(crate) fn retain_current_tracker_runtime(&mut self) {
         let routine_ids = self
             .store
@@ -1478,34 +675,52 @@ impl CoreRuntime {
             .next_due_epoch_ms
             .retain(|routine_id, _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
-            .step_gate
+            .step_run_now
             .retain(|routine_id, _| routine_ids.contains(routine_id.as_str()));
+        self.tracker_runtime
+            .step_task_not_before
+            .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
             .pending_steward_wakes
             .retain(|project_id, _| project_ids.contains(project_id.as_str()));
     }
 
-    fn active_check_for_project(&self, project_id: &str) -> Option<(String, ActiveTrackerCheck)> {
+    /// The scheduled Routine check the Steward itself is working on. Step
+    /// checks run in evaluation forks and never occupy the Steward.
+    fn steward_held_check_for_project(
+        &self,
+        project_id: &str,
+    ) -> Option<(String, ActiveTrackerCheck)> {
         self.tracker_runtime
             .health
             .iter()
             .find_map(|(routine_id, health)| {
-                health.active.as_ref().and_then(|active| {
-                    (active.project_id == project_id).then(|| (routine_id.clone(), active.clone()))
-                })
+                health
+                    .checks
+                    .iter()
+                    .find(|active| active.project_id == project_id && active.step_task_id.is_none())
+                    .map(|active| (routine_id.clone(), active.clone()))
             })
     }
 
+    fn project_step_check_count(&self, project_id: &str) -> usize {
+        self.tracker_runtime
+            .health
+            .values()
+            .flat_map(|health| health.checks.iter())
+            .filter(|active| active.project_id == project_id && active.step_task_id.is_some())
+            .count()
+    }
+
+    /// Projects whose Steward is busy with a scheduled Routine check. Running
+    /// step checks never hold back the Steward or other Tasks.
     fn busy_project_ids(&self) -> std::collections::HashSet<String> {
         self.tracker_runtime
             .health
             .values()
-            .filter_map(|health| {
-                health
-                    .active
-                    .as_ref()
-                    .map(|active| active.project_id.clone())
-            })
+            .flat_map(|health| health.checks.iter())
+            .filter(|active| active.step_task_id.is_none())
+            .map(|active| active.project_id.clone())
             .collect()
     }
 
@@ -1516,6 +731,19 @@ impl CoreRuntime {
                 .iter()
                 .any(|task| task.id == *task_id && task.project_id == project_id)
         })
+    }
+}
+
+fn active_capability(routine_id: &str, active: &ActiveTrackerCheck) -> TrackerCheckCapability {
+    TrackerCheckCapability {
+        project_id: active.project_id.clone(),
+        tracker_id: routine_id.to_owned(),
+        check_id: active.check_id.clone(),
+        generation: active.generation,
+        claimed_at_epoch_ms: active.claimed_at_epoch_ms,
+        deadline_epoch_ms: active.deadline_epoch_ms,
+        steward_generation: active.steward_generation,
+        steward_session_id: active.steward_session_id.clone(),
     }
 }
 
@@ -1532,137 +760,8 @@ fn routine_next_due(configuration: &TrackerConfiguration) -> u64 {
     })
 }
 
-fn assigned_routine_result(
-    routine: &TrackerConfiguration,
-    capability: &TrackerCheckCapability,
-    now_epoch_ms: u64,
-    step: Option<&super::playbook_runtime::PlaybookStepAssignment>,
-) -> Value {
-    let scan_since = routine.last_check_started_at_epoch_ms.map_or_else(
-        || now_epoch_ms.saturating_sub(routine.schedule_interval_seconds.saturating_mul(1_000)),
-        |previous| previous.saturating_sub(ROUTINE_SCAN_OVERLAP_MS),
-    );
-    let mut result = json!({
-        "status": "assigned",
-        "checkId": capability.check_id,
-        "routine": {
-            "id": routine.id,
-            "name": routine.name,
-            "instructions": routine.prompt,
-            "scheduleIntervalSeconds": routine.schedule_interval_seconds,
-        },
-        "context": {
-            "revision": routine.context_revision,
-            "markdown": routine.context_markdown,
-            "evidenceKind": "routineMemory",
-            "independentlyVerified": false,
-            "scanSinceEpochMs": scan_since,
-            "lastFinishedAtEpochMs": routine.last_attempt_at_epoch_ms,
-            "recentSourceKeys": routine.recent_source_keys,
-            "relatedTaskIds": routine.related_task_ids,
-        },
-        "claimedAtEpochMs": capability.claimed_at_epoch_ms,
-        "leaseExpiresAtEpochMs": capability.deadline_epoch_ms,
-    });
-    // A step Routine evaluates one stage for a named set of Tasks. It finishes
-    // with verdicts rather than findings, so the assignment says so instead of
-    // leaving the Steward to infer it from the trigger mode.
-    if let Some(step) = step {
-        result["step"] = json!({
-            "milestoneId": step.milestone.id,
-            "title": step.milestone.title,
-            "gate": step.milestone.gate,
-            "completeWhen": routine.prompt,
-            "whileWaiting": {
-                "mode": routine.action_handling,
-                "instructions": routine.steward_instructions,
-            },
-            "approver": step.milestone.approver,
-            "retryDelaySeconds": step.milestone.retry_delay_seconds,
-            "finishWith": "steward_complete_assignment",
-            "taskRead": {
-                "requiredBeforeVerdict": true,
-                "tool": "task_read",
-                "arguments": {
-                    "taskId": step.waiting[0].task_id,
-                    "checkId": capability.check_id,
-                },
-            },
-            "tasks": step
-                .waiting
-                .iter()
-                .map(|task| {
-                    json!({
-                        "taskId": task.task_id,
-                        "title": task.title,
-                        "dueAtEpochMs": task.due_at_epoch_ms,
-                        "lastEvidence": task.last_evidence,
-                        "lastEvidenceKind": "previousStewardVerdict",
-                        "lastEvidenceIndependentlyVerified": false,
-                    })
-                })
-                .collect::<Vec<_>>(),
-        });
-    }
-    result
-}
-
 pub(crate) fn is_routine_problem_source_key(value: &str) -> bool {
     value.starts_with("routine-problem:")
-}
-
-fn routine_problem_source_key(
-    routine_id: &str,
-    episode: &str,
-    message: &str,
-    source_references: &[String],
-    related_task_ids: &[String],
-) -> String {
-    let mut digest = Sha256::new();
-    for part in std::iter::once(routine_id)
-        .chain(std::iter::once(episode))
-        .chain(std::iter::once(message))
-        .chain(source_references.iter().map(String::as_str))
-        .chain(related_task_ids.iter().map(String::as_str))
-    {
-        digest.update(part.as_bytes());
-        digest.update([0]);
-    }
-    let digest = digest.finalize();
-    let mut hex = String::with_capacity(64);
-    for byte in digest {
-        use std::fmt::Write as _;
-        write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    format!("routine-problem:{hex}")
-}
-
-fn truncate_utf8(value: &str, max_bytes: usize) -> String {
-    if value.len() <= max_bytes {
-        return value.to_owned();
-    }
-    let mut end = max_bytes;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    value[..end].to_owned()
-}
-
-fn valid_source_key(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= ROUTINE_SOURCE_KEY_MAX_BYTES
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
-        })
-}
-
-fn unique_bounded(values: &[String], max_items: usize, max_bytes: usize) -> bool {
-    values.len() <= max_items
-        && values.iter().enumerate().all(|(index, value)| {
-            !value.trim().is_empty()
-                && value.len() <= max_bytes
-                && !values[index + 1..].contains(value)
-        })
 }
 
 #[cfg(test)]

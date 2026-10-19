@@ -15,14 +15,13 @@ const MAX_ACTIVITY_ENTRIES: usize = 4096;
 #[derive(Default)]
 pub(crate) struct PlaybookEvaluationRuntime {
     pub(crate) evaluations: HashMap<String, PlaybookEvaluation>,
-    pub(crate) waiting: HashMap<String, PlaybookEvaluationWait>,
+    /// Deferred step checks, keyed by Routine and Task.
+    pub(crate) waiting: HashMap<(String, String), PlaybookEvaluationWait>,
     activity: HashMap<String, TaskAgentActivity>,
 }
 
 pub(crate) struct PlaybookEvaluationWait {
-    project_id: String,
     task_id: String,
-    playbook_revision: u64,
     routine_generation: u64,
     reason: String,
 }
@@ -31,13 +30,16 @@ pub(crate) struct PlaybookEvaluationWait {
 pub(crate) struct PlaybookEvaluation {
     pub(crate) capability: TrackerCheckCapability,
     pub(crate) task_id: String,
-    pub(crate) source_session_id: String,
+    /// The forked Task Agent, or `None` for a fresh evaluator.
+    pub(crate) source_session_id: Option<String>,
     pub(crate) session_id: String,
     pub(crate) runtime_epoch: u64,
-    pub(crate) playbook_revision: u64,
     pub(crate) worktree_generation: u64,
     pub(crate) assignment: Value,
     read: bool,
+    /// Core refused this fork's report because its check no longer matched.
+    /// The fork stops on that answer, so cleanup must not wait for expiry.
+    report_rejected: bool,
 }
 
 #[derive(Default)]
@@ -81,28 +83,48 @@ impl TaskAgentActivity {
 }
 
 impl CoreRuntime {
-    /// UI routing is derived from the exact live claim, never Session names or cwd.
-    pub(crate) fn playbook_evaluation_projection(&self, routine_id: &str) -> Option<Value> {
-        let Some(capability) = self.current_step_check(routine_id) else {
-            let waiting = self.playbook_evaluation.waiting.get(routine_id)?;
-            let assignment = self.playbook_step_assignment(routine_id)?;
-            let playbook = self.store.playbook_for_project(&waiting.project_id)?;
-            if assignment.waiting[0].task_id != waiting.task_id
-                || playbook.revision != waiting.playbook_revision
-                || !self
-                    .store
-                    .tracker_configurations()
-                    .iter()
-                    .any(|r| r.id == routine_id && r.generation == waiting.routine_generation)
-            {
-                return None;
-            }
-            return Some(json!({
-                "routineId": routine_id, "taskId": waiting.task_id, "mode": "waitingForTaskAgent",
-                "sessionId": null, "sourceSessionId": null, "reason": waiting.reason,
-            }));
-        };
-        let task_id = self.tracker_check_task_id(&capability).ok()??;
+    /// UI routing is derived from the exact live claims, never Session names or
+    /// cwd. A step reports one entry per Task it is checking or deferring.
+    pub(crate) fn playbook_evaluation_projections(&self, routine_id: &str) -> Vec<Value> {
+        let mut projections = self
+            .current_step_checks(routine_id)
+            .into_iter()
+            .filter_map(|capability| self.running_evaluation_projection(routine_id, &capability))
+            .collect::<Vec<_>>();
+        let mut waiting = self
+            .playbook_evaluation
+            .waiting
+            .iter()
+            .filter(|((routine, task_id), wait)| {
+                routine == routine_id
+                    && !self.step_task_is_checked(routine_id, task_id)
+                    && self
+                        .playbook_step_assignment_for_task(routine_id, task_id)
+                        .is_some()
+                    && self
+                        .store
+                        .tracker_configurations()
+                        .iter()
+                        .any(|r| r.id == routine_id && r.generation == wait.routine_generation)
+            })
+            .map(|(_, wait)| wait)
+            .collect::<Vec<_>>();
+        waiting.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        projections.extend(waiting.into_iter().map(|wait| {
+            json!({
+                "routineId": routine_id, "taskId": wait.task_id, "mode": "waitingForTaskAgent",
+                "sessionId": null, "sourceSessionId": null, "reason": wait.reason,
+            })
+        }));
+        projections
+    }
+
+    fn running_evaluation_projection(
+        &self,
+        routine_id: &str,
+        capability: &TrackerCheckCapability,
+    ) -> Option<Value> {
+        let task_id = self.tracker_check_task_id(capability).ok()??;
         let mut projection = json!({
             "routineId": routine_id, "taskId": task_id, "mode": "starting",
             "sessionId": null, "sourceSessionId": null, "reason": null,
@@ -121,7 +143,11 @@ impl CoreRuntime {
                     && session.lifecycle_state == "running"
             }) && !self.pending_agent_forks.contains(&evaluation.session_id)
             {
-                projection["mode"] = json!("taskAgentFork");
+                projection["mode"] = json!(if evaluation.source_session_id.is_some() {
+                    "taskAgentFork"
+                } else {
+                    "freshEvaluator"
+                });
                 projection["sessionId"] = json!(evaluation.session_id);
             }
         }
@@ -142,18 +168,11 @@ impl CoreRuntime {
         let task_id = self
             .tracker_check_task_id(capability)?
             .ok_or(CoreError::TrackerReportStale)?;
-        let playbook_revision = self
-            .store
-            .playbook_for_project(&capability.project_id)
-            .ok_or(CoreError::TrackerReportStale)?
-            .revision;
         self.finish_steward_routine_check(capability, None, now, &configuration);
         self.playbook_evaluation.waiting.insert(
-            capability.tracker_id.clone(),
+            (capability.tracker_id.clone(), task_id.clone()),
             PlaybookEvaluationWait {
-                project_id: capability.project_id.clone(),
                 task_id,
-                playbook_revision,
                 routine_generation: configuration.generation,
                 reason: reason.into(),
             },
@@ -309,7 +328,7 @@ impl CoreRuntime {
     pub(crate) fn reserve_playbook_evaluation(
         &mut self,
         claim: &StewardRoutineClaim,
-        source: String,
+        source: Option<String>,
         session_id: String,
         runtime_epoch: u64,
     ) -> Result<(), CoreError> {
@@ -330,14 +349,7 @@ impl CoreRuntime {
             .iter()
             .find(|t| t.id == task_id)
             .ok_or(CoreError::NotFound)?;
-        let playbook_revision = self
-            .store
-            .playbook_for_project(&capability.project_id)
-            .ok_or(CoreError::TrackerReportStale)?
-            .revision;
-        let mut assignment = claim.result.clone();
-        assignment["step"]["finishWith"] = json!("playbook_evaluation_complete");
-        assignment["step"]["taskRead"] = json!({"requiredBeforeVerdict": true, "tool": "playbook_evaluation_read", "arguments": {}});
+        let assignment = claim.result.clone();
         self.playbook_evaluation.evaluations.insert(
             capability.check_id.clone(),
             PlaybookEvaluation {
@@ -346,10 +358,10 @@ impl CoreRuntime {
                 source_session_id: source,
                 session_id,
                 runtime_epoch,
-                playbook_revision,
                 worktree_generation: task.worktree_generation,
                 assignment,
                 read: false,
+                report_rejected: false,
             },
         );
         Ok(())
@@ -361,10 +373,16 @@ impl CoreRuntime {
         now: u64,
     ) -> Result<(), CoreError> {
         self.validate_current_check(&evaluation.capability, now)?;
+        // The check's own question is fenced by its Routine generation above.
+        // The Task must still stand at the step it was claimed for; an edit to
+        // another step of the same Playbook leaves this evaluation valid.
+        let claimed_milestone_id = self.claimed_step_milestone_id(&evaluation.capability);
         if self
-            .store
-            .playbook_for_project(&evaluation.capability.project_id)
-            .is_none_or(|p| p.revision != evaluation.playbook_revision)
+            .playbook_step_assignment_for_task(
+                &evaluation.capability.tracker_id,
+                &evaluation.task_id,
+            )
+            .is_none_or(|assignment| Some(assignment.milestone.id) != claimed_milestone_id)
             || self
                 .tracker_check_task_id(&evaluation.capability)?
                 .as_deref()
@@ -439,17 +457,29 @@ impl CoreRuntime {
             return Err(CoreError::CapabilityDenied);
         }
         let now = termloop_platform::current_epoch_ms();
-        self.validate_playbook_evaluation(&evaluation, now)?;
-        let result = self.apply_playbook_step_verdicts(
-            &evaluation.capability,
-            vec![StewardStepVerdict {
-                task_id: evaluation.task_id,
-                verdict,
-                evidence,
-            }],
-            termloop_platform::generate_opaque_id(),
-            now,
-        )?;
+        let result = self
+            .validate_playbook_evaluation(&evaluation, now)
+            .and_then(|()| {
+                self.apply_playbook_step_verdicts(
+                    &evaluation.capability,
+                    vec![StewardStepVerdict {
+                        task_id: evaluation.task_id,
+                        verdict,
+                        evidence,
+                    }],
+                    termloop_platform::generate_opaque_id(),
+                    now,
+                )
+            });
+        let result = match result {
+            Err(CoreError::TrackerReportStale) => {
+                if let Some(evaluation) = self.playbook_evaluation.evaluations.get_mut(check_id) {
+                    evaluation.report_rejected = true;
+                }
+                return Err(CoreError::TrackerReportStale);
+            }
+            result => result?,
+        };
         self.playbook_evaluation.evaluations.remove(check_id);
         self.mcp_authorizer.remove(&evaluation.session_id);
         Ok(
@@ -458,10 +488,19 @@ impl CoreRuntime {
     }
 
     pub fn fail_playbook_evaluation_launch(&mut self, check_id: &str) -> Result<Value, CoreError> {
+        let fresh = self
+            .playbook_evaluation
+            .evaluations
+            .get(check_id)
+            .is_some_and(|evaluation| evaluation.source_session_id.is_none());
         self.interrupt_evaluation_record(
             check_id,
             termloop_domain::PlaybookEvaluationOutcome::Failed,
-            "The evaluation fork could not start.",
+            if fresh {
+                "The evaluator could not start."
+            } else {
+                "The evaluation fork could not start."
+            },
         )?;
         let result = if let Some(evaluation) =
             self.playbook_evaluation.evaluations.get(check_id).cloned()
@@ -475,7 +514,11 @@ impl CoreRuntime {
                         capability: Some(evaluation.capability),
                         result: evaluation.assignment,
                     },
-                    "forkUnavailable",
+                    if fresh {
+                        "evaluatorUnavailable"
+                    } else {
+                        "forkUnavailable"
+                    },
                 )?
             } else {
                 self.release_steward_routine_claim(&evaluation.capability);
@@ -549,7 +592,7 @@ impl CoreRuntime {
             .collect::<std::collections::HashSet<_>>();
         self.playbook_evaluation
             .waiting
-            .retain(|id, _| current.contains(id.as_str()));
+            .retain(|(id, _), _| current.contains(id.as_str()));
         let stale = self
             .playbook_evaluation
             .evaluations
@@ -562,6 +605,8 @@ impl CoreRuntime {
                 });
                 let reason = if exited {
                     "The fork agent exited before recording a result."
+                } else if evaluation.report_rejected {
+                    "The check changed before its result was recorded, so the step will be checked again."
                 } else if self.validate_playbook_evaluation(evaluation, now).is_err() {
                     "The check expired or its Task, pipeline, or Steward changed before a result was recorded."
                 } else {
@@ -576,7 +621,23 @@ impl CoreRuntime {
                 termloop_domain::PlaybookEvaluationOutcome::Interrupted,
                 reason,
             )?;
-            self.fail_playbook_evaluation_launch(&id)?;
+            let rejected = self
+                .playbook_evaluation
+                .evaluations
+                .get(&id)
+                .filter(|evaluation| evaluation.report_rejected)
+                .cloned();
+            if let Some(evaluation) = rejected {
+                // The fork worked and answered a question that no longer
+                // matched. Hand the claim back so the step is asked again on
+                // its own cadence instead of waiting for another fork.
+                self.release_steward_routine_claim(&evaluation.capability);
+                self.playbook_evaluation.evaluations.remove(&id);
+                self.mcp_authorizer.remove(&evaluation.session_id);
+                self.pending_agent_forks.remove(&evaluation.session_id);
+            } else {
+                self.fail_playbook_evaluation_launch(&id)?;
+            }
         }
         self.playbook_evaluation
             .activity

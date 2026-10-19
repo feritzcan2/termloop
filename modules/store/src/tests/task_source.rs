@@ -1,7 +1,8 @@
 use super::*;
 use termloop_domain::{
     IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ProjectRecord, TaskSourceBoardSelection,
-    TaskSourceConfiguration, TaskSourceImportPolicy, TaskSourceProvider, TaskSourceScope,
+    TaskSourceBranchNaming, TaskSourceConfiguration, TaskSourceImportPolicy, TaskSourceProvider,
+    TaskSourceScope,
 };
 
 fn source(id: &str) -> TaskSourceConfiguration {
@@ -21,6 +22,7 @@ fn source(id: &str) -> TaskSourceConfiguration {
             termloop_domain::TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,
         refresh_interval_seconds: 900,
         ignored_external_ids: vec![],
+        branch_naming: TaskSourceBranchNaming::Title,
         created_at_epoch_ms: 1,
         updated_at_epoch_ms: 1,
     }
@@ -232,6 +234,65 @@ fn single_board_preview_state_remains_readable() {
         }
     );
     assert!(reopened.task_source_configurations()[0].boards.is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn branch_naming_persists_and_state_written_before_it_reads_as_title() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-task-source-branch-naming-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(
+            &authority,
+            ProjectRecord {
+                id: "project-1".into(),
+                name: "Project".into(),
+                folder_path: "/project".into(),
+            },
+        )
+        .unwrap();
+    let mut keyed = source("keyed-source");
+    keyed.branch_naming = TaskSourceBranchNaming::IssueKey;
+    store
+        .insert_task_source_configuration(&authority, keyed)
+        .unwrap();
+    store
+        .insert_task_source_configuration(&authority, source("legacy-source"))
+        .unwrap();
+    drop(store);
+
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    for source in state["task_source_configurations"].as_array_mut().unwrap() {
+        if source["id"] == "legacy-source" {
+            source
+                .as_object_mut()
+                .unwrap()
+                .remove("branchNaming")
+                .unwrap();
+        }
+    }
+    std::fs::write(&path, serde_json::to_vec(&state).unwrap()).unwrap();
+
+    let reopened = Store::open(&path).unwrap();
+    let naming = |id: &str| {
+        reopened
+            .task_source_configurations()
+            .iter()
+            .find(|source| source.id == id)
+            .unwrap()
+            .branch_naming
+    };
+    assert_eq!(naming("keyed-source"), TaskSourceBranchNaming::IssueKey);
+    assert_eq!(naming("legacy-source"), TaskSourceBranchNaming::Title);
     let _ = std::fs::remove_file(path);
 }
 

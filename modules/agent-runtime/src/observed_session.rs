@@ -273,7 +273,11 @@ impl ObservedSession {
             }
             return;
         }
-        if !generated_input_composer_may_accept(&self.provider, state) {
+        if !generated_input_composer_may_accept(
+            &self.provider,
+            state,
+            self.observation.map(|value| value.source),
+        ) {
             if state.is_some() {
                 self.deliveries.block_for_unavailable_composer(
                     &self.id,

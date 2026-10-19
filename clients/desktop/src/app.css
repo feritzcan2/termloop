@@ -433,6 +433,9 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group.focused .task-rename { height: 26px; }
 .task-rename[aria-invalid="true"] { border-color: var(--danger); }
 .task-row:has(.task-rename) .row-actions, .task-row:has(.task-rename) .task-agents { display: none; }
+/* The close confirmation takes the same corner as the hover actions; while it
+   is asking, it is the only control there. */
+.task-row:has(.task-close-confirm) .row-actions { display: none; }
 /* Closing asks once, in place, without a modal for a worktree-less Task. */
 .task-close-confirm { position: absolute; z-index: 2; top: 3px; right: 6px; display: flex; align-items: center; gap: 3px; height: 21px; padding: 0 4px 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--danger)); color: var(--sidebar-text); }
 .task-close-confirm > span { font: 600 9px/1 var(--font-ui); }
@@ -512,7 +515,24 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-headline { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; }
 .task-focus-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
 .task-focus-copy .task-title { display: -webkit-box; overflow: hidden; font-size: 12.5px; line-height: 1.35; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+/* The identity line a person scans for: ticket key first, then where the Task
+   stands, then its scope tag. Everything below it is detail. */
+.task-card-ids { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+.task-card-key { flex: none; color: var(--warning); font: 700 10.5px/1.5 var(--font-mono); letter-spacing: .01em; }
+.task-card-scope { min-width: 0; overflow: hidden; padding: 0 5px; border: 1px solid light-dark(rgba(15,23,42,.1), rgba(255,255,255,.1)); border-radius: 4px; color: var(--sidebar-dim); font: 600 9px/14px var(--font-ui); text-overflow: ellipsis; }
+.task-card-status { flex: none; padding: 0 6px; border-radius: 999px; background: light-dark(rgba(15,23,42,.06), rgba(255,255,255,.07)); color: var(--sidebar-dim); font: 700 9px/15px var(--font-ui); letter-spacing: .02em; }
+.task-card-status[data-tone="working"] { background: rgba(92,201,149,.13); color: var(--agent-status-working); }
+.task-card-status[data-tone="review"] { background: rgba(102,179,255,.13); color: var(--agent-status-review); }
+.task-card-status[data-tone="attention"] { background: rgba(255,143,107,.14); color: var(--agent-status-awaiting); }
+.task-card-status[data-tone="done"] { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 35%, transparent); color: color-mix(in srgb, var(--success) 80%, var(--sidebar-dim)); }
+/* The card edge repeats the status tone so a long board can be scanned by
+   colour alone. Only live or owed states light it: a Done Task is stated by
+   its chip but never lit, matching the `done` rule in `row-tone.ts`. */
+.task-group.focused[data-status-tone="working"] { box-shadow: inset 2px 0 0 var(--agent-status-working); }
+.task-group.focused[data-status-tone="review"] { box-shadow: inset 2px 0 0 var(--agent-status-review); }
+.task-group.focused[data-status-tone="attention"] { box-shadow: inset 2px 0 0 var(--agent-status-awaiting); }
+.task-board-search { margin: 2px 12px 6px; }
 /* One dot answers "what does this Task want" for the whole row; the same tone
    vocabulary as `.row-rail` (see `renderer/row-tone.ts`), rendered as a point
    so every row spends the same three pixels on it. */
@@ -2736,8 +2756,10 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workflow-agent-group-changes { flex: none; padding: 2px 4px; border: 0; border-radius: 4px; background: transparent; color: var(--accent-strong); font: 600 9px/1.4 var(--font-mono); }
 .workflow-agent-group-changes:hover { background: var(--accent-wash); }
 .workflow-agent-group-changes:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
-.active-agent-row { grid-template-columns: minmax(0,1fr) 20px; gap: 1px; padding-right: 4px; }
-.active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
+/* The title owns the row's whole width. The favorite star and the change and
+   pull-request strip float over the row instead of reserving side columns
+   that left a gap beside every title. */
+.active-agent-row { grid-template-columns: minmax(0,1fr); gap: 1px; padding-right: 4px; }
 .active-agent-entry { min-width: 0; }
 .active-agent-workflow { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); min-width: 0; min-height: 24px; margin: 2px 4px 0; padding: 3px 7px; border: 0; border-radius: 5px; background: var(--accent-wash); color: var(--accent-strong); text-align: left; }
 .active-agent-workflow-action { flex: 0 0 auto; font: 600 10px/1.4 var(--font-ui); }
@@ -2757,18 +2779,46 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .active-agent-row .session-item { min-height: 36px; grid-template-columns: 20px minmax(0,1fr) 10px; gap: 6px; padding: 3px 7px; border-radius: 6px; }
 .active-agent-row .row-copy { gap: 1px; }
 .active-agent-row .row-title { font-size: 11.5px; }
+/* A Task Agent row leads with the Task's key, coloured like the board's key.
+   The key spends a third of the line, so the Task title may wrap to a second
+   line rather than truncate to a few words. */
+.row-title.with-key { display: -webkit-box; overflow: hidden; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.row-title-key { margin-right: 5px; color: var(--warning); font: 700 10.5px/1.3 var(--font-mono); letter-spacing: .01em; }
+/* A linked key opens the issue in the browser; it says so on hover. */
+.row-title-key.linked, .task-card-key.linked { cursor: pointer; }
+.row-title-key.linked:hover, .task-card-key.linked:hover { text-decoration: underline; text-underline-offset: 2px; }
 .active-agent-row .session-state-line { gap: 6px; font-size: 9.5px; }
 .active-agent-row .row-subtitle { color: light-dark(#61768b, #9bbddf); font-size: 10.5px; font-weight: 600; }
 .active-agent-row .session-presence { width: 10px; }
+/* Steward's glyph, turning, stands in for the presence dot while a Playbook
+   evaluation fork checks this agent's work; it opens that fork. */
+.presence-badge { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: -2px; color: var(--accent-strong); font: 700 12px/1 var(--font-ui); cursor: pointer; animation: presence-badge-spin 2.4s linear infinite; }
+.presence-badge:hover { color: light-dark(#1f70b5, #cfe7ff); animation-play-state: paused; }
+@keyframes presence-badge-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .presence-badge { animation: none; } }
 .active-agent-row .row-actions { right: 27px; }
-.active-agent-row.has-worktree-changes .row-actions { right: 92px; }
-.active-agent-favorite { z-index: 2; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: light-dark(rgba(15,23,42,.22), rgba(255,255,255,.22)); }
+.active-agent-favorite { position: absolute; top: 4px; right: 6px; z-index: 3; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: light-dark(rgba(15,23,42,.22), rgba(255,255,255,.22)); }
 .active-agent-favorite:hover, .active-agent-favorite:focus-visible { outline: 0; background: rgba(217,170,95,.1); color: light-dark(#79683f, #c7ad69); }
 .active-agent-favorite.favorite { color: var(--warning); }
+/* Twelve identical stars read as noise; an unset star appears only on the
+   row being pointed at or focused. */
+.active-agent-favorite:not(.favorite) { opacity: 0; }
+.active-agent-row:hover .active-agent-favorite, .active-agent-favorite:focus-visible { opacity: 1; background: var(--bg-sidebar); }
+.active-agent-row:has(.active-agent-favorite.favorite) .row-title { padding-right: 18px; }
 .active-agent-favorite.favorite svg { fill: currentColor; }
 .active-agent-favorite svg { width: 12px; height: 12px; }
-.active-agent-worktree-changes { z-index: 2; width: 64px; min-width: 0; padding: 2px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 700 9px/1.3 var(--font-mono); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.active-agent-worktree-changes { flex: none; padding: 1px 3px; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dim); font: 700 9px/1.3 var(--font-mono); white-space: nowrap; }
 .active-agent-worktree-changes:hover, .active-agent-worktree-changes:focus-visible { outline: 0; background: rgba(102,179,255,.12); color: var(--accent-strong); text-decoration: underline; }
+/* Change count and up to two pull requests share the state line's free right
+   side. The state line is short ("Working Claude"), so the strip sits on the
+   same baseline; under width pressure the strip shrinks, never the title. */
+.active-agent-delivery { position: absolute; right: 20px; bottom: 4px; z-index: 2; display: flex; max-width: calc(100% - 120px); align-items: center; justify-content: flex-end; gap: 2px; overflow: hidden; }
+.active-agent-pull-request { min-width: 0; padding: 1px 3px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); font: 600 9px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.active-agent-pull-request[data-tone="review"] { color: var(--agent-status-review); }
+.active-agent-pull-request[data-tone="attention"] { color: var(--state-attention); }
+.active-agent-pull-request[data-tone="done"] { color: var(--sidebar-dim); }
+.active-agent-pull-request:hover:not(:disabled), .active-agent-pull-request:focus-visible { outline: 0; background: rgba(102,179,255,.12); color: var(--accent-strong); text-decoration: underline; }
+.active-agent-pull-request-more { margin-left: 3px; color: var(--sidebar-dimmer); }
 .active-agent-section[data-active-agent-section="Favs"] .rail-subhead > span:first-child { color: light-dark(#79683f, #c7ad69); }
 .active-agent-section[data-active-agent-section="10m+ ago"] { opacity: .76; }
 .active-agent-row .agent-status-awaitingInput, .active-agent-row .agent-status-compacting { animation: none; }
@@ -2781,6 +2831,12 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workflow-agent-group .active-agent-row .row-state { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-agent-group .active-agent-row .row-agent { display: none; }
 .workflow-agent-group .active-agent-row .row-actions { top: 3px; }
+/* One-line workflow members keep the star and change count in columns. */
+.workflow-agent-group .active-agent-row { grid-template-columns: minmax(0,1fr) 20px; }
+.workflow-agent-group .active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
+.workflow-agent-group .active-agent-favorite, .workflow-agent-group .active-agent-delivery { position: static; }
+.workflow-agent-group .active-agent-delivery { max-width: none; }
+.workflow-agent-group .active-agent-row:has(.active-agent-favorite.favorite) .row-title { padding-right: 0; }
 .workflow-agent-group .active-agent-row:has(.active-agent-workflow) { grid-template-columns: minmax(0,1fr) 20px 24px; }
 .workflow-agent-group .active-agent-row.has-worktree-changes:has(.active-agent-workflow) { grid-template-columns: minmax(0,1fr) 20px 24px 64px; }
 .workflow-agent-group .active-agent-row:has(.active-agent-workflow) .row-actions { right: 51px; }

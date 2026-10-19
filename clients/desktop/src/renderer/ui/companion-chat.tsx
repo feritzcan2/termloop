@@ -288,7 +288,7 @@ export function playbookStateSummary(
       waitingCount: byMilestone.get(milestone.id)?.waitingTaskIds.length ?? 0,
     })),
     doneCount: runtime?.doneTaskIds.length ?? 0,
-    processing: Boolean(runtime?.processingTaskId),
+    processing: (runtime?.processingTaskIds.length ?? 0) > 0,
     nextAttemptAtEpochMs: nextAttempts.length ? Math.min(...nextAttempts) : null,
   };
 }
