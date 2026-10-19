@@ -76,7 +76,7 @@ import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
 import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
 import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
-import { SidebarShortcutTips, sidebarShortcutTipsVisible } from "./SidebarShortcutTips.js";
+import { SidebarShortcutTips } from "./SidebarShortcutTips.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
 import { moveProject, moveProjectBy, orderProjects, readProjectOrder, writeProjectOrder, type ProjectOrder } from "../project-order-memory.js";
@@ -576,6 +576,7 @@ export function Shell(props: ShellProps) {
   }, [finishBackgroundRelocation, props.provisionTaskWorktree]);
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(window.innerWidth));
   const [sidebarDragging, setSidebarDragging] = useState(false);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sessionDragging, setSessionDragging] = useState(false);
   const [filesPresentation, setFilesPresentation] = useState<{ projectId: string; taskId: string | null }>();
   const [changesPresentation, setChangesPresentation] = useState<
@@ -764,11 +765,6 @@ export function Shell(props: ShellProps) {
   const looseSessions = useMemo(
     () => props.projectSessions.filter((session) => !attachedSessionIds.has(session.id) && !taskNestedHelperIds.has(session.id) && !isAssistantSession(session)),
     [attachedSessionIds, props.projectSessions, taskNestedHelperIds],
-  );
-  const agentsViewRowCount = useMemo(
-    () => props.projectSessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)).length
-      + looseSessions.filter((session) => session.kind === "Terminal").length,
-    [looseSessions, props.projectSessions],
   );
   const agentGroupScopeBySessionId = useMemo(() => {
     const scopes = new Map(props.projectSessions.map((session) => [session.id, "project"]));
@@ -1598,7 +1594,7 @@ export function Shell(props: ShellProps) {
               : undefined}
           />
           <LibraryScopeHeader section={railMode} context={settingsScope} />
-          <div className="sidebar-scroll">
+          <div ref={sidebarScrollRef} className="sidebar-scroll">
           {railMode === "skills" ? <SkillsRail
             key={props.selectedProject?.id ?? "global"}
             load={props.loadSkillCatalog}
@@ -1868,9 +1864,7 @@ export function Shell(props: ShellProps) {
             restoreDeletedSession={deleted.restore}
           /> : null}</>}
           </div>
-          {railMode === "workspace" && workspaceView === "agents" && sidebarShortcutTipsVisible(agentsViewRowCount)
-            ? <SidebarShortcutTips platform={platform} />
-            : null}
+          {railMode === "workspace" && workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}
           {/* Archived Agent history lives in History; this footer is Task-only. */}
           {railMode === "workspace" ? <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
             tasks={archived.tasks}
