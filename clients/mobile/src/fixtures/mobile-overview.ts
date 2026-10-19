@@ -273,7 +273,9 @@ export const fixturePlaybook: PlaybookDto = {
 export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
   activePipelineName: "Dev PR to production",
   evaluation: null,
+  evaluations: [],
   processingTaskId: null,
+  processingTaskIds: [],
   steps: [
     {
       milestoneId: "code-done",

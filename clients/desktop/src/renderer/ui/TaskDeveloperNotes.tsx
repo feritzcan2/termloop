@@ -18,6 +18,9 @@ export function TaskDeveloperNotes(props: {
   taskId: string;
   taskTitle: string;
   notes: readonly TaskDeveloperNoteDto[];
+  /// Bumped by the card's hover action. An empty checklist renders nothing, so
+  /// this is how a first note is started without a permanent empty header.
+  addRequest?: number | undefined;
   save(
     expected: readonly TaskDeveloperNoteDto[],
     next: readonly TaskDeveloperNoteDto[],
@@ -83,6 +86,10 @@ export function TaskDeveloperNotes(props: {
     setNotes(props.notes);
   }, [props.notes, props.projectId, props.taskId]);
 
+  useEffect(() => {
+    if (props.addRequest) setAdding(true);
+  }, [props.addRequest]);
+
   const replaceNotes = async (next: readonly TaskDeveloperNoteDto[]) => {
     if (saving) return;
     const expected = notes;
@@ -106,6 +113,7 @@ export function TaskDeveloperNotes(props: {
     void replaceNotes([...notes, { id: nextNoteId(), text, completed: false }]);
   };
   const completedCount = notes.filter((note) => note.completed).length;
+  if (notes.length === 0 && !adding && !error && !saving && props.addRequest !== undefined) return null;
 
   return (
     <section

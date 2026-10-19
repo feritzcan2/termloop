@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
-import type { AgentStatus, Session } from "../model.js";
+import type { AgentStatus, GitHostProjection, Session } from "../model.js";
+import { pullRequestChip } from "../task-card-copy.js";
 import { basename, isLiveSession, sessionLabel } from "../model.js";
 import { agentActivityIsOlder, agentActivityPriority, agentGroupActivityPriority, agentLastKnownActivityAtEpochMs, sessionState } from "../session-presentation.js";
 import { isAssistantSession } from "./AssistantRail.js";
@@ -33,6 +34,18 @@ type ActiveAgentGroupSections = {
   resting: readonly AgentSessionCluster[];
   older: readonly AgentSessionCluster[];
   stopped: readonly AgentSessionCluster[];
+};
+
+/// The Task an Agent works inside, named the way the Task board names it.
+export type ActiveAgentTaskIdentity = {
+  taskId: string;
+  issueKey: string | undefined;
+  issueUrl: string | undefined;
+  title: string;
+  /// At most the two newest pull requests, already ordered by the caller.
+  pullRequests: readonly GitHostProjection["matches"][number][];
+  /// Matches beyond `pullRequests`, shown only as a count.
+  morePullRequests: number;
 };
 
 export type ActiveAgentWorktreeChanges = {
@@ -286,6 +299,9 @@ export type ActiveAgentRailProps = {
   favoriteSessionIds: ReadonlySet<string>;
   taskAttachedSessionIds: ReadonlySet<string>;
   worktreeChangesBySessionId: ReadonlyMap<string, ActiveAgentWorktreeChanges>;
+  /// A Task Agent's row is titled by its Task, not by the provider name every
+  /// row would otherwise share. Helpers nest under that row and keep their name.
+  taskIdentityBySessionId?: ReadonlyMap<string, ActiveAgentTaskIdentity> | undefined;
   workflowsBySessionId?: ReadonlyMap<string, readonly ActiveAgentWorkflow[]> | undefined;
   workflowAgentLabelsBySessionId?: ReadonlyMap<string, string> | undefined;
   workflowGroupsBySessionId?: ReadonlyMap<string, WorkflowAgentGroup> | undefined;
@@ -305,6 +321,11 @@ export type ActiveAgentRailProps = {
   archiveSession(sessionId: string): void;
   toggleFavoriteSession(sessionId: string): void;
   openTaskChanges(taskId: string): void;
+  openExternal?: ((url: string) => void) | undefined;
+  /// Core's exact Playbook evaluation fork and the agent it checks. The fork
+  /// folds into its source's row instead of taking a row of its own.
+  /** Running Playbook evaluation forks, one per independently checked Task. */
+  playbookEvaluations?: readonly { sessionId: string; sourceSessionId: string }[] | undefined;
   /// Opens Quick Action, the same surface the Shift Shift chord reaches. Only
   /// the first-run empty state calls it; every other row here already exists.
   openQuickAction?: (() => void) | undefined;
@@ -332,14 +353,23 @@ export function ActiveAgentRail(props: ActiveAgentRailProps) {
   }, [props.nowEpochMs]);
   const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
   /// Workflow members live only in their run's entry, never also in a bucket.
+  /// Only folded while the source row exists to carry it; otherwise the fork
+  /// stays an ordinary row so it is never unreachable.
+  const foldedEvaluations = useMemo(() => (props.playbookEvaluations ?? []).filter((evaluation) =>
+    props.sessions.some((session) => session.id === evaluation.sessionId)
+    && props.sessions.some((session) => session.id === evaluation.sourceSessionId)), [props.playbookEvaluations, props.sessions]);
+  const rowSessions = useMemo(() => {
+    const folded = new Set(foldedEvaluations.map((evaluation) => evaluation.sessionId));
+    return folded.size ? props.sessions.filter((session) => !folded.has(session.id)) : props.sessions;
+  }, [foldedEvaluations, props.sessions]);
   const workflowRuns = useMemo(() => orderWorkflowRuns(
-    workflowAgentRuns(props.sessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
+    workflowAgentRuns(rowSessions.filter((session) => session.kind === "Agent" && !isAssistantSession(session)), props.workflowGroupsBySessionId),
     props.statusesById, props.reviewReadySessionIds,
-  ), [props.sessions, props.workflowGroupsBySessionId, props.statusesById, props.reviewReadySessionIds]);
+  ), [rowSessions, props.workflowGroupsBySessionId, props.statusesById, props.reviewReadySessionIds]);
   const bucketSessions = useMemo(() => {
     const members = new Set(workflowRuns.flatMap(({ run }) => run.sessions.map((session) => session.id)));
-    return members.size ? props.sessions.filter((session) => !members.has(session.id)) : props.sessions;
-  }, [props.sessions, workflowRuns]);
+    return members.size ? rowSessions.filter((session) => !members.has(session.id)) : rowSessions;
+  }, [rowSessions, workflowRuns]);
   const naturalSections = useMemo(
     () => activeAgentGroupSections(bucketSessions, props.statusesById, props.reviewReadySessionIds, props.favoriteSessionIds, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.rememberedActivityBySessionId),
     [bucketSessions, nowEpochMs, props.agentGroups, props.detachedRelationshipSessionIds, props.favoriteSessionIds, props.rememberedActivityBySessionId, props.reviewReadySessionIds, props.statusesById],
@@ -613,6 +643,23 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const workflows = props.workflowsBySessionId?.get(session.id) ?? [];
   const workflowAction = activeAgentWorkflowAction(session);
   const rowChanges = sharedChanges ? undefined : worktreeChanges;
+  const nested = Boolean(source || projectedSource);
+  /// A name the user gave the Session, or a workflow role, still wins.
+  const workflowLabel = props.workflowAgentLabelsBySessionId?.get(session.id);
+  const taskIdentity = compactWorkflow || session.name?.trim() || workflowLabel
+    ? undefined
+    : props.taskIdentityBySessionId?.get(session.id);
+  const taskTitled = Boolean(taskIdentity) && !nested;
+  const pullRequests = taskTitled ? taskIdentity!.pullRequests : [];
+  const delivery = Boolean(rowChanges) || pullRequests.length > 0;
+  const evaluationFork = props.playbookEvaluations
+    ?.find((candidate) => candidate.sourceSessionId === session.id);
+  const evaluation = evaluationFork
+    ? props.sessions.find((candidate) => candidate.id === evaluationFork.sessionId)
+    : undefined;
+  const evaluationState = evaluation
+    ? sessionState(evaluation, props.statusesById.get(evaluation.id), props.reviewReadySessionIds.has(evaluation.id))
+    : undefined;
   const workflowActions = workflows.map((workflow) => <button
     key={workflow.executionId}
     type="button"
@@ -628,13 +675,24 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
   const row = (
     <div ref={setNodeRef} className="active-agent-entry" role={source ? undefined : "listitem"} data-session-drop-target={session.id}>
       {!compactWorkflow ? workflowActions : null}
-      <div className={`session-row active-agent-row${rowChanges ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
+      <div className={`session-row active-agent-row${delivery ? " has-worktree-changes" : ""}${draggable.isDragging ? " dragging" : ""}${dropPlacement ? ` drop-${dropPlacement}` : ""}`}>
         <SessionRowButton
         session={session}
-        displayName={props.workflowAgentLabelsBySessionId?.get(session.id)}
+        displayName={taskTitled ? taskIdentity!.title : workflowLabel}
+        titleKey={taskTitled ? taskIdentity!.issueKey : undefined}
+        openTitleKey={taskTitled && taskIdentity!.issueUrl && props.openExternal
+          ? () => props.openExternal!(taskIdentity!.issueUrl!)
+          : undefined}
+        presenceBadge={evaluation ? {
+          glyph: "✦",
+          title: `A Playbook evaluator is checking this work${evaluationState?.label ? ` · ${evaluationState.label}` : ""}. Click to open the evaluator.`,
+          open: () => props.selectSession(evaluation.id),
+        } : undefined}
         agentStatus={agentStatus}
         reviewReady={reviewReady}
-        subtitle={sharedCheckout || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
+        /// The Task title already says which checkout this is; a helper under a
+        /// Task row inherits that and needs no folder either.
+        subtitle={sharedCheckout || taskIdentity || session.process.cwd === props.projectFolder ? "" : basename(session.process.cwd)}
         {...(projectedSource?.kind === "Agent"
           ? { relationshipLabel: source ? sessionRelationshipLabel(source, session) : sessionRelationshipLabel(projectedSource, session) }
           : {})}
@@ -661,13 +719,29 @@ function ActiveAgentRow({ session, source, depth = 0, projectedSource, worktreeC
         onClick={() => props.toggleFavoriteSession(session.id)}
         ><Icon name="star" /></button>
         {compactWorkflow ? workflowActions : null}
-        {rowChanges ? <button
-        type="button"
-        className="active-agent-worktree-changes"
-        aria-label={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
-        title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
-        onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
-        >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
+        {delivery ? <div className="active-agent-delivery">
+          {rowChanges ? <button
+          type="button"
+          className="active-agent-worktree-changes"
+          aria-label={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+          title={`Review ${taskChangeLabel(rowChanges.changeCount)} in ${rowChanges.taskTitle}`}
+          onClick={(event) => { event.stopPropagation(); props.openTaskChanges(rowChanges.taskId); }}
+          >{taskChangeLabel(rowChanges.changeCount)}</button> : null}
+          {pullRequests.map((pullRequest, index) => {
+            const chip = pullRequestChip(pullRequest);
+            const more = index === pullRequests.length - 1 ? taskIdentity!.morePullRequests : 0;
+            return <button
+              key={`${pullRequest.repository_owner}/${pullRequest.repository_name}#${pullRequest.number}`}
+              type="button"
+              className="active-agent-pull-request"
+              data-tone={chip.tone}
+              aria-label={`Open pull request ${pullRequest.number}, ${pullRequest.state}, in browser`}
+              title={`${chip.title}\nOpen in browser`}
+              disabled={!props.openExternal}
+              onClick={(event) => { event.stopPropagation(); props.openExternal?.(pullRequest.url); }}
+            >{chip.label}{more > 0 ? <span className="active-agent-pull-request-more">+{more}</span> : null}</button>;
+          })}
+        </div> : null}
       </div>
     </div>
   );

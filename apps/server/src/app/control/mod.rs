@@ -25,14 +25,15 @@ use uuid::Uuid;
 use super::AppState;
 use super::health::{replace_health_demand, trigger_health_for_projects};
 pub(in crate::app) use dispatch::apply_configuration_plan;
+pub(in crate::app) use dispatch::reopen_task;
 use dispatch::{DispatchOutcome, PostResponseAction, dispatch};
 use errors::error_response;
 pub(super) use handlers::git_host_pull_request_list_background;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
 pub(in crate::app) use handlers::{
-    launch_automated_task_workflow, launch_playbook_evaluation_fork, launch_task_session,
-    preview_steward_task_agent_session, preview_task_agent_session, project_list_local_branches,
-    provision_task_worktree, terminate_session,
+    close_task, launch_automated_task_workflow, launch_playbook_evaluation_fork,
+    launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
+    project_list_local_branches, provision_task_worktree, terminate_session,
 };
 pub(in crate::app) use task_source::{
     TaskSourceCredentialPresence, run_deadlines as run_task_source_deadlines,
@@ -684,6 +685,77 @@ mod tests {
     use super::*;
     use serde_json::json;
     use termloop_contract::current::ControlResponse;
+
+    #[test]
+    fn companion_user_answers_return_the_generated_transcript_append_result() {
+        let directory = std::env::temp_dir().join(format!(
+            "termloop-companion-answer-{}",
+            termloop_platform::generate_uuid_v4()
+        ));
+        let project_directory = directory.join("project");
+        std::fs::create_dir_all(&project_directory).unwrap();
+        let mut core = termloop_core::CoreRuntime::open(
+            directory.join("state.json"),
+            termloop_terminal::TerminalService::default(),
+            1,
+        )
+        .unwrap();
+        let project_id = core
+            .handle(
+                "project.create",
+                json!({"name": "Project", "folderPath": project_directory}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let steward = |core: &mut termloop_core::CoreRuntime, kind: &str, at: u64| {
+            core.append_companion_message(
+                &project_id,
+                "steward",
+                kind,
+                Default::default(),
+                format!("A {kind}."),
+                at,
+            )
+            .unwrap()["message"]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+
+        let proposal_id = steward(&mut core, "proposal", 1);
+        let approved = core
+            .respond_to_companion_proposal(&project_id, &proposal_id, "approve", 2)
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.proposalRespond", &approved),
+            "{approved}"
+        );
+        let suggestion_id = steward(&mut core, "suggestion", 3);
+        let accepted = core
+            .accept_companion_suggestion(&project_id, &suggestion_id, 4)
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.suggestionAccept", &accepted),
+            "{accepted}"
+        );
+        let reply = core
+            .append_companion_message(
+                &project_id,
+                "user",
+                "reply",
+                Default::default(),
+                "Hello.".into(),
+                5,
+            )
+            .unwrap();
+        assert!(
+            protocol::validate_method_result("companion.transcriptAppend", &reply),
+            "{reply}"
+        );
+        std::fs::remove_dir_all(directory).ok();
+    }
 
     #[test]
     fn workspace_file_observations_require_full_control_on_every_connection() {

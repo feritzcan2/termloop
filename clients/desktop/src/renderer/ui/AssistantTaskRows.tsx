@@ -1,8 +1,12 @@
-import type { PlaybookRuntimeResult } from "@termloop/contract/current";
-import type { DragEvent } from "react";
-import type { Task } from "../model.js";
+import type { PlaybookRuntimeResult, TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
+import { useState, type DragEvent } from "react";
+import type { Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
+import { OverlayPortal } from "./OverlayPortal.js";
+import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
+import { useOverlayLease } from "./overlay-lease.js";
 import { PlaybookTaskNotes, type SavePlaybookTaskNotes } from "./PlaybookTaskNotes.js";
 import { Icon } from "./Icon.js";
+import { PlaybookTaskDecisionStrip, type PlaybookTaskDecisionHandle } from "./PlaybookTaskDecision.js";
 
 export type AssistantTaskPlacement = Readonly<{
   byRoutineId: ReadonlyMap<string, readonly Task[]>;
@@ -45,17 +49,64 @@ export function assistantTaskPlacement(
   };
 }
 
+/** Closing a completed Task from the Playbook reuses the Task rail's close
+    path: a Task with a worktree goes through the same inspected removal
+    dialog, and one without a worktree closes directly. */
+export type CloseCompletedTask = Readonly<{
+  inspect(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
+  closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
+  busyTaskIds: ReadonlySet<string>;
+  overlayContainer: Element | undefined;
+  /** The native terminal sits above the page; while the dialog is open it
+      must hold an overlay lease or the terminal keeps its clicks and focus. */
+  overlayVisibilityChanged(visible: boolean): void;
+}>;
+
+function CloseCompletedTaskButton(props: { task: Task; close: CloseCompletedTask; disabled?: boolean | undefined }) {
+  const [reviewing, setReviewing] = useState(false);
+  useOverlayLease(reviewing, props.close.overlayVisibilityChanged);
+  const busy = props.close.busyTaskIds.has(props.task.id);
+  const label = props.task.worktree
+    ? `Close ${props.task.title} and remove its worktree`
+    : `Close ${props.task.title}`;
+  return <>
+    <button
+      type="button"
+      className="assistant-task-close"
+      aria-label={label}
+      title={props.task.worktree ? "Close Task and remove worktree" : "Close Task"}
+      disabled={props.disabled || busy}
+      onClick={() => {
+        if (props.task.worktree) setReviewing(true);
+        else void props.close.closeTaskAndWorktree(props.task.id);
+      }}
+    ><Icon name="close" /></button>
+    {reviewing ? <OverlayPortal container={props.close.overlayContainer}><DeleteTaskDialog
+      task={props.task}
+      inspect={props.close.inspect}
+      close={() => setReviewing(false)}
+      closeAfterWorktreeRemoval
+      remove={(review) => { void props.close.closeTaskAndWorktree(props.task.id, review); }}
+    /></OverlayPortal> : null}
+  </>;
+}
+
 export function AssistantTaskRow(props: {
   task: Task;
-  processingTaskId: string | null;
+  /** Every Task whose own step check is running; each is checked independently. */
+  processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
   dragging?: boolean;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
+  decision?: PlaybookTaskDecisionHandle | null | undefined;
+  openSteward?: (() => void) | undefined;
+  closeTask?: CloseCompletedTask | undefined;
 }) {
-  const processing = props.processingTaskId === props.task.id;
+  const decision = props.decision?.decision.taskIds.includes(props.task.id) ? props.decision : null;
+  const processing = props.processingTaskIds.includes(props.task.id);
   const draggable = props.task.status === "open" && props.beginDrag !== undefined;
   return <div className="assistant-task-item" role="listitem"><button
     type="button"
@@ -74,18 +125,30 @@ export function AssistantTaskRow(props: {
       <small>{props.task.branch?.name ?? (props.task.worktree ? "Worktree ready" : "No worktree")}</small>
     </span>
     {processing ? <em>Active</em> : null}
-  </button>{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}</div>;
+  </button>{props.closeTask && props.task.status === "open"
+    ? <CloseCompletedTaskButton task={props.task} close={props.closeTask} disabled={props.notesDisabled} />
+    : null}{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}
+  {decision ? <PlaybookTaskDecisionStrip
+    taskTitle={props.task.title}
+    handle={decision}
+    disabled={props.notesDisabled}
+    openSteward={props.openSteward ?? (() => props.openTask(props.task.id))}
+  /> : null}</div>;
 }
 
 export function AssistantTaskTail(props: {
   placement: AssistantTaskPlacement;
-  processingTaskId: string | null;
+  processingTaskIds: readonly string[];
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
   notesDisabled?: boolean | undefined;
   draggingTaskId?: string | undefined;
   beginDrag?: ((task: Task, event: DragEvent<HTMLButtonElement>) => void) | undefined;
   endDrag?: (() => void) | undefined;
+  decision?: PlaybookTaskDecisionHandle | null | undefined;
+  openSteward?: (() => void) | undefined;
+  /** Offered only on Completed Tasks: they finished the Playbook and are ready to close. */
+  closeTask?: CloseCompletedTask | undefined;
 }) {
   const groups = [
     { key: "completed", label: "Completed Tasks", tasks: props.placement.completed },
@@ -101,13 +164,16 @@ export function AssistantTaskTail(props: {
     <div role="list">{group.tasks.map((task) => <AssistantTaskRow
       key={task.id}
       task={task}
-      processingTaskId={props.processingTaskId}
+      processingTaskIds={props.processingTaskIds}
       openTask={props.openTask}
       saveTaskNotes={props.saveTaskNotes}
       notesDisabled={props.notesDisabled}
       dragging={props.draggingTaskId === task.id}
       beginDrag={props.beginDrag}
       endDrag={props.endDrag}
+      decision={props.decision}
+      openSteward={props.openSteward}
+      closeTask={group.key === "completed" ? props.closeTask : undefined}
     />)}</div>
   </section> : null)}</>;
 }

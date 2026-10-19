@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use termloop_domain::{
-    IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, TaskRecord, TaskSourceProvider,
-    TaskSourceScope, TaskStatus,
+    IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, TaskRecord, TaskSourceBranchNaming,
+    TaskSourceProvider, TaskSourceScope, TaskStatus,
 };
 use termloop_providers::{JiraIssueSnapshot, JiraSearchRequest, JiraSearchResult, JiraSearchScope};
 
@@ -187,6 +187,7 @@ impl CoreRuntime {
         import_policy: &str,
         auto_import_active_task_limit: u64,
         refresh_interval_seconds: u64,
+        branch_naming: Option<&str>,
         expected_revision: u64,
         now_epoch_ms: u64,
     ) -> Result<TaskSourceMutation, CoreError> {
@@ -212,6 +213,10 @@ impl CoreRuntime {
             auto_import_active_task_limit,
             refresh_interval_seconds,
             ignored_external_ids: vec![],
+            branch_naming: branch_naming
+                .map(source_branch_naming)
+                .transpose()?
+                .unwrap_or_default(),
             created_at_epoch_ms: now_epoch_ms,
             updated_at_epoch_ms: now_epoch_ms,
         };
@@ -241,6 +246,7 @@ impl CoreRuntime {
         import_policy: &str,
         auto_import_active_task_limit: u64,
         refresh_interval_seconds: u64,
+        branch_naming: Option<&str>,
         expected_generation: u64,
         expected_revision: u64,
         now_epoch_ms: u64,
@@ -268,6 +274,10 @@ impl CoreRuntime {
         let next_statuses = source_statuses(statuses)?;
         let next_name = normalized_name(name)?;
         let next_import_policy = source_import_policy(import_policy)?;
+        let next_branch_naming = branch_naming
+            .map(source_branch_naming)
+            .transpose()?
+            .unwrap_or(source.branch_naming);
         let query_changed = source.site_base_url != next_site
             || source.scope != next_scope
             || source.boards != next_boards
@@ -281,6 +291,7 @@ impl CoreRuntime {
             && source.import_policy == next_import_policy
             && source.auto_import_active_task_limit == auto_import_active_task_limit
             && source.refresh_interval_seconds == refresh_interval_seconds
+            && source.branch_naming == next_branch_naming
         {
             return Ok(TaskSourceMutation {
                 source,
@@ -299,6 +310,7 @@ impl CoreRuntime {
         source.import_policy = next_import_policy;
         source.auto_import_active_task_limit = auto_import_active_task_limit;
         source.refresh_interval_seconds = refresh_interval_seconds;
+        source.branch_naming = next_branch_naming;
         source.generation = source
             .generation
             .checked_add(1)
@@ -1026,6 +1038,14 @@ fn source_import_policy(value: &str) -> Result<TaskSourceImportPolicy, CoreError
     }
 }
 
+fn source_branch_naming(value: &str) -> Result<TaskSourceBranchNaming, CoreError> {
+    match value {
+        "title" => Ok(TaskSourceBranchNaming::Title),
+        "issueKey" => Ok(TaskSourceBranchNaming::IssueKey),
+        _ => Err(CoreError::InvalidParams("branchNaming".into())),
+    }
+}
+
 fn source_boards(
     mut boards: Vec<TaskSourceBoardSelection>,
 ) -> Result<Vec<TaskSourceBoardSelection>, CoreError> {
@@ -1191,6 +1211,7 @@ mod tests {
                     "review",
                     5,
                     900,
+                    None,
                     revision,
                     10,
                 )
@@ -1258,6 +1279,7 @@ mod tests {
                 "autoAdd",
                 5,
                 900,
+                None,
                 1,
                 revision,
                 30,
@@ -1273,6 +1295,82 @@ mod tests {
         assert_eq!(projected["autoImportActiveTaskLimit"], 5);
         assert!(projected.get("createWorktree").is_none());
         assert!(projected.get("agentId").is_none());
+    }
+
+    #[test]
+    fn issue_key_branch_naming_names_imported_task_checkouts_by_key() {
+        let mut fixture = Fixture::new();
+        fixture.create_source();
+        let refresh = fixture.refresh("Payment deadline", "Details");
+        let revision = fixture.runtime.state_revision();
+        let imported = fixture
+            .runtime
+            .import_task_source_candidate(
+                "source-1",
+                "10042",
+                1,
+                refresh.observation_sequence,
+                revision,
+                "task-imported".into(),
+                30,
+            )
+            .unwrap();
+        assert_eq!(imported.task["id"], "task-imported");
+        let title_names = fixture.runtime.task_managed_checkout_names(
+            "task-imported",
+            "Payment deadline",
+            "feature",
+        );
+        assert_eq!(title_names.branch_name, "feature/payment-deadline-taskimpo");
+        assert_eq!(fixture.runtime.task_issue_branch_key("task-imported"), None);
+
+        let update = |fixture: &mut Fixture, generation, naming| {
+            let revision = fixture.runtime.state_revision();
+            fixture.runtime.update_task_source(
+                "source-1",
+                "Assigned Jira work".into(),
+                true,
+                "https://example.atlassian.net".into(),
+                "assignedToMe",
+                vec![],
+                vec![],
+                None,
+                "review",
+                5,
+                900,
+                naming,
+                generation,
+                revision,
+                40,
+            )
+        };
+        let keyed = update(&mut fixture, 1, Some("issueKey")).unwrap();
+        assert_eq!(keyed.source.branch_naming, TaskSourceBranchNaming::IssueKey);
+        let view = fixture.runtime.task_source_view_by_id("source-1").unwrap();
+        assert_eq!(
+            task_source_view_json(&view, "present")["branchNaming"],
+            "issueKey"
+        );
+        let names = fixture.runtime.task_managed_checkout_names(
+            "task-imported",
+            "Payment deadline",
+            "feature",
+        );
+        assert_eq!(names.branch_name, "TERM-42");
+        assert_eq!(names.worktree_leaf, "TERM-42_worktree");
+
+        let unchanged = update(&mut fixture, 2, None).unwrap();
+        assert_eq!(unchanged.source.generation, 2);
+        assert_eq!(
+            unchanged.source.branch_naming,
+            TaskSourceBranchNaming::IssueKey
+        );
+        assert!(matches!(
+            update(&mut fixture, 2, Some("ticket")),
+            Err(CoreError::InvalidParams(field)) if field == "branchNaming"
+        ));
+        update(&mut fixture, 2, Some("title")).unwrap();
+        assert_eq!(fixture.runtime.task_issue_branch_key("task-imported"), None);
     }
 
     #[test]
@@ -1502,6 +1600,7 @@ mod tests {
                 "review",
                 5,
                 900,
+                None,
                 1,
                 revision,
                 30,
@@ -1594,6 +1693,7 @@ mod tests {
                 "review",
                 5,
                 900,
+                None,
                 revision,
                 10,
             )
@@ -1646,6 +1746,7 @@ mod tests {
                 "review",
                 5,
                 900,
+                None,
                 1,
                 revision,
                 30,
@@ -1700,6 +1801,7 @@ mod tests {
                 "review",
                 5,
                 900,
+                None,
                 1,
                 revision,
                 30,

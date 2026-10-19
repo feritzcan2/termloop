@@ -44,7 +44,7 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
                 launch.provenance().template_ref,
                 "builtin.agent.playbook-evaluator"
             );
-            assert_eq!(launch.provenance().template_version, 2);
+            assert_eq!(launch.provenance().template_version, 4);
             assert_eq!(launch.inspectable_manifest().target.permission, permission);
             assert_eq!(
                 launch.delivered_prompt().unwrap(),
@@ -55,6 +55,11 @@ fn evaluation_forks_apply_selected_model_and_permissions_with_visible_instructio
             assert!(prompt.contains("invalidArguments"));
             assert!(prompt.contains("retry the same check"));
             assert!(prompt.contains("Never repeat an accepted report"));
+            assert!(
+                prompt
+                    .replace('\n', " ")
+                    .contains("never re-derive, re-verify, or tighten it")
+            );
             assert!(launch.args().iter().any(|arg| arg
                 == if provider == "claude" {
                     "--fork-session"

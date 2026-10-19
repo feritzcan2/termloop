@@ -363,6 +363,7 @@ pub(super) async fn create(params: Value, state: &AppState) -> Result<Value, Cor
             import_policy(params.import_policy),
             params.auto_import_active_task_limit,
             params.refresh_interval_seconds,
+            params.branch_naming.map(branch_naming),
             params.expected_revision,
             super::super::current_epoch_ms(),
         )?;
@@ -400,6 +401,7 @@ pub(super) async fn update(params: Value, state: &AppState) -> Result<Value, Cor
             import_policy(params.import_policy),
             params.auto_import_active_task_limit,
             params.refresh_interval_seconds,
+            params.branch_naming.map(branch_naming),
             params.expected_generation,
             params.expected_revision,
             super::super::current_epoch_ms(),
@@ -852,6 +854,13 @@ fn import_policy(value: protocol::TaskSourceImportPolicy) -> &'static str {
     match value {
         protocol::TaskSourceImportPolicy::Review => "review",
         protocol::TaskSourceImportPolicy::AutoAdd => "autoAdd",
+    }
+}
+
+fn branch_naming(value: protocol::TaskSourceBranchNaming) -> &'static str {
+    match value {
+        protocol::TaskSourceBranchNaming::Title => "title",
+        protocol::TaskSourceBranchNaming::IssueKey => "issueKey",
     }
 }
 

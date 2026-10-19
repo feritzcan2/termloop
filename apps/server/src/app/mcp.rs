@@ -1001,6 +1001,26 @@ async fn steward_task_command(
         .get("taskId")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    // Close and reopen stop or resume the Task's Agents, which runs outside
+    // the Core lock; authorize first, then reuse the control handlers.
+    let lifecycle_result = match method {
+        "task.close" | "task.reopen" => {
+            let task_id = requested_task_id
+                .as_deref()
+                .ok_or_else(|| termloop_core::CoreError::InvalidParams("taskId".into()))?;
+            state
+                .core
+                .lock()
+                .await
+                .authorize_steward_task_execution(session_id, project_id, task_id)?;
+            Some(if method == "task.close" {
+                super::control::close_task(params.clone(), state).await?
+            } else {
+                super::control::reopen_task(params.clone(), state).await?
+            })
+        }
+        _ => None,
+    };
     let (result, creation, state_revision) = {
         let mut core = state.core.lock().await;
         let automation = if method == "task.create" {
@@ -1015,7 +1035,10 @@ async fn steward_task_command(
         } else {
             None
         };
-        let result = core.execute_steward_task_command(session_id, project_id, method, params)?;
+        let result = match lifecycle_result {
+            Some(result) => result,
+            None => core.execute_steward_task_command(session_id, project_id, method, params)?,
+        };
         let task_id = requested_task_id
             .or_else(|| result.get("id").and_then(Value::as_str).map(str::to_owned))
             .ok_or_else(|| {

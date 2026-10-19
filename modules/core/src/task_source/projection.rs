@@ -1,5 +1,5 @@
 use serde_json::{Value, json};
-use termloop_domain::{TaskSourceImportPolicy, TaskSourceScope};
+use termloop_domain::{TaskSourceBranchNaming, TaskSourceImportPolicy, TaskSourceScope};
 
 use super::{TaskSourceCandidateView, TaskSourceFailure, TaskSourceRuntimeStatus, TaskSourceView};
 
@@ -43,6 +43,10 @@ pub fn task_source_view_json(view: &TaskSourceView, credential_state: &str) -> V
         },
         "autoImportActiveTaskLimit": view.configuration.auto_import_active_task_limit,
         "refreshIntervalSeconds": view.configuration.refresh_interval_seconds,
+        "branchNaming": match view.configuration.branch_naming {
+            TaskSourceBranchNaming::Title => "title",
+            TaskSourceBranchNaming::IssueKey => "issueKey",
+        },
         "credentialState": credential_state,
         "runtimeState": match view.status {
             TaskSourceRuntimeStatus::Idle => "idle",

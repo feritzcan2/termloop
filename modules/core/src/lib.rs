@@ -94,7 +94,8 @@ use std::sync::mpsc::{Receiver, Sender};
 pub mod agent_connections;
 
 use termloop_agent_runtime::readiness::{
-    generated_input_composer_may_accept, generated_input_settlement, unavailable_composer_cause,
+    generated_input_composer_may_accept, generated_input_composer_may_accept_after_failed_turn,
+    generated_input_settlement, unavailable_composer_cause,
 };
 use termloop_agents::{AgentObservation, AgentSignalSource, AgentState};
 use termloop_store::{CoreWriteAuthority, Store};
@@ -196,6 +197,10 @@ pub struct CoreRuntime {
     /// keep the terminal exit reconciler from reclassifying that intentional
     /// PTY reap before the exact typed failure is committed.
     pub(crate) resume_failure_reaps: HashSet<String>,
+    /// Task ID to the live Agent Session IDs its close is retiring outside the
+    /// Core lock. The exit reconciler must not open a continuation shell for
+    /// them before the close parks them.
+    pub(crate) pending_task_closes: HashMap<String, Vec<String>>,
     pub(crate) pending_agent_forks: HashSet<String>,
     /// Runtime-only fork presentation provenance. Native fork deliberately
     /// does not create durable parentage; this bounded map lets the current
@@ -694,6 +699,7 @@ impl CoreRuntime {
             provider_history_repair_reservations: HashSet::new(),
             resume_ready: HashSet::new(),
             resume_failure_reaps: HashSet::new(),
+            pending_task_closes: HashMap::new(),
             pending_agent_forks: HashSet::new(),
             fork_source_session_ids: HashMap::new(),
             agent_terminal_holds: HashSet::new(),
@@ -1485,7 +1491,14 @@ impl CoreRuntime {
             provider_state,
         );
         let composer_ready =
-            generated_input_composer_may_accept(agent_id, provider_state) || provider_queue_ready;
+            generated_input_composer_may_accept(agent_id, provider_state, provider_source)
+                || provider_queue_ready
+                || generated_input_may_follow_failed_turn(
+                    submission.provenance().template_ref.as_str(),
+                    agent_id,
+                    provider_state,
+                    provider_source,
+                );
         if !composer_ready {
             if provider_state.is_some() {
                 self.generated_input_deliveries
@@ -2628,6 +2641,24 @@ fn generated_input_may_enter_provider_queue(
     .permits(provider_state)
 }
 
+/// A persistent assistant wake is the only automatic path that restarts a
+/// Steward or Worker after a failed turn; without it every later wake would
+/// queue behind a `Failed` state that only new work clears. Handoffs, agent
+/// messages, and other generated prompts keep waiting for the user.
+fn generated_input_may_follow_failed_turn(
+    template_ref: &str,
+    agent_id: &str,
+    provider_state: Option<AgentState>,
+    provider_source: Option<AgentSignalSource>,
+) -> bool {
+    template_ref == "builtin.assistant.wake"
+        && generated_input_composer_may_accept_after_failed_turn(
+            agent_id,
+            provider_state,
+            provider_source,
+        )
+}
+
 fn generated_input_delivery_state_name(value: GeneratedInputDeliveryState) -> &'static str {
     match value {
         GeneratedInputDeliveryState::WritingPaste => "writingPaste",
@@ -2665,6 +2696,7 @@ fn generated_input_delivery_cancel_cause_name(
         GeneratedInputDeliveryCancelCause::Notification => "notification",
         GeneratedInputDeliveryCancelCause::ProviderAwaitingInput => "providerAwaitingInput",
         GeneratedInputDeliveryCancelCause::ProviderBusy => "providerBusy",
+        GeneratedInputDeliveryCancelCause::ProviderTurnFailed => "providerTurnFailed",
     }
 }
 

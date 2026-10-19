@@ -9,9 +9,32 @@ impl Store {
 
     pub fn set_tracker_configuration(
         &mut self,
+        authority: &CoreWriteAuthority,
+        configuration: TrackerConfiguration,
+        expected_revision: u64,
+    ) -> Result<TrackerConfiguration, StoreError> {
+        self.save_tracker_configuration(authority, configuration, expected_revision, false)
+    }
+
+    /// Saves an edited Playbook step Routine and advances the revision of the
+    /// Playbook that asks it in the same commit. The Playbook document shows
+    /// every step's question, so a Playbook draft read before this edit must
+    /// conflict instead of silently writing the old question back.
+    pub fn set_step_routine_configuration(
+        &mut self,
+        authority: &CoreWriteAuthority,
+        configuration: TrackerConfiguration,
+        expected_revision: u64,
+    ) -> Result<TrackerConfiguration, StoreError> {
+        self.save_tracker_configuration(authority, configuration, expected_revision, true)
+    }
+
+    fn save_tracker_configuration(
+        &mut self,
         _authority: &CoreWriteAuthority,
         configuration: TrackerConfiguration,
         expected_revision: u64,
+        advance_playbook: bool,
     ) -> Result<TrackerConfiguration, StoreError> {
         if expected_revision != self.state.revision {
             return Err(StoreError::RevisionConflict);
@@ -45,6 +68,26 @@ impl Store {
         {
             return Ok(configuration);
         }
+        let advanced_playbook = if advance_playbook {
+            let index = self
+                .state
+                .playbook_configurations
+                .iter()
+                .position(|playbook| {
+                    playbook.project_id == configuration.project_id
+                        && playbook
+                            .all_milestones()
+                            .any(|milestone| milestone.routine_id == configuration.id)
+                })
+                .ok_or(StoreError::ConstraintViolation)?;
+            let revision = self.state.playbook_configurations[index]
+                .revision
+                .checked_add(1)
+                .ok_or(StoreError::ConstraintViolation)?;
+            Some((index, revision))
+        } else {
+            None
+        };
         let previous = self.state.clone();
         if let Some(index) = current_index {
             self.state.tracker_configurations[index] = configuration.clone();
@@ -52,6 +95,11 @@ impl Store {
             self.state
                 .tracker_configurations
                 .push(configuration.clone());
+        }
+        if let Some((index, revision)) = advanced_playbook {
+            let playbook = &mut self.state.playbook_configurations[index];
+            playbook.revision = revision;
+            playbook.updated_at_epoch_ms = configuration.updated_at_epoch_ms;
         }
         super::configuration_version::record_routine_version(
             &mut self.state,

@@ -17,6 +17,7 @@ import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookB
 import { Icon } from "./Icon.js";
 import { PlaybookEvaluationHistory } from "./PlaybookEvaluationHistory.js";
 import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
+import { StewardHowItWorksButton } from "./StewardHowItWorks.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
@@ -588,7 +589,10 @@ export function StewardPanel(props: StewardPanelProps) {
         <h1>{headerTitle}</h1>
         <p>{headerSubtitle}</p>
       </div>
-      <button type="button" className="ap-close" aria-label="Close" onClick={props.close}><Icon name="close" /></button>
+      <div className="ap-header-actions">
+        {props.selection.kind === "steward" ? <StewardHowItWorksButton className="ap-how-it-works" /> : null}
+        <button type="button" className="ap-close" aria-label="Close" onClick={props.close}><Icon name="close" /></button>
+      </div>
     </header>
     {tabs.length > 1 ? <nav className="ap-tabs">{tabs.map(([id, label]) => <button type="button"
       className={view === id ? "active" : ""}

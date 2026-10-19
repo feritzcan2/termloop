@@ -80,8 +80,9 @@ pub use task_source::{
     TASK_SOURCE_EXTERNAL_ID_MAX_BYTES, TASK_SOURCE_IGNORED_MAX, TASK_SOURCE_JQL_MAX_BYTES,
     TASK_SOURCE_NAME_MAX_BYTES, TASK_SOURCE_REFRESH_MAX_SECONDS, TASK_SOURCE_REFRESH_MIN_SECONDS,
     TASK_SOURCE_SITE_MAX_BYTES, TASK_SOURCE_STATUSES_MAX, TASK_SOURCES_PER_PROJECT_MAX,
-    TaskSourceBoardSelection, TaskSourceConfiguration, TaskSourceImportPolicy, TaskSourceProvider,
-    TaskSourceScope, TaskSourceStatusSelection,
+    TaskSourceBoardSelection, TaskSourceBranchNaming, TaskSourceConfiguration,
+    TaskSourceImportPolicy, TaskSourceProvider, TaskSourceScope, TaskSourceStatusSelection,
+    issue_key_branch_name,
 };
 
 pub use companion::{

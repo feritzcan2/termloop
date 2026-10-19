@@ -13,6 +13,15 @@ pub struct PlaybookApply {
     pub steward_configuration: Option<StewardConfiguration>,
     pub upsert_routines: Vec<TrackerConfiguration>,
     pub delete_routine_ids: Vec<String>,
+    /// Replacements for answers that stay current across this save, keyed by
+    /// Task and milestone. Core decides how an edited step reschedules its
+    /// waiting answers; every replaced answer must already exist and still be
+    /// asked by the next document.
+    pub progress_updates: Vec<PlaybookStepProgress>,
+    /// New passed answers for steps this save adds behind a Task's current
+    /// position. Each must be a pass for a step the next document asks, and
+    /// that Task must not already have an answer for it.
+    pub progress_inserts: Vec<PlaybookStepProgress>,
 }
 
 /// Whether one answer contradicts the state it is stored in.
@@ -164,6 +173,31 @@ impl Store {
             !project_task_ids.contains(progress.task_id.as_str())
                 || apply.configuration.progress_matches_current_step(progress)
         });
+        for insert in apply.progress_inserts {
+            if !project_task_ids.contains(insert.task_id.as_str())
+                || insert.verdict != termloop_domain::PlaybookStepVerdict::Passed
+                || !apply.configuration.progress_matches_current_step(&insert)
+                || next.playbook_step_progress.iter().any(|current| {
+                    current.task_id == insert.task_id && current.milestone_id == insert.milestone_id
+                })
+            {
+                return Err(StoreError::ConstraintViolation);
+            }
+            next.playbook_step_progress.push(insert);
+        }
+        for update in apply.progress_updates {
+            if !project_task_ids.contains(update.task_id.as_str()) {
+                return Err(StoreError::ConstraintViolation);
+            }
+            let Some(current) = next.playbook_step_progress.iter_mut().find(|current| {
+                current.task_id == update.task_id
+                    && current.milestone_id == update.milestone_id
+                    && current.routine_id == update.routine_id
+            }) else {
+                return Err(StoreError::ConstraintViolation);
+            };
+            *current = update;
+        }
 
         // The snapshot helpers expect the Playbook-to-Routine relation to have
         // already passed validation. Validate the candidate before recording

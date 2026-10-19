@@ -1,6 +1,7 @@
 use termloop_domain::{
-    TASK_DEVELOPER_NOTES_MAX, TASK_STEWARD_BRIEF_MAX_BYTES, TaskBranchBinding, TaskDeveloperNote,
-    TaskRecord, TaskStatus,
+    TASK_DEVELOPER_NOTES_MAX, TASK_STEWARD_BRIEF_MAX_BYTES, TaskArchiveSuspension,
+    TaskArchiveTarget, TaskBranchBinding, TaskDeveloperNote, TaskRecord, TaskStatus,
+    TaskSuspensionReason,
 };
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
@@ -233,14 +234,85 @@ impl Store {
             return Ok(updated);
         }
         if status == TaskStatus::Closed {
-            for routine in &mut self.state.tracker_configurations {
-                if !routine.trigger_mode.is_scheduled() {
-                    routine
-                        .pending_routine_findings
-                        .retain(|finding| !finding.related_task_ids.iter().any(|id| id == task_id));
-                }
-            }
+            drop_closed_task_routine_findings(&mut self.state, task_id);
         }
+        self.commit_or_restore(previous)?;
+        Ok(updated)
+    }
+
+    /// Closes an open Task and parks the Agents its close retired in one
+    /// current-state replacement. Reopening consumes this exact sidecar cohort.
+    pub fn close_task_with_suspended_sessions(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        task_id: &str,
+        targets: &[TaskArchiveTarget],
+        closed_at_epoch_ms: u64,
+    ) -> Result<TaskRecord, StoreError> {
+        let task = self
+            .state
+            .tasks
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(StoreError::NotFound)?;
+        if let Some(operation) = self
+            .state
+            .session_relocation_operations
+            .iter()
+            .find(|operation| operation.target_task_id == task_id)
+        {
+            return Err(StoreError::JournalConflict {
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        if task.status != TaskStatus::Open
+            || task.archived_at_epoch_ms.is_some()
+            || targets.iter().enumerate().any(|(index, target)| {
+                targets[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.session_id == target.session_id)
+                    || self
+                        .state
+                        .task_archive_suspensions
+                        .iter()
+                        .any(|suspension| suspension.session_id == target.session_id)
+                    || !self.state.sessions.iter().any(|session| {
+                        session.id == target.session_id
+                            && session.project_id == task.project_id
+                            && session.runtime_epoch == target.runtime_epoch
+                    })
+            })
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let previous = self.state.clone();
+        for target in targets {
+            let session = self
+                .state
+                .sessions
+                .iter_mut()
+                .find(|session| session.id == target.session_id)
+                .ok_or(StoreError::NotFound)?;
+            session.lifecycle_state = "exited".into();
+            session.resume_failure = None;
+            self.state
+                .task_archive_suspensions
+                .push(TaskArchiveSuspension {
+                    task_id: Some(task_id.to_owned()),
+                    session_id: target.session_id.clone(),
+                    archived_at_epoch_ms: closed_at_epoch_ms,
+                    prior_lifecycle_state: target.prior_lifecycle_state.clone(),
+                    prior_resume_failure: target.prior_resume_failure,
+                    reason: TaskSuspensionReason::Closed,
+                });
+        }
+        let (updated, _) = set_task_status_record(
+            &mut self.state.tasks,
+            task_id,
+            TaskStatus::Closed,
+            closed_at_epoch_ms,
+        )?;
+        drop_closed_task_routine_findings(&mut self.state, task_id);
         self.commit_or_restore(previous)?;
         Ok(updated)
     }
@@ -308,6 +380,21 @@ impl Store {
         }
         let previous = self.state.clone();
         let deleted = self.state.tasks.remove(index);
+        // Agents parked by closing this Task are reachable only through it.
+        let parked_session_ids = self
+            .state
+            .task_archive_suspensions
+            .iter()
+            .filter(|suspension| {
+                suspension.task_id.as_deref() == Some(task_id)
+                    && suspension.reason.parks_closed_task()
+            })
+            .map(|suspension| suspension.session_id.clone())
+            .collect::<Vec<_>>();
+        super::session::remove_exact_session_descriptors(&mut self.state, &parked_session_ids);
+        self.state
+            .task_archive_suspensions
+            .retain(|suspension| !parked_session_ids.contains(&suspension.session_id));
         self.state
             .task_branch_sets
             .retain(|set| set.task_id != task_id);
@@ -405,7 +492,8 @@ impl Store {
             .iter()
             .filter(|suspension| {
                 suspension.task_id.as_deref() == Some(task_id)
-                    && suspension.archived_at_epoch_ms == archived_at_epoch_ms
+                    && (suspension.archived_at_epoch_ms == archived_at_epoch_ms
+                        || suspension.reason == TaskSuspensionReason::Closed)
             })
             .map(|suspension| suspension.session_id.as_str())
             .collect::<std::collections::HashSet<_>>();
@@ -420,7 +508,8 @@ impl Store {
                     .iter()
                     .any(|suspension| {
                         suspension.session_id == **session_id
-                            && suspension.archived_at_epoch_ms == archived_at_epoch_ms
+                            && (suspension.archived_at_epoch_ms == archived_at_epoch_ms
+                                || suspension.reason == TaskSuspensionReason::Closed)
                             && suspension.task_id.as_deref() == Some(task_id)
                     })
             })
@@ -502,6 +591,16 @@ pub(super) fn update_task_brief_record(
     task.brief = brief;
     task.updated_at_epoch_ms = updated_at_epoch_ms.max(task.updated_at_epoch_ms + 1);
     Ok((task.clone(), true))
+}
+
+fn drop_closed_task_routine_findings(state: &mut crate::CurrentState, task_id: &str) {
+    for routine in &mut state.tracker_configurations {
+        if !routine.trigger_mode.is_scheduled() {
+            routine
+                .pending_routine_findings
+                .retain(|finding| !finding.related_task_ids.iter().any(|id| id == task_id));
+        }
+    }
 }
 
 pub(super) fn set_task_status_record(

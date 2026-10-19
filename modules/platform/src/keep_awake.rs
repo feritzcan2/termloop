@@ -48,6 +48,13 @@ pub enum KeepAwakeOverride {
     LowBattery,
     /// A thermal emergency overrides assertions.
     ThermalEmergency,
+    /// Connecting or disconnecting power or a display while the lid is closed.
+    ///
+    /// macOS keeps one global "clamshell sleep disabled" bit that `powerd`
+    /// also writes. Hot-plug processing makes `powerd` clear it, and with the
+    /// lid already closed the kernel sleeps synchronously in that same call,
+    /// before any user-space holder can set it again.
+    LidClosedPowerOrDisplayChange,
 }
 
 /// Whether this host has a keep-awake mechanism at all, independent of any
@@ -93,9 +100,7 @@ impl std::fmt::Debug for KeepAwakeHold {
 }
 
 #[cfg(all(test, target_os = "macos"))]
-pub(crate) fn keep_awake_lid_close_causes_sleep() -> Option<bool> {
-    imp::lid_close_causes_sleep()
-}
+pub(crate) use imp::{coordination_marker_records_override, keep_awake_coordination_marker};
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -117,6 +122,7 @@ mod imp {
     pub(super) const SUPPORTED: bool = true;
     pub(super) const OVERRIDES: &[KeepAwakeOverride] = &[
         KeepAwakeOverride::UserInitiatedSleep,
+        KeepAwakeOverride::LidClosedPowerOrDisplayChange,
         KeepAwakeOverride::LowBattery,
         KeepAwakeOverride::ThermalEmergency,
     ];
@@ -140,7 +146,6 @@ mod imp {
     const CLAMSHELL_HEARTBEAT: Duration = Duration::from_secs(1);
     const COORDINATION_FILE: &str = "termloop-next-keep-awake.lock";
     const TERMLOOP_OWNED_MARKER: &[u8] = b"termloop-owned\n";
-    const EXTERNAL_OWNER_MARKER: &[u8] = b"external-owner\n";
 
     /// `IOPMAssertionCreateWithName` requires a name shorter than 128
     /// characters. Keeping it short and stable also makes the assertion
@@ -166,9 +171,6 @@ mod imp {
             encoding: u32,
         ) -> CFStringRef;
         fn CFRelease(value: CFTypeRef);
-        fn CFGetTypeID(value: CFTypeRef) -> usize;
-        fn CFBooleanGetTypeID() -> usize;
-        fn CFBooleanGetValue(value: CFTypeRef) -> u8;
         fn CFStringCompare(left: CFStringRef, right: CFStringRef, options: usize) -> isize;
     }
 
@@ -207,12 +209,6 @@ mod imp {
             output: *mut u64,
             output_count: *mut u32,
         ) -> IOReturn;
-        fn IORegistryEntryCreateCFProperty(
-            entry: IoService,
-            key: CFStringRef,
-            allocator: CFTypeRef,
-            options: u32,
-        ) -> CFTypeRef;
         fn IOPSCopyPowerSourcesInfo() -> CFTypeRef;
         fn IOPSGetProvidingPowerSourceType(snapshot: CFTypeRef) -> CFStringRef;
         static mach_task_self_: MachPort;
@@ -344,9 +340,15 @@ mod imp {
     ///
     /// macOS does not associate selector 12 with the process that set it. All
     /// TermLoop daemons therefore share one advisory lock and only the last
-    /// live holder may restore the state. A marker preserves whether TermLoop
-    /// made the original transition, so a pre-existing clamshell utility is
-    /// not switched off when this hold ends.
+    /// live holder may restore the state. A non-empty marker records that a
+    /// TermLoop holder set the override and has not finished cleanup, so a
+    /// crashed holder's override can be released later.
+    ///
+    /// The previous state cannot be preserved: `AppleClamshellCausesSleep` is
+    /// refreshed only on lid, power-source and display events, not when
+    /// selector 12 changes, so reading it right after a release reports the
+    /// override TermLoop itself just cleared. `powerd` also writes the same
+    /// bit, so no reader can attribute it to another utility.
     struct ClamshellHold {
         _coordination: CoordinationLock,
         stop: Option<Sender<()>>,
@@ -397,7 +399,7 @@ mod imp {
             let mut file = open_coordination_file()?;
             loop {
                 if try_lock(&file, libc::LOCK_EX | libc::LOCK_NB)? {
-                    initialize_owner_marker(&mut file)?;
+                    write_owner_marker(&mut file, TERMLOOP_OWNED_MARKER)?;
                     if let Err(error) = set_clamshell_sleep_disabled(true) {
                         let _ = clear_owner_marker(&mut file);
                         return Err(error);
@@ -425,8 +427,8 @@ mod imp {
             let Ok(true) = try_lock(&self.file, libc::LOCK_EX | libc::LOCK_NB) else {
                 return;
             };
-            let termloop_owned =
-                owner_marker(&mut self.file).is_ok_and(|marker| marker == TERMLOOP_OWNED_MARKER);
+            let termloop_owned = owner_marker(&mut self.file)
+                .is_ok_and(|marker| coordination_marker_records_override(&marker));
             // Clearing selector 12 while Apple's normal clamshell mode is
             // active can desynchronise powerd. Ambiguous display/power facts
             // also preserve the flag: cleanup must not turn off a state whose
@@ -474,8 +476,9 @@ mod imp {
         }
         // A normal power assertion cannot veto forced clamshell sleep. The
         // IOPMrootDomain override is therefore part of the macOS acquisition,
-        // not a best-effort side effect: active status now means a closed lid
-        // is covered too.
+        // not a best-effort side effect: active status means a closed lid is
+        // covered too, except across the power or display hot-plug that
+        // `LidClosedPowerOrDisplayChange` names.
         hold.clamshell = Some(ClamshellHold::acquire()?);
         Ok(hold)
     }
@@ -505,7 +508,7 @@ mod imp {
         if !try_lock(&file, libc::LOCK_EX | libc::LOCK_NB)? {
             return Ok(false);
         }
-        let termloop_owned = owner_marker(&mut file)? == TERMLOOP_OWNED_MARKER;
+        let termloop_owned = coordination_marker_records_override(&owner_marker(&mut file)?);
         if termloop_owned && normal_clamshell_mode_active() == Some(false) {
             set_clamshell_sleep_disabled(false)?;
         }
@@ -540,42 +543,19 @@ mod imp {
         }
     }
 
-    fn root_domain_boolean(property: &str) -> Result<Option<bool>, KeepAwakeError> {
-        let service = Service::root_domain()?;
-        let key = CfString::new(property).ok_or(KeepAwakeError::Undescribable)?;
-        // SAFETY: the service and key are live for the call. A non-null result
-        // is a +1 CoreFoundation value owned by the wrapper below.
-        #[allow(unsafe_code)]
-        let raw = unsafe { IORegistryEntryCreateCFProperty(service.0, key.0, ptr::null(), 0) };
-        if raw.is_null() {
-            return Ok(None);
-        }
-        let value = CfValue(raw);
-        // SAFETY: `value` is a live CF object; type inspection is valid for
-        // every CF object and boolean access follows only an exact type match.
-        #[allow(unsafe_code)]
-        let boolean = unsafe {
-            if CFGetTypeID(value.0) == CFBooleanGetTypeID() {
-                Some(CFBooleanGetValue(value.0) != 0)
-            } else {
-                None
-            }
-        };
-        Ok(boolean)
+    /// Whether a coordination marker says a TermLoop holder set the override.
+    ///
+    /// Only an empty marker means a clean release. Earlier builds also wrote
+    /// `external-owner\n`, inferred from the stale clamshell property; that
+    /// marker was always written by a TermLoop holder that set the override
+    /// itself, so it is treated the same way instead of leaking the override.
+    pub(crate) fn coordination_marker_records_override(marker: &[u8]) -> bool {
+        !marker.is_empty()
     }
 
-    fn initialize_owner_marker(file: &mut File) -> Result<(), KeepAwakeError> {
-        let stale_marker = owner_marker(file)?;
-        let termloop_owned = stale_marker == TERMLOOP_OWNED_MARKER
-            || root_domain_boolean("AppleClamshellCausesSleep")?.unwrap_or(true);
-        write_owner_marker(
-            file,
-            if termloop_owned {
-                TERMLOOP_OWNED_MARKER
-            } else {
-                EXTERNAL_OWNER_MARKER
-            },
-        )
+    #[cfg(test)]
+    pub(crate) fn keep_awake_coordination_marker() -> Option<Vec<u8>> {
+        owner_marker(&mut open_coordination_file().ok()?).ok()
     }
 
     fn owner_marker(file: &mut File) -> Result<Vec<u8>, KeepAwakeError> {
@@ -737,13 +717,6 @@ mod imp {
         // requested.
         #[allow(unsafe_code)]
         Some(unsafe { CFStringCompare(source, ac.0, 0) == 0 })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn lid_close_causes_sleep() -> Option<bool> {
-        root_domain_boolean("AppleClamshellCausesSleep")
-            .ok()
-            .flatten()
     }
 }
 

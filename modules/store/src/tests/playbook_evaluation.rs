@@ -9,8 +9,8 @@ pub(super) fn evaluation(id: &str, time: u64) -> PlaybookEvaluationRecord {
         task_title: "Original task".into(),
         milestone_id: "pr-approved".into(),
         milestone_title: "PR approved".into(),
-        source_session_id: "source".into(),
-        source_name: "Implementer".into(),
+        source_session_id: Some("source".into()),
+        source_name: Some("Implementer".into()),
         session_id: format!("fork-{id}"),
         agent_id: "codex".into(),
         model: "gpt-6-luna".into(),
@@ -59,7 +59,7 @@ fn evaluation_results_survive_missing_sessions_and_restart_without_rewriting_com
     finished.finished_at_epoch_ms = Some(5);
     finished.evidence = "Awaiting reviewer approval.".into();
     let mut changed_snapshot = finished.clone();
-    changed_snapshot.source_name = "A different agent".into();
+    changed_snapshot.source_name = Some("A different agent".into());
     assert!(matches!(
         store.finish_playbook_evaluation(&authority, changed_snapshot),
         Err(StoreError::ConstraintViolation)
@@ -146,5 +146,26 @@ fn version_63_migrates_to_empty_evaluation_history() {
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_fresh_evaluator_has_no_source_agent_and_a_half_named_source_is_rejected() {
+    let (path, mut store, authority) = fixture("fresh");
+    let mut fresh = evaluation("fresh", 1);
+    fresh.source_session_id = None;
+    fresh.source_name = None;
+    store
+        .start_playbook_evaluation(&authority, fresh.clone())
+        .unwrap();
+    let mut half = evaluation("half", 2);
+    half.source_name = None;
+    assert!(matches!(
+        store.start_playbook_evaluation(&authority, half),
+        Err(StoreError::ConstraintViolation)
+    ));
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.playbook_evaluations(), &[fresh]);
     std::fs::remove_file(path).unwrap();
 }

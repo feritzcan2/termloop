@@ -61,7 +61,7 @@ export function source(overrides: Partial<TaskSourceDto> = {}): TaskSourceDto {
   return {
     id: "source-1", projectId: "project-1", provider: "jira", name: "Team board", enabled: true, generation: 3,
     siteBaseUrl: "https://acme.atlassian.net", scopeKind: "assignedToMe", boards: [], statuses: [], jql: null, importPolicy: "review", autoImportActiveTaskLimit: 5,
-    refreshIntervalSeconds: 900, credentialState: "present", runtimeState: "idle", failureReason: null,
+    refreshIntervalSeconds: 900, branchNaming: "title", credentialState: "present", runtimeState: "idle", failureReason: null,
     lastAttemptAtEpochMs: 1_000_000, lastSuccessfulAtEpochMs: 1_000_000, retryAfterEpochMs: null,
     candidateCount: 2, truncated: false, createdAtEpochMs: 1, updatedAtEpochMs: 1,
     ...overrides,

@@ -56,3 +56,14 @@ it("removes the terminal link when the ephemeral fork is absent or exited", asyn
     expect(host.textContent).toContain("Connecting to the evaluation terminal");
   }
 });
+it("opens a fresh evaluator for a task without an agent to fork", async () => {
+  await render({ ...evaluation, mode: "freshEvaluator", sessionId: "fork", sourceSessionId: null });
+  expect(host.textContent).toContain("Checking · Evaluator");
+  expect(host.textContent).toContain("The task has no agent to fork.");
+  host.querySelector<HTMLButtonElement>("button")!.click();
+  expect(openAgentTerminal).toHaveBeenCalledExactlyOnceWith("fork");
+});
+it("explains a fresh evaluator that could not start", async () => {
+  await render({ ...evaluation, mode: "waitingForTaskAgent", sessionId: null, sourceSessionId: null, reason: "evaluatorUnavailable" });
+  expect(host.textContent).toContain("The evaluator could not start. No check was performed.");
+});

@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
-use termloop_domain::{ProvisioningBranchMode, TaskBranchBinding};
+use termloop_domain::{
+    ProvisioningBranchMode, TaskBranchBinding, TaskSourceBranchNaming, issue_key_branch_name,
+};
 
 use crate::CoreRuntime;
 
@@ -33,6 +35,16 @@ pub fn managed_task_checkout_names(
     }
 }
 
+/// Names a managed checkout after an issue key, such as `UKIE-931` and
+/// `UKIE-931_worktree`. Callers pass only a key that
+/// `termloop_domain::issue_key_branch_name` accepted.
+fn issue_key_checkout_names(issue_key: &str) -> ManagedTaskCheckoutNames {
+    ManagedTaskCheckoutNames {
+        branch_name: issue_key.to_owned(),
+        worktree_leaf: format!("{issue_key}_worktree"),
+    }
+}
+
 fn managed_task_slug(title: &str) -> String {
     let mut slug = String::with_capacity(title.len().min(48));
     let mut separator_pending = false;
@@ -60,6 +72,8 @@ mod branch_binding;
 mod branch_commits;
 mod changes;
 mod cleanup;
+mod close;
+pub use close::{TaskClosePlan, TaskClosePreparation};
 mod commit_changes;
 mod git_mapping;
 mod health;
@@ -115,6 +129,39 @@ pub use repair::{
 };
 
 impl CoreRuntime {
+    /// The issue key that names this Task's managed branch. It exists only
+    /// when the Task was imported from a same-Project source configured for
+    /// issue-key branches and its key is a portable branch name.
+    pub fn task_issue_branch_key(&self, task_id: &str) -> Option<String> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let link = self
+            .store
+            .issue_links()
+            .iter()
+            .find(|link| link.task_id == task_id)?;
+        let source_id = link.source_id.as_deref()?;
+        self.store
+            .task_source_configurations()
+            .iter()
+            .find(|source| source.id == source_id && source.project_id == task.project_id)
+            .filter(|source| source.branch_naming == TaskSourceBranchNaming::IssueKey)?;
+        issue_key_branch_name(&link.external_ref).map(str::to_owned)
+    }
+
+    /// Managed checkout names for a Task: its issue key when its source asks
+    /// for issue-key branches, otherwise the title slug under `worktree_prefix`.
+    pub fn task_managed_checkout_names(
+        &self,
+        task_id: &str,
+        title: &str,
+        worktree_prefix: &str,
+    ) -> ManagedTaskCheckoutNames {
+        match self.task_issue_branch_key(task_id) {
+            Some(issue_key) => issue_key_checkout_names(&issue_key),
+            None => managed_task_checkout_names(title, task_id, worktree_prefix),
+        }
+    }
+
     /// Returns only the exact creation ref and OID captured by the currently
     /// managed Task worktree proof. This is intentionally absent for manually
     /// bound/existing branches and for any stale or inconsistent proof tuple.

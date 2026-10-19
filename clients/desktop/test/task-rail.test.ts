@@ -746,14 +746,17 @@ describe("Task rail row anatomy", () => {
     });
     expect(markup).toContain('class="task-signal issue"');
     expect(markup).toContain("Open Jira UKIE-697 in browser");
-    expect(markup).toContain(">UKIE-697</button>");
+    /// The card leads with the key; the meta line keeps only the link.
+    expect(markup).toContain('<span class="task-card-key linked" data-issue-link="" title="Open UKIE-697 in browser">UKIE-697</span>');
+    expect(markup).toContain(">Jira ↗</button>");
+    expect(markup).not.toContain(">UKIE-697</button>");
     /// The folder no longer spends meta-line width; the full path rides the
     /// branch token's tooltip instead.
     expect(markup).not.toContain("task-leaf");
     expect(markup).toContain("Worktree /Users/example/Projects/termloop-ukie-697-automation-expired-list-for-season-ticket-worktree");
 
-    /// A title that already carries the issue key makes the meta-line key pure
-    /// repetition, so it steps aside; other titles keep the click affordance.
+    /// A title that already carries the issue key gives the key to the
+    /// identity line and keeps only the rest as the title.
     const titled = renderRail({
       task: {
         ...launchableTask(),
@@ -761,7 +764,94 @@ describe("Task rail row anatomy", () => {
         jira_url: "https://example.atlassian.net/browse/UKIE-697",
       },
     });
-    expect(titled).not.toContain('class="task-signal issue"');
+    expect(titled).toContain('<span class="task-card-key linked" data-issue-link="" title="Open UKIE-697 in browser">UKIE-697</span>');
+    expect(titled).toContain('<strong class="task-title">Expired list automation</strong>');
+  });
+
+  it("opens the Jira issue from the card key instead of the Task", async () => {
+    const openExternal = vi.fn(async () => {});
+    const openTaskDetail = vi.fn();
+    const task = { ...launchableTask(), jira_url: "https://example.atlassian.net/browse/UKIE-697" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ tasks: [task], openTaskDetail }), openExternal })));
+    await act(async () => container.querySelector<HTMLElement>(".task-card-key")!.click());
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://example.atlassian.net/browse/UKIE-697");
+    expect(openTaskDetail).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("splits a scope tag off the title, flattens Jira markup, and shows the branch leaf", () => {
+    const markup = renderRail({
+      task: {
+        ...launchableTask(),
+        title: "[Users service] Replace regex filter",
+        brief: "{{UserRepository.SearchUsers}} filters on *Name* using h2. regex",
+      },
+    });
+    expect(markup).toContain('<span class="task-card-scope" title="Users service">Users service</span>');
+    expect(markup).toContain('<strong class="task-title">Replace regex filter</strong>');
+    expect(markup).toContain('<small class="task-focus-brief">UserRepository.SearchUsers filters on Name using h2. regex</small>');
+    expect(markup).toContain(">launchers</small>");
+    expect(markup).toContain('title="Task branch feature/launchers');
+  });
+
+  it("names a merged Task Done and tints the card edge", () => {
+    const task = launchableTask();
+    const markup = renderRail({
+      task,
+      branchCommitSummary: {
+        task_id: task.id,
+        count: 2,
+        base_ref: "refs/heads/main",
+        not_in_base: { count: 0, base_ref: "refs/heads/main", freshness: "fresh", reason: null },
+        freshness: "fresh",
+        reason: null,
+      },
+    });
+    expect(markup).toContain('data-status-tone="done"');
+    expect(markup).toContain('data-tone="done"');
+    expect(markup).toContain(">Done</span>");
+  });
+
+  it("hides an empty developer-notes checklist behind the card's hover action", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, railProps({ tasks: [launchableTask()] }))));
+    expect(container.querySelector(".task-developer-notes")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add a developer note to Compact launchers"]')!.click());
+    expect(container.querySelector('[aria-label="New developer note for Compact launchers"]')).not.toBeNull();
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("filters a crowded active board by key, title, or branch", async () => {
+    const tasks: Task[] = ["Alpha", "Beta", "Gamma", "Delta"].map((title, index) => ({
+      ...launchableTask(),
+      id: `task-${index}`,
+      title,
+      jira_url: `https://example.atlassian.net/browse/NUC-${index + 10}`,
+    }));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, railProps({ tasks }))));
+    const search = container.querySelector<HTMLInputElement>('[aria-label="Filter active Tasks"]')!;
+    expect(search).not.toBeNull();
+    await act(async () => typeInto(search, "nuc-12"));
+    expect(container.querySelectorAll(".task-board .task-group")).toHaveLength(1);
+    expect(container.querySelector(".task-board .task-title")?.textContent).toBe("Gamma");
+    expect(container.querySelector(".task-board-count")?.textContent).toBe("4");
+    await act(async () => typeInto(search, "nothing-here"));
+    expect(container.textContent).toContain("No active Tasks match.");
+    await act(async () => root.unmount());
+    container.remove();
   });
 
   it("labels the launcher group instead of leaving three bare glyphs", () => {

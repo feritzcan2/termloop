@@ -20,7 +20,7 @@ use super::super::invalidation::{
 use super::super::{AppState, current_epoch_ms};
 use super::errors::{git_observation_error_response, response_conflict, response_error};
 use super::handlers::{
-    bind_task_branch, cleanup_task_worktree, close_session, create_skill_definition,
+    bind_task_branch, cleanup_task_worktree, close_session, close_task, create_skill_definition,
     create_skill_package, delete_project, delete_steward_configuration,
     dismiss_task_worktree_provisioning, dismiss_task_worktree_repair, fork_agent_session,
     get_context_bank_catalog, get_context_bank_file, get_skill_catalog, get_skill_definition,
@@ -83,8 +83,9 @@ fn publish_tracker_mutation(
 ) -> Result<serde_json::Value, termloop_core::CoreError> {
     if result.is_ok() {
         state.tracker_runtime_wake.notify_one();
+        // A step Routine's question is part of the Playbook document.
         let _ = state.invalidation_requests.try_send(InvalidationRequest {
-            topics: vec![ProjectionTopic::Routine],
+            topics: vec![ProjectionTopic::Routine, ProjectionTopic::Playbook],
             state_revision: core.state_revision(),
             observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
         });
@@ -447,7 +448,10 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
     Ok(result)
 }
 
-async fn reopen_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
+pub(in crate::app) async fn reopen_task(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
     let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
         let previous_revision = core.state_revision();
@@ -1524,6 +1528,7 @@ async fn dispatch_inner(
             }
             "project.startRun" => launch_project_run(request.params, false, state).await,
             "project.restartRun" => launch_project_run(request.params, true, state).await,
+            "task.close" => close_task(request.params, state).await,
             "task.archive" => archive_task(request.params, state).await,
             "task.restore" => restore_task(request.params, state).await,
             "task.reopen" => reopen_task(request.params, state).await,

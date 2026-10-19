@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useOverlayLease } from "./overlay-lease.js";
 import type { Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview } from "../model.js";
 import { Icon } from "./Icon.js";
 import { RailHeader } from "./RailHeader.js";
@@ -91,10 +92,7 @@ export function archivedRailVisible(workspaceRailActive: boolean, workspaceView:
 export function ArchivedRail(props: ArchivedRailProps) {
   const [collapsed, setCollapsed] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Task>();
-  useEffect(() => {
-    props.overlayVisibilityChanged(Boolean(deleteTarget));
-    return () => props.overlayVisibilityChanged(false);
-  }, [deleteTarget, props.overlayVisibilityChanged]);
+  useOverlayLease(Boolean(deleteTarget), props.overlayVisibilityChanged);
   /// Emptiness is owned here so the sidebar never has to predict it.
   const total = props.tasks.length;
   if (total === 0) return null;

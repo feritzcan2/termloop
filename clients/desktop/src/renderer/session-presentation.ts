@@ -106,6 +106,7 @@ export function agentStatusIsLive(session: Session): boolean {
 export type GeneratedInputDeliveryLabel =
   | "Submitting prompt" | "Verify prompt" | "Prompt unconfirmed" | "Prompt paused"
   | "Press Enter" | "Review prompt" | "Resolve agent prompt" | "Waiting to submit"
+  | "Previous turn failed"
   | "Prompt failed" | "Resubmit prompt";
 
 type GeneratedInputDeliveryState = Omit<SessionState, "label"> & {
@@ -152,6 +153,7 @@ function unavailableComposerDetail(
     case "notification": return "agent notification requested attention";
     case "providerAwaitingInput": return "agent is waiting for input";
     case "providerBusy": return "agent had not returned to an available composer";
+    case "providerTurnFailed": return "agent's previous turn failed";
     case null: return "agent composer unavailable";
   }
 }
@@ -213,6 +215,17 @@ export function generatedInputDeliveryPresentation(
           },
           detail: generatedInputFailureDetail(delivery.failure),
           nextAction: "Open its Terminal and submit the reviewed prompt manually.",
+        };
+      }
+      if (delivery.failure === "composerUnavailable" && delivery.cancelCause === "providerTurnFailed") {
+        return {
+          state: {
+            ...blocked,
+            label: "Previous turn failed",
+            summary: "The agent's previous turn ended with an error, so TermLoop kept this prompt queued. Type in its Terminal to continue; TermLoop submits the queued prompt once the agent is ready again.",
+          },
+          detail: unavailableComposerDetail(delivery.cancelCause),
+          nextAction: "Open its Terminal and send any input to continue.",
         };
       }
       if (delivery.failure === "composerUnavailable") {

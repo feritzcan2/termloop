@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOverlayLease } from "./overlay-lease.js";
 import type {
   RunConfigurationCreateParams,
   RunConfigurationDto,
@@ -58,10 +59,7 @@ export function TaskRunLaunchers(props: {
   const idle = props.configurations.filter((configuration) => !liveConfigurationIds.has(configuration.id));
 
   const { overlayVisibilityChanged } = props;
-  useEffect(() => {
-    overlayVisibilityChanged(Boolean(editing));
-    return () => overlayVisibilityChanged(false);
-  }, [editing, overlayVisibilityChanged]);
+  useOverlayLease(Boolean(editing), overlayVisibilityChanged);
 
   const start = async (configuration: RunConfiguration, forceSetup: boolean) => {
     setBusyId(configuration.id);

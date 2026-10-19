@@ -48,8 +48,10 @@ import {
   routineBuilderSession,
   routinePromptImproverSession,
 } from "../prompt-improver-session-link.js";
-import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement } from "./AssistantTaskRows.js";
+import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement, type CloseCompletedTask } from "./AssistantTaskRows.js";
+import { usePlaybookTaskDecision, type PlaybookTaskDecisionActions } from "./PlaybookTaskDecision.js";
 import { Icon } from "./Icon.js";
+import { StewardHowItWorksButton } from "./StewardHowItWorks.js";
 import {
   ConfigurationVersions,
   PromptImproveButton,
@@ -390,6 +392,9 @@ type Props = {
   dismissImproverSession(sessionId: string): void;
   openTask(taskId: string): void;
   saveTaskNotes?: SavePlaybookTaskNotes | undefined;
+  /** The Steward's open proposal or suggestion is answerable from its Task row. */
+  taskDecisionActions?: PlaybookTaskDecisionActions | undefined;
+  closeTask?: CloseCompletedTask | undefined;
   openDetails(selection: AssistantSelection): void;
 };
 
@@ -530,6 +535,8 @@ export function AssistantRail(props: Props) {
       .catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
   }, [applySnapshot, props.projectId, props.refreshToken]);
+  const taskDecision = usePlaybookTaskDecision(props.projectId, props.refreshToken, props.taskDecisionActions, routines);
+  const openStewardChat = () => props.openDetails({ kind: "steward", initialView: "chat" });
   const sessions = useMemo(() => new Map(props.sessions.map((session) => [session.id, session])), [props.sessions]);
   const healthByRoutine = useMemo(() => new Map(health.map((value) => [value.routineId, value])), [health]);
   const capabilityByAgent = useMemo(() => new Map(props.agentCapabilities.map((capability) => [capability.agent_id, capability])), [props.agentCapabilities]);
@@ -848,8 +855,8 @@ export function AssistantRail(props: Props) {
   const stepNode = (node: PlaybookStepNode) => {
     const { routine, step, keptPipeline } = node;
     const current = healthByRoutine.get(routine.id);
-    const evaluation = props.playbookRuntime?.evaluation?.routineId === routine.id
-      ? props.playbookRuntime.evaluation : null;
+    const evaluations = props.playbookRuntime?.evaluations
+      .filter((value) => value.routineId === routine.id) ?? [];
     const selection = { kind: "routine" as const, routineId: routine.id };
     const improver = routinePromptImproverSession(props.projectId, routine, routines, props.sessions);
     const improverAgent = improver?.process.agent_id === "claude"
@@ -926,7 +933,7 @@ export function AssistantRail(props: Props) {
                 void removeStep(step);
               }}><Icon name="trash" /></button>
           </span> : null}
-          {status.tone === "checking" && !evaluation ? <span className="ar-flag checking">{status.label}</span>
+          {status.tone === "checking" && evaluations.length === 0 ? <span className="ar-flag checking">{status.label}</span>
             : null}
           {improver ? <span className={`ar-step-improver-group${props.selectedSessionId === improver.id ? " selected" : ""}`}>
             <button type="button"
@@ -948,11 +955,12 @@ export function AssistantRail(props: Props) {
           </span> : null}
         </span>
       </div>
-      {evaluation ? <PlaybookEvaluationStatus
+      {evaluations.map((evaluation) => <PlaybookEvaluationStatus
+        key={evaluation.taskId}
         evaluation={evaluation}
         sessions={props.sessions}
         openAgentTerminal={props.openImproverTerminal}
-      /> : null}
+      />)}
       {dropRoutineId === routine.id ? <div className="ar-step-drop-hint" role="status">
         Move here and check now
       </div> : null}
@@ -960,13 +968,15 @@ export function AssistantRail(props: Props) {
         {tasksAtStep.map((task) => <AssistantTaskRow
           key={task.id}
           task={task}
-          processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
+          processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}
           dragging={draggedTaskId === task.id}
           beginDrag={taskDragEnabled ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
+          decision={taskDecision}
+          openSteward={openStewardChat}
         />)}
       </div> : null}
     </div>;
@@ -999,6 +1009,7 @@ export function AssistantRail(props: Props) {
     <div className="ar-head">
       <span>Project assistant</span>
       <i className="ar-rule" aria-hidden="true" />
+      <StewardHowItWorksButton className="ar-how-it-works" />
       {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Playbook check history" title="Playbook check history"
         onClick={() => props.openDetails({ kind: "steward", initialView: "history" })}><Icon name="history" /></button>}
       {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Configure Steward prompts" title="Configure Steward prompts"
@@ -1100,13 +1111,16 @@ export function AssistantRail(props: Props) {
           </div>}
         <AssistantTaskTail
           placement={taskPlacement}
-          processingTaskId={props.playbookRuntime?.processingTaskId ?? null}
+          processingTaskIds={props.playbookRuntime?.processingTaskIds ?? []}
           openTask={props.openTask}
           saveTaskNotes={props.saveTaskNotes}
           notesDisabled={props.disabled}
           draggingTaskId={draggedTaskId}
           beginDrag={!props.disabled && mutatingKey === undefined ? beginTaskDrag : undefined}
           endDrag={endTaskDrag}
+          decision={taskDecision}
+          openSteward={openStewardChat}
+          closeTask={props.closeTask}
         />
         {board.offBoard.length > 0 ? <div className="ar-offboard">
           <span className="ar-routines-label">Off the board · {board.offBoard.length}</span>

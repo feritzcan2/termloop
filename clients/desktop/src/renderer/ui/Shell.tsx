@@ -1,4 +1,5 @@
 import { FilesOverlay } from "./FilesOverlay.js";
+import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesRail } from "./FilesRail.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
@@ -15,7 +16,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
-import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel } from "../model.js";
+import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
+import { newestPullRequests, taskCardTitle } from "../task-card-copy.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
@@ -68,7 +70,7 @@ import { SessionProjectRelocationDialog } from "./SessionProjectRelocationDialog
 import { ProviderHistoryRepairDialog } from "./ProviderHistoryRepairDialog.js";
 import { WorkflowCloseDialog, type WorkflowCloseTarget } from "./WorkflowCloseDialog.js";
 import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
-import { ActiveAgentRail } from "./ActiveAgentRail.js";
+import { ActiveAgentRail, type ActiveAgentTaskIdentity } from "./ActiveAgentRail.js";
 import { activeAgentWorkflows, workflowAgentGroups, workflowAgentLabels } from "./active-agent-workflows.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
@@ -479,6 +481,7 @@ export function shellNativeOverlayOpen(state: {
   projectWorkflow?: boolean;
   workflowClose?: boolean;
   archivedRail: boolean;
+  playbook?: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
 }
@@ -640,8 +643,8 @@ export function Shell(props: ShellProps) {
   /// so the page follows the live projection instead of a snapshot taken at the
   /// click, and drops itself when the Task leaves the Project.
   const [detailTaskId, setDetailTaskId] = useState<string>();
-  const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useState(false);
-  const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useState(false);
+  const [taskRailOverlayOpen, setTaskRailOverlayOpen] = useOverlayLeaseCount();
+  const [projectWorkflowOverlayOpen, setProjectWorkflowOverlayOpen] = useOverlayLeaseCount();
   /// Tab-bar state for the two rails that lost their title rows: the Agents
   /// search toggle and the Tasks create request both live beside the tabs.
   const [agentSearchOpen, setAgentSearchOpen] = useState(false);
@@ -649,7 +652,8 @@ export function Shell(props: ShellProps) {
   useEffect(() => {
     if (railMode !== "workspace" || workspaceView !== "agents") setAgentSearchOpen(false);
   }, [railMode, workspaceView]);
-  const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useState(false);
+  const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
+  const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
   const projectTriggerRef = useRef<HTMLButtonElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const commandInvokerRef = useRef<HTMLElement | null>(null);
@@ -721,6 +725,26 @@ export function Shell(props: ShellProps) {
     }
     return changes;
   }, [props.projectTasks, sessionsById]);
+  const taskIdentityBySessionId = useMemo(() => {
+    const identities = new Map<string, ActiveAgentTaskIdentity>();
+    const projections = new Map(props.gitHostProjections.map((projection) => [projection.task_id, projection]));
+    for (const task of props.projectTasks) {
+      if (task.status !== "open") continue;
+      const { key, title } = taskCardTitle(task.title, task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined);
+      const projection = projections.get(task.id);
+      const pullRequests = newestPullRequests(projection, 2);
+      const identity: ActiveAgentTaskIdentity = {
+        taskId: task.id,
+        issueKey: key,
+        issueUrl: task.jira_url ?? undefined,
+        title,
+        pullRequests,
+        morePullRequests: (projection?.matches.length ?? 0) - pullRequests.length,
+      };
+      for (const sessionId of taskAttachedSessionIds([task], sessionsById)) identities.set(sessionId, identity);
+    }
+    return identities;
+  }, [props.gitHostProjections, props.projectTasks, sessionsById]);
   const taskNestedHelperIds = useMemo(
     () => askToHelpersForSources(attachedSessionIds, sessionsById),
     [attachedSessionIds, sessionsById],
@@ -1108,6 +1132,7 @@ export function Shell(props: ShellProps) {
     projectWorkflow: projectWorkflowOverlayOpen,
     workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
+    playbook: playbookOverlayOpen,
   });
   useEffect(() => {
     props.setNativeOverlayOpen(nativeOverlayOpen);
@@ -1731,6 +1756,7 @@ export function Shell(props: ShellProps) {
             favoriteSessionIds={favoriteAgentSessionIds}
             taskAttachedSessionIds={attachedSessionIds}
             worktreeChangesBySessionId={worktreeChangesBySessionId}
+            taskIdentityBySessionId={taskIdentityBySessionId}
             workflowsBySessionId={workflowsBySessionId}
             workflowAgentLabelsBySessionId={workflowAgentLabelsBySessionId}
             workflowGroupsBySessionId={workflowGroupsBySessionId}
@@ -1749,6 +1775,11 @@ export function Shell(props: ShellProps) {
             archiveSession={(sessionId) => { void props.archiveSession(sessionId).then((failure) => { if (!failure) archived.reload(); }); }}
             toggleFavoriteSession={toggleFavoriteAgentSession}
             openTaskChanges={(taskId) => setChangesPresentation({ kind: "task", taskId, source: { kind: "local" } })}
+            openExternal={(url) => { void props.openExternal(url); }}
+            playbookEvaluations={(props.playbookRuntime?.evaluations ?? []).flatMap((evaluation) =>
+              evaluation.mode === "taskAgentFork" && evaluation.sessionId && evaluation.sourceSessionId
+                ? [{ sessionId: evaluation.sessionId, sourceSessionId: evaluation.sourceSessionId }]
+                : [])}
             openQuickAction={disabled ? undefined : () => openQuickAction()}
           />
           <SessionRail
@@ -1800,6 +1831,14 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             saveTaskNotes={props.updateTaskDeveloperNotes}
+            taskDecisionActions={props.assistantActions}
+            closeTask={{
+              inspect: props.inspectTaskWorktreeCleanup,
+              closeTaskAndWorktree: props.closeTaskAndWorktree,
+              busyTaskIds: props.deletingTaskIds,
+              overlayContainer: props.overlayContainer,
+              overlayVisibilityChanged: setPlaybookOverlayOpen,
+            }}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}

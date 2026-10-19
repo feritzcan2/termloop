@@ -5331,7 +5331,8 @@
         "permissionRequested",
         "notification",
         "providerAwaitingInput",
-        "providerBusy"
+        "providerBusy",
+        "providerTurnFailed"
       ]
     },
     "generatedInputSettlementEvidence": {
@@ -5893,7 +5894,8 @@
         "lidClose",
         "userInitiatedSleep",
         "lowBattery",
-        "thermalEmergency"
+        "thermalEmergency",
+        "lidClosedPowerOrDisplayChange"
       ]
     },
     "keepAwakeSetParams": {
@@ -14103,6 +14105,12 @@
       "type": "string",
       "enum": ["review", "autoAdd"]
     },
+    "taskSourceBranchNaming": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskSourceBranchNaming",
+      "type": "string",
+      "enum": ["title", "issueKey"]
+    },
     "taskSourceCredentialState": {
       "x-codegen": true,
       "x-codegen-name": "TaskSourceCredentialState",
@@ -14132,7 +14140,7 @@
       "x-codegen-name": "TaskSourceDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "projectId", "provider", "name", "enabled", "generation", "siteBaseUrl", "scopeKind", "boards", "statuses", "jql", "importPolicy", "autoImportActiveTaskLimit", "refreshIntervalSeconds", "credentialState", "runtimeState", "failureReason", "lastAttemptAtEpochMs", "lastSuccessfulAtEpochMs", "retryAfterEpochMs", "candidateCount", "truncated", "createdAtEpochMs", "updatedAtEpochMs"],
+      "required": ["id", "projectId", "provider", "name", "enabled", "generation", "siteBaseUrl", "scopeKind", "boards", "statuses", "jql", "importPolicy", "autoImportActiveTaskLimit", "refreshIntervalSeconds", "branchNaming", "credentialState", "runtimeState", "failureReason", "lastAttemptAtEpochMs", "lastSuccessfulAtEpochMs", "retryAfterEpochMs", "candidateCount", "truncated", "createdAtEpochMs", "updatedAtEpochMs"],
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "projectId": { "type": "string", "minLength": 1 },
@@ -14148,6 +14156,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "credentialState": { "$ref": "#/$defs/taskSourceCredentialState" },
         "runtimeState": { "$ref": "#/$defs/taskSourceRuntimeState" },
         "failureReason": { "anyOf": [{ "$ref": "#/$defs/taskSourceFailureReason" }, { "type": "null" }] },
@@ -14347,6 +14356,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },
       "allOf": [
@@ -14386,6 +14396,7 @@
         "importPolicy": { "$ref": "#/$defs/taskSourceImportPolicy" },
         "autoImportActiveTaskLimit": { "type": "integer", "minimum": 1, "maximum": 50, "x-rust-type": "u64" },
         "refreshIntervalSeconds": { "type": "integer", "minimum": 60, "maximum": 86400, "x-rust-type": "u64" },
+        "branchNaming": { "$ref": "#/$defs/taskSourceBranchNaming" },
         "expectedGeneration": { "type": "integer", "minimum": 1, "x-rust-type": "u64" },
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       },
@@ -15559,8 +15570,8 @@
         "taskTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "milestoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "milestoneTitle": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "sourceSessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "sourceName": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sourceSessionId": { "description": "The forked Task Agent, or null for a fresh evaluator.", "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "sourceName": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 },
         "sessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "agentId": { "$ref": "#/$defs/stewardAgentId" },
         "model": { "type": "string", "minLength": 1, "maxLength": 80 },
@@ -15676,6 +15687,7 @@
           "enum": [
             "starting",
             "taskAgentFork",
+            "freshEvaluator",
             "waitingForTaskAgent"
           ]
         },
@@ -15699,7 +15711,7 @@
           "anyOf": [
             {
               "type": "string",
-              "enum": ["noUnambiguousTaskAgent", "forkUnsupported", "forkUnavailable", "evaluationCapacity"]
+              "enum": ["noUnambiguousTaskAgent", "forkUnsupported", "forkUnavailable", "evaluatorUnavailable", "evaluationCapacity"]
             },
             { "type": "null" }
           ]
@@ -15714,12 +15726,27 @@
       "required": [
         "activePipelineName",
         "processingTaskId",
+        "processingTaskIds",
         "evaluation",
+        "evaluations",
         "steps",
         "doneTaskIds",
         "stateRevision"
       ],
       "properties": {
+        "processingTaskIds": {
+          "description": "Every Task whose own Playbook step check is running. Each Task is checked independently.",
+          "type": "array",
+          "maxItems": 512,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "evaluations": {
+          "description": "One entry per Task whose step check is running in an evaluation fork or a fresh evaluator, or is waiting for an evaluator.",
+          "type": "array",
+          "maxItems": 512,
+          "items": { "$ref": "#/$defs/playbookEvaluationDto" }
+        },
         "activePipelineName": {
           "type": "string",
           "maxLength": 120
