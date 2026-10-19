@@ -1,6 +1,19 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon.js";
 import "./steward-how-it-works.css";
+
+/// The "How it works?" button and the explanation it opens.
+export function StewardHowItWorksButton(props: { className: string }) {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button type="button" className={props.className} aria-haspopup="dialog"
+      title="How the Playbook and Steward work" onClick={() => setOpen(true)}>How it works?</button>
+    {/* Rendered at the document root so a narrow or clipped sidebar never
+        constrains the dialog. */}
+    {open ? createPortal(<StewardHowItWorks close={() => setOpen(false)} />, document.body) : null}
+  </>;
+}
 
 /// A static explanation of how the Playbook and Steward work together. It
 /// describes product behavior only; it reads no Project state.
