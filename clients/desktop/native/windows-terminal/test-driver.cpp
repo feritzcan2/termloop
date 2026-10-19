@@ -1,7 +1,51 @@
 #include <napi.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <UIAutomation.h>
+#include <wrl/client.h>
 #include "paste-mode.hpp"
+
+class VisibleTextWorker final : public Napi::AsyncWorker {
+  HWND window_;
+  Napi::Promise::Deferred deferred_;
+  std::u16string text_;
+public:
+  VisibleTextWorker(Napi::Env env, HWND window) : AsyncWorker(env), window_(window), deferred_(Napi::Promise::Deferred::New(env)) {}
+  Napi::Promise Promise() { return deferred_.Promise(); }
+  void Execute() override {
+    const auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(initialized)) { SetError("visible text COM initialization failed"); return; }
+    {
+      Microsoft::WRL::ComPtr<IUIAutomation> automation;
+      Microsoft::WRL::ComPtr<IUIAutomationElement> element;
+      Microsoft::WRL::ComPtr<IUIAutomationTextPattern> pattern;
+      Microsoft::WRL::ComPtr<IUIAutomationTextRangeArray> ranges;
+      auto result = CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
+      if (SUCCEEDED(result)) result = automation->ElementFromHandle(window_, &element);
+      if (SUCCEEDED(result)) result = element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern));
+      if (SUCCEEDED(result)) result = pattern->GetVisibleRanges(&ranges);
+      int count = 0;
+      if (SUCCEEDED(result)) result = ranges->get_Length(&count);
+      for (int i = 0; SUCCEEDED(result) && i < count; ++i) {
+        Microsoft::WRL::ComPtr<IUIAutomationTextRange> range;
+        BSTR value = nullptr;
+        result = ranges->GetElement(i, &range);
+        if (SUCCEEDED(result)) result = range->GetText(262144, &value);
+        if (SUCCEEDED(result) && value) text_.append(reinterpret_cast<char16_t*>(value), SysStringLen(value));
+        SysFreeString(value);
+      }
+      if (FAILED(result)) SetError("visible terminal text unavailable");
+    }
+    CoUninitialize();
+  }
+  void OnOK() override { deferred_.Resolve(Napi::String::New(Env(), text_)); }
+  void OnError(const Napi::Error& error) override { deferred_.Reject(error.Value()); }
+};
+
+LRESULT CALLBACK WheelParentProc(HWND window, UINT message, WPARAM key, LPARAM flags, UINT_PTR, DWORD_PTR reference) {
+  if (message == WM_MOUSEWHEEL) ++*reinterpret_cast<unsigned*>(reference);
+  return DefSubclassProc(window, message, key, flags);
+}
 
 LRESULT CALLBACK ResizeCursorProc(HWND window, UINT message, WPARAM key, LPARAM flags, UINT_PTR, DWORD_PTR reference) {
   if (message == WM_SETCURSOR) {
@@ -20,6 +64,23 @@ HWND Handle(const Napi::Value& value) {
   return window;
 }
 Napi::Object Module(Napi::Env env, Napi::Object exports) {
+  exports.Set("visibleText", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    auto worker = new VisibleTextWorker(info.Env(), Handle(info[0]));
+    auto promise = worker->Promise();
+    worker->Queue();
+    return promise;
+  }));
+  exports.Set("wheel", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    HWND window = Handle(info[0]), parent = GetParent(window);
+    unsigned parentRequests = 0;
+    if (!SetWindowSubclass(parent, WheelParentProc, 2, reinterpret_cast<DWORD_PTR>(&parentRequests)))
+      throw Napi::Error::New(info.Env(), "wheel test parent subclass failed");
+    POINT point{ 10, 10 };
+    ClientToScreen(window, &point);
+    SendMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, info[1].As<Napi::Number>().Int32Value()), MAKELPARAM(point.x, point.y));
+    RemoveWindowSubclass(parent, WheelParentProc, 2);
+    return Napi::Number::New(info.Env(), parentRequests);
+  }));
   exports.Set("cursor", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
     HWND window = Handle(info[0]), parent = GetParent(window);
     const bool clientArea = info[1].As<Napi::Boolean>();
