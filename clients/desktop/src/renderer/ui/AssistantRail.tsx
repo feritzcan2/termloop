@@ -51,6 +51,7 @@ import {
 import { AssistantTaskRow, AssistantTaskTail, assistantTaskPlacement, type CloseCompletedTask } from "./AssistantTaskRows.js";
 import { usePlaybookTaskDecision, type PlaybookTaskDecisionActions } from "./PlaybookTaskDecision.js";
 import { Icon } from "./Icon.js";
+import { StewardHowItWorksButton } from "./StewardHowItWorks.js";
 import {
   ConfigurationVersions,
   PromptImproveButton,
@@ -1008,6 +1009,7 @@ export function AssistantRail(props: Props) {
     <div className="ar-head">
       <span>Project assistant</span>
       <i className="ar-rule" aria-hidden="true" />
+      <StewardHowItWorksButton className="ar-how-it-works" />
       {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Playbook check history" title="Playbook check history"
         onClick={() => props.openDetails({ kind: "steward", initialView: "history" })}><Icon name="history" /></button>}
       {firstRunLocked ? null : <button type="button" className="ar-config" aria-label="Configure Steward prompts" title="Configure Steward prompts"
