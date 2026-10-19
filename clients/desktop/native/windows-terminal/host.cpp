@@ -1,6 +1,7 @@
 #include <napi.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -92,6 +93,14 @@ const auto scrollCallbacks = ScrollCallbacks(std::make_index_sequence<kCapacity>
 
 bool Down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
 void Shortcut(Surface& surface, const char16_t* action) { Emit(surface, "shortcut", action); }
+
+void ScrollTo(Surface& surface, int top) {
+  const int bottom = std::max(0, surface.bufferSize.load() - surface.viewHeight.load());
+  // TerminalUserScroll does not call the scroll callback. Keep our position
+  // aligned with its clamped viewport so consecutive wheel events accumulate.
+  surface.viewTop = std::clamp(top, 0, bottom);
+  api.scroll(surface.terminal, surface.viewTop.load());
+}
 
 void CopySelection(Surface& surface) {
   wchar_t* text = api.selection(surface.terminal);
@@ -212,7 +221,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM key, LPARAM flags,
     case WM_MOUSEWHEEL: {
       const auto before = surface.viewTop.load();
       const auto inputGeneration = surface.inputGeneration;
-      const auto result = DefSubclassProc(window, message, key, flags);
+      // Unhandled wheels bubble from HwndTerminal to Chromium, which may send
+      // them back to this child. Delegate only for active VT mouse reporting.
+      const auto result = surface.pasteMode.MouseReporting() && !Down(VK_SHIFT) && GetFocus() == window
+        ? DefSubclassProc(window, message, key, flags) : 0;
       // If VT mouse reporting consumed the wheel, don't also scroll history.
       if (surface.inputGeneration == inputGeneration) {
         surface.wheelRemainder += GET_WHEEL_DELTA_WPARAM(key);
@@ -221,7 +233,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM key, LPARAM flags,
         UINT lines = 3;
         SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
         const int distance = lines == WHEEL_PAGESCROLL ? surface.viewHeight.load() : static_cast<int>(std::min(lines, 100u));
-        if (ticks) api.scroll(surface.terminal, std::max(0, before - ticks * distance));
+        if (ticks) ScrollTo(surface, before - ticks * distance);
       }
       return result;
     }
@@ -380,7 +392,7 @@ Napi::Object Module(Napi::Env env, Napi::Object exports) {
   }));
   exports.Set("setColorScheme", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetTheme(Get(info), info[1].As<Napi::String>().Utf8Value() == "light"); }));
   exports.Set("focus", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetFocus(Get(info).window); }));
-  exports.Set("scrollToBottom", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { auto& s = Get(info); api.scroll(s.terminal, std::max(0, s.bufferSize - s.viewHeight)); }));
+  exports.Set("scrollToBottom", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { auto& s = Get(info); ScrollTo(s, s.bufferSize.load()); }));
   exports.Set("readText", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { return ReadTerminalText(info.Env(), Get(info).window); }));
   exports.Set("snapshot", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { return CaptureTerminal(info.Env(), Get(info).window); }));
   exports.Set("destroy", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { Destroy(Get(info).slot); }));
