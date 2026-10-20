@@ -19,6 +19,7 @@ use super::super::super::agent_launch::{
 };
 use super::super::super::core_lock::in_operation;
 use super::super::super::gates::{
+    AGENT_FORK_EXIT_OBSERVATION_WINDOW, AGENT_FORK_STABILITY_WINDOW,
     AGENT_RELOCATION_ATTEMPT_TIMEOUT, AGENT_RESUME_ATTEMPT_TIMEOUT,
     AGENT_RESUME_FINALIZATION_TIMEOUT, AGENT_RESUME_SHUTDOWN_TIMEOUT,
     AGENT_RESUME_STABILITY_WINDOW, FairResumePermit, MAX_ACTIVE_AGENT_RESUMES,
@@ -224,21 +225,24 @@ async fn execute_fork_plan(
     } = execute_agent_fork_attempt(state, plan, deadline).await?;
     retention
         .map_err(|error| AgentForkAttemptFailure::with_child(error, &session_id, runtime_epoch))?;
-    if let Err(reason) = wait_for_agent_fork_startup(
+    let ready_at = match wait_for_agent_fork_startup(
         state,
         &session_id,
         runtime_epoch,
         startup_deadline,
-        AGENT_RESUME_STABILITY_WINDOW,
+        AGENT_FORK_STABILITY_WINDOW,
     )
     .await
     {
-        return Err(AgentForkAttemptFailure::with_child(
-            CoreError::AgentForkUnavailable { reason },
-            &session_id,
-            runtime_epoch,
-        ));
-    }
+        Ok(ready_at) => ready_at,
+        Err(reason) => {
+            return Err(AgentForkAttemptFailure::with_child(
+                CoreError::AgentForkUnavailable { reason },
+                &session_id,
+                runtime_epoch,
+            ));
+        }
+    };
     let confirmation = {
         let mut core = state.core.lock().await;
         match core.confirm_agent_fork_conversation(&session_id, runtime_epoch) {
@@ -261,9 +265,37 @@ async fn execute_fork_plan(
         }
     };
     let effects = confirmation?;
+    observe_confirmed_fork_exit(state, &session_id, runtime_epoch, ready_at);
     finish_session_mutation(state, effects, Ok(value))
         .await
         .map_err(Into::into)
+}
+
+/// Measures whether the shortened fork stability window lets provider exits
+/// through. It only logs; the confirmed child is already the user's Session.
+fn observe_confirmed_fork_exit(
+    state: &AppState,
+    session_id: &str,
+    runtime_epoch: u64,
+    ready_at: Instant,
+) {
+    let terminal = state.terminal.clone();
+    let session_id = session_id.to_owned();
+    tokio::spawn(async move {
+        let until = ready_at + AGENT_FORK_EXIT_OBSERVATION_WINDOW;
+        while Instant::now() < until {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let running = terminal.session_is_running(&session_id, runtime_epoch);
+            if !matches!(running, Ok(true)) {
+                tracing::warn!(
+                    since_readiness_ms = ready_at.elapsed().as_millis(),
+                    runtime_present = running.is_ok(),
+                    "confirmed fork child stopped shortly after readiness"
+                );
+                return;
+            }
+        }
+    });
 }
 
 pub(in crate::app::control) async fn preview_agent_session(
@@ -1647,7 +1679,7 @@ async fn wait_for_agent_fork_startup(
     runtime_epoch: u64,
     deadline: Instant,
     stability_window: Duration,
-) -> Result<(), termloop_core::AgentForkUnavailableReason> {
+) -> Result<Instant, termloop_core::AgentForkUnavailableReason> {
     let mut terminal = state
         .terminal
         .subscribe(session_id, runtime_epoch)
@@ -1693,13 +1725,20 @@ async fn wait_for_agent_fork_startup(
         }
     }
 
-    if deadline.saturating_duration_since(Instant::now()) < stability_window {
+    let ready_at = Instant::now();
+    if deadline.saturating_duration_since(ready_at) < stability_window {
         return Err(termloop_core::AgentForkUnavailableReason::StartupTimedOut);
     }
     tokio::time::sleep(stability_window).await;
     match state.terminal.session_is_running(session_id, runtime_epoch) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(termloop_core::AgentForkUnavailableReason::StartupExited),
+        Ok(true) => Ok(ready_at),
+        Ok(false) => {
+            tracing::warn!(
+                stability_window_ms = stability_window.as_millis(),
+                "fork child exited inside its stability window after readiness"
+            );
+            Err(termloop_core::AgentForkUnavailableReason::StartupExited)
+        }
         Err(_) => Err(termloop_core::AgentForkUnavailableReason::RuntimeConflict),
     }
 }
@@ -2413,6 +2452,13 @@ mod tests {
     fn automatic_resume_lanes_have_independent_caps() {
         assert_eq!(MAX_ACTIVE_AGENT_RESUMES, 7);
         assert_eq!(MAX_ACTIVE_STEWARD_RESUMES, 1);
+    }
+
+    #[test]
+    fn fork_confirms_faster_than_resume_but_is_still_observed_as_long() {
+        assert_eq!(AGENT_FORK_STABILITY_WINDOW, Duration::from_millis(300));
+        assert_eq!(AGENT_RESUME_STABILITY_WINDOW, Duration::from_secs(1));
+        assert!(AGENT_FORK_EXIT_OBSERVATION_WINDOW >= AGENT_RESUME_STABILITY_WINDOW);
     }
 
     #[test]

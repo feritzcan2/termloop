@@ -329,6 +329,8 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .row-state.busy { color: var(--accent-strong); }
 .row-state.attention { color: var(--agent-status-awaiting); }
 .row-state.blocked { color: var(--danger); }
+.row-forking { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--sidebar-dim); font-weight: 650; }
+.row-forking .loading-spinner { width: 8px; height: 8px; }
 .row-subtitle { min-width: 0; flex: 0 9999 auto; overflow: hidden; color: var(--sidebar-dimmer); text-overflow: ellipsis; white-space: nowrap; }
 /* Under width pressure the line drops whole tokens instead of truncating them to
    unreadable stubs, in reverse order of usefulness: the folder goes first, then the
