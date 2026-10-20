@@ -42,6 +42,7 @@ import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionL
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
 import { createSessionRename } from "./session-rename.js";
+import { createQuickActionImageRestore } from "./quick-action-image-restore.js";
 import { closeWorkflowAgents as closeWorkflowAgentGroup } from "./workflow-close.js";
 import { restoreDeletedAgent, retryAgentSession } from "./session-resume.js";
 import {
@@ -2594,14 +2595,10 @@ export function DesktopApp() {
       loadAgentAccounts={loadAgentAccounts}
       previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
-      restoreQuickActionImage={(attachmentId) => {
-        const identity = connectionAttachmentIdentity(attachmentId);
-        const profileId = identity?.profileId ?? "local";
-        if (profileId !== connectionProfileIdOf(selectedProject)) {
-          throw new Error("The saved image belongs to another computer. Paste it again for this Project.");
-        }
-        return sourceApiForAttachmentId(attachmentId).quickActionRestoreImage(attachmentId);
-      }}
+      restoreQuickActionImage={createQuickActionImageRestore({
+        selectedProfileId: () => connectionProfileIdOf(selectedProject),
+        restore: (attachmentId) => sourceApiForAttachmentId(attachmentId).quickActionRestoreImage(attachmentId),
+      })}
       discardQuickActionImage={(attachmentId) => sourceApiForAttachmentId(attachmentId).quickActionDiscardImage(attachmentId)}
       launchQuickAction={launchQuickAction}
       launchTaskTerminal={launchTaskTerminal}
