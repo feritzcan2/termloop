@@ -10,7 +10,7 @@ export type UpdateManagerDependencies = {
 };
 
 export const DEFAULT_UPDATE_INITIAL_DELAY_MS = 15_000;
-export const DEFAULT_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+export const DEFAULT_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1_000;
 
 /**
  * Owns the small, non-durable update state machine. The privileged updater,
@@ -21,11 +21,15 @@ export class UpdateManager {
   readonly #dependencies: UpdateManagerDependencies;
   #checking = false;
   #offeringRestart = false;
+  #downloadedVersion: string | undefined;
 
   constructor(dependencies: UpdateManagerDependencies) {
     this.#dependencies = dependencies;
     dependencies.driver.listen({
-      downloaded: (version) => { void this.#offerRestart(version); },
+      downloaded: (version) => {
+        this.#downloadedVersion = version;
+        void this.#offerRestart(version);
+      },
     });
   }
 
@@ -41,7 +45,10 @@ export class UpdateManager {
     if (this.#checking) return;
     this.#checking = true;
     try {
-      await this.#dependencies.driver.check();
+      // A downloaded update is offered again instead of fetched again; it also
+      // installs on the next quit if every offer is declined.
+      if (this.#downloadedVersion) await this.#offerRestart(this.#downloadedVersion);
+      else await this.#dependencies.driver.check();
     } catch {
       // Periodic update failures are intentionally silent. The next bounded
       // check retries, and raw network errors/URLs never enter application logs.

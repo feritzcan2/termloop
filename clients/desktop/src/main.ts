@@ -1608,7 +1608,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
           type: "info",
           title: "TermLoop update ready",
           message: `TermLoop ${version} is ready to install.`,
-          detail: "Running terminals and the managed local service will shut down gracefully before TermLoop restarts.",
+          detail: "Running terminals and the managed local service will shut down gracefully before TermLoop restarts. If you choose Later, the update installs the next time you quit TermLoop.",
           buttons: ["Restart and update", "Later"],
           defaultId: 0,
           cancelId: 1,
