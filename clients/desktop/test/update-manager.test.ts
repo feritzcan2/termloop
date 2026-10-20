@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { UpdateManager } from "../src/main/update-manager.js";
+import { DEFAULT_UPDATE_CHECK_INTERVAL_MS, UpdateManager } from "../src/main/update-manager.js";
 import type { UpdateDriverListeners } from "../src/platform/auto-update.js";
 
 function harness(options: { confirm?: boolean; checkFailure?: boolean } = {}) {
@@ -67,5 +67,22 @@ describe("desktop update manager", () => {
     await vi.waitFor(() => expect(test.confirmRestart).toHaveBeenCalledTimes(1));
     expect(test.prepareForRestart).not.toHaveBeenCalled();
     expect(test.driver.install).not.toHaveBeenCalled();
+  });
+
+  it("offers a declined update again on the next tick without fetching it again", async () => {
+    const test = harness({ confirm: false });
+    test.manager.start();
+    test.listeners()?.downloaded("0.2.0");
+    await vi.waitFor(() => expect(test.confirmRestart).toHaveBeenCalledTimes(1));
+
+    test.scheduled.shift()?.task();
+    await vi.waitFor(() => expect(test.confirmRestart).toHaveBeenCalledTimes(2));
+    expect(test.driver.check).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(test.scheduled.map(({ delayMs }) => delayMs)).toEqual([20]));
+    expect(test.driver.install).not.toHaveBeenCalled();
+  });
+
+  it("checks hourly while the application is in use", () => {
+    expect(DEFAULT_UPDATE_CHECK_INTERVAL_MS).toBe(60 * 60 * 1_000);
   });
 });

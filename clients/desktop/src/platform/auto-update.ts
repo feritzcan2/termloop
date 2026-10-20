@@ -14,7 +14,9 @@ export type UpdateDriver = {
 
 export function createAutoUpdateDriver(): UpdateDriver {
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false;
+  // A declined restart still installs on the next ordinary quit, which already
+  // stops the managed daemon before Electron emits quit.
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.autoRunAppAfterInstall = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
