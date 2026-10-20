@@ -30,6 +30,7 @@ function New-TestDesktopProcess {
         param($timeout)
         if ($timeout -lt 0 -or $timeout -gt 15000) { throw "Unexpected timeout: $timeout" }
         $this.Waited = $true
+        $this.HasExited = $this.Exits
         return $this.Exits
     }
     return $process
@@ -77,6 +78,24 @@ Describe 'TermLoop Windows restart ownership' {
     It 'fails when the old desktop or a helper has not exited' {
         $script:helper.Exits = $false
         { Stop-TermLoopDesktop $script:appPath } | Should Throw 'TermLoop did not exit'
+    }
+
+    It 'waits for this build''s daemon and hook processes before packaging' {
+        $daemonDirectory = 'C:\checkout\clients\desktop\out\win-unpacked\resources\daemon'
+        $daemon = New-TestDesktopProcess "$daemonDirectory\termloop-server.exe" -WindowHandle 0
+        $companion = New-TestDesktopProcess "$daemonDirectory\termloop-companion.exe" -WindowHandle 0
+        $otherDaemon = New-TestDesktopProcess 'C:\another\resources\daemon\termloop-server.exe' -WindowHandle 0
+        Mock Get-Process { @($daemon, $companion, $otherDaemon) } -ParameterFilter { $Name -contains 'termloop-server' }
+        Stop-TermLoopDesktop $script:appPath
+        $daemon.Waited | Should Be $true
+        $companion.Waited | Should Be $true
+        $otherDaemon.Waited | Should Be $false
+    }
+
+    It 'fails when this build''s daemon has not exited' {
+        $daemon = New-TestDesktopProcess 'C:\checkout\clients\desktop\out\win-unpacked\resources\daemon\termloop-server.exe' -WindowHandle 0 -Exits $false
+        Mock Get-Process { @($daemon) } -ParameterFilter { $Name -contains 'termloop-server' }
+        { Stop-TermLoopDesktop $script:appPath } | Should Throw 'TermLoop daemon did not exit'
     }
 }
 
