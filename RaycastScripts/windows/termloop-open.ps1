@@ -59,6 +59,25 @@ function Stop-TermLoopDesktop {
             throw "TermLoop did not exit (PID $($process.Id)). Close it and retry."
         }
     }
+
+    # The daemon finishes its graceful shutdown after the window closes, and
+    # provider hooks keep starting the packaged daemon binary until their
+    # sessions end. Packaging replaces that binary, so wait until no process
+    # runs from this build's daemon directory, re-checking for late hooks.
+    $daemonDirectory = Join-Path (Split-Path -Parent $AppPath) 'resources\daemon\'
+    do {
+        $daemonProcesses = @(Get-Process -Name 'termloop-server', 'termloop-companion' -ErrorAction SilentlyContinue | Where-Object {
+            -not $_.HasExited -and $_.SessionId -eq $sessionId -and $_.Path -and
+                $_.Path.StartsWith($daemonDirectory, [System.StringComparison]::OrdinalIgnoreCase)
+        })
+        foreach ($process in $daemonProcesses) {
+            $null = $process.Handle
+            $remainingMs = [Math]::Max(0, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+            if (-not $process.WaitForExit($remainingMs)) {
+                throw "TermLoop daemon did not exit (PID $($process.Id)). Close it and retry."
+            }
+        }
+    } while ($daemonProcesses.Count -gt 0)
 }
 
 function Open-TermLoopDesktop {
