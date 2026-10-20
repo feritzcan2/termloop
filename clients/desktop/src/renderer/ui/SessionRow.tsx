@@ -1,5 +1,5 @@
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type Ref } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type Ref } from "react";
 import type { SplitDirection } from "../../layout/model.js";
 import type { AgentStatus, Session } from "../model.js";
 import { sessionDismissCommand, sessionLabel, sessionResumeActionLabel } from "../model.js";
@@ -16,6 +16,10 @@ import { Icon, type IconName } from "./Icon.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 
 export type SessionMenuState = { sessionId: string; x: number; y: number; invoker: HTMLElement };
+
+/// Source Sessions with a fork request in flight. The child stays unpublished
+/// until the daemon confirms it, so the source row carries the wait.
+export const ForkingSessionsContext = createContext<ReadonlySet<string>>(new Set());
 
 export type AskToSessionGroup = {
   source: Session;
@@ -201,6 +205,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
   const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel, displayName: titleKey && displayName ? `${titleKey} ${displayName}` : displayName });
   const planProgress = plan ? agentPlanProgress(plan) : undefined;
+  const forking = useContext(ForkingSessionsContext).has(session.id);
   return (
     <button
       className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""} state-${state.tone}`}
@@ -210,6 +215,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         ? `${accessibleName}, ${planProgress.completed} of ${planProgress.total} todos completed`
         : accessibleName}
       aria-pressed={active}
+      aria-busy={forking || undefined}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       data-session-id={session.id}
@@ -244,7 +250,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} presenceBadge={presenceBadge} visible={visible} active={active} runCommand={runCommand} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} presenceBadge={presenceBadge} visible={visible} active={active} runCommand={runCommand} forking={forking} />
     </button>
   );
 }
@@ -393,7 +399,7 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, presenceBadge, visible, active, runCommand }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, presenceBadge, visible, active, runCommand, forking = false }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
@@ -407,6 +413,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
   visible: boolean;
   active: boolean;
   runCommand?: string | undefined;
+  forking?: boolean;
 }) {
   const provenance = sessionProvenance(session, subtitle, displayName);
   /// A run is a service the Project starts, not a conversation or a shell the
@@ -442,6 +449,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
       <span className="row-copy">
         <strong className={`row-title${titleKey ? " with-key" : ""}`}>{titleKey ? <span className={`row-title-key${titleKeyLinked ? " linked" : ""}`} {...(titleKeyLinked ? { "data-title-key-link": "", title: `Open ${titleKey} in browser` } : {})}>{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>
         <span className="session-state-line">
+          {forking ? <span className="row-forking" role="status"><span className="loading-spinner" aria-hidden="true" />Forking…</span> : null}
           {plan ? <AgentTodoCount plan={plan} /> : null}
           {run ? <span className="row-run-kind">Run</span> : null}
           {improver ? <span className="row-improve-kind">Improver</span> : null}

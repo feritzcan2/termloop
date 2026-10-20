@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/renderer/model.js";
 import { SessionRail, type SessionRailProps } from "../src/renderer/ui/SessionRail.js";
-import { SessionContextMenu, SessionRowButton, type SessionRunDevServer } from "../src/renderer/ui/SessionRow.js";
+import { ForkingSessionsContext, SessionContextMenu, SessionRowButton, type SessionRunDevServer } from "../src/renderer/ui/SessionRow.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, splitDropPositionFromPoint } from "../src/renderer/ui/SidebarSessionDnd.js";
 
 /// This rail holds the Project's own non-Agent Sessions. Agent rows, their
@@ -160,6 +160,33 @@ describe("Session rail structure", () => {
 
     expect(markup).toContain('data-session-id="loose-agent"');
     expect(markup).toContain('aria-roledescription="draggable"');
+  });
+
+  it("marks only the source row busy while its fork request is in flight", () => {
+    const agent: Session = { ...terminalSession(), id: "fork-source", kind: "Agent" };
+    const other: Session = { ...agent, id: "other-agent" };
+    const row = (session: Session) => createElement(SessionRowButton, {
+      session,
+      agentStatus: undefined,
+      subtitle: "project",
+      active: false,
+      visible: false,
+      menuOpen: false,
+      select: () => {},
+      openMenu: () => {},
+    });
+    const markup = renderToStaticMarkup(createElement(
+      ForkingSessionsContext.Provider,
+      { value: new Set(["fork-source"]) },
+      row(agent),
+      row(other),
+    ));
+    const [source, rest] = markup.split('data-session-id="other-agent"');
+
+    expect(source).toContain('aria-busy="true"');
+    expect(source).toContain("Forking…");
+    expect(rest).not.toContain("Forking…");
+    expect(renderToStaticMarkup(row(agent))).not.toContain("Forking…");
   });
 
 

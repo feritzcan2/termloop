@@ -25,7 +25,7 @@ import { SidebarFooterHoverCard } from "./SidebarFooterHoverCard.js";
 import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
 import { ProjectSourceRefreshButton } from "./ProjectSourceRefreshButton.js";
 import { SessionRail } from "./SessionRail.js";
-import { SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
+import { ForkingSessionsContext, SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
 import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskSessions } from "./TaskRail.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { OverlayPortal } from "./OverlayPortal.js";
@@ -337,6 +337,8 @@ export type ShellProps = {
   dismissTaskWorktreeRepair(taskId: string, operationId: string): Promise<string | undefined>;
   renameSession(sessionId: string, name: string | null): Promise<string | undefined>;
   forkSession(sessionId: string): Promise<boolean>;
+  /// Source Sessions whose fork request has not returned yet.
+  forkingSessionIds: ReadonlySet<string>;
   repairProviderHistory(sessionId: string): Promise<string | undefined>;
   requestAgentAskTo(sessionId: string, targetAgentId: "claude" | "codex"): Promise<void>;
   requestAgentHandoverTo(sessionId: string, targetSessionId: string): Promise<void>;
@@ -1268,7 +1270,7 @@ export function Shell(props: ShellProps) {
       danger: true,
       perform: () => { if (props.selectedSession) void props.dismissSession(props.selectedSession.id); },
     },
-    selectedAgentForkCommand(props.selectedSession, disabled, props.forkSession, setProviderHistoryRepairSessionId),
+    selectedAgentForkCommand(props.selectedSession, disabled || Boolean(props.selectedSession && props.forkingSessionIds.has(props.selectedSession.id)), props.forkSession, setProviderHistoryRepairSessionId),
     {
       id: "layout.splitRight", title: "Split Pane Right", detail: "Create an empty pane beside the active pane.", group: "Layout", keywords: ["horizontal"],
       disabled: !props.layout || layoutPanes.length >= MAX_LAYOUT_PANES, perform: () => props.splitActivePane("horizontal"),
@@ -1443,7 +1445,7 @@ export function Shell(props: ShellProps) {
         ? "Connecting to server…"
         : "Server connection lost";
   return (
-    <>
+    <ForkingSessionsContext.Provider value={props.forkingSessionIds}>
       {props.connection !== "connected" ? <div className="server-connection-alert" role="status">
         <div><strong>{connectionTitle}</strong><span>{props.connectionMessage ?? "TermLoop will keep retrying in the background."}</span></div>
         <button type="button" onClick={() => setSettingsPage("servers")}>Settings</button>
@@ -2411,7 +2413,7 @@ export function Shell(props: ShellProps) {
         repairProviderHistory={repairBackgroundRelocation}
       />
       </OverlayPortal>
-    </>
+    </ForkingSessionsContext.Provider>
   );
 }
 

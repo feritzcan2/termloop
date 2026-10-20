@@ -686,6 +686,10 @@ export function DesktopApp() {
   const [keepAwakeRefreshToken, setKeepAwakeRefreshToken] = useState(0);
   const [taskSourceRefreshToken, setTaskSourceRefreshToken] = useState(0);
   const [deletingTaskIds, setDeletingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [forkingSessionIds, setForkingSessionIds] = useState<ReadonlySet<string>>(() => new Set());
+  /// Synchronous twin of forkingSessionIds: a repeated shortcut or menu click
+  /// can arrive before React re-renders with the busy row.
+  const forkingSessionIdsRef = useRef(new Set<string>());
   const [shellTerminalOccluded, setShellTerminalOccluded] = useState(false);
   const [shellNativeOverlayOpen, setShellNativeOverlayOpen] = useState(false);
   const assistantReads = useMemo(() => new AssistantReadCoordinator(), []);
@@ -1600,7 +1604,7 @@ export function DesktopApp() {
     }
     if (failure) projectionStore.setMessage(failure);
   }, []);
-  const forkSession = useCallback(async (sessionId: string) => {
+  const requestSessionFork = useCallback(async (sessionId: string) => {
     let failure: string | undefined;
     try {
       const outcome = await sourceApiForSession(sessionId).sessionForkAgent(sessionId);
@@ -1628,6 +1632,17 @@ export function DesktopApp() {
       return false;
     }
   }, []);
+  const forkSession = useCallback(async (sessionId: string) => {
+    if (forkingSessionIdsRef.current.has(sessionId)) return false;
+    forkingSessionIdsRef.current.add(sessionId);
+    setForkingSessionIds(new Set(forkingSessionIdsRef.current));
+    try {
+      return await requestSessionFork(sessionId);
+    } finally {
+      forkingSessionIdsRef.current.delete(sessionId);
+      setForkingSessionIds(new Set(forkingSessionIdsRef.current));
+    }
+  }, [requestSessionFork]);
   const repairProviderHistory = useCallback(async (sessionId: string) => {
     const api = sourceApiForSession(sessionId);
     let failure: string | undefined;
@@ -2631,6 +2646,7 @@ export function DesktopApp() {
       }}
       renameSession={renameSession}
       forkSession={forkSession}
+      forkingSessionIds={forkingSessionIds}
       repairProviderHistory={repairProviderHistory}
       requestAgentAskTo={requestAgentAskTo}
       requestAgentHandoverTo={requestAgentHandoverTo}

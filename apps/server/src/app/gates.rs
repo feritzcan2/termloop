@@ -35,6 +35,12 @@ pub(super) const MAX_ADMITTED_AGENT_RESUMES: usize =
 pub(super) const AGENT_RESUME_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const AGENT_RELOCATION_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const AGENT_RESUME_STABILITY_WINDOW: Duration = Duration::from_secs(1);
+/// A user waits on every fork. A provider exit after this window leaves a
+/// visible exited fork instead of an automatic retry; resume keeps the full window.
+pub(super) const AGENT_FORK_STABILITY_WINDOW: Duration = Duration::from_millis(300);
+/// Diagnostic only: how long after readiness a confirmed fork is still watched
+/// for an exit that the shorter stability window would have caught.
+pub(super) const AGENT_FORK_EXIT_OBSERVATION_WINDOW: Duration = Duration::from_secs(1);
 pub(super) const AGENT_RESUME_FINALIZATION_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const AGENT_RESUME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
