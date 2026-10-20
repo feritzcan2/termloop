@@ -131,6 +131,24 @@ pub fn powershell_or_posix_hook_command(executable: &Path, args: &[&str]) -> Str
     }
 }
 
+/// Renders an exact executable invocation for command-hook providers that use
+/// a POSIX shell on every host, including Git Bash on Windows. Bash consumes
+/// backslashes in verbatim (`\\?\`) and UNC prefixes, so Windows paths drop the
+/// verbatim prefix and use forward slashes.
+pub fn posix_hook_command(executable: &Path, args: &[&str]) -> String {
+    #[cfg(windows)]
+    {
+        let executable = crate::path::subprocess_path_argument(executable)
+            .to_string_lossy()
+            .replace('\\', "/");
+        render_posix_hook_command(Path::new(&executable), args)
+    }
+    #[cfg(not(windows))]
+    {
+        render_posix_hook_command(executable, args)
+    }
+}
+
 #[cfg(any(windows, test))]
 fn render_powershell_hook_command(executable: &Path, args: &[&str]) -> String {
     let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
@@ -140,7 +158,6 @@ fn render_powershell_hook_command(executable: &Path, args: &[&str]) -> String {
         .join(" ")
 }
 
-#[cfg(any(not(windows), test))]
 fn render_posix_hook_command(executable: &Path, args: &[&str]) -> String {
     let quote = |value: &str| format!("'{}'", value.replace('\'', "'\"'\"'"));
     std::iter::once(quote(&executable.to_string_lossy()))
@@ -299,6 +316,25 @@ mod tests {
         assert_eq!(
             render_posix_hook_command(Path::new("/Applications/TermLoop's/server"), &["hook"]),
             "'/Applications/TermLoop'\"'\"'s/server' 'hook'"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn posix_hook_command_survives_git_bash_for_verbatim_and_unc_paths() {
+        assert_eq!(
+            posix_hook_command(
+                Path::new(r"\\?\C:\Program Files\TermLoop's\termloop-server.exe"),
+                &["hook"]
+            ),
+            "'C:/Program Files/TermLoop'\"'\"'s/termloop-server.exe' 'hook'"
+        );
+        assert_eq!(
+            posix_hook_command(
+                Path::new(r"\\?\UNC\server\share\termloop-server.exe"),
+                &["hook"]
+            ),
+            "'//server/share/termloop-server.exe' 'hook'"
         );
     }
 

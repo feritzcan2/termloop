@@ -99,7 +99,7 @@ pub use process_tree::{ProcessTreeGuard, SignalDelivery, attach_process_tree_gua
 pub use runtime::{
     MonotonicDeadline, current_epoch_ms, default_shell, generate_capability_token,
     generate_opaque_id, generate_opaque_runtime_token, generate_runtime_epoch, generate_uuid_v4,
-    powershell_or_posix_hook_command, reserve_loopback_port, shell_command,
+    posix_hook_command, powershell_or_posix_hook_command, reserve_loopback_port, shell_command,
     shell_command_with_setup_marker, terminate_for_unrecoverable_runtime_stall,
     wait_for_daemon_shutdown_signal,
 };

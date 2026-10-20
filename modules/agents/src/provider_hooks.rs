@@ -25,7 +25,7 @@ pub fn provider_hook_settings(
     };
     match descriptor.adapter {
         BuiltinAgentAdapter::Claude => {
-            let command = format!("\"{}\" hook", executable.display());
+            let command = termloop_platform::posix_hook_command(executable, &["hook"]);
             claude_hook_settings(&command).map(Some)
         }
         BuiltinAgentAdapter::Gemini => {
@@ -171,6 +171,10 @@ mod tests {
         assert_eq!(
             claude.delivery,
             ProviderHookSettingsDelivery::InlineSettings
+        );
+        assert_eq!(
+            claude_json["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "'/private/termloop hook' 'hook'"
         );
         assert!(claude_json["hooks"].get("UserPromptSubmit").is_some());
         assert!(claude_json["hooks"].get("BeforeAgent").is_none());
