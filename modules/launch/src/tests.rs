@@ -91,11 +91,20 @@ fn opencode_v2_uses_private_server_configuration_for_every_model_and_permission(
                 .iter()
                 .map(String::as_str)
                 .collect::<Vec<_>>();
-            // The Windows `.cmd` fixture is spawned as `cmd.exe /d /s /c <shim>`;
-            // the manifest shows only the provider's own arguments.
-            let shim_prefix = if cfg!(windows) { 4 } else { 0 };
-            assert_eq!(delivered.len(), displayed.len() + shim_prefix);
-            assert_eq!(delivered[shim_prefix..], displayed[..]);
+            // A `.cmd` fixture is spawned as `cmd.exe /d /s /c <shim>`; the
+            // manifest shows only the provider's own arguments.
+            let shim = &delivered[..delivered
+                .len()
+                .checked_sub(displayed.len())
+                .expect("argv keeps every displayed argument")];
+            assert!(
+                shim.is_empty()
+                    || (shim.len() == 4
+                        && shim[..3] == ["/d", "/s", "/c"]
+                        && shim[3].ends_with("opencode.cmd")),
+                "unexpected argv prefix {shim:?}"
+            );
+            assert_eq!(delivered[shim.len()..], displayed[..]);
         }
     }
     std::fs::remove_dir_all(directory).unwrap();
