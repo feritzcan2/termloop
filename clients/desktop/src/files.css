@@ -41,7 +41,7 @@
 .app-shell.files-sidebar-open { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--files-sidebar-width) var(--files-activity-width); }
 .sidebar-resize-handle.files-sidebar-resize-handle { right: calc(var(--files-sidebar-width) + var(--files-activity-width)); left: auto; transform: translateX(50%); }
 .files-activity-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; padding: 8px 0; border-left: 1px solid var(--border); background: var(--bg-sidebar); }
-.files-activity-bar button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 34px; padding: 6px 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer, var(--text-muted)); font: 600 8.5px/1 var(--font-ui); }
+.files-activity-bar button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 37px; padding: 6px 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer, var(--text-muted)); font: 600 8.5px/1 var(--font-ui); letter-spacing: -.01em; }
 .files-activity-bar button:hover { background: var(--hover); color: var(--sidebar-text); }
 .files-activity-bar button.selected { color: var(--sidebar-text); }
 .files-activity-bar button.selected::before { position: absolute; top: 6px; bottom: 6px; right: -3px; width: 2px; border-radius: 2px; background: var(--accent); content: ""; }

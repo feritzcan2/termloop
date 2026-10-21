@@ -2472,6 +2472,13 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .ar-routine-builder .agent-action-setup { min-width: 48px; }
 .ar-routine-builder > .ar-step-improver-group { width: 100%; }
 .ar-routine-builder > .ar-step-improver-group .ar-step-improver { flex: 1; justify-content: flex-start; }
+/* The right Steward sidebar can be narrower than the old left rail: grid
+   tracks may shrink below their nowrap content, and long labels wrap. */
+.steward-sidebar > .files-sidebar-body { overflow-x: hidden; }
+.steward-sidebar :is(.assistant-rail, .ar-tree, .ar-routines, .ar-playbook, .ar-pipeline, .ar-routine-builder) { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.steward-sidebar .ar-tree { margin-left: 8px; }
+.steward-sidebar .ar-routine-builder { justify-items: stretch; }
+.steward-sidebar .ar-routine-builder .agent-action-main { min-width: 0; white-space: normal; text-align: left; }
 .ar-builder-context { display: block; max-width: 360px; margin-top: 3px; color: var(--sidebar-dimmer); line-height: 1.35; }
 .ar-builder-context strong { color: var(--sidebar-text); font-weight: 650; }
 .ar-builder-state { color: var(--sidebar-dimmer); font: 9px/1.35 var(--font-mono); }
