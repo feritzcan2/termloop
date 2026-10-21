@@ -1,5 +1,6 @@
 import type { WorkspaceDirectoryResult, WorkspaceFileEntryDto, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import { FileSearch } from "./file-search.js";
+import { controlErrorIsServiceBusy, controlErrorMessage } from "./control-error.js";
 
 export type FilesSubject = { projectId: string; taskId: string | null; title: string };
 export type FilesReader = {
@@ -16,7 +17,14 @@ export type FileBrowserSnapshot = {
   refreshing: boolean;
 };
 
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Files could not be loaded. Try Refresh.";
+// The daemon answers "repository is unavailable" when its Git and file
+// observations stay queued past their deadline, typically while a Project's
+// first checkout summaries run. A listing waits through that instead of failing.
+const busy = (error: unknown) => controlErrorIsServiceBusy(error) || /repository is unavailable/iu.test(controlErrorMessage(error));
+export const FILE_LIST_RETRY_DELAYS_MS = [500, 1500, 3000];
+const errorMessage = (error: unknown) => busy(error) ? "The daemon is still busy reading this project. Try Refresh."
+  : error instanceof Error ? controlErrorMessage(error) : "Files could not be loaded. Try Refresh.";
+const wait = (ms: number) => new Promise<void>((done) => { setTimeout(done, ms); });
 
 /** In-memory observation state. Generations isolate refresh and
  * unmount from late responses, including responses from a disconnected source. */
@@ -52,15 +60,23 @@ export class FileBrowser {
     if (existing) return existing;
     const generation = this.generation;
     this.directory(path, { status: "loading" });
-    const request = Promise.resolve().then(() => this.reader.list(path)).then((result) => {
-      if (!this.active || generation !== this.generation) return undefined;
-      if (path !== "" && !this.snapshot.expanded.has(path)) return undefined;
+    const wanted = () => this.active && generation === this.generation && (path === "" || this.snapshot.expanded.has(path));
+    const list = async (): Promise<WorkspaceDirectoryResult> => {
+      for (const delay of FILE_LIST_RETRY_DELAYS_MS) {
+        try { return await this.reader.list(path); } catch (error) {
+          if (!busy(error)) throw error;
+        }
+        await wait(delay);
+        if (!wanted()) throw new Error("superseded");
+      }
+      return this.reader.list(path);
+    };
+    const request = Promise.resolve().then(list).then((result) => {
+      if (!wanted()) return undefined;
       this.directory(path, { status: "ready", result });
       return result;
     }).catch((error: unknown) => {
-      if (this.active && generation === this.generation && (path === "" || this.snapshot.expanded.has(path))) {
-        this.directory(path, { status: "error", message: errorMessage(error) });
-      }
+      if (wanted()) this.directory(path, { status: "error", message: errorMessage(error) });
       return undefined;
     }).finally(() => {
       if (generation === this.generation) this.pending.delete(path);
