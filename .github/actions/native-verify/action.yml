@@ -29,6 +29,9 @@ runs:
     - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         version: 10.14.0
+        # A fresh per-job install; the persistent default (~/setup-pnpm) is
+        # reused without verification and is not cleaned on Windows runners.
+        dest: ${{ runner.temp }}/setup-pnpm
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       if: inputs.cache-pnpm == 'true'
       with:
