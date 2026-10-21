@@ -1647,9 +1647,362 @@
       "result": {
         "$ref": "#/$defs/workspaceFileWriteResult"
       }
+    },
+    "sourceControl.status": {
+      "params": {
+        "$ref": "#/$defs/sourceControlRootParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlStatusResult"
+      }
+    },
+    "sourceControl.stage": {
+      "params": {
+        "$ref": "#/$defs/sourceControlEntriesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlMutationResult"
+      }
+    },
+    "sourceControl.unstage": {
+      "params": {
+        "$ref": "#/$defs/sourceControlEntriesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlMutationResult"
+      }
+    },
+    "sourceControl.discard": {
+      "params": {
+        "$ref": "#/$defs/sourceControlEntriesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlMutationResult"
+      }
+    },
+    "sourceControl.commit": {
+      "params": {
+        "$ref": "#/$defs/sourceControlCommitParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlCommitResult"
+      }
+    },
+    "sourceControl.push": {
+      "params": {
+        "$ref": "#/$defs/sourceControlRootParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlSyncResult"
+      }
+    },
+    "sourceControl.pull": {
+      "params": {
+        "$ref": "#/$defs/sourceControlRootParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlSyncResult"
+      }
+    },
+    "sourceControl.fetch": {
+      "params": {
+        "$ref": "#/$defs/sourceControlRootParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sourceControlSyncResult"
+      }
     }
   },
   "$defs": {
+    "sourceControlRootParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlRootParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "sourceControlEntriesParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlEntriesParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId",
+        "observationId",
+        "entryIds"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "observationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "entryIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "sourceControlCommitParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlCommitParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId",
+        "message"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "x-utf8-max-bytes": 65536
+        }
+      }
+    },
+    "sourceControlBranchDto": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlBranchDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "head_state",
+        "upstream",
+        "upstream_gone",
+        "ahead",
+        "behind"
+      ],
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "head_state": {
+          "type": "string",
+          "enum": [
+            "attached",
+            "detached",
+            "unborn"
+          ]
+        },
+        "upstream": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "upstream_gone": {
+          "type": "boolean"
+        },
+        "ahead": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "behind": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "sourceControlStatusResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlStatusResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "task_id",
+        "observation_id",
+        "branch",
+        "entries",
+        "truncated"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "branch": {
+          "$ref": "#/$defs/sourceControlBranchDto"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskWorktreeChangeEntryDto"
+          },
+          "maxItems": 512
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sourceControlMutationResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlMutationResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "task_id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "sourceControlCommitResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlCommitResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "task_id",
+        "head_oid"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "head_oid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      }
+    },
+    "sourceControlSyncResult": {
+      "x-codegen": true,
+      "x-codegen-name": "SourceControlSyncResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "task_id",
+        "action"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "push",
+            "publish",
+            "pull",
+            "fetch"
+          ]
+        }
+      }
+    },
     "workspaceFilesParams": {
       "x-codegen": true,
       "x-codegen-name": "WorkspaceFilesParams",
@@ -2141,7 +2494,15 @@
         "workspace.directoryList",
         "workspace.fileRead",
         "workspace.fileSearch",
-        "workspace.fileWrite"
+        "workspace.fileWrite",
+        "sourceControl.status",
+        "sourceControl.stage",
+        "sourceControl.unstage",
+        "sourceControl.discard",
+        "sourceControl.commit",
+        "sourceControl.push",
+        "sourceControl.pull",
+        "sourceControl.fetch"
       ]
     },
     "eventName": {

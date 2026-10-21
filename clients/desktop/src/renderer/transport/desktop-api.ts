@@ -1,3 +1,4 @@
+import type { SourceControlCommitParams, SourceControlCommitResult, SourceControlEntriesParams, SourceControlMutationResult, SourceControlRootParams, SourceControlStatusResult, SourceControlSyncResult } from "@termloop/contract/current";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
 import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams, WorkflowCreatorDraftGetResult } from "@termloop/contract/current";
@@ -295,6 +296,14 @@ export type DesktopApi = {
   workspaceFileRead(params: WorkspaceFilesParams): Promise<WorkspaceFileReadResult>;
   workspaceFileSearch(params: WorkspaceFileSearchParams): Promise<WorkspaceFileSearchResult>;
   workspaceFileWrite(params: WorkspaceFileWriteParams): Promise<WorkspaceFileWriteResult>;
+  sourceControlStatus(params: SourceControlRootParams): Promise<SourceControlStatusResult>;
+  sourceControlStage(params: SourceControlEntriesParams): Promise<SourceControlMutationResult>;
+  sourceControlUnstage(params: SourceControlEntriesParams): Promise<SourceControlMutationResult>;
+  sourceControlDiscard(params: SourceControlEntriesParams): Promise<SourceControlMutationResult>;
+  sourceControlCommit(params: SourceControlCommitParams): Promise<SourceControlCommitResult>;
+  sourceControlPush(params: SourceControlRootParams): Promise<SourceControlSyncResult>;
+  sourceControlPull(params: SourceControlRootParams): Promise<SourceControlSyncResult>;
+  sourceControlFetch(params: SourceControlRootParams): Promise<SourceControlSyncResult>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   projectWorktreeDiff(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreeDiffResult>;

@@ -786,6 +786,27 @@ mod tests {
         assert!(!cancellation_safe_method(method));
     }
 
+    #[test]
+    fn source_control_requires_full_control_and_is_not_cancellation_safe() {
+        for method in [
+            "sourceControl.status",
+            "sourceControl.stage",
+            "sourceControl.unstage",
+            "sourceControl.discard",
+            "sourceControl.commit",
+            "sourceControl.push",
+            "sourceControl.pull",
+            "sourceControl.fetch",
+        ] {
+            assert!(protocol::METHODS.contains(&method));
+            assert!(scope_allows_method(ClientScope::Full, method));
+            assert!(!scope_allows_method(ClientScope::ReadOnly, method));
+            assert!(!scope_allows_method(ClientScope::Companion, method));
+            assert!(!scope_allows_method(ClientScope::Hook, method));
+            assert!(!cancellation_safe_method(method));
+        }
+    }
+
     fn request_value(identity: serde_json::Value) -> serde_json::Value {
         json!({
             "id": "identity-test",

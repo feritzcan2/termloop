@@ -26,6 +26,15 @@ pub enum GitOperation {
     BranchCommitSummary,
     CommitChanges,
     ReadPreImage,
+    SourceControlStatus,
+    StagePaths,
+    UnstagePaths,
+    DiscardPaths,
+    RemoveUntracked,
+    Commit,
+    Push,
+    Pull,
+    Fetch,
 }
 
 impl std::fmt::Display for GitOperation {
@@ -55,6 +64,15 @@ impl std::fmt::Display for GitOperation {
             Self::ReadPreImage => "readPreImage",
             Self::BranchCommitSummary => "branchCommitSummary",
             Self::CommitChanges => "commitChanges",
+            Self::SourceControlStatus => "sourceControlStatus",
+            Self::StagePaths => "stagePaths",
+            Self::UnstagePaths => "unstagePaths",
+            Self::DiscardPaths => "discardPaths",
+            Self::RemoveUntracked => "removeUntracked",
+            Self::Commit => "commit",
+            Self::Push => "push",
+            Self::Pull => "pull",
+            Self::Fetch => "fetch",
         };
         formatter.write_str(value)
     }
@@ -71,6 +89,25 @@ pub enum GitFailureKind {
     UnsupportedRepository,
     CorruptRepository,
     DubiousOwnership,
+}
+
+/// A stable classification of why Git refused an explicit Source Control
+/// request. It never carries Git's own output, which can echo URLs, hook text,
+/// or paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceControlRejection {
+    NothingToCommit,
+    EmptyMessage,
+    IdentityMissing,
+    SigningFailed,
+    /// A hook or another commit precondition refused the commit.
+    CommitRejected,
+    UnmergedPaths,
+    PushRejected,
+    PullNotFastForward,
+    LocalChangesWouldBeOverwritten,
+    NoUpstream,
+    NoRemote,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +145,7 @@ pub enum GitError {
     ParseFailed {
         operation: GitOperation,
     },
+    SourceControlRejected(SourceControlRejection),
 }
 
 impl std::fmt::Display for GitError {
@@ -156,6 +194,9 @@ impl std::fmt::Display for GitError {
             } => write!(formatter, "Git {version} does not support {capability}"),
             Self::ParseFailed { operation } => {
                 write!(formatter, "Git output for {operation} was unsupported")
+            }
+            Self::SourceControlRejected(rejection) => {
+                write!(formatter, "Git refused the request ({rejection:?})")
             }
         }
     }
@@ -246,7 +287,7 @@ fn classify_stderr(stderr: &[u8]) -> GitFailureKind {
     }
 }
 
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)

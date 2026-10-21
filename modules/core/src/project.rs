@@ -370,6 +370,8 @@ impl CoreRuntime {
         let task_id_set = task_ids.iter().cloned().collect::<HashSet<_>>();
         self.project_change_observations
             .retain_outside_project(&project_id);
+        self.source_control_observations
+            .retain_outside_project(&project_id);
         self.worktree_change_observations
             .retain_outside_tasks(&task_id_set);
         self.branch_commit_observations

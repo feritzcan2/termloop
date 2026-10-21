@@ -450,7 +450,7 @@ pub(crate) fn split_remote_tracking_ref(reference: &[u8]) -> Result<(&[u8], &[u8
 /// the same thing to a caller: the remote's current state could not be read.
 /// They stay one typed classification so no URL, host, or credential detail
 /// leaks past this boundary.
-fn is_remote_unavailable(stderr: &[u8]) -> bool {
+pub(crate) fn is_remote_unavailable(stderr: &[u8]) -> bool {
     [
         &b"Could not read from remote repository"[..],
         b"does not appear to be a git repository",
@@ -474,7 +474,7 @@ fn is_remote_unavailable(stderr: &[u8]) -> bool {
     .any(|needle| contains(stderr, needle))
 }
 
-fn process_value(bytes: &[u8], operation: GitOperation) -> Result<OsString, GitError> {
+pub(crate) fn process_value(bytes: &[u8], operation: GitOperation) -> Result<OsString, GitError> {
     termloop_platform::os_string_from_process_bytes(bytes.to_vec())
         .map_err(|error| crate::error::map_platform_error(error, operation))
 }

@@ -12,6 +12,7 @@ mod current_playbook_evaluation;
 mod current_relocation;
 mod current_repair;
 mod current_run;
+mod current_source_control;
 mod current_steward;
 mod current_steward_authority;
 mod current_task_source;

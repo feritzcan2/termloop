@@ -11,6 +11,7 @@ mod pre_image;
 mod remote;
 mod repair;
 mod repository;
+mod source_control;
 #[cfg(feature = "test-support")]
 pub mod test_support;
 mod worktree;
@@ -33,7 +34,7 @@ pub use commit_changes::{
     BRANCH_COMMIT_LIST_MAX_ENTRIES, BranchCommit, BranchCommitListObservation,
     COMMIT_CHANGE_LIST_MAX_ENTRIES, CommitChangeEntry, CommitChangesObservation,
 };
-pub use error::{GitError, GitFailureKind, GitOperation};
+pub use error::{GitError, GitFailureKind, GitOperation, SourceControlRejection};
 pub use health::{
     ChangeState, ContentState, LockState, SubmoduleFacts, SubmoduleState, UpstreamState,
     WorktreeHealthObservation, WorktreeObservationBudget, WorktreeStatusFacts,
@@ -44,6 +45,10 @@ pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;
 pub use repository::{
     GitRefName, HeadState, LocalBranchList, ObjectId, RemoteBranchList, RepositoryFacts,
+};
+pub use source_control::{
+    SOURCE_CONTROL_COMMIT_DEADLINE, SOURCE_CONTROL_INDEX_DEADLINE, SOURCE_CONTROL_NETWORK_DEADLINE,
+    SOURCE_CONTROL_STATUS_DEADLINE, SourceControlStatusObservation, SourceControlUpstream,
 };
 pub use worktree::{GitText, RegisteredPathState, WorktreeCheckout, WorktreeFacts, WorktreeMarker};
 pub use worktree_branches::{

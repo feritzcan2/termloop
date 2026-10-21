@@ -186,3 +186,26 @@ pub fn clean_untracked(runner: &GitRunner, repository: &Path) -> Result<(), GitE
     runner.checked(GitOperation::CreateRef, repository, ["clean", "-fd"])?;
     Ok(())
 }
+
+/// Sets one repository-local config value, such as a fixture identity or a
+/// disabled hooks path, without touching global or system config.
+pub fn set_config(
+    runner: &GitRunner,
+    repository: &Path,
+    key: &str,
+    value: &str,
+) -> Result<(), GitError> {
+    runner.checked(GitOperation::CreateRef, repository, ["config", key, value])?;
+    Ok(())
+}
+
+/// Turns an existing empty directory into a bare repository that a fixture
+/// can push to.
+pub fn initialize_bare_repository(runner: &GitRunner, path: &Path) -> Result<(), GitError> {
+    runner.checked(
+        GitOperation::CreateRef,
+        path,
+        ["init", "--quiet", "--bare", "--initial-branch=main"],
+    )?;
+    Ok(())
+}

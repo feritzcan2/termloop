@@ -4,7 +4,7 @@ import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { RightActivityBar } from "./RightActivityBar.js";
 import { SourceControlSidebar } from "./SourceControlSidebar.js";
 import { useSourceControl } from "./use-source-control.js";
-import type { SourceControlSubject } from "../source-control-status.js";
+import type { SourceControlApi, SourceControlSubject } from "../source-control-status.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
-import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskEffectiveBranch, taskJiraIssueKey } from "../model.js";
+import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
 import { newestPullRequests, taskCardTitle } from "../task-card-copy.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
@@ -295,6 +295,7 @@ export type ShellProps = {
   inspectTaskWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;
   cleanupTaskWorktree(params: TaskCleanupWorktreeParams): Promise<string | undefined>;
   listProjectWorktreeChanges(projectId: string): Promise<ProjectWorktreeChangeListResult>;
+  sourceControlApi: SourceControlApi;
   getProjectWorktreeDiff(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreeDiffResult>;
   getProjectWorktreePreImage(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreePreImageResult>;
   listTaskWorktreeChanges(taskId: string): Promise<TaskWorktreeChangeListResult>;
@@ -890,14 +891,13 @@ export function Shell(props: ShellProps) {
   const toggleFilesSidebar = () => toggleRightSidebar("files");
   // Source Control shares the Files root: the Project checkout or one Task worktree.
   const sourceControlSubject: SourceControlSubject | undefined = filesSidebar.open && filesSidebar.view === "sourceControl" && editorSubject
-    ? editorSubject.taskId ? { kind: "task", id: editorSubject.taskId } : { kind: "project", id: editorSubject.projectId } : undefined;
+    ? { projectId: editorSubject.projectId, taskId: editorSubject.taskId ?? null } : undefined;
   const sourceControl = useSourceControl(
     sourceControlSubject,
     filesTask
       ? `${filesTask.worktree_health?.observation_sequence ?? ""}`
       : `${props.projectWorktreeSummary?.change_count ?? ""}:${props.projectWorktreeSummary?.checked_out_branch ?? ""}`,
-    props.listProjectWorktreeChanges,
-    props.listTaskWorktreeChanges,
+    props.sourceControlApi,
   );
   const openSourceControlChanges = (source: ChangesOpenSource) => setChangesPresentation(filesTask
     ? { kind: "task", taskId: filesTask.id, source }
@@ -2242,15 +2242,14 @@ export function Shell(props: ShellProps) {
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</div>
           </aside> : filesSidebar.view === "sourceControl" ? <SourceControlSidebar
+            key={sourceControlSubject ? `${sourceControlSubject.projectId}:${sourceControlSubject.taskId ?? ""}` : ""}
             subject={sourceControlSubject}
             projectName={props.selectedProject?.name}
             tasks={props.projectTasks.filter((task) => task.worktree)}
             selectedTaskId={filesTask?.id ?? null}
             snapshot={sourceControl.snapshot}
-            branch={filesTask ? taskEffectiveBranch(filesTask) : props.projectWorktreeSummary?.checked_out_branch ?? undefined}
-            upstream={filesTask?.worktree_health?.upstream_state}
+            actions={sourceControl.status}
             selectRoot={(taskId) => openFiles(taskId, "sourceControl")}
-            refresh={() => { void sourceControl.status.refresh(); }}
             openChange={(entry) => openSourceControlChanges({ kind: "local", entry: { path: entry.display_path, side: entry.side } })}
             openAll={() => openSourceControlChanges({ kind: "local" })}
             close={() => updateFilesSidebar({ open: false })}
