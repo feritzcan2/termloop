@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WorkspaceDirectoryResult, WorkspaceFileSearchResult } from "@termloop/contract/current";
-import { FileBrowser, fileTreeRows, type FileBrowserSnapshot } from "../src/renderer/file-browser.js";
+import { FILE_LIST_RETRY_DELAYS_MS, FileBrowser, fileTreeRows, type FileBrowserSnapshot } from "../src/renderer/file-browser.js";
 import { FileTree } from "../src/renderer/ui/FileTree.js";
 
 const directory = (path: string, entries: WorkspaceDirectoryResult["entries"] = []): WorkspaceDirectoryResult => ({ path, entries, truncated: false });
@@ -72,6 +72,31 @@ describe("Files observations", () => {
     browser.toggle("src"); browser.toggle("src");
     child.resolve(directory("src")); await settle();
     expect(browser.getSnapshot().directories.has("src")).toBe(false);
+  });
+
+  it("keeps loading while the daemon's observation queue is busy and then explains it", async () => {
+    vi.useFakeTimers();
+    try {
+      const unavailable = new Error("Error invoking remote method 'termloop:workspace-directory-list': TermLoopControlError: repository is unavailable");
+      const list = vi.fn().mockRejectedValueOnce(unavailable).mockResolvedValueOnce(directory("", [{ name: "a.ts", path: "a.ts", kind: "file" }]));
+      const browser = new FileBrowser({ list, search });
+      browser.start(); await settle();
+      expect(browser.getSnapshot().directories.get("")?.status).toBe("loading");
+      await vi.advanceTimersByTimeAsync(FILE_LIST_RETRY_DELAYS_MS[0]!);
+      expect(fileTreeRows(browser.getSnapshot())).toMatchObject([{ entry: { name: "a.ts" } }]);
+
+      list.mockReset().mockRejectedValue(unavailable);
+      const refreshed = browser.refresh();
+      await vi.runAllTimersAsync(); await refreshed;
+      expect(list).toHaveBeenCalledTimes(FILE_LIST_RETRY_DELAYS_MS.length + 1);
+      expect(fileTreeRows(browser.getSnapshot())).toEqual([{ kind: "message", path: "", depth: 0, message: "The daemon is still busy reading this project. Try Refresh.", error: true }]);
+
+      list.mockReset().mockRejectedValue(new Error("Error invoking remote method 'termloop:workspace-directory-list': TermLoopControlError: invalid workspace path"));
+      await browser.refresh();
+      expect(list).toHaveBeenCalledOnce();
+      expect(fileTreeRows(browser.getSnapshot())).toMatchObject([{ message: "invalid workspace path" }]);
+      browser.dispose();
+    } finally { vi.useRealTimers(); }
   });
 });
 

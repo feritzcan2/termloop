@@ -1,4 +1,5 @@
 import type { WorkspaceFileEntryDto, WorkspaceFileSearchResult } from "@termloop/contract/current";
+import { controlErrorMessage } from "./control-error.js";
 
 export type FileSearchSnapshot = {
   query: string;
@@ -56,7 +57,7 @@ export class FileSearch {
       this.publish({ status: "ready", entries: result.entries, total: result.total, incomplete: result.incomplete, unreadable: result.unreadable });
     } catch (error) {
       if (!current()) return;
-      this.publish({ status: "error", ...EMPTY, error: error instanceof Error ? error.message : "File search failed. Try Refresh." });
+      this.publish({ status: "error", ...EMPTY, error: error instanceof Error ? controlErrorMessage(error) : "File search failed. Try Refresh." });
     }
   }
 }
