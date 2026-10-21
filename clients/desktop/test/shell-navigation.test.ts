@@ -9,6 +9,7 @@ import {
   openWorkspaceSession,
   sessionRecoveryMessage,
   sessionShowsRecoveryStrip,
+  rightSidebarToggle,
   shellAssistantStageVisible,
   shellNativeOverlayOpen,
   shellTerminalOccluded,
@@ -101,6 +102,13 @@ describe("Shell navigation from the changes editor", () => {
     expect(shellAssistantStageVisible("sourceControl", selection)).toBe(false);
     expect(shellAssistantStageVisible(undefined, selection)).toBe(false);
     expect(shellAssistantStageVisible("steward", undefined)).toBe(false);
+  });
+
+  it("opens the Steward rail without changing the stage until an assistant is picked", () => {
+    expect(rightSidebarToggle({ open: false, view: "files" }, "steward")).toEqual({ update: { open: true, view: "steward" }, clearAssistant: true });
+    expect(rightSidebarToggle({ open: true, view: "sourceControl" }, "steward")).toEqual({ update: { open: true, view: "steward" }, clearAssistant: true });
+    expect(rightSidebarToggle({ open: true, view: "steward" }, "steward")).toEqual({ update: { open: false }, clearAssistant: false });
+    expect(rightSidebarToggle({ open: true, view: "steward" }, "files")).toEqual({ update: { open: true, view: "files" }, clearAssistant: false });
   });
 });
 

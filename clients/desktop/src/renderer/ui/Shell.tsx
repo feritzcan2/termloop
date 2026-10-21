@@ -471,6 +471,17 @@ export function shellAssistantStageVisible(
   return rightSidebarView === "steward" && selection !== undefined;
 }
 
+/// An activity bar click. Choosing the open view closes the sidebar. Opening
+/// Steward only reveals its rail: the stage changes when the reader picks an
+/// assistant there, so a pick left over from before must not reappear.
+export function rightSidebarToggle(
+  current: Pick<FilesSidebarPreference, "open" | "view">,
+  view: RightSidebarView,
+): { update: Partial<FilesSidebarPreference>; clearAssistant: boolean } {
+  if (current.open && current.view === view) return { update: { open: false }, clearAssistant: false };
+  return { update: { open: true, view }, clearAssistant: view === "steward" };
+}
+
 export function shellTerminalOccluded(
   changesOpen: boolean,
   sidebarDragging: boolean,
@@ -872,9 +883,9 @@ export function Shell(props: ShellProps) {
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
   const toggleRightSidebar = (view: RightSidebarView) => {
-    if (filesSidebar.open && filesSidebar.view === view) updateFilesSidebar({ open: false });
-    else if (view === "steward" && !assistantSelection && props.selectedProject) openAssistant({ kind: "steward" });
-    else updateFilesSidebar({ open: true, view });
+    const toggle = rightSidebarToggle(filesSidebar, view);
+    if (toggle.clearAssistant) setAssistantSelection(undefined);
+    updateFilesSidebar(toggle.update);
   };
   const toggleFilesSidebar = () => toggleRightSidebar("files");
   // Source Control shares the Files root: the Project checkout or one Task worktree.
