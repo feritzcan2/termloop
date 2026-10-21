@@ -14,7 +14,10 @@ const composerProps = () => ({
   projects: [{ id: "project-1", name: "TermLoop", folder_path: "/tmp/termloop" }],
   selectedProject: { id: "project-1", name: "TermLoop", folder_path: "/tmp/termloop" },
   capabilities: [capability], profiles: [],
-  pasteImage: vi.fn(), restoreImage: vi.fn(), discardImage: vi.fn(), preview: vi.fn(), launch: vi.fn(), close: vi.fn(),
+  pasteImage: vi.fn(), restoreImage: vi.fn(), discardImage: vi.fn(),
+  // The composer debounces a preview after prompt edits; keep it pending so a
+  // timer that outlives a test never dereferences an undefined result.
+  preview: vi.fn(() => new Promise<never>(() => undefined)), launch: vi.fn(), close: vi.fn(),
 });
 
 describe("Quick Action shortcut controls", () => {
