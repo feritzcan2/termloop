@@ -11,6 +11,9 @@ import {
   type WorkspaceFilesParams,
   type WorkspaceFileSearchParams,
   type WorkspaceFileWriteParams,
+  type SourceControlCommitParams,
+  type SourceControlEntriesParams,
+  type SourceControlRootParams,
   type ContextBankCatalogGetParams,
   type ContextBankFileGetParams,
   type ContextBankFileSaveParams,
@@ -446,6 +449,30 @@ handleIpc("termloop:workspace-file-search", (_event, params: WorkspaceFileSearch
 );
 handleIpc("termloop:workspace-file-write", (_event, params: WorkspaceFileWriteParams) =>
   controlCall("workspace.fileWrite", params),
+);
+handleIpc("termloop:source-control-status", (_event, params: SourceControlRootParams) =>
+  controlCall("sourceControl.status", params),
+);
+handleIpc("termloop:source-control-stage", (_event, params: SourceControlEntriesParams) =>
+  controlCall("sourceControl.stage", params),
+);
+handleIpc("termloop:source-control-unstage", (_event, params: SourceControlEntriesParams) =>
+  controlCall("sourceControl.unstage", params),
+);
+handleIpc("termloop:source-control-discard", (_event, params: SourceControlEntriesParams) =>
+  controlCall("sourceControl.discard", params),
+);
+handleIpc("termloop:source-control-commit", (_event, params: SourceControlCommitParams) =>
+  controlCall("sourceControl.commit", params),
+);
+handleIpc("termloop:source-control-push", (_event, params: SourceControlRootParams) =>
+  controlCall("sourceControl.push", params),
+);
+handleIpc("termloop:source-control-pull", (_event, params: SourceControlRootParams) =>
+  controlCall("sourceControl.pull", params),
+);
+handleIpc("termloop:source-control-fetch", (_event, params: SourceControlRootParams) =>
+  controlCall("sourceControl.fetch", params),
 );
 handleIpc("termloop:project-worktree-summary", (_event, projectId: string) =>
   controlCall("project.worktreeSummary", { projectId }),

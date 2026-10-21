@@ -18,7 +18,9 @@ use super::super::invalidation::{
     queue_durable_commit_invalidation, refresh_task_presence_for_cwd,
 };
 use super::super::{AppState, current_epoch_ms};
-use super::errors::{git_observation_error_response, response_conflict, response_error};
+use super::errors::{
+    git_observation_error_response, response_conflict, response_error, source_control_refusal,
+};
 use super::handlers::{
     bind_task_branch, cleanup_task_worktree, close_session, close_task, create_skill_definition,
     create_skill_package, delete_project, delete_steward_configuration,
@@ -1605,6 +1607,29 @@ async fn dispatch_inner(
             "workspace.fileWrite" => {
                 super::handlers::write_workspace_file(request.params, state).await
             }
+            "sourceControl.status" => {
+                super::handlers::source_control_status(request.params, state).await
+            }
+            method @ ("sourceControl.stage"
+            | "sourceControl.unstage"
+            | "sourceControl.discard"
+            | "sourceControl.commit"
+            | "sourceControl.push"
+            | "sourceControl.pull"
+            | "sourceControl.fetch") => {
+                use super::handlers::SourceControlRequest as Request;
+                let source_control = match method {
+                    "sourceControl.stage" => Request::Stage,
+                    "sourceControl.unstage" => Request::Unstage,
+                    "sourceControl.discard" => Request::Discard,
+                    "sourceControl.commit" => Request::Commit,
+                    "sourceControl.push" => Request::Sync(termloop_core::SourceControlSync::Push),
+                    "sourceControl.pull" => Request::Sync(termloop_core::SourceControlSync::Pull),
+                    _ => Request::Sync(termloop_core::SourceControlSync::Fetch),
+                };
+                super::handlers::source_control_mutation(request.params, source_control, state)
+                    .await
+            }
             "project.listLocalBranches" => project_list_local_branches(request.params, state).await,
             "project.worktreeSummary" => project_worktree_summary(request.params, state).await,
             "project.worktreeChangeList" => {
@@ -2084,6 +2109,10 @@ async fn dispatch_inner(
                 | termloop_core::CoreError::CorruptRepository
                 | termloop_core::CoreError::UnsupportedRepository),
             ) => git_observation_error_response(request.id, error),
+            Err(termloop_core::CoreError::SourceControlRefused { reason }) => {
+                let (code, message) = source_control_refusal(reason);
+                response_error(request.id, code, message)
+            }
             Err(termloop_core::CoreError::ProjectDeleteBlocked(blocker)) => {
                 let (message, blocker) = match blocker {
                     termloop_core::ProjectDeleteBlocker::Worktrees => (

@@ -51,6 +51,29 @@ pub enum ProviderHistoryRepairUnavailableReason {
     RuntimeConflict,
 }
 
+/// Why an explicit Source Control request did not run or Git refused it.
+/// Each value maps to one fixed, secret-free wire message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceControlRefusal {
+    ObservationStale,
+    EntriesNotApplicable,
+    NothingToCommit,
+    EmptyMessage,
+    IdentityMissing,
+    SigningFailed,
+    CommitRejected,
+    UnmergedPaths,
+    PushRejected,
+    PullNotFastForward,
+    LocalChangesWouldBeOverwritten,
+    NoUpstream,
+    NoRemote,
+    NoBranch,
+    RemoteUnavailable,
+    IndexLocked,
+    TimedOut,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskAgentStartStage {
     Planning,
@@ -270,6 +293,8 @@ pub enum CoreError {
     CorruptRepository,
     #[error("repository format is unsupported")]
     UnsupportedRepository,
+    #[error("Source Control request was refused: {reason:?}")]
+    SourceControlRefused { reason: SourceControlRefusal },
     #[error("store failed: {0}")]
     Store(String),
     #[error("terminal failed: {0}")]

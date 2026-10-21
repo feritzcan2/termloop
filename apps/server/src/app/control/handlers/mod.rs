@@ -5,11 +5,15 @@ mod prompt_improvement;
 mod session;
 mod settings_improvement;
 mod skills;
+mod source_control;
 mod steward;
 mod task_close;
 mod workflow;
 mod workspace_files;
 mod worktree;
+pub(super) use source_control::{
+    SourceControlRequest, source_control_mutation, source_control_status,
+};
 pub(super) use workspace_files::{
     observe_workspace_files, search_workspace_files, write_workspace_file,
 };

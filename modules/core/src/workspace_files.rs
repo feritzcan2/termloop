@@ -86,7 +86,11 @@ impl WorkspaceFilesPlan {
         ObservedWorkspaceFiles { plan: self, result }
     }
 
-    fn root(&self) -> &Path {
+    pub(crate) fn task_id(&self) -> Option<&str> {
+        self.task_id.as_deref()
+    }
+
+    pub(crate) fn root(&self) -> &Path {
         self.proof
             .as_ref()
             .map_or(self.project_folder.as_path(), |proof| {
@@ -152,7 +156,16 @@ impl CoreRuntime {
         &self,
         observed: ObservedWorkspaceFiles,
     ) -> Result<Value, CoreError> {
-        let plan = &observed.plan;
+        self.revalidate_workspace_root(&observed.plan)?;
+        observed.result
+    }
+
+    /// Fails unless the Project folder or managed Task proof that `plan`
+    /// captured is still the current one.
+    pub(crate) fn revalidate_workspace_root(
+        &self,
+        plan: &WorkspaceFilesPlan,
+    ) -> Result<(), CoreError> {
         let current =
             self.plan_workspace_files(&plan.project_id, plan.task_id.as_deref(), &plan.path)?;
         if current != *plan {
@@ -161,7 +174,7 @@ impl CoreRuntime {
                 .as_ref()
                 .map_or(CoreError::RepositoryUnavailable, changed_proof));
         }
-        observed.result
+        Ok(())
     }
 }
 

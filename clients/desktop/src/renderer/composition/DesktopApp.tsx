@@ -4,6 +4,7 @@ import { openWorkflowCreator } from "./workflow-creator.js";
 import type { WorkflowCreatorActions } from "../ui/WorkflowCreator.js";
 import { useAgentLibrary } from "./use-agent-library.js";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { SourceControlApi } from "../source-control-status.js";
 import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, type SplitPlacement } from "../../layout/model.js";
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
@@ -542,6 +543,18 @@ function sourceApiForProject(projectId: string): SourceDesktopApi {
   const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
   return project ? desktopApi.source(connectionProfileIdOf(project)) : sourceApiForEntityId(projectId);
 }
+
+/// Source Control actions route to the daemon that owns the Project.
+const sourceControlApi: SourceControlApi = {
+  status: (params) => sourceApiForProject(params.projectId).sourceControlStatus(params),
+  stage: (params) => sourceApiForProject(params.projectId).sourceControlStage(params),
+  unstage: (params) => sourceApiForProject(params.projectId).sourceControlUnstage(params),
+  discard: (params) => sourceApiForProject(params.projectId).sourceControlDiscard(params),
+  commit: (params) => sourceApiForProject(params.projectId).sourceControlCommit(params),
+  push: (params) => sourceApiForProject(params.projectId).sourceControlPush(params),
+  pull: (params) => sourceApiForProject(params.projectId).sourceControlPull(params),
+  fetch: (params) => sourceApiForProject(params.projectId).sourceControlFetch(params),
+};
 
 function sourceApiForTask(taskId: string): SourceDesktopApi {
   const task = projectionStore.getSnapshot().tasks.find((candidate) => candidate.id === taskId);
@@ -2598,6 +2611,7 @@ export function DesktopApp() {
       inspectTaskWorktreeCleanup={inspectTaskWorktreeCleanup}
       cleanupTaskWorktree={cleanupTaskWorktree}
       listProjectWorktreeChanges={(projectId) => sourceApiForProject(projectId).projectWorktreeChangeList(projectId)}
+      sourceControlApi={sourceControlApi}
       getProjectWorktreeDiff={(projectId, observationId, entryId) => sourceApiForProject(projectId).projectWorktreeDiff(projectId, observationId, entryId)}
       getProjectWorktreePreImage={(projectId, observationId, entryId) => sourceApiForProject(projectId).projectWorktreePreImage(projectId, observationId, entryId)}
       listTaskWorktreeChanges={(taskId) => sourceApiForTask(taskId).taskWorktreeChangeList(taskId)}

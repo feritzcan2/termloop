@@ -1,5 +1,5 @@
 use termloop_contract::current::{ControlResponse, ErrorCode, ProtocolError, ProtocolErrorDetails};
-use termloop_core::CoreError;
+use termloop_core::{CoreError, SourceControlRefusal};
 
 pub(in crate::app::control) fn response_error(
     id: String,
@@ -72,6 +72,63 @@ pub(in crate::app::control) fn git_observation_error_response(
         _ => unreachable!("non-Git error passed to Git response mapper"),
     };
     response_error(id, code, message)
+}
+
+/// Fixed wire copy for each Source Control refusal. Git's own output can echo
+/// remote URLs, hook text, or paths, so none of it reaches the client.
+pub(in crate::app::control) fn source_control_refusal(
+    reason: SourceControlRefusal,
+) -> (ErrorCode, &'static str) {
+    use SourceControlRefusal as Refusal;
+    match reason {
+        Refusal::ObservationStale => (
+            ErrorCode::Conflict,
+            "the changes moved since they were listed; refresh and try again",
+        ),
+        Refusal::EntriesNotApplicable => (
+            ErrorCode::Conflict,
+            "that action does not apply to the selected changes",
+        ),
+        Refusal::NothingToCommit => (ErrorCode::Conflict, "there are no staged changes to commit"),
+        Refusal::EmptyMessage => (ErrorCode::Conflict, "enter a commit message"),
+        Refusal::IdentityMissing => (
+            ErrorCode::OperationFailed,
+            "Git has no author identity; set user.name and user.email",
+        ),
+        Refusal::SigningFailed => (ErrorCode::OperationFailed, "the commit could not be signed"),
+        Refusal::CommitRejected => (
+            ErrorCode::OperationFailed,
+            "the commit was rejected, possibly by a hook",
+        ),
+        Refusal::UnmergedPaths => (ErrorCode::Conflict, "resolve the merge conflicts first"),
+        Refusal::PushRejected => (
+            ErrorCode::Conflict,
+            "the remote rejected the push; pull first",
+        ),
+        Refusal::PullNotFastForward => (
+            ErrorCode::Conflict,
+            "the branch has diverged from its upstream and cannot fast-forward",
+        ),
+        Refusal::LocalChangesWouldBeOverwritten => (
+            ErrorCode::Conflict,
+            "local changes would be overwritten; commit or discard them first",
+        ),
+        Refusal::NoUpstream => (ErrorCode::Conflict, "the branch has no upstream"),
+        Refusal::NoRemote => (
+            ErrorCode::Conflict,
+            "the repository has no single remote to publish to",
+        ),
+        Refusal::NoBranch => (ErrorCode::Conflict, "check out a branch first"),
+        Refusal::RemoteUnavailable => (
+            ErrorCode::OperationFailed,
+            "the remote could not be reached or authenticated",
+        ),
+        Refusal::IndexLocked => (
+            ErrorCode::Conflict,
+            "another Git process is using this repository",
+        ),
+        Refusal::TimedOut => (ErrorCode::OperationFailed, "Git did not finish in time"),
+    }
 }
 
 pub(in crate::app::control) fn error_response(id: &str, code: ErrorCode, message: &str) -> String {

@@ -353,7 +353,9 @@ fn append_literal_pathspecs(
     Ok(())
 }
 
-fn parse_change_entries(bytes: &[u8]) -> Result<(Vec<WorktreeChangeEntry>, bool), GitError> {
+pub(crate) fn parse_change_entries(
+    bytes: &[u8],
+) -> Result<(Vec<WorktreeChangeEntry>, bool), GitError> {
     let mut entries = Vec::new();
     let mut records = bytes.split(|byte| *byte == 0);
     while let Some(record) = records.next() {

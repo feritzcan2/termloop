@@ -10,10 +10,15 @@ pub mod project;
 mod run_configuration;
 mod settings_improvement;
 mod skills;
+mod source_control;
 mod task_source;
 mod workflow;
 mod workspace_files;
 pub use run_configuration::RunConfigurationImproverBindings;
+pub use source_control::{
+    ExecutedSourceControl, ObservedSourceControlStatus, SourceControlMutationPlan,
+    SourceControlRootPlan, SourceControlSync,
+};
 pub use workspace_files::{ObservedWorkspaceFiles, WorkspaceFilesPlan};
 mod runtime;
 pub mod session_launch;
@@ -37,8 +42,8 @@ pub use context_bank::{
 };
 pub use error::{
     AgentForkUnavailableReason, CoreError, ProjectDeleteBlocker,
-    ProviderHistoryRepairUnavailableReason, TaskAgentStartStage, TaskAgentStartSuggestedAction,
-    TaskWorktreeUnavailableReason,
+    ProviderHistoryRepairUnavailableReason, SourceControlRefusal, TaskAgentStartStage,
+    TaskAgentStartSuggestedAction, TaskWorktreeUnavailableReason,
 };
 pub(crate) use error::{json_error, required_string, store_error, terminal_error};
 pub use mcp_settings::{McpToolCatalogEntry, McpToolDescriptions, McpToolRole};
@@ -222,6 +227,7 @@ pub struct CoreRuntime {
     pub(crate) worktree_projections: task_worktree::WorktreeProjectionCache,
     pub(crate) worktree_change_observations: task_worktree::WorktreeChangeObservationCache,
     pub(crate) project_change_observations: project::ProjectChangeObservationCache,
+    pub(crate) source_control_observations: source_control::SourceControlObservationCache,
     pub(crate) branch_commit_summaries: task_worktree::BranchCommitSummaryCache,
     pub(crate) branch_commit_observations: task_worktree::BranchCommitObservationCache,
     pub(crate) provider_cache: termloop_store::ProviderCacheHandle,
@@ -711,6 +717,7 @@ impl CoreRuntime {
             worktree_projections: task_worktree::WorktreeProjectionCache::default(),
             worktree_change_observations: task_worktree::WorktreeChangeObservationCache::default(),
             project_change_observations: project::ProjectChangeObservationCache::default(),
+            source_control_observations: source_control::SourceControlObservationCache::default(),
             branch_commit_summaries: task_worktree::BranchCommitSummaryCache::default(),
             branch_commit_observations: task_worktree::BranchCommitObservationCache::default(),
             provider_cache,

@@ -224,20 +224,67 @@ impl GitRunner {
         I: IntoIterator<Item = S>,
         S: Into<OsString>,
     {
-        let timeout = match self.absolute_deadline {
-            Some(deadline) => deadline
-                .remaining()
-                .filter(|remaining| !remaining.is_zero())
-                .map(|remaining| remaining.min(timeout))
-                .ok_or(GitError::Timeout { operation })?,
-            None => timeout,
-        };
-        let outcome = termloop_platform::run_command(
+        let timeout = self.remaining_timeout(operation, timeout)?;
+        self.run_request(
+            operation,
             base_request(&self.program, Some(cwd), args)
                 .timeout(timeout)
                 .output_limit(output_limit),
         )
-        .map_err(|error| map_platform_error(error, operation))?;
+    }
+
+    /// Runs one explicit user-requested Source Control mutation. Every path
+    /// argument is literal (`GIT_LITERAL_PATHSPECS`), so a file named `*` or
+    /// `:(glob)x` never widens the request, and optional bytes reach Git only
+    /// through stdin, never argv.
+    pub(crate) fn execute_mutation<I, S>(
+        &self,
+        operation: GitOperation,
+        cwd: &Path,
+        args: I,
+        stdin: Option<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<CommandOutcome, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<OsString>,
+    {
+        let timeout = self.remaining_timeout(operation, timeout)?;
+        let mut request = base_request(&self.program, Some(cwd), args)
+            .environment("GIT_LITERAL_PATHSPECS", "1")
+            .remove_environment("GIT_GLOB_PATHSPECS")
+            .remove_environment("GIT_NOGLOB_PATHSPECS")
+            .remove_environment("GIT_ICASE_PATHSPECS")
+            .timeout(timeout)
+            .output_limit(self.output_limit);
+        if let Some(stdin) = stdin {
+            request = request.stdin(stdin);
+        }
+        self.run_request(operation, request)
+    }
+
+    fn remaining_timeout(
+        &self,
+        operation: GitOperation,
+        timeout: Duration,
+    ) -> Result<Duration, GitError> {
+        match self.absolute_deadline {
+            Some(deadline) => deadline
+                .remaining()
+                .filter(|remaining| !remaining.is_zero())
+                .map(|remaining| remaining.min(timeout))
+                .ok_or(GitError::Timeout { operation }),
+            None => Ok(timeout),
+        }
+    }
+
+    fn run_request(
+        &self,
+        operation: GitOperation,
+        request: CommandRequest,
+    ) -> Result<CommandOutcome, GitError> {
+        let outcome = termloop_platform::run_command(request)
+            .map_err(|error| map_platform_error(error, operation))?;
         ensure_complete(&outcome, operation)?;
         Ok(outcome)
     }
