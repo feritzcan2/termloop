@@ -36,27 +36,31 @@ fn sides(runner: &GitRunner, root: &Path) -> Vec<(String, WorktreeChangeSide)> {
     entries
 }
 
+/// A glob that matches `new file.txt`. Windows rejects `*` and `?` in file
+/// names, so a bracket class keeps the fixture portable.
+const GLOB_PATH: &str = "[n]ew file.txt";
+
 #[test]
 fn stage_unstage_and_discard_touch_exactly_the_requested_literal_paths() {
     let repository = TestRepository::init("source-control-index");
     hermetic_local_config(&repository, repository.root());
     repository.create_commit_at("tracked.txt", "base\n");
-    repository.create_commit_at("*", "star base\n");
+    repository.create_commit_at(GLOB_PATH, "glob base\n");
     let root = repository.root();
     fs::write(root.join("tracked.txt"), "edited\n").unwrap();
-    fs::write(root.join("*"), "star edited\n").unwrap();
+    fs::write(root.join(GLOB_PATH), "glob edited\n").unwrap();
     fs::write(root.join("new file.txt"), "new\n").unwrap();
     fs::create_dir_all(root.join("dir")).unwrap();
     fs::write(root.join("dir/keep.txt"), "keep\n").unwrap();
     fs::write(root.join("dir/remove.txt"), "remove\n").unwrap();
     let runner = GitRunner::discover().unwrap();
 
-    // A file literally named `*` must not act as a glob over every change.
-    runner.stage_paths(root, &[Path::new("*")]).unwrap();
+    // A file whose name is a glob must not also select the change it matches.
+    runner.stage_paths(root, &[Path::new(GLOB_PATH)]).unwrap();
     assert_eq!(
         sides(&runner, root),
         vec![
-            ("*".to_owned(), WorktreeChangeSide::Staged),
+            (GLOB_PATH.to_owned(), WorktreeChangeSide::Staged),
             ("dir/keep.txt".to_owned(), WorktreeChangeSide::Untracked),
             ("dir/remove.txt".to_owned(), WorktreeChangeSide::Untracked),
             ("new file.txt".to_owned(), WorktreeChangeSide::Untracked),
@@ -66,11 +70,11 @@ fn stage_unstage_and_discard_touch_exactly_the_requested_literal_paths() {
     runner
         .stage_paths(root, &[Path::new("new file.txt"), Path::new("tracked.txt")])
         .unwrap();
-    runner.unstage_paths(root, &[Path::new("*")]).unwrap();
+    runner.unstage_paths(root, &[Path::new(GLOB_PATH)]).unwrap();
     assert_eq!(
         sides(&runner, root),
         vec![
-            ("*".to_owned(), WorktreeChangeSide::Unstaged),
+            (GLOB_PATH.to_owned(), WorktreeChangeSide::Unstaged),
             ("dir/keep.txt".to_owned(), WorktreeChangeSide::Untracked),
             ("dir/remove.txt".to_owned(), WorktreeChangeSide::Untracked),
             ("new file.txt".to_owned(), WorktreeChangeSide::Staged),
@@ -79,9 +83,12 @@ fn stage_unstage_and_discard_touch_exactly_the_requested_literal_paths() {
     );
 
     runner
-        .restore_worktree_paths(root, &[Path::new("*")])
+        .restore_worktree_paths(root, &[Path::new(GLOB_PATH)])
         .unwrap();
-    assert_eq!(fs::read_to_string(root.join("*")).unwrap(), "star base\n");
+    assert_eq!(
+        fs::read_to_string(root.join(GLOB_PATH)).unwrap(),
+        "glob base\n"
+    );
     runner
         .remove_untracked_files(root, &[Path::new("dir/remove.txt")])
         .unwrap();
