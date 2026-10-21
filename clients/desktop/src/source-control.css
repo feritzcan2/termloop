@@ -22,7 +22,12 @@
 .source-control-row-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-control-row.status-deleted .source-control-row-name { text-decoration: line-through; opacity: .8; }
 .source-control-row small { flex: 1; min-width: 0; overflow: hidden; color: var(--text-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.source-control-row .change-badge { flex: none; width: 16px; height: 16px; margin-left: auto; font-size: 10px; }
+/* Orca shows the status as a bare colored letter, not a badge. */
+.source-control-row .change-badge[class] { flex: none; width: 14px; height: 16px; margin-left: auto; border: 0; background: none; color: var(--git-modified); font: 700 11px/1 var(--font-mono); }
+.source-control-row .change-badge.added { color: var(--git-added); }
+.source-control-row .change-badge.untracked { color: var(--git-untracked); }
+.source-control-row .change-badge:is(.renamed, .copied) { color: var(--git-renamed); }
+.source-control-row .change-badge:is(.deleted, .unmerged) { color: var(--git-deleted); }
 /* Steward rail hosted in the same right sidebar shell. */
 .files-sidebar.steward-sidebar { grid-template-rows: auto minmax(0, 1fr); }
 .steward-sidebar .assistant-empty { margin: 14px 12px; }

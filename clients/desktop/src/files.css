@@ -1,4 +1,26 @@
 .files-search-toolbar .rail-search { flex: 1; }
+/* Orca's neutral palette (stablyai/orca main.css) for the right-hand
+   sidebar shell and the editor. Redefining the shared tokens here keeps every
+   descendant rule unchanged. */
+.files-sidebar, .files-activity-bar, .changes-overlay.file-editor {
+  --bg-sidebar: light-dark(#fafafa, #171717);
+  --border: light-dark(#e5e5e5, rgb(255 255 255 / .07));
+  --text: light-dark(#0a0a0a, #fafafa);
+  --sidebar-text: light-dark(#0a0a0a, #fafafa);
+  --sidebar-dimmer: light-dark(#737373, #a1a1a1);
+  --text-muted: light-dark(#737373, #a1a1a1);
+  --hover: light-dark(rgb(245 245 245), rgb(64 64 64 / .4));
+  --accent: light-dark(#171717, #e5e5e5);
+  --accent-strong: light-dark(#0a0a0a, #fafafa);
+  --accent-wash: light-dark(#ececec, rgb(64 64 64 / .6));
+  --git-added: light-dark(#587c0c, #81b88b);
+  --git-modified: light-dark(#895503, #e2c08d);
+  --git-deleted: light-dark(#ad0707, #c74e39);
+  --git-renamed: light-dark(#007acc, #73c991);
+  --git-untracked: light-dark(#007100, #73c991);
+  --editor-surface: light-dark(#ffffff, #1e1e1e);
+}
+.files-sidebar :focus-visible, .files-activity-bar :focus-visible, .changes-overlay.file-editor :focus-visible { outline-color: light-dark(#a1a1a1, #737373); }
 /* Right-hand Files sidebar: an activity strip, the root section row, then a
    compact Explorer tree or the file name search. */
 .app-shell.files-sidebar-open { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--files-sidebar-width) var(--files-activity-width); }
@@ -47,13 +69,13 @@
 .files-tree-message { margin: 5px 10px; color: var(--text-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .files-tree-message.error { color: var(--danger); }
 /* Editor tabs over the terminal stage, Monaco below them and a status row. */
-.changes-overlay.file-editor { grid-template-rows: auto minmax(0, 1fr); }
+.changes-overlay.file-editor { grid-template-rows: auto minmax(0, 1fr); background: var(--editor-surface); color: var(--text); }
 .file-editor-tabs { display: flex; align-items: stretch; min-width: 0; height: 35px; border-bottom: 1px solid var(--border); background: var(--bg-sidebar); }
 .file-editor-tabs [role="tablist"] { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .file-editor-tabs > .icon-button { align-self: center; width: 26px; height: 26px; margin: 0 6px; }
 .file-editor-tabs > .icon-button svg { width: 13px; height: 13px; }
 .file-editor-tab { display: flex; flex: none; align-items: center; max-width: 220px; border-right: 1px solid var(--border); color: var(--text-muted); }
-.file-editor-tab.active { background: light-dark(#f8fafc, #1d2124); color: var(--text); box-shadow: inset 0 1px 0 var(--accent); }
+.file-editor-tab.active { background: var(--editor-surface); color: var(--text); box-shadow: inset 0 1px 0 var(--accent); }
 .file-editor-tab [role="tab"] { display: flex; align-items: center; gap: 6px; min-width: 0; height: 100%; padding: 0 4px 0 12px; border: 0; background: transparent; color: inherit; font: 12px/1 var(--font-ui); }
 .file-editor-tab [role="tab"] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-editor-tab [role="tab"] > svg { width: 14px; height: 14px; flex: none; }
@@ -64,7 +86,7 @@
 .file-editor-dirty { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .file-editor-tab-close.dirty:not(:hover) svg, .file-editor-tab-close.dirty:hover .file-editor-dirty { display: none; }
 .file-editor-body { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.file-editor-banner { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--border); background: light-dark(#fff7e6, #3a2f17); color: var(--text); font-size: 12px; }
+.file-editor-banner { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--git-modified) 14%, var(--editor-surface)); color: var(--text); font-size: 12px; }
 .file-editor-banner > span { flex: 1; min-width: 0; }
 .file-editor-surface { flex: 1; min-height: 0; }
 .file-editor-surface[hidden] { display: none; }
