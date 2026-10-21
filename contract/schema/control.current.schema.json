@@ -1480,6 +1480,14 @@
         "$ref": "#/$defs/gitHostRepositoryPullRequestListResult"
       }
     },
+    "gitHost.projectRepository": {
+      "params": {
+        "$ref": "#/$defs/gitHostProjectRepositoryParams"
+      },
+      "result": {
+        "$ref": "#/$defs/gitHostProjectRepositoryResult"
+      }
+    },
     "agent.libraryGet": {
       "params": {
         "$ref": "#/$defs/emptyParams"
@@ -2497,6 +2505,7 @@
         "integration.azureDevOpsTokenSet",
         "gitHost.pullRequestDiff",
         "gitHost.repositoryPullRequestList",
+        "gitHost.projectRepository",
         "agent.libraryGet",
         "agent.profileCreate",
         "agent.profileUpdate",
@@ -12182,6 +12191,93 @@
         "authored",
         "reviewRequested"
       ]
+    },
+    "gitHostProjectRepositoryParams": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostProjectRepositoryParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "gitHostProjectRepositoryResult": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostProjectRepositoryResult",
+      "description": "The Project checkout's supported Git-host repository, read from local remote configuration only; no provider is contacted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_provider",
+        "repository_owner",
+        "repository_project",
+        "repository_name",
+        "reason"
+      ],
+      "properties": {
+        "repository_provider": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitHostProvider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_owner": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_project": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitHostProjectionReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "gitHostRepositoryPullRequestListParams": {
       "x-codegen": true,

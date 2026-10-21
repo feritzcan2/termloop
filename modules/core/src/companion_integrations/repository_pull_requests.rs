@@ -2,7 +2,8 @@
 //!
 //! The Project folder's remote configuration selects one provider repository
 //! (`origin` first); the provider lists its open pull requests. Nothing is
-//! cached or persisted: the result is a display-only read.
+//! cached or persisted: the result is a display-only read. The repository
+//! identity alone is also available without contacting the provider.
 
 use super::{
     GitHostProjectionReason, cache_failure, checks_name, map_cache_failure, map_git_error,
@@ -10,7 +11,7 @@ use super::{
 };
 use crate::{CoreError, CoreRuntime};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use termloop_gitio::{GitRunner, RemoteFact};
 pub use termloop_providers::RepositoryPullRequestFilter;
@@ -30,6 +31,10 @@ pub struct RepositoryPullRequestListPlan {
     azure: Option<AzureDevOpsClient>,
 }
 
+pub struct ProjectRepositoryPlan {
+    project_folder: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ProjectRepository {
     Github(termloop_providers::GitHubRepository),
@@ -37,11 +42,24 @@ enum ProjectRepository {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-struct RepositoryPullRequestListResult {
+struct RepositoryIdentity {
     repository_provider: Option<GitHostProvider>,
     repository_owner: Option<String>,
     repository_project: Option<String>,
     repository_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+struct ProjectRepositoryResult {
+    #[serde(flatten)]
+    identity: RepositoryIdentity,
+    reason: Option<GitHostProjectionReason>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+struct RepositoryPullRequestListResult {
+    #[serde(flatten)]
+    identity: RepositoryIdentity,
     reason: Option<GitHostProjectionReason>,
     pull_requests: Vec<RepositoryPullRequestDto>,
     truncated: bool,
@@ -70,31 +88,57 @@ impl CoreRuntime {
         project_id: &str,
         filter: RepositoryPullRequestFilter,
     ) -> Result<RepositoryPullRequestListPlan, CoreError> {
-        let project = self
-            .store
-            .projects()
-            .iter()
-            .find(|project| project.id == project_id)
-            .ok_or(CoreError::NotFound)?;
         Ok(RepositoryPullRequestListPlan {
-            project_folder: PathBuf::from(&project.folder_path),
+            project_folder: self.project_folder(project_id)?,
             filter,
             github: self.github_client.clone(),
             azure: self.azure_devops_client.clone(),
         })
     }
+
+    pub fn plan_project_repository(
+        &self,
+        project_id: &str,
+    ) -> Result<ProjectRepositoryPlan, CoreError> {
+        Ok(ProjectRepositoryPlan {
+            project_folder: self.project_folder(project_id)?,
+        })
+    }
+
+    fn project_folder(&self, project_id: &str) -> Result<PathBuf, CoreError> {
+        self.store
+            .projects()
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| PathBuf::from(&project.folder_path))
+            .ok_or(CoreError::NotFound)
+    }
+}
+
+impl ProjectRepositoryPlan {
+    /// Blocking: reads local Git configuration. Never call under the core lock.
+    pub fn observe(self) -> Value {
+        let repository = observe_repository(&self.project_folder);
+        let reason = repository.as_ref().err().copied();
+        serde_json::to_value(ProjectRepositoryResult {
+            identity: identity(repository.ok()),
+            reason,
+        })
+        .expect("project repository serializes")
+    }
+}
+
+fn observe_repository(project_folder: &Path) -> Result<ProjectRepository, GitHostProjectionReason> {
+    GitRunner::discover_with_timeout(REMOTE_DEADLINE)
+        .and_then(|runner| runner.observe_remotes_with_timeout(project_folder, REMOTE_DEADLINE))
+        .map_err(|error| map_git_error(&error))
+        .and_then(|remotes| select_repository(&remotes))
 }
 
 impl RepositoryPullRequestListPlan {
     /// Blocking: runs Git and the provider CLI. Never call under the core lock.
     pub fn observe(self) -> Value {
-        let remotes = GitRunner::discover_with_timeout(REMOTE_DEADLINE).and_then(|runner| {
-            runner.observe_remotes_with_timeout(&self.project_folder, REMOTE_DEADLINE)
-        });
-        let repository = match remotes {
-            Ok(remotes) => select_repository(&remotes),
-            Err(error) => Err(map_git_error(&error)),
-        };
+        let repository = observe_repository(&self.project_folder);
         let listed = repository.clone().and_then(|repository| {
             self.list(&repository)
                 .map_err(|failure| map_cache_failure(cache_failure(failure)))
@@ -165,6 +209,24 @@ fn build_result(
     listed: Result<RepositoryPullRequestList, GitHostProjectionReason>,
     observed_at_epoch_ms: u64,
 ) -> RepositoryPullRequestListResult {
+    let (pull_requests, truncated, reason) = match listed {
+        Ok(list) => (
+            list.pull_requests.into_iter().map(dto).collect(),
+            list.truncated,
+            None,
+        ),
+        Err(reason) => (Vec::new(), false, Some(reason)),
+    };
+    RepositoryPullRequestListResult {
+        identity: identity(repository),
+        reason,
+        pull_requests,
+        truncated,
+        observed_at_epoch_ms,
+    }
+}
+
+fn identity(repository: Option<ProjectRepository>) -> RepositoryIdentity {
     let (repository_provider, repository_owner, repository_project, repository_name) =
         match repository {
             Some(ProjectRepository::Github(repository)) => (
@@ -181,23 +243,11 @@ fn build_result(
             ),
             None => (None, None, None, None),
         };
-    let (pull_requests, truncated, reason) = match listed {
-        Ok(list) => (
-            list.pull_requests.into_iter().map(dto).collect(),
-            list.truncated,
-            None,
-        ),
-        Err(reason) => (Vec::new(), false, Some(reason)),
-    };
-    RepositoryPullRequestListResult {
+    RepositoryIdentity {
         repository_provider,
         repository_owner,
         repository_project,
         repository_name,
-        reason,
-        pull_requests,
-        truncated,
-        observed_at_epoch_ms,
     }
 }
 
@@ -287,6 +337,36 @@ mod tests {
         assert_eq!(value["reason"], "unauthorized");
         assert_eq!(value["pull_requests"], serde_json::json!([]));
         assert_eq!(value["observed_at_epoch_ms"], 7);
+    }
+
+    #[test]
+    fn project_repository_reports_identity_or_reason_without_pull_requests() {
+        let repository = select_repository(&[remote(
+            "origin",
+            "git@ssh.dev.azure.com:v3/ValueSpaces/Nucleus/Nucleus",
+        )]);
+        let value = serde_json::to_value(ProjectRepositoryResult {
+            identity: identity(repository.ok()),
+            reason: None,
+        })
+        .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "repository_provider": "azureDevOps",
+                "repository_owner": "valuespaces",
+                "repository_project": "Nucleus",
+                "repository_name": "Nucleus",
+                "reason": null,
+            })
+        );
+        let missing = serde_json::to_value(ProjectRepositoryResult {
+            identity: identity(None),
+            reason: Some(GitHostProjectionReason::NoRemote),
+        })
+        .unwrap();
+        assert_eq!(missing["repository_provider"], Value::Null);
+        assert_eq!(missing["reason"], "noRemote");
     }
 
     #[test]

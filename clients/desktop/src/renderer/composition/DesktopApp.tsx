@@ -793,6 +793,17 @@ export function DesktopApp() {
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
+  const repositoryProjectId = projection.connection === "connected" ? selectedProject?.id : undefined;
+  const [projectRepository, setProjectRepository] = useState<{ projectId: string; supported: boolean }>();
+  useEffect(() => {
+    if (!repositoryProjectId) return;
+    let current = true;
+    const settle = (supported: boolean) => { if (current) setProjectRepository({ projectId: repositoryProjectId, supported }); };
+    sourceApiForProject(repositoryProjectId).gitHostProjectRepository(repositoryProjectId)
+      .then((result) => settle(result.repository_provider !== null), () => settle(false));
+    return () => { current = false; };
+  }, [repositoryProjectId]);
+  const pullRequestsAvailable = projectRepository?.projectId === repositoryProjectId && projectRepository?.supported === true;
   useEffect(() => onProjectionInvalidated(({ profileId, payload }) => {
     if (profileId === selectedConnectionProfileId && payload.topics.includes("agentLibrary")) agentLibrary.reload();
   }), [selectedConnectionProfileId, agentLibrary.reload]);
@@ -2580,6 +2591,7 @@ export function DesktopApp() {
       loadPromptAssets={promptSettings.load}
       updatePromptAsset={promptSettings.update}
       resetPromptAsset={promptSettings.reset}
+      pullRequestsAvailable={pullRequestsAvailable}
       loadRepositoryPullRequests={loadRepositoryPullRequests}
       loadSkillCatalog={loadSkillCatalog}
       setSkillDeployment={setSkillDeployment}

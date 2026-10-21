@@ -233,6 +233,9 @@ export type ShellProps = {
   loadPromptAssets(): Promise<import("../prompt-settings.js").PromptAsset[]>;
   updatePromptAsset(id: string, body: string): Promise<import("../prompt-settings.js").PromptAsset[]>;
   resetPromptAsset(id: string): Promise<import("../prompt-settings.js").PromptAsset[]>;
+  /// True only once the selected Project's checkout is known to have a
+  /// GitHub or Azure DevOps remote.
+  pullRequestsAvailable: boolean;
   loadRepositoryPullRequests(
     projectId: string,
     filter: import("@termloop/contract/current").GitHostRepositoryPullRequestFilter,
@@ -612,7 +615,11 @@ export function Shell(props: ShellProps) {
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sessionDragging, setSessionDragging] = useState(false);
   const [filesPresentation, setFilesPresentation] = useState<{ projectId: string; taskId: string | null }>();
-  const [filesSidebar, setFilesSidebarState] = useState(readFilesSidebarPreference);
+  const [storedFilesSidebar, setFilesSidebarState] = useState(readFilesSidebarPreference);
+  // A Project without a GitHub or Azure DevOps repository has no Pull Requests
+  // view; the remembered choice falls back to Files without being overwritten.
+  const filesSidebar = storedFilesSidebar.view === "pullRequests" && !props.pullRequestsAvailable
+    ? { ...storedFilesSidebar, view: "files" as const } : storedFilesSidebar;
   const updateFilesSidebar = useCallback((update: Partial<FilesSidebarPreference>) => {
     setFilesSidebarState((current) => {
       const next = { ...current, ...update };
@@ -1297,10 +1304,10 @@ export function Shell(props: ShellProps) {
       id: "view.sourceControl", title: filesSidebar.open && filesSidebar.view === "sourceControl" ? "Hide Source Control" : "Show Source Control", detail: "See staged, unstaged, and untracked changes on the right.", group: "Session", keywords: ["git", "changes", "status", "staged", "branch", "scm"],
       perform: () => toggleRightSidebar("sourceControl"),
     },
-    {
+    ...(props.pullRequestsAvailable ? [{
       id: "view.pullRequests", title: filesSidebar.open && filesSidebar.view === "pullRequests" ? "Hide Pull Requests" : "Show Pull Requests", detail: "See the Project repository's open pull requests on the right.", group: "Session", keywords: ["pr", "prs", "pull request", "review", "github", "azure"],
       perform: () => toggleRightSidebar("pullRequests"),
-    },
+    } satisfies ShellCommand] : []),
     {
       id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
       disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSettings" }),
@@ -2240,7 +2247,7 @@ export function Shell(props: ShellProps) {
             unavailable={Boolean(props.selectedProject) && disabled}
           />}
         </> : null}
-        <RightActivityBar open={filesSidebar.open} view={filesSidebar.view} select={toggleRightSidebar} />
+        <RightActivityBar open={filesSidebar.open} view={filesSidebar.view} hidden={props.pullRequestsAvailable ? [] : ["pullRequests"]} select={toggleRightSidebar} />
       </div>
       </SidebarSessionDndProvider>
       <OverlayPortal container={props.overlayContainer}>

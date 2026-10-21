@@ -150,6 +150,7 @@ import type {
   GitHostPullRequestIdentityDto,
   GitHostPullRequestChangeListResult,
   GitHostPullRequestDiffResult,
+  GitHostProjectRepositoryResult,
   GitHostRepositoryPullRequestFilter,
   GitHostRepositoryPullRequestListResult,
   ProjectLocalBranchListResult,
@@ -338,6 +339,7 @@ export type DesktopApi = {
   gitHostPullRequestChangeList(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;
   gitHostPullRequestDiff(taskId: string, observationId: string, entryId: string): Promise<GitHostPullRequestDiffResult>;
   gitHostRepositoryPullRequestList(projectId: string, filter: GitHostRepositoryPullRequestFilter): Promise<GitHostRepositoryPullRequestListResult>;
+  gitHostProjectRepository(projectId: string): Promise<GitHostProjectRepositoryResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   copySessionId(sessionId: string): Promise<void>;
   taskInspectWorktreeCleanup(taskId: string): Promise<TaskWorktreeCleanupPreviewDto>;

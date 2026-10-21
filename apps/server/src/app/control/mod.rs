@@ -821,13 +821,17 @@ mod tests {
     }
 
     #[test]
-    fn repository_pull_request_list_requires_full_control() {
-        let method = "gitHost.repositoryPullRequestList";
-        assert!(protocol::METHODS.contains(&method));
-        assert!(scope_allows_method(ClientScope::Full, method));
-        assert!(!scope_allows_method(ClientScope::ReadOnly, method));
-        assert!(!scope_allows_method(ClientScope::Companion, method));
-        assert!(!scope_allows_method(ClientScope::Hook, method));
+    fn repository_pull_request_reads_require_full_control() {
+        for method in [
+            "gitHost.repositoryPullRequestList",
+            "gitHost.projectRepository",
+        ] {
+            assert!(protocol::METHODS.contains(&method));
+            assert!(scope_allows_method(ClientScope::Full, method));
+            assert!(!scope_allows_method(ClientScope::ReadOnly, method));
+            assert!(!scope_allows_method(ClientScope::Companion, method));
+            assert!(!scope_allows_method(ClientScope::Hook, method));
+        }
     }
 
     fn request_value(identity: serde_json::Value) -> serde_json::Value {

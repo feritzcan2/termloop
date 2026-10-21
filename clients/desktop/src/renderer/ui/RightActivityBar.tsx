@@ -17,9 +17,14 @@ export function rightSidebarLabel(view: RightSidebarView): string {
 
 /// Always visible at the window's right edge, like Orca's activity bar.
 /// Choosing the open view closes the sidebar; choosing another switches it.
-export function RightActivityBar({ open, view, select }: { open: boolean; view: RightSidebarView; select(view: RightSidebarView): void }) {
+export function RightActivityBar({ open, view, hidden = [], select }: {
+  open: boolean;
+  view: RightSidebarView;
+  hidden?: readonly RightSidebarView[];
+  select(view: RightSidebarView): void;
+}) {
   return <nav className="files-activity-bar" aria-label="Right sidebar">
-    {ITEMS.map((item) => {
+    {ITEMS.filter((item) => !hidden.includes(item.view)).map((item) => {
       const selected = open && view === item.view;
       return <button key={item.view} type="button" aria-label={`${item.label} sidebar`} aria-pressed={selected}
         className={selected ? "selected" : undefined} title={selected ? `Hide ${item.label}` : `Show ${item.label}`}
