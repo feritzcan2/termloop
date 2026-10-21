@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./Icon.js";
+import { useOverlayLease } from "./overlay-lease.js";
 import "./steward-how-it-works.css";
 
+/// Where the dialog renders above a native terminal surface, and the lease
+/// that keeps that terminal from painting over it.
+export type StewardHowItWorksOverlay = {
+  container: Element | undefined;
+  visibilityChanged(visible: boolean): void;
+};
+
+const noOverlayLease = () => {};
+
 /// The "How it works?" button and the explanation it opens.
-export function StewardHowItWorksButton(props: { className: string }) {
+export function StewardHowItWorksButton(props: { className: string; overlay?: StewardHowItWorksOverlay | undefined }) {
   const [open, setOpen] = useState(false);
+  useOverlayLease(open, props.overlay?.visibilityChanged ?? noOverlayLease);
   return <>
     <button type="button" className={props.className} aria-haspopup="dialog"
       title="How the Playbook and Steward work" onClick={() => setOpen(true)}>How it works?</button>
-    {/* Rendered at the document root so a narrow or clipped sidebar never
-        constrains the dialog. */}
-    {open ? createPortal(<StewardHowItWorks close={() => setOpen(false)} />, document.body) : null}
+    {/* Rendered at the overlay or document root so a narrow or clipped
+        sidebar never constrains the dialog. */}
+    {open ? createPortal(<StewardHowItWorks close={() => setOpen(false)} />, props.overlay?.container ?? document.body) : null}
   </>;
 }
 

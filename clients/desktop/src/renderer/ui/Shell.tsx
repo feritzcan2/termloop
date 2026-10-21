@@ -696,6 +696,10 @@ export function Shell(props: ShellProps) {
   }, [railMode, workspaceView]);
   const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
   const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
+  const howItWorksOverlay = useMemo(
+    () => ({ container: props.overlayContainer, visibilityChanged: setPlaybookOverlayOpen }),
+    [props.overlayContainer, setPlaybookOverlayOpen],
+  );
   const projectTriggerRef = useRef<HTMLButtonElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const commandInvokerRef = useRef<HTMLElement | null>(null);
@@ -1983,6 +1987,7 @@ export function Shell(props: ShellProps) {
               refreshToken={props.assistantRefreshToken}
               agentCapabilities={props.agentCapabilities}
               playbookBuilderSessionId={playbookBuilderSession(props.selectedProject.id, props.projectSessions)?.id}
+              howItWorksOverlay={howItWorksOverlay}
               close={() => setAssistantSelection(undefined)}
               openTerminal={selectAssistantSession}
               openTermLoopInstructions={() => openPromptPage("runtime.steward.protected")}
@@ -2239,6 +2244,7 @@ export function Shell(props: ShellProps) {
               overlayContainer: props.overlayContainer,
               overlayVisibilityChanged: setPlaybookOverlayOpen,
             }}
+            howItWorksOverlay={howItWorksOverlay}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</div>
           </aside> : filesSidebar.view === "sourceControl" ? <SourceControlSidebar

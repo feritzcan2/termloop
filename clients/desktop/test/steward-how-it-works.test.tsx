@@ -71,3 +71,17 @@ it("offers the explanation in the sidebar Steward tab", async () => {
   await act(async () => document.querySelector<HTMLButtonElement>(".shiw-backdrop")!.click());
   expect(dialog()).toBeNull();
 });
+
+it("opens above native terminals in the overlay container and releases its lease on close", async () => {
+  const container = document.createElement("div"); document.body.append(container);
+  const reports: boolean[] = [];
+  const overlay = { container, visibilityChanged: (visible: boolean) => { reports.push(visible); } };
+  await act(async () => root.render(<StewardPanel {...props({ kind: "steward" })} howItWorksOverlay={overlay} />));
+  await act(async () => howItWorks()!.click());
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(reports).toEqual([true]);
+  await act(async () => container.querySelector<HTMLButtonElement>(".shiw-backdrop")!.click());
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(reports).toEqual([true, false]);
+  container.remove();
+});
