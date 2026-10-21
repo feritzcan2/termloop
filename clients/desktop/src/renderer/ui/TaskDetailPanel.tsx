@@ -139,6 +139,20 @@ export function stepEvidence(step: TaskPipelineStep): string | undefined {
   return undefined;
 }
 
+/** The Task's pull requests a step's check reads, so the reader can open the
+    one the step is waiting on. A check pinned to a base branch names only the
+    pull requests into that branch. Display only: the gate reads the host
+    directly and never trusts this projection. */
+export function stepPullRequests(
+  step: TaskPipelineStep,
+  projection: GitHostProjection | undefined,
+): GitHostProjection["matches"] {
+  const check = step.milestone.deterministicCheck;
+  if (!check || check.kind === "branchCommitted" || !projection) return [];
+  const base = check.baseBranch?.trim().replace(/^refs\/heads\//, "");
+  return projection.matches.filter((pullRequest) => !base || pullRequest.base_branch === base);
+}
+
 export type TaskStepAnswerSource = { text: string; blocked: boolean };
 
 export type PlaybookTaskPositionSetOutcome =
@@ -598,6 +612,8 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     checkNow={checkNow}
                     setPosition={setPosition}
                     provider={props.gitHostProjection?.repository_provider}
+                    pullRequests={stepPullRequests(step, props.gitHostProjection)}
+                    openExternal={props.openExternal}
                     openIntegrations={props.openIntegrationsSettings}
                   />
                 ))}
@@ -638,7 +654,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   );
 }
 
-function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy, canSetPosition, checkNow, setPosition, provider, openIntegrations }: {
+function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy, canSetPosition, checkNow, setPosition, provider, pullRequests, openExternal, openIntegrations }: {
   step: TaskPipelineStep;
   nowEpochMs: number;
   running: boolean;
@@ -648,6 +664,8 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
   checkNow(routineId: string): Promise<void>;
   setPosition(passedMilestoneCount: number): Promise<void>;
   provider?: GitHostProvider | null | undefined;
+  pullRequests: GitHostProjection["matches"];
+  openExternal(url: string): Promise<void>;
   openIntegrations?: (() => void) | undefined;
 }) {
   const verdictSource = stepVerdictSource(step, provider);
@@ -687,6 +705,18 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
                 : step.standing === "waiting" ? "Reset here" : "Set here"}</button>
           ) : null}
         </div>
+        {pullRequests.length > 0 ? (
+          <p className="td-step-prs">
+            {pullRequests.map((pullRequest) => (
+              <button
+                key={pullRequest.url}
+                type="button"
+                title={`Open pull request #${pullRequest.number} in browser · ${pullRequest.head_branch} → ${pullRequest.base_branch} · ${pullRequest.title}`}
+                onClick={() => void openExternal(pullRequest.url)}
+              >#{pullRequest.number} → {pullRequest.base_branch} · {pullRequest.state}<span aria-hidden="true"> ↗</span></button>
+            ))}
+          </p>
+        ) : null}
         {step.standing === "waiting" ? (
           <>
             <p className="td-evidence">{evidence}</p>
