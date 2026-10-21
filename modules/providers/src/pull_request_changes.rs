@@ -585,12 +585,13 @@ impl AzureDevOpsClient {
             azure_name_key(project)
         );
         self.check_suppression(&project_key, &identity.key())?;
+        let generation = self.credential.generation();
         let outcome = termloop_platform::run_command(
             self.base_request(deadline.remaining().ok_or(ProviderFailure::Timeout)?)?
                 .args(arguments),
         )
         .map_err(|_| ProviderFailure::ProviderUnavailable)?;
-        self.classify_query_outcome(&project_key, &identity.key(), &outcome)?;
+        self.classify_query_outcome(&project_key, &identity.key(), generation, &outcome)?;
         Ok(outcome)
     }
 }

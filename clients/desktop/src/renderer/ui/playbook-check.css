@@ -1,0 +1,13 @@
+.ap-step-check { display: grid; gap: 8px; }
+.ap-step-check-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.ap-step-check-fields label { display: grid; flex: 1 1 160px; gap: 6px; min-width: 0; color: var(--text-muted); font: 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+.ap-step-check-fields select, .ap-step-check-fields input { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: light-dark(#f8fafc, #1d2123); color: var(--text); font: 11px/1 var(--font-mono); text-transform: none; letter-spacing: normal; }
+.ap-step-check-fields select:disabled, .ap-step-check-fields input:disabled { opacity: .6; }
+.ap-step-check .ap-hint { margin: 0; }
+
+.td-check { flex: none; padding: 2px 7px; border: 1px solid rgba(102,179,255,.3); border-radius: 999px; background: rgba(102,179,255,.1); color: light-dark(#4f6478, #b4daff); font: 700 9.5px/1.5 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.td-evaluator { color: var(--td-dim); font: 10.5px/1.5 var(--font-mono); }
+.td-fallback { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 6px 0 0; color: var(--warning); font: 10.5px/1.5 var(--font-mono); }
+.td-fallback button { padding: 0; border: 0; background: none; color: light-dark(#607488, #b4daff); font: 600 10.5px/1.5 var(--font-ui); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+.ar-copy small > .ar-step-check { flex: none; max-width: 55%; padding: 0 5px; border: 1px solid rgba(102,179,255,.3); border-radius: 999px; color: light-dark(#4f6478, #b4daff); font-size: 8.5px; line-height: 1.5; text-overflow: ellipsis; }

@@ -35,6 +35,7 @@ mod health;
 mod invalidation;
 mod keep_awake;
 mod mcp;
+mod playbook_deterministic;
 mod playbook_evaluation;
 mod runtime_health;
 mod shell_history;
@@ -112,6 +113,10 @@ struct AppState {
     task_source_credential_states:
         Arc<StdMutex<HashMap<String, control::TaskSourceCredentialPresence>>>,
     task_source_refresh_observer: Arc<dyn termloop_core::TaskSourceJiraObserver>,
+    /// Daemon-held Azure DevOps PAT shared with core's `az` client; never
+    /// serialized, logged, or returned.
+    azure_devops_credential: termloop_core::AzureDevOpsCredential,
+    integration_status: control::IntegrationStatusCache,
     terminal: TerminalService,
     terminal_grids: terminal_grids::TerminalGridStore,
     terminal_resizes: terminal_plane::TerminalResizeRegistry,
@@ -448,6 +453,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         mcp_endpoint,
         claude_mcp_config_path: claude_mcp_config_path.display().to_string(),
     });
+    let azure_devops_credential = core.azure_devops_credential();
     let agent_runtime_signals = core
         .take_agent_runtime_signals()
         .expect("agent runtime signal receiver is composed once");
@@ -515,6 +521,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         voice_settings,
         task_source_credential_states: Arc::new(StdMutex::new(HashMap::new())),
         task_source_refresh_observer,
+        azure_devops_credential,
+        integration_status: control::IntegrationStatusCache::default(),
         terminal: terminal.clone(),
         terminal_grids: terminal_grids::TerminalGridStore::spawn(
             &state_directory,
@@ -560,6 +568,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(keep_awake::supervise(state.clone()));
     tokio::spawn(tracker_runtime::run_tracker_deadlines(state.clone()));
     tokio::spawn(control::run_task_source_deadlines(state.clone()));
+    tokio::spawn(control::load_azure_devops_credential(state.clone()));
     tokio::spawn(reconcile_agent_runtime_signals(
         bridge_agent_runtime_signals(agent_runtime_signals),
         state.core.clone(),

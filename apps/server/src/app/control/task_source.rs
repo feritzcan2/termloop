@@ -709,6 +709,30 @@ async fn read_stored_credential(
     }
 }
 
+/// Cached credential presence for a source, reading the secure store once
+/// (secret discarded) when no state is cached yet, e.g. after daemon start.
+pub(in crate::app::control) async fn credential_presence(
+    state: &AppState,
+    source_id: &str,
+) -> TaskSourceCredentialPresence {
+    let cached = state
+        .task_source_credential_states
+        .lock()
+        .ok()
+        .and_then(|states| states.get(source_id).copied());
+    if let Some(presence) = cached {
+        return presence;
+    }
+    match read_stored_credential(state, source_id).await {
+        Ok(_) => {
+            set_credential_state(state, source_id, TaskSourceCredentialPresence::Present);
+            TaskSourceCredentialPresence::Present
+        }
+        Err(TaskSourceFailure::CredentialsMissing) => TaskSourceCredentialPresence::None,
+        Err(_) => TaskSourceCredentialPresence::Unavailable,
+    }
+}
+
 fn expose_credential(secret: &SecureSecret) -> Result<(&str, &str), TaskSourceFailure> {
     let separator = secret
         .expose()
@@ -838,7 +862,7 @@ pub(in crate::app::control) fn forget_credential_state(state: &AppState, source_
     }
 }
 
-fn credential_error(error: SecureCredentialError) -> CoreError {
+pub(in crate::app::control) fn credential_error(error: SecureCredentialError) -> CoreError {
     CoreError::Store(error.to_string())
 }
 

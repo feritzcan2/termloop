@@ -500,6 +500,18 @@ handleIpc(
   (_event, params: import("@termloop/contract/current").VoiceCredentialsSetParams) =>
     controlCall("voice.credentialsSet", params),
 );
+handleIpc(
+  "termloop:integration-status-list",
+  (_event, params: import("@termloop/contract/current").IntegrationStatusListParams) =>
+    controlCall("integration.statusList", params),
+);
+// The Azure DevOps PAT passes straight through to the selected daemon, which
+// stores it in that computer's credential store. Main never logs or keeps it.
+handleIpc(
+  "termloop:integration-azure-devops-credential-set",
+  (_event, params: import("@termloop/contract/current").IntegrationAzureDevOpsTokenSetParams) =>
+    controlCall("integration.azureDevOpsTokenSet", params),
+);
 handleIpc("termloop:mcp-tool-settings-get", () => controlCall("mcp.toolSettingsGet"));
 handleIpc(
   "termloop:mcp-tool-description-update",

@@ -10,6 +10,7 @@ import {
   stepEvidence,
   stepIsCheckable,
   stepTiming,
+  stepVerdictSource,
   taskPipelineView,
   type TaskPipelineStep,
 } from "../src/renderer/ui/TaskDetailPanel.js";
@@ -31,6 +32,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     completeWhen: "The Task branch has commits and no agent is still working.",
     whileWaiting: { mode: "off", instructions: "" },
     approver: null,
+    deterministicCheck: null,
     ...overrides,
   };
 }
@@ -48,6 +50,8 @@ function playbook(milestones: PlaybookMilestoneDto[]): PlaybookDto {
 
 function progress(overrides: Partial<PlaybookStepProgressDto> = {}): PlaybookStepProgressDto {
   return {
+    evaluator: "routine",
+    deterministicFallback: null,
     taskId: "task-1",
     verdict: "passed",
     evidence: "Branch has 3 commits and no agent is working.",
@@ -714,6 +718,51 @@ describe("the Task detail page on screen", () => {
       .toBe("Dev PR to production · 1 of 3 cleared");
 
     await unmount();
+  });
+  it("marks a pull-request-checked step and explains a fallback with a way to Integrations", async () => {
+    const checked = [
+      milestone(),
+      milestone({
+        id: "review-requested", title: "Was the PR merged?", routineId: "routine-review",
+        deterministicCheck: { kind: "pullRequestMerged", baseBranch: "dev" },
+      }),
+      milestone({ id: "deployed", title: "Did the master PR deploy?", routineId: "routine-deploy" }),
+    ];
+    const fallbackRuntime = standingRuntime();
+    fallbackRuntime.steps[1]!.progress[0] = {
+      ...fallbackRuntime.steps[1]!.progress[0]!, evaluator: "routine", deterministicFallback: "unauthorized",
+    };
+    let opened = 0;
+    const { container, unmount } = await mount({
+      getPlaybook: async () => ({ playbook: playbook(checked), stateRevision: 12 }),
+      getPlaybookRuntime: async () => fallbackRuntime,
+      gitHostProjection: { repository_provider: "github", matches: [] },
+      openIntegrationsSettings: () => { opened += 1; },
+    });
+    const waiting = container.querySelector(".td-step.waiting")!;
+    expect(waiting.querySelector(".td-check")?.textContent).toBe("PR merged → dev");
+    expect(waiting.querySelector(".td-evaluator")?.textContent).toBe("Decided by agent routine");
+    expect(waiting.querySelector(".td-fallback span")?.textContent).toBe("Fell back to agent routine: GitHub not signed in");
+    await act(async () => waiting.querySelector<HTMLButtonElement>(".td-fallback button")!.click());
+    expect(opened).toBe(1);
+    await unmount();
+  });
+
+  it("says a deterministic verdict came from the pull request and offers no link for a transient fallback", () => {
+    const step = (progressOverrides: Partial<PlaybookStepProgressDto>, check = true): TaskPipelineStep => ({
+      position: 1,
+      milestone: milestone({ deterministicCheck: check ? { kind: "pullRequestOpen", baseBranch: null } : null }),
+      standing: "waiting",
+      progress: progress(progressOverrides),
+      routine: { name: "Code finished", enabled: true },
+    });
+    expect(stepVerdictSource(step({ evaluator: "deterministic" }), "github"))
+      .toEqual({ label: "Decided by pull request check", fallback: undefined, needsIntegrations: false });
+    expect(stepVerdictSource(step({ deterministicFallback: "rateLimited" }), "azureDevOps"))
+      .toEqual({ label: "Decided by agent routine", fallback: "Fell back to agent routine: Azure DevOps rate limit reached", needsIntegrations: false });
+    expect(stepVerdictSource(step({ deterministicFallback: "checksUnsupported" }), null)?.needsIntegrations).toBe(true);
+    // A plain Routine step says nothing extra: that is how every step works.
+    expect(stepVerdictSource(step({}, false), "github")).toBeUndefined();
   });
 });
 

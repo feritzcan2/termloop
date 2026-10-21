@@ -1,5 +1,6 @@
 mod context_bank;
 mod git_host;
+mod integration;
 mod project;
 mod prompt_improvement;
 mod session;
@@ -29,6 +30,10 @@ pub(in crate::app) use git_host::{
 pub(in crate::app) use git_host::{
     project_list_local_branches, project_worktree_change_list, project_worktree_diff,
     project_worktree_pre_image, project_worktree_summary,
+};
+pub(in crate::app) use integration::{
+    IntegrationStatusCache, integration_azure_devops_token_set, integration_status_list,
+    load_azure_devops_credential,
 };
 pub(super) use project::delete_project;
 pub(super) use prompt_improvement::{

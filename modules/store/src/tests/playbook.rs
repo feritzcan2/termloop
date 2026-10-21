@@ -81,6 +81,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             routine_id: "routine-pr".into(),
             retry_delay_seconds: 600,
             approver: Some("ferit".into()),
+            deterministic_check: None,
         }],
         updated_at_epoch_ms: 1,
     }
@@ -528,6 +529,8 @@ fn step_verdict_and_waiting_finding_commit_atomically() {
         evidence: "No approval is visible.".into(),
         decided_at_epoch_ms: 2,
         next_attempt_at_epoch_ms: Some(602_000),
+        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+        deterministic_fallback: None,
     };
     let mut routine = store.tracker_configurations()[0].clone();
     routine.action_handling = RoutineActionHandling::Ask;
@@ -703,6 +706,8 @@ fn answer(task_id: &str, verdict: PlaybookStepVerdict) -> PlaybookStepProgress {
             PlaybookStepVerdict::Passed => None,
             PlaybookStepVerdict::Waiting | PlaybookStepVerdict::Blocked => Some(610),
         },
+        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+        deterministic_fallback: None,
     }
 }
 
@@ -782,6 +787,71 @@ fn a_step_verdict_is_current_state_that_a_later_run_replaces() {
     // A deleted Task asks nothing, so its answers go with it.
     store.delete_task(&authority, "task-1").unwrap();
     assert!(store.playbook_step_progress().is_empty());
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn deterministic_checks_and_answer_provenance_survive_reopen() {
+    let (path, mut store) = temp_store("deterministic");
+    let authority = issue_core_write_authority_for_composition();
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    let revision = store.revision();
+    store
+        .set_tracker_configuration(
+            &authority,
+            step_routine("project-a", "routine-pr"),
+            revision,
+        )
+        .unwrap();
+    store
+        .insert_task(&authority, task("task-1", "project-a"))
+        .unwrap();
+    let mut document = playbook("project-a", 1);
+    document.milestones[0].gate = PlaybookGateKind::Automatic;
+    document.milestones[0].approver = None;
+    document.milestones[0].deterministic_check =
+        Some(termloop_domain::PlaybookDeterministicCheck {
+            kind: termloop_domain::PlaybookDeterministicCheckKind::PullRequestMerged,
+            base_branch: Some("develop".into()),
+        });
+    let revision = store.revision();
+    store
+        .set_playbook_configuration(&authority, document.clone(), revision)
+        .unwrap();
+    let mut deterministic = answer("task-1", PlaybookStepVerdict::Passed);
+    deterministic.evaluator = termloop_domain::PlaybookStepEvaluator::Deterministic;
+    let revision = store.revision();
+    store
+        .record_playbook_step_progress(
+            &authority,
+            "project-a",
+            vec![deterministic.clone()],
+            revision,
+        )
+        .unwrap();
+
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(
+        store.playbook_for_project("project-a").unwrap().milestones,
+        document.milestones
+    );
+    assert_eq!(store.playbook_step_progress(), &[deterministic]);
+
+    // A Routine answer keeps the reason the deterministic read could not
+    // decide.
+    let mut fallback = answer("task-1", PlaybookStepVerdict::Waiting);
+    fallback.deterministic_fallback =
+        Some(termloop_domain::PlaybookDeterministicFallback::MultipleMatches);
+    let revision = store.revision();
+    store
+        .record_playbook_step_progress(&authority, "project-a", vec![fallback.clone()], revision)
+        .unwrap();
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.playbook_step_progress(), &[fallback]);
     let _ = std::fs::remove_file(&path);
 }
 

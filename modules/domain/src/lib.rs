@@ -67,11 +67,13 @@ pub use playbook_evaluation::{
 };
 mod task_source;
 pub use playbook::{
-    PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES, PLAYBOOK_EVIDENCE_MAX_BYTES,
-    PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES, PLAYBOOK_RETRY_DELAY_MAX_SECONDS,
-    PLAYBOOK_RETRY_DELAY_MIN_SECONDS, PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX,
-    PLAYBOOK_TITLE_MAX_BYTES, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
-    PlaybookPipeline, PlaybookPosition, PlaybookStepProgress, PlaybookStepVerdict,
+    PLAYBOOK_APPROVER_MAX_BYTES, PLAYBOOK_BASE_BRANCH_MAX_BYTES, PLAYBOOK_ENTRY_ID_MAX_BYTES,
+    PLAYBOOK_EVIDENCE_MAX_BYTES, PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES,
+    PLAYBOOK_RETRY_DELAY_MAX_SECONDS, PLAYBOOK_RETRY_DELAY_MIN_SECONDS,
+    PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX, PLAYBOOK_TITLE_MAX_BYTES,
+    PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookDeterministicCheckKind,
+    PlaybookDeterministicFallback, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
+    PlaybookPosition, PlaybookStepEvaluator, PlaybookStepProgress, PlaybookStepVerdict,
     pipeline_position,
 };
 pub use task_source::{

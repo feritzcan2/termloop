@@ -348,8 +348,9 @@ function pullRequestVerdict(pullRequest: GitHostProjection["matches"][number]): 
   if (pullRequest.state === "draft") {
     return { tone: "quiet", label: "Draft", title: "The pull request is still a draft.", action: "pullRequest" };
   }
+  const checks = checkRollupSubject(pullRequest);
   if (pullRequest.check_rollup === "failing") {
-    return { tone: "attention", label: "Checks failing", title: "The GitHub status-check rollup for the latest pull request commit is failing.", action: "pullRequest" };
+    return { tone: "attention", label: "Checks failing", title: `${checks} for the latest pull request commit is failing.`, action: "pullRequest" };
   }
   if (pullRequest.review_signal === "changesRequested") {
     return { tone: "attention", label: "Changes requested", title: "The configured review signal reports that changes were requested.", action: "pullRequest" };
@@ -361,15 +362,24 @@ function pullRequestVerdict(pullRequest: GitHostProjection["matches"][number]): 
     return { tone: "attention", label: "Policy blocked", title: "Azure DevOps reports that a repository policy blocks the pull request.", action: "pullRequest" };
   }
   if (pullRequest.check_rollup === "passing" && pullRequest.review_signal === "approved" && pullRequest.merge_conflict === "noneDetected") {
-    return { tone: "review", label: "Signals positive", title: "The GitHub check rollup passes, the provider review decision is approved, and no merge conflict is reported; other merge gates are not evaluated.", action: "pullRequest" };
+    return { tone: "review", label: "Signals positive", title: `${checks} passes, the provider review decision is approved, and no merge conflict is reported; other merge gates are not evaluated.`, action: "pullRequest" };
   }
   if (pullRequest.check_rollup === "pending") {
-    return { tone: "quiet", label: "Checks pending", title: "The GitHub status-check rollup is pending.", action: "pullRequest" };
+    return { tone: "quiet", label: "Checks pending", title: `${checks} is pending.`, action: "pullRequest" };
   }
   if (pullRequest.check_rollup === "unsupported") {
-    return { tone: "quiet", label: "CI not observed", title: "TermLoop does not observe Azure DevOps build validation or CI status for this pull request.", action: "pullRequest" };
+    return { tone: "quiet", label: "CI not observed", title: "TermLoop has not read build or status policy results for this pull request.", action: "pullRequest" };
   }
   return { tone: "quiet", label: "Open", title: "The pull request is open and has not been reported as merged.", action: "pullRequest" };
+}
+
+/// Where the check state came from. Azure DevOps pull requests now report real
+/// build and status policy evaluations, so the title names that source rather
+/// than assuming GitHub.
+function checkRollupSubject(pullRequest: GitHostProjection["matches"][number]): string {
+  return pullRequest.check_rollup_source === "azurePolicyEvaluations"
+    ? "The Azure DevOps build and status policy evaluation"
+    : "The GitHub status-check rollup";
 }
 
 function mergedVerdict(mergedCount: number, inBase: boolean): IntegrationVerdict {

@@ -354,6 +354,19 @@ describe("Task facts", () => {
       action: "pullRequest",
     });
 
+    // Azure now reports real policy-evaluated build checks, rendered like GitHub's.
+    projection.matches[0]!.check_rollup = "failing";
+    projection.matches[0]!.check_rollup_source = "azurePolicyEvaluations";
+    expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
+      tone: "attention",
+      label: "Checks failing",
+      title: expect.stringContaining("Azure DevOps build and status policy evaluation"),
+    });
+    projection.matches[0]!.check_rollup = "pending";
+    expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({ label: "Checks pending" });
+    projection.matches[0]!.check_rollup = "unsupported";
+    projection.matches[0]!.check_rollup_source = "unsupported";
+
     projection.matches[0]!.merge_conflict = "policyBlocked";
     expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
       tone: "attention",

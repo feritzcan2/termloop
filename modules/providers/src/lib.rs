@@ -1,10 +1,18 @@
 #![forbid(unsafe_code)]
 
+mod azure_pr_checks;
+mod integration_status;
 mod jira;
 mod openai_voice;
 mod pull_request_changes;
 
 pub use openai_voice::{OpenAiVoiceService, VoiceProviderError};
+
+pub use integration_status::{
+    AZURE_DEVOPS_PAT_ENVIRONMENT, AzureDevOpsCredential, IntegrationProbe,
+    IntegrationProbeCredential, IntegrationProbeState, InvalidAzureDevOpsToken,
+    probe_azure_devops_cli, probe_github_cli, valid_azure_devops_personal_access_token,
+};
 
 pub use jira::{
     JiraBoard, JiraBoardListResult, JiraBoardSource, JiraCloudClient, JiraCredential,
@@ -38,6 +46,7 @@ const AZURE_HOST: &str = "dev.azure.com";
 const AZURE_SSH_HOST: &str = "ssh.dev.azure.com";
 const AZURE_MAX_MATCHES: usize = 16;
 const AZURE_QUERY_ROWS: usize = AZURE_MAX_MATCHES + 1;
+const AZURE_SUPPRESSION: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1134,6 +1143,8 @@ pub struct AzureDevOpsClient {
     sequence: Arc<AtomicU64>,
     suppression:
         Arc<Mutex<BTreeMap<String, (ProviderFailure, termloop_platform::MonotonicDeadline)>>>,
+    credential: AzureDevOpsCredential,
+    suppression_generation: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for AzureDevOpsClient {
@@ -1156,13 +1167,42 @@ impl AzureDevOpsClient {
             discovery_gate: Arc::new(Mutex::new(())),
             sequence: Arc::new(AtomicU64::new(0)),
             suppression: Arc::new(Mutex::new(BTreeMap::new())),
+            credential: AzureDevOpsCredential::default(),
+            suppression_generation: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Suppression recorded under a replaced PAT no longer describes the
+    /// current credential, so a credential change clears it.
+    fn azure_suppression(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        BTreeMap<String, (ProviderFailure, termloop_platform::MonotonicDeadline)>,
+    > {
+        let mut suppression = self.suppression.lock().expect("Azure suppression mutex");
+        let generation = self.credential.generation();
+        if self
+            .suppression_generation
+            .swap(generation, Ordering::Relaxed)
+            != generation
+        {
+            suppression.clear();
+        }
+        suppression
+    }
+
+    /// Shares the daemon-held PAT with every `az` request this client makes.
+    pub fn with_credential(mut self, credential: AzureDevOpsCredential) -> Self {
+        self.credential = credential;
+        self
     }
 
     pub fn query_pull_requests_with_timeout(
         &self,
         query: &AzurePullRequestQuery,
         known_target: Option<&AzureRepository>,
+        include_checks: bool,
         timeout: Duration,
     ) -> Result<AzurePullRequestScan, ProviderFailure> {
         let deadline =
@@ -1194,7 +1234,21 @@ impl AzureDevOpsClient {
         self.check_suppression(&project_key, &alias_key)?;
         self.ensure_discovered(deadline.remaining().ok_or(ProviderFailure::Timeout)?)?;
         let mut scan =
-            self.execute_pull_request_query(&query, known_target.as_ref(), &alias_key, deadline)?;
+            self.scan_pull_requests(&query, known_target.as_ref(), &alias_key, deadline)?;
+        if include_checks {
+            self.attach_azure_policy_checks(&query.repository.organization, &mut scan, deadline);
+        }
+        Ok(scan)
+    }
+
+    fn scan_pull_requests(
+        &self,
+        query: &AzurePullRequestQuery,
+        known_target: Option<&AzureRepository>,
+        alias_key: &str,
+        deadline: termloop_platform::MonotonicDeadline,
+    ) -> Result<AzurePullRequestScan, ProviderFailure> {
+        let mut scan = self.execute_pull_request_query(query, known_target, alias_key, deadline)?;
         if scan.truncated || scan.incomplete {
             return Ok(scan);
         }
@@ -1202,14 +1256,14 @@ impl AzureDevOpsClient {
             scan.parent_resolved = true;
             return Ok(scan);
         }
-        match self.query_repository_relationship(&query, &alias_key, deadline)? {
+        match self.query_repository_relationship(query, alias_key, deadline)? {
             AzureRepositoryRelationship::NonFork => {
                 scan.parent_resolved = true;
                 Ok(scan)
             }
             AzureRepositoryRelationship::Fork(target) => {
                 let mut target_scan =
-                    self.execute_pull_request_query(&query, Some(&target), &alias_key, deadline)?;
+                    self.execute_pull_request_query(query, Some(&target), alias_key, deadline)?;
                 target_scan.parent_resolved = !target_scan.truncated && !target_scan.incomplete;
                 Ok(target_scan)
             }
@@ -1231,12 +1285,13 @@ impl AzureDevOpsClient {
             || query.repository.project_key(),
             AzureRepository::project_key,
         );
+        let generation = self.credential.generation();
         let outcome = termloop_platform::run_command(
             self.base_request(deadline.remaining().ok_or(ProviderFailure::Timeout)?)?
                 .args(azure_pull_request_arguments(query, known_target)),
         )
         .map_err(|_| ProviderFailure::ProviderUnavailable)?;
-        self.classify_query_outcome(&project_key, alias_key, &outcome)?;
+        self.classify_query_outcome(&project_key, alias_key, generation, &outcome)?;
         parse_azure_pull_request_scan(query.clone(), known_target, &outcome.stdout)
     }
 
@@ -1247,12 +1302,13 @@ impl AzureDevOpsClient {
         deadline: termloop_platform::MonotonicDeadline,
     ) -> Result<AzureRepositoryRelationship, ProviderFailure> {
         let project_key = query.repository.project_key();
+        let generation = self.credential.generation();
         let outcome = termloop_platform::run_command(
             self.base_request(deadline.remaining().ok_or(ProviderFailure::Timeout)?)?
                 .args(azure_repository_arguments(query)),
         )
         .map_err(|_| ProviderFailure::ProviderUnavailable)?;
-        self.classify_query_outcome(&project_key, alias_key, &outcome)?;
+        self.classify_query_outcome(&project_key, alias_key, generation, &outcome)?;
         parse_azure_repository_relationship(query, &outcome.stdout)
     }
 
@@ -1326,57 +1382,69 @@ impl AzureDevOpsClient {
 
     fn base_request(&self, timeout: Duration) -> Result<CommandRequest, ProviderFailure> {
         let id = self.sequence.fetch_add(1, Ordering::Relaxed);
-        Ok(
+        Ok(self.credential.apply(
             azure_cli_request(termloop_platform::LaunchEnvironment::os_baseline())?
                 .timeout(timeout)
                 .output_limit(OUTPUT_LIMIT)
                 .tracked(&self.registry_directory, format!("azure-devops-{id}")),
-        )
+        ))
     }
 
     fn classify_query_outcome(
         &self,
         project_key: &str,
         alias_key: &str,
+        generation: u64,
         outcome: &termloop_platform::CommandOutcome,
     ) -> Result<(), ProviderFailure> {
-        if outcome.stdout_truncated || outcome.stderr_truncated {
-            return Err(ProviderFailure::OutputLimit);
+        classify_azure_outcome(outcome).inspect_err(|&failure| {
+            let key = match failure {
+                ProviderFailure::Unauthorized => project_key,
+                ProviderFailure::RateLimited => alias_key,
+                _ => return,
+            };
+            self.record_azure_suppression(key, failure, generation);
+        })
+    }
+
+    /// Records a denial observed under credential `generation`. A request that
+    /// started before the PAT was replaced says nothing about the new one.
+    pub(crate) fn record_azure_suppression(
+        &self,
+        key: &str,
+        failure: ProviderFailure,
+        generation: u64,
+    ) {
+        let Ok(deadline) = termloop_platform::MonotonicDeadline::after(AZURE_SUPPRESSION) else {
+            return;
+        };
+        let mut suppression = self.azure_suppression();
+        if self.credential.generation() != generation {
+            return;
         }
-        if let Err(failure) = classify_azure_termination(&outcome.termination, &outcome.stderr) {
-            if matches!(
-                failure,
-                ProviderFailure::Unauthorized | ProviderFailure::RateLimited
-            ) && let Ok(deadline) =
-                termloop_platform::MonotonicDeadline::after(Duration::from_secs(5 * 60))
-            {
-                let mut suppression = self.suppression.lock().expect("Azure suppression mutex");
-                while suppression.len() >= 256 {
-                    let Some(oldest_key) = suppression.keys().next().cloned() else {
-                        break;
-                    };
-                    suppression.remove(&oldest_key);
-                }
-                let key = if failure == ProviderFailure::Unauthorized {
-                    project_key
-                } else {
-                    alias_key
-                };
-                suppression.insert(key.to_owned(), (failure, deadline));
-            }
-            return Err(failure);
+        while suppression.len() >= 256 {
+            let Some(oldest_key) = suppression.keys().next().cloned() else {
+                break;
+            };
+            suppression.remove(&oldest_key);
         }
-        Ok(())
+        suppression.insert(key.to_owned(), (failure, deadline));
+    }
+
+    pub(crate) fn azure_suppressed(&self, key: &str) -> Option<ProviderFailure> {
+        let mut suppression = self.azure_suppression();
+        let (failure, deadline) = suppression.get(key).copied()?;
+        if deadline.remaining().is_some() {
+            return Some(failure);
+        }
+        suppression.remove(key);
+        None
     }
 
     fn check_suppression(&self, project_key: &str, alias_key: &str) -> Result<(), ProviderFailure> {
-        let mut suppression = self.suppression.lock().expect("Azure suppression mutex");
         for key in [project_key, alias_key] {
-            if let Some((failure, deadline)) = suppression.get(key).copied() {
-                if deadline.remaining().is_some() {
-                    return Err(failure);
-                }
-                suppression.remove(key);
+            if let Some(failure) = self.azure_suppressed(key) {
+                return Err(failure);
             }
         }
         Ok(())
@@ -1447,15 +1515,19 @@ fn cacheable_discovery_failure(failure: ProviderFailure) -> bool {
 fn classify_azure_discovery(
     outcome: &termloop_platform::CommandOutcome,
 ) -> Result<(), ProviderFailure> {
+    classify_azure_outcome(outcome).map_err(|failure| match failure {
+        ProviderFailure::Timeout | ProviderFailure::OutputLimit => failure,
+        _ => ProviderFailure::ProviderUnavailable,
+    })
+}
+
+pub(crate) fn classify_azure_outcome(
+    outcome: &termloop_platform::CommandOutcome,
+) -> Result<(), ProviderFailure> {
     if outcome.stdout_truncated || outcome.stderr_truncated {
         return Err(ProviderFailure::OutputLimit);
     }
-    classify_azure_termination(&outcome.termination, &outcome.stderr).map_err(|failure| {
-        match failure {
-            ProviderFailure::Timeout | ProviderFailure::OutputLimit => failure,
-            _ => ProviderFailure::ProviderUnavailable,
-        }
-    })
+    classify_azure_termination(&outcome.termination, &outcome.stderr)
 }
 
 fn classify_azure_termination(

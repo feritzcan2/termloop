@@ -4,14 +4,17 @@ import type {
   PlaybookStepProgressDto, PlaybookTaskPositionSetParams, PlaybookTaskPositionSetResult,
   RoutineConfigurationListResult, RoutineRunNowResult, RoutineRuntimeListResult,
 } from "@termloop/contract/current";
-import type { AgentCapabilityDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, GitHostProvider } from "@termloop/contract/current";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, Session, Task } from "../model.js";
 import { sessionLabel, taskEffectiveBranch, taskJiraIssueKey } from "../model.js";
 import { agentAttention, sessionState } from "../session-presentation.js";
 import {
   integrationTone, taskChangeCount, taskChangedFileLabel, taskDivergence, taskIntegration, taskStage,
 } from "../task-presentation.js";
-import { playbookRelativeMinutes } from "./playbook-policy.js";
+import {
+  playbookCheckCaption, playbookFallbackNeedsIntegrations, playbookFallbackReasonCopy, playbookRelativeMinutes,
+} from "./playbook-policy.js";
+import "./playbook-check.css";
 import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
 import { TaskBrief } from "./TaskBrief.js";
 import { Icon, agentIconName } from "./Icon.js";
@@ -157,6 +160,35 @@ export function stepAnswerSource(step: TaskPipelineStep): TaskStepAnswerSource {
     : { text: `${step.routine.name} is off`, blocked: true };
 }
 
+/** Who decided this Task's last verdict at a step that can be checked against
+    its pull request, and — when the pull request check could not answer — why
+    the agent Routine decided instead. Nothing for a step without a check whose
+    Routine answered, because that is simply how every step works. */
+export type TaskStepVerdictSource = {
+  label: string;
+  fallback: string | undefined;
+  needsIntegrations: boolean;
+};
+
+export function stepVerdictSource(
+  step: TaskPipelineStep,
+  provider: GitHostProvider | null | undefined,
+): TaskStepVerdictSource | undefined {
+  const progress = step.progress;
+  if (!progress) return undefined;
+  const hasCheck = step.milestone.gate === "automatic" && (step.milestone.deterministicCheck ?? null) !== null;
+  if (progress.evaluator === "deterministic") {
+    return { label: "Decided by pull request check", fallback: undefined, needsIntegrations: false };
+  }
+  const reason = progress.deterministicFallback ?? null;
+  if (!hasCheck && reason === null) return undefined;
+  return {
+    label: "Decided by agent routine",
+    fallback: reason === null ? undefined : playbookFallbackReasonCopy(reason, provider),
+    needsIntegrations: playbookFallbackNeedsIntegrations(reason),
+  };
+}
+
 /** Running a step Routine by hand is only meaningful for the automatic stage
     this Task is standing at. A human gate waits on a person. */
 export function stepIsCheckable(step: TaskPipelineStep): boolean {
@@ -197,6 +229,9 @@ export type TaskDetailPanelProps = {
   agentCapabilities?: readonly AgentCapabilityDto[] | undefined;
   launchTerminal?: ((taskId: string) => Promise<unknown>) | undefined;
   launchAgent?: ((taskId: string, agentId: string) => Promise<unknown>) | undefined;
+  /** Opens Settings → Integrations, offered when a pull request check fell
+      back because its provider is not set up on this computer. */
+  openIntegrationsSettings?: (() => void) | undefined;
 };
 
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
@@ -559,6 +594,8 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     canSetPosition={view.placement !== "away"}
                     checkNow={checkNow}
                     setPosition={setPosition}
+                    provider={props.gitHostProjection?.repository_provider}
+                    openIntegrations={props.openIntegrationsSettings}
                   />
                 ))}
                 <li className={`td-step terminus ${view.placement === "done" ? "passed" : "ahead"}`}>
@@ -598,7 +635,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   );
 }
 
-function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy, canSetPosition, checkNow, setPosition }: {
+function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy, canSetPosition, checkNow, setPosition, provider, openIntegrations }: {
   step: TaskPipelineStep;
   nowEpochMs: number;
   running: boolean;
@@ -607,7 +644,16 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
   canSetPosition: boolean;
   checkNow(routineId: string): Promise<void>;
   setPosition(passedMilestoneCount: number): Promise<void>;
+  provider?: GitHostProvider | null | undefined;
+  openIntegrations?: (() => void) | undefined;
 }) {
+  const verdictSource = stepVerdictSource(step, provider);
+  const check = step.milestone.gate === "automatic" ? playbookCheckCaption(step.milestone.deterministicCheck) : undefined;
+  const fallback = verdictSource?.fallback ? <p className="td-fallback" role="note">
+    <span>{verdictSource.fallback}</span>
+    {verdictSource.needsIntegrations && openIntegrations
+      ? <button type="button" onClick={openIntegrations}>Open Integrations</button> : null}
+  </p> : null;
   const timing = stepTiming(step, nowEpochMs);
   const evidence = stepEvidence(step);
   const answers = stepAnswerSource(step);
@@ -623,6 +669,7 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
         <div className="td-step-title-row">
           <p className="td-step-title">{step.milestone.title}</p>
           {step.milestone.gate === "human" ? <span className="td-gate">Approval</span> : null}
+          {check ? <span className="td-check" title="Checked directly against the Task branch pull request">{check}</span> : null}
           {canSetPosition ? (
             <button
               type="button"
@@ -640,10 +687,12 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
         {step.standing === "waiting" ? (
           <>
             <p className="td-evidence">{evidence}</p>
+            {fallback}
             <div className="td-step-foot">
               <span className={`td-answers${answers.blocked ? " blocked" : ""}`}>
                 {answers.blocked || step.milestone.gate === "human" ? answers.text : `Checked by ${answers.text}`}
               </span>
+              {verdictSource ? <span className="td-evaluator">{verdictSource.label}</span> : null}
               {timing ? <span className="td-timing">{timing}</span> : null}
               {checkable && step.milestone.routineId ? (
                 <button
@@ -673,8 +722,10 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
               {step.standing === "ahead"
                 ? <span className={`td-answers${answers.blocked ? " blocked" : ""}`}>{answers.text}</span>
                 : null}
+              {step.standing === "passed" && verdictSource ? <span className="td-evaluator">{verdictSource.label}</span> : null}
               {timing ? <span className="td-timing">{timing}</span> : null}
             </div>
+            {step.standing === "passed" ? fallback : null}
           </>
         )}
       </div>

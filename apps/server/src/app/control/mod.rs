@@ -30,6 +30,7 @@ use dispatch::{DispatchOutcome, PostResponseAction, dispatch};
 use errors::error_response;
 pub(super) use handlers::git_host_pull_request_list_background;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
+pub(in crate::app) use handlers::{IntegrationStatusCache, load_azure_devops_credential};
 pub(in crate::app) use handlers::{
     close_task, launch_automated_task_workflow, launch_playbook_evaluation_fork,
     launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
@@ -807,6 +808,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn integration_methods_require_full_control_and_are_not_cancellation_safe() {
+        for method in ["integration.statusList", "integration.azureDevOpsTokenSet"] {
+            assert!(protocol::METHODS.contains(&method));
+            assert!(scope_allows_method(ClientScope::Full, method));
+            assert!(!scope_allows_method(ClientScope::ReadOnly, method));
+            assert!(!scope_allows_method(ClientScope::Companion, method));
+            assert!(!scope_allows_method(ClientScope::Hook, method));
+            assert!(!cancellation_safe_method(method));
+        }
+    }
+
     fn request_value(identity: serde_json::Value) -> serde_json::Value {
         json!({
             "id": "identity-test",
@@ -903,7 +916,11 @@ mod tests {
                 "instructions": "s".repeat(8_192)
             },
             "retryDelaySeconds": 60,
-            "approver": "a".repeat(120)
+            "approver": "a".repeat(120),
+            "deterministicCheck": {
+                "kind": "pullRequestChecksPassing",
+                "baseBranch": "b".repeat(255)
+            }
         });
         let milestones = vec![milestone; 24];
         let saved_pipeline = json!({ "name": "Saved pipeline", "milestones": milestones });

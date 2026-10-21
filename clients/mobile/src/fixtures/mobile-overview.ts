@@ -224,6 +224,7 @@ export const fixturePlaybook: PlaybookDto = {
       completeWhen: "The Task branch has commits and no agent is still working.",
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
+      deterministicCheck: null,
     },
     {
       id: "self-review",
@@ -234,6 +235,7 @@ export const fixturePlaybook: PlaybookDto = {
       completeWhen: "A reviewer agent has reported on the branch diff.",
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
+      deterministicCheck: null,
     },
     {
       id: "review-requested",
@@ -244,6 +246,7 @@ export const fixturePlaybook: PlaybookDto = {
       completeWhen: "A review request naming this pull request exists.",
       whileWaiting: { mode: "ask", instructions: "Offer to request review." },
       approver: null,
+      deterministicCheck: null,
     },
     {
       id: "approved",
@@ -254,6 +257,7 @@ export const fixturePlaybook: PlaybookDto = {
       completeWhen: "The named reviewer explicitly approves the pull request.",
       whileWaiting: { mode: "off", instructions: "" },
       approver: "Nurguyl",
+      deterministicCheck: null,
     },
     {
       id: "deployed",
@@ -264,6 +268,7 @@ export const fixturePlaybook: PlaybookDto = {
       completeWhen: "The deploy pipeline reports the merge commit as live.",
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
+      deterministicCheck: null,
     },
   ],
   savedPipelines: [],
@@ -288,6 +293,8 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
         evidence: "Branch has 6 commits and no agent is working.",
         decidedAtEpochMs: now - 5_400_000,
         nextAttemptAtEpochMs: null,
+        evaluator: "routine",
+        deterministicFallback: null,
       }],
     },
     {
@@ -301,6 +308,8 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
         evidence: "The reviewer agent reported no blocking findings on the 14-file diff.",
         decidedAtEpochMs: now - 1_800_000,
         nextAttemptAtEpochMs: null,
+        evaluator: "routine",
+        deterministicFallback: null,
       }],
     },
     {
@@ -314,6 +323,8 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
         evidence: "No review request naming pull request #482 has been seen in the channel yet.",
         decidedAtEpochMs: now - 600_000,
         nextAttemptAtEpochMs: now + 660_000,
+        evaluator: "routine",
+        deterministicFallback: null,
       }],
     },
     {

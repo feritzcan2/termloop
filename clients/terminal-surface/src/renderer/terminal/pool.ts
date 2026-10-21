@@ -109,7 +109,7 @@ export class TerminalPool<S extends TerminalSession> {
     if (!entry || !container) return;
     this.#disposeRuntime(entry);
     entry.tail.clear();
-    this.#present(entry, { phase: "connecting", reading: undefined, notice: "Reopening the available recent output." });
+    this.#present(entry, { phase: "connecting", reading: undefined, notice: undefined });
     try { await this.mount(id, container); }
     catch { this.#present(entry, { phase: "failed", notice: "The terminal view could not be reopened." }); }
   }
@@ -148,7 +148,7 @@ export class TerminalPool<S extends TerminalSession> {
           // Session descriptor itself is explicitly closed.
           this.#detachAttachment(entry);
         }
-        if (runtimeChanged) { entry.tail.clear(); this.#present(entry, { phase: "connecting", notice: "Terminal runtime changed.", reading: undefined }); }
+        if (runtimeChanged) { entry.tail.clear(); this.#present(entry, { phase: "connecting", notice: undefined, input: undefined, reading: undefined }); }
         if (runtimeChanged && entry.mounted) {
           entry.surfaceReady = false;
           entry.mountToken = undefined;
@@ -427,7 +427,11 @@ export class TerminalPool<S extends TerminalSession> {
     }
     if (!entry.surface || entry.attachment !== attachment) return;
     if (event.type === "inputDelivery") {
-      this.#present(entry, { input: event.state, ...(event.state === "uncertain" ? { notice: "Input delivery unconfirmed. Check the terminal before sending again." } : {}) });
+      // A notice stands until the user's next confirmed input shows they have
+      // moved on; a failure notice stays because input cannot be confirmed.
+      const notice = event.state === "uncertain" ? { notice: "Input delivery unconfirmed. Check the terminal before sending again." }
+        : event.state === "confirmed" && entry.presentation.phase !== "failed" ? { notice: undefined } : {};
+      this.#present(entry, { input: event.state, ...notice });
       return;
     }
     if (event.type === "gap") {

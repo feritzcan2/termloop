@@ -626,6 +626,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         routine_id: "routine-a".into(),
         retry_delay_seconds: 60,
         approver: None,
+        deterministic_check: None,
     };
     store
         .state
@@ -649,6 +650,8 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             evidence: "CI passed".into(),
             decided_at_epoch_ms: 2,
             next_attempt_at_epoch_ms: None,
+            evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+            deterministic_fallback: None,
         });
     store.state.companion_messages = vec![
         message("project-a", 1, "reset me"),

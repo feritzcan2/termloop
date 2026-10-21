@@ -60,6 +60,7 @@ import { SkillsRail, type RemoteSkillComputer } from "./SkillsRail.js";
 import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel, type KeepAwakeActions } from "./KeepAwakePanel.js";
+import type { IntegrationActions } from "./IntegrationsSettings.js";
 import { computerScopeName, hasRemoteComputers } from "../settings-scope.js";
 import { LibraryScopeHeader } from "./LibraryScopeHeader.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
@@ -214,6 +215,7 @@ export type ShellProps = {
   agentConnections?: AgentConnectionActions;
   connectionProfiles: readonly ConnectionProfileSummary[];
   computerKeepAwake: KeepAwakeActions;
+  integrationActions?: IntegrationActions | undefined;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   sshSetup?: SshSetupActions;
@@ -1926,6 +1928,7 @@ export function Shell(props: ShellProps) {
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
+              openIntegrationsSettings={props.integrationActions ? () => setSettingsPage("integrations") : undefined}
             /> : stagePage?.kind === "workflow" && props.selectedProject ? (stagePage.id && !props.workflowConfigurations.some((configuration) => configuration.id === stagePage.id)
               ? <StageEditorPlaceholder label="Workflow template" error="This template is no longer available. Your draft has been kept; it cannot overwrite another template." loaded={false} close={() => setStagePage(undefined)} />
               : <WorkflowEditorPanel
@@ -2376,6 +2379,10 @@ export function Shell(props: ShellProps) {
         keepAwake={props.computerKeepAwake}
         mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
         update={props.appUpdate}
+        integrations={props.integrationActions ? {
+          actions: props.integrationActions,
+          openTaskSettings: props.selectedProject ? () => openStagePage({ kind: "taskSettings" }) : undefined,
+        } : undefined}
         prepareRemoteMobileAccess={props.prepareRemoteMobileAccess}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}

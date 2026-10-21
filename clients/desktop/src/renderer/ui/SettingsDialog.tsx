@@ -14,8 +14,9 @@ import { showsWindowDragRegion, type KeyboardPlatform } from "../command-surface
 import { Icon, type IconName } from "./Icon.js";
 import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
 import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
+import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSettings.js";
 
-export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -32,6 +33,7 @@ const appNavItems: SettingsNavItem[] = [
 
 const computerNavItems: SettingsNavItem[] = [
   { page: "servers", title: "Computers", icon: "monitor", keywords: "servers remote ssh tailscale host share connection keep awake power agent accounts" },
+  { page: "integrations", title: "Integrations", icon: "link", keywords: "github gh azure devops az jira pull request pr build checks ci review token pat credentials providers" },
   { page: "mobile", title: "Pair phone", icon: "phone", keywords: "mobile iphone qr pairing voice transcription" },
 ];
 
@@ -47,6 +49,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   localComputerName?: string | undefined;
   mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
   update?: AppUpdateControls | undefined;
+  /** Per-computer provider status. Absent hosts simply omit the page. */
+  integrations?: { actions: IntegrationActions; openTaskSettings?: (() => void) | undefined } | undefined;
 };
 
 export function SettingsDialog({
@@ -61,6 +65,7 @@ export function SettingsDialog({
   localComputerName,
   mobile,
   update,
+  integrations,
   ...connectionProps
 }: SettingsDialogProps) {
   const [selectedPage, setPage] = useState<SettingsPage>(initialPage);
@@ -76,7 +81,9 @@ export function SettingsDialog({
     { title: showScope ? "This app" : "General", items: appNavItems.filter((item) => matchesSettingsQuery(item, query)) },
     {
       title: "Computers",
-      items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile) && matchesSettingsQuery(item, query)),
+      items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile)
+        && (item.page !== "integrations" || integrations)
+        && matchesSettingsQuery(item, query)),
     },
   ].filter((group) => group.items.length > 0);
   const visiblePages = navGroups.flatMap((group) => group.items.map((item) => item.page));
@@ -219,6 +226,13 @@ export function SettingsDialog({
             />
           ) : page === "updates" ? (
             <UpdateSettings update={update} />
+          ) : page === "integrations" && integrations ? (
+            <IntegrationsSettings
+              actions={integrations.actions}
+              listProfiles={connectionProps.list}
+              initialProfileId={initialProfileId}
+              openTaskSettings={integrations.openTaskSettings ? () => { close(); integrations.openTaskSettings?.(); } : undefined}
+            />
           ) : page === "mobile" && mobile ? (
             <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
           ) : (

@@ -108,6 +108,13 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
         "gitHost.pullRequestList",
         &wrong_url
     ));
+    let mut azure_policy_checks = azure.clone();
+    azure_policy_checks[0]["matches"][1]["check_rollup"] = json!("passing");
+    azure_policy_checks[0]["matches"][1]["check_rollup_source"] = json!("azurePolicyEvaluations");
+    assert!(validate_method_result(
+        "gitHost.pullRequestList",
+        &azure_policy_checks
+    ));
     let mut invented_azure_checks = azure.clone();
     invented_azure_checks[0]["matches"][1]["check_rollup"] = json!("passing");
     invented_azure_checks[0]["matches"][1]["check_rollup_source"] =

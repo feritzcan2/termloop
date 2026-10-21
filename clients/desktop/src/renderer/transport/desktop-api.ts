@@ -27,6 +27,10 @@ import type {
   AgentAuthSubmitCodeParams,
   ErrorCode,
   ProjectTaskAutomationGetResult,
+  IntegrationAzureDevOpsTokenSetParams,
+  IntegrationAzureDevOpsTokenSetResult,
+  IntegrationStatusListParams,
+  IntegrationStatusListResult,
   ProjectTaskAutomationSetParams,
   ProjectTaskAutomationSetResult,
   TaskSourceCandidateImportParams,
@@ -274,6 +278,8 @@ export type DesktopApi = {
   keepAwakeSet(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
   voiceSettingsGet(): Promise<VoiceSettingsResult>;
   voiceCredentialsSet(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
+  integrationStatusList(params: IntegrationStatusListParams): Promise<IntegrationStatusListResult>;
+  integrationAzureDevOpsCredentialSet(params: IntegrationAzureDevOpsTokenSetParams): Promise<IntegrationAzureDevOpsTokenSetResult>;
   mcpToolSettingsGet(): Promise<McpToolSettingsResult>;
   mcpToolDescriptionUpdate(params: McpToolDescriptionUpdateParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;
   mcpToolDescriptionReset(params: McpToolDescriptionResetParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;

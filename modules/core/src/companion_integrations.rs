@@ -4,6 +4,7 @@ pub mod assistant_reset;
 pub mod assistant_session;
 pub(crate) mod finding_disposition;
 pub mod playbook;
+pub mod playbook_deterministic;
 pub mod playbook_runtime;
 pub mod prompt_improvement;
 pub mod pull_request_changes;
@@ -986,6 +987,7 @@ impl GitHostProviderQueryJob {
                             client.query_pull_requests_with_timeout(
                                 query,
                                 known_target.as_ref(),
+                                true,
                                 remaining,
                             )
                         })
@@ -1723,15 +1725,16 @@ fn projection_summary(summary: &CachedPullRequest) -> GitHostPullRequestSummary 
         head_repository_owner: summary.head_repository_owner.clone(),
         head_repository_project: summary.head_repository_project.clone(),
         head_repository_name: summary.head_repository_name.clone(),
-        check_rollup: if github {
-            summary.checks.clone()
-        } else {
-            "unsupported".into()
-        },
+        check_rollup: summary.checks.clone(),
+        // Azure checks come from blocking build and status policy evaluations;
+        // providers keep `unsupported` only for terminal PRs, so the source
+        // stays derivable from the cached checks alone.
         check_rollup_source: if github {
             "githubStatusCheckRollup"
-        } else {
+        } else if summary.checks == "unsupported" {
             "unsupported"
+        } else {
+            "azurePolicyEvaluations"
         }
         .into(),
         review_signal: summary.review.clone(),
@@ -2065,8 +2068,22 @@ mod tests {
             updated_at_epoch_ms: 10,
         };
         let projection = projection_summary(&summary);
-        assert_eq!(projection.check_rollup, "unsupported");
-        assert_eq!(projection.check_rollup_source, "unsupported");
+        assert_eq!(projection.check_rollup, "unknown");
+        assert_eq!(projection.check_rollup_source, "azurePolicyEvaluations");
+        for (checks, source) in [
+            ("passing", "azurePolicyEvaluations"),
+            ("failing", "azurePolicyEvaluations"),
+            ("pending", "azurePolicyEvaluations"),
+            ("notReported", "azurePolicyEvaluations"),
+            ("unsupported", "unsupported"),
+        ] {
+            let projection = projection_summary(&CachedPullRequest {
+                checks: checks.into(),
+                ..summary.clone()
+            });
+            assert_eq!(projection.check_rollup, checks);
+            assert_eq!(projection.check_rollup_source, source);
+        }
         assert_eq!(
             projection.review_signal_source,
             "azureRequiredReviewerVotes"

@@ -16,7 +16,8 @@ fn milestone() -> serde_json::Value {
             "mode": "ask",
             "instructions": "Propose asking the reviewer and ask the user whether to send it."
         },
-        "approver": "ferit"
+        "approver": "ferit",
+        "deterministicCheck": null
     })
 }
 
@@ -31,7 +32,8 @@ fn milestone_draft() -> serde_json::Value {
             "instructions": "If approval is still missing, propose asking the reviewer and ask the user whether to send it."
         },
         "retryDelaySeconds": 600,
-        "approver": "ferit"
+        "approver": "ferit",
+        "deterministicCheck": null
     })
 }
 
@@ -114,6 +116,21 @@ fn playbook_surface_is_strict_and_scoped() {
     let mut automatic = milestone_draft();
     automatic["gate"] = json!("automatic");
     automatic["approver"] = serde_json::Value::Null;
+    automatic["deterministicCheck"] =
+        json!({"kind": "pullRequestChecksPassing", "baseBranch": "develop"});
+    let mut unknown_check = automatic.clone();
+    unknown_check["deterministicCheck"] = json!({"kind": "jiraInReview", "baseBranch": null});
+    assert!(!validate_method_params(
+        "playbook.update",
+        &json!({
+            "projectId": "project-1",
+            "activePipelineName": "Ship to production",
+            "savedPipelines": [],
+            "milestones": [unknown_check],
+            "expectedPlaybookRevision": 0,
+            "expectedRevision": 4
+        })
+    ));
     assert!(validate_method_params(
         "playbook.update",
         &json!({
@@ -422,13 +439,17 @@ fn the_board_reads_where_every_task_is_standing() {
             "verdict": "passed",
             "evidence": "PR #12 is approved by ferit.",
             "decidedAtEpochMs": 20,
-            "nextAttemptAtEpochMs": null
+            "nextAttemptAtEpochMs": null,
+            "evaluator": "deterministic",
+            "deterministicFallback": null
         }, {
             "taskId": "task-2",
             "verdict": "waiting",
             "evidence": "No branch has been pushed yet.",
             "decidedAtEpochMs": 20,
-            "nextAttemptAtEpochMs": 620
+            "nextAttemptAtEpochMs": 620,
+            "evaluator": "routine",
+            "deterministicFallback": "checksUnsupported"
         }],
         "nextAttemptAtEpochMs": 620
     });

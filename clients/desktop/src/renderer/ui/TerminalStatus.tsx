@@ -20,7 +20,10 @@ export function TerminalStatus({ sessionId, port }: { sessionId: string; port?: 
   const needsAttention = unavailable || state.input === "uncertain" || Boolean(state.notice);
   if (!reading && !needsAttention && !reconnecting && !error && !savedMessagesAvailable) return null;
   const phase = ({ connecting: "Connecting — input unavailable", replaying: "Loading recent output", live: "Live", reconnecting: "Connection lost — you cannot type here", exited: "Process exited", failed: "Terminal unavailable — input unavailable" })[state.phase];
-  const input = state.input ? ({ sending: "Sending…", confirmed: "Input reached terminal", uncertain: "Last input delivery unconfirmed. Check the terminal before sending again." })[state.input] : undefined;
+  // Routine progress (live, sending, confirmed) is not news; only problems speak.
+  const input = state.input === "uncertain" ? "Last input delivery unconfirmed. Check the terminal before sending again." : undefined;
+  const notice = state.notice && !state.notice.startsWith("Input delivery unconfirmed.") ? state.notice : undefined;
+  const showMessage = unavailable || reading || Boolean(input || notice || error);
   const reconnect = async () => {
     if (pending.current || !port?.reconnect) return;
     pending.current = true;
@@ -34,11 +37,11 @@ export function TerminalStatus({ sessionId, port }: { sessionId: string; port?: 
     {conversation && conversationPort ? <ConversationHistory sessionId={sessionId} state={conversation} port={conversationPort} /> : reading ? <pre className="terminal-reading-view" tabIndex={0} aria-label="Paused terminal output">{state.reading || "No output yet."}</pre> : null}
     <div className={`terminal-stream-status${unavailable ? " terminal-stream-status--unavailable" : ""}`}>
       <div className="terminal-stream-message" role={unavailable ? "alert" : "status"}>
-        <strong>{unavailable ? "⚠ " : ""}{phase}{state.progress === undefined ? "" : ` · ${state.progress}%`}</strong>
+        {showMessage && state.phase !== "live" ? <strong>{unavailable ? "⚠ " : ""}{phase}{state.progress === undefined ? "" : ` · ${state.progress}%`}</strong> : null}
         {unavailable ? <span>{state.phase === "failed" ? "Reconnect to the computer or reopen the terminal view." : "Trying to reconnect automatically. The output shown may be out of date."}</span> : null}
         {reading ? <span>Reading paused · {state.phase === "live" ? "session keeps running" : "return to live after reconnecting"}</span> : null}
         {input ? <span>{input}</span> : null}
-        {state.notice && !state.notice.startsWith("Input delivery unconfirmed.") ? <span>{state.notice}</span> : null}
+        {notice ? <span>{notice}</span> : null}
         {error ? <span role="alert">{error}</span> : null}
       </div>
       <div className="terminal-stream-actions">
