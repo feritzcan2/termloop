@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+mod pull_request_nudge;
 mod report;
 mod run_now;
 mod step_claims;
@@ -102,6 +103,9 @@ pub(crate) struct TrackerRuntimeState {
     /// without this a run that answered nothing would be due again the instant
     /// it finished. It holds back only that Task, never others at the step.
     step_task_not_before: HashMap<(String, String), u64>,
+    /// When one Task's step should be asked early because its pull request
+    /// changed. Runtime-only and cleared once that Task is claimed.
+    step_task_nudge: HashMap<(String, String), u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +135,8 @@ impl TrackerRuntimeState {
         self.step_run_now.remove(routine_id);
         self.step_task_not_before
             .retain(|(routine, _), _| routine != routine_id);
+        self.step_task_nudge
+            .retain(|(routine, _), _| routine != routine_id);
     }
 
     /// Cancels only one Task's check and wait at a step. Checks running for
@@ -141,8 +147,9 @@ impl TrackerRuntimeState {
                 .checks
                 .retain(|check| check.step_task_id.as_deref() != Some(task_id));
         }
-        self.step_task_not_before
-            .remove(&(routine_id.to_owned(), task_id.to_owned()));
+        let key = (routine_id.to_owned(), task_id.to_owned());
+        self.step_task_not_before.remove(&key);
+        self.step_task_nudge.remove(&key);
         if self
             .step_run_now
             .get(routine_id)
@@ -685,6 +692,9 @@ impl CoreRuntime {
             .retain(|routine_id, _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
             .step_task_not_before
+            .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
+        self.tracker_runtime
+            .step_task_nudge
             .retain(|(routine_id, _), _| routine_ids.contains(routine_id.as_str()));
         self.tracker_runtime
             .pending_steward_wakes

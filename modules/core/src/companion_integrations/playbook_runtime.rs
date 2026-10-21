@@ -16,10 +16,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 pub use termloop_domain::PlaybookStepVerdict;
 use termloop_domain::{
-    PendingRoutineFinding, PlaybookConfiguration, PlaybookMilestone, PlaybookPosition,
-    PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX, ROUTINE_RECENT_SOURCE_KEYS_MAX,
-    ROUTINE_RELATED_TASKS_MAX, RoutineActionHandling, TaskRecord, TaskStatus, TrackerConfiguration,
-    TrackerReport, TrackerReportKind, pipeline_position,
+    PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone,
+    PlaybookPosition, PlaybookStepProgress, ROUTINE_PENDING_FINDINGS_MAX,
+    ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, RoutineActionHandling, TaskRecord,
+    TaskStatus, TrackerConfiguration, TrackerReport, TrackerReportKind, pipeline_position,
 };
 
 /// One Task standing at a question, and when it may be asked about again.
@@ -276,6 +276,27 @@ impl CoreRuntime {
             .collect()
     }
 
+    /// The automatic step this open Task stands at right now, as its Routine
+    /// and its own stored due time. Human gates and finished Tasks have none.
+    pub(crate) fn playbook_automatic_step_for_task(&self, task_id: &str) -> Option<(String, u64)> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let playbook = self.store.playbook_for_project(&task.project_id)?;
+        let standing = self
+            .pipeline_standings(playbook)
+            .into_iter()
+            .find(|standing| standing.task.id == task_id)?;
+        let PlaybookPosition::At(index) = standing.position else {
+            return None;
+        };
+        let milestone = &playbook.milestones[index];
+        (milestone.gate == PlaybookGateKind::Automatic).then(|| {
+            (
+                milestone.routine_id.clone(),
+                standing.due_at_epoch_ms(&milestone.id),
+            )
+        })
+    }
+
     /// The pipeline this Routine's Project is walking, if both still exist.
     fn routine_playbook(&self, routine_id: &str) -> Option<&PlaybookConfiguration> {
         let routine = self
@@ -316,8 +337,11 @@ impl CoreRuntime {
                 continue;
             }
             // A failed or expired check delays only its own Task.
+            // A pull-request nudge only brings the wait forward; a failed
+            // check's back-off still holds.
             let due_at_epoch_ms = standing
                 .due_at_epoch_ms(&milestone.id)
+                .min(self.step_nudge_epoch_ms(routine_id, &standing.task.id))
                 .max(self.step_retry_not_before_epoch_ms(routine_id, &standing.task.id));
             let priority = (
                 due_at_epoch_ms,
@@ -1818,6 +1842,55 @@ pub(crate) mod tests {
         ));
 
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_pull_request_change_asks_only_that_tasks_waiting_step_early() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(&project_id, "first".into(), NOW)
+            .unwrap();
+        assert_eq!(claim.result["step"]["tasks"][0]["taskId"], "task-1");
+        runtime
+            .report_steward_step_verdicts(
+                &claim.capability.unwrap(),
+                vec![StewardStepVerdict {
+                    task_id: "task-1".into(),
+                    verdict: PlaybookStepVerdict::Waiting,
+                    evidence: "No pull request yet".into(),
+                }],
+                "report-first".into(),
+                NOW + 1,
+            )
+            .unwrap();
+        let (routine_id, waiting_until) =
+            runtime.playbook_automatic_step_for_task("task-1").unwrap();
+        assert_eq!(routine_id, "routine-pr");
+        assert!(waiting_until > NOW + 60_000);
+        // The nudge waits out the debounce, then outranks the step delay for
+        // task-1 alone.
+        assert!(runtime.nudge_playbook_steps(&["task-1".into()], NOW + 2));
+        assert!(!runtime.nudge_playbook_steps(&["task-unknown".into()], NOW + 3));
+        let early = NOW + 2 + 15_000;
+        assert_eq!(
+            runtime
+                .claim_next_playbook_step_or_idle(&project_id, "debounced".into(), early - 1)
+                .unwrap()
+                .result["step"]["tasks"][0]["taskId"],
+            "task-2"
+        );
+        let nudged = runtime
+            .claim_next_playbook_step_or_idle(&project_id, "nudged".into(), early)
+            .unwrap();
+        assert_eq!(nudged.result["step"]["tasks"][0]["taskId"], "task-1");
+        // A claim consumes the nudge; a Task already being checked takes none.
+        assert_eq!(
+            runtime.step_nudge_epoch_ms("routine-pr", "task-1"),
+            u64::MAX
+        );
+        assert!(!runtime.nudge_playbook_steps(&["task-1".into()], early + 1));
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
