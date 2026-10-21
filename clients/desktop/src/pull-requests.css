@@ -1,0 +1,21 @@
+.pull-requests-sidebar { display: flex; flex-direction: column; }
+.pull-requests-sidebar > .files-sidebar-body { flex: 1; }
+.pull-requests-header-actions { display: flex; align-items: center; gap: 2px; }
+.pull-requests-filters { display: flex; gap: 2px; margin: 8px 8px 4px; padding: 2px; border-radius: 6px; background: var(--hover); }
+.pull-requests-filters button { flex: 1; min-width: 0; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); font: 600 10.5px/1.2 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pull-requests-filters button.selected { background: var(--bg-sidebar); color: var(--sidebar-text); }
+.pull-requests-filters button:focus-visible { outline: 1px solid var(--accent); }
+.pull-requests-repository { margin: 2px 12px 4px; color: var(--text-muted); font: 10.5px/1.3 var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pull-requests-error { color: var(--warning); }
+.pull-requests-list { margin: 0; padding: 0; list-style: none; }
+.pull-request-row { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 7px 12px; border: 0; border-radius: 0; background: transparent; color: var(--sidebar-text); text-align: left; font: 12px/1.35 var(--font-ui); }
+.pull-request-row:hover { background: var(--hover); }
+.pull-request-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.pull-request-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pull-request-number { color: var(--text-muted); }
+.pull-request-meta { overflow: hidden; color: var(--text-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.pull-request-signals { display: flex; flex-wrap: wrap; gap: 4px; }
+.pull-request-signal { padding: 1px 5px; border-radius: 3px; background: var(--hover); color: var(--text-muted); font: 600 9.5px/1.4 var(--font-ui); }
+.pull-request-signal.ok { color: var(--success); }
+.pull-request-signal.warn { color: var(--warning); }
+.pull-request-signal.danger { color: var(--danger); }

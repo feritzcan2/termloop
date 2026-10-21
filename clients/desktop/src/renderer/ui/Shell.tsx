@@ -3,6 +3,7 @@ import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { RightActivityBar, rightSidebarLabel } from "./RightActivityBar.js";
 import { SourceControlSidebar } from "./SourceControlSidebar.js";
+import { PullRequestsSidebar } from "./PullRequestsSidebar.js";
 import { useSourceControl } from "./use-source-control.js";
 import type { SourceControlApi, SourceControlSubject } from "../source-control-status.js";
 import { useFileBrowser } from "./use-file-browser.js";
@@ -232,6 +233,10 @@ export type ShellProps = {
   loadPromptAssets(): Promise<import("../prompt-settings.js").PromptAsset[]>;
   updatePromptAsset(id: string, body: string): Promise<import("../prompt-settings.js").PromptAsset[]>;
   resetPromptAsset(id: string): Promise<import("../prompt-settings.js").PromptAsset[]>;
+  loadRepositoryPullRequests(
+    projectId: string,
+    filter: import("@termloop/contract/current").GitHostRepositoryPullRequestFilter,
+  ): Promise<import("@termloop/contract/current").GitHostRepositoryPullRequestListResult>;
   loadSkillCatalog(): Promise<import("@termloop/contract/current").SkillCatalogResult>;
   setSkillDeployment(
     skillId: string,
@@ -1293,6 +1298,10 @@ export function Shell(props: ShellProps) {
       perform: () => toggleRightSidebar("sourceControl"),
     },
     {
+      id: "view.pullRequests", title: filesSidebar.open && filesSidebar.view === "pullRequests" ? "Hide Pull Requests" : "Show Pull Requests", detail: "See the Project repository's open pull requests on the right.", group: "Session", keywords: ["pr", "prs", "pull request", "review", "github", "azure"],
+      perform: () => toggleRightSidebar("pullRequests"),
+    },
+    {
       id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
       disabled: !props.selectedProject, perform: () => openStagePage({ kind: "taskSettings" }),
     },
@@ -2197,7 +2206,14 @@ export function Shell(props: ShellProps) {
             howItWorksOverlay={howItWorksOverlay}
             openDetails={openAssistant}
           /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</div>
-          </aside> : filesSidebar.view === "sourceControl" ? <SourceControlSidebar
+          </aside> : filesSidebar.view === "pullRequests" ? <PullRequestsSidebar
+            key={props.selectedProject?.id ?? ""}
+            projectId={props.selectedProject?.id}
+            load={props.loadRepositoryPullRequests}
+            openExternal={(url) => { void props.openExternal(url); }}
+            close={() => updateFilesSidebar({ open: false })}
+            unavailable={Boolean(props.selectedProject) && disabled}
+          /> : filesSidebar.view === "sourceControl" ? <SourceControlSidebar
             key={sourceControlSubject ? `${sourceControlSubject.projectId}:${sourceControlSubject.taskId ?? ""}` : ""}
             subject={sourceControlSubject}
             projectName={props.selectedProject?.name}

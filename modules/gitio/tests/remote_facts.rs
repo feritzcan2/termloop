@@ -114,3 +114,41 @@ fn requested_deleted_branch_keeps_remote_fallback_facts() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn observes_repository_remotes_without_a_branch() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-repository-remotes-{}-{}",
+        std::process::id(),
+        termloop_platform::current_epoch_ms()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    git(&root, &["init", "--initial-branch=main"]);
+    let runner = GitRunner::discover_with_timeout(Duration::from_millis(2_500)).unwrap();
+    assert!(
+        runner
+            .observe_remotes_with_timeout(&root, Duration::from_secs(2))
+            .unwrap()
+            .is_empty()
+    );
+    git(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widget.git",
+        ],
+    );
+    let remotes = runner
+        .observe_remotes_with_timeout(&root, Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(remotes.len(), 1);
+    assert_eq!(remotes[0].name, b"origin");
+    assert_eq!(
+        remotes[0].fetch_urls,
+        vec![b"https://github.com/acme/widget.git".to_vec()]
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}

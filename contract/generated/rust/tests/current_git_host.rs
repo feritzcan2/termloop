@@ -172,3 +172,60 @@ fn git_host_change_content_is_full_control_only_and_provider_discriminated() {
         &json!({"task_id":"task", "observation_id":"prc-1-1", "entry_id":"e-0", "state":"unavailable", "reason":"changed", "patch":null}),
     ));
 }
+
+#[test]
+fn repository_pull_request_list_is_full_control_only_and_bounded() {
+    assert!(!READ_ONLY_METHODS.contains(&"gitHost.repositoryPullRequestList"));
+    assert!(validate_method_params(
+        "gitHost.repositoryPullRequestList",
+        &json!({"projectId":"project", "filter":"reviewRequested"}),
+    ));
+    assert!(!validate_method_params(
+        "gitHost.repositoryPullRequestList",
+        &json!({"projectId":"project", "filter":"assignee"}),
+    ));
+    let pull_request = json!({
+        "number": 42, "title": "Add widget", "url": "https://github.com/acme/widget/pull/42",
+        "state": "draft", "base_branch": "main", "head_branch": "feature/widget",
+        "author": "octo-cat", "check_rollup": "passing", "review_signal": "reviewRequired",
+        "merge_conflict": "noneDetected", "created_at_epoch_ms": 1, "updated_at_epoch_ms": 2
+    });
+    let result = json!({
+        "repository_provider": "github", "repository_owner": "acme",
+        "repository_project": null, "repository_name": "widget", "reason": null,
+        "pull_requests": [pull_request], "truncated": false, "observed_at_epoch_ms": 3
+    });
+    assert!(validate_method_result(
+        "gitHost.repositoryPullRequestList",
+        &result
+    ));
+    let mut degraded = result.clone();
+    degraded["reason"] = json!("unauthorized");
+    degraded["pull_requests"] = json!([]);
+    assert!(validate_method_result(
+        "gitHost.repositoryPullRequestList",
+        &degraded
+    ));
+    let mut foreign_url = result.clone();
+    foreign_url["pull_requests"][0]["url"] =
+        json!("https://gitlab.com/acme/widget/-/merge_requests/42");
+    assert!(!validate_method_result(
+        "gitHost.repositoryPullRequestList",
+        &foreign_url
+    ));
+    let mut oversized = result;
+    oversized["pull_requests"] = json!(vec![pull_request_value(); 51]);
+    assert!(!validate_method_result(
+        "gitHost.repositoryPullRequestList",
+        &oversized
+    ));
+}
+
+fn pull_request_value() -> serde_json::Value {
+    json!({
+        "number": 1, "title": "t", "url": "https://dev.azure.com/o/p/_git/r/pullrequest/1",
+        "state": "open", "base_branch": "main", "head_branch": "h", "author": null,
+        "check_rollup": "unsupported", "review_signal": "notReported",
+        "merge_conflict": "unknown", "created_at_epoch_ms": null, "updated_at_epoch_ms": 0
+    })
+}

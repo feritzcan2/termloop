@@ -20,7 +20,7 @@ describe("Files sidebar preference", () => {
     expect(readFilesSidebarPreference(storage)).toEqual({ open: false, view: "files", width: FILES_SIDEBAR_DEFAULT_WIDTH });
     writeFilesSidebarPreference({ open: true, view: "sourceControl", width: 360 }, storage);
     expect(readFilesSidebarPreference(storage)).toEqual({ open: true, view: "sourceControl", width: 360 });
-    for (const view of ["steward", "agents", "skills", "context"] as const) {
+    for (const view of ["steward", "pullRequests", "agents", "skills", "context"] as const) {
       writeFilesSidebarPreference({ open: true, view, width: 360 }, storage);
       expect(readFilesSidebarPreference(storage).view).toBe(view);
     }

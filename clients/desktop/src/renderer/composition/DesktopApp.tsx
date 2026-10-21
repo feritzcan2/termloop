@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -544,6 +544,9 @@ function sourceApiForProject(projectId: string): SourceDesktopApi {
   const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
   return project ? desktopApi.source(connectionProfileIdOf(project)) : sourceApiForEntityId(projectId);
 }
+
+const loadRepositoryPullRequests = (projectId: string, filter: GitHostRepositoryPullRequestFilter) =>
+  sourceApiForProject(projectId).gitHostRepositoryPullRequestList(projectId, filter);
 
 /// Source Control actions route to the daemon that owns the Project.
 const sourceControlApi: SourceControlApi = {
@@ -2577,6 +2580,7 @@ export function DesktopApp() {
       loadPromptAssets={promptSettings.load}
       updatePromptAsset={promptSettings.update}
       resetPromptAsset={promptSettings.reset}
+      loadRepositoryPullRequests={loadRepositoryPullRequests}
       loadSkillCatalog={loadSkillCatalog}
       setSkillDeployment={setSkillDeployment}
       listRemoteSkillComputers={listRemoteSkillComputers}
