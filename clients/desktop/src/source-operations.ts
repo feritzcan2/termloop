@@ -29,6 +29,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   workspaceDirectoryList: "termloop:workspace-directory-list",
   workspaceFileRead: "termloop:workspace-file-read",
   workspaceFileSearch: "termloop:workspace-file-search",
+  workspaceFileWrite: "termloop:workspace-file-write",
   projectWorktreeSummary: "termloop:project-worktree-summary",
   projectWorktreeChangeList: "termloop:project-worktree-change-list",
   projectWorktreeDiff: "termloop:project-worktree-diff",

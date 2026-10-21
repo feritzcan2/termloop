@@ -67,6 +67,34 @@ fn file_reads_are_ephemeral_and_revalidate_project_roots() {
         core.plan_workspace_files(id, None, "../outside"),
         Err(CoreError::InvalidParams(_))
     ));
+    let version = core
+        .complete_workspace_files(
+            core.plan_workspace_files(id, None, "file")
+                .unwrap()
+                .observe_file(),
+        )
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let write = core
+        .plan_workspace_files(id, None, "file")
+        .unwrap()
+        .observe_write("EDITED", &version);
+    let written = core.complete_workspace_files(write).unwrap();
+    assert_eq!(written["state"], "written");
+    assert_eq!(
+        std::fs::read_to_string(root.join("project/file")).unwrap(),
+        "EDITED"
+    );
+    let conflict = core
+        .plan_workspace_files(id, None, "file")
+        .unwrap()
+        .observe_write("LOST", &version);
+    let conflict = core.complete_workspace_files(conflict).unwrap();
+    assert_eq!(conflict["state"], "conflict");
+    assert_eq!(conflict["version"], written["version"]);
+    assert_eq!(core.state_revision(), revision);
     let stale = core
         .plan_workspace_files(id, None, "file")
         .unwrap()

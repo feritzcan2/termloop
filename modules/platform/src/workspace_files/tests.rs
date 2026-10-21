@@ -292,3 +292,97 @@ fn retained_binary_workspace_capability_is_bounded_and_cannot_overwrite() {
         assert!(reader.create_file(path, b"x").is_err());
     }
 }
+
+#[test]
+fn text_reads_carry_a_version_that_guards_writes() {
+    let f = Fixture::new();
+    std::fs::create_dir(f.0.join("src")).unwrap();
+    std::fs::write(f.0.join("src/a.txt"), "old\n").unwrap();
+    let read = read_workspace_file(&f.0, "src/a.txt").unwrap();
+    let version = read.version.clone().unwrap();
+    assert_eq!(version, workspace_file_version(b"old\n"));
+    assert_eq!(version.len(), 64);
+    let written = write_workspace_file(&f.0, "src/a.txt", "new\n", &version).unwrap();
+    assert_eq!(written.state, WorkspaceFileWriteState::Written);
+    assert_eq!(
+        written.version.as_deref(),
+        Some(workspace_file_version(b"new\n").as_str())
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.0.join("src/a.txt")).unwrap(),
+        "new\n"
+    );
+    // The stale version no longer matches; the disk keeps the newer bytes.
+    let stale = write_workspace_file(&f.0, "src/a.txt", "lost\n", &version).unwrap();
+    assert_eq!(stale.state, WorkspaceFileWriteState::Conflict);
+    assert_eq!(stale.version, written.version);
+    assert_eq!(
+        std::fs::read_to_string(f.0.join("src/a.txt")).unwrap(),
+        "new\n"
+    );
+    assert_eq!(
+        std::fs::read_dir(f.0.join("src")).unwrap().count(),
+        1,
+        "no temporary file remains"
+    );
+    assert!(read_workspace_file(&f.0, "src").unwrap().version.is_none());
+}
+
+#[test]
+fn writes_reject_missing_files_links_bad_input_and_oversized_content() {
+    let f = Fixture::new();
+    std::fs::write(f.0.join("a.txt"), "x").unwrap();
+    let version = workspace_file_version(b"x");
+    assert_eq!(
+        write_workspace_file(&f.0, "missing.txt", "y", &version)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::NotFound
+    );
+    for (path, content, expected) in [
+        ("", "y", version.as_str()),
+        ("../a.txt", "y", version.as_str()),
+        ("a.txt", "nul\0", version.as_str()),
+        ("a.txt", "y", "ABC"),
+    ] {
+        assert_eq!(
+            write_workspace_file(&f.0, path, content, expected)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+    }
+    let huge = "x".repeat(WORKSPACE_CONTENT_LIMIT + 1);
+    assert!(write_workspace_file(&f.0, "a.txt", &huge, &version).is_err());
+    std::fs::create_dir(f.0.join("dir")).unwrap();
+    assert!(write_workspace_file(&f.0, "dir", "y", &version).is_err());
+    assert_eq!(std::fs::read_to_string(f.0.join("a.txt")).unwrap(), "x");
+}
+
+#[cfg(unix)]
+#[test]
+fn writes_keep_permissions_and_never_follow_links() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let outside = Fixture::new();
+    std::fs::write(outside.0.join("secret.txt"), "secret").unwrap();
+    std::os::unix::fs::symlink(outside.0.join("secret.txt"), f.0.join("link.txt")).unwrap();
+    std::os::unix::fs::symlink(&outside.0, f.0.join("linked-dir")).unwrap();
+    let version = workspace_file_version(b"secret");
+    assert!(write_workspace_file(&f.0, "link.txt", "pwned", &version).is_err());
+    assert!(write_workspace_file(&f.0, "linked-dir/secret.txt", "pwned", &version).is_err());
+    assert_eq!(
+        std::fs::read_to_string(outside.0.join("secret.txt")).unwrap(),
+        "secret"
+    );
+    std::fs::write(f.0.join("run.sh"), "echo 1\n").unwrap();
+    std::fs::set_permissions(f.0.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let version = workspace_file_version(b"echo 1\n");
+    write_workspace_file(&f.0, "run.sh", "echo 2\n", &version).unwrap();
+    let mode = std::fs::metadata(f.0.join("run.sh"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o755);
+}

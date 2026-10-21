@@ -4,8 +4,9 @@ import { fileTreeRows, type FileBrowserSnapshot, type FileTreeRow } from "../fil
 import { Icon } from "./Icon.js";
 import { WorkspaceFileIcon } from "./WorkspaceFileIcon.js";
 
-export function FileTree({ snapshot, toggle, select, results }: {
+export function FileTree({ snapshot, selectedPath, toggle, select, results }: {
   snapshot: FileBrowserSnapshot;
+  selectedPath?: string | undefined;
   toggle(path: string): void;
   select(path: string): void;
   results?: readonly WorkspaceFileEntryDto[];
@@ -44,7 +45,7 @@ export function FileTree({ snapshot, toggle, select, results }: {
       const { entry, depth } = row;
       const folder = entry.kind === "directory";
       const expanded = snapshot.expanded.has(entry.path);
-      const selected = snapshot.preview.status !== "empty" && snapshot.preview.path === entry.path;
+      const selected = selectedPath === entry.path;
       return <button
         key={entry.path}
         ref={(button) => { if (button) buttons.current.set(entry.path, button); else buttons.current.delete(entry.path); }}

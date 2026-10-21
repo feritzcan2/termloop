@@ -69,6 +69,23 @@ impl WorkspaceFilesPlan {
         ObservedWorkspaceFiles { plan: self, result }
     }
 
+    /// Replace one existing text file only while it still matches the version
+    /// the client read. Filesystem content never becomes durable core state.
+    pub fn observe_write(self, content: &str, expected_version: &str) -> ObservedWorkspaceFiles {
+        let result = (|| {
+            let root = self.root();
+            let written = termloop_platform::write_workspace_file(
+                root,
+                &self.path,
+                content,
+                expected_version,
+            )
+            .map_err(file_error)?;
+            serde_json::to_value(written).map_err(json_error)
+        })();
+        ObservedWorkspaceFiles { plan: self, result }
+    }
+
     fn root(&self) -> &Path {
         self.proof
             .as_ref()

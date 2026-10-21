@@ -18,15 +18,18 @@ export function FilesActivityBar({ open, toggle }: { open: boolean; toggle(): vo
 
 /// The right-hand Files sidebar: the root section row, a file name search,
 /// then either the search results or the Explorer tree. Opening a file
-/// previews it in the stage.
-export function FilesSidebar({ subject, projectName, tasks, browser, snapshot, selectRoot, openFile, close, unavailable }: {
+/// opens it in an editor tab over the stage.
+export function FilesSidebar({ subject, projectName, tasks, browser, snapshot, selectedPath, selectRoot, openFile, dismiss, close, unavailable }: {
   subject: FilesSubject | undefined;
   projectName: string | undefined;
   tasks: readonly { id: string; title: string }[];
   browser: FileBrowser;
   snapshot: FileBrowserSnapshot;
+  selectedPath?: string | undefined;
   selectRoot(taskId: string | null): void;
   openFile(path: string): void;
+  /// Escape outside a search hides the editor without closing its tabs.
+  dismiss(): void;
   close(): void;
   unavailable: boolean;
 }) {
@@ -38,7 +41,7 @@ export function FilesSidebar({ subject, projectName, tasks, browser, snapshot, s
   return <aside className="files-sidebar" aria-label="File browser" onKeyDown={(event) => {
     if (event.key !== "Escape") return;
     event.stopPropagation();
-    if (search.query) { event.preventDefault(); clearSearch(); } else browser.clearPreview();
+    if (search.query) { event.preventDefault(); clearSearch(); } else dismiss();
   }}>
     <header className="files-sidebar-header">
       <h2>Explorer</h2>
@@ -82,13 +85,13 @@ export function FilesSidebar({ subject, projectName, tasks, browser, snapshot, s
         : searching ? <div ref={searchResults}>
           <p className="files-search-status" role="status">{search.status === "searching" ? "Searching… · " : ""}{`${search.total} ${search.total === 1 ? "match" : "matches"}`}{search.total > search.entries.length ? ` · top ${search.entries.length} shown` : ""}</p>
           <p className="files-search-note">Hidden files included · .gitignore and .git skipped</p>
-          {search.entries.length ? <FileTree snapshot={snapshot} toggle={() => {}} select={openFile} results={search.entries} />
+          {search.entries.length ? <FileTree snapshot={snapshot} selectedPath={selectedPath} toggle={() => {}} select={openFile} results={search.entries} />
             : search.status === "ready" ? <p className="files-sidebar-empty">No matching files.</p> : null}
           {search.status === "error" ? <p className="files-tree-message" role="alert">{search.error}</p> : null}
           {search.incomplete ? <p className="files-tree-message">The search stopped early or skipped unsupported names. Results may be incomplete.</p> : null}
           {search.unreadable ? <p className="files-tree-message">Some folders could not be read. Results may be incomplete.</p> : null}
         </div>
-          : <FileTree snapshot={snapshot} toggle={(path) => browser.toggle(path)} select={openFile} />}
+          : <FileTree snapshot={snapshot} selectedPath={selectedPath} toggle={(path) => browser.toggle(path)} select={openFile} />}
     </div>
   </aside>;
 }

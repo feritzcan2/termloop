@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::time::Duration;
-use termloop_contract::current::{WorkspaceFileSearchParams, WorkspaceFilesParams};
+use termloop_contract::current::{
+    WorkspaceFileSearchParams, WorkspaceFileWriteParams, WorkspaceFilesParams,
+};
 use termloop_core::CoreError;
 use tokio::time::Instant;
 
@@ -67,6 +69,29 @@ pub(in crate::app) async fn search_workspace_files(
                 walk_deadline,
             )
         },
+    )
+    .await?;
+    state.core.lock().await.complete_workspace_files(observed)
+}
+
+/// A write is not cancellable once its blocking worker starts; a request that
+/// times out may still have replaced the file, which the next read reveals.
+pub(in crate::app) async fn write_workspace_file(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params = serde_json::from_value::<WorkspaceFileWriteParams>(params)
+        .map_err(|_| CoreError::InvalidParams("workspace file write".into()))?;
+    let plan = state.core.lock().await.plan_workspace_files(
+        &params.project_id,
+        params.task_id.as_deref(),
+        &params.path,
+    )?;
+    let observed = observe_with_deadline(
+        &state.git_observation_gate,
+        plan.project_id().to_owned(),
+        Instant::now() + Duration::from_secs(10),
+        move || plan.observe_write(&params.content, &params.expected_version),
     )
     .await?;
     state.core.lock().await.complete_workspace_files(observed)

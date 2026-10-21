@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:37144e22e7de36e4d8b8727836cd01388bea26ee45aaf30b349ca58f75560687";
+    "sha256:736007c81a81edff283f40d4d4a0aec69bfcf48fce641ee6cbe4516a3060e435";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -422,6 +422,7 @@ pub const METHODS: &[&str] = &[
     "workspace.directoryList",
     "workspace.fileRead",
     "workspace.fileSearch",
+    "workspace.fileWrite",
 ];
 pub const READ_ONLY_METHODS: &[&str] = &[
     "system.version",
@@ -622,6 +623,30 @@ pub struct WorkspaceFileReadResult {
     pub state: String,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileWriteParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId", deserialize_with = "deserialize_required_nullable")]
+    pub task_id: Option<String>,
+    pub path: String,
+    pub content: String,
+    #[serde(rename = "expectedVersion")]
+    pub expected_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileWriteResult {
+    pub path: String,
+    pub state: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -8948,9 +8973,81 @@ fn validate_workspace_file_read_result(value: &Value) -> bool {
                 .as_str()
                 .is_some_and(|text| text.chars().count() <= 262144 && text.len() <= 262144)
                 || field.is_null())
+        }) && object.get("version").is_none_or(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
         }) && object
             .keys()
-            .all(|key| ["path", "state", "content"].contains(&key.as_str()))
+            .all(|key| ["path", "state", "content", "version"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workspace_file_write_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("taskId").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                || field.is_null())
+        }) && object.get("path").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("content").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 262144 && text.len() <= 262144)
+        }) && object.get("expectedVersion").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.keys().all(|key| {
+            ["projectId", "taskId", "path", "content", "expectedVersion"].contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workspace_file_write_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("path").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("state").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| ["written", "conflict"].contains(&text))
+        }) && object.get("version").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+                || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["path", "state", "version"].contains(&key.as_str()))
     })
 }
 
@@ -9172,6 +9269,7 @@ fn validate_method(value: &Value) -> bool {
             "workspace.directoryList",
             "workspace.fileRead",
             "workspace.fileSearch",
+            "workspace.fileWrite",
         ]
         .contains(&text)
     })
@@ -32087,6 +32185,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<WorkspaceFileSearchParams>(params.clone()).is_ok()
                 && validate_workspace_file_search_params(params)
         }
+        "workspace.fileWrite" => {
+            serde_json::from_value::<WorkspaceFileWriteParams>(params.clone()).is_ok()
+                && validate_workspace_file_write_params(params)
+        }
         _ => false,
     }
 }
@@ -32957,6 +33059,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "workspace.fileSearch" => {
             serde_json::from_value::<WorkspaceFileSearchResult>(result.clone()).is_ok()
                 && validate_workspace_file_search_result(result)
+        }
+        "workspace.fileWrite" => {
+            serde_json::from_value::<WorkspaceFileWriteResult>(result.clone()).is_ok()
+                && validate_workspace_file_write_result(result)
         }
         _ => false,
     }

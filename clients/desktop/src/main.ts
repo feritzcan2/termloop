@@ -10,6 +10,7 @@ import {
   type CallArgs,
   type WorkspaceFilesParams,
   type WorkspaceFileSearchParams,
+  type WorkspaceFileWriteParams,
   type ContextBankCatalogGetParams,
   type ContextBankFileGetParams,
   type ContextBankFileSaveParams,
@@ -442,6 +443,9 @@ handleIpc("termloop:workspace-file-read", (_event, params: WorkspaceFilesParams)
 );
 handleIpc("termloop:workspace-file-search", (_event, params: WorkspaceFileSearchParams) =>
   controlCall("workspace.fileSearch", params),
+);
+handleIpc("termloop:workspace-file-write", (_event, params: WorkspaceFileWriteParams) =>
+  controlCall("workspace.fileWrite", params),
 );
 handleIpc("termloop:project-worktree-summary", (_event, projectId: string) =>
   controlCall("project.worktreeSummary", { projectId }),

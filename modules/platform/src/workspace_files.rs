@@ -8,16 +8,20 @@ use serde::Serialize;
 mod search;
 #[cfg(test)]
 mod tests;
+mod write;
 
 pub use search::{
     WORKSPACE_SEARCH_QUERY_LIMIT, WORKSPACE_SEARCH_RESULT_LIMIT, WorkspaceFileSearch,
     search_workspace_files,
 };
+pub use write::{
+    WorkspaceFileWrite, WorkspaceFileWriteState, workspace_file_version, write_workspace_file,
+};
 
 pub const WORKSPACE_DIRECTORY_LIMIT: usize = 2_000;
 pub const WORKSPACE_CONTENT_LIMIT: usize = 256 * 1024;
 const DIRECTORY_BYTES_LIMIT: usize = 256 * 1024;
-const CONTENT_LINE_LIMIT: usize = 20_000;
+pub(crate) const CONTENT_LINE_LIMIT: usize = 20_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +64,9 @@ pub struct WorkspaceFileContent {
     pub path: String,
     pub state: WorkspaceContentState,
     pub content: Option<String>,
+    /// Content digest of a text read; a later write must present it unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// Wire paths have one portable spelling and never grant ambient path access.
@@ -80,7 +87,7 @@ pub fn validate_workspace_relative_path(path: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn open_root(root: &Path) -> io::Result<Dir> {
+pub(crate) fn open_root(root: &Path) -> io::Result<Dir> {
     if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -92,7 +99,7 @@ fn open_root(root: &Path) -> io::Result<Dir> {
 
 /// Check each component for the UI's no-symlink policy. The capability directory
 /// also confines actual opens, including when a component changes after this check.
-fn contains_symlink(root: &Dir, path: &str) -> io::Result<bool> {
+pub(crate) fn contains_symlink(root: &Dir, path: &str) -> io::Result<bool> {
     let mut prefix = PathBuf::new();
     for part in path.split('/').filter(|part| !part.is_empty()) {
         prefix.push(part);
@@ -220,6 +227,7 @@ pub fn read_workspace_file(root: &Path, path: &str) -> io::Result<WorkspaceFileC
         path: path.to_owned(),
         state,
         content,
+        version: None,
     };
     let root = open_root(root)?;
     if contains_symlink(&root, path)? {
@@ -259,7 +267,10 @@ pub fn read_workspace_file(root: &Path, path: &str) -> io::Result<WorkspaceFileC
     if content.lines().count() > CONTENT_LINE_LIMIT {
         return Ok(result(WorkspaceContentState::TooLarge, None));
     }
-    Ok(result(WorkspaceContentState::Text, Some(content)))
+    Ok(WorkspaceFileContent {
+        version: Some(workspace_file_version(content.as_bytes())),
+        ..result(WorkspaceContentState::Text, Some(content))
+    })
 }
 
 /// A retained directory capability for reading an explicitly selected set of

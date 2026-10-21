@@ -1639,6 +1639,14 @@
       "result": {
         "$ref": "#/$defs/workspaceFileSearchResult"
       }
+    },
+    "workspace.fileWrite": {
+      "params": {
+        "$ref": "#/$defs/workspaceFileWriteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workspaceFileWriteResult"
+      }
     }
   },
   "$defs": {
@@ -1842,6 +1850,84 @@
           ],
           "maxLength": 262144,
           "x-utf8-max-bytes": 262144
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "workspaceFileWriteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileWriteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId",
+        "path",
+        "content",
+        "expectedVersion"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 262144,
+          "x-utf8-max-bytes": 262144
+        },
+        "expectedVersion": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "workspaceFileWriteResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileWriteResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "state",
+        "version"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "written",
+            "conflict"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -2054,7 +2140,8 @@
         "agent.accountSetDefault",
         "workspace.directoryList",
         "workspace.fileRead",
-        "workspace.fileSearch"
+        "workspace.fileSearch",
+        "workspace.fileWrite"
       ]
     },
     "eventName": {

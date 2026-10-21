@@ -1,6 +1,7 @@
 // Files acceptance over an isolated real daemon, including managed Task roots.
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -78,9 +79,20 @@ try {
     call("workspace.fileRead", { ...params, path: "sample.txt" }),
     call("workspace.fileRead", { ...params, taskId: task.id, path: "sample.txt" }),
   ]);
-  assert.deepEqual(projectRead, { path: "sample.txt", state: "text", content: "PROJECT_CURRENT_CONTENT\n" });
-  assert.deepEqual(taskRead, { path: "sample.txt", state: "text", content: "TASK_CURRENT_CONTENT\n" });
+  const digest = (text) => createHash("sha256").update(text).digest("hex");
+  assert.deepEqual(projectRead, { path: "sample.txt", state: "text", content: "PROJECT_CURRENT_CONTENT\n", version: digest("PROJECT_CURRENT_CONTENT\n") });
+  assert.deepEqual(taskRead, { path: "sample.txt", state: "text", content: "TASK_CURRENT_CONTENT\n", version: digest("TASK_CURRENT_CONTENT\n") });
   checks += 2;
+  const writeParams = { ...params, taskId: task.id, path: "sample.txt", content: "TASK_EDITED_CONTENT\n", expectedVersion: taskRead.version };
+  assert.deepEqual(await call("workspace.fileWrite", writeParams), { path: "sample.txt", state: "written", version: digest("TASK_EDITED_CONTENT\n") });
+  assert.equal(await readFile(path.join(worktreeDirectory, "sample.txt"), "utf8"), "TASK_EDITED_CONTENT\n");
+  assert.deepEqual(await call("workspace.fileWrite", { ...writeParams, content: "LOST\n" }),
+    { path: "sample.txt", state: "conflict", version: digest("TASK_EDITED_CONTENT\n") }, "a stale version never overwrites");
+  assert.equal((await call("workspace.fileRead", { ...params, path: "sample.txt" })).content, "PROJECT_CURRENT_CONTENT\n", "Task writes stay in the worktree");
+  await denied("workspace.fileWrite", { ...writeParams, path: "../outside" }, "invalidMessage");
+  await denied("workspace.fileWrite", { ...writeParams, path: "missing.txt" }, "notFound");
+  await denied("workspace.fileWrite", writeParams, "capabilityDenied", record.readOnlyToken);
+  checks += 7;
   for (const [file, expected] of [["binary", "binary"], ["large", "tooLarge"]]) {
     assert.deepEqual(await call("workspace.fileRead", { ...params, path: file }), { path: file, state: expected, content: null });
     checks++;
