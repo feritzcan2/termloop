@@ -20,6 +20,18 @@
   --git-untracked: light-dark(#007100, #73c991);
   --editor-surface: light-dark(#ffffff, #1e1e1e);
 }
+/* The right sidebar shares the left sidebar's worktree surface; the editor keeps
+   the darker tab and status chrome above. */
+.files-sidebar, .files-activity-bar {
+  --bg-sidebar: light-dark(#f5f5f5, #2a2a2a);
+  --rule: light-dark(#e5e5e5, rgb(255 255 255 / .07));
+  --text-secondary: light-dark(#525252, #d4d4d4);
+  --text-muted: #737373;
+  --sidebar-dim: light-dark(#525252, #a1a1a1);
+  --sidebar-dimmer: #737373;
+  --hover: light-dark(#ededed, #313131);
+  --accent-wash: light-dark(#eaeaea, #353535);
+}
 .files-sidebar :focus-visible, .files-activity-bar :focus-visible, .changes-overlay.file-editor :focus-visible { outline-color: light-dark(#a1a1a1, #737373); }
 /* Right-hand Files sidebar: an activity strip, the root section row, then a
    compact Explorer tree or the file name search. */
