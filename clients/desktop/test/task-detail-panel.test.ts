@@ -9,6 +9,7 @@ import {
   stepAnswerSource,
   stepEvidence,
   stepIsCheckable,
+  stepPullRequests,
   stepTiming,
   stepVerdictSource,
   taskPipelineView,
@@ -18,7 +19,7 @@ import type {
   PlaybookDto, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookRuntimeStepDto,
   PlaybookStepProgressDto, RoutineHealthDto,
 } from "@termloop/contract/current";
-import type { Task } from "../src/renderer/model.js";
+import type { GitHostProjection, Task } from "../src/renderer/model.js";
 
 const NOW = 1_700_000_000_000;
 
@@ -763,6 +764,53 @@ describe("the Task detail page on screen", () => {
     expect(stepVerdictSource(step({ deterministicFallback: "checksUnsupported" }), null)?.needsIntegrations).toBe(true);
     // A plain Routine step says nothing extra: that is how every step works.
     expect(stepVerdictSource(step({}, false), "github")).toBeUndefined();
+  });
+
+  describe("pull request links on pipeline steps", () => {
+    const pullRequest = (number: number, base_branch: string): GitHostProjection["matches"][number] => ({
+      provider: "azureDevOps", host: "dev.azure.com", repository_owner: "valuespaces", repository_project: "Nucleus",
+      repository_name: "Nucleus", number, title: `PR ${number}`,
+      url: `https://dev.azure.com/valuespaces/Nucleus/_git/Nucleus/pullrequest/${number}`, state: "open",
+      merge_commit_oid: null, base_branch, head_branch: "UKIE-804", head_repository_owner: "valuespaces",
+      head_repository_project: "Nucleus", head_repository_name: "Nucleus", check_rollup: "passing",
+      check_rollup_source: "azurePolicyEvaluations", review_signal: "approved",
+      review_signal_source: "azureRequiredReviewerVotes", merge_conflict: "unknown",
+      merge_conflict_source: "azureMergeStatus", activity_at_epoch_ms: 1, activity_at_source: "azureLifecycleApproximation",
+    });
+    const projection = { repository_provider: "azureDevOps", matches: [pullRequest(1, "development"), pullRequest(2, "master")] } as GitHostProjection;
+    const step = (deterministicCheck: PlaybookMilestoneDto["deterministicCheck"]): TaskPipelineStep => ({
+      position: 1, milestone: milestone({ deterministicCheck }), standing: "waiting", progress: undefined,
+      routine: { name: "Code finished", enabled: true },
+    });
+
+    it("names only the pull requests a check reads, filtered by its base branch", () => {
+      expect(stepPullRequests(step({ kind: "pullRequestOpen", baseBranch: "development" }), projection).map((pr) => pr.number)).toEqual([1]);
+      expect(stepPullRequests(step({ kind: "pullRequestMerged", baseBranch: "refs/heads/master" }), projection).map((pr) => pr.number)).toEqual([2]);
+      expect(stepPullRequests(step({ kind: "pullRequestChecksPassing", baseBranch: null }), projection).map((pr) => pr.number)).toEqual([1, 2]);
+      expect(stepPullRequests(step({ kind: "branchCommitted", baseBranch: null }), projection)).toEqual([]);
+      expect(stepPullRequests(step(null), projection)).toEqual([]);
+      expect(stepPullRequests(step({ kind: "pullRequestOpen", baseBranch: null }), undefined)).toEqual([]);
+    });
+
+    it("opens the step's pull request in the browser", async () => {
+      const checked = [
+        milestone({ deterministicCheck: { kind: "pullRequestOpen", baseBranch: "development" } }),
+        milestone({ id: "review-requested", title: "Was the PR merged?", routineId: "routine-review" }),
+        milestone({ id: "deployed", title: "Did the master PR deploy?", routineId: "routine-deploy" }),
+      ];
+      const opened: string[] = [];
+      const { container, unmount } = await mount({
+        getPlaybook: async () => ({ playbook: playbook(checked), stateRevision: 12 }),
+        getPlaybookRuntime: async () => standingRuntime(),
+        gitHostProjection: projection,
+        openExternal: async (url: string) => { opened.push(url); },
+      });
+      const links = container.querySelectorAll<HTMLButtonElement>(".td-step-prs button");
+      expect([...links].map((link) => link.textContent)).toEqual(["#1 → development · open ↗"]);
+      await act(async () => links[0]!.click());
+      expect(opened).toEqual(["https://dev.azure.com/valuespaces/Nucleus/_git/Nucleus/pullrequest/1"]);
+      await unmount();
+    });
   });
 });
 
