@@ -5,15 +5,16 @@ const FILES_SIDEBAR_KEY = "termloop.filesSidebar.v1";
 export const FILES_SIDEBAR_MIN_WIDTH = 220;
 export const FILES_SIDEBAR_MAX_WIDTH = 640;
 export const FILES_SIDEBAR_DEFAULT_WIDTH = 300;
+/// Mirrors `--files-activity-width` in files.css.
+export const FILES_ACTIVITY_BAR_WIDTH = 40;
 const WORKSPACE_MIN_WIDTH = 360;
 
-export type FilesSidebarTab = "explorer" | "search";
-export type FilesSidebarPreference = { open: boolean; width: number; tab: FilesSidebarTab };
+export type FilesSidebarPreference = { open: boolean; width: number };
 
-const DEFAULT: FilesSidebarPreference = { open: false, width: FILES_SIDEBAR_DEFAULT_WIDTH, tab: "explorer" };
+const DEFAULT: FilesSidebarPreference = { open: false, width: FILES_SIDEBAR_DEFAULT_WIDTH };
 
 export function filesSidebarMaximumWidth(viewportWidth: number, leftSidebarWidth: number): number {
-  return Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, viewportWidth - leftSidebarWidth - WORKSPACE_MIN_WIDTH));
+  return Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, viewportWidth - leftSidebarWidth - FILES_ACTIVITY_BAR_WIDTH - WORKSPACE_MIN_WIDTH));
 }
 
 export function clampFilesSidebarWidth(width: number, viewportWidth: number, leftSidebarWidth: number): number {
@@ -25,11 +26,10 @@ export function readFilesSidebarPreference(storage?: Pick<Storage, "getItem">): 
     const source = storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
     const parsed = JSON.parse(source?.getItem(FILES_SIDEBAR_KEY) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return DEFAULT;
-    const { open, width, tab } = parsed as Record<string, unknown>;
+    const { open, width } = parsed as Record<string, unknown>;
     return {
       open: open === true,
       width: typeof width === "number" && Number.isFinite(width) ? Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, Math.round(width))) : DEFAULT.width,
-      tab: tab === "search" ? "search" : "explorer",
     };
   } catch {
     return DEFAULT;

@@ -1,6 +1,6 @@
 import { FilesOverlay } from "./FilesOverlay.js";
 import { useOverlayLeaseCount } from "./overlay-lease.js";
-import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
+import { FilesActivityBar, FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult } from "@termloop/contract/current";
@@ -849,7 +849,6 @@ export function Shell(props: ShellProps) {
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
   const toggleFilesSidebar = () => updateFilesSidebar({ open: !filesSidebar.open });
-  const filesSidebarToggle = { open: filesSidebar.open, toggle: toggleFilesSidebar };
   useEffect(() => { if (changesPresentation) files.browser.clearPreview(); }, [changesPresentation, files.browser]);
   const changesTask = changesPresentation?.kind === "task"
     ? props.projectTasks.find((task) => task.id === changesPresentation.taskId)
@@ -1624,7 +1623,6 @@ export function Shell(props: ShellProps) {
             settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
               ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
-            filesSidebar={filesSidebarToggle}
           />
           <LibraryScopeHeader section={railMode} context={settingsScope} />
           <div ref={sidebarScrollRef} className="sidebar-scroll">
@@ -1967,7 +1965,6 @@ export function Shell(props: ShellProps) {
             disabled={disabled}
             selectSession={selectSession}
             launchTerminal={props.launchTerminal}
-            filesSidebar={filesSidebarToggle}
           /> : null}
           <main className="terminal-stage" aria-label="Terminal panes">
             {assistantStageVisible && assistantSelection && props.selectedProject ? <StewardPanel
@@ -2192,14 +2189,13 @@ export function Shell(props: ShellProps) {
             tasks={props.projectTasks.filter((task) => task.worktree)}
             browser={files.browser}
             snapshot={files.snapshot}
-            tab={filesSidebar.tab}
-            selectTab={(tab) => updateFilesSidebar({ tab })}
             selectRoot={openFiles}
             openFile={(path) => { setChangesPresentation(undefined); void files.browser.select(path); }}
             close={() => updateFilesSidebar({ open: false })}
             unavailable={Boolean(props.selectedProject) && disabled}
           />
         </> : null}
+        <FilesActivityBar open={filesSidebar.open} toggle={toggleFilesSidebar} />
       </div>
       </SidebarSessionDndProvider>
       <OverlayPortal container={props.overlayContainer}>
