@@ -1565,6 +1565,10 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .session-tab-add:hover:not(:disabled) { background: light-dark(#ffffff, #2a2e36); color: var(--text); }
 .session-tab-add svg { width: 13px; height: 13px; }
 .session-tab-add:disabled { color: #474e54; }
+.session-tab-files { display: grid; width: 34px; flex: none; place-items: center; border: 0; border-left: 1px solid light-dark(#cbd5e1, #30343b); background: light-dark(#f1f5f9, #20242a); color: #7c858c; }
+.session-tab-files:hover, .session-tab-files[aria-pressed="true"] { background: light-dark(#ffffff, #2a2e36); color: var(--text); }
+.session-tab-files[aria-pressed="true"] { color: var(--accent-strong); }
+.session-tab-files svg { width: 14px; height: 14px; }
 .primary-button, .secondary-button { height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-raised); color: var(--text-secondary); font-size: 10.5px; font-weight: 620; }
 .secondary-button:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-hover); color: var(--text); }
 .primary-button { border-color: rgba(102,179,255,.3); background: #1468a8; color: #fff; }
@@ -3064,6 +3068,10 @@ button.history-row-main { cursor: pointer; }
 /* Sidebar view tabs carry their names; two bare glyphs were unreadable on a
    first visit. */
 .workspace-view-switch button { width: auto; padding: 0 7px; gap: 4px; display: inline-flex; align-items: center; }
+.workspace-files-toggle { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); }
+.workspace-files-toggle:hover { background: light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); color: var(--sidebar-text); }
+.workspace-files-toggle.selected { background: var(--accent-wash); color: var(--accent-strong); }
+.workspace-files-toggle svg { width: 14px; height: 14px; }
 .workspace-view-label { font: 600 9.5px/1 var(--font-ui); }
 .workspace-view-attention { width: 6px; height: 6px; border-radius: 999px; background: var(--agent-status-awaiting); box-shadow: 0 0 0 2px rgba(255,143,107,.18); }
 /* The selected view's one action sits right after the tabs; the rails below

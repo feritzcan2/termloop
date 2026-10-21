@@ -94,6 +94,12 @@ export class FileBrowser {
     }
   }
 
+  collapseAll(): void {
+    if (this.snapshot.refreshing || !this.snapshot.expanded.size) return;
+    const root = this.snapshot.directories.get("");
+    this.publish({ expanded: new Set(), directories: new Map(root ? [["", root]] : []) });
+  }
+
   async select(path: string): Promise<void> {
     const selection = ++this.selection;
     const generation = this.generation;

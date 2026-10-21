@@ -3,7 +3,7 @@ import geminiIcon from "../../assets/gemini.svg";
 
 export type IconName =
   | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "opencode" | "gemini" | "fileGear" | "fileText"
-  | "chevronDown" | "circle" | "close" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
+  | "chevronDown" | "circle" | "close" | "collapseAll" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
   | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "settings" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash"
   | "alert" | "power" | "bell" | "monitor" | "palette" | "phone" | "download";
@@ -43,6 +43,7 @@ const paths: Record<IconName, ReactNode> = {
   chevronDown: <><path d="m6 8 4 4 4-4" /></>,
   circle: <><circle cx="10" cy="10" r="5" /></>,
   close: <><path d="m5 5 10 10M15 5 5 15" /></>,
+  collapseAll: <><path d="m6 4 4 4 4-4M6 16l4-4 4 4" /></>,
   copy: <><rect x="6" y="6" width="10" height="10" rx="2" /><path d="M4 13H3.5A1.5 1.5 0 0 1 2 11.5v-8A1.5 1.5 0 0 1 3.5 2h8A1.5 1.5 0 0 1 13 3.5V4" /></>,
   edit: <><path d="m12.5 4.5 3 3-8.5 8.5-3.5.5.5-3.5zM11 6l3 3" /></>,
   external: <><path d="M11 4h5v5M15.5 4.5 9 11M14 11.5V16H4V6h4.5" /></>,
