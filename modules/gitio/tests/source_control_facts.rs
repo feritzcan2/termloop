@@ -19,6 +19,8 @@ fn hermetic_local_config(repository: &TestRepository, root: &Path) {
         ("commit.gpgsign", "false".to_owned()),
         ("core.hooksPath", hooks.display().to_string()),
         ("push.default", "simple".to_owned()),
+        // Windows runners default to autocrlf; fixtures compare exact bytes.
+        ("core.autocrlf", "false".to_owned()),
     ] {
         repository.git(["-C", root.to_str().unwrap(), "config", key, value.as_str()]);
     }
