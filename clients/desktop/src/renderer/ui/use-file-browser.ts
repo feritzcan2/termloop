@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFilesParams } from "@termloop/contract/current";
+import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams } from "@termloop/contract/current";
 import { FileBrowser, type FilesSubject } from "../file-browser.js";
 
 /** One disposable browser for the currently visible Project or Task root. */
@@ -8,14 +8,16 @@ export function useFileBrowser(
   rootIdentity: string,
   list: (params: WorkspaceFilesParams) => Promise<WorkspaceDirectoryResult>,
   read: (params: WorkspaceFilesParams) => Promise<WorkspaceFileReadResult>,
+  search: (params: WorkspaceFileSearchParams) => Promise<WorkspaceFileSearchResult>,
 ) {
-  const reader = useRef({ list, read });
-  reader.current = { list, read };
+  const reader = useRef({ list, read, search });
+  reader.current = { list, read, search };
   const projectId = subject?.projectId;
   const taskId = subject?.taskId ?? null;
   const browser = useMemo(() => new FileBrowser({
     list: (path, afterName) => reader.current.list({ projectId: projectId!, taskId, path, ...(afterName ? { afterName } : {}) }),
     read: (path) => reader.current.read({ projectId: projectId!, taskId, path }),
+    search: (query) => reader.current.search({ projectId: projectId!, taskId, query }),
   }), [projectId, taskId, rootIdentity]);
   const snapshot = useSyncExternalStore(browser.subscribe, browser.getSnapshot, browser.getSnapshot);
   useEffect(() => {

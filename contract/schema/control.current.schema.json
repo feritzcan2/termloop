@@ -1631,6 +1631,14 @@
       "result": {
         "$ref": "#/$defs/workspaceFileReadResult"
       }
+    },
+    "workspace.fileSearch": {
+      "params": {
+        "$ref": "#/$defs/workspaceFileSearchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/workspaceFileSearchResult"
+      }
     }
   },
   "$defs": {
@@ -1731,6 +1739,73 @@
           "maxLength": 4096
         },
         "omitted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "workspaceFileSearchParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileSearchParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "taskId",
+        "query"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "workspaceFileSearchResult": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkspaceFileSearchResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query",
+        "entries",
+        "total",
+        "incomplete",
+        "unreadable"
+      ],
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/workspaceFileEntryDto"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete": {
+          "type": "boolean"
+        },
+        "unreadable": {
           "type": "boolean"
         }
       }
@@ -1978,7 +2053,8 @@
         "agent.accountRename",
         "agent.accountSetDefault",
         "workspace.directoryList",
-        "workspace.fileRead"
+        "workspace.fileRead",
+        "workspace.fileSearch"
       ]
     },
     "eventName": {

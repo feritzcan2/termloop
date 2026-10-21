@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { WorkspaceDirectoryResult, WorkspaceFileReadResult } from "@termloop/contract/current";
+import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import { FileBrowser, fileTreeRows, type FileBrowserSnapshot } from "../src/renderer/file-browser.js";
 import { FileContentPreview } from "../src/renderer/ui/FilesOverlay.js";
 import { FileTree } from "../src/renderer/ui/FileTree.js";
@@ -9,6 +9,7 @@ import { FileTree } from "../src/renderer/ui/FileTree.js";
 const directory = (path: string, entries: WorkspaceDirectoryResult["entries"] = []): WorkspaceDirectoryResult => ({ path, entries, truncated: false });
 const text = (path: string, content = path): WorkspaceFileReadResult => ({ path, content, state: "text" });
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { resolve, promise }; };
+const search = async (query: string): Promise<WorkspaceFileSearchResult> => ({ query, entries: [], total: 0, incomplete: false, unreadable: false });
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
 describe("Files observations", () => {
@@ -17,7 +18,7 @@ describe("Files observations", () => {
     const pendingList = deferred<WorkspaceDirectoryResult>();
     const read = vi.fn().mockReturnValueOnce(pendingRead.promise).mockResolvedValue(text("file"));
     const list = vi.fn().mockResolvedValueOnce(directory("")).mockReturnValueOnce(pendingList.promise);
-    const browser = new FileBrowser({ list, read });
+    const browser = new FileBrowser({ list, read, search });
     browser.start(); await settle();
     const selection = browser.select("file");
     browser.clearPreview();
@@ -35,7 +36,7 @@ describe("Files observations", () => {
       ? directory("", [{ name: "src", path: "src", kind: "directory" }])
       : directory(path, [{ name: "app.ts", path: "src/app.ts", kind: "file" }]));
     const read = vi.fn(async (path: string) => text(path));
-    const browser = new FileBrowser({ list, read });
+    const browser = new FileBrowser({ list, read, search });
     browser.start(); await settle();
     expect(list.mock.calls).toEqual([[""]]);
     browser.toggle("src"); await settle();
@@ -52,7 +53,7 @@ describe("Files observations", () => {
 
   it("never replaces a new selection with an older file response", async () => {
     const first = deferred<WorkspaceFileReadResult>();
-    const browser = new FileBrowser({ list: async () => directory(""), read: (path) => path === "first" ? first.promise : Promise.resolve(text(path)) });
+    const browser = new FileBrowser({ list: async () => directory(""), read: (path) => path === "first" ? first.promise : Promise.resolve(text(path)), search });
     browser.start(); await settle();
     const old = browser.select("first");
     await browser.select("second");
@@ -63,7 +64,7 @@ describe("Files observations", () => {
   it("discards old refresh responses and disposed observations", async () => {
     const old = deferred<WorkspaceDirectoryResult>();
     const list = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValue(directory("", [{ name: "new", path: "new", kind: "file" }]));
-    const browser = new FileBrowser({ list, read: async (path) => text(path) });
+    const browser = new FileBrowser({ list, read: async (path) => text(path), search });
     browser.start(); await settle();
     await browser.refresh();
     old.resolve(directory("", [{ name: "old", path: "old", kind: "file" }])); await settle();
@@ -78,7 +79,7 @@ describe("Files observations", () => {
     const list = vi.fn().mockResolvedValueOnce(directory("", [{ name: "gone", path: "gone", kind: "directory" }]))
       .mockRejectedValueOnce(new Error("Permission denied"))
       .mockResolvedValue(directory(""));
-    const browser = new FileBrowser({ list, read: async () => { throw new Error("File removed"); } });
+    const browser = new FileBrowser({ list, read: async () => { throw new Error("File removed"); }, search });
     browser.start(); await settle(); browser.toggle("gone"); await settle();
     expect(fileTreeRows(browser.getSnapshot())).toContainEqual({ kind: "message", path: "gone", depth: 1, message: "Permission denied", error: true });
     await browser.select("missing");
@@ -90,7 +91,7 @@ describe("Files observations", () => {
 
   it("supports strict effect cleanup and restart without remaining stuck loading", async () => {
     const list = vi.fn(async () => directory(""));
-    const browser = new FileBrowser({ list, read: async (path) => text(path) });
+    const browser = new FileBrowser({ list, read: async (path) => text(path), search });
     browser.start(); browser.dispose(); browser.start(); await settle();
     expect(browser.getSnapshot().refreshing).toBe(false);
     expect(browser.getSnapshot().directories.get("")?.status).toBe("ready");
@@ -101,6 +102,7 @@ describe("Files observations", () => {
     const browser = new FileBrowser({
       list: (path) => path === "" ? Promise.resolve(directory("", [{ name: "src", path: "src", kind: "directory" }])) : child.promise,
       read: async (path) => text(path),
+      search,
     });
     browser.start(); await settle();
     browser.toggle("src"); browser.toggle("src");

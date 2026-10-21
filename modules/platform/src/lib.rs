@@ -30,9 +30,11 @@ mod watch;
 mod workspace_files;
 
 pub use workspace_files::{
-    WorkspaceContentState, WorkspaceDirectory, WorkspaceFileContent, WorkspaceFileEntry,
-    WorkspaceFileKind, WorkspaceFileReader, list_workspace_directory,
-    list_workspace_directory_page, read_workspace_file, validate_workspace_relative_path,
+    WORKSPACE_SEARCH_QUERY_LIMIT, WORKSPACE_SEARCH_RESULT_LIMIT, WorkspaceContentState,
+    WorkspaceDirectory, WorkspaceFileContent, WorkspaceFileEntry, WorkspaceFileKind,
+    WorkspaceFileReader, WorkspaceFileSearch, list_workspace_directory,
+    list_workspace_directory_page, read_workspace_file, search_workspace_files,
+    validate_workspace_relative_path,
 };
 
 pub use access_crypto::{

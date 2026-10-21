@@ -3,7 +3,7 @@ import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesRail } from "./FilesRail.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
-import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult } from "@termloop/contract/current";
+import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
@@ -159,6 +159,7 @@ function matchesInteractiveAgentProvider(session: Session): boolean {
 export type ShellProps = {
   listWorkspaceDirectory(params: WorkspaceFilesParams): Promise<WorkspaceDirectoryResult>;
   readWorkspaceFile(params: WorkspaceFilesParams): Promise<WorkspaceFileReadResult>;
+  searchWorkspaceFiles(params: WorkspaceFileSearchParams): Promise<WorkspaceFileSearchResult>;
   projects: readonly Project[];
   projectTasks: readonly Task[];
   gitHostProjections: readonly GitHostProjection[];
@@ -821,7 +822,7 @@ export function Shell(props: ShellProps) {
     && props.connection === "connected" && props.selectedProject.connectionState !== "offline"
     ? { projectId: props.selectedProject.id, taskId: filesTask?.id ?? null, title: filesTask?.title ?? props.selectedProject.name } : undefined;
   const files = useFileBrowser(filesSubject, `${props.selectedProject?.folder_path}:${filesTask?.worktree_generation ?? 0}`,
-    props.listWorkspaceDirectory, props.readWorkspaceFile);
+    props.listWorkspaceDirectory, props.readWorkspaceFile, props.searchWorkspaceFiles);
   const filesPreviewVisible = Boolean(filesSubject && files.snapshot.preview.status !== "empty" && !changesPresentation);
   const openFiles = (taskId: string | null) => {
     if (!props.selectedProject) return;

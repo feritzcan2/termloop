@@ -1,4 +1,4 @@
-import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult } from "@termloop/contract/current";
+import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
 import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams, WorkflowCreatorDraftGetResult } from "@termloop/contract/current";
 import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
@@ -289,6 +289,7 @@ export type DesktopApi = {
   projectList(): Promise<Project[]>;
   workspaceDirectoryList(params: WorkspaceFilesParams): Promise<WorkspaceDirectoryResult>;
   workspaceFileRead(params: WorkspaceFilesParams): Promise<WorkspaceFileReadResult>;
+  workspaceFileSearch(params: WorkspaceFileSearchParams): Promise<WorkspaceFileSearchResult>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;
   projectWorktreeDiff(projectId: string, observationId: string, entryId: string): Promise<ProjectWorktreeDiffResult>;

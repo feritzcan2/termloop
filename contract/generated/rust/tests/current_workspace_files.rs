@@ -66,3 +66,36 @@ fn workspace_results_are_closed_and_bounded() {
         &json!({"path":"a", "state":"text", "content":"a".repeat(262145)})
     ));
 }
+
+#[test]
+fn workspace_file_search_is_full_control_only_bounded_and_has_no_root_input() {
+    let method = "workspace.fileSearch";
+    assert!(METHODS.contains(&method));
+    assert!(!READ_ONLY_METHODS.contains(&method));
+    assert!(!COMPANION_METHODS.contains(&method));
+    assert!(validate_method_params(
+        method,
+        &json!({"projectId":"p", "taskId":null, "query":"app"})
+    ));
+    assert!(!validate_method_params(
+        method,
+        &json!({"projectId":"p", "taskId":null, "query":""})
+    ));
+    assert!(!validate_method_params(
+        method,
+        &json!({"projectId":"p", "taskId":null, "query":"a".repeat(513)})
+    ));
+    assert!(!validate_method_params(
+        method,
+        &json!({"projectId":"p", "taskId":null, "query":"a", "path":"/"})
+    ));
+    let entry = json!({"name":"a", "path":"a", "kind":"file"});
+    assert!(validate_method_result(
+        method,
+        &json!({"query":"a", "entries":[entry.clone()], "total":9, "incomplete":false, "unreadable":true})
+    ));
+    assert!(!validate_method_result(
+        method,
+        &json!({"query":"a", "entries":vec![entry; 201], "total":201, "incomplete":false, "unreadable":false})
+    ));
+}

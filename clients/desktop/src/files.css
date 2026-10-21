@@ -5,7 +5,6 @@
 .files-search-toolbar { display: flex; align-items: center; gap: 5px; }
 .files-search-toolbar .rail-search { flex: 1; }
 .files-search-status { margin: 0 5px 5px; color: var(--text-muted); font-size: 10px; }
-.files-search-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; margin: 5px 0; color: var(--text-muted); font-size: 10px; }
 .files-search-tree .files-tree-entry { height: auto; min-height: 40px; }
 .files-search-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .files-search-tree .files-search-label small { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
