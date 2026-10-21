@@ -178,7 +178,10 @@ export function stepVerdictSource(
   if (!progress) return undefined;
   const hasCheck = step.milestone.gate === "automatic" && (step.milestone.deterministicCheck ?? null) !== null;
   if (progress.evaluator === "deterministic") {
-    return { label: "Decided by pull request check", fallback: undefined, needsIntegrations: false };
+    const label = step.milestone.deterministicCheck?.kind === "branchCommitted"
+      ? "Decided by commit check"
+      : "Decided by pull request check";
+    return { label, fallback: undefined, needsIntegrations: false };
   }
   const reason = progress.deterministicFallback ?? null;
   if (!hasCheck && reason === null) return undefined;

@@ -52,7 +52,7 @@ fn check(kind: PlaybookDeterministicCheckKind, base: Option<&str>) -> PlaybookDe
 
 use CheckState::{Failing, NotReported, Passing, Pending, Unknown, Unsupported};
 use PlaybookDeterministicCheckKind::{
-    PullRequestChecksPassing, PullRequestMerged, PullRequestOpen,
+    BranchCommitted, PullRequestChecksPassing, PullRequestMerged, PullRequestOpen,
 };
 use PullRequestState::{Closed, Draft, Merged, Open};
 
@@ -285,6 +285,78 @@ fn an_unavailable_or_partial_read_never_decides() {
 }
 
 #[test]
+fn a_commit_check_passes_on_the_task_branchs_first_own_commit() {
+    let counted = |count| CommitRead::Read {
+        branch: "feature/login".into(),
+        base: "origin/development".into(),
+        count,
+    };
+    assert_eq!(
+        decide_commits(&counted(0)),
+        DeterministicDecision::Waiting(
+            "feature/login has no commits of its own since origin/development.".into()
+        )
+    );
+    assert_eq!(
+        decide_commits(&counted(1)),
+        DeterministicDecision::Passed(
+            "feature/login has 1 commit of its own since origin/development.".into()
+        )
+    );
+    assert_eq!(
+        decide_commits(&counted(3)),
+        DeterministicDecision::Passed(
+            "feature/login has 3 commits of its own since origin/development.".into()
+        )
+    );
+    assert_eq!(
+        decide_commits(&CommitRead::Unavailable(Fallback::CommitsUnavailable)),
+        DeterministicDecision::Fallback(Fallback::CommitsUnavailable)
+    );
+    assert_eq!(short_ref("refs/remotes/origin/main"), "origin/main");
+    assert_eq!(short_ref("refs/heads/main"), "main");
+}
+
+#[test]
+fn a_commit_check_reads_local_git_only_and_passes_through_the_verdict_path() {
+    let committed = PlaybookDeterministicCheck {
+        kind: BranchCommitted,
+        base_branch: None,
+    };
+    let (mut runtime, root, capability) = claimed(committed, RoutineActionHandling::Off);
+    let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
+    assert!(plan.github.is_none() && plan.azure.is_none());
+    // The fixture Task has no branch, so the read stops before any Git work.
+    let observation = plan.clone().observe();
+    assert_eq!(
+        observation.read,
+        StepRead::Commits(CommitRead::Unavailable(Fallback::NoTaskBranch))
+    );
+    // A timed-out read stays a commit read.
+    assert_eq!(
+        plan.clone().timed_out().read,
+        StepRead::Commits(CommitRead::Unavailable(Fallback::Timeout))
+    );
+    assert!(matches!(
+        runtime
+            .apply_deterministic_step_check(
+                plan.observed(StepRead::Commits(CommitRead::Read {
+                    branch: "feature/login".into(),
+                    base: "origin/main".into(),
+                    count: 2,
+                })),
+                NOW + 5,
+            )
+            .unwrap(),
+        DeterministicStepOutcome::Recorded { .. }
+    ));
+    let recorded = answer(&runtime, "pr-open").expect("the verdict is stored");
+    assert_eq!(recorded.verdict, PlaybookStepVerdict::Passed);
+    assert_eq!(recorded.evaluator, PlaybookStepEvaluator::Deterministic);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn evidence_stays_within_the_stored_bound_on_a_character_boundary() {
     let long_branch = "ş".repeat(200);
     let evidence = match decide(
@@ -362,7 +434,7 @@ fn apply(
         .plan_deterministic_step_check(capability)
         .expect("the claimed step has a deterministic check");
     runtime
-        .apply_deterministic_step_check(plan.observed(read), NOW + 5)
+        .apply_deterministic_step_check(plan.observed(StepRead::PullRequests(read)), NOW + 5)
         .unwrap()
 }
 
@@ -515,7 +587,9 @@ fn a_read_for_a_question_the_board_no_longer_asks_records_nothing() {
         .unwrap();
     let outcome = runtime
         .apply_deterministic_step_check(
-            plan.observed(read(vec![pull_request(42, Open, "develop", Passing)])),
+            plan.observed(StepRead::PullRequests(read(vec![pull_request(
+                42, Open, "develop", Passing,
+            )]))),
             NOW + 5,
         )
         .unwrap();
@@ -551,7 +625,7 @@ fn no_task_branch_falls_back_without_any_git_or_provider_work() {
     let observation = plan.observe();
     assert_eq!(
         observation.read,
-        PullRequestRead::Unavailable(Fallback::NoTaskBranch)
+        StepRead::PullRequests(PullRequestRead::Unavailable(Fallback::NoTaskBranch))
     );
     assert!(matches!(
         runtime
@@ -661,7 +735,7 @@ fn cached_git_host_display_state_never_satisfies_the_gate() {
         .observe();
     assert_eq!(
         observation.read,
-        PullRequestRead::Unavailable(Fallback::ProviderUnavailable)
+        StepRead::PullRequests(PullRequestRead::Unavailable(Fallback::ProviderUnavailable))
     );
     assert!(matches!(
         runtime

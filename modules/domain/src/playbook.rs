@@ -67,6 +67,9 @@ pub enum PlaybookDeterministicCheckKind {
     PullRequestChecksPassing,
     /// Exactly one merged pull request from the Task branch.
     PullRequestMerged,
+    /// The Task branch has at least one commit of its own, counted from where
+    /// it left its base. Read from local Git; the commits need not be pushed.
+    BranchCommitted,
 }
 
 /// A step's completion expressed as the Task branch's own pull request state.
@@ -106,6 +109,8 @@ pub enum PlaybookDeterministicFallback {
     ProviderFailure,
     MultipleMatches,
     ChecksUnsupported,
+    /// Local Git could not count the Task branch's own commits.
+    CommitsUnavailable,
 }
 
 /// The one current Playbook document for a Project. Replace-only: updates
@@ -277,6 +282,11 @@ impl PlaybookMilestone {
 
 impl PlaybookDeterministicCheck {
     pub fn is_valid(&self) -> bool {
+        // Commits are counted from the Task branch's own base, so naming
+        // another target would describe a different question.
+        if self.kind == PlaybookDeterministicCheckKind::BranchCommitted {
+            return self.base_branch.is_none();
+        }
         self.base_branch.as_deref().is_none_or(|branch| {
             !branch.is_empty()
                 && branch.len() <= PLAYBOOK_BASE_BRANCH_MAX_BYTES
@@ -596,6 +606,13 @@ mod tests {
                 "{invalid:?} must be rejected"
             );
         }
+
+        let committed = |base: Option<&str>| PlaybookDeterministicCheck {
+            kind: PlaybookDeterministicCheckKind::BranchCommitted,
+            base_branch: base.map(str::to_owned),
+        };
+        assert!(automatic(Some(committed(None))).is_valid());
+        assert!(!automatic(Some(committed(Some("development")))).is_valid());
 
         // A pull-request read cannot prove a named person's approval.
         let mut human = playbook();

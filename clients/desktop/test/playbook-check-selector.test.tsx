@@ -45,10 +45,10 @@ async function type(input: HTMLInputElement, value: string) {
 }
 
 describe("PlaybookCheckSelector", () => {
-  it("offers the agent Routine and the three pull request checks, with an optional base branch", async () => {
+  it("offers the agent Routine, the commit check, and the three pull request checks, with an optional base branch", async () => {
     await render("automatic", null);
     expect([...select().options].map((option) => option.textContent))
-      .toEqual(["Agent routine (LLM)", "PR open", "PR checks passing", "PR merged"]);
+      .toEqual(["Agent routine (LLM)", "Committed", "PR open", "PR checks passing", "PR merged"]);
     expect(select().value).toBe("routine");
     expect(baseInput()).toBeNull();
     expect(saveButton().disabled).toBe(true);
@@ -61,6 +61,15 @@ describe("PlaybookCheckSelector", () => {
     await type(baseInput()!, "  dev ");
     await act(async () => saveButton().click());
     expect(save).toHaveBeenLastCalledWith({ kind: "pullRequestMerged", baseBranch: "dev" });
+  });
+
+  it("saves a commit check without a base branch", async () => {
+    await render("automatic", { kind: "pullRequestOpen", baseBranch: "main" });
+    await choose("branchCommitted");
+    expect(baseInput()).toBeNull();
+    await act(async () => saveButton().click());
+    expect(save).toHaveBeenLastCalledWith({ kind: "branchCommitted", baseBranch: null });
+    expect(host.textContent).toContain("reads the Task branch directly");
   });
 
   it("switches a checked step back to the agent Routine", async () => {

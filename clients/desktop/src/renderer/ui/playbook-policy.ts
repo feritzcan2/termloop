@@ -149,7 +149,9 @@ export function playbookMilestoneFieldIssues(
   const deterministicCheck = milestone.deterministicCheck ?? null;
   if (deterministicCheck !== null) {
     if (milestone.gate === "human") check.push("A human gate waits for its approver and cannot use a pull request check.");
-    if (deterministicCheck.baseBranch !== null) {
+    if (deterministicCheck.baseBranch !== null && !playbookCheckTakesBaseBranch(deterministicCheck.kind)) {
+      check.push("A commit check counts from the Task branch's own base and takes no base branch.");
+    } else if (deterministicCheck.baseBranch !== null) {
       check.push(...requiredTextIssues(deterministicCheck.baseBranch, PLAYBOOK_BASE_BRANCH_MAX_BYTES, "Base branch"));
       if (deterministicCheck.baseBranch.trim() && /\s/u.test(deterministicCheck.baseBranch)) check.push("Base branch cannot contain spaces.");
     }
@@ -362,11 +364,21 @@ function templateMilestone(
   };
 }
 
+/** Every template begins here: the Task branch has commits of its own. It is
+    a cheap local Git read that needs no agent Routine, so it is asked every
+    minute. */
+function committedMilestone(): PlaybookMilestoneDraft {
+  return {
+    ...templateMilestone("committed", "Committed", "The Task branch has at least one commit of its own.", 60),
+    deterministicCheck: { kind: "branchCommitted", baseBranch: null },
+  };
+}
+
 export const PLAYBOOK_STARTER: PlaybookDraft = {
   activePipelineName: "Ship to production",
   savedPipelines: [],
   milestones: [
-    templateMilestone("agent-working", "Agent is working", "An agent is running in the Task's worktree."),
+    committedMilestone(),
     templateMilestone("pr-opened", "Pull request opened", "A pull request exists for the Task branch."),
     templateMilestone("ci-green", "Required CI checks passed", "Required checks pass on the Task branch head."),
     templateMilestone(
@@ -396,6 +408,7 @@ export const PLAYBOOK_DEV_TO_PRODUCTION: PlaybookDraft = {
   activePipelineName: "Dev PR to production",
   savedPipelines: [],
   milestones: [
+    committedMilestone(),
     templateMilestone("code-finished", "Code implementation completed", "The agent has stopped working and the Task branch carries its commits."),
     templateMilestone("dev-pr-opened", "Development pull request opened", "A pull request from the Task branch into dev exists."),
     templateMilestone(
@@ -450,7 +463,7 @@ export const PLAYBOOK_TEMPLATES: readonly PlaybookTemplate[] = [
   {
     id: "ship-to-production",
     name: "Ship to production",
-    summary: "An agent picks the Task up, opens a PR, CI passes, someone signs it off, and it reaches production.",
+    summary: "The Task branch gets its first commit, a PR opens, CI passes, someone signs it off, and it reaches production.",
     draft: playbookStarterDraft,
   },
   {
@@ -547,13 +560,25 @@ export function playbookStationApproverCaption(milestone: Pick<PlaybookMilestone
    stays as the fallback whenever the provider cannot answer. */
 
 export const PLAYBOOK_CHECK_KINDS: readonly PlaybookDeterministicCheckKind[] = [
+  "branchCommitted",
   "pullRequestOpen",
   "pullRequestChecksPassing",
   "pullRequestMerged",
 ];
 
 export function playbookCheckKindLabel(kind: PlaybookDeterministicCheckKind): string {
-  return kind === "pullRequestOpen" ? "PR open" : kind === "pullRequestChecksPassing" ? "PR checks passing" : "PR merged";
+  switch (kind) {
+    case "pullRequestOpen": return "PR open";
+    case "pullRequestChecksPassing": return "PR checks passing";
+    case "pullRequestMerged": return "PR merged";
+    case "branchCommitted": return "Committed";
+  }
+}
+
+/** Only pull request checks name a target; commits are counted from the Task
+    branch's own base. */
+export function playbookCheckTakesBaseBranch(kind: PlaybookDeterministicCheckKind): boolean {
+  return kind !== "branchCommitted";
 }
 
 /** The compact caption a step shows beside its cadence. */
@@ -569,6 +594,7 @@ export function playbookCheckDescription(check: PlaybookDeterministicCheckDto): 
     case "pullRequestOpen": return `Passes when the Task branch has an open pull request${target}.`;
     case "pullRequestChecksPassing": return `Passes when the Task branch pull request${target} reports all build checks passing.`;
     case "pullRequestMerged": return `Passes when the Task branch pull request${target} is merged.`;
+    case "branchCommitted": return "Passes when the Task branch has at least one commit of its own. Pushing is not required.";
   }
 }
 
@@ -633,6 +659,7 @@ export function playbookFallbackReasonCopy(
       case "providerFailure": return `${host} returned an error`;
       case "multipleMatches": return "several pull requests match the Task branch";
       case "checksUnsupported": return `${host} does not report build checks for this pull request`;
+      case "commitsUnavailable": return "the Task branch's commits could not be counted";
     }
   })();
   return `Fell back to agent routine: ${detail}`;

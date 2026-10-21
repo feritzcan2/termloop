@@ -216,7 +216,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:cf81e3467491b855d301886576d433a387c841d0f0e8b275234d67df225be4ea";
+    "sha256:5c8f29c8f76e4e6e8cce9d6d9aaf80b7e169a914710960a1e56a5df5cd6ee419";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -8084,6 +8084,8 @@ pub enum PlaybookDeterministicCheckKind {
     PullRequestChecksPassing,
     #[serde(rename = "pullRequestMerged")]
     PullRequestMerged,
+    #[serde(rename = "branchCommitted")]
+    BranchCommitted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -8127,6 +8129,8 @@ pub enum PlaybookDeterministicFallbackReason {
     MultipleMatches,
     #[serde(rename = "checksUnsupported")]
     ChecksUnsupported,
+    #[serde(rename = "commitsUnavailable")]
+    CommitsUnavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30122,6 +30126,7 @@ fn validate_playbook_deterministic_check_kind(value: &Value) -> bool {
             "pullRequestOpen",
             "pullRequestChecksPassing",
             "pullRequestMerged",
+            "branchCommitted",
         ]
         .contains(&text)
     })
@@ -30189,6 +30194,7 @@ fn validate_playbook_deterministic_fallback_reason(value: &Value) -> bool {
             "providerFailure",
             "multipleMatches",
             "checksUnsupported",
+            "commitsUnavailable",
         ]
         .contains(&text)
     })
