@@ -440,17 +440,6 @@ export function ConnectionProfilesDialog({
     const showEmptyDiscovery = discovery?.state !== "unavailable" && !discovery?.servers.length;
     return (
       <>
-        <section className="conn-section" aria-labelledby="your-computers-title">
-          <div className="conn-section-head"><h3 id="your-computers-title">Your computers</h3></div>
-          {profiles === undefined ? (
-            <div className="conn-list"><div className="conn-skeleton" /><div className="conn-skeleton" /></div>
-          ) : (
-            <div className="conn-list">{profiles.map(renderComputerCard)}</div>
-          )}
-          {onlyLocal ? <p className="conn-empty">Add a computer below to see its projects here too.</p> : null}
-          <MessageBanner message={message && message.placement !== "discovered" && message.placement !== "manual" ? message : undefined} />
-        </section>
-
         <section className="conn-section" aria-labelledby="discovery-title">
           <div className="conn-section-head">
             <div>
@@ -483,6 +472,17 @@ export function ConnectionProfilesDialog({
             <summary>Add by address instead</summary>
             {renderManualForm()}
           </details>
+        </section>
+
+        <section className="conn-section" aria-labelledby="your-computers-title">
+          <div className="conn-section-head"><h3 id="your-computers-title">Your computers</h3></div>
+          {profiles === undefined ? (
+            <div className="conn-list"><div className="conn-skeleton" /><div className="conn-skeleton" /></div>
+          ) : (
+            <div className="conn-list">{profiles.map(renderComputerCard)}</div>
+          )}
+          {onlyLocal ? <p className="conn-empty">Add a computer above to see its projects here too.</p> : null}
+          <MessageBanner message={message && message.placement !== "discovered" && message.placement !== "manual" ? message : undefined} />
         </section>
       </>
     );
