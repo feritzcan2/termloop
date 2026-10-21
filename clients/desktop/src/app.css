@@ -153,23 +153,24 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 
 .app-shell { --files-activity-width: 40px; position: relative; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--files-activity-width); width: 100vw; height: 100vh; background: var(--bg-app); }
 .sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-sidebar); container-type: inline-size; }
-/* Orca's worktree sidebar: neutral greys instead of the blue-tinted slate, and
-   selection as a solid neutral accent rather than a blue wash. */
+/* Orca's neutral worktree sidebar warmed halfway back toward the old slate,
+   with selection as a solid accent rather than a blue wash. The right sidebar
+   (files.css) repeats these values. */
 .sidebar {
-  --bg-sidebar: light-dark(#f5f5f5, #2a2a2a);
-  --border: light-dark(#e5e5e5, rgb(255 255 255 / .07));
-  --rule: light-dark(#e5e5e5, rgb(255 255 255 / .07));
-  --text: light-dark(#0a0a0a, #fafafa);
-  --text-secondary: light-dark(#525252, #d4d4d4);
-  --text-muted: #737373;
-  --sidebar-text: light-dark(#0a0a0a, #fafafa);
-  --sidebar-dim: light-dark(#525252, #a1a1a1);
-  --sidebar-dimmer: #737373;
-  --hover: light-dark(#ededed, #313131);
-  --sidebar-selected: light-dark(#eaeaea, #353535);
-  --accent-wash: light-dark(rgb(234 234 234), rgb(64 64 64 / .6));
+  --bg-sidebar: light-dark(#f7f8f9, #2d3031);
+  --border: light-dark(#dfe2e6, rgb(255 255 255 / .08));
+  --rule: light-dark(#dfe2e6, rgb(255 255 255 / .08));
+  --text: light-dark(#111620, #ececed);
+  --text-secondary: light-dark(#4c5563, #b7babb);
+  --text-muted: light-dark(#767d8a, #717374);
+  --sidebar-text: light-dark(#111620, #ececed);
+  --sidebar-dim: light-dark(#4c5563, #a1a3a4);
+  --sidebar-dimmer: light-dark(#767d8a, #717374);
+  --hover: light-dark(#edeef0, #333637);
+  --sidebar-selected: light-dark(#e8eaed, #383b3d);
+  --accent-wash: light-dark(#e8eaed, #383b3d);
 }
-.sidebar .sidebar-scroll { scrollbar-color: light-dark(#d4d4d4, #404040) transparent; }
+.sidebar .sidebar-scroll { scrollbar-color: light-dark(#d1d5db, #42464a) transparent; }
 .sidebar .session-item:hover { background: var(--hover); color: var(--sidebar-text); }
 .sidebar .session-item.active { border-color: transparent; background: var(--sidebar-selected); color: var(--sidebar-text); }
 .sidebar .session-item.visible:not(.active) { color: var(--sidebar-text); }
