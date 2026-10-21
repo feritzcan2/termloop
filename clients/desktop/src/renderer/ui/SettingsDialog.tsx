@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   DesktopNotificationPreferences,
@@ -10,13 +10,33 @@ import {
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
 import type { AppearancePreference } from "../appearance-theme.js";
+import { showsWindowDragRegion, type KeyboardPlatform } from "../command-surface.js";
+import { Icon, type IconName } from "./Icon.js";
 import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
 
 export type SettingsPage = "appearance" | "notifications" | "servers" | "mobile";
 
+type SettingsNavItem = {
+  page: SettingsPage;
+  title: string;
+  icon: IconName;
+  keywords: string;
+};
+
+const appNavItems: SettingsNavItem[] = [
+  { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
+  { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
+];
+
+const computerNavItems: SettingsNavItem[] = [
+  { page: "servers", title: "Computers", icon: "monitor", keywords: "servers remote ssh tailscale host share connection keep awake power agent accounts" },
+  { page: "mobile", title: "Pair phone", icon: "phone", keywords: "mobile iphone qr pairing voice transcription" },
+];
+
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
   close(): void;
   initialPage?: SettingsPage;
+  platform?: KeyboardPlatform;
   appearancePreference: AppearancePreference;
   changeAppearancePreference(preference: AppearancePreference): void;
   loadNotificationPreferences(): Promise<NotificationPreferences>;
@@ -29,6 +49,7 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
 export function SettingsDialog({
   close,
   initialPage = "notifications",
+  platform = "linux",
   appearancePreference,
   changeAppearancePreference,
   loadNotificationPreferences,
@@ -38,12 +59,26 @@ export function SettingsDialog({
   mobile,
   ...connectionProps
 }: SettingsDialogProps) {
-  const [page, setPage] = useState<SettingsPage>(initialPage);
+  const [selectedPage, setPage] = useState<SettingsPage>(initialPage);
+  const [query, setQuery] = useState("");
   const [preferences, setPreferences] = useState<NotificationPreferences>();
   const [loadingError, setLoadingError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [initialProfileId] = useState(connectionProps.initialProfileId);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const navGroups = [
+    { title: showScope ? "This app" : "General", items: appNavItems.filter((item) => matchesSettingsQuery(item, query)) },
+    {
+      title: "Computers",
+      items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile) && matchesSettingsQuery(item, query)),
+    },
+  ].filter((group) => group.items.length > 0);
+  const visiblePages = navGroups.flatMap((group) => group.items.map((item) => item.page));
+  // While searching, the content follows the selection only if it still matches;
+  // otherwise it shows the first match so the pane never displays a filtered-out page.
+  const page = visiblePages.includes(selectedPage) ? selectedPage : visiblePages[0];
 
   useEffect(() => {
     let active = true;
@@ -62,9 +97,16 @@ export function SettingsDialog({
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
       if (event.key !== "Escape") return;
       event.preventDefault();
-      close();
+      if (searchRef.current?.value) setQuery("");
+      else close();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -109,51 +151,89 @@ export function SettingsDialog({
   };
 
   return (
-    <div className="settings-layer" role="presentation">
-      <button className="settings-backdrop" type="button" tabIndex={-1} aria-label="Close settings" onClick={close} />
-      <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <header>
-          <div><span>TermLoop</span><h2 id="settings-title">Settings</h2></div>
-          <button type="button" aria-label="Close" onClick={close}>×</button>
-        </header>
-        <div className="settings-layout">
-          <nav className="settings-nav" aria-label="Settings sections">
-            {showScope ? <span className="settings-nav-group">This app</span> : null}
-            <button type="button" className={page === "appearance" ? "active" : ""} aria-current={page === "appearance" ? "page" : undefined} onClick={() => setPage("appearance")}>Appearance</button>
-            <button type="button" className={page === "notifications" ? "active" : ""} aria-current={page === "notifications" ? "page" : undefined} onClick={() => setPage("notifications")}>Notifications</button>
-            {showScope ? <span className="settings-nav-group">Computers</span> : null}
-            <button type="button" className={page === "servers" ? "active" : ""} aria-current={page === "servers" ? "page" : undefined} onClick={() => setPage("servers")}>Computers</button>
-            {mobile ? <button type="button" className={page === "mobile" ? "active" : ""} aria-current={page === "mobile" ? "page" : undefined} onClick={() => setPage("mobile")}>Pair phone{showScope ? <small>This computer</small> : null}</button> : null}
-          </nav>
-          <main className="settings-content">
-            {showScope && (page === "appearance" || page === "notifications") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
-            {page === "appearance" ? (
-              <AppearanceSettings preference={appearancePreference} change={changeAppearancePreference} />
-            ) : page === "notifications" ? (
-              <NotificationSettings
-                preferences={preferences}
-                loadingError={loadingError}
-                saveError={saveError}
-                saving={saving}
-                updateDesktop={updateDesktopPreference}
-                updateRemote={updateRemotePreference}
-              />
-            ) : page === "mobile" && mobile ? (
-              <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
-            ) : (
-              <>
-                <div className="settings-page-header">
-                  <h3>Computers</h3>
-                  <p>Manage your computers, agent accounts and remote access.</p>
-                </div>
-                <ConnectionProfilesDialog {...connectionProps} initialProfileId={initialProfileId} embedded close={close} pairPhone={mobile ? () => setPage("mobile") : undefined} />
-              </>
-            )}
-          </main>
+    <div className="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <aside className="settings-sidebar">
+        {showsWindowDragRegion(platform) ? <div className="window-drag-region" aria-hidden="true" /> : null}
+        <div className="settings-sidebar-head">
+          <button type="button" className="settings-back" onClick={close}>
+            <Icon name="arrowLeft" />Back to app
+          </button>
         </div>
-      </section>
+        <div className="settings-search">
+          <h2 id="settings-title">Settings</h2>
+          <label>
+            <Icon name="search" />
+            <input
+              ref={searchRef}
+              type="search"
+              autoFocus
+              value={query}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query ? null : <kbd aria-hidden="true">{platform === "mac" ? "⌘F" : "Ctrl F"}</kbd>}
+          </label>
+        </div>
+        <nav className="settings-nav" aria-label="Settings sections">
+          {navGroups.map((group) => (
+            <div key={group.title} className="settings-nav-section">
+              <span className="settings-nav-group">{group.title}</span>
+              {group.items.map((item) => (
+                <button
+                  key={item.page}
+                  type="button"
+                  className={page === item.page ? "active" : ""}
+                  aria-current={page === item.page ? "page" : undefined}
+                  onClick={() => setPage(item.page)}
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.title}</span>
+                  {item.page === "mobile" && showScope ? <small>This computer</small> : null}
+                </button>
+              ))}
+            </div>
+          ))}
+          {navGroups.length === 0 ? <p className="settings-nav-empty">No matching settings.</p> : null}
+        </nav>
+      </aside>
+      <main className="settings-content">
+        <div className="settings-content-inner">
+          {showScope && (page === "appearance" || page === "notifications") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {page === undefined ? (
+            <p className="settings-empty">No settings found for “{query.trim()}”</p>
+          ) : page === "appearance" ? (
+            <AppearanceSettings preference={appearancePreference} change={changeAppearancePreference} />
+          ) : page === "notifications" ? (
+            <NotificationSettings
+              preferences={preferences}
+              loadingError={loadingError}
+              saveError={saveError}
+              saving={saving}
+              updateDesktop={updateDesktopPreference}
+              updateRemote={updateRemotePreference}
+            />
+          ) : page === "mobile" && mobile ? (
+            <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
+          ) : (
+            <>
+              <div className="settings-page-header">
+                <h3>Computers</h3>
+                <p>Manage your computers, agent accounts and remote access.</p>
+              </div>
+              <ConnectionProfilesDialog {...connectionProps} initialProfileId={initialProfileId} embedded close={close} pairPhone={mobile ? () => { setQuery(""); setPage("mobile"); } : undefined} />
+            </>
+          )}
+        </div>
+      </main>
     </div>
   );
+}
+
+function matchesSettingsQuery(item: SettingsNavItem, query: string): boolean {
+  const terms = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  const haystack = `${item.title} ${item.keywords}`.toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 function AppearanceSettings({

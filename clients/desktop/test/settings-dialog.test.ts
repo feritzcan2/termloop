@@ -129,7 +129,7 @@ describe("SettingsDialog", () => {
     await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "servers" }))));
 
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-    expect(container.querySelector(".settings-dialog")?.textContent).toContain("Settings");
+    expect(container.querySelector(".settings-view")?.textContent).toContain("Settings");
     expect(container.querySelector(".settings-content")?.textContent).toContain("Your computers");
     expect(container.querySelector(".settings-content")?.textContent).toContain("Share this computer");
     expect(container.querySelector(".server-profiles-layer")).toBeNull();
@@ -159,10 +159,37 @@ describe("SettingsDialog", () => {
     const settings = props({ initialPage: "appearance", localComputerName: "MacBook Pro" });
     await act(async () => root.render(createElement(SettingsDialog, settings)));
     expect(container.querySelector(".settings-scope-label")).toBeNull();
-    expect(container.querySelector(".settings-nav-group")).toBeNull();
+    expect(container.querySelector(".settings-nav-group")?.textContent).toBe("General");
     await act(async () => root.render(createElement(SettingsDialog, { ...settings, showScope: true })));
     expect(container.querySelector(".settings-scope-label")?.textContent).toBe("This app · MacBook Pro");
     expect(container.querySelector(".settings-nav-group")?.textContent).toBe("This app");
+  });
+
+  it("filters sections by search and clears the query before closing on Escape", async () => {
+    const close = vi.fn();
+    await act(async () => root.render(createElement(SettingsDialog, props({ close, initialPage: "appearance" }))));
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!;
+    const navLabels = () => [...container.querySelectorAll(".settings-nav button")].map((button) => button.textContent);
+    expect(navLabels()).toEqual(["Appearance", "Notifications", "Computers"]);
+
+    const type = async (value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, value);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await type("watch");
+    expect(navLabels()).toEqual(["Notifications"]);
+    expect(container.querySelector('[aria-label="Apple Watch notifications"]')).not.toBeNull();
+
+    await type("nothing-matches");
+    expect(navLabels()).toEqual([]);
+    expect(container.querySelector(".settings-empty")?.textContent).toContain("nothing-matches");
+
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(close).not.toHaveBeenCalled();
+    expect(search.value).toBe("");
+    expect(container.querySelector('[role="radiogroup"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("pairs the local computer inside Settings while a remote project is selected", async () => {

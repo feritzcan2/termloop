@@ -2302,6 +2302,7 @@ export function Shell(props: ShellProps) {
       /> : null}
       {settingsPage ? <SettingsDialog
         initialPage={settingsPage}
+        platform={platform}
         showScope={showSettingsScope}
         localComputerName={localComputerName}
         keepAwake={props.computerKeepAwake}
