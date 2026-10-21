@@ -6,7 +6,8 @@ import { useState } from "react";
 import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { FilesSubject } from "../src/renderer/file-browser.js";
 import { FileEditorOverlay } from "../src/renderer/ui/FileEditorOverlay.js";
-import { FilesActivityBar, FilesSidebar, FilesSidebarResizeHandle } from "../src/renderer/ui/FilesSidebar.js";
+import { FilesSidebar, FilesSidebarResizeHandle } from "../src/renderer/ui/FilesSidebar.js";
+import { RightActivityBar } from "../src/renderer/ui/RightActivityBar.js";
 import { useFileBrowser } from "../src/renderer/ui/use-file-browser.js";
 import { useFileEditor } from "../src/renderer/ui/use-file-editor.js";
 import { fakeMonaco } from "./monaco-fixture.js";
@@ -78,15 +79,18 @@ describe("Files sidebar", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("toggles the sidebar from the always-visible right activity bar", async () => {
-    const toggle = vi.fn();
-    await act(async () => root.render(<FilesActivityBar open={false} toggle={toggle} />));
+  it("switches between Files and Source Control from the always-visible right activity bar", async () => {
+    const select = vi.fn();
+    await act(async () => root.render(<RightActivityBar open={false} view="files" select={select} />));
     const filesButton = button('[aria-label="Files sidebar"]');
+    const gitButton = button('[aria-label="Source Control sidebar"]');
     expect(filesButton.getAttribute("aria-pressed")).toBe("false");
-    await act(async () => filesButton.click());
-    expect(toggle).toHaveBeenCalledOnce();
-    await act(async () => root.render(<FilesActivityBar open toggle={toggle} />));
-    expect(filesButton.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => gitButton.click());
+    expect(select).toHaveBeenCalledWith("sourceControl");
+    await act(async () => root.render(<RightActivityBar open view="sourceControl" select={select} />));
+    expect(filesButton.getAttribute("aria-pressed")).toBe("false");
+    expect(gitButton.getAttribute("aria-pressed")).toBe("true");
+    expect(gitButton.title).toBe("Hide Source Control");
   });
 
   it("searches inside the Explorer, collapses folders and closes", async () => {

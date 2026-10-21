@@ -1,4 +1,4 @@
-/// Client-local presentation preference for the right-hand Files sidebar.
+/// Client-local presentation preference for the right-hand sidebar (Files or Source Control).
 /// Core owns none of it; a blocked store only loses the remembered layout.
 const FILES_SIDEBAR_KEY = "termloop.filesSidebar.v1";
 
@@ -9,9 +9,10 @@ export const FILES_SIDEBAR_DEFAULT_WIDTH = 300;
 export const FILES_ACTIVITY_BAR_WIDTH = 40;
 const WORKSPACE_MIN_WIDTH = 360;
 
-export type FilesSidebarPreference = { open: boolean; width: number };
+export type RightSidebarView = "files" | "sourceControl";
+export type FilesSidebarPreference = { open: boolean; view: RightSidebarView; width: number };
 
-const DEFAULT: FilesSidebarPreference = { open: false, width: FILES_SIDEBAR_DEFAULT_WIDTH };
+const DEFAULT: FilesSidebarPreference = { open: false, view: "files", width: FILES_SIDEBAR_DEFAULT_WIDTH };
 
 export function filesSidebarMaximumWidth(viewportWidth: number, leftSidebarWidth: number): number {
   return Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, viewportWidth - leftSidebarWidth - FILES_ACTIVITY_BAR_WIDTH - WORKSPACE_MIN_WIDTH));
@@ -26,9 +27,10 @@ export function readFilesSidebarPreference(storage?: Pick<Storage, "getItem">): 
     const source = storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
     const parsed = JSON.parse(source?.getItem(FILES_SIDEBAR_KEY) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return DEFAULT;
-    const { open, width } = parsed as Record<string, unknown>;
+    const { open, view, width } = parsed as Record<string, unknown>;
     return {
       open: open === true,
+      view: view === "sourceControl" ? "sourceControl" : "files",
       width: typeof width === "number" && Number.isFinite(width) ? Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, Math.round(width))) : DEFAULT.width,
     };
   } catch {

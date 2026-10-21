@@ -6,16 +6,6 @@ import { Icon } from "./Icon.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import "../../files.css";
 
-/// Always visible at the window's right edge, like Orca's activity bar, so
-/// the Files sidebar opens and closes from the same place.
-export function FilesActivityBar({ open, toggle }: { open: boolean; toggle(): void }) {
-  return <nav className="files-activity-bar" aria-label="Right sidebar">
-    <button type="button" aria-label="Files sidebar" aria-pressed={open}
-      className={open ? "selected" : undefined} title={open ? "Hide Files" : "Show Files"} onClick={toggle}
-    ><Icon name="folder" /><span>Files</span></button>
-  </nav>;
-}
-
 /// The right-hand Files sidebar: the root section row, a file name search,
 /// then either the search results or the Explorer tree. Opening a file
 /// opens it in an editor tab over the stage.

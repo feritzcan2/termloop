@@ -5,12 +5,15 @@ import type {
   ProjectWorktreeDiffResult,
   ProjectWorktreePreImageResult,
   TaskBranchCommitDiffResult,
+  TaskWorktreeChangeSide,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
 } from "@termloop/contract/current";
 
 export type ChangesOpenSource =
-  | { kind: "local" }
+  /// `entry` preselects one local change by path and side, as the Source
+  /// Control panel names it; entry ids are scoped to a single observation.
+  | { kind: "local"; entry?: { path: string; side: TaskWorktreeChangeSide } | undefined }
   | { kind: "commits"; branchId?: string | undefined }
   | {
       kind: "pullRequest";
