@@ -1,4 +1,5 @@
 import type { AgentConnectionActions } from "../ui/AgentConnectionsPanel.js";
+import type { IntegrationActions } from "../ui/IntegrationsSettings.js";
 import { openAgentCreator } from "./agent-creator.js";
 import { openWorkflowCreator } from "./workflow-creator.js";
 import type { WorkflowCreatorActions } from "../ui/WorkflowCreator.js";
@@ -781,6 +782,10 @@ export function DesktopApp() {
   const computerKeepAwake = useMemo(() => ({
     load: (profileId: string) => desktopApi.source(profileId).keepAwakeGet(),
     save: (profileId: string, params: Parameters<SourceDesktopApi["keepAwakeSet"]>[0]) => desktopApi.source(profileId).keepAwakeSet(params),
+  }), []);
+  const integrationActions = useMemo<IntegrationActions>(() => ({
+    list: (profileId, params) => desktopApi.source(profileId).integrationStatusList(params),
+    setAzureDevOpsToken: (profileId, params) => desktopApi.source(profileId).integrationAzureDevOpsCredentialSet(params),
   }), []);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
@@ -2527,6 +2532,7 @@ export function DesktopApp() {
       agentConnections={agentConnections}
       connectionProfiles={settingsComputers.profiles}
       computerKeepAwake={{ ...computerKeepAwake, refreshToken: keepAwakeRefreshToken }}
+      integrationActions={integrationActions}
       listConnectionProfiles={settingsComputers.list}
       sshSetup={{
         current: desktopApi.sshSetupCurrent,

@@ -43,6 +43,12 @@ struct ActiveTrackerCheck {
     /// the same question current while changing which Task has focus; both
     /// values must still match before a claim can be reused or reported.
     step_task_id: Option<String>,
+    /// Who will answer this step claim, and why a deterministic check did
+    /// not. Lives and dies with the claim; never stored.
+    step_evaluation: (
+        termloop_domain::PlaybookStepEvaluator,
+        Option<termloop_domain::PlaybookDeterministicFallback>,
+    ),
     generation: u64,
     claimed_at_epoch_ms: u64,
     deadline_epoch_ms: u64,

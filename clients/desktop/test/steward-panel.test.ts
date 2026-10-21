@@ -202,7 +202,7 @@ describe("Steward capability presentation", () => {
   it("keeps first-run Playbook guidance after the pipeline status strip is removed", () => {
     const withSteps = {
       projectId: "project-1", revision: 1, activePipelineName: "Delivery",
-      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null }],
+      milestones: [{ id: "ms-1", title: "Build green", gate: "automatic", routineId: "r-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null }],
       savedPipelines: [], updatedAtEpochMs: 1,
     } satisfies PlaybookDto;
 

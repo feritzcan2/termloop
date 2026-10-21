@@ -10,6 +10,7 @@ import {
   playbookRefusalMessage,
   playbookRetryChoiceLabel,
   playbookRetryChoices,
+  playbookCheckCaption,
   playbookStationApproverCaption,
   PLAYBOOK_TEMPLATES,
   removeMilestoneAt,
@@ -19,6 +20,7 @@ import {
   type PlaybookTemplate,
   type PlaybookUpdateOutcome,
 } from "./playbook-policy.js";
+import "./playbook-check.css";
 import type {
   AgentCapabilityDto,
   StewardAgentId,
@@ -867,6 +869,7 @@ export function AssistantRail(props: Props) {
     const tasksAtStep = taskPlacement.byRoutineId.get(routine.id) ?? [];
     const milestone = step === undefined ? undefined : playbookDoc?.milestones[step];
     const approver = milestone ? playbookStationApproverCaption(milestone) : undefined;
+    const check = milestone?.gate === "automatic" ? playbookCheckCaption(milestone.deterministicCheck) : undefined;
     const armed = step !== undefined && confirmingStepId === routine.id;
     const meta = armed
       ? undefined
@@ -902,7 +905,9 @@ export function AssistantRail(props: Props) {
             <strong>{routine.name}</strong>
             <small>{armed
               ? <em className="ar-state danger">Remove this step? Its Routine goes with it.</em>
-              : <span>{meta}</span>}</small>
+              : <>{check ? <span className="ar-step-check"
+                title={`Checked directly against the pull request (${check}); the agent Routine decides only if the provider cannot answer`}>{check}</span> : null}
+                <span>{meta}</span></>}</small>
           </span>
         </button>
         <span className="ar-step-actions">

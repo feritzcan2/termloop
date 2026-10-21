@@ -252,6 +252,7 @@ impl CoreRuntime {
                 check_id: capability.check_id.clone(),
                 step_milestone_id: step.map(|assignment| assignment.milestone.id.clone()),
                 step_task_id: step.map(|assignment| assignment.waiting[0].task_id.clone()),
+                step_evaluation: (termloop_domain::PlaybookStepEvaluator::Routine, None),
                 generation: capability.generation,
                 claimed_at_epoch_ms: capability.claimed_at_epoch_ms,
                 deadline_epoch_ms: capability.deadline_epoch_ms,

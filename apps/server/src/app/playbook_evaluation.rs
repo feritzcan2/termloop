@@ -93,8 +93,14 @@ async fn settle_evaluator_launch(
 }
 
 /// Routes one admitted step claim to its evaluator. A claim that cannot be
-/// routed is handed back with a short floor so it is retried, not spun.
+/// routed is handed back with a short floor so it is retried, not spun. A
+/// step with a deterministic check is first answered from a live Git-host
+/// read; only an undecided or fallen-back read reaches its Routine.
 pub(super) async fn route_playbook_step(state: AppState, mut claim: StewardRoutineClaim) {
+    if super::playbook_deterministic::try_record(&state, &claim).await {
+        state.tracker_runtime_wake.notify_one();
+        return;
+    }
     if let Err(error) = route_assignment(&state, &mut claim).await {
         tracing::warn!(%error, "Playbook step routing failed");
         if let Some(capability) = claim.capability.as_ref() {

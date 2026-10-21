@@ -377,7 +377,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            22,
+            23,
         ),
     ];
 
@@ -418,8 +418,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 22);
-    assert_eq!(launch.provenance().template_version, 22);
+    assert_eq!(template.version, 23);
+    assert_eq!(launch.provenance().template_version, 23);
     for expected in [
         "two compact review",
         "For a scoped edit to one or a few existing steps",
@@ -444,6 +444,14 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
         "Routines have no provider kind",
         "Reject a circular dependency",
         "unknown scope never counts as permission to skip",
+        "`approver`, and\n`deterministicCheck`",
+        "exactly `kind` and `baseBranch`",
+        "`pullRequestOpen`",
+        "`pullRequestChecksPassing`",
+        "`pullRequestMerged`",
+        "whose source branch is the Task branch",
+        "Never use it on a human\ngate.",
+        "Still write a complete `completeWhen`",
     ] {
         assert!(delivered.contains(expected), "missing {expected:?}");
     }

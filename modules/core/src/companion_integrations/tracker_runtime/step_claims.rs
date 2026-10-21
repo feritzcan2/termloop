@@ -155,6 +155,47 @@ impl CoreRuntime {
             .min()
     }
 
+    /// Who answers this exact step claim. A claim nobody marked is a Routine
+    /// run with no deterministic fallback.
+    pub(crate) fn claimed_step_evaluation(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> (
+        termloop_domain::PlaybookStepEvaluator,
+        Option<termloop_domain::PlaybookDeterministicFallback>,
+    ) {
+        self.claimed_check(capability).map_or(
+            (termloop_domain::PlaybookStepEvaluator::Routine, None),
+            |check| check.step_evaluation,
+        )
+    }
+
+    /// Records who answers this exact step claim. Returns `false` when the
+    /// claim is no longer the one Core holds.
+    pub(crate) fn mark_step_evaluation(
+        &mut self,
+        capability: &TrackerCheckCapability,
+        evaluator: termloop_domain::PlaybookStepEvaluator,
+        fallback: Option<termloop_domain::PlaybookDeterministicFallback>,
+    ) -> bool {
+        let Some(check) = self
+            .tracker_runtime
+            .health
+            .get_mut(&capability.tracker_id)
+            .and_then(|health| {
+                health
+                    .checks
+                    .iter_mut()
+                    .find(|check| check.check_id == capability.check_id)
+            })
+            .filter(|check| check.step_task_id.is_some())
+        else {
+            return false;
+        };
+        check.step_evaluation = (evaluator, fallback);
+        true
+    }
+
     /// Hands back a step claim whose evaluator could not be routed and holds
     /// that Task back until `retry_at_epoch_ms`, so a failing route cannot
     /// spin. Other Tasks at the step are unaffected.

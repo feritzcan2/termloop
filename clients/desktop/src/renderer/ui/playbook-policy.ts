@@ -1,6 +1,11 @@
 import type {
   ErrorCode,
+  GitHostProvider,
+  PlaybookDeterministicCheckDto,
+  PlaybookDeterministicCheckKind,
+  PlaybookDeterministicFallbackReason,
   PlaybookDto,
+  PlaybookGateKind,
   PlaybookGetResult,
   PlaybookMilestoneDto,
   PlaybookMilestoneDraftDto,
@@ -31,6 +36,7 @@ export const PLAYBOOK_SAVED_PIPELINES_MAX = 16;
 export const PLAYBOOK_RETRY_DELAY_MIN_SECONDS = 60;
 export const PLAYBOOK_RETRY_DELAY_MAX_SECONDS = 86400;
 export const PLAYBOOK_DEFAULT_RETRY_DELAY_SECONDS = 600;
+export const PLAYBOOK_BASE_BRANCH_MAX_BYTES = 255;
 
 /** The recheck delays offered in place; any other stored value is kept and
     shown alongside them. */
@@ -120,6 +126,7 @@ export type PlaybookMilestoneFieldIssues = Readonly<{
   gate: readonly string[];
   approver: readonly string[];
   instructions: readonly string[];
+  check: readonly string[];
 }>;
 
 export function playbookMilestoneFieldIssues(
@@ -138,6 +145,15 @@ export function playbookMilestoneFieldIssues(
     "While-waiting instructions",
     milestone.whileWaiting.mode !== "off",
   );
+  const check: string[] = [];
+  const deterministicCheck = milestone.deterministicCheck ?? null;
+  if (deterministicCheck !== null) {
+    if (milestone.gate === "human") check.push("A human gate waits for its approver and cannot use a pull request check.");
+    if (deterministicCheck.baseBranch !== null) {
+      check.push(...requiredTextIssues(deterministicCheck.baseBranch, PLAYBOOK_BASE_BRANCH_MAX_BYTES, "Base branch"));
+      if (deterministicCheck.baseBranch.trim() && /\s/u.test(deterministicCheck.baseBranch)) check.push("Base branch cannot contain spaces.");
+    }
+  }
   if (milestone.gate === "human") {
     if (milestone.approver === null) approver = ["A human gate names its approver."];
     else approver = requiredTextIssues(milestone.approver, PLAYBOOK_APPROVER_MAX_BYTES, "Approver");
@@ -152,6 +168,7 @@ export function playbookMilestoneFieldIssues(
     gate,
     approver,
     instructions,
+    check,
   };
 }
 
@@ -165,6 +182,7 @@ export function playbookMilestoneIssues(milestone: PlaybookMilestoneDraft): stri
     ...issues.gate,
     ...issues.approver,
     ...issues.instructions,
+    ...issues.check,
   ];
 }
 
@@ -201,9 +219,22 @@ export function playbookDraftIsValid(draft: PlaybookDraft): boolean {
       .every((milestone) => playbookMilestoneIssues(milestone).length === 0);
 }
 
+/** A milestone written before deterministic checks existed — or relayed from a
+    Builder conversation that never mentions them — carries no check at all.
+    That is the agent Routine, so it reads as `null`, never as a guess. */
+export function normalizePlaybookMilestone<T extends { deterministicCheck: PlaybookDeterministicCheckDto | null }>(
+  milestone: Omit<T, "deterministicCheck"> & { deterministicCheck?: PlaybookDeterministicCheckDto | null | undefined },
+): T {
+  const check = milestone.deterministicCheck ?? null;
+  return {
+    ...milestone,
+    deterministicCheck: check === null ? null : { kind: check.kind, baseBranch: check.baseBranch ?? null },
+  } as T;
+}
+
 /** Copies the saved flat document into independently editable local state. */
 export function playbookDraftFromDto(playbook: PlaybookDto | null): PlaybookDraft {
-  const milestoneDraft = (milestone: PlaybookMilestoneDto): PlaybookMilestoneDraft => ({ ...milestone });
+  const milestoneDraft = (milestone: PlaybookMilestoneDto): PlaybookMilestoneDraft => normalizePlaybookMilestone<PlaybookMilestoneDraft>(milestone);
   return {
     activePipelineName: playbook?.activePipelineName ?? "",
     milestones: playbook?.milestones.map(milestoneDraft) ?? [],
@@ -327,6 +358,7 @@ function templateMilestone(
     completeWhen,
     whileWaiting,
     approver,
+    deterministicCheck: null,
   };
 }
 
@@ -508,4 +540,105 @@ export function truncatePlaybookLabel(value: string, maxCharacters = 24): string
 export function playbookStationApproverCaption(milestone: Pick<PlaybookMilestoneDraft, "gate" | "approver">): string | undefined {
   if (milestone.gate === "automatic") return undefined;
   return milestone.approver === null ? "needs an approver" : `waits on ${truncatePlaybookLabel(milestone.approver, 18)}`;
+}
+
+/* ---- Deterministic pull request checks. A step may be decided directly from
+   the Task branch's pull request instead of by its agent Routine; the Routine
+   stays as the fallback whenever the provider cannot answer. */
+
+export const PLAYBOOK_CHECK_KINDS: readonly PlaybookDeterministicCheckKind[] = [
+  "pullRequestOpen",
+  "pullRequestChecksPassing",
+  "pullRequestMerged",
+];
+
+export function playbookCheckKindLabel(kind: PlaybookDeterministicCheckKind): string {
+  return kind === "pullRequestOpen" ? "PR open" : kind === "pullRequestChecksPassing" ? "PR checks passing" : "PR merged";
+}
+
+/** The compact caption a step shows beside its cadence. */
+export function playbookCheckCaption(check: PlaybookDeterministicCheckDto | null | undefined): string | undefined {
+  if (!check) return undefined;
+  const base = check.baseBranch ? ` → ${truncatePlaybookLabel(check.baseBranch, 16)}` : "";
+  return `${playbookCheckKindLabel(check.kind)}${base}`;
+}
+
+export function playbookCheckDescription(check: PlaybookDeterministicCheckDto): string {
+  const target = check.baseBranch ? ` into ${check.baseBranch}` : "";
+  switch (check.kind) {
+    case "pullRequestOpen": return `Passes when the Task branch has an open pull request${target}.`;
+    case "pullRequestChecksPassing": return `Passes when the Task branch pull request${target} reports all build checks passing.`;
+    case "pullRequestMerged": return `Passes when the Task branch pull request${target} is merged.`;
+  }
+}
+
+/** A human gate waits on a person, so switching to it drops any check; an
+    automatic gate gives up its approver. */
+export function playbookMilestoneWithGate<T extends PlaybookMilestoneDraft>(
+  milestone: T,
+  gate: PlaybookGateKind,
+  approver: string | null = milestone.approver,
+): T {
+  return gate === "human"
+    ? { ...milestone, gate, approver: approver ?? "", deterministicCheck: null }
+    : { ...milestone, gate, approver: null };
+}
+
+/** Sets the check of the stage whose completion Routine is `routineId`,
+    wherever the Project keeps it. Undefined when there is no such stage or it
+    is a human gate, which cannot take a check. */
+export function changeMilestoneCheckForRoutine(
+  draft: PlaybookDraft,
+  routineId: string,
+  check: PlaybookDeterministicCheckDto | null,
+): PlaybookDraft | undefined {
+  const apply = (milestones: PlaybookMilestoneDraft[]): PlaybookMilestoneDraft[] | undefined => {
+    const index = milestones.findIndex((milestone) => milestone.routineId === routineId);
+    const milestone = milestones[index];
+    if (!milestone) return undefined;
+    if (milestone.gate === "human" && check !== null) return undefined;
+    return milestones.map((value, at) => at === index ? { ...value, deterministicCheck: check } : value);
+  };
+  const active = apply(draft.milestones);
+  if (active) return { ...draft, milestones: active };
+  for (const [index, pipeline] of draft.savedPipelines.entries()) {
+    const kept = apply(pipeline.milestones);
+    if (kept) {
+      return {
+        ...draft,
+        savedPipelines: draft.savedPipelines.map((value, at) => at === index ? { ...value, milestones: kept } : value),
+      };
+    }
+  }
+  return undefined;
+}
+
+/** Why the last verdict came from the agent Routine although the step has a
+    pull request check. `provider` names the Task's Git host when known. */
+export function playbookFallbackReasonCopy(
+  reason: PlaybookDeterministicFallbackReason,
+  provider: GitHostProvider | null | undefined,
+): string {
+  const host = provider === "github" ? "GitHub" : provider === "azureDevOps" ? "Azure DevOps" : "The Git host";
+  const cli = provider === "github" ? "GitHub CLI" : provider === "azureDevOps" ? "Azure DevOps CLI" : "Git host CLI";
+  const detail = ((): string => {
+    switch (reason) {
+      case "noTaskBranch": return "the Task has no branch yet";
+      case "unsupportedRepository": return "this repository is not on GitHub or Azure DevOps";
+      case "providerUnavailable": return `${cli} is not available on this computer`;
+      case "unauthorized": return `${host} not signed in`;
+      case "offline": return `${host} unreachable`;
+      case "rateLimited": return `${host} rate limit reached`;
+      case "timeout": return `${host} did not answer in time`;
+      case "providerFailure": return `${host} returned an error`;
+      case "multipleMatches": return "several pull requests match the Task branch";
+      case "checksUnsupported": return `${host} does not report build checks for this pull request`;
+    }
+  })();
+  return `Fell back to agent routine: ${detail}`;
+}
+
+/** Fallbacks the user fixes in Settings → Integrations. */
+export function playbookFallbackNeedsIntegrations(reason: PlaybookDeterministicFallbackReason | null): boolean {
+  return reason === "unauthorized" || reason === "providerUnavailable" || reason === "checksUnsupported";
 }

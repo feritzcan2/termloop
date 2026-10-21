@@ -46,7 +46,7 @@ function props(): ComponentProps<typeof AssistantRail> {
         milestones: [{
           id: "review", title: routine.name, gate: "automatic", routineId: routine.id,
           retryDelaySeconds: 300, completeWhen: "A pull request is ready.",
-          whileWaiting: routine.whileWaiting, approver: null,
+          whileWaiting: routine.whileWaiting, approver: null, deterministicCheck: null,
         }],
         savedPipelines: [], updatedAtEpochMs: 1,
       },

@@ -206,6 +206,8 @@ impl CoreRuntime {
                         evidence: "Position set manually from Task details.".into(),
                         decided_at_epoch_ms,
                         next_attempt_at_epoch_ms: None,
+                        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+                        deterministic_fallback: None,
                     })
             })
             .collect::<Vec<_>>();
@@ -522,6 +524,10 @@ impl CoreRuntime {
         if verdicts.len() != assignment.waiting.len() {
             return Err(CoreError::TrackerReportInvalid);
         }
+        // Who answered is a property of the claim: a deterministic read marks
+        // its claim before recording through this same path, and a Routine
+        // run carries any reason the deterministic read could not decide.
+        let (evaluator, deterministic_fallback) = self.claimed_step_evaluation(capability);
         let mut answers = Vec::with_capacity(verdicts.len());
         for verdict in &verdicts {
             let evidence = verdict.evidence.trim();
@@ -554,6 +560,8 @@ impl CoreRuntime {
                         )
                     },
                 ),
+                evaluator,
+                deterministic_fallback,
             });
         }
         let mut new_pending_findings = Vec::new();
@@ -786,6 +794,8 @@ impl CoreRuntime {
                             "evidence": entry.evidence,
                             "decidedAtEpochMs": entry.decided_at_epoch_ms,
                             "nextAttemptAtEpochMs": entry.next_attempt_at_epoch_ms,
+                            "evaluator": entry.evaluator,
+                            "deterministicFallback": entry.deterministic_fallback,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -869,6 +879,7 @@ pub(crate) mod tests {
             routine_id: routine_id.into(),
             retry_delay_seconds: retry,
             approver: None,
+            deterministic_check: None,
         }
     }
 

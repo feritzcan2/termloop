@@ -49,7 +49,22 @@ describe("terminal status visibility", () => {
     expect(markup).toContain("Return to live");
   });
 
-  it("keeps the recovery action available after a failure", () => {
+  it("shows only the actions when saved messages keep the bar open during ordinary operation", () => {
+    const port: TerminalPresentationPort = {
+      subscribe: () => () => {},
+      snapshot: () => ({ phase: "live", input: "confirmed" }),
+      read: vi.fn(),
+      recover: vi.fn(),
+      reconnect: vi.fn(),
+      conversation: { subscribe: () => () => {}, snapshot: () => undefined, supported: () => true, open: vi.fn(), close: vi.fn() } as unknown as NonNullable<TerminalPresentationPort["conversation"]>,
+    };
+    const markup = renderToStaticMarkup(createElement(TerminalStatus, { sessionId: "session-1", port }));
+    expect(markup).toContain("Earlier messages");
+    expect(markup).not.toContain("Live");
+    expect(markup).not.toContain("Input reached terminal");
+  });
+
+    it("keeps the recovery action available after a failure", () => {
     expect(render({ phase: "failed" })).toContain("Reopen view");
   });
 

@@ -90,6 +90,12 @@ pub use termloop_domain::{ImproverSessionTarget, ImproverSessionTargetKind};
 /// preference onto its generated contract shape without depending on `domain`.
 pub use termloop_domain::{KeepAwakeMode, KeepAwakePreference};
 pub use termloop_invocation::SettingsEntryKind;
+/// Integration status probes and the daemon-held Azure DevOps PAT handle.
+/// Probes are blocking CLI work and run outside the serialized core lock.
+pub use termloop_providers::{
+    AzureDevOpsCredential, IntegrationProbe, IntegrationProbeCredential, IntegrationProbeState,
+    probe_azure_devops_cli, probe_github_cli, valid_azure_devops_personal_access_token,
+};
 pub use termloop_providers::{OpenAiVoiceService as VoiceService, VoiceProviderError};
 
 use serde::{Deserialize, Serialize};
@@ -233,6 +239,7 @@ pub struct CoreRuntime {
     pub(crate) provider_cache: termloop_store::ProviderCacheHandle,
     pub(crate) github_client: Option<termloop_providers::GitHubClient>,
     pub(crate) azure_devops_client: Option<termloop_providers::AzureDevOpsClient>,
+    azure_devops_credential: termloop_providers::AzureDevOpsCredential,
     pub(crate) git_host_local_facts: companion_integrations::GitHostLocalFactsCache,
     pub(crate) git_host_projections: companion_integrations::GitHostSemanticCache,
     pub(crate) git_host_change_observations:
@@ -723,6 +730,7 @@ impl CoreRuntime {
             provider_cache,
             github_client: None,
             azure_devops_client: None,
+            azure_devops_credential: termloop_providers::AzureDevOpsCredential::default(),
             git_host_local_facts: companion_integrations::GitHostLocalFactsCache::default(),
             git_host_projections: companion_integrations::GitHostSemanticCache::default(),
             git_host_change_observations:
@@ -759,10 +767,19 @@ impl CoreRuntime {
         self.github_client = Some(termloop_providers::GitHubClient::new(
             transport.provider_process_directory.clone(),
         ));
-        self.azure_devops_client = Some(termloop_providers::AzureDevOpsClient::new(
-            transport.provider_process_directory.clone(),
-        ));
+        self.azure_devops_client = Some(
+            termloop_providers::AzureDevOpsClient::new(
+                transport.provider_process_directory.clone(),
+            )
+            .with_credential(self.azure_devops_credential.clone()),
+        );
         self.observation_transport = Some(transport);
+    }
+
+    /// Shared handle for the daemon-held Azure DevOps PAT. Replacing its value
+    /// affects every later `az` invocation without rebuilding the client.
+    pub fn azure_devops_credential(&self) -> termloop_providers::AzureDevOpsCredential {
+        self.azure_devops_credential.clone()
     }
 
     pub fn configure_resume_shutdown(

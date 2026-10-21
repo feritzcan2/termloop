@@ -216,7 +216,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:14aa35ab3084b9982f5642bc2196b3b32c2ba5192d5f4016468489cb7a10580d";
+    "sha256:a77168ae5881b70a1f7a59ef652a5ca704f64449923bcb882c6263764888b7f1";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -401,6 +401,8 @@ pub const METHODS: &[&str] = &[
     "voice.credentialsSet",
     "gitHost.pullRequestList",
     "gitHost.pullRequestChangeList",
+    "integration.statusList",
+    "integration.azureDevOpsTokenSet",
     "gitHost.pullRequestDiff",
     "agent.libraryGet",
     "agent.profileCreate",
@@ -5029,6 +5031,8 @@ pub enum GitHostChecksState {
 pub enum GitHostCheckRollupSource {
     #[serde(rename = "githubStatusCheckRollup")]
     GithubStatusCheckRollup,
+    #[serde(rename = "azurePolicyEvaluations")]
+    AzurePolicyEvaluations,
     #[serde(rename = "unsupported")]
     Unsupported,
 }
@@ -7249,6 +7253,11 @@ pub struct PlaybookMilestoneDto {
     pub while_waiting: RoutineWhileWaitingDto,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub approver: Option<String>,
+    #[serde(
+        rename = "deterministicCheck",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub deterministic_check: Option<PlaybookDeterministicCheckDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7265,6 +7274,11 @@ pub struct PlaybookMilestoneDraftDto {
     pub retry_delay_seconds: u64,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub approver: Option<String>,
+    #[serde(
+        rename = "deterministicCheck",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub deterministic_check: Option<PlaybookDeterministicCheckDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7309,6 +7323,12 @@ pub enum PlaybookStepVerdict {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PlaybookStepProgressDto {
+    pub evaluator: PlaybookStepEvaluator,
+    #[serde(
+        rename = "deterministicFallback",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub deterministic_fallback: Option<PlaybookDeterministicFallbackReason>,
     #[serde(rename = "taskId")]
     pub task_id: String,
     pub verdict: PlaybookStepVerdict,
@@ -7930,6 +7950,170 @@ pub struct AgentAuthStatusListParams {
     pub agent_id: Option<AgentConnectionProvider>,
     #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IntegrationProvider {
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "azureDevOps")]
+    AzureDevOps,
+    #[serde(rename = "jira")]
+    Jira,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IntegrationConnectionState {
+    #[serde(rename = "connected")]
+    Connected,
+    #[serde(rename = "notInstalled")]
+    NotInstalled,
+    #[serde(rename = "notAuthenticated")]
+    NotAuthenticated,
+    #[serde(rename = "extensionMissing")]
+    ExtensionMissing,
+    #[serde(rename = "notConfigured")]
+    NotConfigured,
+    #[serde(rename = "offline")]
+    Offline,
+    #[serde(rename = "rateLimited")]
+    RateLimited,
+    #[serde(rename = "timeout")]
+    Timeout,
+    #[serde(rename = "failed")]
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IntegrationCapability {
+    #[serde(rename = "pullRequests")]
+    PullRequests,
+    #[serde(rename = "checks")]
+    Checks,
+    #[serde(rename = "reviews")]
+    Reviews,
+    #[serde(rename = "mergeConflicts")]
+    MergeConflicts,
+    #[serde(rename = "issues")]
+    Issues,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IntegrationCredentialSource {
+    #[serde(rename = "cli")]
+    Cli,
+    #[serde(rename = "personalAccessToken")]
+    PersonalAccessToken,
+    #[serde(rename = "apiToken")]
+    ApiToken,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationCapabilityDto {
+    pub capability: IntegrationCapability,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationStatusDto {
+    pub provider: IntegrationProvider,
+    pub target: String,
+    pub state: IntegrationConnectionState,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub account: Option<String>,
+    #[serde(
+        rename = "credentialSource",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub credential_source: Option<IntegrationCredentialSource>,
+    pub capabilities: Vec<IntegrationCapabilityDto>,
+    #[serde(
+        rename = "retryAfterEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub retry_after_epoch_ms: Option<u64>,
+    #[serde(rename = "checkedAtEpochMs")]
+    pub checked_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationStatusListParams {
+    pub refresh: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationStatusListResult {
+    pub integrations: Vec<IntegrationStatusDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationAzureDevOpsTokenSetParams {
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IntegrationAzureDevOpsTokenSetResult {
+    pub status: IntegrationStatusDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PlaybookDeterministicCheckKind {
+    #[serde(rename = "pullRequestOpen")]
+    PullRequestOpen,
+    #[serde(rename = "pullRequestChecksPassing")]
+    PullRequestChecksPassing,
+    #[serde(rename = "pullRequestMerged")]
+    PullRequestMerged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PlaybookDeterministicCheckDto {
+    pub kind: PlaybookDeterministicCheckKind,
+    #[serde(
+        rename = "baseBranch",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub base_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PlaybookStepEvaluator {
+    #[serde(rename = "deterministic")]
+    Deterministic,
+    #[serde(rename = "routine")]
+    Routine,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PlaybookDeterministicFallbackReason {
+    #[serde(rename = "noTaskBranch")]
+    NoTaskBranch,
+    #[serde(rename = "unsupportedRepository")]
+    UnsupportedRepository,
+    #[serde(rename = "providerUnavailable")]
+    ProviderUnavailable,
+    #[serde(rename = "unauthorized")]
+    Unauthorized,
+    #[serde(rename = "offline")]
+    Offline,
+    #[serde(rename = "rateLimited")]
+    RateLimited,
+    #[serde(rename = "timeout")]
+    Timeout,
+    #[serde(rename = "providerFailure")]
+    ProviderFailure,
+    #[serde(rename = "multipleMatches")]
+    MultipleMatches,
+    #[serde(rename = "checksUnsupported")]
+    ChecksUnsupported,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -9639,6 +9823,8 @@ fn validate_method(value: &Value) -> bool {
             "voice.credentialsSet",
             "gitHost.pullRequestList",
             "gitHost.pullRequestChangeList",
+            "integration.statusList",
+            "integration.azureDevOpsTokenSet",
             "gitHost.pullRequestDiff",
             "agent.libraryGet",
             "agent.profileCreate",
@@ -20778,9 +20964,14 @@ fn validate_git_host_checks_state(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_git_host_check_rollup_source(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| ["githubStatusCheckRollup", "unsupported"].contains(&text))
+    value.as_str().is_some_and(|text| {
+        [
+            "githubStatusCheckRollup",
+            "azurePolicyEvaluations",
+            "unsupported",
+        ]
+        .contains(&text)
+    })
 }
 
 #[allow(
@@ -20875,7 +21066,7 @@ fn validate_git_host_activity_at_source(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_git_host_pull_request_summary_dto(value: &Value) -> bool {
-    (value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| validate_git_host_provider(field)) && object.get("host").is_some_and(|field| field.as_str().is_some_and(|text| ["github.com", "dev.azure.com"].contains(&text))) && object.get("repository_owner").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("repository_project").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("repository_name").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("number").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() <= 512)) && object.get("url").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 2048 && contract_pattern_matches("^https://(?:github\\.com|dev\\.azure\\.com)/", text))) && object.get("state").is_some_and(|field| validate_git_host_pull_request_state(field)) && object.get("merge_commit_oid").is_some_and(|field| (field.as_str().is_some_and(|text| contract_pattern_matches("^(?:[0-9a-f]{40}|[0-9a-f]{64})$", text)) || field.is_null())) && object.get("base_branch").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)) && object.get("head_branch").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)) && object.get("head_repository_owner").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("head_repository_project").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("head_repository_name").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("check_rollup").is_some_and(|field| validate_git_host_checks_state(field)) && object.get("check_rollup_source").is_some_and(|field| validate_git_host_check_rollup_source(field)) && object.get("review_signal").is_some_and(|field| validate_git_host_review_state(field)) && object.get("review_signal_source").is_some_and(|field| validate_git_host_review_signal_source(field)) && object.get("merge_conflict").is_some_and(|field| validate_git_host_merge_conflict_state(field)) && object.get("merge_conflict_source").is_some_and(|field| validate_git_host_merge_conflict_source(field)) && object.get("activity_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("activity_at_source").is_some_and(|field| validate_git_host_activity_at_source(field)) && object.keys().all(|key| ["provider", "host", "repository_owner", "repository_project", "repository_name", "number", "title", "url", "state", "merge_commit_oid", "base_branch", "head_branch", "head_repository_owner", "head_repository_project", "head_repository_name", "check_rollup", "check_rollup_source", "review_signal", "review_signal_source", "merge_conflict", "merge_conflict_source", "activity_at_epoch_ms", "activity_at_source"].contains(&key.as_str()))) && (!(value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| field == &serde_json::json!("github")))) || (value.as_object().is_some_and(|object| object.get("host").is_none_or(|field| field == &serde_json::json!("github.com")) && object.get("repository_project").is_none_or(|field| field.is_null()) && object.get("head_repository_project").is_none_or(|field| field.is_null()) && object.get("check_rollup_source").is_none_or(|field| field == &serde_json::json!("githubStatusCheckRollup")) && object.get("review_signal_source").is_none_or(|field| field == &serde_json::json!("githubReviewDecision")) && object.get("merge_conflict_source").is_none_or(|field| field == &serde_json::json!("githubMergeable")) && object.get("activity_at_source").is_none_or(|field| field == &serde_json::json!("githubUpdatedAt")) && object.get("url").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$", text)))))) && (!(value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| field == &serde_json::json!("azureDevOps")))) || (value.as_object().is_some_and(|object| object.get("host").is_none_or(|field| field == &serde_json::json!("dev.azure.com")) && object.get("repository_project").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)) && object.get("head_repository_project").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)) && object.get("check_rollup").is_none_or(|field| field == &serde_json::json!("unsupported")) && object.get("check_rollup_source").is_none_or(|field| field == &serde_json::json!("unsupported")) && object.get("review_signal_source").is_none_or(|field| field == &serde_json::json!("azureRequiredReviewerVotes")) && object.get("merge_conflict_source").is_none_or(|field| field == &serde_json::json!("azureMergeStatus")) && object.get("activity_at_source").is_none_or(|field| field == &serde_json::json!("azureLifecycleApproximation")) && object.get("url").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$", text)))))))
+    (value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| validate_git_host_provider(field)) && object.get("host").is_some_and(|field| field.as_str().is_some_and(|text| ["github.com", "dev.azure.com"].contains(&text))) && object.get("repository_owner").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("repository_project").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("repository_name").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("number").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() <= 512)) && object.get("url").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 2048 && contract_pattern_matches("^https://(?:github\\.com|dev\\.azure\\.com)/", text))) && object.get("state").is_some_and(|field| validate_git_host_pull_request_state(field)) && object.get("merge_commit_oid").is_some_and(|field| (field.as_str().is_some_and(|text| contract_pattern_matches("^(?:[0-9a-f]{40}|[0-9a-f]{64})$", text)) || field.is_null())) && object.get("base_branch").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)) && object.get("head_branch").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)) && object.get("head_repository_owner").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("head_repository_project").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("head_repository_name").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)) && object.get("check_rollup").is_some_and(|field| validate_git_host_checks_state(field)) && object.get("check_rollup_source").is_some_and(|field| validate_git_host_check_rollup_source(field)) && object.get("review_signal").is_some_and(|field| validate_git_host_review_state(field)) && object.get("review_signal_source").is_some_and(|field| validate_git_host_review_signal_source(field)) && object.get("merge_conflict").is_some_and(|field| validate_git_host_merge_conflict_state(field)) && object.get("merge_conflict_source").is_some_and(|field| validate_git_host_merge_conflict_source(field)) && object.get("activity_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("activity_at_source").is_some_and(|field| validate_git_host_activity_at_source(field)) && object.keys().all(|key| ["provider", "host", "repository_owner", "repository_project", "repository_name", "number", "title", "url", "state", "merge_commit_oid", "base_branch", "head_branch", "head_repository_owner", "head_repository_project", "head_repository_name", "check_rollup", "check_rollup_source", "review_signal", "review_signal_source", "merge_conflict", "merge_conflict_source", "activity_at_epoch_ms", "activity_at_source"].contains(&key.as_str()))) && (!(value.as_object().is_some_and(|object| object.get("check_rollup_source").is_some_and(|field| field == &serde_json::json!("unsupported")))) || (value.as_object().is_some_and(|object| object.get("check_rollup").is_none_or(|field| field == &serde_json::json!("unsupported"))))) && (!(value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| field == &serde_json::json!("github")))) || (value.as_object().is_some_and(|object| object.get("host").is_none_or(|field| field == &serde_json::json!("github.com")) && object.get("repository_project").is_none_or(|field| field.is_null()) && object.get("head_repository_project").is_none_or(|field| field.is_null()) && object.get("check_rollup_source").is_none_or(|field| field == &serde_json::json!("githubStatusCheckRollup")) && object.get("review_signal_source").is_none_or(|field| field == &serde_json::json!("githubReviewDecision")) && object.get("merge_conflict_source").is_none_or(|field| field == &serde_json::json!("githubMergeable")) && object.get("activity_at_source").is_none_or(|field| field == &serde_json::json!("githubUpdatedAt")) && object.get("url").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$", text)))))) && (!(value.as_object().is_some_and(|object| object.get("provider").is_some_and(|field| field == &serde_json::json!("azureDevOps")))) || (value.as_object().is_some_and(|object| object.get("host").is_none_or(|field| field == &serde_json::json!("dev.azure.com")) && object.get("repository_project").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)) && object.get("head_repository_project").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)) && object.get("check_rollup_source").is_none_or(|field| field.as_str().is_some_and(|text| ["azurePolicyEvaluations", "unsupported"].contains(&text))) && object.get("review_signal_source").is_none_or(|field| field == &serde_json::json!("azureRequiredReviewerVotes")) && object.get("merge_conflict_source").is_none_or(|field| field == &serde_json::json!("azureMergeStatus")) && object.get("activity_at_source").is_none_or(|field| field == &serde_json::json!("azureLifecycleApproximation")) && object.get("url").is_none_or(|field| field.as_str().is_some_and(|text| contract_pattern_matches("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$", text)))))))
 }
 
 #[allow(
@@ -27342,6 +27533,9 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
                     text.chars().count() >= 1 && text.chars().count() <= 120 && text.len() <= 120
                 }) || field.is_null())
             })
+            && object.get("deterministicCheck").is_some_and(|field| {
+                (validate_playbook_deterministic_check_dto(field) || field.is_null())
+            })
             && object.keys().all(|key| {
                 [
                     "id",
@@ -27352,6 +27546,7 @@ fn validate_playbook_milestone_dto(value: &Value) -> bool {
                     "completeWhen",
                     "whileWaiting",
                     "approver",
+                    "deterministicCheck",
                 ]
                 .contains(&key.as_str())
             })
@@ -27403,6 +27598,9 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
                     text.chars().count() >= 1 && text.chars().count() <= 120 && text.len() <= 120
                 }) || field.is_null())
             })
+            && object.get("deterministicCheck").is_some_and(|field| {
+                (validate_playbook_deterministic_check_dto(field) || field.is_null())
+            })
             && object.keys().all(|key| {
                 [
                     "id",
@@ -27412,6 +27610,7 @@ fn validate_playbook_milestone_draft_dto(value: &Value) -> bool {
                     "whileWaiting",
                     "retryDelaySeconds",
                     "approver",
+                    "deterministicCheck",
                 ]
                 .contains(&key.as_str())
             })
@@ -27561,13 +27760,20 @@ fn validate_playbook_step_verdict(value: &Value) -> bool {
 )]
 fn validate_playbook_step_progress_dto(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
-        object.get("taskId").is_some_and(|field| {
-            field
-                .as_str()
-                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
-        }) && object
-            .get("verdict")
-            .is_some_and(|field| validate_playbook_step_verdict(field))
+        object
+            .get("evaluator")
+            .is_some_and(|field| validate_playbook_step_evaluator(field))
+            && object.get("deterministicFallback").is_some_and(|field| {
+                (validate_playbook_deterministic_fallback_reason(field) || field.is_null())
+            })
+            && object.get("taskId").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 256)
+            })
+            && object
+                .get("verdict")
+                .is_some_and(|field| validate_playbook_step_verdict(field))
             && object.get("evidence").is_some_and(|field| {
                 field
                     .as_str()
@@ -27587,6 +27793,8 @@ fn validate_playbook_step_progress_dto(value: &Value) -> bool {
             })
             && object.keys().all(|key| {
                 [
+                    "evaluator",
+                    "deterministicFallback",
                     "taskId",
                     "verdict",
                     "evidence",
@@ -29604,6 +29812,339 @@ fn validate_agent_auth_status_list_params(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["agentId", "accountId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_provider(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["github", "azureDevOps", "jira"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_connection_state(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "connected",
+            "notInstalled",
+            "notAuthenticated",
+            "extensionMissing",
+            "notConfigured",
+            "offline",
+            "rateLimited",
+            "timeout",
+            "failed",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_capability(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "pullRequests",
+            "checks",
+            "reviews",
+            "mergeConflicts",
+            "issues",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_credential_source(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["cli", "personalAccessToken", "apiToken"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_capability_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("capability")
+            .is_some_and(|field| validate_integration_capability(field))
+            && object
+                .get("available")
+                .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["capability", "available"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_status_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("provider")
+            .is_some_and(|field| validate_integration_provider(field))
+            && object.get("target").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 255)
+            })
+            && object
+                .get("state")
+                .is_some_and(|field| validate_integration_connection_state(field))
+            && object.get("account").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 120 && text.len() <= 120
+                }) || field.is_null())
+            })
+            && object.get("credentialSource").is_some_and(|field| {
+                (validate_integration_credential_source(field) || field.is_null())
+            })
+            && object.get("capabilities").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 8
+                        && items
+                            .iter()
+                            .all(|item| validate_integration_capability_dto(item))
+                })
+            })
+            && object.get("retryAfterEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.get("checkedAtEpochMs").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "provider",
+                    "target",
+                    "state",
+                    "account",
+                    "credentialSource",
+                    "capabilities",
+                    "retryAfterEpochMs",
+                    "checkedAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_status_list_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("refresh")
+            .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| ["refresh"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_status_list_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("integrations").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 32
+                    && items
+                        .iter()
+                        .all(|item| validate_integration_status_dto(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["integrations"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_azure_dev_ops_token_set_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("token").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 1024 && text.len() <= 1024
+            }) || field.is_null())
+        }) && object.keys().all(|key| ["token"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_integration_azure_dev_ops_token_set_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("status")
+            .is_some_and(|field| validate_integration_status_dto(field))
+            && object.keys().all(|key| ["status"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_deterministic_check_kind(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "pullRequestOpen",
+            "pullRequestChecksPassing",
+            "pullRequestMerged",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_deterministic_check_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| validate_playbook_deterministic_check_kind(field))
+            && object.get("baseBranch").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 255 && text.len() <= 255
+                }) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "baseBranch"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_step_evaluator(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["deterministic", "routine"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_playbook_deterministic_fallback_reason(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "noTaskBranch",
+            "unsupportedRepository",
+            "providerUnavailable",
+            "unauthorized",
+            "offline",
+            "rateLimited",
+            "timeout",
+            "providerFailure",
+            "multipleMatches",
+            "checksUnsupported",
+        ]
+        .contains(&text)
     })
 }
 
@@ -32488,6 +33029,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<GitHostPullRequestChangeListParams>(params.clone()).is_ok()
                 && validate_git_host_pull_request_change_list_params(params)
         }
+        "integration.statusList" => {
+            serde_json::from_value::<IntegrationStatusListParams>(params.clone()).is_ok()
+                && validate_integration_status_list_params(params)
+        }
+        "integration.azureDevOpsTokenSet" => {
+            serde_json::from_value::<IntegrationAzureDevOpsTokenSetParams>(params.clone()).is_ok()
+                && validate_integration_azure_dev_ops_token_set_params(params)
+        }
         "gitHost.pullRequestDiff" => {
             serde_json::from_value::<GitHostPullRequestDiffParams>(params.clone()).is_ok()
                 && validate_git_host_pull_request_diff_params(params)
@@ -33389,6 +33938,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "gitHost.pullRequestChangeList" => {
             serde_json::from_value::<GitHostPullRequestChangeListResult>(result.clone()).is_ok()
                 && validate_git_host_pull_request_change_list_result(result)
+        }
+        "integration.statusList" => {
+            serde_json::from_value::<IntegrationStatusListResult>(result.clone()).is_ok()
+                && validate_integration_status_list_result(result)
+        }
+        "integration.azureDevOpsTokenSet" => {
+            serde_json::from_value::<IntegrationAzureDevOpsTokenSetResult>(result.clone()).is_ok()
+                && validate_integration_azure_dev_ops_token_set_result(result)
         }
         "gitHost.pullRequestDiff" => {
             serde_json::from_value::<GitHostPullRequestDiffResult>(result.clone()).is_ok()

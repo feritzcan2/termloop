@@ -32,6 +32,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     completeWhen: "The Task branch has commits.",
     whileWaiting: { mode: "off", instructions: "" },
     approver: null,
+    deterministicCheck: null,
     ...overrides,
   };
 }
@@ -54,6 +55,8 @@ function progress(overrides: Partial<PlaybookStepProgressDto> = {}): PlaybookSte
     evidence: "Branch has 3 commits and no agent is working.",
     decidedAtEpochMs: NOW - 3_600_000,
     nextAttemptAtEpochMs: null,
+    evaluator: "routine",
+    deterministicFallback: null,
     ...overrides,
   };
 }

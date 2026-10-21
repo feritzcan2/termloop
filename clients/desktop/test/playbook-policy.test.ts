@@ -24,6 +24,12 @@ import {
   switchToSavedPipeline,
   truncatePlaybookLabel,
   utf8ByteLength,
+  changeMilestoneCheckForRoutine,
+  normalizePlaybookMilestone,
+  playbookCheckCaption,
+  playbookFallbackNeedsIntegrations,
+  playbookFallbackReasonCopy,
+  playbookMilestoneWithGate,
 } from "../src/renderer/ui/playbook-policy.js";
 
 function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMilestoneDto {
@@ -39,6 +45,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
       instructions: "Propose asking the reviewer and ask the user whether to send it.",
     },
     approver: "ferit",
+    deterministicCheck: null,
     ...overrides,
   };
 }
@@ -137,6 +144,7 @@ describe("Atomic Playbook mutation payload", () => {
         instructions: "Propose asking the reviewer and ask the user whether to send it.",
       },
       approver: "ferit",
+      deterministicCheck: null,
     }]);
     expect(wire[0]).not.toHaveProperty("routineId");
   });
@@ -145,7 +153,7 @@ describe("Atomic Playbook mutation payload", () => {
     const wire = playbookMilestonesForWire([{
       id: "ci-green", title: "Is CI green?", gate: "automatic",
       routineId: null, retryDelaySeconds: 600, completeWhen: "Required checks pass.",
-      whileWaiting: { mode: "off", instructions: "" }, approver: null,
+      whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null,
     }]);
     expect(wire[0]).toMatchObject({
       completeWhen: "Required checks pass.",
@@ -236,5 +244,69 @@ describe("Playbook labels", () => {
     expect(playbookStationApproverCaption({ gate: "automatic", approver: null })).toBeUndefined();
     expect(playbookStationApproverCaption({ gate: "human", approver: null })).toBe("needs an approver");
     expect(playbookStationApproverCaption({ gate: "human", approver: "ferit" })).toBe("waits on ferit");
+  });
+});
+
+describe("Deterministic pull request checks", () => {
+  const automatic = () => milestone({
+    id: "pr-merged", title: "PR merged", gate: "automatic", approver: null, routineId: "routine-merged",
+  });
+
+  it("defaults a missing check to the agent Routine for older or Builder-relayed data", () => {
+    const { deterministicCheck: _omitted, ...legacy } = automatic();
+    expect(normalizePlaybookMilestone<PlaybookMilestoneDto>(legacy).deterministicCheck).toBeNull();
+    const draft = playbookDraftFromDto(playbook({
+      milestones: [legacy as PlaybookMilestoneDto],
+      savedPipelines: [{ name: "Kept", milestones: [legacy as PlaybookMilestoneDto] }],
+    }));
+    expect(draft.milestones[0]?.deterministicCheck).toBeNull();
+    expect(draft.savedPipelines[0]?.milestones[0]?.deterministicCheck).toBeNull();
+    expect(playbookMilestonesForWire(draft.milestones)[0]).toHaveProperty("deterministicCheck", null);
+  });
+
+  it("sets a check on an automatic step wherever its pipeline is kept and sends it on the wire", () => {
+    const check = { kind: "pullRequestMerged" as const, baseBranch: "dev" };
+    const draft = playbookDraftFromDto(playbook({ milestones: [automatic()] }));
+    const next = changeMilestoneCheckForRoutine(draft, "routine-merged", check);
+    expect(next?.milestones[0]?.deterministicCheck).toEqual(check);
+    expect(playbookMilestonesForWire(next!.milestones)[0]?.deterministicCheck).toEqual(check);
+
+    const kept = playbookDraftFromDto(playbook({ milestones: [], savedPipelines: [{ name: "Kept", milestones: [automatic()] }] }));
+    expect(changeMilestoneCheckForRoutine(kept, "routine-merged", check)?.savedPipelines[0]?.milestones[0]?.deterministicCheck)
+      .toEqual(check);
+    expect(changeMilestoneCheckForRoutine(draft, "missing", check)).toBeUndefined();
+  });
+
+  it("refuses a check on a human gate and clears it when a step becomes one", () => {
+    const human = playbookDraftFromDto(playbook());
+    expect(changeMilestoneCheckForRoutine(human, "routine-pr", { kind: "pullRequestOpen", baseBranch: null })).toBeUndefined();
+    expect(changeMilestoneCheckForRoutine(human, "routine-pr", null)?.milestones[0]?.deterministicCheck).toBeNull();
+
+    const checked = { ...automatic(), deterministicCheck: { kind: "pullRequestOpen" as const, baseBranch: null } };
+    const gated = playbookMilestoneWithGate(checked, "human", "ferit");
+    expect(gated).toMatchObject({ gate: "human", approver: "ferit", deterministicCheck: null });
+    expect(playbookMilestoneWithGate(gated, "automatic")).toMatchObject({ gate: "automatic", approver: null });
+
+    expect(playbookMilestoneFieldIssues({ ...milestone(), deterministicCheck: checked.deterministicCheck }).check)
+      .toEqual(["A human gate waits for its approver and cannot use a pull request check."]);
+    expect(playbookMilestoneFieldIssues({ ...checked, deterministicCheck: { kind: "pullRequestOpen", baseBranch: " " } }).check)
+      .toEqual(["Base branch is required."]);
+    expect(playbookMilestoneFieldIssues(checked).check).toEqual([]);
+    expect(playbookMilestoneFieldIssues({ ...checked, deterministicCheck: { kind: "pullRequestMerged", baseBranch: "feature x" } }).check)
+      .toEqual(["Base branch cannot contain spaces."]);
+  });
+
+  it("captions checks and explains fallbacks in the provider's name", () => {
+    expect(playbookCheckCaption(null)).toBeUndefined();
+    expect(playbookCheckCaption({ kind: "pullRequestChecksPassing", baseBranch: null })).toBe("PR checks passing");
+    expect(playbookCheckCaption({ kind: "pullRequestMerged", baseBranch: "main" })).toBe("PR merged → main");
+    expect(playbookFallbackReasonCopy("unauthorized", "github")).toBe("Fell back to agent routine: GitHub not signed in");
+    expect(playbookFallbackReasonCopy("checksUnsupported", "azureDevOps"))
+      .toBe("Fell back to agent routine: Azure DevOps does not report build checks for this pull request");
+    expect(playbookFallbackReasonCopy("noTaskBranch", null)).toBe("Fell back to agent routine: the Task has no branch yet");
+    expect(["unauthorized", "providerUnavailable", "checksUnsupported"].every((reason) =>
+      playbookFallbackNeedsIntegrations(reason as "unauthorized"))).toBe(true);
+    expect(playbookFallbackNeedsIntegrations("rateLimited")).toBe(false);
+    expect(playbookFallbackNeedsIntegrations(null)).toBe(false);
   });
 });

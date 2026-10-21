@@ -392,6 +392,18 @@ impl CoreRuntime {
             .collect())
     }
 
+    /// Every Task Source view across existing Projects, for host-level
+    /// integration status. Ordered as stored; secret-free.
+    pub fn all_task_source_views(&self) -> Vec<TaskSourceView> {
+        self.store
+            .task_source_configurations()
+            .iter()
+            .filter(|source| self.project_exists(&source.project_id))
+            .cloned()
+            .map(|source| self.task_source_view(source))
+            .collect()
+    }
+
     pub fn due_task_source_refreshes(&self, now_epoch_ms: u64) -> Vec<(String, u64)> {
         self.store
             .task_source_configurations()
@@ -1660,6 +1672,27 @@ mod tests {
                 .unwrap()
                 .observation_sequence,
             sequence
+        );
+    }
+
+    #[test]
+    fn all_task_source_views_span_projects_without_credentials() {
+        let mut fixture = Fixture::new();
+        assert!(fixture.runtime.all_task_source_views().is_empty());
+        fixture.create_source();
+        let views = fixture.runtime.all_task_source_views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].configuration.id, "source-1");
+        assert_eq!(
+            views[0].configuration.site_base_url,
+            "https://example.atlassian.net"
+        );
+        assert_eq!(
+            views,
+            fixture
+                .runtime
+                .task_source_views(&fixture.project_id)
+                .unwrap()
         );
     }
 

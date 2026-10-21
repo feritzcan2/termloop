@@ -1642,6 +1642,12 @@ async fn dispatch_inner(
                 git_host_pull_request_change_list(request.params, state).await
             }
             "gitHost.pullRequestDiff" => git_host_pull_request_diff(request.params, state).await,
+            "integration.statusList" => {
+                super::handlers::integration_status_list(request.params, state).await
+            }
+            "integration.azureDevOpsTokenSet" => {
+                super::handlers::integration_azure_devops_token_set(request.params, state).await
+            }
             _ => {
                 let mut core = state.core.lock().await;
                 let previous_revision = core.state_revision();

@@ -1448,6 +1448,22 @@
         "$ref": "#/$defs/gitHostPullRequestChangeListResult"
       }
     },
+    "integration.statusList": {
+      "params": {
+        "$ref": "#/$defs/integrationStatusListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/integrationStatusListResult"
+      }
+    },
+    "integration.azureDevOpsTokenSet": {
+      "params": {
+        "$ref": "#/$defs/integrationAzureDevOpsTokenSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/integrationAzureDevOpsTokenSetResult"
+      }
+    },
     "gitHost.pullRequestDiff": {
       "params": {
         "$ref": "#/$defs/gitHostPullRequestDiffParams"
@@ -2469,6 +2485,8 @@
         "voice.credentialsSet",
         "gitHost.pullRequestList",
         "gitHost.pullRequestChangeList",
+        "integration.statusList",
+        "integration.azureDevOpsTokenSet",
         "gitHost.pullRequestDiff",
         "agent.libraryGet",
         "agent.profileCreate",
@@ -11204,6 +11222,7 @@
       "type": "string",
       "enum": [
         "githubStatusCheckRollup",
+        "azurePolicyEvaluations",
         "unsupported"
       ]
     },
@@ -11408,6 +11427,25 @@
         {
           "if": {
             "properties": {
+              "check_rollup_source": {
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "check_rollup_source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "check_rollup": {
+                "const": "unsupported"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
               "provider": {
                 "const": "github"
               }
@@ -11471,11 +11509,12 @@
                 "minLength": 1,
                 "maxLength": 64
               },
-              "check_rollup": {
-                "const": "unsupported"
-              },
               "check_rollup_source": {
-                "const": "unsupported"
+                "type": "string",
+                "enum": [
+                  "azurePolicyEvaluations",
+                  "unsupported"
+                ]
               },
               "review_signal_source": {
                 "const": "azureRequiredReviewerVotes"
@@ -15830,7 +15869,8 @@
         "retryDelaySeconds",
         "completeWhen",
         "whileWaiting",
-        "approver"
+        "approver",
+        "deterministicCheck"
       ],
       "properties": {
         "id": {
@@ -15875,6 +15915,16 @@
           "minLength": 1,
           "maxLength": 120,
           "x-utf8-max-bytes": 120
+        },
+        "deterministicCheck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookDeterministicCheckDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -15890,7 +15940,8 @@
         "completeWhen",
         "whileWaiting",
         "retryDelaySeconds",
-        "approver"
+        "approver",
+        "deterministicCheck"
       ],
       "properties": {
         "id": {
@@ -15930,6 +15981,16 @@
           "minLength": 1,
           "maxLength": 120,
           "x-utf8-max-bytes": 120
+        },
+        "deterministicCheck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookDeterministicCheckDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -16050,9 +16111,24 @@
         "verdict",
         "evidence",
         "decidedAtEpochMs",
-        "nextAttemptAtEpochMs"
+        "nextAttemptAtEpochMs",
+        "evaluator",
+        "deterministicFallback"
       ],
       "properties": {
+        "evaluator": {
+          "$ref": "#/$defs/playbookStepEvaluator"
+        },
+        "deterministicFallback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/playbookDeterministicFallbackReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "taskId": {
           "type": "string",
           "minLength": 1,
@@ -17649,6 +17725,271 @@
         "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
       },
       "x-codegen": true
+    },
+    "integrationProvider": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationProvider",
+      "type": "string",
+      "enum": [
+        "github",
+        "azureDevOps",
+        "jira"
+      ]
+    },
+    "integrationConnectionState": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationConnectionState",
+      "type": "string",
+      "enum": [
+        "connected",
+        "notInstalled",
+        "notAuthenticated",
+        "extensionMissing",
+        "notConfigured",
+        "offline",
+        "rateLimited",
+        "timeout",
+        "failed"
+      ]
+    },
+    "integrationCapability": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationCapability",
+      "type": "string",
+      "enum": [
+        "pullRequests",
+        "checks",
+        "reviews",
+        "mergeConflicts",
+        "issues"
+      ]
+    },
+    "integrationCredentialSource": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationCredentialSource",
+      "type": "string",
+      "enum": [
+        "cli",
+        "personalAccessToken",
+        "apiToken"
+      ]
+    },
+    "integrationCapabilityDto": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationCapabilityDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "available"
+      ],
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/integrationCapability"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      }
+    },
+    "integrationStatusDto": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationStatusDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "target",
+        "state",
+        "account",
+        "credentialSource",
+        "capabilities",
+        "retryAfterEpochMs",
+        "checkedAtEpochMs"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/integrationProvider"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Host or site this status describes, such as github.com, dev.azure.com, or an Atlassian site host."
+        },
+        "state": {
+          "$ref": "#/$defs/integrationConnectionState"
+        },
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120,
+          "x-utf8-max-bytes": 120,
+          "description": "Secret-free signed-in account label when the provider reports one."
+        },
+        "credentialSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/integrationCredentialSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/integrationCapabilityDto"
+          }
+        },
+        "retryAfterEpochMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "checkedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "integrationStatusListParams": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationStatusListParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refresh"
+      ],
+      "properties": {
+        "refresh": {
+          "type": "boolean",
+          "description": "Bypass the short-lived probe cache and inspect every provider again."
+        }
+      }
+    },
+    "integrationStatusListResult": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationStatusListResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrations"
+      ],
+      "properties": {
+        "integrations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/integrationStatusDto"
+          }
+        }
+      }
+    },
+    "integrationAzureDevOpsTokenSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationAzureDevOpsTokenSetParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token"
+      ],
+      "properties": {
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024,
+          "x-utf8-max-bytes": 1024,
+          "description": "Azure DevOps personal access token stored in this computer's secure credential store; null removes it."
+        }
+      }
+    },
+    "integrationAzureDevOpsTokenSetResult": {
+      "x-codegen": true,
+      "x-codegen-name": "IntegrationAzureDevOpsTokenSetResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/integrationStatusDto"
+        }
+      }
+    },
+    "playbookDeterministicCheckKind": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookDeterministicCheckKind",
+      "type": "string",
+      "enum": [
+        "pullRequestOpen",
+        "pullRequestChecksPassing",
+        "pullRequestMerged"
+      ]
+    },
+    "playbookDeterministicCheckDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookDeterministicCheckDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "baseBranch"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/playbookDeterministicCheckKind"
+        },
+        "baseBranch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 255,
+          "x-utf8-max-bytes": 255,
+          "description": "Optional exact target branch the Task branch pull request must target."
+        }
+      }
+    },
+    "playbookStepEvaluator": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookStepEvaluator",
+      "type": "string",
+      "enum": [
+        "deterministic",
+        "routine"
+      ]
+    },
+    "playbookDeterministicFallbackReason": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookDeterministicFallbackReason",
+      "type": "string",
+      "enum": [
+        "noTaskBranch",
+        "unsupportedRepository",
+        "providerUnavailable",
+        "unauthorized",
+        "offline",
+        "rateLimited",
+        "timeout",
+        "providerFailure",
+        "multipleMatches",
+        "checksUnsupported"
+      ]
     }
   }
 }

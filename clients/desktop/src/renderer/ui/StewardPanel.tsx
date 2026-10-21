@@ -23,6 +23,11 @@ import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabe
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
 import { routineDisplayStatus, statusExplanation } from "./assistant-status.js";
 import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } from "./companion-chat.js";
+import { PlaybookCheckSelector } from "./PlaybookCheckSelector.js";
+import {
+  changeMilestoneCheckForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
+  type PlaybookUpdateOutcome,
+} from "./playbook-policy.js";
 
 export { assistantInstructionsEditableSuffix };
 
@@ -53,6 +58,9 @@ export type StewardPanelProps = {
   getPlaybook(): Promise<PlaybookGetResult>;
   getPlaybookRuntime(): Promise<PlaybookRuntimeResult>;
   getEvaluationHistory(): Promise<PlaybookEvaluationHistoryResult>;
+  /// Atomic Playbook save, used here only for a step's completion check.
+  /// Absent hosts show the check read-only.
+  updatePlaybook?: ((params: PlaybookUpdateParams) => Promise<PlaybookUpdateOutcome>) | undefined;
   /// Improve-with-agent for editable prompts and the Playbook on this panel. Absent
   /// when the composition root has not wired it, which leaves the editors
   /// exactly as they were.
@@ -463,11 +471,17 @@ export function StewardPanel(props: StewardPanelProps) {
   const selectedRoutineCompletionEvidence = selectedRoutine
     ? playbookRoutineCompletionEvidence(playbook, selectedRoutine.id)
     : undefined;
+  const selectedRoutineStep = selectedRoutine ? playbookRoutineStep(playbook, selectedRoutine.id) : undefined;
+  const updatePlaybook = props.updatePlaybook;
   const context = selectedRoutine ? <RoutineContextEditor
     key={`${selectedRoutine.id}:${selectedRoutine.generation}:${selectedRoutine.contextRevision}`}
     routine={selectedRoutine}
     stepRetryDelaySeconds={selectedRoutineRetryDelaySeconds}
     completionEvidence={selectedRoutineCompletionEvidence}
+    stepCheck={selectedRoutineStep ? { gate: selectedRoutineStep.gate, check: selectedRoutineStep.deterministicCheck ?? null } : undefined}
+    saveCheck={updatePlaybook ? (check) => run(async () => {
+      setPlaybook(await saveStepCheck(props.projectId, selectedRoutine.id, check, props.getPlaybook, updatePlaybook));
+    }) : undefined}
     health={selectedRoutineHealth}
     reports={reports.filter((report) => report.routineId === selectedRoutine.id)}
     busy={busy}
@@ -681,10 +695,39 @@ function WakePromptDetails(props: { context: AssistantPromptContextDto; role: "S
   </section>;
 }
 
+/** One atomic Playbook save changing only this step's completion check:
+    re-read, apply, submit against the just-read revisions, and retry a lost
+    race the user did not cause. */
+export async function saveStepCheck(
+  projectId: string,
+  routineId: string,
+  check: PlaybookMilestoneDto["deterministicCheck"],
+  getPlaybook: () => Promise<PlaybookGetResult>,
+  updatePlaybook: (params: PlaybookUpdateParams) => Promise<PlaybookUpdateOutcome>,
+): Promise<PlaybookDto> {
+  for (let attempt = 1; ; attempt += 1) {
+    const latest = await getPlaybook();
+    const next = changeMilestoneCheckForRoutine(playbookDraftFromDto(latest.playbook), routineId, check);
+    if (!next) throw new Error(check === null
+      ? "This step is no longer in the Playbook."
+      : "This step is a human gate or no longer in the Playbook, so it cannot use a pull request check.");
+    const decision = resolvePlaybookSave(projectId, next, latest.playbook?.revision ?? 0, latest);
+    if (decision.kind === "proceed") {
+      const outcome = await updatePlaybook(decision.params);
+      if (outcome.ok) return outcome.result.playbook;
+      if (outcome.code !== "conflict" || attempt >= REVISION_ATTEMPTS) throw new Error(playbookRefusalMessage(outcome.message));
+    } else if (attempt >= REVISION_ATTEMPTS) {
+      throw new Error("state revision changed");
+    }
+  }
+}
+
 export function RoutineContextEditor(props: {
   routine: RoutineConfigurationDto;
   stepRetryDelaySeconds?: number | undefined;
   completionEvidence?: string | undefined;
+  stepCheck?: { gate: PlaybookMilestoneDto["gate"]; check: PlaybookMilestoneDto["deterministicCheck"] } | undefined;
+  saveCheck?: ((check: PlaybookMilestoneDto["deterministicCheck"]) => Promise<void>) | undefined;
   health: RoutineHealthDto | undefined;
   reports: readonly RoutineReportDto[];
   busy: boolean;
@@ -742,6 +785,12 @@ export function RoutineContextEditor(props: {
         <p>{props.completionEvidence?.trim() || "Use the verification instructions below to define how completion is proven."}</p>
         <small>This completion rule comes from the Playbook step. The Steward verifies it with the instructions below.</small>
       </div> : null}
+      {props.stepRetryDelaySeconds !== undefined && props.stepCheck && props.saveCheck ? <PlaybookCheckSelector
+        gate={props.stepCheck.gate}
+        check={props.stepCheck.check}
+        busy={props.busy}
+        save={props.saveCheck}
+      /> : null}
       <details className="ap-details ap-instructions-details" open>
         <summary>What should the Steward verify?</summary>
         <div className="ap-instructions-editor">

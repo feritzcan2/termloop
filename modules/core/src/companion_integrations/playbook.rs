@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use termloop_domain::{
-    PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
-    PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling, RoutineTriggerMode,
-    StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration,
+    PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookGateKind, PlaybookMilestone,
+    PlaybookPipeline, PlaybookStepProgress, PlaybookStepVerdict, RoutineActionHandling,
+    RoutineTriggerMode, StewardConfiguration, TASK_STEWARD_BRIEF_MAX_BYTES, TrackerConfiguration,
 };
 use termloop_store::PlaybookApply;
 
@@ -44,6 +44,9 @@ pub(crate) struct PlaybookMilestoneDraft {
     pub(crate) while_waiting: PlaybookWhileWaitingDraft,
     pub(crate) retry_delay_seconds: u64,
     pub(crate) approver: Option<String>,
+    /// Absent in snapshots written before deterministic checks existed.
+    #[serde(default)]
+    pub(crate) deterministic_check: Option<PlaybookDeterministicCheck>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -362,6 +365,8 @@ impl CoreRuntime {
                                 .into(),
                         decided_at_epoch_ms,
                         next_attempt_at_epoch_ms: None,
+                        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+                        deterministic_fallback: None,
                     });
                 }
             }
@@ -371,7 +376,8 @@ impl CoreRuntime {
 
     /// The waiting answers an edited step must reschedule. Passed answers are
     /// never touched: editing a step does not undo work a Task already did.
-    /// A changed question (completion condition, gate, or approver) is asked
+    /// A changed question (completion condition, gate, approver, or
+    /// deterministic check) is asked
     /// again right away; a changed delay moves the next attempt to the new
     /// delay after the answer was given.
     fn rescheduled_step_answers(
@@ -405,6 +411,7 @@ impl CoreRuntime {
                 .map(|routine| routine.prompt.as_str());
             let ask_again = previous.gate != next.gate
                 || previous.approver != next.approver
+                || previous.deterministic_check != next.deterministic_check
                 || previous_prompt != next_prompt;
             if !ask_again && previous.retry_delay_seconds == next.retry_delay_seconds {
                 continue;
@@ -554,6 +561,7 @@ fn materialize_pipeline(
             let unchanged = current.enabled
                 && milestone.gate == draft.gate
                 && milestone.approver == draft.approver
+                && milestone.deterministic_check == draft.deterministic_check
                 && current.name == name
                 && current.prompt == prompt
                 && current.steward_instructions == steward_instructions
@@ -618,6 +626,7 @@ fn materialize_pipeline(
             routine_id,
             retry_delay_seconds: draft.retry_delay_seconds,
             approver: draft.approver.clone(),
+            deterministic_check: draft.deterministic_check.clone(),
         });
     }
     Ok((milestones, changed))
@@ -681,6 +690,7 @@ fn playbook_projection(
                 "instructions": routine.steward_instructions,
             },
             "approver": value.approver,
+            "deterministicCheck": value.deterministic_check,
         }))
     };
     let milestones = configuration
@@ -1409,6 +1419,8 @@ mod tests {
                         evidence: "PR #12 is open.".into(),
                         decided_at_epoch_ms: 1_000,
                         next_attempt_at_epoch_ms: None,
+                        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+                        deterministic_fallback: None,
                     },
                     PlaybookStepProgress {
                         task_id: "task-1".into(),
@@ -1418,6 +1430,8 @@ mod tests {
                         evidence: "CI is still running.".into(),
                         decided_at_epoch_ms: 2_000,
                         next_attempt_at_epoch_ms: Some(302_000),
+                        evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+                        deterministic_fallback: None,
                     },
                 ],
                 revision,
@@ -1552,6 +1566,8 @@ mod tests {
             evidence: "Checked.".into(),
             decided_at_epoch_ms: 1_000,
             next_attempt_at_epoch_ms: None,
+            evaluator: termloop_domain::PlaybookStepEvaluator::Routine,
+            deterministic_fallback: None,
         };
         let revision = runtime.state_revision();
         runtime
@@ -1649,5 +1665,98 @@ mod tests {
             serde_json::to_value([PlaybookGateKind::Automatic, PlaybookGateKind::Human]).unwrap(),
             json!(["automatic", "human"])
         );
+    }
+
+    #[test]
+    fn deterministic_checks_round_trip_through_update_get_and_saved_pipelines() {
+        let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
+        let mut milestones = two_step_milestones(600, 600, "CI is green on the Task's PR.");
+        milestones[1]["deterministicCheck"] =
+            json!({"kind": "pullRequestChecksPassing", "baseBranch": "develop"});
+        let mut parked = milestones[1].clone();
+        parked["deterministicCheck"] = json!({"kind": "pullRequestMerged", "baseBranch": null});
+        let saved = apply_playbook(
+            &mut runtime,
+            json!({
+                "projectId": project_id,
+                "activePipelineName": "Ship",
+                "savedPipelines": [{"name": "Parked", "milestones": [parked]}],
+                "milestones": milestones,
+                "expectedPlaybookRevision": 0,
+            }),
+            1,
+        )
+        .unwrap();
+        let read = runtime
+            .get_playbook(json!({"projectId": project_id}))
+            .unwrap();
+        for playbook in [&saved["playbook"], &read["playbook"]] {
+            // A step written without the field reads back as an explicit null.
+            assert_eq!(playbook["milestones"][0]["deterministicCheck"], Value::Null);
+            assert_eq!(
+                playbook["milestones"][1]["deterministicCheck"],
+                json!({"kind": "pullRequestChecksPassing", "baseBranch": "develop"})
+            );
+            assert_eq!(
+                playbook["savedPipelines"][0]["milestones"][0]["deterministicCheck"],
+                json!({"kind": "pullRequestMerged", "baseBranch": null})
+            );
+        }
+
+        // Changing only the check is a real edit of the step.
+        let mut edited = two_step_milestones(600, 600, "CI is green on the Task's PR.");
+        edited[1]["deterministicCheck"] = json!({"kind": "pullRequestOpen", "baseBranch": null});
+        let saved = save_two_steps(&mut runtime, &project_id, edited, 2);
+        assert_eq!(saved["playbook"]["revision"], 2);
+        assert_eq!(
+            saved["playbook"]["milestones"][1]["deterministicCheck"]["kind"],
+            "pullRequestOpen"
+        );
+
+        // A human gate never carries a check, and a base branch is bounded and
+        // non-blank.
+        let rejected = |runtime: &mut CoreRuntime, milestone: Value| {
+            let expected = runtime
+                .store
+                .playbook_for_project(&project_id)
+                .map_or(0, |playbook| playbook.revision);
+            apply_playbook(
+                runtime,
+                json!({
+                    "projectId": project_id,
+                    "activePipelineName": "Ship",
+                    "savedPipelines": [],
+                    "milestones": [milestone],
+                    "expectedPlaybookRevision": expected,
+                }),
+                3,
+            )
+        };
+        let mut human = milestone_value();
+        human["deterministicCheck"] = json!({"kind": "pullRequestMerged", "baseBranch": null});
+        assert!(matches!(
+            rejected(&mut runtime, human),
+            Err(CoreError::InvalidParams(field)) if field == "playbook"
+        ));
+        for base in [json!(""), json!("   "), json!("b".repeat(256))] {
+            let mut automatic = two_step_milestones(600, 600, "x")[0].clone();
+            automatic["deterministicCheck"] =
+                json!({"kind": "pullRequestOpen", "baseBranch": base});
+            assert!(rejected(&mut runtime, automatic).is_err());
+        }
+        let mut unknown = two_step_milestones(600, 600, "x")[0].clone();
+        unknown["deterministicCheck"] = json!({"kind": "jiraDone", "baseBranch": null});
+        assert!(rejected(&mut runtime, unknown).is_err());
+        assert_eq!(
+            runtime
+                .store
+                .playbook_for_project(&project_id)
+                .unwrap()
+                .revision,
+            2
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(folder);
     }
 }

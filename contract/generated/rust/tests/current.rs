@@ -5,6 +5,7 @@ mod current_cleanup;
 mod current_companion;
 mod current_companion_supervisor;
 mod current_git_host;
+mod current_integration;
 mod current_launch;
 mod current_mcp;
 mod current_playbook;

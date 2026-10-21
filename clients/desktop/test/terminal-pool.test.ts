@@ -849,4 +849,17 @@ describe("TerminalPool stream presentation", () => {
     expect(surface.visibility.at(-1)).toBe(true);
     pool.dispose();
   });
+  it("retires a notice once input is confirmed and leaves none after a runtime change", async () => {
+    const attachment = new FakeAttachment();
+    const pool = new TerminalPool(() => new FakeSurface(), async () => attachment);
+    const value = session("notice");
+    pool.reconcile([value]); await pool.mount("notice", {} as HTMLElement);
+    attachment.emit({ type: "gap" });
+    expect(pool.presentationPort.snapshot("notice")?.notice).toContain("skipped");
+    attachment.emit({ type: "inputDelivery", state: "confirmed" });
+    expect(pool.presentationPort.snapshot("notice")).toMatchObject({ input: "confirmed", notice: undefined });
+    pool.reconcile([{ ...value, runtime_epoch: 2 }]);
+    expect(pool.presentationPort.snapshot("notice")).toMatchObject({ phase: "connecting", input: undefined, notice: undefined });
+    pool.dispose();
+  });
 });

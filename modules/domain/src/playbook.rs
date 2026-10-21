@@ -22,6 +22,8 @@ pub const PLAYBOOK_RETRY_DELAY_MAX_SECONDS: u64 = 86_400;
 /// One short factual sentence per verdict. Evidence explains an answer; it is
 /// never a place to park raw external content.
 pub const PLAYBOOK_EVIDENCE_MAX_BYTES: usize = 600;
+/// A Git branch name a deterministic pull-request check may filter by.
+pub const PLAYBOOK_BASE_BRANCH_MAX_BYTES: usize = 255;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +50,62 @@ pub struct PlaybookMilestone {
     /// enforcement stays with the Steward's built-in gate rules.
     #[serde(default)]
     pub approver: Option<String>,
+    /// An optional fact TermLoop can read itself from the Task branch's pull
+    /// request before asking the step's Routine. `None` for every step whose
+    /// completion is anything else, and for documents written before it.
+    #[serde(default)]
+    pub deterministic_check: Option<PlaybookDeterministicCheck>,
+}
+
+/// The pull-request state a deterministic step check reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybookDeterministicCheckKind {
+    /// Exactly one open, non-draft pull request from the Task branch.
+    PullRequestOpen,
+    /// Exactly one open pull request from the Task branch whose checks pass.
+    PullRequestChecksPassing,
+    /// Exactly one merged pull request from the Task branch.
+    PullRequestMerged,
+}
+
+/// A step's completion expressed as the Task branch's own pull request state.
+/// It is read fresh from the Git host; it never consults a display cache.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookDeterministicCheck {
+    pub kind: PlaybookDeterministicCheckKind,
+    /// Only pull requests targeting exactly this branch count. `None` accepts
+    /// any target branch.
+    #[serde(default)]
+    pub base_branch: Option<String>,
+}
+
+/// Who produced a stored verdict.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybookStepEvaluator {
+    /// TermLoop read the Git host itself.
+    Deterministic,
+    /// The step's Routine evaluated it.
+    #[default]
+    Routine,
+}
+
+/// Why a step with a deterministic check was answered by its Routine instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybookDeterministicFallback {
+    NoTaskBranch,
+    UnsupportedRepository,
+    ProviderUnavailable,
+    Unauthorized,
+    Offline,
+    RateLimited,
+    Timeout,
+    ProviderFailure,
+    MultipleMatches,
+    ChecksUnsupported,
 }
 
 /// The one current Playbook document for a Project. Replace-only: updates
@@ -116,6 +174,14 @@ pub struct PlaybookStepProgress {
     /// Task has passed: a passed step is not re-evaluated.
     #[serde(default)]
     pub next_attempt_at_epoch_ms: Option<u64>,
+    /// Who produced this verdict. Rows written before deterministic checks
+    /// existed were all Routine answers.
+    #[serde(default)]
+    pub evaluator: PlaybookStepEvaluator,
+    /// Set only on a Routine answer to a step whose deterministic check could
+    /// not decide.
+    #[serde(default)]
+    pub deterministic_fallback: Option<PlaybookDeterministicFallback>,
 }
 
 /// Where one Task stands on a pipeline, derived from its stored answers.
@@ -161,6 +227,10 @@ impl PlaybookStepProgress {
             && valid_entry_id(&self.milestone_id)
             && valid_routine_reference(&self.routine_id)
             && valid_optional_text(&self.evidence, PLAYBOOK_EVIDENCE_MAX_BYTES)
+            // A fallback explains why the Routine answered; a deterministic
+            // answer has none.
+            && (self.evaluator == PlaybookStepEvaluator::Routine
+                || self.deterministic_fallback.is_none())
             && match self.verdict {
                 // A passed step is never evaluated again, so a retry time on
                 // one would let the engine act on it twice.
@@ -195,6 +265,25 @@ impl PlaybookMilestone {
                 (PlaybookGateKind::Human, None) => false,
                 (PlaybookGateKind::Automatic, approver) => approver.is_none(),
             }
+            && match (&self.gate, &self.deterministic_check) {
+                (_, None) => true,
+                // A pull-request read cannot establish a named person's
+                // approval, so a human gate never carries one.
+                (PlaybookGateKind::Human, Some(_)) => false,
+                (PlaybookGateKind::Automatic, Some(check)) => check.is_valid(),
+            }
+    }
+}
+
+impl PlaybookDeterministicCheck {
+    pub fn is_valid(&self) -> bool {
+        self.base_branch.as_deref().is_none_or(|branch| {
+            !branch.is_empty()
+                && branch.len() <= PLAYBOOK_BASE_BRANCH_MAX_BYTES
+                && !branch
+                    .chars()
+                    .any(|character| character.is_control() || character.is_whitespace())
+        })
     }
 }
 
@@ -281,6 +370,7 @@ mod tests {
             routine_id: "routine-pr".into(),
             retry_delay_seconds: 600,
             approver: Some("ferit".into()),
+            deterministic_check: None,
         }
     }
 
@@ -304,6 +394,8 @@ mod tests {
             evidence: "Approval by ferit on the open PR.".into(),
             decided_at_epoch_ms: 10,
             next_attempt_at_epoch_ms: None,
+            evaluator: PlaybookStepEvaluator::Routine,
+            deterministic_fallback: None,
         }
     }
 
@@ -476,5 +568,59 @@ mod tests {
         let mut human_without_approver = playbook();
         human_without_approver.milestones[0].approver = None;
         assert!(!human_without_approver.is_valid());
+    }
+
+    fn automatic(check: Option<PlaybookDeterministicCheck>) -> PlaybookConfiguration {
+        let mut document = playbook();
+        document.milestones[0].gate = PlaybookGateKind::Automatic;
+        document.milestones[0].approver = None;
+        document.milestones[0].deterministic_check = check;
+        document
+    }
+
+    #[test]
+    fn deterministic_checks_are_automatic_only_and_bound_their_base_branch() {
+        let check = |base: Option<&str>| PlaybookDeterministicCheck {
+            kind: PlaybookDeterministicCheckKind::PullRequestMerged,
+            base_branch: base.map(str::to_owned),
+        };
+        assert!(automatic(None).is_valid());
+        assert!(automatic(Some(check(None))).is_valid());
+        assert!(automatic(Some(check(Some("release/2026.10")))).is_valid());
+        let longest = "b".repeat(PLAYBOOK_BASE_BRANCH_MAX_BYTES);
+        assert!(automatic(Some(check(Some(&longest)))).is_valid());
+
+        for invalid in ["", " ", "has space", "tab\there", &"b".repeat(256)] {
+            assert!(
+                !automatic(Some(check(Some(invalid)))).is_valid(),
+                "{invalid:?} must be rejected"
+            );
+        }
+
+        // A pull-request read cannot prove a named person's approval.
+        let mut human = playbook();
+        human.milestones[0].deterministic_check = Some(check(None));
+        assert!(!human.is_valid());
+
+        // Kept pipelines are held to the same rule.
+        let mut kept = automatic(None);
+        kept.saved_pipelines = vec![PlaybookPipeline {
+            name: "Kept".into(),
+            milestones: human.milestones.clone(),
+        }];
+        assert!(!kept.is_valid());
+    }
+
+    #[test]
+    fn only_a_routine_answer_explains_a_deterministic_fallback() {
+        let mut routine = passed("task-1", "pr-approved");
+        routine.deterministic_fallback = Some(PlaybookDeterministicFallback::MultipleMatches);
+        assert!(routine.is_valid());
+
+        let mut deterministic = routine.clone();
+        deterministic.evaluator = PlaybookStepEvaluator::Deterministic;
+        assert!(!deterministic.is_valid());
+        deterministic.deterministic_fallback = None;
+        assert!(deterministic.is_valid());
     }
 }
