@@ -1836,7 +1836,17 @@ export function Shell(props: ShellProps) {
           /></WorkspaceRailCache>
           {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
-            {assistantProjectId ? <StewardPetHost
+            <div className="sidebar-footer-actions sidebar-footer-start">
+              <div className="sidebar-footer-control"><button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" aria-describedby="sidebar-footer-settings-card" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><SidebarFooterHoverCard
+                id="sidebar-footer-settings-card"
+                eyebrow={showSettingsScope ? `Preferences · ${scopeName}` : "Preferences"}
+                title="Settings"
+                status="Appearance, notifications, updates, servers and mobile access."
+                rows={showSettingsScope ? [{ label: "Computer", value: computerName }] : []}
+                hint="Click to open"
+              /></div>
+            </div>
+            <div className="sidebar-footer-center">{assistantProjectId ? <StewardPetHost
               projectId={assistantProjectId}
               refreshToken={props.assistantRefreshToken}
               sessions={props.projectSessions}
@@ -1868,16 +1878,9 @@ export function Shell(props: ShellProps) {
               openSteward={() => openAssistant({ kind: "steward", initialView: "terminal" })}
               dismissUtterance={() => undefined}
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
-            /> : null}
-            <div className="sidebar-footer-actions">
-              <div className="sidebar-footer-control"><button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" aria-describedby="sidebar-footer-settings-card" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><SidebarFooterHoverCard
-                id="sidebar-footer-settings-card"
-                eyebrow={showSettingsScope ? `Preferences · ${scopeName}` : "Preferences"}
-                title="Settings"
-                status="Appearance, notifications, updates, servers and mobile access."
-                rows={showSettingsScope ? [{ label: "Computer", value: computerName }] : []}
-                hint="Click to open"
-              /></div><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+            /> : null}</div>
+            <div className="sidebar-footer-actions sidebar-footer-end">
+              <KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
