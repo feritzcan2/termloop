@@ -1662,6 +1662,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: Some(termloop_agents::AgentObservation {
                     state: termloop_agents::AgentState::Working,
                     source: termloop_agents::AgentSignalSource::Hook,
@@ -1963,6 +1964,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: Some(termloop_agents::AgentObservation {
                     state: termloop_agents::AgentState::Idle,
                     source: termloop_agents::AgentSignalSource::Hook,

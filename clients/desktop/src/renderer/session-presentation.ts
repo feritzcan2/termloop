@@ -25,6 +25,7 @@ export type SessionStateId =
   | "review"
   | "working"
   | "compacting"
+  | "waiting"
   | "failed"
   | "interrupted"
   | "agentExited"
@@ -64,6 +65,10 @@ const sessionStatePresentation: Record<SessionStateId, Omit<SessionState, "id">>
   /// `busy` one. It is named separately because it takes minutes and answers the
   /// question a silent "Working" row cannot: why nothing is happening.
   compacting: { tone: "working", label: "Compacting", summary: "Summarizing its conversation to free up context." },
+  /// Its turn has ended, but work it started itself will start the next one
+  /// without the user, so it is not done and keeps the `working` hue. The words
+  /// depend on what it waits on; see `waitingState`.
+  waiting: { tone: "working", label: "Waiting", summary: "Waiting on work it started." },
   failed: { tone: "blocked", label: "Failed", summary: "Its last turn failed." },
   interrupted: { tone: "interrupted", label: "Interrupted", summary: "Its last turn was interrupted." },
   agentExited: { tone: "blocked", label: "Exited", summary: "The agent reported that it exited." },
@@ -80,6 +85,29 @@ const sessionStatePresentation: Record<SessionStateId, Omit<SessionState, "id">>
 
 function stateOf(id: SessionStateId): SessionState {
   return { id, ...sessionStatePresentation[id] };
+}
+
+/// A resting agent that still waits on its own background tasks or scheduled
+/// wakes. The daemon projects the counts only while the status is idle.
+export function agentIsWaitingOnPendingWakes(status: AgentStatus | undefined): boolean {
+  const pending = status?.pendingWakes;
+  return status?.status === "idle" && !!pending && (pending.backgroundTasks > 0 || pending.scheduledWakes > 0);
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function waitingState(pending: NonNullable<AgentStatus["pendingWakes"]>): SessionState {
+  const parts = [
+    pending.backgroundTasks > 0 ? plural(pending.backgroundTasks, "background task") : undefined,
+    pending.scheduledWakes > 0 ? plural(pending.scheduledWakes, "scheduled wake") : undefined,
+  ].filter((part): part is string => part !== undefined);
+  return {
+    ...stateOf("waiting"),
+    label: pending.backgroundTasks > 0 ? "Waiting on tasks" : "Waiting on trigger",
+    summary: `Waiting on ${parts.join(" and ")}.`,
+  };
 }
 
 /// An interruption remains the daemon's exact last-turn result. Once the user
@@ -301,7 +329,9 @@ export function sessionState(session: Session, status: AgentStatus | undefined, 
     /// Per F2-16 the client-local review flag is only valid while the structured
     /// status is idle. The shipped row checked it ahead of every status, so an
     /// agent that resumed working still claimed to need review.
-    case "idle": return stateOf(reviewReady ? "review" : "idle");
+    case "idle":
+      if (agentIsWaitingOnPendingWakes(status)) return waitingState(status.pendingWakes!);
+      return stateOf(reviewReady ? "review" : "idle");
     case "working": return stateOf("working");
     case "compacting": return stateOf("compacting");
     case "failed": return stateOf("failed");
@@ -324,7 +354,7 @@ export function agentActivityPriority(
   if (state.id === "awaitingInput") return 0;
   if (state.id === "review") return 1;
   if (state.id === "failed" || state.id === "interrupted") return 2;
-  if (state.id === "working" || state.id === "compacting" || state.id === "resuming") return 3;
+  if (state.id === "working" || state.id === "compacting" || state.id === "waiting" || state.id === "resuming") return 3;
   return 4;
 }
 
@@ -366,6 +396,7 @@ export function agentActivityIsOlder(
     session.lifecycle_state === "resuming"
     || status?.status === "working"
     || status?.status === "compacting"
+    || agentIsWaitingOnPendingWakes(status)
   ) return false;
   /// A missing/unknown observation is not evidence of inactivity. It is most
   /// often the short window between launch and the first provider status.
@@ -432,7 +463,8 @@ export function agentAttention(
     if (session.kind !== "Agent" || !agentStatusIsLive(session)) continue;
     const status = statusesById.get(session.id);
     if (status?.status === "awaitingInput") return attentionOf(session, "attention");
-    if (status?.status === "idle" && reviewReadySessionIds.has(session.id)) review ??= session;
+    if (agentIsWaitingOnPendingWakes(status)) working ??= session;
+    else if (status?.status === "idle" && reviewReadySessionIds.has(session.id)) review ??= session;
     else if (status?.status === "working") working ??= session;
   }
   if (review) return attentionOf(review, "review");

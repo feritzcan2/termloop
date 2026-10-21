@@ -451,6 +451,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: Some(idle_observation()),
                 pending_generated_input: None,
             },
@@ -463,6 +464,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: Some(termloop_agents::AgentObservation {
                     state: termloop_agents::AgentState::Failed,
                     source: termloop_agents::AgentSignalSource::Hook,

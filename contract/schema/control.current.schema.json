@@ -9345,6 +9345,40 @@
               "type": "null"
             }
           ]
+        },
+        "pendingWakes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/agentPendingWakes"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "agentPendingWakes": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentPendingWakes",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backgroundTasks",
+        "scheduledWakes"
+      ],
+      "properties": {
+        "backgroundTasks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024,
+          "x-rust-type": "u32"
+        },
+        "scheduledWakes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024,
+          "x-rust-type": "u32"
         }
       }
     },
@@ -9438,6 +9472,16 @@
         },
         "plan": {
           "$ref": "#/$defs/agentPlanObservation"
+        },
+        "pendingWakes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/agentPendingWakes"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

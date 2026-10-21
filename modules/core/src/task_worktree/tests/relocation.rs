@@ -148,6 +148,7 @@ fn prepare_relocation_fixture_for(agent_id: &str) -> (Fixture, String, String, P
             last_signal: None,
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
+            pending_wakes: Default::default(),
             observation: Some(termloop_agents::AgentObservation {
                 state: termloop_agents::AgentState::Idle,
                 source: termloop_agents::AgentSignalSource::DaemonBridge,

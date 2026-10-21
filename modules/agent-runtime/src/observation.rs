@@ -11,6 +11,8 @@ pub struct SessionObservation {
     pub pending_generated_input: Option<termloop_launch::GeneratedTerminalSubmission>,
     pub defer_generated_input_until_hook_response: bool,
     pub last_notification_type: Option<String>,
+    /// The latest `Stop` snapshot of what the resting turn still waits on.
+    pub pending_wakes: termloop_agents::AgentPendingWakes,
 }
 
 pub fn observation_token_matches(expected: &str, token: &str) -> bool {

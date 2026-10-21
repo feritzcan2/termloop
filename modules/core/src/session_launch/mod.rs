@@ -1995,6 +1995,7 @@ impl CoreRuntime {
                     pending_generated_input,
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
+                    pending_wakes: Default::default(),
                 },
             );
         }

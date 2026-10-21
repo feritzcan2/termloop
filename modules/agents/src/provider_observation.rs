@@ -1,5 +1,6 @@
 use crate::{
-    AgentPlanUpdate, AgentSignal, AgentSignalSource, BuiltinAgentAdapter, agent_descriptor,
+    AgentPendingWakes, AgentPlanUpdate, AgentSignal, AgentSignalSource, BuiltinAgentAdapter,
+    agent_descriptor,
 };
 use termloop_domain::{ResumeProvider, ResumeRef};
 
@@ -20,6 +21,7 @@ pub struct ProviderHookObservationInput {
     pub transcript_path: Option<String>,
     pub prompt_id: Option<String>,
     pub plan: Option<AgentPlanUpdate>,
+    pub pending_wakes: Option<AgentPendingWakes>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +41,7 @@ pub struct NormalizedProviderObservation {
     pub reasoning_level: Option<String>,
     pub turn_watch: Option<ProviderTurnWatch>,
     pub plan: Option<AgentPlanUpdate>,
+    pub pending_wakes: Option<AgentPendingWakes>,
 }
 
 pub fn normalize_provider_hook_observation(
@@ -81,6 +84,7 @@ fn normalize_claude_hook(
         reasoning_level: input.reasoning_level,
         turn_watch,
         plan: input.plan,
+        pending_wakes: input.pending_wakes,
     })
 }
 
@@ -115,6 +119,7 @@ fn normalize_gemini_hook(
         reasoning_level: None,
         turn_watch: None,
         plan: None,
+        pending_wakes: None,
     })
 }
 
@@ -143,6 +148,7 @@ fn normalize_opencode_hook(
         reasoning_level: None,
         turn_watch: None,
         plan: None,
+        pending_wakes: None,
     })
 }
 
@@ -167,6 +173,7 @@ mod tests {
             transcript_path: None,
             prompt_id: None,
             plan: None,
+            pending_wakes: None,
         }
     }
 
