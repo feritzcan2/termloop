@@ -5,6 +5,11 @@ directories:
 files:
   - dist/**
   - package.json
+  # esbuild bundles the host's JavaScript into dist/main.js, and the packaged
+  # addon and Ghostty resources ship through extraResources. Keeping the
+  # package out of the asar also stops its addon from unpacking hundreds of
+  # theme files, which overflows the universal asar merge's unpack glob.
+  - "!node_modules/@termloop/ghostty-host/**"
 asar: true
 asarUnpack:
   - dist/mobile-access/**
