@@ -511,9 +511,11 @@ impl CoreRuntime {
     pub fn apply_git_host_pull_request_list(
         &mut self,
         observed: ObservedGitHostPullRequestList,
-    ) -> Result<(Value, Vec<String>, Vec<String>), CoreError> {
+    ) -> Result<(Value, Vec<String>, Vec<String>, bool), CoreError> {
         let follow_up_task_ids = observed.follow_up_task_ids;
         let mut changed = Vec::new();
+        let mut nudged_task_ids = Vec::new();
+        let mut nudge_at = 0;
         let mut projections = Vec::with_capacity(observed.projections.len());
         for (snapshot, mut projection) in observed
             .snapshots
@@ -555,6 +557,19 @@ impl CoreRuntime {
             {
                 self.git_host_invalidated_tasks.remove(index);
             }
+            let previous_signal = self
+                .git_host_projections
+                .entries
+                .get(&snapshot.task_id)
+                .map(|entry| playbook_signal(&entry.projection));
+            // Only a fresh read that moved a fact a step can depend on counts;
+            // the first observation after start has nothing to compare with.
+            if projection.freshness == GitHostProjectionFreshness::Fresh
+                && previous_signal.is_some_and(|previous| previous != playbook_signal(&projection))
+            {
+                nudged_task_ids.push(snapshot.task_id.clone());
+                nudge_at = nudge_at.max(projection.last_attempt_observed_at_epoch_ms);
+            }
             if self
                 .git_host_projections
                 .insert(snapshot.project_id.clone(), projection.clone())
@@ -565,10 +580,33 @@ impl CoreRuntime {
             }
             projections.push(projection);
         }
+        let nudged = self.nudge_playbook_steps(&nudged_task_ids, nudge_at);
         serde_json::to_value(projections)
-            .map(|value| (value, changed, follow_up_task_ids))
+            .map(|value| (value, changed, follow_up_task_ids, nudged))
             .map_err(|_| CoreError::Store("projection serialization failed".into()))
     }
+}
+
+/// The pull-request facts a Playbook step can depend on, in a stable order.
+/// Titles, activity times, and freshness bookkeeping change without moving any
+/// step, so they are left out.
+fn playbook_signal(projection: &GitHostTaskProjection) -> Vec<[&str; 6]> {
+    let mut signal = projection
+        .matches
+        .iter()
+        .map(|summary| {
+            [
+                summary.url.as_str(),
+                summary.state.as_str(),
+                summary.base_branch.as_str(),
+                summary.check_rollup.as_str(),
+                summary.review_signal.as_str(),
+                summary.merge_conflict.as_str(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    signal.sort_unstable();
+    signal
 }
 
 fn automatic_git_host_task(task: &TaskRecord) -> bool {

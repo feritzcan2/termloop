@@ -357,7 +357,11 @@ async fn observe_git_host_pull_request_list(
     };
     let (mut result, invalidated, state_revision, observation_sequence) = {
         let mut core = state.core.lock().await;
-        let (result, mut changed, follow_up) = core.apply_git_host_pull_request_list(observed)?;
+        let (result, mut changed, follow_up, nudged) =
+            core.apply_git_host_pull_request_list(observed)?;
+        if nudged {
+            state.tracker_runtime_wake.notify_one();
+        }
         changed.extend(follow_up);
         changed.sort();
         changed.dedup();

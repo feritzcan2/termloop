@@ -243,6 +243,11 @@ impl CoreRuntime {
         capability: &TrackerCheckCapability,
         step: Option<&super::super::playbook_runtime::PlaybookStepAssignment>,
     ) {
+        if let Some(assignment) = step {
+            self.tracker_runtime
+                .step_task_nudge
+                .remove(&(routine_id.to_owned(), assignment.waiting[0].task_id.clone()));
+        }
         self.tracker_runtime
             .health
             .entry(routine_id.to_owned())

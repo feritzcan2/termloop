@@ -83,17 +83,31 @@ fn pull_request_open_needs_exactly_one_open_non_draft_pull_request() {
             "PR #7 from feature/login on github.com/acme/widgets is still a draft.".into()
         )
     );
-    // Closed and merged pull requests are not open ones.
+    // A closed pull request is not an open one.
     assert!(matches!(
         decide(
             &open,
-            &read(vec![
-                pull_request(3, Closed, "develop", Passing),
-                pull_request(4, Merged, "develop", Passing),
-            ])
+            &read(vec![pull_request(3, Closed, "develop", Passing)])
         ),
         DeterministicDecision::Waiting(_)
     ));
+    // A pull request that already merged proves it was opened, but its CI is
+    // no longer the open pull request's to report.
+    let merged = read(vec![
+        pull_request(3, Closed, "develop", Passing),
+        pull_request(4, Merged, "develop", Passing),
+    ]);
+    assert_eq!(
+        decide(&open, &merged),
+        DeterministicDecision::Passed(
+            "PR #4 from feature/login on github.com/acme/widgets was opened and has merged into develop."
+                .into()
+        )
+    );
+    assert_eq!(
+        decide(&check(PullRequestChecksPassing, None), &merged),
+        DeterministicDecision::Fallback(Fallback::ChecksUnsupported)
+    );
     assert_eq!(
         decide(
             &open,
