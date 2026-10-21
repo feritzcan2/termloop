@@ -5,6 +5,7 @@ const ITEMS: readonly { view: RightSidebarView; label: string; short: string; ic
   { view: "files", label: "Files", short: "Files", icon: "folder" },
   { view: "sourceControl", label: "Source Control", short: "Git", icon: "branch" },
   { view: "steward", label: "Steward", short: "Steward", icon: "sparkles" },
+  { view: "pullRequests", label: "Pull Requests", short: "PRs", icon: "fork" },
   { view: "agents", label: "Agents", short: "Agents", icon: "agent" },
   { view: "skills", label: "Skills", short: "Skills", icon: "star" },
   { view: "context", label: "Context", short: "Context", icon: "fileText" },

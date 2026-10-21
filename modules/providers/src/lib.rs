@@ -5,6 +5,7 @@ mod integration_status;
 mod jira;
 mod openai_voice;
 mod pull_request_changes;
+mod repository_pull_requests;
 
 pub use openai_voice::{OpenAiVoiceService, VoiceProviderError};
 
@@ -19,6 +20,10 @@ pub use jira::{
     JiraIssueRefError, JiraIssueSnapshot, JiraIssueSource, JiraSearchError, JiraSearchRequest,
     JiraSearchResult, JiraSearchScope, NormalizedJiraIssueRef, normalize_jira_issue_url,
     normalize_jira_site_base_url,
+};
+
+pub use repository_pull_requests::{
+    RepositoryPullRequest, RepositoryPullRequestFilter, RepositoryPullRequestList,
 };
 
 pub use pull_request_changes::{
@@ -575,15 +580,7 @@ impl GitHubClient {
         if queries.is_empty() || queries.len() > MAX_BATCH_QUERIES {
             return Err(ProviderFailure::ProviderFailure);
         }
-        {
-            let mut suppression = self.suppression.lock().expect("GitHub suppression mutex");
-            if let Some((failure, deadline)) = *suppression {
-                if deadline.remaining().is_some() {
-                    return Err(failure);
-                }
-                *suppression = None;
-            }
-        }
+        self.check_suppression()?;
         let result = self.query_unsuppressed(queries, timeout.min(Duration::from_secs(8)));
         let suppression_failure = result
             .as_ref()
@@ -609,6 +606,17 @@ impl GitHubClient {
             self.record_suppression(failure, retry_after);
         }
         result
+    }
+
+    fn check_suppression(&self) -> Result<(), ProviderFailure> {
+        let mut suppression = self.suppression.lock().expect("GitHub suppression mutex");
+        if let Some((failure, deadline)) = *suppression {
+            if deadline.remaining().is_some() {
+                return Err(failure);
+            }
+            *suppression = None;
+        }
+        Ok(())
     }
 
     fn record_suppression(&self, failure: ProviderFailure, retry_after: Option<u64>) {
@@ -643,13 +651,7 @@ impl GitHubClient {
         queries: &[PullRequestQuery],
         timeout: Duration,
     ) -> Result<Vec<PullRequestQueryResult>, ProviderFailure> {
-        if self.discovery.get().is_none() {
-            let _guard = self.discovery_gate.lock().expect("GitHub discovery mutex");
-            if self.discovery.get().is_none() {
-                self.discover(timeout)?;
-                let _ = self.discovery.set(());
-            }
-        }
+        self.ensure_discovered(timeout)?;
         let body = build_graphql_body(queries)?;
         if body.len() > MAX_STDIN {
             return Err(ProviderFailure::OutputLimit);
@@ -665,6 +667,17 @@ impl GitHubClient {
             &outcome.stdout,
             termloop_platform::current_epoch_ms(),
         )
+    }
+
+    fn ensure_discovered(&self, timeout: Duration) -> Result<(), ProviderFailure> {
+        if self.discovery.get().is_none() {
+            let _guard = self.discovery_gate.lock().expect("GitHub discovery mutex");
+            if self.discovery.get().is_none() {
+                self.discover(timeout)?;
+                let _ = self.discovery.set(());
+            }
+        }
+        Ok(())
     }
 
     fn discover(&self, timeout: Duration) -> Result<(), ProviderFailure> {

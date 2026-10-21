@@ -1648,6 +1648,9 @@ async fn dispatch_inner(
                 git_host_pull_request_change_list(request.params, state).await
             }
             "gitHost.pullRequestDiff" => git_host_pull_request_diff(request.params, state).await,
+            "gitHost.repositoryPullRequestList" => {
+                super::handlers::git_host_repository_pull_request_list(request.params, state).await
+            }
             "integration.statusList" => {
                 super::handlers::integration_status_list(request.params, state).await
             }

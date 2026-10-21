@@ -1472,6 +1472,14 @@
         "$ref": "#/$defs/gitHostPullRequestDiffResult"
       }
     },
+    "gitHost.repositoryPullRequestList": {
+      "params": {
+        "$ref": "#/$defs/gitHostRepositoryPullRequestListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/gitHostRepositoryPullRequestListResult"
+      }
+    },
     "agent.libraryGet": {
       "params": {
         "$ref": "#/$defs/emptyParams"
@@ -2488,6 +2496,7 @@
         "integration.statusList",
         "integration.azureDevOpsTokenSet",
         "gitHost.pullRequestDiff",
+        "gitHost.repositoryPullRequestList",
         "agent.libraryGet",
         "agent.profileCreate",
         "agent.profileUpdate",
@@ -12161,6 +12170,213 @@
           "minItems": 1,
           "maxItems": 40,
           "uniqueItems": true
+        }
+      }
+    },
+    "gitHostRepositoryPullRequestFilter": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostRepositoryPullRequestFilter",
+      "type": "string",
+      "enum": [
+        "all",
+        "authored",
+        "reviewRequested"
+      ]
+    },
+    "gitHostRepositoryPullRequestListParams": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostRepositoryPullRequestListParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "filter"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filter": {
+          "$ref": "#/$defs/gitHostRepositoryPullRequestFilter"
+        }
+      }
+    },
+    "gitHostRepositoryPullRequestDto": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostRepositoryPullRequestDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "title",
+        "url",
+        "state",
+        "base_branch",
+        "head_branch",
+        "author",
+        "check_rollup",
+        "review_signal",
+        "merge_conflict",
+        "created_at_epoch_ms",
+        "updated_at_epoch_ms"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://(?:github\\.com|dev\\.azure\\.com)/"
+        },
+        "state": {
+          "$ref": "#/$defs/gitHostPullRequestState"
+        },
+        "base_branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "head_branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "author": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "check_rollup": {
+          "$ref": "#/$defs/gitHostChecksState"
+        },
+        "review_signal": {
+          "$ref": "#/$defs/gitHostReviewState"
+        },
+        "merge_conflict": {
+          "$ref": "#/$defs/gitHostMergeConflictState"
+        },
+        "created_at_epoch_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at_epoch_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "gitHostRepositoryPullRequestListResult": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostRepositoryPullRequestListResult",
+      "description": "Repository-wide open pull requests for UI presentation only; never a delivery gate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_provider",
+        "repository_owner",
+        "repository_project",
+        "repository_name",
+        "reason",
+        "pull_requests",
+        "truncated",
+        "observed_at_epoch_ms"
+      ],
+      "properties": {
+        "repository_provider": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitHostProvider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_owner": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_project": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitHostProjectionReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pull_requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gitHostRepositoryPullRequestDto"
+          },
+          "maxItems": 50
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "observed_at_epoch_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
         }
       }
     },

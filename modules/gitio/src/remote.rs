@@ -118,6 +118,27 @@ impl GitRunner {
         )
     }
 
+    /// Observes only the repository-local remote configuration, independent of
+    /// any branch, for repository-wide provider lookups.
+    pub fn observe_remotes_with_timeout(
+        &self,
+        repository_path: &Path,
+        timeout: Duration,
+    ) -> Result<Vec<RemoteFact>, GitError> {
+        let timeout = timeout.min(REMOTE_OBSERVATION_DEADLINE);
+        let runner = self
+            .clone()
+            .with_limits(timeout, REMOTE_OUTPUT_LIMIT)
+            .with_absolute_timeout(timeout)?;
+        let mut scope = crate::command::GitCommandScope::bounded(&runner, timeout)?;
+        let config_output = scope.checked(
+            GitOperation::Remotes,
+            repository_path,
+            ["config", "--null", "--list", "--local"],
+        )?;
+        Ok(parse_remote_config(&config_output.stdout)?.1)
+    }
+
     pub(crate) fn observe_branch_remotes_in_scope(
         &self,
         repository_path: &Path,

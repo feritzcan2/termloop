@@ -59,6 +59,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   gitHostPullRequestList: "termloop:git-host-pull-request-list",
   gitHostPullRequestChangeList: "termloop:git-host-pull-request-change-list",
   gitHostPullRequestDiff: "termloop:git-host-pull-request-diff",
+  gitHostRepositoryPullRequestList: "termloop:git-host-repository-pull-request-list",
   openExternal: "termloop:open-external",
   copySessionId: "termloop:copy-session-id",
   taskInspectWorktreeCleanup: "termloop:task-inspect-worktree-cleanup",

@@ -9,7 +9,7 @@ export const FILES_SIDEBAR_DEFAULT_WIDTH = 300;
 export const FILES_ACTIVITY_BAR_WIDTH = 40;
 const WORKSPACE_MIN_WIDTH = 360;
 
-const RIGHT_SIDEBAR_VIEWS = ["files", "sourceControl", "steward", "agents", "skills", "context"] as const;
+const RIGHT_SIDEBAR_VIEWS = ["files", "sourceControl", "steward", "pullRequests", "agents", "skills", "context"] as const;
 export type RightSidebarView = typeof RIGHT_SIDEBAR_VIEWS[number];
 export type FilesSidebarPreference = { open: boolean; view: RightSidebarView; width: number };
 

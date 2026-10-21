@@ -8,6 +8,7 @@ pub mod playbook_deterministic;
 pub mod playbook_runtime;
 pub mod prompt_improvement;
 pub mod pull_request_changes;
+pub mod repository_pull_requests;
 pub mod steward;
 pub mod tracker;
 pub mod tracker_runtime;

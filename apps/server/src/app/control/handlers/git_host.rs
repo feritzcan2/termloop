@@ -5,14 +5,17 @@ use std::sync::atomic::Ordering;
 use serde_json::json;
 use termloop_contract::current::{
     GitHostProvider, GitHostPullRequestChangeListParams, GitHostPullRequestDiffParams,
-    GitHostPullRequestIdentityDto, GitHostPullRequestListParams, ProjectListLocalBranchesParams,
-    ProjectWorktreeChangeListParams, ProjectWorktreeSummaryParams, ProjectionInvalidatedPayload,
-    ProjectionTopic, TaskProjectionEntityScopeDto, TaskProjectionTopic,
+    GitHostPullRequestIdentityDto, GitHostPullRequestListParams,
+    GitHostRepositoryPullRequestFilter, GitHostRepositoryPullRequestListParams,
+    ProjectListLocalBranchesParams, ProjectWorktreeChangeListParams, ProjectWorktreeSummaryParams,
+    ProjectionInvalidatedPayload, ProjectionTopic, TaskProjectionEntityScopeDto,
+    TaskProjectionTopic,
 };
 use termloop_core::CoreError;
 use termloop_core::companion_integrations::pull_request_changes::{
     GitHostPullRequestSelection, GitHostSelectionProvider,
 };
+use termloop_core::companion_integrations::repository_pull_requests::RepositoryPullRequestFilter;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::{Duration, Instant};
@@ -22,6 +25,7 @@ use super::super::super::{AppState, current_epoch_ms};
 
 const MAX_GIT_HOST_RESPONSE_BYTES: usize = 1024 * 1024;
 const GIT_HOST_CONTENT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(22);
+const REPOSITORY_PULL_REQUEST_LIST_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub(in crate::app) async fn git_host_pull_request_change_list(
     params: serde_json::Value,
@@ -116,6 +120,32 @@ pub(in crate::app) async fn git_host_pull_request_diff(
         .lock()
         .await
         .apply_git_host_pull_request_diff(plan, outcome, current_epoch_ms())
+}
+
+pub(in crate::app) async fn git_host_repository_pull_request_list(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let params = serde_json::from_value::<GitHostRepositoryPullRequestListParams>(params)
+        .map_err(|_| CoreError::InvalidParams("gitHost.repositoryPullRequestList".into()))?;
+    let filter = match params.filter {
+        GitHostRepositoryPullRequestFilter::All => RepositoryPullRequestFilter::All,
+        GitHostRepositoryPullRequestFilter::Authored => RepositoryPullRequestFilter::Authored,
+        GitHostRepositoryPullRequestFilter::ReviewRequested => {
+            RepositoryPullRequestFilter::ReviewRequested
+        }
+    };
+    let plan = {
+        let core = state.core.lock().await;
+        core.plan_repository_pull_request_list(&params.project_id, filter)?
+    };
+    tokio::time::timeout(
+        REPOSITORY_PULL_REQUEST_LIST_TIMEOUT,
+        tokio::task::spawn_blocking(move || plan.observe()),
+    )
+    .await
+    .map_err(|_| CoreError::Store("repository pull request list timed out".into()))?
+    .map_err(|error| CoreError::Store(format!("repository pull request list failed: {error}")))
 }
 
 fn selection_from_dto(value: GitHostPullRequestIdentityDto) -> GitHostPullRequestSelection {
