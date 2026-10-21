@@ -17,7 +17,7 @@ import { assistantInitialView, defaultAssistantLaunchSelection, requestPlaybookB
 import { Icon } from "./Icon.js";
 import { PlaybookEvaluationHistory } from "./PlaybookEvaluationHistory.js";
 import { PlaybookEvaluatorSettings } from "./PlaybookEvaluatorSettings.js";
-import { StewardHowItWorksButton } from "./StewardHowItWorks.js";
+import { StewardHowItWorksButton, type StewardHowItWorksOverlay } from "./StewardHowItWorks.js";
 import { QUICK_ACTION_AGENT_MODELS, QUICK_ACTION_AGENT_PERMISSIONS, QUICK_ACTION_AGENT_REASONING, type QuickActionReasoning } from "../quick-action-memory.js";
 import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabel, usePromptImprovement, type PromptImprovement } from "./PromptImprovement.js";
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
@@ -33,6 +33,7 @@ export type StewardPanelProps = {
   projectId: string; projectName: string; selection: AssistantSelection; refreshToken: number;
   agentCapabilities: readonly AgentCapabilityDto[]; close(): void; openTerminal(sessionId: string): void;
   playbookBuilderSessionId?: string | undefined;
+  howItWorksOverlay?: StewardHowItWorksOverlay | undefined;
   openTermLoopInstructions(): void;
   renderTerminal(sessionId: string): ReactNode;
   getConfiguration(): Promise<StewardConfigurationGetResult>;
@@ -590,7 +591,7 @@ export function StewardPanel(props: StewardPanelProps) {
         <p>{headerSubtitle}</p>
       </div>
       <div className="ap-header-actions">
-        {props.selection.kind === "steward" ? <StewardHowItWorksButton className="ap-how-it-works" /> : null}
+        {props.selection.kind === "steward" ? <StewardHowItWorksButton className="ap-how-it-works" overlay={props.howItWorksOverlay} /> : null}
         <button type="button" className="ap-close" aria-label="Close" onClick={props.close}><Icon name="close" /></button>
       </div>
     </header>
