@@ -10,7 +10,7 @@ import { QuickActionShortcutLaunchers, type QuickActionShortcutLaunchersProps } 
 
 export type { WorkspaceView } from "../workspace-view-memory.js";
 
-export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, filesSidebar, setupAgents, workflowLauncher, shortcutLaunchers, providerShortcuts = [], configureAgent }: {
+export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, settingsAction, setupAgents, workflowLauncher, shortcutLaunchers, providerShortcuts = [], configureAgent }: {
   view: WorkspaceView;
   /// False while another rail (Skills, MCP, Prompts) owns the sidebar: the bar
   /// keeps its place and its launch actions, but no tab claims to be showing
@@ -53,9 +53,6 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   /// A trailing settings destination for the selected view. It stays at the
   /// far edge so Create Task remains beside the Tasks tab.
   settingsAction?: { label: string; icon: IconName; run(): void; pressed?: boolean; disabled?: boolean } | undefined;
-  /// Shows or hides the right-hand Files sidebar. It is a toggle, not a tab:
-  /// the sidebar sits beside whichever view the rail shows.
-  filesSidebar?: { open: boolean; toggle(): void } | undefined;
 }) {
   const selected = (candidate: WorkspaceView) => viewActive && view === candidate;
   return (
@@ -90,14 +87,6 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
             onClick={() => select("steward")}
           ><span className="workspace-view-glyph" aria-hidden="true">✦</span><span className="workspace-view-label">Steward</span></button>
       </div>
-      {filesSidebar ? <button
-        type="button"
-        className={`workspace-files-toggle${filesSidebar.open ? " selected" : ""}`}
-        aria-label="Files sidebar"
-        aria-pressed={filesSidebar.open}
-        title={filesSidebar.open ? "Hide Files sidebar" : "Show Project and Task files on the right"}
-        onClick={filesSidebar.toggle}
-      ><Icon name="folder" /><span className="workspace-view-label">Files</span></button> : null}
       {viewAction ? (
         <button
           type="button"

@@ -8,7 +8,6 @@ export type SessionTabStripProps = {
   disabled: boolean;
   selectSession(sessionId: string): void;
   launchTerminal(): Promise<void>;
-  filesSidebar?: { open: boolean; toggle(): void } | undefined;
 };
 
 export function SessionTabStrip(props: SessionTabStripProps) {
@@ -44,16 +43,6 @@ export function SessionTabStrip(props: SessionTabStripProps) {
       >
         <Icon name="add" />
       </button>
-      {props.filesSidebar ? <button
-        className="session-tab-files"
-        type="button"
-        aria-label="Files sidebar"
-        aria-pressed={props.filesSidebar.open}
-        title={props.filesSidebar.open ? "Hide Files sidebar" : "Show Files sidebar"}
-        onClick={props.filesSidebar.toggle}
-      >
-        <Icon name="panelRight" />
-      </button> : null}
     </nav>
   );
 }
