@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 23,
+    version: 24,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 

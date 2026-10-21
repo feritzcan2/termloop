@@ -377,7 +377,7 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
             },
-            23,
+            24,
         ),
     ];
 
@@ -418,8 +418,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 23);
-    assert_eq!(launch.provenance().template_version, 23);
+    assert_eq!(template.version, 24);
+    assert_eq!(launch.provenance().template_version, 24);
     for expected in [
         "two compact review",
         "For a scoped edit to one or a few existing steps",
@@ -427,6 +427,8 @@ fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() 
         "not a configuration delta",
         "JSON-escaped snapshot fragment",
         "show the complete normal path as one readable arrow sequence",
+        "Prefer a direct check wherever one fits",
+        "recommend adding it in the same",
         "present the complete detailed draft",
         "configuration_version_write.content",
         "\"activePipelineName\"",
