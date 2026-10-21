@@ -215,7 +215,7 @@ if [[ -z "$verified_ci_run_id" ]]; then
     echo "CI started: https://github.com/$REPO_SLUG/actions/runs/$ci_run_id"
   fi
 
-  echo "Waiting for macOS, Linux, and Windows CI to pass..."
+  echo "Waiting for macOS and Windows CI to pass..."
   if ! gh run watch "$ci_run_id" \
     --repo "$REPO_SLUG" \
     --compact \
