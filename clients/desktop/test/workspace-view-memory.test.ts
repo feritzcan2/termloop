@@ -22,10 +22,10 @@ describe("workspace view memory", () => {
     const storage = memoryStorage();
     let memory = readWorkspaceViewMemory(storage);
     memory = rememberWorkspaceView(memory, "project-a", "overview", storage);
-    memory = rememberWorkspaceView(memory, "project-b", "steward", storage);
+    memory = rememberWorkspaceView(memory, "project-b", "history", storage);
 
     expect(workspaceViewForProject(memory, "project-a")).toBe("overview");
-    expect(workspaceViewForProject(memory, "project-b")).toBe("steward");
+    expect(workspaceViewForProject(memory, "project-b")).toBe("history");
     expect(workspaceViewForProject(readWorkspaceViewMemory(storage), "project-a")).toBe("overview");
     expect(workspaceViewForProject(memory, "project-new")).toBe("agents");
   });
@@ -35,6 +35,7 @@ describe("workspace view memory", () => {
       "project-agents": "agents",
       "project-bad": "settings",
       "project-files": "files",
+      "project-steward": "steward",
       "": "history",
     }));
 

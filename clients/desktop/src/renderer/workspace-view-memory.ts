@@ -2,11 +2,13 @@
 /// user chose; Core owns none of this presentation preference.
 const WORKSPACE_VIEW_KEY = "termloop.workspaceView.v1";
 
-export type WorkspaceView = "overview" | "agents" | "history" | "steward";
+/// Steward moved to the right sidebar, so a remembered "steward" view is
+/// ignored and the Project falls back to the default rail.
+export type WorkspaceView = "overview" | "agents" | "history";
 export type WorkspaceViewMemory = Readonly<Record<string, WorkspaceView>>;
 
 function isWorkspaceView(value: unknown): value is WorkspaceView {
-  return value === "overview" || value === "agents" || value === "history" || value === "steward";
+  return value === "overview" || value === "agents" || value === "history";
 }
 
 export function readWorkspaceViewMemory(

@@ -462,12 +462,13 @@ export function stagePageAfterProjectChange(page: StagePage | undefined): StageP
     : page;
 }
 
+/// The Steward detail replaces the stage only while the right sidebar shows
+/// the Steward rail that selected it.
 export function shellAssistantStageVisible(
-  railMode: RailMode,
-  workspaceView: WorkspaceView,
+  rightSidebarView: RightSidebarView | undefined,
   selection: AssistantSelection | undefined,
 ): boolean {
-  return railMode === "workspace" && workspaceView === "steward" && selection !== undefined;
+  return rightSidebarView === "steward" && selection !== undefined;
 }
 
 export function shellTerminalOccluded(
@@ -870,8 +871,11 @@ export function Shell(props: ShellProps) {
     setChangesPresentation(undefined);
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
-  const toggleRightSidebar = (view: RightSidebarView) => updateFilesSidebar(
-    filesSidebar.open && filesSidebar.view === view ? { open: false } : { open: true, view });
+  const toggleRightSidebar = (view: RightSidebarView) => {
+    if (filesSidebar.open && filesSidebar.view === view) updateFilesSidebar({ open: false });
+    else if (view === "steward" && !assistantSelection && props.selectedProject) openAssistant({ kind: "steward" });
+    else updateFilesSidebar({ open: true, view });
+  };
   const toggleFilesSidebar = () => toggleRightSidebar("files");
   // Source Control shares the Files root: the Project checkout or one Task worktree.
   const sourceControlSubject: SourceControlSubject | undefined = filesSidebar.open && filesSidebar.view === "sourceControl" && editorSubject
@@ -1057,35 +1061,27 @@ export function Shell(props: ShellProps) {
     ),
     [dismissChanges, dismissStagePages, props.selectSession],
   );
-  /// Opening any assistant detail implies the Steward view has the rail; every
-  /// entry point (rail rows, pet, draft reveal) shares this one reveal.
+  /// Opening any assistant detail implies the right sidebar shows the Steward
+  /// rail; every entry point (rail rows, pet, draft reveal) shares this one reveal.
   const openAssistant = useCallback(
     (selection: AssistantSelection) => {
-      setRailMode("workspace");
-      setWorkspaceView("steward");
+      updateFilesSidebar({ open: true, view: "steward" });
       setDetailTaskId(undefined);
       setStagePage(undefined);
       dismissChangesBeforeNavigation(dismissChanges, setAssistantSelection, selection);
     },
-    [dismissChanges, setWorkspaceView],
+    [dismissChanges, updateFilesSidebar],
   );
   const toggleRail = useCallback(
     (mode: Exclude<RailMode, "workspace">) => setRailMode((current) => current === mode ? "workspace" : mode),
     [],
   );
-  const revealStewardRail = useCallback(() => {
-    setRailMode("workspace");
-    setWorkspaceView("steward");
-  }, [setWorkspaceView]);
+  const revealStewardRail = useCallback(() => updateFilesSidebar({ open: true, view: "steward" }), [updateFilesSidebar]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
-    if (view === "steward" && !assistantSelection && props.selectedProject) {
-      openAssistant({ kind: "steward" });
-      return;
-    }
     setWorkspaceView(view);
-  }, [assistantSelection, dismissChanges, openAssistant, props.selectedProject, setWorkspaceView]);
-  const assistantStageVisible = shellAssistantStageVisible(railMode, workspaceView, assistantSelection);
+  }, [setWorkspaceView]);
+  const assistantStageVisible = shellAssistantStageVisible(filesSidebar.open ? filesSidebar.view : undefined, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
     railMode === "mcp" || stagePage?.kind === "mcpTool",
@@ -1860,47 +1856,7 @@ export function Shell(props: ShellProps) {
               : undefined}
             openExternal={props.openExternal}
           />
-          </WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "steward"}>{assistantProjectId ? <AssistantRail
-            projectId={assistantProjectId}
-            refreshToken={props.assistantRefreshToken}
-            sessions={props.projectSessions}
-            statusesById={statusesById}
-            tasks={props.projectTasks}
-            playbookRuntime={props.playbookRuntime}
-            disabled={disabled}
-            selectedSessionId={props.selectedSession?.id}
-            selection={assistantSelection}
-            agentCapabilities={props.agentCapabilities}
-            getSteward={props.assistantActions.getConfiguration}
-            setSteward={props.assistantActions.setConfiguration}
-            deleteSteward={props.assistantActions.deleteConfiguration}
-            listRoutines={props.assistantActions.listRoutines}
-            listRuntime={props.assistantActions.listRoutineRuntime}
-            getPlaybook={props.assistantActions.getPlaybook}
-            updatePlaybook={props.assistantActions.updatePlaybook}
-            setPlaybookTaskPosition={props.assistantActions.setPlaybookTaskPosition}
-            runRoutineNow={props.assistantActions.runRoutineNow}
-            createRoutine={props.assistantActions.createRoutine}
-            updateRoutine={props.assistantActions.updateRoutine}
-            deleteRoutine={props.assistantActions.deleteRoutine}
-            improvement={props.assistantActions.promptImprovement}
-            setupPromptImprovement={openPromptImproverSetup}
-            restartSteward={props.assistantActions.restartSteward}
-            selectSession={selectAssistantSession}
-            openImproverTerminal={openImproverTerminal}
-            dismissImproverSession={dismissSession}
-            openTask={openTaskDetail}
-            saveTaskNotes={props.updateTaskDeveloperNotes}
-            taskDecisionActions={props.assistantActions}
-            closeTask={{
-              inspect: props.inspectTaskWorktreeCleanup,
-              closeTaskAndWorktree: props.closeTaskAndWorktree,
-              busyTaskIds: props.deletingTaskIds,
-              overlayContainer: props.overlayContainer,
-              overlayVisibilityChanged: setPlaybookOverlayOpen,
-            }}
-            openDetails={openAssistant}
-          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
+          </WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}
             projectBranch={props.projectWorktreeSummary?.checked_out_branch}
@@ -2228,7 +2184,53 @@ export function Shell(props: ShellProps) {
             reset={() => updateFilesSidebar({ width: FILES_SIDEBAR_DEFAULT_WIDTH })}
             draggingChanged={setSidebarDragging}
           />
-          {filesSidebar.view === "sourceControl" ? <SourceControlSidebar
+          {filesSidebar.view === "steward" ? <aside className="files-sidebar steward-sidebar" aria-label="Steward">
+            <header className="files-sidebar-header">
+              <h2>Steward</h2>
+              <button type="button" className="icon-button quiet" aria-label="Close Steward sidebar" title="Close Steward sidebar" onClick={() => updateFilesSidebar({ open: false })}><Icon name="close" /></button>
+            </header>
+            <div className="files-sidebar-body">{assistantProjectId ? <AssistantRail
+            projectId={assistantProjectId}
+            refreshToken={props.assistantRefreshToken}
+            sessions={props.projectSessions}
+            statusesById={statusesById}
+            tasks={props.projectTasks}
+            playbookRuntime={props.playbookRuntime}
+            disabled={disabled}
+            selectedSessionId={props.selectedSession?.id}
+            selection={assistantSelection}
+            agentCapabilities={props.agentCapabilities}
+            getSteward={props.assistantActions.getConfiguration}
+            setSteward={props.assistantActions.setConfiguration}
+            deleteSteward={props.assistantActions.deleteConfiguration}
+            listRoutines={props.assistantActions.listRoutines}
+            listRuntime={props.assistantActions.listRoutineRuntime}
+            getPlaybook={props.assistantActions.getPlaybook}
+            updatePlaybook={props.assistantActions.updatePlaybook}
+            setPlaybookTaskPosition={props.assistantActions.setPlaybookTaskPosition}
+            runRoutineNow={props.assistantActions.runRoutineNow}
+            createRoutine={props.assistantActions.createRoutine}
+            updateRoutine={props.assistantActions.updateRoutine}
+            deleteRoutine={props.assistantActions.deleteRoutine}
+            improvement={props.assistantActions.promptImprovement}
+            setupPromptImprovement={openPromptImproverSetup}
+            restartSteward={props.assistantActions.restartSteward}
+            selectSession={selectAssistantSession}
+            openImproverTerminal={openImproverTerminal}
+            dismissImproverSession={dismissSession}
+            openTask={openTaskDetail}
+            saveTaskNotes={props.updateTaskDeveloperNotes}
+            taskDecisionActions={props.assistantActions}
+            closeTask={{
+              inspect: props.inspectTaskWorktreeCleanup,
+              closeTaskAndWorktree: props.closeTaskAndWorktree,
+              busyTaskIds: props.deletingTaskIds,
+              overlayContainer: props.overlayContainer,
+              overlayVisibilityChanged: setPlaybookOverlayOpen,
+            }}
+            openDetails={openAssistant}
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</div>
+          </aside> : filesSidebar.view === "sourceControl" ? <SourceControlSidebar
             subject={sourceControlSubject}
             projectName={props.selectedProject?.name}
             tasks={props.projectTasks.filter((task) => task.worktree)}
