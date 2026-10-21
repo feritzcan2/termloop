@@ -5,8 +5,14 @@ use std::path::{Path, PathBuf};
 use cap_std::fs::{Dir, OpenOptions};
 use serde::Serialize;
 
+mod search;
 #[cfg(test)]
 mod tests;
+
+pub use search::{
+    WORKSPACE_SEARCH_QUERY_LIMIT, WORKSPACE_SEARCH_RESULT_LIMIT, WorkspaceFileSearch,
+    search_workspace_files,
+};
 
 pub const WORKSPACE_DIRECTORY_LIMIT: usize = 2_000;
 pub const WORKSPACE_CONTENT_LIMIT: usize = 256 * 1024;

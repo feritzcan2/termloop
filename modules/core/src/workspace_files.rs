@@ -53,6 +53,22 @@ impl WorkspaceFilesPlan {
         ObservedWorkspaceFiles { plan: self, result }
     }
 
+    /// One daemon-side walk replaces client crawling of directory pages.
+    pub fn observe_search(
+        self,
+        query: &str,
+        limit: usize,
+        deadline: std::time::Instant,
+    ) -> ObservedWorkspaceFiles {
+        let result = (|| {
+            let root = self.root();
+            let found = termloop_platform::search_workspace_files(root, query, limit, deadline)
+                .map_err(file_error)?;
+            serde_json::to_value(found).map_err(json_error)
+        })();
+        ObservedWorkspaceFiles { plan: self, result }
+    }
+
     fn root(&self) -> &Path {
         self.proof
             .as_ref()

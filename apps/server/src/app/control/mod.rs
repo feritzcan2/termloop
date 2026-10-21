@@ -647,6 +647,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "task.branchCommitSummaryList"
             | "workspace.directoryList"
             | "workspace.fileRead"
+            | "workspace.fileSearch"
     )
 }
 
@@ -759,7 +760,11 @@ mod tests {
 
     #[test]
     fn workspace_file_observations_require_full_control_on_every_connection() {
-        for method in ["workspace.directoryList", "workspace.fileRead"] {
+        for method in [
+            "workspace.directoryList",
+            "workspace.fileRead",
+            "workspace.fileSearch",
+        ] {
             assert!(scope_allows_method(ClientScope::Full, method));
             assert!(!scope_allows_method(ClientScope::ReadOnly, method));
             assert!(!scope_allows_method(ClientScope::Companion, method));
@@ -915,6 +920,7 @@ mod tests {
                         || [
                             "workspace.directoryList",
                             "workspace.fileRead",
+                            "workspace.fileSearch",
                             "session.listArchived",
                             // Full-scope only because this read projects private
                             // provider transcripts from the daemon host.

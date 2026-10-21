@@ -85,6 +85,17 @@ try {
     assert.deepEqual(await call("workspace.fileRead", { ...params, path: file }), { path: file, state: expected, content: null });
     checks++;
   }
+  const projectSearch = await call("workspace.fileSearch", { projectId: project.id, taskId: null, query: "SAMPLE" });
+  assert.deepEqual(projectSearch.entries, [{ name: "sample.txt", path: "sample.txt", kind: "file" }]);
+  assert.equal((await call("workspace.fileSearch", { projectId: project.id, taskId: null, query: "untracked" })).total, 0,
+    "search skips .gitignore'd folders");
+  assert.ok((await call("workspace.fileSearch", { projectId: project.id, taskId: null, query: ".hidden" })).entries.some((entry) => entry.path === ".hidden"));
+  assert.equal((await call("workspace.fileSearch", { projectId: project.id, taskId: task.id, query: "sample" })).total, 1);
+  checks += 4;
+  const searchParams = { projectId: project.id, taskId: null, query: "sample" };
+  await denied("workspace.fileSearch", { ...searchParams, query: "" }, "invalidMessage");
+  await denied("workspace.fileSearch", { ...searchParams, projectId: other.id, taskId: task.id }, "notFound");
+  await denied("workspace.fileSearch", searchParams, "capabilityDenied", record.readOnlyToken);
   for (const method of ["workspace.directoryList", "workspace.fileRead"]) {
     await denied(method, { ...params, path: "../outside" }, "invalidMessage");
     await denied(method, { ...params, projectId: other.id, taskId: task.id }, "notFound");
@@ -105,7 +116,7 @@ try {
   assert.equal(after, before, "file observations never mutate the durable store");
   assert.ok(!after.includes("CURRENT_CONTENT"));
   checks += 2;
-  console.log(`FILES_ACCEPTANCE_OK: ${checks} checks (Project/Task roots, lazy listing, current content, refusals, scopes, ephemeral reads)`);
+  console.log(`FILES_ACCEPTANCE_OK: ${checks} checks (Project/Task roots, lazy listing, daemon search, current content, refusals, scopes, ephemeral reads)`);
 } finally {
   if (server?.pid && server.exitCode === null && server.signalCode === null) {
     const exited = once(server, "exit");

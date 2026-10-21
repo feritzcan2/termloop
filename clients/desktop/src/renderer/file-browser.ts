@@ -1,10 +1,11 @@
-import type { WorkspaceDirectoryResult, WorkspaceFileEntryDto, WorkspaceFileReadResult } from "@termloop/contract/current";
+import type { WorkspaceDirectoryResult, WorkspaceFileEntryDto, WorkspaceFileReadResult, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import { FileSearch } from "./file-search.js";
 
 export type FilesSubject = { projectId: string; taskId: string | null; title: string };
 export type FilesReader = {
   list(path: string, afterName?: string): Promise<WorkspaceDirectoryResult>;
   read(path: string): Promise<WorkspaceFileReadResult>;
+  search(query: string): Promise<WorkspaceFileSearchResult>;
 };
 export type DirectoryState =
   | { status: "loading" }
@@ -35,7 +36,7 @@ export class FileBrowser {
   private active = false;
   private pending = new Map<string, Promise<WorkspaceDirectoryResult | undefined>>();
 
-  constructor(private readonly reader: FilesReader) { this.search = new FileSearch(reader.list); }
+  constructor(private readonly reader: FilesReader) { this.search = new FileSearch(reader.search); }
   getSnapshot = (): FileBrowserSnapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);

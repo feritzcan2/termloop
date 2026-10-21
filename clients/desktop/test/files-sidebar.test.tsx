@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFilesParams } from "@termloop/contract/current";
+import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams } from "@termloop/contract/current";
 import type { FilesSubject } from "../src/renderer/file-browser.js";
 import { FilesOverlay } from "../src/renderer/ui/FilesOverlay.js";
 import { FilesRail } from "../src/renderer/ui/FilesRail.js";
@@ -19,10 +19,12 @@ describe("Files sidebar", () => {
   let root: Root;
   const list = vi.fn(async (_params: WorkspaceFilesParams) => directory);
   const read = vi.fn(async (_params: WorkspaceFilesParams) => content("Project file"));
+  const noMatches = ({ query }: WorkspaceFileSearchParams): WorkspaceFileSearchResult => ({ query, entries: [], total: 0, incomplete: false, unreadable: false });
+  const searchFiles = vi.fn(async (params: WorkspaceFileSearchParams) => noMatches(params));
   const selectRoot = vi.fn();
 
   function Harness({ subject, identity = "root" }: { subject: FilesSubject | undefined; identity?: string }) {
-    const { browser, snapshot } = useFileBrowser(subject, identity, list, read);
+    const { browser, snapshot } = useFileBrowser(subject, identity, list, read, searchFiles);
     return <>
       <aside><FilesRail subject={subject} projectName="Project" tasks={[{ id: "task", title: "Task" }]}
         browser={browser} snapshot={snapshot} selectRoot={selectRoot} openFile={(path) => void browser.select(path)} unavailable={!subject} /></aside>
@@ -41,13 +43,14 @@ describe("Files sidebar", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(searchInput(), query);
       searchInput().dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () => vi.advanceTimersByTimeAsync(180));
+    await act(async () => vi.advanceTimersByTimeAsync(120));
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     list.mockReset().mockResolvedValue(directory);
     read.mockReset().mockResolvedValue(content("Project file"));
+    searchFiles.mockReset().mockImplementation(async (params) => noMatches(params));
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -117,20 +120,23 @@ describe("Files sidebar", () => {
     list.mockImplementation(async ({ path }) => ({ path, truncated: false, entries: path === ""
       ? [{ name: "src", path: "src", kind: "directory" }]
       : [{ name: "nested.ts", path: "src/nested.ts", kind: "file" }] }));
+    searchFiles.mockImplementation(async ({ query }) => ({ query, entries: [{ name: "nested.ts", path: "src/nested.ts", kind: "file" }], total: 1, incomplete: false, unreadable: false }));
     await render(project);
     const terminal = container.querySelector("[data-terminal-host]");
     await search("SRC NESTED");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("1 match");
     expect(container.querySelector('[aria-label="File search results"]')?.textContent).toContain("nested.ts");
     expect(read).not.toHaveBeenCalled();
+    expect(searchFiles).toHaveBeenLastCalledWith({ projectId: "project", taskId: null, query: "SRC NESTED" });
+    expect(list.mock.calls.filter(([params]) => params.path === "src")).toHaveLength(0);
     await act(async () => searchInput().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
     expect(document.activeElement).toBe(button('[role="treeitem"]'));
     await act(async () => searchInput().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
     expect(read).toHaveBeenLastCalledWith({ projectId: "project", taskId: null, path: "src/nested.ts" });
     await act(async () => button('[aria-label="Refresh files"]').click());
-    await act(async () => vi.advanceTimersByTimeAsync(180));
+    await act(async () => vi.advanceTimersByTimeAsync(120));
     expect(searchInput().value).toBe("SRC NESTED");
-    expect(list.mock.calls.filter(([params]) => params.path === "src")).toHaveLength(2);
+    expect(searchFiles).toHaveBeenCalledTimes(2);
     await act(async () => searchInput().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(searchInput().value).toBe("");
     expect(document.activeElement).toBe(searchInput());
@@ -155,22 +161,26 @@ describe("Files sidebar", () => {
     expect(searchInput().disabled).toBe(true);
   });
 
-  it("exposes every match across result pages without rescanning the project", async () => {
+  it("shows the daemon's top results with the full match count and partial-walk notice", async () => {
     vi.useFakeTimers();
-    list.mockResolvedValue({ path: "", truncated: false, entries: Array.from({ length: 401 }, (_, i) => ({ name: `Subscription-${i}.cs`, path: `Subscription-${i}.cs`, kind: "file" })) });
+    searchFiles.mockImplementation(async ({ query }) => ({ query, total: 401, incomplete: true, unreadable: false,
+      entries: Array.from({ length: 200 }, (_, i) => ({ name: `Subscription-${i}.cs`, path: `Subscription-${i}.cs`, kind: "file" as const })) }));
     await render(project);
     await search("subscription");
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("401 matches");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("401 matches · top 200 shown");
     expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(200);
-    const calls = list.mock.calls.length;
-    await act(async () => button('[aria-label="Next file results"]').click());
-    expect(container.textContent).toContain("Page 2 of 3");
-    await act(async () => button('[aria-label="Next file results"]').click());
-    expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(1);
+    expect(container.textContent).toContain("Results may be incomplete.");
     await clickFile();
-    expect(read).toHaveBeenLastCalledWith({ projectId: "project", taskId: null, path: "Subscription-400.cs" });
-    expect(list).toHaveBeenCalledTimes(calls);
-    await act(async () => button('[aria-label="Previous file results"]').click());
-    expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(200);
+    expect(read).toHaveBeenLastCalledWith({ projectId: "project", taskId: null, path: "Subscription-0.cs" });
+    expect(list.mock.calls.every(([params]) => params.path === "")).toBe(true);
+  });
+
+  it("shows a daemon search failure without hiding the query", async () => {
+    vi.useFakeTimers();
+    searchFiles.mockRejectedValue(new Error("Repository unavailable"));
+    await render(project);
+    await search("anything");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Repository unavailable");
+    expect(searchInput().value).toBe("anything");
   });
 });

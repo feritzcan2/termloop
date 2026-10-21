@@ -212,7 +212,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:8b29f3c7a2d73e7efa26f797bb28cccb268cb9d751b182b4453f99b00e2315a1";
+    "sha256:37144e22e7de36e4d8b8727836cd01388bea26ee45aaf30b349ca58f75560687";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -421,6 +421,7 @@ pub const METHODS: &[&str] = &[
     "agent.accountSetDefault",
     "workspace.directoryList",
     "workspace.fileRead",
+    "workspace.fileSearch",
 ];
 pub const READ_ONLY_METHODS: &[&str] = &[
     "system.version",
@@ -592,6 +593,26 @@ pub struct WorkspaceDirectoryResult {
     pub next_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub omitted: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileSearchParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "taskId", deserialize_with = "deserialize_required_nullable")]
+    pub task_id: Option<String>,
+    pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileSearchResult {
+    pub query: String,
+    pub entries: Vec<WorkspaceFileEntryDto>,
+    pub total: u64,
+    pub incomplete: bool,
+    pub unreadable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -8843,6 +8864,75 @@ fn validate_workspace_directory_result(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_workspace_file_search_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("taskId").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+                || field.is_null())
+        }) && object.get("query").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 512)
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "taskId", "query"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_workspace_file_search_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("query").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 512)
+        }) && object.get("entries").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 200
+                    && items
+                        .iter()
+                        .all(|item| validate_workspace_file_entry_dto(item))
+            })
+        }) && object.get("total").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object
+            .get("incomplete")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .get("unreadable")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                ["query", "entries", "total", "incomplete", "unreadable"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_workspace_file_read_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("path").is_some_and(|field| {
@@ -9081,6 +9171,7 @@ fn validate_method(value: &Value) -> bool {
             "agent.accountSetDefault",
             "workspace.directoryList",
             "workspace.fileRead",
+            "workspace.fileSearch",
         ]
         .contains(&text)
     })
@@ -31992,6 +32083,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<WorkspaceFileReadParams>(params.clone()).is_ok()
                 && validate_workspace_files_params(params)
         }
+        "workspace.fileSearch" => {
+            serde_json::from_value::<WorkspaceFileSearchParams>(params.clone()).is_ok()
+                && validate_workspace_file_search_params(params)
+        }
         _ => false,
     }
 }
@@ -32858,6 +32953,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "workspace.fileRead" => {
             serde_json::from_value::<WorkspaceFileReadResult>(result.clone()).is_ok()
                 && validate_workspace_file_read_result(result)
+        }
+        "workspace.fileSearch" => {
+            serde_json::from_value::<WorkspaceFileSearchResult>(result.clone()).is_ok()
+                && validate_workspace_file_search_result(result)
         }
         _ => false,
     }

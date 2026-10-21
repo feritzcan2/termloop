@@ -9,6 +9,7 @@ import {
   TermLoopControlError,
   type CallArgs,
   type WorkspaceFilesParams,
+  type WorkspaceFileSearchParams,
   type ContextBankCatalogGetParams,
   type ContextBankFileGetParams,
   type ContextBankFileSaveParams,
@@ -418,6 +419,9 @@ handleIpc("termloop:workspace-directory-list", (_event, params: WorkspaceFilesPa
 );
 handleIpc("termloop:workspace-file-read", (_event, params: WorkspaceFilesParams) =>
   controlCall("workspace.fileRead", params),
+);
+handleIpc("termloop:workspace-file-search", (_event, params: WorkspaceFileSearchParams) =>
+  controlCall("workspace.fileSearch", params),
 );
 handleIpc("termloop:project-worktree-summary", (_event, projectId: string) =>
   controlCall("project.worktreeSummary", { projectId }),

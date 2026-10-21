@@ -54,17 +54,13 @@ export function FilesRail({ subject, projectName, tasks, browser, snapshot, sele
       /></label>
       {search.query ? <button type="button" className="icon-button quiet" aria-label="Clear file search" title="Clear search (Esc)" onClick={clearSearch}><Icon name="close" /></button> : null}
     </div>
-    <p className="settings-rail-note">Hidden and ignored files included · .git hidden</p>
+    <p className="settings-rail-note">{searching ? "Hidden files included · .gitignore and .git skipped" : "Hidden and ignored files included · .git hidden"}</p>
     {subject && searching ? <div ref={searchResults}>
-      <p className="files-search-status" role="status">{search.status === "searching" ? `Searching… · ${search.directories} folders · ` : ""}{`${search.total} ${search.total === 1 ? "match" : "matches"}`}</p>
-      {search.pages > 1 ? <div className="files-search-pages">
-        <button type="button" className="secondary-button" aria-label="Previous file results" disabled={search.page === 0} onClick={() => browser.search.setPage(search.page - 1)}>Previous</button>
-        <span>Page {search.page + 1} of {search.pages}</span>
-        <button type="button" className="secondary-button" aria-label="Next file results" disabled={search.page + 1 >= search.pages} onClick={() => browser.search.setPage(search.page + 1)}>Next</button>
-      </div> : null}
+      <p className="files-search-status" role="status">{search.status === "searching" ? "Searching… · " : ""}{`${search.total} ${search.total === 1 ? "match" : "matches"}`}{search.total > search.entries.length ? ` · top ${search.entries.length} shown` : ""}</p>
       {search.entries.length ? <FileTree snapshot={snapshot} toggle={() => {}} select={openFile} results={search.entries} />
         : search.status === "ready" ? <p className="settings-rail-empty">No matching files.</p> : null}
-      {search.incomplete ? <p className="files-tree-message">Some file names could not be listed. Results may be incomplete.</p> : null}
+      {search.status === "error" ? <p className="files-tree-message" role="alert">{search.error}</p> : null}
+      {search.incomplete ? <p className="files-tree-message">The search stopped early or skipped unsupported names. Results may be incomplete.</p> : null}
       {search.unreadable ? <p className="files-tree-message">Some folders could not be read. Results may be incomplete.</p> : null}
     </div> : subject ? <FileTree snapshot={snapshot} toggle={(path) => browser.toggle(path)} select={openFile} />
       : <p className="settings-rail-empty">{unavailable ? "Connect to this computer to browse files." : "Select a Project to browse its files."}</p>}

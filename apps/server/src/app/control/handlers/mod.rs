@@ -10,7 +10,7 @@ mod task_close;
 mod workflow;
 mod workspace_files;
 mod worktree;
-pub(super) use workspace_files::observe_workspace_files;
+pub(super) use workspace_files::{observe_workspace_files, search_workspace_files};
 
 pub(super) use context_bank::{
     get_context_bank_catalog, get_context_bank_file, resolve_context_bank_sibling_conflict,

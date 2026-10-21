@@ -1,6 +1,6 @@
 use serde_json::Value;
 use std::time::Duration;
-use termloop_contract::current::WorkspaceFilesParams;
+use termloop_contract::current::{WorkspaceFileSearchParams, WorkspaceFilesParams};
 use termloop_core::CoreError;
 use tokio::time::Instant;
 
@@ -35,6 +35,37 @@ pub(in crate::app) async fn observe_workspace_files(
             } else {
                 plan.observe_directory_page(params.after_name.as_deref())
             }
+        },
+    )
+    .await?;
+    state.core.lock().await.complete_workspace_files(observed)
+}
+
+pub(in crate::app) async fn search_workspace_files(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params = serde_json::from_value::<WorkspaceFileSearchParams>(params)
+        .map_err(|_| CoreError::InvalidParams("workspace file search".into()))?;
+    let plan = state.core.lock().await.plan_workspace_files(
+        &params.project_id,
+        params.task_id.as_deref(),
+        "",
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    // The walk stops itself before the request deadline and returns partial
+    // results marked incomplete instead of an error.
+    let walk_deadline = std::time::Instant::now() + Duration::from_secs(8);
+    let observed = observe_with_deadline(
+        &state.git_observation_gate,
+        plan.project_id().to_owned(),
+        deadline,
+        move || {
+            plan.observe_search(
+                &params.query,
+                termloop_platform::WORKSPACE_SEARCH_RESULT_LIMIT,
+                walk_deadline,
+            )
         },
     )
     .await?;

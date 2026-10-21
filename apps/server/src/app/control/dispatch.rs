@@ -1599,6 +1599,9 @@ async fn dispatch_inner(
             "workspace.fileRead" => {
                 super::handlers::observe_workspace_files(request.params, true, state).await
             }
+            "workspace.fileSearch" => {
+                super::handlers::search_workspace_files(request.params, state).await
+            }
             "project.listLocalBranches" => project_list_local_branches(request.params, state).await,
             "project.worktreeSummary" => project_worktree_summary(request.params, state).await,
             "project.worktreeChangeList" => {

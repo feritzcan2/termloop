@@ -38,6 +38,17 @@ fn file_reads_are_ephemeral_and_revalidate_project_roots() {
         core.complete_workspace_files(read).unwrap()["content"],
         "EPHEMERAL_FILE_MARKER"
     );
+    let search = core
+        .plan_workspace_files(id, None, "")
+        .unwrap()
+        .observe_search(
+            "FILE",
+            10,
+            std::time::Instant::now() + std::time::Duration::from_secs(10),
+        );
+    let found = core.complete_workspace_files(search).unwrap();
+    assert_eq!(found["entries"][0]["path"], "file");
+    assert_eq!(found["total"], 1);
     assert_eq!(core.state_revision(), revision);
     assert!(
         !std::fs::read_to_string(root.join("state.json"))
