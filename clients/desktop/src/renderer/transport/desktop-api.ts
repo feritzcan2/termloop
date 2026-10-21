@@ -8,6 +8,7 @@ import type { PromptAsset } from "../prompt-settings.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
+import type { UpdateSnapshot } from "../../update-status.js";
 import type { AppearanceTheme } from "../appearance-theme.js";
 import type {
   ConnectionProfileConnectInput,
@@ -225,6 +226,9 @@ export type ProjectDeleteCallResult =
 
 export type DesktopApi = {
   isPackaged(): Promise<boolean>;
+  updateSnapshot(): Promise<UpdateSnapshot>;
+  updateCheck(): Promise<void>;
+  updateInstall(): Promise<void>;
   notificationPreferencesGet(): Promise<NotificationPreferences>;
   notificationPreferencesSet(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;

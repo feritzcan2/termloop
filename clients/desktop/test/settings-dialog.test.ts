@@ -170,7 +170,7 @@ describe("SettingsDialog", () => {
     await act(async () => root.render(createElement(SettingsDialog, props({ close, initialPage: "appearance" }))));
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!;
     const navLabels = () => [...container.querySelectorAll(".settings-nav button")].map((button) => button.textContent);
-    expect(navLabels()).toEqual(["Appearance", "Notifications", "Computers"]);
+    expect(navLabels()).toEqual(["Appearance", "Notifications", "Updates", "Computers"]);
 
     const type = async (value: string) => act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, value);

@@ -14,6 +14,8 @@ import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
 import { onProjectionInvalidated } from "../transport/projection-events.js";
 import { onConnectionStatus } from "../transport/connection-events.js";
+import { onUpdateStatus } from "../transport/update-events.js";
+import type { UpdateSnapshot } from "../../update-status.js";
 import { useSettingsComputers } from "./use-settings-computers.js";
 import { onAgentAttentionActivated } from "../transport/agent-attention.js";
 import {
@@ -709,6 +711,25 @@ export function DesktopApp() {
   useEffect(() => {
     void desktopApi.isPackaged().then(setIsPackaged).catch(() => setIsPackaged(true));
   }, []);
+  const [updateSnapshot, setUpdateSnapshot] = useState<UpdateSnapshot>();
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = onUpdateStatus((status) => {
+      setUpdateSnapshot((current) => current ? { ...current, status } : current);
+    });
+    void desktopApi.updateSnapshot().then((snapshot) => {
+      if (active) setUpdateSnapshot(snapshot);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+  const appUpdate = useMemo(() => updateSnapshot ? {
+    snapshot: updateSnapshot,
+    check: () => void desktopApi.updateCheck().catch(() => undefined),
+    install: () => void desktopApi.updateInstall().catch(() => undefined),
+  } : undefined, [updateSnapshot]);
   useEffect(() => {
     for (const runtime of projection.runRuntimes) {
       if (!pendingRunAutoOpenSessionIds.current.has(runtime.sessionId)) continue;
@@ -2480,6 +2501,7 @@ export function DesktopApp() {
         }
       }}
       isPackaged={isPackaged}
+      appUpdate={appUpdate}
       errorLog={projection.errorLog}
       clearErrorLog={() => projectionStore.clearErrorLog()}
       prepareMobileAccess={desktopApi.mobileAccessPairing}

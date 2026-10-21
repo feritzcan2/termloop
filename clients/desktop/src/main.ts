@@ -111,6 +111,7 @@ import {
 } from "./platform/mobile-access.js";
 import { UpdateManager } from "./main/update-manager.js";
 import { autoUpdateSupported } from "./platform/auto-update-policy.js";
+import type { UpdateSnapshot } from "./update-status.js";
 import { createAutoUpdateDriver, scheduleAutoUpdateTask } from "./platform/auto-update.js";
 import {
   notificationPreferencesOf,
@@ -157,6 +158,7 @@ let ghosttySurfaces: GhosttySurfaceManager | WindowsTerminalSurfaceManager | und
 let nativeOverlayWindow: NativeOverlayWindowManager | undefined;
 let effectiveTerminalRenderer: TerminalRendererKind = "xterm";
 let quickActionImageStore: QuickActionImageStore | undefined;
+let updateManager: UpdateManager | undefined;
 const forwardManager = new ForwardManager(async (profileId) => {
   const config = await connectionConfig(profileId);
   return config?.kind === "remote" ? config : undefined;
@@ -325,6 +327,24 @@ async function publishClientMobileNotificationPreferences(
 handleIpc("termloop:app-is-packaged", (event) => {
   requireMainRenderer(event);
   return app.isPackaged;
+});
+
+handleIpc("termloop:update-snapshot", (event): UpdateSnapshot => {
+  requireMainRenderer(event);
+  return {
+    currentVersion: app.getVersion(),
+    status: updateManager?.status() ?? { state: autoUpdateSupported(app.isPackaged) ? "idle" : "unsupported" },
+  };
+});
+
+handleIpc("termloop:update-check", async (event) => {
+  requireMainRenderer(event);
+  await updateManager?.checkNow();
+});
+
+handleIpc("termloop:update-install", async (event) => {
+  requireMainRenderer(event);
+  await updateManager?.install();
 });
 
 handleIpc("termloop:notification-preferences-get", (event) => {
@@ -1603,7 +1623,7 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
   await publishDevelopmentReadyMarker(process.env.TERMLOOP_DEV_READY_FILE, process.pid);
   await connections.start();
   if (autoUpdateSupported(app.isPackaged)) {
-    new UpdateManager({
+    updateManager = new UpdateManager({
       driver: createAutoUpdateDriver(),
       schedule: scheduleAutoUpdateTask,
       async confirmRestart(version) {
@@ -1624,7 +1644,11 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         await prepareForApplicationExit();
         readyToQuit = true;
       },
-    }).start();
+      statusChanged(status) {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("termloop:update-status", status);
+      },
+    });
+    updateManager.start();
   }
   if (process.argv.includes("--smoke")) {
     if (requestedTerminalRenderer() === "windows-terminal" && effectiveTerminalRenderer !== "windows-terminal") {
