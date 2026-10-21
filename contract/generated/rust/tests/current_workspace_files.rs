@@ -99,3 +99,57 @@ fn workspace_file_search_is_full_control_only_bounded_and_has_no_root_input() {
         &json!({"query":"a", "entries":vec![entry; 201], "total":201, "incomplete":false, "unreadable":false})
     ));
 }
+
+#[test]
+fn workspace_file_write_is_full_control_only_and_requires_a_read_version() {
+    let method = "workspace.fileWrite";
+    let version = "a".repeat(64);
+    assert!(METHODS.contains(&method));
+    assert!(!READ_ONLY_METHODS.contains(&method));
+    assert!(!COMPANION_METHODS.contains(&method));
+    let params = |path: &str, content: String, expected: &str| json!({"projectId":"p", "taskId":null, "path":path, "content":content, "expectedVersion":expected});
+    assert!(validate_method_params(
+        method,
+        &params("a.ts", "x".into(), &version)
+    ));
+    assert!(validate_method_params(
+        method,
+        &params("a.ts", String::new(), &version)
+    ));
+    assert!(!validate_method_params(
+        method,
+        &params("", "x".into(), &version)
+    ));
+    assert!(!validate_method_params(
+        method,
+        &params("a.ts", "x".into(), "ABC")
+    ));
+    assert!(!validate_method_params(
+        method,
+        &params("a.ts", "a".repeat(262145), &version)
+    ));
+    assert!(!validate_method_params(
+        method,
+        &json!({"projectId":"p", "taskId":null, "path":"a.ts", "content":"x"})
+    ));
+    assert!(validate_method_result(
+        method,
+        &json!({"path":"a.ts", "state":"written", "version":version})
+    ));
+    assert!(validate_method_result(
+        method,
+        &json!({"path":"a.ts", "state":"conflict", "version":null})
+    ));
+    assert!(!validate_method_result(
+        method,
+        &json!({"path":"a.ts", "state":"saved", "version":version})
+    ));
+    assert!(validate_method_result(
+        "workspace.fileRead",
+        &json!({"path":"a", "state":"text", "content":"x", "version":version})
+    ));
+    assert!(!validate_method_result(
+        "workspace.fileRead",
+        &json!({"path":"a", "state":"text", "content":"x", "version":"nothex"})
+    ));
+}

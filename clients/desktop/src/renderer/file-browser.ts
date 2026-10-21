@@ -1,38 +1,30 @@
-import type { WorkspaceDirectoryResult, WorkspaceFileEntryDto, WorkspaceFileReadResult, WorkspaceFileSearchResult } from "@termloop/contract/current";
+import type { WorkspaceDirectoryResult, WorkspaceFileEntryDto, WorkspaceFileSearchResult } from "@termloop/contract/current";
 import { FileSearch } from "./file-search.js";
 
 export type FilesSubject = { projectId: string; taskId: string | null; title: string };
 export type FilesReader = {
   list(path: string, afterName?: string): Promise<WorkspaceDirectoryResult>;
-  read(path: string): Promise<WorkspaceFileReadResult>;
   search(query: string): Promise<WorkspaceFileSearchResult>;
 };
 export type DirectoryState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; result: WorkspaceDirectoryResult };
-export type FilePreview =
-  | { status: "empty" }
-  | { status: "loading"; path: string }
-  | { status: "error"; path: string; message: string }
-  | { status: "ready"; path: string; result: WorkspaceFileReadResult };
 export type FileBrowserSnapshot = {
   directories: ReadonlyMap<string, DirectoryState>;
   expanded: ReadonlySet<string>;
-  preview: FilePreview;
   refreshing: boolean;
 };
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Files could not be loaded. Try Refresh.";
 
-/** In-memory observation state. Generations isolate refresh, selection and
+/** In-memory observation state. Generations isolate refresh and
  * unmount from late responses, including responses from a disconnected source. */
 export class FileBrowser {
   readonly search: FileSearch;
-  private snapshot: FileBrowserSnapshot = { directories: new Map(), expanded: new Set(), preview: { status: "empty" }, refreshing: false };
+  private snapshot: FileBrowserSnapshot = { directories: new Map(), expanded: new Set(), refreshing: false };
   private listeners = new Set<() => void>();
   private generation = 0;
-  private selection = 0;
   private active = false;
   private pending = new Map<string, Promise<WorkspaceDirectoryResult | undefined>>();
 
@@ -43,8 +35,7 @@ export class FileBrowser {
     return () => { this.listeners.delete(listener); };
   };
   start(): void { this.active = true; this.search.start(); void this.refresh(); }
-  dispose(): void { this.active = false; this.search.dispose(); this.generation++; this.selection++; this.pending.clear(); }
-  clearPreview = (): void => { this.selection++; this.publish({ preview: { status: "empty" } }); };
+  dispose(): void { this.active = false; this.search.dispose(); this.generation++; this.pending.clear(); }
 
   private publish(update: Partial<FileBrowserSnapshot>): void {
     if (!this.active) return;
@@ -100,29 +91,11 @@ export class FileBrowser {
     this.publish({ expanded: new Set(), directories: new Map(root ? [["", root]] : []) });
   }
 
-  async select(path: string): Promise<void> {
-    const selection = ++this.selection;
-    const generation = this.generation;
-    this.publish({ preview: { status: "loading", path } });
-    try {
-      const result = await this.reader.read(path);
-      if (this.active && selection === this.selection && generation === this.generation) {
-        this.publish({ preview: { status: "ready", path, result } });
-      }
-    } catch (error) {
-      if (this.active && selection === this.selection && generation === this.generation) {
-        this.publish({ preview: { status: "error", path, message: errorMessage(error) } });
-      }
-    }
-  }
-
   async refresh(): Promise<void> {
     this.search.refresh();
     const generation = ++this.generation;
-    const selection = ++this.selection;
     this.pending.clear();
-    const selected = this.snapshot.preview.status === "empty" ? undefined : this.snapshot.preview.path;
-    this.publish({ directories: new Map(), refreshing: true, preview: { status: "empty" } });
+    this.publish({ directories: new Map(), refreshing: true });
     const queue = [""];
     const found = new Set<string>();
     while (queue.length && this.active && generation === this.generation) {
@@ -138,7 +111,6 @@ export class FileBrowser {
     }
     if (!this.active || generation !== this.generation) return;
     this.publish({ expanded: found, refreshing: false });
-    if (selected && selection === this.selection && this.snapshot.preview.status === "empty") await this.select(selected);
   }
 }
 
@@ -165,14 +137,4 @@ export function fileTreeRows(snapshot: Pick<FileBrowserSnapshot, "directories" |
   };
   visit("", 0);
   return rows;
-}
-
-export function filePreviewMessage(state: WorkspaceFileReadResult["state"]): string | undefined {
-  switch (state) {
-    case "text": return undefined;
-    case "binary": return "Preview is unavailable for binary files or text that is not UTF-8.";
-    case "tooLarge": return "This file exceeds the preview limit of 256 KiB or 20,000 lines.";
-    case "symlink": return "Symbolic links are shown without opening their targets.";
-    case "unsupported": return "Preview is available for regular text files only.";
-  }
 }

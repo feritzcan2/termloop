@@ -2465,6 +2465,7 @@ export function DesktopApp() {
       listWorkspaceDirectory={(params) => sourceApiForProject(params.projectId).workspaceDirectoryList(params)}
       readWorkspaceFile={(params) => sourceApiForProject(params.projectId).workspaceFileRead(params)}
       searchWorkspaceFiles={(params) => sourceApiForProject(params.projectId).workspaceFileSearch(params)}
+      writeWorkspaceFile={(params) => sourceApiForProject(params.projectId).workspaceFileWrite(params)}
       projects={projection.projects}
       projectTasks={projection.tasks}
       gitHostProjections={projection.gitHostProjections}

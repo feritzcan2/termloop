@@ -2,40 +2,52 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams } from "@termloop/contract/current";
+import { useState } from "react";
+import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { FilesSubject } from "../src/renderer/file-browser.js";
-import { FilesOverlay } from "../src/renderer/ui/FilesOverlay.js";
+import { FileEditorOverlay } from "../src/renderer/ui/FileEditorOverlay.js";
 import { FilesActivityBar, FilesSidebar, FilesSidebarResizeHandle } from "../src/renderer/ui/FilesSidebar.js";
 import { useFileBrowser } from "../src/renderer/ui/use-file-browser.js";
+import { useFileEditor } from "../src/renderer/ui/use-file-editor.js";
+import { fakeMonaco } from "./monaco-fixture.js";
+
+const fake = vi.hoisted(() => ({ current: undefined as ReturnType<typeof import("./monaco-fixture.js").fakeMonaco> | undefined }));
+vi.mock("../src/renderer/monaco-editor.js", () => ({ get monaco() { return fake.current!.monaco; } }));
 
 const project: FilesSubject = { projectId: "project", taskId: null, title: "Project" };
 const task: FilesSubject = { ...project, taskId: "task", title: "Task" };
 const directory: WorkspaceDirectoryResult = { path: "", entries: [{ name: "sample.txt", path: "sample.txt", kind: "file" }], truncated: false };
-const content = (value: string): WorkspaceFileReadResult => ({ path: "sample.txt", state: "text", content: value });
+const content = (value: string): WorkspaceFileReadResult => ({ path: "sample.txt", state: "text", content: value, version: "1".repeat(64) });
 
 describe("Files sidebar", () => {
   let container: HTMLDivElement;
   let root: Root;
   const list = vi.fn(async (_params: WorkspaceFilesParams) => directory);
   const read = vi.fn(async (_params: WorkspaceFilesParams) => content("Project file"));
+  const write = vi.fn(async ({ path }: WorkspaceFileWriteParams): Promise<WorkspaceFileWriteResult> => ({ path, state: "written", version: "2".repeat(64) }));
   const noMatches = ({ query }: WorkspaceFileSearchParams): WorkspaceFileSearchResult => ({ query, entries: [], total: 0, incomplete: false, unreadable: false });
   const searchFiles = vi.fn(async (params: WorkspaceFileSearchParams) => noMatches(params));
   const selectRoot = vi.fn();
   const close = vi.fn();
 
-  function Harness({ subject, identity = "root" }: { subject: FilesSubject | undefined; identity?: string }) {
-    const { browser, snapshot } = useFileBrowser(subject, identity, list, read, searchFiles);
+  function Harness({ subject, identity = "root", readOnly = false }: { subject: FilesSubject | undefined; identity?: string; readOnly?: boolean }) {
+    const { browser, snapshot } = useFileBrowser(subject, identity, list, searchFiles);
+    const files = useFileEditor(subject, identity, read, write);
+    const [shown, setShown] = useState(false);
+    const visible = Boolean(subject && shown && files.snapshot.tabs.length);
     return <>
       <FilesSidebar subject={subject} projectName="Project" tasks={[{ id: "task", title: "Task" }]}
-        browser={browser} snapshot={snapshot} selectRoot={selectRoot}
-        openFile={(path) => void browser.select(path)} close={close} unavailable={!subject} />
-      <main><div data-terminal-host="true" />{subject && snapshot.preview.status !== "empty"
-        ? <FilesOverlay subject={subject} preview={snapshot.preview} close={browser.clearPreview} /> : null}</main>
+        browser={browser} snapshot={snapshot} selectedPath={visible ? files.snapshot.active : undefined} selectRoot={selectRoot}
+        openFile={(path) => { files.editor.open(path); setShown(true); }} dismiss={() => setShown(false)} close={close} unavailable={!subject} />
+      <main><div data-terminal-host="true" />{visible && subject
+        ? <FileEditorOverlay subject={subject} editor={files.editor} snapshot={files.snapshot} readOnly={readOnly}
+          hide={() => setShown(false)} closeTab={(path) => files.editor.close(path)} /> : null}</main>
     </>;
   }
-  const render = async (subject: FilesSubject | undefined, identity?: string) => {
-    await act(async () => root.render(<Harness subject={subject} {...(identity ? { identity } : {})} />));
+  const render = async (subject: FilesSubject | undefined, identity?: string, readOnly?: boolean) => {
+    await act(async () => root.render(<Harness subject={subject} {...(identity ? { identity } : {})} {...(readOnly ? { readOnly } : {})} />));
   };
+  const editorOpen = () => container.querySelector('[aria-label^="Editor for"]') !== null;
   const button = (selector: string) => container.querySelector<HTMLButtonElement>(selector)!;
   const clickFile = async () => { await act(async () => button('[role="treeitem"]').click()); };
   const searchInput = () => container.querySelector<HTMLInputElement>('[aria-label="Search files"]')!;
@@ -51,6 +63,8 @@ describe("Files sidebar", () => {
     vi.clearAllMocks();
     list.mockReset().mockResolvedValue(directory);
     read.mockReset().mockResolvedValue(content("Project file"));
+    write.mockClear();
+    fake.current = fakeMonaco();
     searchFiles.mockReset().mockImplementation(async (params) => noMatches(params));
     container = document.createElement("div");
     document.body.append(container);
@@ -110,20 +124,42 @@ describe("Files sidebar", () => {
     expect(resize.mock.calls).toEqual([[310], [260], [500]]);
   });
 
-  it("keeps the tree in the sidebar and closes only the preview without replacing terminal hosts", async () => {
+  it("edits a file in a tab over the stage, saves with ⌘S and hides without replacing terminal hosts", async () => {
     await render(project);
     const terminal = container.querySelector("[data-terminal-host]");
-    expect(container.querySelector('aside [role="tree"]')).not.toBeNull();
     expect(container.querySelector('main [role="tree"]')).toBeNull();
-    expect(container.querySelector('[aria-label="File preview"]')).toBeNull();
+    expect(editorOpen()).toBe(false);
     await clickFile();
-    expect(container.querySelector("main")?.textContent).toContain("Project file");
-    await act(async () => button('[aria-label="Refresh files"]').click());
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="tab"]')?.textContent).toBe("sample.txt");
+    expect(button('[role="treeitem"]').getAttribute("aria-selected")).toBe("true");
+    expect(fake.current!.state.model).toMatchObject({ value: "Project file", language: "plaintext" });
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved");
+    await act(async () => fake.current!.type("Edited"));
+    expect(container.querySelector('[aria-label="Close sample.txt (unsaved changes)"]')).not.toBeNull();
+    await act(async () => fake.current!.save());
+    expect(write).toHaveBeenCalledWith({ projectId: "project", taskId: null, path: "sample.txt", content: "Edited", expectedVersion: "1".repeat(64) });
+    expect(container.querySelector('[aria-label="Close sample.txt"]')).not.toBeNull();
     await act(async () => container.querySelector('[aria-label="File browser"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(container.querySelector('[aria-label="File preview"]')).toBeNull();
+    expect(editorOpen()).toBe(false);
     expect(container.querySelector('aside [role="tree"]')).not.toBeNull();
     expect(container.querySelector("[data-terminal-host]")).toBe(terminal);
+    await clickFile();
+    expect(fake.current!.models.filter((model) => !model.disposed)).toHaveLength(1);
+  });
+
+  it("offers reload or overwrite on a conflict and stays read-only for read-only computers", async () => {
+    write.mockResolvedValueOnce({ path: "sample.txt", state: "conflict", version: "9".repeat(64) });
+    await render(project);
+    await clickFile();
+    await act(async () => fake.current!.type("Mine"));
+    await act(async () => fake.current!.save());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("changed on disk");
+    await act(async () => [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === "Overwrite")!.click());
+    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ content: "Mine", expectedVersion: "9".repeat(64) }));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await render(project, "root", true);
+    expect(fake.current!.state.readOnly).toBe(true);
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Read-only");
   });
 
   it("isolates Task roots and discards responses after leaving Files", async () => {
@@ -137,17 +173,17 @@ describe("Files sidebar", () => {
     await render(task);
     expect(list).toHaveBeenLastCalledWith({ projectId: "project", taskId: "task", path: "" });
     await act(async () => resolve(content("Old Project content")));
-    expect(container.textContent).not.toContain("Old Project content");
+    expect(fake.current!.models.some((model) => model.value === "Old Project content")).toBe(false);
     await clickFile();
     expect(read).toHaveBeenLastCalledWith({ projectId: "project", taskId: "task", path: "sample.txt" });
     const count = list.mock.calls.length;
     await render(undefined);
     expect(container.querySelector('[role="tree"]')).toBeNull();
-    expect(container.querySelector('[aria-label="File preview"]')).toBeNull();
+    expect(editorOpen()).toBe(false);
     expect(list).toHaveBeenCalledTimes(count);
     await render(task, "new-worktree-generation");
     expect(list).toHaveBeenCalledTimes(count + 1);
-    expect(container.querySelector('[aria-label="File preview"]')).toBeNull();
+    expect(editorOpen()).toBe(false);
   });
 
   it("searches closed folders, opens keyboard results, refreshes and clears on Escape", async () => {
@@ -176,7 +212,7 @@ describe("Files sidebar", () => {
     expect(searchInput().value).toBe("");
     expect(document.activeElement).toBe(searchInput());
     expect(container.querySelector('[aria-label="File search results"]')).toBeNull();
-    expect(container.querySelector('[aria-label="File preview"]')).not.toBeNull();
+    expect(editorOpen()).toBe(true);
     expect(container.querySelector('[aria-label="Workspace files"]')?.textContent).toBe("src");
     expect(container.querySelector("[data-terminal-host]")).toBe(terminal);
   });

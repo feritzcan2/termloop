@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { execFile as execFileCallback } from "node:child_process";
-import { cp, mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -23,13 +23,16 @@ const esmRequireBanner = `import { createRequire as __termloopCreateRequire } fr
 const require = __termloopCreateRequire(import.meta.url);`;
 
 await mkdir("dist", { recursive: true });
+// Hashed renderer chunks would otherwise accumulate across builds.
+await rm("dist/chunks", { recursive: true, force: true });
 await buildWindowsTerminal();
 await Promise.all([
   build({ entryPoints: ["src/main.ts"], outfile: "dist/main.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws", "ssh2"], define: mainDefines, banner: { js: esmRequireBanner } }),
   build({ entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", bundle: true, platform: "node", format: "cjs", external: ["electron"] }),
   build({ entryPoints: ["src/utility/terminal-gateway.ts"], outfile: "dist/terminal-gateway.js", bundle: true, platform: "node", format: "esm", external: ["electron", "ws"] }),
-  build({ entryPoints: ["src/renderer/index.tsx"], outfile: "dist/renderer.js", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" }, assetNames: "[name]" }),
-  build({ entryPoints: ["src/renderer/file-highlight-worker.ts"], outfile: "dist/file-highlight-worker.js", bundle: true, platform: "browser", format: "esm", minify: true }),
+  // Splitting keeps the lazily imported editor out of the startup bundle.
+  build({ entryPoints: { renderer: "src/renderer/index.tsx" }, outdir: "dist", splitting: true, chunkNames: "chunks/[name]-[hash]", bundle: true, platform: "browser", format: "esm", jsx: "automatic", loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" }, assetNames: "[name]" }),
+  build({ entryPoints: [fileURLToPath(import.meta.resolve("monaco-editor/editor/editor.worker.js"))], outfile: "dist/monaco-editor.worker.js", bundle: true, platform: "browser", format: "esm", minify: true }),
   cp("src/index.html", "dist/index.html"),
   cp(path.join(checkout, "resources/prompts"), "dist/prompts", { recursive: true }),
   cp(path.join(checkout, "tools/server"), "dist/server-setup", { recursive: true, filter: (source) => !source.endsWith(".test.mjs") }),

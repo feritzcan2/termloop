@@ -1,23 +1,24 @@
-/** Filename associations for the grammars shipped with the read-only viewer. */
+/** Filename associations mapped onto the editor's bundled Monarch tokenizers.
+ * JSON has no Monarch grammar, so it borrows the JavaScript tokenizer. */
 const languages = [
   ["csharp", "C#", "cs csx"], ["razor", "Razor", "cshtml razor"],
-  ["typescript", "TypeScript", "ts mts cts"], ["tsx", "TSX", "tsx"],
-  ["javascript", "JavaScript", "js mjs cjs"], ["jsx", "JSX", "jsx"],
-  ["json", "JSON", "json jsonl ipynb"], ["jsonc", "JSON with comments", "jsonc"],
-  ["yaml", "YAML", "yaml yml"], ["toml", "TOML", "toml"],
+  ["typescript", "TypeScript", "ts mts cts"], ["typescript", "TSX", "tsx"],
+  ["javascript", "JavaScript", "js mjs cjs"], ["javascript", "JSX", "jsx"],
+  ["javascript", "JSON", "json jsonl ipynb"], ["javascript", "JSON with comments", "jsonc"],
+  ["yaml", "YAML", "yaml yml"], ["ini", "TOML", "toml"],
   ["xml", "XML", "xml xsd xsl xslt svg csproj fsproj vbproj props targets resx config plist slnx"],
   ["html", "HTML", "html htm"], ["css", "CSS", "css"], ["scss", "SCSS", "scss"],
   ["markdown", "Markdown", "md markdown"], ["sql", "SQL", "sql"],
-  ["shellscript", "Shell", "sh bash zsh"], ["powershell", "PowerShell", "ps1 psm1 psd1"],
+  ["shell", "Shell", "sh bash zsh"], ["powershell", "PowerShell", "ps1 psm1 psd1"],
   ["bat", "Batch", "bat cmd"], ["python", "Python", "py pyi pyw"],
   ["rust", "Rust", "rs"], ["go", "Go", "go"], ["java", "Java", "java"],
-  ["c", "C", "c h"], ["cpp", "C++", "cpp cc cxx hpp hxx"],
+  ["cpp", "C", "c h"], ["cpp", "C++", "cpp cc cxx hpp hxx"],
   ["swift", "Swift", "swift"], ["kotlin", "Kotlin", "kt kts"],
-  ["ruby", "Ruby", "rb"], ["php", "PHP", "php"], ["vue", "Vue", "vue"],
-  ["svelte", "Svelte", "svelte"], ["graphql", "GraphQL", "graphql gql"],
-  ["dockerfile", "Dockerfile", "dockerfile"], ["makefile", "Makefile", "mk"],
-  ["ini", "INI", "ini editorconfig"], ["dotenv", "Environment", "env"],
-  ["diff", "Diff", "diff patch"], ["gherkin", "Gherkin", "feature"],
+  ["ruby", "Ruby", "rb"], ["php", "PHP", "php"], ["html", "Vue", "vue"],
+  ["html", "Svelte", "svelte"], ["graphql", "GraphQL", "graphql gql"],
+  ["dockerfile", "Dockerfile", "dockerfile"], ["plaintext", "Makefile", "mk"],
+  ["ini", "INI", "ini editorconfig"], ["ini", "Environment", "env"],
+  ["plaintext", "Diff", "diff patch"], ["plaintext", "Gherkin", "feature"],
 ] as const;
 
 export type FileLanguageId = typeof languages[number][0];
@@ -35,8 +36,4 @@ export function fileLanguage(path: string): FileLanguage | undefined {
   if (name.startsWith("dockerfile.") || name.startsWith("containerfile.")) return extensions.get("dockerfile");
   if (/^(?:tsconfig|jsconfig)(?:\..+)?\.json$/u.test(name)) return extensions.get("jsonc");
   return extensions.get(filenames[name] ?? name.split(".").at(-1)!);
-}
-
-export function sourceLines(content: string): string[] {
-  return content === "" ? [] : content.replace(/\r\n?/gu, "\n").replace(/\n$/u, "").split("\n");
 }

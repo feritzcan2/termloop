@@ -1,9 +1,10 @@
-import { FilesOverlay } from "./FilesOverlay.js";
+import { FileEditorOverlay } from "./FileEditorOverlay.js";
 import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesActivityBar, FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { useFileBrowser } from "./use-file-browser.js";
+import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
-import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult } from "@termloop/contract/current";
+import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
@@ -169,6 +170,7 @@ export type ShellProps = {
   listWorkspaceDirectory(params: WorkspaceFilesParams): Promise<WorkspaceDirectoryResult>;
   readWorkspaceFile(params: WorkspaceFilesParams): Promise<WorkspaceFileReadResult>;
   searchWorkspaceFiles(params: WorkspaceFileSearchParams): Promise<WorkspaceFileSearchResult>;
+  writeWorkspaceFile(params: WorkspaceFileWriteParams): Promise<WorkspaceFileWriteResult>;
   projects: readonly Project[];
   projectTasks: readonly Task[];
   gitHostProjections: readonly GitHostProjection[];
@@ -836,20 +838,35 @@ export function Shell(props: ShellProps) {
     || projectSourceGroups.some((group) => group.profileId !== "local");
   const filesTask = filesPresentation?.projectId === props.selectedProject?.id && filesPresentation?.taskId
     ? props.projectTasks.find((task) => task.id === filesPresentation.taskId && task.worktree) : undefined;
-  const filesSubject = filesSidebar.open && props.selectedProject
-    && props.connection === "connected" && props.selectedProject.connectionState !== "offline"
+  const editorSubject = props.selectedProject && props.connection === "connected" && props.selectedProject.connectionState !== "offline"
     ? { projectId: props.selectedProject.id, taskId: filesTask?.id ?? null, title: filesTask?.title ?? props.selectedProject.name } : undefined;
-  const files = useFileBrowser(filesSubject, `${props.selectedProject?.folder_path}:${filesTask?.worktree_generation ?? 0}`,
-    props.listWorkspaceDirectory, props.readWorkspaceFile, props.searchWorkspaceFiles);
-  const filesPreviewVisible = Boolean(filesSubject && files.snapshot.preview.status !== "empty" && !changesPresentation);
+  const filesSubject = filesSidebar.open ? editorSubject : undefined;
+  const filesRootIdentity = `${props.selectedProject?.folder_path}:${filesTask?.worktree_generation ?? 0}`;
+  const files = useFileBrowser(filesSubject, filesRootIdentity, props.listWorkspaceDirectory, props.searchWorkspaceFiles);
+  // Editor tabs outlive the sidebar; hiding the editor keeps their drafts.
+  const fileEditor = useFileEditor(editorSubject, filesRootIdentity, props.readWorkspaceFile, props.writeWorkspaceFile);
+  const [editorShown, setEditorShown] = useState(false);
+  const editorVisible = Boolean(editorSubject && editorShown && fileEditor.snapshot.tabs.length && !changesPresentation);
+  const openFile = (path: string) => {
+    setChangesPresentation(undefined);
+    fileEditor.editor.open(path);
+    setEditorShown(true);
+  };
+  const closeEditorTab = (path: string) => {
+    const tab = fileEditor.editor.tab(path);
+    if (tab?.dirty && !window.confirm(`Discard unsaved changes to ${path}?`)) return;
+    fileEditor.editor.close(path);
+  };
   const openFiles = (taskId: string | null) => {
     if (!props.selectedProject) return;
+    if ((editorSubject?.taskId ?? null) !== taskId && fileEditor.editor.dirty()
+      && !window.confirm("Switching the file root discards unsaved editor changes. Continue?")) return;
     updateFilesSidebar({ open: true });
     setChangesPresentation(undefined);
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
   const toggleFilesSidebar = () => updateFilesSidebar({ open: !filesSidebar.open });
-  useEffect(() => { if (changesPresentation) files.browser.clearPreview(); }, [changesPresentation, files.browser]);
+  useEffect(() => { setEditorShown(false); }, [props.selectedSession?.id]);
   const changesTask = changesPresentation?.kind === "task"
     ? props.projectTasks.find((task) => task.id === changesPresentation.taskId)
     : undefined;
@@ -880,7 +897,7 @@ export function Shell(props: ShellProps) {
         : [],
     [changesProject, changesTask, looseSessions, props.projectSessions],
   );
-  const dismissChanges = useCallback(() => { setChangesPresentation(undefined); files.browser.clearPreview(); }, [files.browser]);
+  const dismissChanges = useCallback(() => { setChangesPresentation(undefined); setEditorShown(false); }, []);
   const dismissStagePages = useCallback(() => {
     setAssistantSelection(undefined);
     setDetailTaskId(undefined);
@@ -1127,7 +1144,7 @@ export function Shell(props: ShellProps) {
     shortcutSettingsOpen,
     quickActionOpen: quickActionOpen || Boolean(improverSetup) || Boolean(agentShortcutEdit),
     runEditorOpen,
-    changesEditorOpen: Boolean(changesSubject) || filesPreviewVisible,
+    changesEditorOpen: Boolean(changesSubject) || editorVisible,
   });
   const nativeOverlayOpen = shellNativeOverlayOpen({
     projectDialog: props.projectDialogOpen,
@@ -1155,7 +1172,7 @@ export function Shell(props: ShellProps) {
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
   const terminalOccluded = shellTerminalOccluded(
-    Boolean(changesSubject) || filesPreviewVisible,
+    Boolean(changesSubject) || editorVisible,
     sidebarDragging,
     sessionDragging,
   );
@@ -2147,11 +2164,14 @@ export function Shell(props: ShellProps) {
                 Task detail page covers that page and closes back onto it,
                 rather than throwing the reader out to the terminal. Opening the
                 Steward already dismisses it, so it never stacks on that panel. */}
-            {filesPreviewVisible && filesSubject ? <FilesOverlay
-              key={`${filesSubject.projectId}:${filesSubject.taskId ?? "project"}`}
-              subject={filesSubject}
-              preview={files.snapshot.preview}
-              close={files.browser.clearPreview}
+            {editorVisible && editorSubject ? <FileEditorOverlay
+              key={`${editorSubject.projectId}:${editorSubject.taskId ?? "project"}:${filesRootIdentity}`}
+              subject={editorSubject}
+              editor={fileEditor.editor}
+              snapshot={fileEditor.snapshot}
+              readOnly={selectedComputer?.scope === "readOnly"}
+              hide={() => setEditorShown(false)}
+              closeTab={closeEditorTab}
             /> : null}
             {changesSubject ? (
               <ChangesOverlay
@@ -2190,7 +2210,9 @@ export function Shell(props: ShellProps) {
             browser={files.browser}
             snapshot={files.snapshot}
             selectRoot={openFiles}
-            openFile={(path) => { setChangesPresentation(undefined); void files.browser.select(path); }}
+            selectedPath={editorVisible ? fileEditor.snapshot.active : undefined}
+            openFile={openFile}
+            dismiss={() => setEditorShown(false)}
             close={() => updateFilesSidebar({ open: false })}
             unavailable={Boolean(props.selectedProject) && disabled}
           />

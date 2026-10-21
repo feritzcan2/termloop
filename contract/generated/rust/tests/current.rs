@@ -17,6 +17,7 @@ mod current_steward_authority;
 mod current_task_source;
 mod current_tracker;
 mod current_workflow;
+mod current_workspace_files;
 mod current_worktree;
 mod skill_packages;
 

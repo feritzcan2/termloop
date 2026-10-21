@@ -774,6 +774,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn workspace_file_writes_require_full_control_and_are_not_cancellation_safe() {
+        let method = "workspace.fileWrite";
+        assert!(protocol::METHODS.contains(&method));
+        assert!(scope_allows_method(ClientScope::Full, method));
+        assert!(!scope_allows_method(ClientScope::ReadOnly, method));
+        assert!(!scope_allows_method(ClientScope::Companion, method));
+        assert!(!scope_allows_method(ClientScope::Hook, method));
+        assert!(origin_allows_method(ConnectionOrigin::RemoteDevice, method));
+        assert!(!cancellation_safe_method(method));
+    }
+
     fn request_value(identity: serde_json::Value) -> serde_json::Value {
         json!({
             "id": "identity-test",
