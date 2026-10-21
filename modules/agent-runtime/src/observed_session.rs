@@ -343,6 +343,7 @@ mod tests {
             transcript_path: None,
             prompt_id: None,
             plan: None,
+            pending_wakes: None,
         }
     }
     #[test]

@@ -974,6 +974,12 @@ async fn dispatch_inner(
                     transcript_path: params.transcript_path,
                     prompt_id: params.prompt_id,
                     plan: params.plan.map(agent_plan_update),
+                    pending_wakes: params.pending_wakes.map(|pending| {
+                        termloop_core::AgentPendingWakes {
+                            background_tasks: pending.background_tasks,
+                            scheduled_wakes: pending.scheduled_wakes,
+                        }
+                    }),
                 };
                 let mut core = state.core.lock().await;
                 match core.next_observation_sequence() {

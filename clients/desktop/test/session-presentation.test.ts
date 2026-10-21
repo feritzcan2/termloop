@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
 import {
+  agentActivityIsOlder,
+  agentActivityPriority,
   agentAttention,
   agentStatusTooltip,
   generatedInputDeliveryPresentation,
@@ -192,6 +194,35 @@ describe("Session state", () => {
     expect(sessionState(session(), status("idle"), true)).toMatchObject({ id: "review", tone: "review", label: "Needs review" });
     expect(sessionState(session(), status("working"), true)).toMatchObject({ id: "working", label: "Working" });
     expect(sessionState(session(), status("awaitingInput"), true)).toMatchObject({ id: "awaitingInput" });
+  });
+
+  /// A resting turn that started background work or scheduled a wake will
+  /// start its next turn without the user, so it is neither idle nor review.
+  it("says what a resting agent still waits on ahead of review-ready", () => {
+    const waiting = (backgroundTasks: number, scheduledWakes: number): AgentStatus => ({
+      ...status("idle", "hook"),
+      pendingWakes: { backgroundTasks, scheduledWakes },
+    });
+    expect(sessionState(session(), waiting(2, 0), true)).toEqual({
+      id: "waiting",
+      tone: "working",
+      label: "Waiting on tasks",
+      summary: "Waiting on 2 background tasks.",
+    });
+    expect(sessionState(session(), waiting(1, 1), false)).toMatchObject({
+      label: "Waiting on tasks",
+      summary: "Waiting on 1 background task and 1 scheduled wake.",
+    });
+    expect(sessionState(session(), waiting(0, 1), false)).toMatchObject({
+      label: "Waiting on trigger",
+      summary: "Waiting on 1 scheduled wake.",
+    });
+    expect(sessionState(session(), waiting(0, 0), true)).toMatchObject({ id: "review" });
+    expect(sessionState(session(), { ...waiting(1, 0), status: "working" }, false)).toMatchObject({ id: "working" });
+    expect(agentActivityPriority(session(), waiting(1, 0), true)).toBe(3);
+    expect(agentActivityIsOlder(session(), { ...waiting(1, 0), observedAtEpochMs: 0 }, 60 * 60 * 1_000)).toBe(false);
+    const statuses = new Map<string, AgentStatus>([["session-1", waiting(1, 0)]]);
+    expect(agentAttention([session()], statuses, new Set(["session-1"]))).toMatchObject({ tone: "working" });
   });
 });
 

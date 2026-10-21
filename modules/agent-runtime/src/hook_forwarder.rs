@@ -109,6 +109,9 @@ where
     let plan = is_claude
         .then(|| termloop_agents::normalize_claude_plan_update(&payload))
         .flatten();
+    let pending_wakes = is_claude
+        .then(|| termloop_agents::normalize_claude_pending_wakes(&payload))
+        .flatten();
     // Every hook payload carries the mode the Session is on right now, so an
     // in-TUI `Shift+Tab` is observable without reading the transcript.
     let permission_mode = is_claude
@@ -158,6 +161,12 @@ where
         "transcriptPath": transcript_path,
         "promptId": prompt_id,
     });
+    if let Some(pending_wakes) = pending_wakes {
+        params["pendingWakes"] = json!({
+            "backgroundTasks": pending_wakes.background_tasks,
+            "scheduledWakes": pending_wakes.scheduled_wakes,
+        });
+    }
     if let Some(plan) = plan {
         params["plan"] = match plan {
             termloop_agents::AgentPlanUpdate::Replace(plan) => json!({

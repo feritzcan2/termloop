@@ -216,7 +216,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:a77168ae5881b70a1f7a59ef652a5ca704f64449923bcb882c6263764888b7f1";
+    "sha256:cf81e3467491b855d301886576d433a387c841d0f0e8b275234d67df225be4ea";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -4147,6 +4147,17 @@ pub struct AgentStatusDto {
         skip_serializing_if = "Option::is_none"
     )]
     pub generated_input_delivery: Option<GeneratedInputDeliveryDto>,
+    #[serde(rename = "pendingWakes", skip_serializing_if = "Option::is_none")]
+    pub pending_wakes: Option<AgentPendingWakes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentPendingWakes {
+    #[serde(rename = "backgroundTasks")]
+    pub background_tasks: u32,
+    #[serde(rename = "scheduledWakes")]
+    pub scheduled_wakes: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -4175,6 +4186,8 @@ pub struct AgentObserveParams {
     pub prompt_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<AgentPlanObservation>,
+    #[serde(rename = "pendingWakes", skip_serializing_if = "Option::is_none")]
+    pub pending_wakes: Option<AgentPendingWakes>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18889,6 +18902,9 @@ fn validate_agent_status_dto(value: &Value) -> bool {
             && object.get("generatedInputDelivery").is_none_or(|field| {
                 (validate_generated_input_delivery_dto(field) || field.is_null())
             })
+            && object
+                .get("pendingWakes")
+                .is_none_or(|field| (validate_agent_pending_wakes(field) || field.is_null()))
             && object.keys().all(|key| {
                 [
                     "sessionId",
@@ -18897,6 +18913,7 @@ fn validate_agent_status_dto(value: &Value) -> bool {
                     "observedAtEpochMs",
                     "plan",
                     "generatedInputDelivery",
+                    "pendingWakes",
                 ]
                 .contains(&key.as_str())
             })
@@ -18912,8 +18929,37 @@ fn validate_agent_status_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_pending_wakes(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("backgroundTasks").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1024_u64))
+            })
+        }) && object.get("scheduledWakes").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    && (number.as_u64().is_some_and(|number| number <= 1024_u64))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["backgroundTasks", "scheduledWakes"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_observe_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 5 && text.chars().count() <= 256 && contract_pattern_matches("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 5 && text.chars().count() <= 256 && contract_pattern_matches("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.get("pendingWakes").is_none_or(|field| (validate_agent_pending_wakes(field) || field.is_null())) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan", "pendingWakes"].contains(&key.as_str())))
 }
 
 #[allow(

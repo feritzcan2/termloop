@@ -121,6 +121,7 @@ pub type AgentPlanStep = termloop_agents::AgentPlanStep;
 pub type AgentPlanStepStatus = termloop_agents::AgentPlanStepStatus;
 pub type ObservationCapability = termloop_agents::ObservationCapability;
 pub type ProviderHookObservationInput = termloop_agents::ProviderHookObservationInput;
+pub type AgentPendingWakes = termloop_agents::AgentPendingWakes;
 pub type ProviderHookSettings = termloop_agents::ProviderHookSettings;
 pub type ProviderHookSettingsDelivery = termloop_agents::ProviderHookSettingsDelivery;
 pub type ResumeFailureReason = termloop_domain::ResumeFailureReason;
@@ -885,6 +886,16 @@ impl CoreRuntime {
         capability.observation = Some(next);
         capability.last_signal = Some(signal);
         capability.last_notification_type = hook_notification_type;
+        // Only a turn boundary reports the pending-wake snapshot; every other
+        // event keeps the last one, which the projection shows only at rest.
+        let previous_pending_wakes = capability.pending_wakes;
+        if signal == termloop_agents::AgentSignal::SessionEnded {
+            capability.pending_wakes = AgentPendingWakes::default();
+        }
+        if let Some(pending_wakes) = normalized.pending_wakes {
+            capability.pending_wakes = pending_wakes;
+        }
+        let pending_wakes_changed = capability.pending_wakes != previous_pending_wakes;
         let defer_generated_input_until_hook_response =
             session_started && capability.pending_generated_input.is_some();
         if defer_generated_input_until_hook_response {
@@ -930,6 +941,7 @@ impl CoreRuntime {
             self.resume_ready.insert(session_id.to_owned());
         }
         let status_changed = observation_projection_changed(previous, next)
+            || pending_wakes_changed
             || plan_changed
             || readiness_changed
             || generated_input_confirmed
@@ -1032,6 +1044,7 @@ impl CoreRuntime {
                 transcript_path: None,
                 prompt_id: None,
                 plan,
+                pending_wakes: None,
             },
             sequence,
             observed_at_epoch_ms,
@@ -2381,6 +2394,20 @@ impl CoreRuntime {
                             "templateVersion": provenance.template_version,
                         }))
                     });
+                // A resting turn that still waits on its own background work or
+                // scheduled wake is not finished; any other state already says
+                // what the Session is doing.
+                let pending_wakes = (live && state == AgentState::Idle)
+                    .then(|| self.agent_observations.get(&session.id))
+                    .flatten()
+                    .map(|capability| capability.pending_wakes)
+                    .filter(|pending| !pending.is_empty())
+                    .map(|pending| {
+                        serde_json::json!({
+                            "backgroundTasks": pending.background_tasks,
+                            "scheduledWakes": pending.scheduled_wakes,
+                        })
+                    });
                 serde_json::json!({
                     "sessionId": session.id,
                     "status": agent_state_name(state),
@@ -2388,6 +2415,7 @@ impl CoreRuntime {
                     "observedAtEpochMs": observed_at_epoch_ms,
                     "plan": plan,
                     "generatedInputDelivery": generated_input_delivery,
+                    "pendingWakes": pending_wakes,
                 })
             })
             .collect();
@@ -2931,6 +2959,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3157,6 +3186,126 @@ mod tests {
     }
 
     #[test]
+    fn a_resting_claude_turn_projects_what_it_still_waits_on() {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-core-claude-pending-wakes-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let authority = termloop_store::issue_core_write_authority_for_composition();
+        let store = Store::open(&path).unwrap();
+        let mut runtime =
+            CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+        runtime.configure_agent_observations(test_agent_observation_transport(
+            std::env::temp_dir().join("termloop-core-pending-wakes-provider"),
+        ));
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                termloop_domain::SessionRecord {
+                    launch_selection: Default::default(),
+                    id: "claude-live".into(),
+                    project_id: "project-1".into(),
+                    name: None,
+                    kind: termloop_domain::SessionKind::Agent,
+                    process: termloop_domain::ProcessDescriptor {
+                        program: "claude".into(),
+                        args: vec![],
+                        cwd: "/tmp".into(),
+                        agent_id: Some("claude".into()),
+                        template_ref: None,
+                        template_version: None,
+                    },
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 1,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
+        runtime.agent_observations.insert(
+            "claude-live".into(),
+            AgentObservationCapability {
+                token: Some("token-live".into()),
+                runtime_epoch: 1,
+                last_signal: None,
+                defer_generated_input_until_hook_response: false,
+                last_notification_type: None,
+                pending_wakes: Default::default(),
+                observation: None,
+                pending_generated_input: None,
+            },
+        );
+        let observe = |runtime: &mut CoreRuntime,
+                       event: &str,
+                       pending_wakes: Option<AgentPendingWakes>,
+                       sequence: u64| {
+            runtime
+                .record_provider_hook_observation(
+                    "token-live",
+                    "claude-live",
+                    ProviderHookObservationInput {
+                        event_name: event.into(),
+                        notification_type: None,
+                        native_session_id: None,
+                        provider_model_id: None,
+                        permission_mode: None,
+                        reasoning_level: None,
+                        transcript_path: None,
+                        prompt_id: None,
+                        plan: None,
+                        pending_wakes,
+                    },
+                    sequence,
+                    sequence,
+                )
+                .unwrap()
+                .status_changed
+        };
+        let waiting = AgentPendingWakes {
+            background_tasks: 2,
+            scheduled_wakes: 1,
+        };
+
+        observe(&mut runtime, "UserPromptSubmit", None, 1);
+        assert!(observe(&mut runtime, "Stop", Some(waiting), 2));
+        let projected = runtime.agent_status_list().unwrap();
+        assert_eq!(projected[0]["status"], "idle");
+        assert_eq!(projected[0]["pendingWakes"]["backgroundTasks"], 2);
+        assert_eq!(projected[0]["pendingWakes"]["scheduledWakes"], 1);
+
+        // The completion notice starts a new turn; a working Session already
+        // says what it is doing, so the snapshot is not projected.
+        observe(&mut runtime, "UserPromptSubmit", None, 3);
+        let projected = runtime.agent_status_list().unwrap();
+        assert_eq!(projected[0]["status"], "working");
+        assert!(projected[0]["pendingWakes"].is_null());
+
+        // The same state with a new snapshot is still a projection change.
+        observe(&mut runtime, "Stop", Some(waiting), 4);
+        assert!(observe(
+            &mut runtime,
+            "Stop",
+            Some(AgentPendingWakes::default()),
+            5
+        ));
+        assert!(runtime.agent_status_list().unwrap()[0]["pendingWakes"].is_null());
+
+        observe(&mut runtime, "Stop", Some(waiting), 6);
+        observe(&mut runtime, "SessionEnd", None, 7);
+        observe(&mut runtime, "SessionStart", None, 8);
+        assert!(runtime.agent_status_list().unwrap()[0]["pendingWakes"].is_null());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn claude_transcript_model_replaces_only_a_contradicted_session_selection() {
         let path = std::env::temp_dir().join(format!(
             "termloop-core-claude-model-{}-{}.json",
@@ -3209,6 +3358,7 @@ mod tests {
                     last_signal: None,
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
+                    pending_wakes: Default::default(),
                     observation: None,
                     pending_generated_input: None,
                 },
@@ -3389,6 +3539,7 @@ mod tests {
                     last_signal: None,
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
+                    pending_wakes: Default::default(),
                     observation: None,
                     pending_generated_input: None,
                 },
@@ -3589,6 +3740,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3607,6 +3759,7 @@ mod tests {
                     transcript_path: None,
                     prompt_id: None,
                     plan: None,
+                    pending_wakes: None,
                 },
                 1,
                 1,
@@ -3642,6 +3795,7 @@ mod tests {
                     transcript_path: None,
                     prompt_id: None,
                     plan: None,
+                    pending_wakes: None,
                 },
                 2,
                 2,
@@ -3722,6 +3876,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3734,6 +3889,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3772,6 +3928,7 @@ mod tests {
                     transcript_path: None,
                     prompt_id: None,
                     plan: None,
+                    pending_wakes: None,
                 },
                 1,
                 1,
@@ -3793,6 +3950,7 @@ mod tests {
                     transcript_path: None,
                     prompt_id: None,
                     plan: None,
+                    pending_wakes: None,
                 },
                 2,
                 2,
@@ -3865,6 +4023,7 @@ mod tests {
                         transcript_path: None,
                         prompt_id: None,
                         plan: None,
+                        pending_wakes: None,
                     },
                     sequence,
                     2,
@@ -3885,6 +4044,7 @@ mod tests {
                     transcript_path: None,
                     prompt_id: None,
                     plan: None,
+                    pending_wakes: None,
                 },
                 257,
                 2,
@@ -4144,6 +4304,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -4537,6 +4698,7 @@ mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },

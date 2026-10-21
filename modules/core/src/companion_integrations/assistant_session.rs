@@ -594,6 +594,7 @@ impl CoreRuntime {
                     pending_generated_input,
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
+                    pending_wakes: Default::default(),
                 },
             );
         }
@@ -1002,6 +1003,7 @@ mod tests {
                 pending_generated_input: Some(submission.clone()),
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
             },
         );
         // This is the exact state after the first wake was accepted while the

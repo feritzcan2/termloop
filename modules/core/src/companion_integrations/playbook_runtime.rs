@@ -1581,6 +1581,7 @@ pub(crate) mod tests {
                 last_signal: None,
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
+                pending_wakes: Default::default(),
                 observation: Some(termloop_agents::reduce_observation(
                     None,
                     termloop_agents::AgentSignal::PromptSubmitted,
