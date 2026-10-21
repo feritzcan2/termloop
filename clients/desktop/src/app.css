@@ -153,6 +153,32 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 
 .app-shell { --files-activity-width: 40px; position: relative; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--files-activity-width); width: 100vw; height: 100vh; background: var(--bg-app); }
 .sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-sidebar); container-type: inline-size; }
+/* Orca's worktree sidebar: neutral greys instead of the blue-tinted slate, and
+   selection as a solid neutral accent rather than a blue wash. */
+.sidebar {
+  --bg-sidebar: light-dark(#f5f5f5, #2a2a2a);
+  --border: light-dark(#e5e5e5, rgb(255 255 255 / .07));
+  --rule: light-dark(#e5e5e5, rgb(255 255 255 / .07));
+  --text: light-dark(#0a0a0a, #fafafa);
+  --text-secondary: light-dark(#525252, #d4d4d4);
+  --text-muted: #737373;
+  --sidebar-text: light-dark(#0a0a0a, #fafafa);
+  --sidebar-dim: light-dark(#525252, #a1a1a1);
+  --sidebar-dimmer: #737373;
+  --hover: light-dark(#ededed, #313131);
+  --sidebar-selected: light-dark(#eaeaea, #353535);
+  --accent-wash: light-dark(rgb(234 234 234), rgb(64 64 64 / .6));
+}
+.sidebar .sidebar-scroll { scrollbar-color: light-dark(#d4d4d4, #404040) transparent; }
+.sidebar .session-item:hover { background: var(--hover); color: var(--sidebar-text); }
+.sidebar .session-item.active { border-color: transparent; background: var(--sidebar-selected); color: var(--sidebar-text); }
+.sidebar .session-item.visible:not(.active) { color: var(--sidebar-text); }
+.sidebar .task-group.focused { --card-surface: var(--hover); border-color: var(--rule); background: transparent; }
+.sidebar .task-group.focused:hover { border-color: light-dark(#d4d4d4, rgb(255 255 255 / .12)); background: var(--hover); }
+.sidebar .task-group.focused:has(.task-item.showing-detail) { --card-surface: var(--sidebar-selected); border-color: light-dark(#d4d4d4, rgb(255 255 255 / .12)); background: var(--sidebar-selected); }
+.sidebar .task-group[data-disclosed] { background: transparent; }
+/* The hover actions fade into the card, whose surface is hover or selection here. */
+.sidebar .task-group.focused .task-row .row-actions[class] { background: linear-gradient(90deg, transparent, var(--card-surface) 45%); }
 .sidebar-resize-handle { position: absolute; z-index: 30; top: 0; bottom: 0; left: var(--sidebar-width); width: 9px; padding: 0; outline: 0; cursor: col-resize; touch-action: none; transform: translateX(-50%); -webkit-app-region: no-drag; }
 .sidebar-resize-handle::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; content: ""; transition: background 100ms ease, box-shadow 100ms ease; }
 .sidebar-resize-handle:hover::after, .sidebar-resize-handle:focus-visible::after, .sidebar-resize-handle.dragging::after { background: var(--accent); box-shadow: 0 0 0 2px rgba(102,179,255,.12); }
