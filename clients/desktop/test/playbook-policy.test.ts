@@ -228,7 +228,7 @@ describe("Playbook templates", () => {
     const starter = playbookStarterDraft();
     expect(playbookDraftIsValid(starter)).toBe(true);
     starter.milestones[0]!.title = "Changed";
-    expect(PLAYBOOK_STARTER.milestones[0]?.title).toBe("Agent is working");
+    expect(PLAYBOOK_STARTER.milestones[0]?.title).toBe("Committed");
   });
 });
 
@@ -308,5 +308,20 @@ describe("Deterministic pull request checks", () => {
       playbookFallbackNeedsIntegrations(reason as "unauthorized"))).toBe(true);
     expect(playbookFallbackNeedsIntegrations("rateLimited")).toBe(false);
     expect(playbookFallbackNeedsIntegrations(null)).toBe(false);
+  });
+
+  it("counts commits without a base branch and opens every template with that check", () => {
+    const committed = { kind: "branchCommitted", baseBranch: null } as const;
+    expect(playbookCheckCaption(committed)).toBe("Committed");
+    expect(playbookFallbackReasonCopy("commitsUnavailable", "github"))
+      .toBe("Fell back to agent routine: the Task branch's commits could not be counted");
+    const step = milestone({ gate: "automatic", approver: null, deterministicCheck: committed });
+    expect(playbookMilestoneFieldIssues(step).check).toEqual([]);
+    expect(playbookMilestoneFieldIssues({ ...step, deterministicCheck: { ...committed, baseBranch: "main" } }).check)
+      .toEqual(["A commit check counts from the Task branch's own base and takes no base branch."]);
+    for (const draft of [playbookStarterDraft(), ...PLAYBOOK_TEMPLATES.map(playbookTemplateDraft)]) {
+      expect(draft.milestones[0]?.deterministicCheck).toEqual(committed);
+      expect(playbookDraftIsValid(draft)).toBe(true);
+    }
   });
 });

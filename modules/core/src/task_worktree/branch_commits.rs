@@ -189,18 +189,8 @@ impl TaskBranchCommitSummaryListPlan {
                         std::path::Path::new(&repository_root),
                         &targets
                             .iter()
-                            .map(|target| match target.recorded_base.as_ref() {
-                                Some((base_ref, base_oid)) => {
-                                    BranchCommitSummaryRequest::with_current_base_and_recorded_base(
-                                        target.binding.name.as_bytes().to_vec(),
-                                        base_ref.as_bytes().to_vec(),
-                                        base_oid.as_bytes().to_vec(),
-                                    )
-                                }
-                                None => BranchCommitSummaryRequest::new(
-                                    target.binding.name.as_bytes().to_vec(),
-                                    None,
-                                ),
+                            .map(|target| {
+                                summary_request(&target.binding, target.recorded_base.as_ref())
                             })
                             .collect::<Vec<_>>(),
                     )
@@ -244,7 +234,65 @@ impl TaskBranchCommitSummaryListPlan {
     }
 }
 
+fn summary_request(
+    binding: &TaskBranchBinding,
+    recorded_base: Option<&(String, String)>,
+) -> BranchCommitSummaryRequest {
+    match recorded_base {
+        Some((base_ref, base_oid)) => {
+            BranchCommitSummaryRequest::with_current_base_and_recorded_base(
+                binding.name.as_bytes().to_vec(),
+                base_ref.as_bytes().to_vec(),
+                base_oid.as_bytes().to_vec(),
+            )
+        }
+        None => BranchCommitSummaryRequest::new(binding.name.as_bytes().to_vec(), None),
+    }
+}
+
+/// A fresh, uncached count of one Task branch's own commits, the same count
+/// the Task's commit summary shows. A Playbook gate reads this instead of the
+/// display cache.
+#[derive(Clone)]
+pub(crate) struct TaskBranchCommitProbe {
+    repository_root: String,
+    request: BranchCommitSummaryRequest,
+}
+
+impl TaskBranchCommitProbe {
+    /// Blocking; call without the core lock.
+    pub(crate) fn observe(&self) -> Result<BranchCommitState, CoreError> {
+        let runner =
+            GitRunner::discover_with_timeout(termloop_gitio::BRANCH_COMMIT_OBSERVATION_DEADLINE)
+                .map_err(super::git_mapping::map_git_observation_error)?;
+        let mut batch = runner
+            .observe_branch_commit_summary_requests(
+                std::path::Path::new(&self.repository_root),
+                std::slice::from_ref(&self.request),
+            )
+            .map_err(super::git_mapping::map_git_observation_error)?;
+        batch
+            .observations
+            .pop()
+            .ok_or(CoreError::RepositoryUnavailable)?
+            .map(|observation| observation.state)
+            .map_err(super::git_mapping::map_git_observation_error)
+    }
+}
+
 impl CoreRuntime {
+    /// The commit read for this Task's current branch, or `None` when it has
+    /// no branch.
+    pub(crate) fn task_branch_commit_probe(&self, task_id: &str) -> Option<TaskBranchCommitProbe> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let binding = task.branch.as_ref()?;
+        let recorded_base = self.task_recorded_branch_base(task_id, binding);
+        Some(TaskBranchCommitProbe {
+            repository_root: binding.repository_root.clone(),
+            request: summary_request(binding, recorded_base.as_ref()),
+        })
+    }
+
     pub fn plan_task_branch_commit_summary_list(
         &mut self,
         params: Value,

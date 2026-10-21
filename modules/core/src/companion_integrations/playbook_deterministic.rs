@@ -1,9 +1,10 @@
 //! Deterministic Playbook step checks.
 //!
 //! A step whose completion is purely the Task branch's own pull request state
-//! (open, checks passing, merged) is answered by TermLoop itself before the
-//! step's Routine is asked. The read is fresh: it never consults the
-//! display-only Git-host Task projection or the provider row cache, because a
+//! (open, checks passing, merged), or whether the branch has commits of its
+//! own, is answered by TermLoop itself before the step's Routine is asked. The
+//! read is fresh: it never consults the display-only Git-host Task projection,
+//! the branch commit summary cache, or the provider row cache, because a
 //! cached display affordance must never satisfy a delivery gate.
 //!
 //! The read follows the usual plan/observe/apply boundary. Core plans under its
@@ -18,6 +19,7 @@ use super::{
     normalize_candidate_sets, snapshot, worktree_branches,
 };
 use crate::companion_integrations::playbook_runtime::StewardStepVerdict;
+use crate::task_worktree::TaskBranchCommitProbe;
 use crate::{CoreError, CoreRuntime};
 use serde_json::Value;
 use std::time::Duration;
@@ -26,7 +28,7 @@ use termloop_domain::{
     PlaybookDeterministicFallback as Fallback, PlaybookGateKind, PlaybookStepEvaluator,
     PlaybookStepVerdict, RoutineActionHandling,
 };
-use termloop_gitio::GitRunner;
+use termloop_gitio::{BranchCommitState, BranchCommitUnavailable, GitRunner};
 use termloop_providers::{
     AzureDevOpsClient, CheckState, GitHostProvider, GitHubClient, ProviderFailure,
     PullRequestState, PullRequestSummary,
@@ -44,6 +46,8 @@ pub struct DeterministicStepPlan {
     snapshot: TaskSnapshot,
     github: Option<GitHubClient>,
     azure: Option<AzureDevOpsClient>,
+    /// Set only for a commit check, whose read is local Git alone.
+    commits: Option<TaskBranchCommitProbe>,
 }
 
 /// What the fresh read observed, waiting to be revalidated and applied.
@@ -52,7 +56,27 @@ pub struct DeterministicStepObservation {
     milestone_id: String,
     check: PlaybookDeterministicCheck,
     snapshot: TaskSnapshot,
-    read: PullRequestRead,
+    read: StepRead,
+}
+
+/// What one fresh read established, by the kind of check that asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StepRead {
+    PullRequests(PullRequestRead),
+    Commits(CommitRead),
+}
+
+/// The Task branch's own commits, as one fresh local Git read counted them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CommitRead {
+    Unavailable(Fallback),
+    Read {
+        branch: String,
+        /// The base the commits were counted from, such as
+        /// `refs/remotes/origin/development`.
+        base: String,
+        count: u64,
+    },
 }
 
 /// The pull requests one fresh read found for the Task branch.
@@ -112,13 +136,21 @@ impl CoreRuntime {
         let milestone_id = milestone.id.clone();
         let task_id = self.claimed_step_task_id(capability)?;
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let commit_check = check.kind == PlaybookDeterministicCheckKind::BranchCommitted;
         Some(DeterministicStepPlan {
             capability: capability.clone(),
             milestone_id,
+            commits: commit_check
+                .then(|| self.task_branch_commit_probe(&task.id))
+                .flatten(),
             check,
             snapshot: snapshot(task),
-            github: self.github_client.clone(),
-            azure: self.azure_devops_client.clone(),
+            github: (!commit_check)
+                .then(|| self.github_client.clone())
+                .flatten(),
+            azure: (!commit_check)
+                .then(|| self.azure_devops_client.clone())
+                .flatten(),
         })
     }
 
@@ -151,7 +183,7 @@ impl CoreRuntime {
             return Ok(DeterministicStepOutcome::Routine);
         }
         let task_id = observation.snapshot.task_id;
-        let (verdict, evidence) = match decide(&observation.check, &observation.read) {
+        let (verdict, evidence) = match decide_step(&observation.check, &observation.read) {
             DeterministicDecision::Fallback(reason) => {
                 self.mark_step_evaluation(
                     &capability,
@@ -205,26 +237,51 @@ impl DeterministicStepPlan {
     /// Runs the fresh Git and provider read. Blocking; call without the core
     /// lock.
     pub fn observe(self) -> DeterministicStepObservation {
-        let read = read_task_branch_pull_requests(
-            &self.snapshot,
-            &self.github,
-            &self.azure,
-            self.check.kind == PlaybookDeterministicCheckKind::PullRequestChecksPassing,
-        );
+        let read = if self.is_commit_check() {
+            StepRead::Commits(read_task_branch_commits(
+                &self.snapshot,
+                self.commits.as_ref(),
+            ))
+        } else {
+            StepRead::PullRequests(read_task_branch_pull_requests(
+                &self.snapshot,
+                &self.github,
+                &self.azure,
+                self.check.kind == PlaybookDeterministicCheckKind::PullRequestChecksPassing,
+            ))
+        };
         self.observed(read)
     }
 
     /// The observation for a read that could not complete in time.
     pub fn timed_out(self) -> DeterministicStepObservation {
-        self.observed(PullRequestRead::Unavailable(Fallback::Timeout))
+        self.unavailable(Fallback::Timeout)
     }
 
     /// The observation for a read whose worker failed before answering.
     pub fn failed(self) -> DeterministicStepObservation {
-        self.observed(PullRequestRead::Unavailable(Fallback::ProviderFailure))
+        let reason = if self.is_commit_check() {
+            Fallback::CommitsUnavailable
+        } else {
+            Fallback::ProviderFailure
+        };
+        self.unavailable(reason)
     }
 
-    fn observed(self, read: PullRequestRead) -> DeterministicStepObservation {
+    fn is_commit_check(&self) -> bool {
+        self.check.kind == PlaybookDeterministicCheckKind::BranchCommitted
+    }
+
+    fn unavailable(self, reason: Fallback) -> DeterministicStepObservation {
+        let read = if self.is_commit_check() {
+            StepRead::Commits(CommitRead::Unavailable(reason))
+        } else {
+            StepRead::PullRequests(PullRequestRead::Unavailable(reason))
+        };
+        self.observed(read)
+    }
+
+    fn observed(self, read: StepRead) -> DeterministicStepObservation {
         DeterministicStepObservation {
             capability: self.capability,
             milestone_id: self.milestone_id,
@@ -233,6 +290,40 @@ impl DeterministicStepPlan {
             read,
         }
     }
+}
+
+fn read_task_branch_commits(
+    task: &TaskSnapshot,
+    probe: Option<&TaskBranchCommitProbe>,
+) -> CommitRead {
+    let (Some(branch), Some(probe)) = (&task.branch_name, probe) else {
+        return CommitRead::Unavailable(Fallback::NoTaskBranch);
+    };
+    match probe.observe() {
+        Ok(BranchCommitState::Available { base_ref, count }) => CommitRead::Read {
+            branch: branch.clone(),
+            base: short_ref(&String::from_utf8_lossy(base_ref.as_bytes())),
+            count,
+        },
+        Ok(BranchCommitState::Unavailable {
+            reason: BranchCommitUnavailable::BranchMissing,
+            ..
+        }) => CommitRead::Unavailable(Fallback::NoTaskBranch),
+        Ok(BranchCommitState::Unavailable { .. }) => {
+            CommitRead::Unavailable(Fallback::CommitsUnavailable)
+        }
+        Err(CoreError::GitObservationTimedOut) => CommitRead::Unavailable(Fallback::Timeout),
+        Err(_) => CommitRead::Unavailable(Fallback::CommitsUnavailable),
+    }
+}
+
+/// `refs/remotes/origin/main` reads as `origin/main` in evidence.
+fn short_ref(reference: &str) -> String {
+    reference
+        .strip_prefix("refs/remotes/")
+        .or_else(|| reference.strip_prefix("refs/heads/"))
+        .unwrap_or(reference)
+        .to_owned()
 }
 
 fn read_task_branch_pull_requests(
@@ -409,8 +500,39 @@ fn summary_repository(summary: &PullRequestSummary) -> String {
     }
 }
 
-/// Decides one deterministic check from one fresh read. Pure, so the whole
-/// decision table is testable without a Git host.
+fn decide_step(check: &PlaybookDeterministicCheck, read: &StepRead) -> DeterministicDecision {
+    match read {
+        StepRead::PullRequests(read) => decide(check, read),
+        StepRead::Commits(read) => decide_commits(read),
+    }
+}
+
+/// A commit check passes on the first commit of the Task branch's own. Pure.
+pub(crate) fn decide_commits(read: &CommitRead) -> DeterministicDecision {
+    match read {
+        CommitRead::Unavailable(reason) => DeterministicDecision::Fallback(*reason),
+        CommitRead::Read {
+            branch,
+            base,
+            count: 0,
+        } => DeterministicDecision::Waiting(bounded_evidence(format!(
+            "{branch} has no commits of its own since {base}."
+        ))),
+        CommitRead::Read {
+            branch,
+            base,
+            count,
+        } => {
+            let commits = if *count == 1 { "commit" } else { "commits" };
+            DeterministicDecision::Passed(bounded_evidence(format!(
+                "{branch} has {count} {commits} of its own since {base}."
+            )))
+        }
+    }
+}
+
+/// Decides one deterministic pull request check from one fresh read. Pure, so
+/// the whole decision table is testable without a Git host.
 ///
 /// "Exactly one" is literal: more than one pull request that could satisfy the
 /// check is never narrowed to one without explicit policy.
@@ -447,6 +569,10 @@ pub(crate) fn decide(
         PlaybookDeterministicCheckKind::PullRequestOpen
         | PlaybookDeterministicCheckKind::PullRequestChecksPassing => PullRequestState::Open,
         PlaybookDeterministicCheckKind::PullRequestMerged => PullRequestState::Merged,
+        // Never planned as a pull request read.
+        PlaybookDeterministicCheckKind::BranchCommitted => {
+            return DeterministicDecision::Fallback(Fallback::CommitsUnavailable);
+        }
     };
     let matching = in_state(wanted);
     if matching.len() > 1 {
@@ -516,6 +642,9 @@ pub(crate) fn decide(
         PlaybookDeterministicCheckKind::PullRequestOpen
         | PlaybookDeterministicCheckKind::PullRequestMerged => {
             DeterministicDecision::Passed(bounded_evidence(format!("{described}.")))
+        }
+        PlaybookDeterministicCheckKind::BranchCommitted => {
+            DeterministicDecision::Fallback(Fallback::CommitsUnavailable)
         }
         PlaybookDeterministicCheckKind::PullRequestChecksPassing => match found.checks {
             CheckState::Passing => DeterministicDecision::Passed(bounded_evidence(format!(

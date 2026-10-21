@@ -10,6 +10,7 @@ import {
   PLAYBOOK_CHECK_KINDS,
   playbookCheckDescription,
   playbookCheckKindLabel,
+  playbookCheckTakesBaseBranch,
   utf8ByteLength,
 } from "./playbook-policy.js";
 import "./playbook-check.css";
@@ -42,7 +43,8 @@ export function PlaybookCheckSelector({
     setChoice(human ? ROUTINE : check?.kind ?? ROUTINE);
     setBaseBranch(check?.baseBranch ?? "");
   }, [human, check?.kind, check?.baseBranch]);
-  const trimmedBase = baseBranch.trim();
+  const takesBase = choice !== ROUTINE && playbookCheckTakesBaseBranch(choice);
+  const trimmedBase = takesBase ? baseBranch.trim() : "";
   const next: PlaybookDeterministicCheckDto | null = human || choice === ROUTINE
     ? null
     : { kind: choice, baseBranch: trimmedBase === "" ? null : trimmedBase };
@@ -59,7 +61,7 @@ export function PlaybookCheckSelector({
           {PLAYBOOK_CHECK_KINDS.map((kind) => <option key={kind} value={kind}>{playbookCheckKindLabel(kind)}</option>)}
         </select>
       </label>
-      {!human && choice !== ROUTINE ? <label>Base branch
+      {!human && takesBase ? <label>Base branch
         <input aria-label="Pull request base branch" value={baseBranch} disabled={busy}
           placeholder="Any branch" spellCheck={false}
           onChange={(event) => setBaseBranch(event.target.value)} />
@@ -70,7 +72,7 @@ export function PlaybookCheckSelector({
     <p className="ap-hint">{human
       ? "Human gates wait for their approver, so they cannot use a pull request check."
       : next
-        ? `${playbookCheckDescription(next)} TermLoop reads the pull request directly; if the provider cannot answer, the agent Routine decides instead.`
+        ? `${playbookCheckDescription(next)} TermLoop reads ${takesBase ? "the pull request" : "the Task branch"} directly; if it cannot answer, the agent Routine decides instead.`
         : "The agent Routine checks the completion rule above with the verification instructions below."}</p>
     {baseTooLong ? <p className="ap-problem">Base branch is too long (max {PLAYBOOK_BASE_BRANCH_MAX_BYTES} bytes).</p> : null}
     {baseHasSpace ? <p className="ap-problem">Base branch cannot contain spaces.</p> : null}

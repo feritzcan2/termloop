@@ -84,7 +84,7 @@ mod task_records;
 pub(crate) use task_records::{BRIEF_LIMIT, TITLE_LIMIT};
 
 pub use branch_binding::{ObservedTaskBranchBinding, TaskBranchBindingPlan};
-pub(crate) use branch_commits::BranchCommitSummaryCache;
+pub(crate) use branch_commits::{BranchCommitSummaryCache, TaskBranchCommitProbe};
 pub use branch_commits::{
     ObservedTaskBranchCommitSummaries, TaskBranchCommitSummaryListPlan, TaskBranchCommitWatchTarget,
 };
