@@ -92,7 +92,7 @@ describe("Files sidebar", () => {
     expect(gitButton.getAttribute("aria-pressed")).toBe("true");
     expect(gitButton.title).toBe("Hide Source Control");
     expect([...container.querySelectorAll(".files-activity-bar button")].map((item) => item.getAttribute("aria-label")))
-      .toEqual(["Files sidebar", "Source Control sidebar", "Steward sidebar"]);
+      .toEqual(["Files sidebar", "Source Control sidebar", "Steward sidebar", "Agents sidebar", "Skills sidebar", "Context sidebar"]);
   });
 
   it("searches inside the Explorer, collapses folders and closes", async () => {

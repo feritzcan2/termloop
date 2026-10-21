@@ -109,3 +109,4 @@
 .file-editor-status { display: flex; gap: 16px; min-width: 0; padding: 4px 14px; border-top: 1px solid var(--border); background: var(--bg-sidebar); color: var(--text-muted); font: 10.5px/1.4 var(--font-ui); }
 .file-editor-status > span:first-child { flex: 1; min-width: 0; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .file-editor-message { margin: 28px; color: var(--text-secondary); line-height: 1.6; }
+.files-sidebar.library-sidebar { grid-template-rows: auto minmax(0, 1fr); }

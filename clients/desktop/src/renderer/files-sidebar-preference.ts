@@ -1,4 +1,4 @@
-/// Client-local presentation preference for the right-hand sidebar (Files, Source Control or Steward).
+/// Client-local presentation preference for the right-hand sidebar and its view.
 /// Core owns none of it; a blocked store only loses the remembered layout.
 const FILES_SIDEBAR_KEY = "termloop.filesSidebar.v1";
 
@@ -9,7 +9,8 @@ export const FILES_SIDEBAR_DEFAULT_WIDTH = 300;
 export const FILES_ACTIVITY_BAR_WIDTH = 40;
 const WORKSPACE_MIN_WIDTH = 360;
 
-export type RightSidebarView = "files" | "sourceControl" | "steward";
+const RIGHT_SIDEBAR_VIEWS = ["files", "sourceControl", "steward", "agents", "skills", "context"] as const;
+export type RightSidebarView = typeof RIGHT_SIDEBAR_VIEWS[number];
 export type FilesSidebarPreference = { open: boolean; view: RightSidebarView; width: number };
 
 const DEFAULT: FilesSidebarPreference = { open: false, view: "files", width: FILES_SIDEBAR_DEFAULT_WIDTH };
@@ -30,7 +31,7 @@ export function readFilesSidebarPreference(storage?: Pick<Storage, "getItem">): 
     const { open, view, width } = parsed as Record<string, unknown>;
     return {
       open: open === true,
-      view: view === "sourceControl" || view === "steward" ? view : "files",
+      view: RIGHT_SIDEBAR_VIEWS.find((candidate) => candidate === view) ?? "files",
       width: typeof width === "number" && Number.isFinite(width) ? Math.max(FILES_SIDEBAR_MIN_WIDTH, Math.min(FILES_SIDEBAR_MAX_WIDTH, Math.round(width))) : DEFAULT.width,
     };
   } catch {
