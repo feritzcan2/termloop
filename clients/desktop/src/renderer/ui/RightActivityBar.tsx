@@ -5,7 +5,14 @@ const ITEMS: readonly { view: RightSidebarView; label: string; short: string; ic
   { view: "files", label: "Files", short: "Files", icon: "folder" },
   { view: "sourceControl", label: "Source Control", short: "Git", icon: "branch" },
   { view: "steward", label: "Steward", short: "Steward", icon: "sparkles" },
+  { view: "agents", label: "Agents", short: "Agents", icon: "agent" },
+  { view: "skills", label: "Skills", short: "Skills", icon: "star" },
+  { view: "context", label: "Context", short: "Context", icon: "fileText" },
 ];
+
+export function rightSidebarLabel(view: RightSidebarView): string {
+  return ITEMS.find((item) => item.view === view)!.label;
+}
 
 /// Always visible at the window's right edge, like Orca's activity bar.
 /// Choosing the open view closes the sidebar; choosing another switches it.

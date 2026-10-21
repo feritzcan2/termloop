@@ -29,7 +29,6 @@
 .agent-profile-manage { display: block; width: 100%; border: 0; border-top: 1px solid var(--border); background: transparent; text-align: left; padding: 12px 10px 6px; color: var(--accent); cursor: pointer; font-size: 12px; }
 @media (max-width: 700px) { .agent-profile-fields { grid-template-columns: 1fr; } }
 
-.agent-library-navigation { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
 .agents-rail .settings-rail-toolbar { grid-template-columns: minmax(0, 1fr) auto auto; }
 .quick-action-header > label { white-space: nowrap; }
 .quick-action:has(.agent-profile-popover) { overflow: visible; }

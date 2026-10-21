@@ -1,7 +1,7 @@
 import { FileEditorOverlay } from "./FileEditorOverlay.js";
 import { useOverlayLeaseCount } from "./overlay-lease.js";
 import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
-import { RightActivityBar } from "./RightActivityBar.js";
+import { RightActivityBar, rightSidebarLabel } from "./RightActivityBar.js";
 import { SourceControlSidebar } from "./SourceControlSidebar.js";
 import { useSourceControl } from "./use-source-control.js";
 import type { SourceControlApi, SourceControlSubject } from "../source-control-status.js";
@@ -52,12 +52,9 @@ import { AgentSetupDialog } from "./AgentSetupDialog.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import { useSettingsLibrary } from "./settings-library.js";
 import { StageEditorPlaceholder } from "./StageEditorPlaceholder.js";
-import { promptImproveTarget, type PromptAsset } from "../prompt-settings.js";
 import { defaultAgentPermission, readQuickActionPreset, type QuickActionAgentSelection } from "../quick-action-memory.js";
-import { McpRail } from "./McpRail.js";
 import { McpToolPanel } from "./McpToolPanel.js";
 import { PromptPanel } from "./PromptPanel.js";
-import { PromptsRail } from "./PromptsRail.js";
 import { SkillEditorPanel } from "./SkillEditorPanel.js";
 import { SkillsRail, type RemoteSkillComputer } from "./SkillsRail.js";
 import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
@@ -443,10 +440,6 @@ export function openImproverSession(
   openWorkspaceSession(dismissChanges, dismissStagePages, navigate, sessionId);
 }
 
-/// Which list owns the sidebar. Skills, MCP, and Prompts are peers of the
-/// Workspace rail rather than dialogs, so the tab row above them never moves.
-export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts" | "agents";
-
 /// The page currently covering the terminal stage, addressed by what it edits.
 export type StagePage =
   | { kind: "agent"; id?: string; duplicate?: boolean }
@@ -656,7 +649,6 @@ export function Shell(props: ShellProps) {
     setQuickActionAgent(undefined);
     setImproverSetup({ kind: "run", projectId, target });
   }, []);
-  const [railMode, setRailMode] = useState<RailMode>("workspace");
   const [contextBankRefreshToken, setContextBankRefreshToken] = useState(0);
   const [workspaceViewMemory, setWorkspaceViewMemory] = useState(readWorkspaceViewMemory);
   const workspaceView = workspaceViewForProject(workspaceViewMemory, props.selectedProject?.id);
@@ -692,8 +684,8 @@ export function Shell(props: ShellProps) {
   const [agentSearchOpen, setAgentSearchOpen] = useState(false);
   const [taskCreateRequested, setTaskCreateRequested] = useState(false);
   useEffect(() => {
-    if (railMode !== "workspace" || workspaceView !== "agents") setAgentSearchOpen(false);
-  }, [railMode, workspaceView]);
+    if (workspaceView !== "agents") setAgentSearchOpen(false);
+  }, [workspaceView]);
   const [archivedRailOverlayOpen, setArchivedRailOverlayOpen] = useOverlayLeaseCount();
   const [playbookOverlayOpen, setPlaybookOverlayOpen] = useOverlayLeaseCount();
   const howItWorksOverlay = useMemo(
@@ -890,6 +882,7 @@ export function Shell(props: ShellProps) {
   const toggleRightSidebar = (view: RightSidebarView) => {
     const toggle = rightSidebarToggle(filesSidebar, view);
     if (toggle.clearAssistant) setAssistantSelection(undefined);
+    if (toggle.update.open && view === "agents") props.agentLibrary?.reload();
     updateFilesSidebar(toggle.update);
   };
   const toggleFilesSidebar = () => toggleRightSidebar("files");
@@ -1087,23 +1080,15 @@ export function Shell(props: ShellProps) {
     },
     [dismissChanges, updateFilesSidebar],
   );
-  const toggleRail = useCallback(
-    (mode: Exclude<RailMode, "workspace">) => setRailMode((current) => current === mode ? "workspace" : mode),
-    [],
-  );
   const revealStewardRail = useCallback(() => updateFilesSidebar({ open: true, view: "steward" }), [updateFilesSidebar]);
-  const selectWorkspaceView = useCallback((view: WorkspaceView) => {
-    setRailMode("workspace");
-    setWorkspaceView(view);
-  }, [setWorkspaceView]);
   const assistantStageVisible = shellAssistantStageVisible(filesSidebar.open ? filesSidebar.view : undefined, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
-    railMode === "mcp" || stagePage?.kind === "mcpTool",
+    stagePage?.kind === "mcpTool",
   );
   const promptLibrary = useSettingsLibrary(
     props.loadPromptAssets,
-    railMode === "prompts" || stagePage?.kind === "prompt",
+    stagePage?.kind === "prompt",
   );
   const stageMcpTool = stagePage?.kind === "mcpTool"
     ? mcpLibrary.value?.tools.find((tool) => tool.name === stagePage.id)
@@ -1111,23 +1096,8 @@ export function Shell(props: ShellProps) {
   const stagePrompt = stagePage?.kind === "prompt"
     ? promptLibrary.value?.find((prompt) => prompt.id === stagePage.id)
     : undefined;
-  const improvePrompt = useCallback((prompt: PromptAsset) => {
-    const target = promptImproveTarget(prompt);
-    if (!target || !props.selectedProject) return;
-    if (target.kind === "assistant") {
-      openPromptImproverSetup({ surface: target.surface, ownerId: target.ownerId });
-      return;
-    }
-    openSettingsImproverSetup(
-      { kind: "prompt", id: target.id, name: target.name, path: target.path, content: target.content },
-      `${target.name} prompt`,
-    );
-  }, [openPromptImproverSetup, openSettingsImproverSetup, props.selectedProject]);
   const openPromptPage = useCallback(
-    (promptId: string) => {
-      setRailMode("prompts");
-      openStagePage({ kind: "prompt", id: promptId });
-    },
+    (promptId: string) => openStagePage({ kind: "prompt", id: promptId }),
     [openStagePage],
   );
   const openPlaybookBuilder = useCallback(() => {
@@ -1310,7 +1280,7 @@ export function Shell(props: ShellProps) {
     },
     {
       id: "view.history", title: "Session History", detail: "Open inactive TermLoop Agents and local Claude or Codex conversations.", group: "Session", keywords: ["resume", "vault", "past"],
-      disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
+      disabled: !props.selectedProject, perform: () => setWorkspaceView("history"),
     },
     {
       id: "view.files", title: filesSidebar.open && filesSidebar.view === "files" ? "Hide Files Sidebar" : "Show Files Sidebar", detail: "Browse and search Project and Task files on the right.", group: "Session", keywords: ["explorer", "tree", "browse", "search", "open"],
@@ -1604,20 +1574,12 @@ export function Shell(props: ShellProps) {
               ) : null}
             </div>
           </ProjectCheckoutHeader>
-          <nav className="agent-library-navigation" aria-label="Libraries">
-            <button className="agent-library-trigger prompt-settings-trigger" type="button" aria-pressed={railMode === "agents"} onClick={() => { toggleRail("agents"); props.agentLibrary?.reload(); }}><span aria-hidden="true" /><strong>Agents</strong></button>
-            <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
-            <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
-            <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
-            <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
-          </nav>
           <WorkspaceViewSwitch
             setupAgents={() => setSettingsPage("servers")}
             view={workspaceView}
-            viewActive={railMode === "workspace"}
             disabled={disabled}
             agents={props.agentCapabilities}
-            select={selectWorkspaceView}
+            select={setWorkspaceView}
             launchTerminal={props.launchTerminal}
             launchAgent={launchOrConfigureAgent}
             providerShortcuts={providerShortcuts}
@@ -1666,78 +1628,17 @@ export function Shell(props: ShellProps) {
             } : undefined}
             attentionCount={activeAgentAttentionCount}
             taskAttentionCount={taskAttentionCount}
-            viewAction={railMode !== "workspace"
-              ? undefined
-              : workspaceView === "overview"
+            viewAction={workspaceView === "overview"
                 ? { label: "Create Task", icon: "add", disabled, run: () => setTaskCreateRequested(true) }
                 : workspaceView === "agents"
                   ? { label: agentSearchOpen ? "Close agent search" : "Search active agents", icon: "search", pressed: agentSearchOpen, run: () => setAgentSearchOpen((open) => !open) }
                   : undefined}
-            settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
+            settingsAction={workspaceView === "overview" && props.selectedProject
               ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
           />
-          <LibraryScopeHeader section={railMode} context={settingsScope} />
           <div ref={sidebarScrollRef} className="sidebar-scroll">
-          {railMode === "skills" ? <SkillsRail
-            key={props.selectedProject?.id ?? "global"}
-            load={props.loadSkillCatalog}
-            setDeployment={props.setSkillDeployment}
-            connectionProfiles={props.connectionProfiles}
-            listRemoteComputers={props.listRemoteSkillComputers}
-            loadRemoteCatalog={props.loadRemoteSkillCatalog}
-            createRemoteSkill={props.createRemoteSkill}
-            openEditor={(skillId, scope) => openStagePage({ kind: "skill", id: skillId, scope })}
-            improveSkill={props.selectedProject
-              ? (skillId, name) => openSettingsImproverSetup(
-                { kind: "skill", id: skillId, name: null, path: null, content: null },
-                `${name} skill`,
-              )
-              : undefined}
-            disabled={disabled}
-          /> : railMode === "context" ? <ContextBankRail
-            projectOpen={Boolean(props.selectedProject)}
-            load={props.loadContextBankCatalog}
-            refreshToken={contextBankRefreshToken}
-            selectedFileId={stagePage?.kind === "contextFile" ? stagePage.id : undefined}
-            openFile={(fileId) => openStagePage({ kind: "contextFile", id: fileId })}
-            resolveConflict={props.resolveContextBankSiblingConflict}
-          /> : railMode === "mcp" ? <McpRail
-            settings={mcpLibrary.value}
-            error={mcpLibrary.error}
-            loading={mcpLibrary.loading}
-            selectedTool={stagePage?.kind === "mcpTool" ? stageMcpTool?.name : undefined}
-            openTool={(tool) => openStagePage({ kind: "mcpTool", id: tool })}
-            improveTool={props.selectedProject
-              ? (tool, title) => openSettingsImproverSetup(
-                { kind: "mcpTool", id: tool, name: null, path: null, content: null },
-                title,
-              )
-              : undefined}
-            reload={mcpLibrary.reload}
-          /> : railMode === "agents" && props.agentLibrary ? <AgentsRail
-            library={props.agentLibrary}
-            selectedId={stagePage?.kind === "agent" ? stagePage.id : undefined}
-            open={(id) => openStagePage({ kind: "agent", id })}
-            create={() => openStagePage({ kind: "agent" })}
-            creator={{
-              available: Boolean(props.selectedProject && props.startAgentCreator),
-              start: async () => {
-                const failure = await props.startAgentCreator?.();
-                if (!failure) dismissStagePages();
-                return failure;
-              },
-              setup: () => { if (props.selectedProject) setImproverSetup({ kind: "agentCreator", projectId: props.selectedProject.id }); },
-            }}
-          /> : railMode === "prompts" ? <PromptsRail
-            prompts={promptLibrary.value}
-            error={promptLibrary.error}
-            loading={promptLibrary.loading}
-            selectedId={stagePage?.kind === "prompt" ? stagePage.id : undefined}
-            openPrompt={openPromptPage}
-            improvePrompt={props.selectedProject ? improvePrompt : undefined}
-            reload={promptLibrary.reload}
-          /> : <><WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
+          <WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
@@ -1897,11 +1798,11 @@ export function Shell(props: ShellProps) {
               });
             }}
             restoreDeletedSession={deleted.restore}
-          /> : null}</>}
+          /> : null}
           </div>
-          {railMode === "workspace" && workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}
+          {workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}
           {/* Archived Agent history lives in History; this footer is Task-only. */}
-          {railMode === "workspace" ? <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
+          <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
             tasks={archived.tasks}
             loading={archived.loading}
             disabled={disabled}
@@ -1914,7 +1815,7 @@ export function Shell(props: ShellProps) {
             })}
             overlayVisibilityChanged={setArchivedRailOverlayOpen}
             overlayContainer={props.overlayContainer}
-          /></WorkspaceRailCache> : null}
+          /></WorkspaceRailCache>
           {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
             {assistantProjectId ? <StewardPetHost
@@ -2200,7 +2101,53 @@ export function Shell(props: ShellProps) {
             reset={() => updateFilesSidebar({ width: FILES_SIDEBAR_DEFAULT_WIDTH })}
             draggingChanged={setSidebarDragging}
           />
-          {filesSidebar.view === "steward" ? <aside className="files-sidebar steward-sidebar" aria-label="Steward">
+          {filesSidebar.view === "agents" || filesSidebar.view === "skills" || filesSidebar.view === "context" ? <aside className="files-sidebar library-sidebar" aria-label={rightSidebarLabel(filesSidebar.view)}>
+            <header className="files-sidebar-header">
+              <h2>{rightSidebarLabel(filesSidebar.view)}</h2>
+              <button type="button" className="icon-button quiet" aria-label={`Close ${rightSidebarLabel(filesSidebar.view)} sidebar`} title={`Close ${rightSidebarLabel(filesSidebar.view)} sidebar`} onClick={() => updateFilesSidebar({ open: false })}><Icon name="close" /></button>
+            </header>
+            <div className="files-sidebar-body">
+              <LibraryScopeHeader section={filesSidebar.view} context={settingsScope} />
+              {filesSidebar.view === "skills" ? <SkillsRail
+                key={props.selectedProject?.id ?? "global"}
+                load={props.loadSkillCatalog}
+                setDeployment={props.setSkillDeployment}
+                connectionProfiles={props.connectionProfiles}
+                listRemoteComputers={props.listRemoteSkillComputers}
+                loadRemoteCatalog={props.loadRemoteSkillCatalog}
+                createRemoteSkill={props.createRemoteSkill}
+                openEditor={(skillId, scope) => openStagePage({ kind: "skill", id: skillId, scope })}
+                improveSkill={props.selectedProject
+                  ? (skillId, name) => openSettingsImproverSetup(
+                    { kind: "skill", id: skillId, name: null, path: null, content: null },
+                    `${name} skill`,
+                  )
+                  : undefined}
+                disabled={disabled}
+              /> : filesSidebar.view === "context" ? <ContextBankRail
+                projectOpen={Boolean(props.selectedProject)}
+                load={props.loadContextBankCatalog}
+                refreshToken={contextBankRefreshToken}
+                selectedFileId={stagePage?.kind === "contextFile" ? stagePage.id : undefined}
+                openFile={(fileId) => openStagePage({ kind: "contextFile", id: fileId })}
+                resolveConflict={props.resolveContextBankSiblingConflict}
+              /> : props.agentLibrary ? <AgentsRail
+                library={props.agentLibrary}
+                selectedId={stagePage?.kind === "agent" ? stagePage.id : undefined}
+                open={(id) => openStagePage({ kind: "agent", id })}
+                create={() => openStagePage({ kind: "agent" })}
+                creator={{
+                  available: Boolean(props.selectedProject && props.startAgentCreator),
+                  start: async () => {
+                    const failure = await props.startAgentCreator?.();
+                    if (!failure) dismissStagePages();
+                    return failure;
+                  },
+                  setup: () => { if (props.selectedProject) setImproverSetup({ kind: "agentCreator", projectId: props.selectedProject.id }); },
+                }}
+              /> : null}
+            </div>
+          </aside> : filesSidebar.view === "steward" ? <aside className="files-sidebar steward-sidebar" aria-label="Steward">
             <header className="files-sidebar-header">
               <h2>Steward</h2>
               <button type="button" className="icon-button quiet" aria-label="Close Steward sidebar" title="Close Steward sidebar" onClick={() => updateFilesSidebar({ open: false })}><Icon name="close" /></button>
@@ -2338,7 +2285,7 @@ export function Shell(props: ShellProps) {
           if (task.archived_at_epoch_ms !== null && result.status === "completed") archived.reload();
           return result;
         }}
-        reviewTasks={() => { setDeleteProjectOpen(false); selectWorkspaceView("overview"); }}
+        reviewTasks={() => { setDeleteProjectOpen(false); setWorkspaceView("overview"); }}
       /> : null}
       {renameTarget ? <RenameSessionDialog session={renameTarget} close={() => setRenameSessionId(undefined)} rename={(name) => props.renameSession(renameTarget.id, name)} /> : null}
       {providerHistoryRepairSession ? <ProviderHistoryRepairDialog
@@ -2362,7 +2309,7 @@ export function Shell(props: ShellProps) {
         profiles={props.agentLibrary?.value?.profiles ?? props.agentProfiles}
         libraryProfiles={props.agentLibrary?.value?.profiles ?? []}
         initialTemplateRef={quickActionProfile}
-        manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); setRailMode("agents"); props.agentLibrary?.reload(); }}
+        manageAgents={() => { setQuickActionOpen(false); setQuickActionProfile(undefined); updateFilesSidebar({ open: true, view: "agents" }); props.agentLibrary?.reload(); }}
         {...(quickActionAgent ? { initialAgent: quickActionAgent } : {})}
         pasteImage={props.pasteQuickActionImage}
         restoreImage={props.restoreQuickActionImage}

@@ -35,23 +35,18 @@ describe("settings scope", () => {
     expect(computerScopeName("Netcup", false)).toBe("Netcup");
   });
 
-  it.each(["agents", "mcp", "prompts", "skills", "context", "workspace"] as const)("omits the %s scope header during local-only use", (section) => {
+  it.each(["agents", "skills", "context"] as const)("omits the %s scope header during local-only use", (section) => {
     expect(renderToStaticMarkup(createElement(LibraryScopeHeader, { section }))).toBe("");
   });
 
   it("identifies the selected library's scope before an editor is opened", () => {
     const context = { computerName: "Felix’s Mac mini", projectName: "TermLoopMini" };
     const render = (section: Parameters<typeof LibraryScopeHeader>[0]["section"]) => renderToStaticMarkup(createElement(LibraryScopeHeader, { section, context }));
-    for (const section of ["agents", "mcp"] as const) {
-      expect(render(section)).toContain("Computer: Felix’s Mac mini");
-      expect(render(section)).not.toContain("TermLoopMini");
-    }
+    expect(render("agents")).toContain("Computer: Felix’s Mac mini");
+    expect(render("agents")).not.toContain("TermLoopMini");
     expect(render("context")).toContain("Project: TermLoopMini · Felix’s Mac mini");
-    expect(render("prompts")).toContain("Built-in prompts: This app · This computer");
-    expect(render("prompts")).toContain("Project prompts: TermLoopMini · Felix’s Mac mini");
     expect(render("skills")).toContain("Personal &amp; provider skills: Felix’s Mac mini");
     expect(render("skills")).toContain("Project skills: TermLoopMini · Felix’s Mac mini");
-    expect(render("workspace")).toBe("");
   });
 
   it("does not mislabel Context as computer-wide when there is no selected project", () => {
