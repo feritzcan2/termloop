@@ -463,6 +463,23 @@ pub(crate) fn decide(
         .map(|base| format!(" targeting {base}"))
         .unwrap_or_default();
     let Some(found) = matching.first() else {
+        // A merged pull request was opened first. Its CI is no longer read,
+        // so a checks step leaves that question to the Routine.
+        if wanted == PullRequestState::Open
+            && let [merged] = in_state(PullRequestState::Merged)[..]
+        {
+            return match check.kind {
+                PlaybookDeterministicCheckKind::PullRequestOpen => {
+                    DeterministicDecision::Passed(bounded_evidence(format!(
+                        "PR #{} from {branch} on {} was opened and has merged into {}.",
+                        merged.number,
+                        summary_repository(merged),
+                        merged.base_branch
+                    )))
+                }
+                _ => DeterministicDecision::Fallback(Fallback::ChecksUnsupported),
+            };
+        }
         let drafts = in_state(PullRequestState::Draft);
         let open = in_state(PullRequestState::Open);
         let merged_check = check.kind == PlaybookDeterministicCheckKind::PullRequestMerged;
