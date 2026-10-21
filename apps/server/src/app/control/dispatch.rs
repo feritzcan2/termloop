@@ -1651,6 +1651,9 @@ async fn dispatch_inner(
             "gitHost.repositoryPullRequestList" => {
                 super::handlers::git_host_repository_pull_request_list(request.params, state).await
             }
+            "gitHost.projectRepository" => {
+                super::handlers::git_host_project_repository(request.params, state).await
+            }
             "integration.statusList" => {
                 super::handlers::integration_status_list(request.params, state).await
             }

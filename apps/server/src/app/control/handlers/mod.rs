@@ -24,8 +24,9 @@ pub(super) use context_bank::{
     save_context_bank_file,
 };
 pub(in crate::app) use git_host::{
-    git_host_pull_request_change_list, git_host_pull_request_diff, git_host_pull_request_list,
-    git_host_pull_request_list_background, git_host_repository_pull_request_list,
+    git_host_project_repository, git_host_pull_request_change_list, git_host_pull_request_diff,
+    git_host_pull_request_list, git_host_pull_request_list_background,
+    git_host_repository_pull_request_list,
 };
 pub(in crate::app) use git_host::{
     project_list_local_branches, project_worktree_change_list, project_worktree_diff,

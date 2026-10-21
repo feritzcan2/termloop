@@ -4,8 +4,8 @@ use std::sync::atomic::Ordering;
 #[cfg(test)]
 use serde_json::json;
 use termloop_contract::current::{
-    GitHostProvider, GitHostPullRequestChangeListParams, GitHostPullRequestDiffParams,
-    GitHostPullRequestIdentityDto, GitHostPullRequestListParams,
+    GitHostProjectRepositoryParams, GitHostProvider, GitHostPullRequestChangeListParams,
+    GitHostPullRequestDiffParams, GitHostPullRequestIdentityDto, GitHostPullRequestListParams,
     GitHostRepositoryPullRequestFilter, GitHostRepositoryPullRequestListParams,
     ProjectListLocalBranchesParams, ProjectWorktreeChangeListParams, ProjectWorktreeSummaryParams,
     ProjectionInvalidatedPayload, ProjectionTopic, TaskProjectionEntityScopeDto,
@@ -146,6 +146,21 @@ pub(in crate::app) async fn git_host_repository_pull_request_list(
     .await
     .map_err(|_| CoreError::Store("repository pull request list timed out".into()))?
     .map_err(|error| CoreError::Store(format!("repository pull request list failed: {error}")))
+}
+
+pub(in crate::app) async fn git_host_project_repository(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let params = serde_json::from_value::<GitHostProjectRepositoryParams>(params)
+        .map_err(|_| CoreError::InvalidParams("gitHost.projectRepository".into()))?;
+    let plan = {
+        let core = state.core.lock().await;
+        core.plan_project_repository(&params.project_id)?
+    };
+    tokio::task::spawn_blocking(move || plan.observe())
+        .await
+        .map_err(|error| CoreError::Store(format!("project repository read failed: {error}")))
 }
 
 fn selection_from_dto(value: GitHostPullRequestIdentityDto) -> GitHostPullRequestSelection {

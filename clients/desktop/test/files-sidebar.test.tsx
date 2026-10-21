@@ -93,6 +93,8 @@ describe("Files sidebar", () => {
     expect(gitButton.title).toBe("Hide Source Control");
     expect([...container.querySelectorAll(".files-activity-bar button")].map((item) => item.getAttribute("aria-label")))
       .toEqual(["Files sidebar", "Source Control sidebar", "Steward sidebar", "Pull Requests sidebar", "Agents sidebar", "Skills sidebar", "Context sidebar"]);
+    await act(async () => root.render(<RightActivityBar open view="files" hidden={["pullRequests"]} select={select} />));
+    expect(container.querySelector('[aria-label="Pull Requests sidebar"]')).toBeNull();
   });
 
   it("searches inside the Explorer, collapses folders and closes", async () => {

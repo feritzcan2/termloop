@@ -632,6 +632,9 @@ handleIpc("termloop:git-host-pull-request-list", (_event, projectId: string, tas
 handleIpc("termloop:git-host-repository-pull-request-list", (_event, projectId: string, filter: GitHostRepositoryPullRequestFilter) =>
   controlCall("gitHost.repositoryPullRequestList", { projectId, filter }),
 );
+handleIpc("termloop:git-host-project-repository", (_event, projectId: string) =>
+  controlCall("gitHost.projectRepository", { projectId }),
+);
 handleIpc(
   "termloop:git-host-pull-request-change-list",
   (

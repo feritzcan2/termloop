@@ -12,9 +12,9 @@ import { Icon } from "./Icon.js";
 import "../../pull-requests.css";
 
 const FILTERS: readonly { filter: GitHostRepositoryPullRequestFilter; label: string }[] = [
-  { filter: "all", label: "All" },
   { filter: "authored", label: "Mine" },
   { filter: "reviewRequested", label: "Review requested" },
+  { filter: "all", label: "All" },
 ];
 
 function repositoryPullRequestReasonCopy(reason: GitHostProjectionReason): string {
@@ -54,7 +54,7 @@ export function PullRequestsSidebar({ projectId, load, openExternal, close, unav
   close(): void;
   unavailable: boolean;
 }) {
-  const [filter, setFilter] = useState<GitHostRepositoryPullRequestFilter>("all");
+  const [filter, setFilter] = useState<GitHostRepositoryPullRequestFilter>("authored");
   const [reloadToken, setReloadToken] = useState(0);
   const [result, setResult] = useState<GitHostRepositoryPullRequestListResult>();
   const [error, setError] = useState<string>();

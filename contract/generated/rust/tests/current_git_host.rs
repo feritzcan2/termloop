@@ -229,3 +229,24 @@ fn pull_request_value() -> serde_json::Value {
         "merge_conflict": "unknown", "created_at_epoch_ms": null, "updated_at_epoch_ms": 0
     })
 }
+
+#[test]
+fn project_repository_is_full_control_only_and_identity_only() {
+    assert!(!READ_ONLY_METHODS.contains(&"gitHost.projectRepository"));
+    assert!(validate_method_params(
+        "gitHost.projectRepository",
+        &json!({"projectId":"project"}),
+    ));
+    assert!(validate_method_result(
+        "gitHost.projectRepository",
+        &json!({"repository_provider":"azureDevOps", "repository_owner":"valuespaces", "repository_project":"Nucleus", "repository_name":"Nucleus", "reason":null}),
+    ));
+    assert!(validate_method_result(
+        "gitHost.projectRepository",
+        &json!({"repository_provider":null, "repository_owner":null, "repository_project":null, "repository_name":null, "reason":"noRemote"}),
+    ));
+    assert!(!validate_method_result(
+        "gitHost.projectRepository",
+        &json!({"repository_provider":"github", "repository_owner":"acme", "repository_project":null, "repository_name":"widget", "reason":null, "pull_requests":[]}),
+    ));
+}

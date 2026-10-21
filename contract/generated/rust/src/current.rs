@@ -216,7 +216,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:8c465292e79770cb4760dacc2e86e5e4941b1e4296e4ce892f6821bd1efbee81";
+    "sha256:b68caf4be4244c41c26d1b1711016cd9435ba098f31d51a420da6fd9d050f09b";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -405,6 +405,7 @@ pub const METHODS: &[&str] = &[
     "integration.azureDevOpsTokenSet",
     "gitHost.pullRequestDiff",
     "gitHost.repositoryPullRequestList",
+    "gitHost.projectRepository",
     "agent.libraryGet",
     "agent.profileCreate",
     "agent.profileUpdate",
@@ -5303,6 +5304,28 @@ pub enum GitHostRepositoryPullRequestFilter {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct GitHostProjectRepositoryParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GitHostProjectRepositoryResult {
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub repository_provider: Option<GitHostProvider>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub repository_owner: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub repository_project: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub repository_name: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub reason: Option<GitHostProjectionReason>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GitHostRepositoryPullRequestListParams {
     #[serde(rename = "projectId")]
     pub project_id: String,
@@ -9900,6 +9923,7 @@ fn validate_method(value: &Value) -> bool {
             "integration.azureDevOpsTokenSet",
             "gitHost.pullRequestDiff",
             "gitHost.repositoryPullRequestList",
+            "gitHost.projectRepository",
             "agent.libraryGet",
             "agent.profileCreate",
             "agent.profileUpdate",
@@ -21739,6 +21763,74 @@ fn validate_git_host_repository_pull_request_filter(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_git_host_project_repository_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("projectId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .keys()
+                .all(|key| ["projectId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_git_host_project_repository_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("repository_provider")
+            .is_some_and(|field| (validate_git_host_provider(field) || field.is_null()))
+            && object.get("repository_owner").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)
+                    || field.is_null())
+            })
+            && object.get("repository_project").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                    || field.is_null())
+            })
+            && object.get("repository_name").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 100)
+                    || field.is_null())
+            })
+            && object.get("reason").is_some_and(|field| {
+                (validate_git_host_projection_reason(field) || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "repository_provider",
+                    "repository_owner",
+                    "repository_project",
+                    "repository_name",
+                    "reason",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_git_host_repository_pull_request_list_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -33349,6 +33441,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<GitHostRepositoryPullRequestListParams>(params.clone()).is_ok()
                 && validate_git_host_repository_pull_request_list_params(params)
         }
+        "gitHost.projectRepository" => {
+            serde_json::from_value::<GitHostProjectRepositoryParams>(params.clone()).is_ok()
+                && validate_git_host_project_repository_params(params)
+        }
         "agent.libraryGet" => {
             serde_json::from_value::<AgentLibraryGetParams>(params.clone()).is_ok()
                 && validate_empty_params(params)
@@ -34262,6 +34358,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "gitHost.repositoryPullRequestList" => {
             serde_json::from_value::<GitHostRepositoryPullRequestListResult>(result.clone()).is_ok()
                 && validate_git_host_repository_pull_request_list_result(result)
+        }
+        "gitHost.projectRepository" => {
+            serde_json::from_value::<GitHostProjectRepositoryResult>(result.clone()).is_ok()
+                && validate_git_host_project_repository_result(result)
         }
         "agent.libraryGet" => {
             serde_json::from_value::<AgentLibraryGetResult>(result.clone()).is_ok()

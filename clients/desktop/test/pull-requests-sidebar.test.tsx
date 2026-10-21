@@ -59,7 +59,7 @@ describe("Pull Requests sidebar", () => {
     const load = vi.fn(async () => listed([pullRequest()]));
     const openExternal = await render({ load });
 
-    expect(load).toHaveBeenCalledWith("project", "all");
+    expect(load).toHaveBeenCalledWith("project", "authored");
     expect(container.querySelector(".pull-requests-repository")?.textContent).toBe("acme/widget");
     const row = container.querySelector<HTMLButtonElement>(".pull-request-row")!;
     expect(row.textContent).toContain("#42 Add the PR sidebar");
@@ -70,15 +70,16 @@ describe("Pull Requests sidebar", () => {
     expect(openExternal).toHaveBeenCalledWith("https://github.com/acme/widget/pull/42");
   });
 
-  it("reloads for each filter and for refresh", async () => {
+  it("starts on Mine and reloads for each filter and for refresh", async () => {
     const load = vi.fn(async (_projectId: string, _filter: GitHostRepositoryPullRequestFilter) => listed([]));
     await render({ load });
-    expect(container.textContent).toContain("No open pull requests.");
-
-    await act(async () => button("Mine").click());
     expect(load).toHaveBeenLastCalledWith("project", "authored");
     expect(button("Mine").getAttribute("aria-pressed")).toBe("true");
     expect(container.textContent).toContain("You have no open pull requests.");
+
+    await act(async () => button("All").click());
+    expect(load).toHaveBeenLastCalledWith("project", "all");
+    expect(container.textContent).toContain("No open pull requests.");
 
     await act(async () => button("Review requested").click());
     expect(load).toHaveBeenLastCalledWith("project", "reviewRequested");
