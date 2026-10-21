@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFilesParams } from "@termloop/contract/current";
 import type { FilesSubject } from "../src/renderer/file-browser.js";
 import { FilesOverlay } from "../src/renderer/ui/FilesOverlay.js";
-import { FilesRail } from "../src/renderer/ui/FilesRail.js";
+import type { FilesSidebarTab } from "../src/renderer/files-sidebar-preference.js";
+import { FilesSidebar, FilesSidebarResizeHandle } from "../src/renderer/ui/FilesSidebar.js";
 import { useFileBrowser } from "../src/renderer/ui/use-file-browser.js";
 import { WorkspaceViewSwitch } from "../src/renderer/ui/WorkspaceViewSwitch.js";
 
@@ -22,12 +23,16 @@ describe("Files sidebar", () => {
   const noMatches = ({ query }: WorkspaceFileSearchParams): WorkspaceFileSearchResult => ({ query, entries: [], total: 0, incomplete: false, unreadable: false });
   const searchFiles = vi.fn(async (params: WorkspaceFileSearchParams) => noMatches(params));
   const selectRoot = vi.fn();
+  const close = vi.fn();
+  let initialTab: FilesSidebarTab = "explorer";
 
   function Harness({ subject, identity = "root" }: { subject: FilesSubject | undefined; identity?: string }) {
     const { browser, snapshot } = useFileBrowser(subject, identity, list, read, searchFiles);
+    const [tab, setTab] = useState(initialTab);
     return <>
-      <aside><FilesRail subject={subject} projectName="Project" tasks={[{ id: "task", title: "Task" }]}
-        browser={browser} snapshot={snapshot} selectRoot={selectRoot} openFile={(path) => void browser.select(path)} unavailable={!subject} /></aside>
+      <FilesSidebar subject={subject} projectName="Project" tasks={[{ id: "task", title: "Task" }]}
+        browser={browser} snapshot={snapshot} tab={tab} selectTab={setTab} selectRoot={selectRoot}
+        openFile={(path) => void browser.select(path)} close={close} unavailable={!subject} />
       <main><div data-terminal-host="true" />{subject && snapshot.preview.status !== "empty"
         ? <FilesOverlay subject={subject} preview={snapshot.preview} close={browser.clearPreview} /> : null}</main>
     </>;
@@ -46,8 +51,13 @@ describe("Files sidebar", () => {
     await act(async () => vi.advanceTimersByTimeAsync(120));
   };
 
+  const selectTab = async (name: string) => {
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent === name)!.click());
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    initialTab = "explorer";
     list.mockReset().mockResolvedValue(directory);
     read.mockReset().mockResolvedValue(content("Project file"));
     searchFiles.mockReset().mockImplementation(async (params) => noMatches(params));
@@ -63,16 +73,50 @@ describe("Files sidebar", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("places Files after Steward and selects it independently", async () => {
+  it("toggles the right Files sidebar beside the rail views instead of replacing them", async () => {
     const select = vi.fn();
-    await act(async () => root.render(<WorkspaceViewSwitch view="files" disabled={false} select={select}
-      launchTerminal={async () => {}} launchAgent={async () => {}} />));
-    expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["Agents", "Tasks", "✦Steward", "Files"]);
-    const filesTab = button('[aria-label="Project files view"]');
-    expect(filesTab.getAttribute("aria-selected")).toBe("true");
-    await act(async () => filesTab.click());
-    expect(select).toHaveBeenCalledWith("files");
-    expect(container.querySelector('[aria-label="Launch Session"]')).toBeNull();
+    const toggle = vi.fn();
+    await act(async () => root.render(<WorkspaceViewSwitch view="agents" disabled={false} select={select}
+      launchTerminal={async () => {}} launchAgent={async () => {}} filesSidebar={{ open: true, toggle }} />));
+    expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["Agents", "Tasks", "✦Steward"]);
+    const filesToggle = button('[aria-label="Files sidebar"]');
+    expect(filesToggle.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => filesToggle.click());
+    expect(toggle).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Launch Session"]')).not.toBeNull();
+  });
+
+  it("switches between Explorer and Search, collapses folders and closes", async () => {
+    list.mockImplementation(async ({ path }) => ({ path, truncated: false, entries: path === ""
+      ? [{ name: "src", path: "src", kind: "directory" }]
+      : [{ name: "nested.ts", path: "src/nested.ts", kind: "file" }] }));
+    await render(project);
+    const tree = () => container.querySelector('[aria-label="Workspace files"]')!;
+    await act(async () => button('[role="treeitem"]').click());
+    expect(tree().textContent).toBe("srcnested.ts");
+    expect(container.querySelectorAll(".files-tree-guide")).toHaveLength(1);
+    await act(async () => button('[aria-label="Collapse all folders"]').click());
+    expect(tree().textContent).toBe("src");
+    expect(button('[aria-label="Collapse all folders"]').getAttribute("aria-disabled")).toBe("true");
+    await selectTab("Search");
+    expect(document.activeElement).toBe(searchInput());
+    expect(container.querySelector('[aria-label="Workspace files"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Collapse all folders"]')).toBeNull();
+    await selectTab("Explorer");
+    expect(tree().textContent).toBe("src");
+    await act(async () => button('[aria-label="Close Files sidebar"]').click());
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("resizes from its left edge with the pointer and the keyboard", async () => {
+    const resize = vi.fn();
+    await act(async () => root.render(<FilesSidebarResizeHandle width={300} maximum={500} resize={resize} reset={() => {}} draggingChanged={() => {}} />));
+    const handle = container.querySelector<HTMLElement>('[aria-label="Resize Files sidebar"]')!;
+    await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true })));
+    await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+    expect(resize.mock.calls).toEqual([[310], [260], [500]]);
   });
 
   it("keeps the tree in the sidebar and closes only the preview without replacing terminal hosts", async () => {
@@ -115,8 +159,9 @@ describe("Files sidebar", () => {
     expect(container.querySelector('[aria-label="File preview"]')).toBeNull();
   });
 
-  it("searches closed folders, opens keyboard results, refreshes and restores the tree on Escape", async () => {
+  it("searches closed folders, opens keyboard results, refreshes and clears on Escape", async () => {
     vi.useFakeTimers();
+    initialTab = "search";
     list.mockImplementation(async ({ path }) => ({ path, truncated: false, entries: path === ""
       ? [{ name: "src", path: "src", kind: "directory" }]
       : [{ name: "nested.ts", path: "src/nested.ts", kind: "file" }] }));
@@ -140,29 +185,34 @@ describe("Files sidebar", () => {
     await act(async () => searchInput().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(searchInput().value).toBe("");
     expect(document.activeElement).toBe(searchInput());
-    expect(container.querySelector('[aria-label="Workspace files"]')?.textContent).toBe("src");
+    expect(container.querySelector('[aria-label="File search results"]')).toBeNull();
     expect(container.querySelector('[aria-label="File preview"]')).not.toBeNull();
+    await selectTab("Explorer");
+    expect(container.querySelector('[aria-label="Workspace files"]')?.textContent).toBe("src");
     expect(container.querySelector("[data-terminal-host]")).toBe(terminal);
   });
 
   it("shows no matches, clears the query and resets search when the root changes", async () => {
     vi.useFakeTimers();
+    initialTab = "search";
     await render(project);
     await search("missing");
     expect(container.textContent).toContain("No matching files.");
     await act(async () => button('[aria-label="Clear file search"]').click());
     expect(searchInput().value).toBe("");
-    expect(container.querySelector('[aria-label="Workspace files"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="File search results"]')).toBeNull();
     await search("sample");
     await render(task);
     expect(searchInput().value).toBe("");
     expect(container.querySelector('[aria-label="File search results"]')).toBeNull();
     await render(undefined);
-    expect(searchInput().disabled).toBe(true);
+    expect(container.querySelector('[aria-label="Search files"]')).toBeNull();
+    expect(container.textContent).toContain("Connect to this computer to browse files.");
   });
 
   it("shows the daemon's top results with the full match count and partial-walk notice", async () => {
     vi.useFakeTimers();
+    initialTab = "search";
     searchFiles.mockImplementation(async ({ query }) => ({ query, total: 401, incomplete: true, unreadable: false,
       entries: Array.from({ length: 200 }, (_, i) => ({ name: `Subscription-${i}.cs`, path: `Subscription-${i}.cs`, kind: "file" as const })) }));
     await render(project);
@@ -177,6 +227,7 @@ describe("Files sidebar", () => {
 
   it("shows a daemon search failure without hiding the query", async () => {
     vi.useFakeTimers();
+    initialTab = "search";
     searchFiles.mockRejectedValue(new Error("Repository unavailable"));
     await render(project);
     await search("anything");

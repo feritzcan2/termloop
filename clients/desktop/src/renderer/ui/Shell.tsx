@@ -1,6 +1,6 @@
 import { FilesOverlay } from "./FilesOverlay.js";
 import { useOverlayLeaseCount } from "./overlay-lease.js";
-import { FilesRail } from "./FilesRail.js";
+import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult } from "@termloop/contract/current";
@@ -122,6 +122,14 @@ import {
   sidebarMaximumWidth,
   writeSidebarWidth,
 } from "../sidebar-width.js";
+import {
+  FILES_SIDEBAR_DEFAULT_WIDTH,
+  clampFilesSidebarWidth,
+  filesSidebarMaximumWidth,
+  readFilesSidebarPreference,
+  writeFilesSidebarPreference,
+  type FilesSidebarPreference,
+} from "../files-sidebar-preference.js";
 
 type AssistantActions = Pick<StewardPanelProps,
   | "getConfiguration" | "setConfiguration" | "listTranscript" | "appendMessage"
@@ -584,6 +592,14 @@ export function Shell(props: ShellProps) {
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sessionDragging, setSessionDragging] = useState(false);
   const [filesPresentation, setFilesPresentation] = useState<{ projectId: string; taskId: string | null }>();
+  const [filesSidebar, setFilesSidebarState] = useState(readFilesSidebarPreference);
+  const updateFilesSidebar = useCallback((update: Partial<FilesSidebarPreference>) => {
+    setFilesSidebarState((current) => {
+      const next = { ...current, ...update };
+      writeFilesSidebarPreference(next);
+      return next;
+    });
+  }, []);
   const [changesPresentation, setChangesPresentation] = useState<
     | { kind: "task"; taskId: string; source: ChangesOpenSource }
     | { kind: "project" }
@@ -820,7 +836,7 @@ export function Shell(props: ShellProps) {
     || projectSourceGroups.some((group) => group.profileId !== "local");
   const filesTask = filesPresentation?.projectId === props.selectedProject?.id && filesPresentation?.taskId
     ? props.projectTasks.find((task) => task.id === filesPresentation.taskId && task.worktree) : undefined;
-  const filesSubject = railMode === "workspace" && workspaceView === "files" && props.selectedProject
+  const filesSubject = filesSidebar.open && props.selectedProject
     && props.connection === "connected" && props.selectedProject.connectionState !== "offline"
     ? { projectId: props.selectedProject.id, taskId: filesTask?.id ?? null, title: filesTask?.title ?? props.selectedProject.name } : undefined;
   const files = useFileBrowser(filesSubject, `${props.selectedProject?.folder_path}:${filesTask?.worktree_generation ?? 0}`,
@@ -828,11 +844,12 @@ export function Shell(props: ShellProps) {
   const filesPreviewVisible = Boolean(filesSubject && files.snapshot.preview.status !== "empty" && !changesPresentation);
   const openFiles = (taskId: string | null) => {
     if (!props.selectedProject) return;
-    setRailMode("workspace");
-    setWorkspaceView("files");
+    updateFilesSidebar({ open: true });
     setChangesPresentation(undefined);
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
+  const toggleFilesSidebar = () => updateFilesSidebar({ open: !filesSidebar.open });
+  const filesSidebarToggle = { open: filesSidebar.open, toggle: toggleFilesSidebar };
   useEffect(() => { if (changesPresentation) files.browser.clearPreview(); }, [changesPresentation, files.browser]);
   const changesTask = changesPresentation?.kind === "task"
     ? props.projectTasks.find((task) => task.id === changesPresentation.taskId)
@@ -1025,7 +1042,6 @@ export function Shell(props: ShellProps) {
   }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
-    if (view === "files") dismissChanges();
     if (view === "steward" && !assistantSelection && props.selectedProject) {
       openAssistant({ kind: "steward" });
       return;
@@ -1160,7 +1176,14 @@ export function Shell(props: ShellProps) {
     window.addEventListener("resize", fitSidebarToViewport);
     return () => window.removeEventListener("resize", fitSidebarToViewport);
   }, []);
-  const appShellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
+  const filesSidebarWidth = clampFilesSidebarWidth(filesSidebar.width, window.innerWidth, sidebarWidth);
+  const resizeFilesSidebar = useCallback((width: number) => {
+    updateFilesSidebar({ width: clampFilesSidebarWidth(width, window.innerWidth, sidebarWidth) });
+  }, [sidebarWidth, updateFilesSidebar]);
+  const appShellStyle = {
+    "--sidebar-width": `${sidebarWidth}px`,
+    ...(filesSidebar.open ? { "--files-sidebar-width": `${filesSidebarWidth}px` } : {}),
+  } as CSSProperties;
   const projectTriggerBounds = projectMenuOpen ? projectTriggerRef.current?.getBoundingClientRect() : undefined;
   const projectMenuStyle = projectTriggerBounds
     ? {
@@ -1240,6 +1263,10 @@ export function Shell(props: ShellProps) {
     {
       id: "view.history", title: "Session History", detail: "Open inactive TermLoop Agents and local Claude or Codex conversations.", group: "Session", keywords: ["resume", "vault", "past"],
       disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
+    },
+    {
+      id: "view.files", title: filesSidebar.open ? "Hide Files Sidebar" : "Show Files Sidebar", detail: "Browse and search Project and Task files on the right.", group: "Session", keywords: ["explorer", "tree", "browse", "search", "open"],
+      perform: toggleFilesSidebar,
     },
     {
       id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
@@ -1476,7 +1503,7 @@ export function Shell(props: ShellProps) {
         requestSplit={props.openSessionInSplitAtPane}
         draggingChanged={setSessionDragging}
       >
-      <div className="app-shell" style={appShellStyle}>
+      <div className={`app-shell${filesSidebar.open ? " files-sidebar-open" : ""}`} style={appShellStyle}>
         <aside className="sidebar" aria-label="Projects and sessions">
           {showsWindowDragRegion(platform) && <div className="window-drag-region" aria-hidden="true" />}
           <header className="brand-row">
@@ -1597,6 +1624,7 @@ export function Shell(props: ShellProps) {
             settingsAction={railMode === "workspace" && workspaceView === "overview" && props.selectedProject
               ? { label: "Task Settings", icon: "settings", pressed: stagePage?.kind === "taskSettings", run: () => openStagePage({ kind: "taskSettings" }) }
               : undefined}
+            filesSidebar={filesSidebarToggle}
           />
           <LibraryScopeHeader section={railMode} context={settingsScope} />
           <div ref={sidebarScrollRef} className="sidebar-scroll">
@@ -1658,16 +1686,7 @@ export function Shell(props: ShellProps) {
             openPrompt={openPromptPage}
             improvePrompt={props.selectedProject ? improvePrompt : undefined}
             reload={promptLibrary.reload}
-          /> : <>{workspaceView === "files" ? <FilesRail
-            subject={filesSubject}
-            projectName={props.selectedProject?.name}
-            tasks={props.projectTasks.filter((task) => task.worktree)}
-            browser={files.browser}
-            snapshot={files.snapshot}
-            selectRoot={openFiles}
-            openFile={(path) => { setChangesPresentation(undefined); void files.browser.select(path); }}
-            unavailable={Boolean(props.selectedProject) && disabled}
-          /> : null}<WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
+          /> : <><WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
@@ -1948,6 +1967,7 @@ export function Shell(props: ShellProps) {
             disabled={disabled}
             selectSession={selectSession}
             launchTerminal={props.launchTerminal}
+            filesSidebar={filesSidebarToggle}
           /> : null}
           <main className="terminal-stage" aria-label="Terminal panes">
             {assistantStageVisible && assistantSelection && props.selectedProject ? <StewardPanel
@@ -2158,6 +2178,28 @@ export function Shell(props: ShellProps) {
             ) : null}
           </main>
         </section>
+        {filesSidebar.open ? <>
+          <FilesSidebarResizeHandle
+            width={filesSidebarWidth}
+            maximum={filesSidebarMaximumWidth(window.innerWidth, sidebarWidth)}
+            resize={resizeFilesSidebar}
+            reset={() => updateFilesSidebar({ width: FILES_SIDEBAR_DEFAULT_WIDTH })}
+            draggingChanged={setSidebarDragging}
+          />
+          <FilesSidebar
+            subject={filesSubject}
+            projectName={props.selectedProject?.name}
+            tasks={props.projectTasks.filter((task) => task.worktree)}
+            browser={files.browser}
+            snapshot={files.snapshot}
+            tab={filesSidebar.tab}
+            selectTab={(tab) => updateFilesSidebar({ tab })}
+            selectRoot={openFiles}
+            openFile={(path) => { setChangesPresentation(undefined); void files.browser.select(path); }}
+            close={() => updateFilesSidebar({ open: false })}
+            unavailable={Boolean(props.selectedProject) && disabled}
+          />
+        </> : null}
       </div>
       </SidebarSessionDndProvider>
       <OverlayPortal container={props.overlayContainer}>

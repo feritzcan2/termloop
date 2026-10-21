@@ -1,26 +1,51 @@
 .changes-overlay.files-overlay { grid-template-rows: auto minmax(0, 1fr); }
 .files-eyebrow { color: var(--text-muted); font-size: 9px; font-weight: 650; letter-spacing: .1em; }
 .files-subject { color: var(--text-secondary); font-weight: 450; }
-.files-rail { padding-bottom: 12px; }
-.files-search-toolbar { display: flex; align-items: center; gap: 5px; }
 .files-search-toolbar .rail-search { flex: 1; }
-.files-search-status { margin: 0 5px 5px; color: var(--text-muted); font-size: 10px; }
-.files-search-tree .files-tree-entry { height: auto; min-height: 40px; }
+/* Right-hand Files sidebar: an activity strip, the root section row, then a
+   compact Explorer tree or the file name search. */
+.app-shell.files-sidebar-open { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--files-sidebar-width); }
+.sidebar-resize-handle.files-sidebar-resize-handle { right: var(--files-sidebar-width); left: auto; transform: translateX(50%); }
+.files-sidebar { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--bg-sidebar); color: var(--sidebar-text); }
+.files-sidebar-tabs { display: flex; align-items: stretch; justify-content: space-between; height: 34px; padding-right: 4px; border-bottom: 1px solid var(--border); }
+.files-sidebar-tabs [role="tablist"] { display: flex; align-items: stretch; min-width: 0; }
+.files-sidebar-tabs [role="tab"] { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; background: transparent; color: var(--text-muted); font: 600 10px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; }
+.files-sidebar-tabs [role="tab"]:hover { color: var(--sidebar-text); }
+.files-sidebar-tabs [role="tab"].selected { color: var(--sidebar-text); }
+.files-sidebar-tabs [role="tab"].selected::after { position: absolute; right: 8px; bottom: -1px; left: 8px; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); content: ""; }
+.files-sidebar-tabs [role="tab"] svg { width: 13px; height: 13px; }
+.files-sidebar-tabs .icon-button, .files-sidebar-section .icon-button { align-self: center; width: 24px; height: 24px; }
+.files-sidebar-tabs .icon-button svg, .files-sidebar-section .icon-button svg { width: 13px; height: 13px; }
+.files-sidebar-section { display: flex; align-items: center; gap: 2px; min-height: 30px; padding: 0 4px 0 8px; }
+.files-sidebar-section .icon-button[aria-disabled="true"] { opacity: .4; }
+.files-root-picker { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+.files-root-picker select { width: 100%; min-width: 0; padding: 4px 18px 4px 4px; border: 0; border-radius: 4px; appearance: none; background: transparent; color: var(--sidebar-text); font: 700 10.5px/1.3 var(--font-ui); letter-spacing: .05em; text-overflow: ellipsis; text-transform: uppercase; cursor: pointer; }
+.files-root-picker select:hover:not(:disabled) { background: var(--hover); }
+.files-root-picker select:focus-visible { outline: 1px solid var(--accent); }
+.files-root-picker > svg { position: absolute; right: 4px; width: 11px; height: 11px; color: var(--text-muted); pointer-events: none; }
+.files-sidebar-body { min-height: 0; overflow: auto; padding-bottom: 12px; }
+.files-sidebar-empty { margin: 14px 12px; color: var(--text-muted); font-size: 11.5px; line-height: 1.5; }
+.files-tree-entry { display: flex; align-items: center; gap: 5px; width: 100%; height: 22px; border: 0; border-radius: 0; padding: 0 10px 0 8px; background: transparent; color: var(--sidebar-text); text-align: left; font: 12px/1 var(--font-ui); }
+.files-tree-guide { align-self: stretch; width: 12px; flex: none; margin-left: 2px; border-left: 1px solid light-dark(rgba(15,23,42,.1), rgba(255,255,255,.08)); }
+.files-tree:hover .files-tree-guide { border-left-color: light-dark(rgba(15,23,42,.18), rgba(255,255,255,.16)); }
+.files-search { display: flex; flex-direction: column; min-height: 0; padding-top: 2px; }
+.files-search-toolbar { display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+.files-search-toolbar .rail-search { height: 28px; }
+.files-search-toolbar .rail-search input { font-size: 12px; }
+.files-search-note { margin: 6px 12px 4px; color: var(--text-muted); font-size: 10px; }
+.files-search-status { margin: 4px 12px 6px; color: var(--text-muted); font-size: 10.5px; }
+.files-search-tree .files-tree-entry { height: auto; min-height: 36px; padding-top: 4px; padding-bottom: 4px; }
 .files-search-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .files-search-tree .files-search-label small { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files-root-picker { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
-.files-root-picker > svg { width: 14px; height: 14px; flex: none; color: var(--text-muted); }
-.files-root-picker select { width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-raised); color: var(--text-secondary); font: 11px var(--font-ui); text-overflow: ellipsis; }
-.files-tree-entry { display: flex; align-items: center; gap: 6px; width: 100%; height: 29px; border: 0; border-radius: 0; padding-right: 10px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 11px; }
 .files-tree-entry:hover { background: var(--hover); }
 .files-tree-entry.selected { background: var(--accent-wash); color: var(--accent-strong); }
 .files-tree-entry:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
-.files-tree-entry > svg { width: 14px; height: 14px; flex: none; }
-.files-tree-chevron { display: flex; width: 10px; flex: none; transform: rotate(-90deg); }
+.files-tree-entry > svg { width: 15px; height: 15px; flex: none; }
+.files-tree-chevron { display: flex; width: 12px; flex: none; justify-content: center; color: var(--text-muted); transform: rotate(-90deg); }
 .files-tree-chevron.expanded { transform: none; }
 .files-tree-chevron svg { width: 10px; height: 10px; }
 .files-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files-tree-entry small { margin-left: auto; color: var(--text-muted); font-size: 9px; }
+.files-tree-entry > small { margin-left: auto; color: var(--text-muted); font-size: 9px; }
 .files-tree-message { margin: 5px 10px; color: var(--text-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .files-tree-message.error { color: var(--danger); }
 .files-preview { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }

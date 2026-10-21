@@ -40,7 +40,7 @@ export function FileTree({ snapshot, toggle, select, results }: {
   };
   return <div role="tree" aria-label={results ? "File search results" : "Workspace files"} className={`files-tree${results ? " files-search-tree" : ""}`}>
     {rows.map((row) => {
-      if (row.kind === "message") return <p key={`message:${row.path}`} className={`files-tree-message${row.error ? " error" : ""}`} role={row.error ? "alert" : undefined} style={{ paddingLeft: 12 + row.depth * 14 }}>{row.message}</p>;
+      if (row.kind === "message") return <p key={`message:${row.path}`} className={`files-tree-message${row.error ? " error" : ""}`} role={row.error ? "alert" : undefined} style={{ paddingLeft: 26 + row.depth * 12 }}>{row.message}</p>;
       const { entry, depth } = row;
       const folder = entry.kind === "directory";
       const expanded = snapshot.expanded.has(entry.path);
@@ -53,11 +53,12 @@ export function FileTree({ snapshot, toggle, select, results }: {
         disabled={folder && snapshot.refreshing}
         tabIndex={tabStop === entry.path ? 0 : -1}
         className={`files-tree-entry${selected ? " selected" : ""}`}
-        style={{ paddingLeft: 8 + depth * 14 }} title={entry.path}
+        title={entry.path}
         onFocus={() => setFocused(entry.path)}
         onKeyDown={(event) => keyDown(event, entry.path, folder)}
         onClick={() => folder ? toggle(entry.path) : select(entry.path)}
       >
+        {Array.from({ length: depth }, (_, level) => <span key={level} className="files-tree-guide" aria-hidden="true" />)}
         <span className={`files-tree-chevron${expanded ? " expanded" : ""}`}>{folder ? <Icon name="chevronDown" /> : null}</span>
         <WorkspaceFileIcon entry={entry} />
         {results ? <span className="files-search-label"><span className="files-tree-name">{entry.name}</span><small>{entry.path.includes("/") ? entry.path.slice(0, entry.path.lastIndexOf("/")) : "."}</small></span>
