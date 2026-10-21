@@ -1,0 +1,25 @@
+/* Right-hand Source Control sidebar. It shares the Files sidebar shell
+   (header, root row, body) and adds the branch row and change sections. */
+.source-control-sidebar { grid-template-rows: auto auto auto minmax(0, 1fr); }
+.source-control-header-actions { display: flex; align-items: center; gap: 2px; }
+.source-control-header-actions .icon-button[aria-disabled="true"] { opacity: .4; }
+.source-control-branch { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 2px 12px 8px; color: var(--sidebar-text); font: 12px/1.3 var(--font-ui); }
+.source-control-branch > svg { width: 14px; height: 14px; flex: none; color: var(--text-muted); }
+.source-control-branch-name { overflow: hidden; font-family: var(--font-mono); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.source-control-branch small { flex: none; margin-left: auto; color: var(--text-muted); font-size: 10px; }
+.source-control-branch small[data-upstream="behind"], .source-control-branch small[data-upstream="diverged"], .source-control-branch small[data-upstream="missing"] { color: var(--warning, var(--text-muted)); }
+.source-control-section h3 { margin: 0; }
+.source-control-section h3 button { display: flex; align-items: center; gap: 4px; width: 100%; height: 24px; padding: 0 10px 0 6px; border: 0; background: transparent; color: var(--sidebar-text); font: 700 10.5px/1 var(--font-ui); letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.source-control-section h3 button:hover { background: var(--hover); }
+.source-control-section h3 button:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+.source-control-section h3 svg { width: 11px; height: 11px; color: var(--text-muted); }
+.source-control-section h3 svg.collapsed { transform: rotate(-90deg); }
+.source-control-section h3 b { display: grid; place-items: center; min-width: 18px; height: 16px; margin-left: auto; padding: 0 5px; border-radius: 8px; background: var(--hover); color: var(--text-muted); font: 650 10px/1 var(--font-ui); letter-spacing: 0; }
+.source-control-section ul { margin: 0 0 6px; padding: 0; list-style: none; }
+.source-control-row { display: flex; align-items: center; gap: 6px; width: 100%; height: 22px; padding: 0 8px 0 22px; border: 0; background: transparent; color: var(--sidebar-text); font: 12px/1 var(--font-ui); text-align: left; }
+.source-control-row:hover { background: var(--hover); }
+.source-control-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+.source-control-row-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-control-row.status-deleted .source-control-row-name { text-decoration: line-through; opacity: .8; }
+.source-control-row small { flex: 1; min-width: 0; overflow: hidden; color: var(--text-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.source-control-row .change-badge { flex: none; width: 16px; height: 16px; margin-left: auto; font-size: 10px; }

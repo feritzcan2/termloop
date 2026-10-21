@@ -213,6 +213,20 @@ export function ChangesOverlay({
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // Selecting a file in the Source Control panel targets it here; apply that
+  // once per request so later refreshes keep the reader's own selection.
+  const initialEntry = initialSource.kind === "local" ? initialSource.entry : undefined;
+  const initialEntryKey = initialEntry ? `${initialEntry.side}:${initialEntry.path}` : undefined;
+  const appliedEntryKey = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!initialEntryKey || appliedEntryKey.current === initialEntryKey || !localChanges) return;
+    const entry = localChanges.entries.find((candidate) => `${candidate.side}:${candidate.display_path}` === initialEntryKey);
+    if (!entry) return;
+    appliedEntryKey.current = initialEntryKey;
+    setSelectedSource({ kind: "local" });
+    setSelectedId(entry.entry_id);
+  }, [initialEntryKey, localChanges]);
+
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement

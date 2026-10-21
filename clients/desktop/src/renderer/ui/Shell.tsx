@@ -1,6 +1,10 @@
 import { FileEditorOverlay } from "./FileEditorOverlay.js";
 import { useOverlayLeaseCount } from "./overlay-lease.js";
-import { FilesActivityBar, FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
+import { FilesSidebar, FilesSidebarResizeHandle } from "./FilesSidebar.js";
+import { RightActivityBar } from "./RightActivityBar.js";
+import { SourceControlSidebar } from "./SourceControlSidebar.js";
+import { useSourceControl } from "./use-source-control.js";
+import type { SourceControlSubject } from "../source-control-status.js";
 import { useFileBrowser } from "./use-file-browser.js";
 import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
@@ -17,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useDroppable } from "@dnd-kit/core";
 import { MAX_LAYOUT_PANES, panes, type AgentGroupLayout, type LayoutNode, type ProjectLayout, type SplitDirection, type SplitNode, type SplitPlacement } from "../../layout/model.js";
 import type { AgentStatus, BranchCommitSummary, ConnectionState, GitHostProjection, Project, ProjectWorktreeSummary, RunConfiguration, RunRuntime, Session, Task, TaskDeleteWorktreeResult, TaskDeleteWorktreeReview, WorkflowConfiguration, WorkflowExecution } from "../model.js";
-import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskJiraIssueKey } from "../model.js";
+import { agentName, basename, isLiveSession, sessionDismissCommand, sessionIsImprover, sessionKeepsTerminalSurface, sessionLabel, sessionResumeActionLabel, taskEffectiveBranch, taskJiraIssueKey } from "../model.js";
 import { newestPullRequests, taskCardTitle } from "../task-card-copy.js";
 import { agentActivityPriority, sessionState } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
@@ -130,6 +134,7 @@ import {
   readFilesSidebarPreference,
   writeFilesSidebarPreference,
   type FilesSidebarPreference,
+  type RightSidebarView,
 } from "../files-sidebar-preference.js";
 
 type AssistantActions = Pick<StewardPanelProps,
@@ -604,7 +609,7 @@ export function Shell(props: ShellProps) {
   }, []);
   const [changesPresentation, setChangesPresentation] = useState<
     | { kind: "task"; taskId: string; source: ChangesOpenSource }
-    | { kind: "project" }
+    | { kind: "project"; source?: ChangesOpenSource }
   >();
   // Coarse tick so the pet can let observed activity go stale instead of latching on it.
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -857,15 +862,31 @@ export function Shell(props: ShellProps) {
     if (tab?.dirty && !window.confirm(`Discard unsaved changes to ${path}?`)) return;
     fileEditor.editor.close(path);
   };
-  const openFiles = (taskId: string | null) => {
+  const openFiles = (taskId: string | null, view: RightSidebarView = "files") => {
     if (!props.selectedProject) return;
     if ((editorSubject?.taskId ?? null) !== taskId && fileEditor.editor.dirty()
       && !window.confirm("Switching the file root discards unsaved editor changes. Continue?")) return;
-    updateFilesSidebar({ open: true });
+    updateFilesSidebar({ open: true, view });
     setChangesPresentation(undefined);
     setFilesPresentation({ projectId: props.selectedProject.id, taskId });
   };
-  const toggleFilesSidebar = () => updateFilesSidebar({ open: !filesSidebar.open });
+  const toggleRightSidebar = (view: RightSidebarView) => updateFilesSidebar(
+    filesSidebar.open && filesSidebar.view === view ? { open: false } : { open: true, view });
+  const toggleFilesSidebar = () => toggleRightSidebar("files");
+  // Source Control shares the Files root: the Project checkout or one Task worktree.
+  const sourceControlSubject: SourceControlSubject | undefined = filesSidebar.open && filesSidebar.view === "sourceControl" && editorSubject
+    ? editorSubject.taskId ? { kind: "task", id: editorSubject.taskId } : { kind: "project", id: editorSubject.projectId } : undefined;
+  const sourceControl = useSourceControl(
+    sourceControlSubject,
+    filesTask
+      ? `${filesTask.worktree_health?.observation_sequence ?? ""}`
+      : `${props.projectWorktreeSummary?.change_count ?? ""}:${props.projectWorktreeSummary?.checked_out_branch ?? ""}`,
+    props.listProjectWorktreeChanges,
+    props.listTaskWorktreeChanges,
+  );
+  const openSourceControlChanges = (source: ChangesOpenSource) => setChangesPresentation(filesTask
+    ? { kind: "task", taskId: filesTask.id, source }
+    : { kind: "project", source });
   useEffect(() => { setEditorShown(false); }, [props.selectedSession?.id]);
   const changesTask = changesPresentation?.kind === "task"
     ? props.projectTasks.find((task) => task.id === changesPresentation.taskId)
@@ -1281,8 +1302,12 @@ export function Shell(props: ShellProps) {
       disabled: !props.selectedProject, perform: () => selectWorkspaceView("history"),
     },
     {
-      id: "view.files", title: filesSidebar.open ? "Hide Files Sidebar" : "Show Files Sidebar", detail: "Browse and search Project and Task files on the right.", group: "Session", keywords: ["explorer", "tree", "browse", "search", "open"],
+      id: "view.files", title: filesSidebar.open && filesSidebar.view === "files" ? "Hide Files Sidebar" : "Show Files Sidebar", detail: "Browse and search Project and Task files on the right.", group: "Session", keywords: ["explorer", "tree", "browse", "search", "open"],
       perform: toggleFilesSidebar,
+    },
+    {
+      id: "view.sourceControl", title: filesSidebar.open && filesSidebar.view === "sourceControl" ? "Hide Source Control" : "Show Source Control", detail: "See staged, unstaged, and untracked changes on the right.", group: "Session", keywords: ["git", "changes", "status", "staged", "branch", "scm"],
+      perform: () => toggleRightSidebar("sourceControl"),
     },
     {
       id: "view.taskSettings", title: "Task Settings", detail: "Configure Task automation, Jira sources, and issues waiting to import.", group: "Session", keywords: ["jira", "sources", "import", "issues", "sync", "worktree", "automation", "settings"],
@@ -2178,7 +2203,7 @@ export function Shell(props: ShellProps) {
                 key={`${props.selectedProject?.connectionProfileId}:${changesSubject.kind}:${changesSubject.id}`}
                 subject={changesSubject}
                 connectionProfileId={props.selectedProject?.connectionProfileId}
-                initialSource={changesPresentation?.kind === "task" ? changesPresentation.source : { kind: "local" }}
+                initialSource={changesPresentation?.source ?? { kind: "local" }}
                 close={() => setChangesPresentation(undefined)}
                 list={changesSubject.kind === "project" ? props.listProjectWorktreeChanges : props.listTaskWorktreeChanges}
                 diff={changesSubject.kind === "project" ? props.getProjectWorktreeDiff : props.getTaskWorktreeDiff}
@@ -2203,7 +2228,21 @@ export function Shell(props: ShellProps) {
             reset={() => updateFilesSidebar({ width: FILES_SIDEBAR_DEFAULT_WIDTH })}
             draggingChanged={setSidebarDragging}
           />
-          <FilesSidebar
+          {filesSidebar.view === "sourceControl" ? <SourceControlSidebar
+            subject={sourceControlSubject}
+            projectName={props.selectedProject?.name}
+            tasks={props.projectTasks.filter((task) => task.worktree)}
+            selectedTaskId={filesTask?.id ?? null}
+            snapshot={sourceControl.snapshot}
+            branch={filesTask ? taskEffectiveBranch(filesTask) : props.projectWorktreeSummary?.checked_out_branch ?? undefined}
+            upstream={filesTask?.worktree_health?.upstream_state}
+            selectRoot={(taskId) => openFiles(taskId, "sourceControl")}
+            refresh={() => { void sourceControl.status.refresh(); }}
+            openChange={(entry) => openSourceControlChanges({ kind: "local", entry: { path: entry.display_path, side: entry.side } })}
+            openAll={() => openSourceControlChanges({ kind: "local" })}
+            close={() => updateFilesSidebar({ open: false })}
+            unavailable={Boolean(props.selectedProject) && disabled}
+          /> : <FilesSidebar
             subject={filesSubject}
             projectName={props.selectedProject?.name}
             tasks={props.projectTasks.filter((task) => task.worktree)}
@@ -2215,9 +2254,9 @@ export function Shell(props: ShellProps) {
             dismiss={() => setEditorShown(false)}
             close={() => updateFilesSidebar({ open: false })}
             unavailable={Boolean(props.selectedProject) && disabled}
-          />
+          />}
         </> : null}
-        <FilesActivityBar open={filesSidebar.open} toggle={toggleFilesSidebar} />
+        <RightActivityBar open={filesSidebar.open} view={filesSidebar.view} select={toggleRightSidebar} />
       </div>
       </SidebarSessionDndProvider>
       <OverlayPortal container={props.overlayContainer}>
