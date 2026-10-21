@@ -46,7 +46,7 @@ test("update publication uploads Windows payload before any latest manifest", as
   const uploads = result.stdout.trim().split("\n");
   const windows = uploads.indexOf("release-assets/termloop-desktop-windows-x64-2.0.7.exe");
   assert.ok(windows >= 0);
-  for (const manifest of ["latest-mac.yml", "latest-linux.yml", "latest.yml"]) {
+  for (const manifest of ["latest-mac.yml", "latest.yml"]) {
     assert.ok(uploads.indexOf(`release-assets/${manifest}`) > windows);
   }
 });
@@ -57,9 +57,7 @@ test("publication refuses an incomplete Windows release", async (t) => {
   await mkdir(assets);
   for (const name of [
     "termloop-server-macos-universal-2.0.7.tar.gz", "termloop-desktop-macos-universal-2.0.7.dmg",
-    "termloop-desktop-macos-universal-2.0.7.zip", "termloop-server-linux-x64-2.0.7.tar.gz",
-    "termloop-desktop-linux-x86_64-2.0.7.AppImage", "termloop-desktop-linux-amd64-2.0.7.deb",
-    "latest-mac.yml", "latest-linux.yml",
+    "termloop-desktop-macos-universal-2.0.7.zip", "latest-mac.yml",
   ]) await writeFile(path.join(assets, name), "fixture");
   for (const missing of ["termloop-desktop-windows-x64-2.0.7.exe", "latest.yml"]) {
     const result = spawnSync("bash", ["-e", "-c", script("Verify and checksum assets")], {
