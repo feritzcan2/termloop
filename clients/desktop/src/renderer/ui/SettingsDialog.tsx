@@ -12,9 +12,10 @@ import {
 import type { AppearancePreference } from "../appearance-theme.js";
 import { showsWindowDragRegion, type KeyboardPlatform } from "../command-surface.js";
 import { Icon, type IconName } from "./Icon.js";
+import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
 import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
 
-export type SettingsPage = "appearance" | "notifications" | "servers" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -26,6 +27,7 @@ type SettingsNavItem = {
 const appNavItems: SettingsNavItem[] = [
   { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
   { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
+  { page: "updates", title: "Updates", icon: "download", keywords: "version about upgrade release check restart install download" },
 ];
 
 const computerNavItems: SettingsNavItem[] = [
@@ -44,6 +46,7 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   showScope?: boolean;
   localComputerName?: string | undefined;
   mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
+  update?: AppUpdateControls | undefined;
 };
 
 export function SettingsDialog({
@@ -57,6 +60,7 @@ export function SettingsDialog({
   showScope = false,
   localComputerName,
   mobile,
+  update,
   ...connectionProps
 }: SettingsDialogProps) {
   const [selectedPage, setPage] = useState<SettingsPage>(initialPage);
@@ -199,7 +203,7 @@ export function SettingsDialog({
       </aside>
       <main className="settings-content">
         <div className="settings-content-inner">
-          {showScope && (page === "appearance" || page === "notifications") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {showScope && (page === "appearance" || page === "notifications" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
           {page === undefined ? (
             <p className="settings-empty">No settings found for “{query.trim()}”</p>
           ) : page === "appearance" ? (
@@ -213,6 +217,8 @@ export function SettingsDialog({
               updateDesktop={updateDesktopPreference}
               updateRemote={updateRemotePreference}
             />
+          ) : page === "updates" ? (
+            <UpdateSettings update={update} />
           ) : page === "mobile" && mobile ? (
             <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
           ) : (

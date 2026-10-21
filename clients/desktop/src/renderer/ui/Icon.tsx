@@ -6,7 +6,7 @@ export type IconName =
   | "chevronDown" | "circle" | "close" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
   | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "settings" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash"
-  | "alert" | "power" | "bell" | "monitor" | "palette" | "phone";
+  | "alert" | "power" | "bell" | "monitor" | "palette" | "phone" | "download";
 
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const brandIcon = name === "claude" || name === "codex" || name === "opencode";
@@ -25,6 +25,7 @@ export function agentIconName(agentId: string): IconName {
 const paths: Record<IconName, ReactNode> = {
   gemini: <image href={geminiIcon} x="1" y="1" width="18" height="18" />,
   add: <><path d="M10 4v12M4 10h12" /></>,
+  download: <><path d="M10 3.5v9M6 8.5l4 4 4-4" /><path d="M4 15.5h12" /></>,
   alert: <><path d="M10 3 17.5 16.5h-15z" /><path d="M10 8v4" /><circle cx="10" cy="14.2" r=".6" fill="currentColor" stroke="none" /></>,
   power: <><path d="M10 3v6.5" /><path d="M6.2 5.6a6 6 0 1 0 7.6 0" /></>,
   bell: <><path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 2h-13zM8.2 17.5a2 2 0 0 0 3.6 0" /></>,

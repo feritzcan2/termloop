@@ -52,6 +52,7 @@ for (const [channel, type] of [
   ["termloop:projection-invalidated", "projection-invalidated"],
   ["termloop:connection-status", "connection-status"],
   ["termloop:agent-attention-activated", "agent-attention-activated"],
+  ["termloop:update-status", "update-status"],
 ] as const) {
   ipcRenderer.on(channel, (_event, payload: unknown) => {
     window.postMessage({ source: "termloop", type, payload }, "*");
@@ -64,6 +65,9 @@ ipcRenderer.on("termloop:native-overlay-closed", () => {
 
 contextBridge.exposeInMainWorld("termloop", {
   isPackaged: () => ipcRenderer.invoke("termloop:app-is-packaged"),
+  updateSnapshot: () => ipcRenderer.invoke("termloop:update-snapshot"),
+  updateCheck: () => ipcRenderer.invoke("termloop:update-check"),
+  updateInstall: () => ipcRenderer.invoke("termloop:update-install"),
   notificationPreferencesGet: () => ipcRenderer.invoke("termloop:notification-preferences-get"),
   notificationPreferencesSet: (preferences: NotificationPreferences) =>
     ipcRenderer.invoke("termloop:notification-preferences-set", preferences),

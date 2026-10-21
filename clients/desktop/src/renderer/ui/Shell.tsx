@@ -94,6 +94,7 @@ import type { SessionHistoryListResult } from "@termloop/contract/current";
 import { ErrorLogPanel } from "./ErrorLogPanel.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import { SettingsDialog, type SettingsPage } from "./SettingsDialog.js";
+import { UpdateNotice, type AppUpdateControls } from "./AppUpdate.js";
 import type { NotificationPreferences } from "../../notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
@@ -189,6 +190,7 @@ export type ShellProps = {
   connectionMessage: string | undefined;
   reconnectSource(profileId: string): Promise<void>;
   isPackaged: boolean;
+  appUpdate?: AppUpdateControls | undefined;
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
@@ -1883,6 +1885,7 @@ export function Shell(props: ShellProps) {
             overlayVisibilityChanged={setArchivedRailOverlayOpen}
             overlayContainer={props.overlayContainer}
           /></WorkspaceRailCache> : null}
+          {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
             {assistantProjectId ? <StewardPetHost
               projectId={assistantProjectId}
@@ -1922,7 +1925,7 @@ export function Shell(props: ShellProps) {
                 id="sidebar-footer-settings-card"
                 eyebrow={showSettingsScope ? `Preferences · ${scopeName}` : "Preferences"}
                 title="Settings"
-                status="Appearance, notifications, servers and mobile access."
+                status="Appearance, notifications, updates, servers and mobile access."
                 rows={showSettingsScope ? [{ label: "Computer", value: computerName }] : []}
                 hint="Click to open"
               /></div><KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
@@ -2308,6 +2311,7 @@ export function Shell(props: ShellProps) {
         localComputerName={localComputerName}
         keepAwake={props.computerKeepAwake}
         mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
+        update={props.appUpdate}
         prepareRemoteMobileAccess={props.prepareRemoteMobileAccess}
         appearancePreference={selectedAppearancePreference}
         changeAppearancePreference={setAppearancePreference}
