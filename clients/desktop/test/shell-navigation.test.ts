@@ -94,13 +94,13 @@ describe("Shell navigation from the changes editor", () => {
     ]);
   });
 
-  it("shows assistant pages only in the Steward view so other views reveal the selected terminal", () => {
+  it("shows assistant pages only while the right sidebar shows Steward so other views reveal the selected terminal", () => {
     const selection = { kind: "steward", initialView: "builder" } as const;
-    expect(shellAssistantStageVisible("workspace", "steward", selection)).toBe(true);
-    expect(shellAssistantStageVisible("workspace", "overview", selection)).toBe(false);
-    expect(shellAssistantStageVisible("workspace", "agents", selection)).toBe(false);
-    expect(shellAssistantStageVisible("skills", "steward", selection)).toBe(false);
-    expect(shellAssistantStageVisible("workspace", "steward", undefined)).toBe(false);
+    expect(shellAssistantStageVisible("steward", selection)).toBe(true);
+    expect(shellAssistantStageVisible("files", selection)).toBe(false);
+    expect(shellAssistantStageVisible("sourceControl", selection)).toBe(false);
+    expect(shellAssistantStageVisible(undefined, selection)).toBe(false);
+    expect(shellAssistantStageVisible("steward", undefined)).toBe(false);
   });
 });
 

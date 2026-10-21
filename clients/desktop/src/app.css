@@ -2702,7 +2702,6 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workspace-view-switch button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); }
 .workspace-view-switch button:hover { background: light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); color: var(--sidebar-text); }
 .workspace-view-switch button.selected { background: var(--accent-wash); color: var(--accent-strong); }
-.workspace-view-glyph { font-size: 11px; line-height: 1; }
 .workspace-view-switch svg { width: 14px; height: 14px; }
 .workspace-launch-actions button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--sidebar-dim); }
 .workspace-launch-actions button:hover:not(:disabled) { border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--sidebar-text); }

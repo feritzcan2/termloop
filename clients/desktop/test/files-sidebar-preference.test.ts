@@ -20,6 +20,8 @@ describe("Files sidebar preference", () => {
     expect(readFilesSidebarPreference(storage)).toEqual({ open: false, view: "files", width: FILES_SIDEBAR_DEFAULT_WIDTH });
     writeFilesSidebarPreference({ open: true, view: "sourceControl", width: 360 }, storage);
     expect(readFilesSidebarPreference(storage)).toEqual({ open: true, view: "sourceControl", width: 360 });
+    writeFilesSidebarPreference({ open: true, view: "steward", width: 360 }, storage);
+    expect(readFilesSidebarPreference(storage).view).toBe("steward");
   });
 
   it("repairs malformed values and survives blocked storage", () => {

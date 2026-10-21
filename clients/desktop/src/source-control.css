@@ -23,3 +23,6 @@
 .source-control-row.status-deleted .source-control-row-name { text-decoration: line-through; opacity: .8; }
 .source-control-row small { flex: 1; min-width: 0; overflow: hidden; color: var(--text-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .source-control-row .change-badge { flex: none; width: 16px; height: 16px; margin-left: auto; font-size: 10px; }
+/* Steward rail hosted in the same right sidebar shell. */
+.files-sidebar.steward-sidebar { grid-template-rows: auto minmax(0, 1fr); }
+.steward-sidebar .assistant-empty { margin: 14px 12px; }
