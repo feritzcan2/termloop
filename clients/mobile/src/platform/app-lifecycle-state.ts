@@ -9,6 +9,8 @@ export interface AppLifecycleMachine {
 export interface AppLifecycleAction {
   readonly nativeState: MobileAppState;
   readonly resumeAfterGap?: boolean;
+  /// The OS reported a network return or handoff while the app stayed active.
+  readonly networkRevived?: boolean;
 }
 
 export const SUSPENSION_GAP_MS = 10_000;
@@ -19,6 +21,7 @@ export function reduceAppLifecycle(
 ): AppLifecycleMachine {
   const next = typeof action === "string" ? action : action.nativeState;
   const resumeAfterGap = typeof action === "string" ? false : action.resumeAfterGap === true;
+  const networkRevived = typeof action === "string" ? false : action.networkRevived === true;
   /// iOS moves through `inactive` while system UI such as PHPicker, the camera,
   /// Control Centre, or an interruption owns focus. That is not evidence that the
   /// app entered the background, and tearing down sockets here makes attaching a
@@ -29,7 +32,7 @@ export function reduceAppLifecycle(
     return { ...current, active: false, backgrounded: true };
   }
   if (next !== "active") return current;
-  if (!current.backgrounded && current.active && !resumeAfterGap) return current;
+  if (!current.backgrounded && current.active && !resumeAfterGap && !networkRevived) return current;
   return {
     active: true,
     backgrounded: false,

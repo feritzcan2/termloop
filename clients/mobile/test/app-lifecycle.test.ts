@@ -6,6 +6,23 @@ import {
 } from "../src/platform/app-lifecycle-state";
 
 describe("mobile app lifecycle", () => {
+  it("starts a fresh transport epoch when the network revives in the foreground", () => {
+    const active = { active: true, backgrounded: false, foregroundRevision: 3 };
+
+    expect(reduceAppLifecycle(active, { nativeState: "active", networkRevived: true })).toEqual({
+      active: true,
+      backgrounded: false,
+      foregroundRevision: 4,
+    });
+  });
+
+  it("never wakes a backgrounded app for a network revival", () => {
+    const backgrounded = { active: false, backgrounded: true, foregroundRevision: 3 };
+
+    expect(reduceAppLifecycle(backgrounded, { nativeState: "background", networkRevived: true }))
+      .toBe(backgrounded);
+  });
+
   it("keeps sockets active while iOS system UI temporarily owns focus", () => {
     const active = { active: true, backgrounded: false, foregroundRevision: 3 };
 
