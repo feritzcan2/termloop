@@ -1101,7 +1101,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
          list, whose rows have their own targets) keep their own meaning. */
       onClick={props.deleting ? undefined : (event) => {
         const target = event.target as HTMLElement;
-        if (event.defaultPrevented || target.closest("button, input, a, summary, .task-children")) return;
+        if (event.defaultPrevented || target.closest("button, input, a, summary, .task-children, .task-agent-strip")) return;
         rowClick();
       }}
       /* A double click is "show me the Task itself": the detail page, from the
@@ -1111,7 +1111,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         const target = event.target as HTMLElement;
         const control = target.closest("button, input, a, summary");
         if (control && !control.classList.contains("task-item")) return;
-        if (target.closest(".task-children, [data-issue-link]")) return;
+        if (target.closest(".task-children, .task-agent-strip, [data-issue-link]")) return;
         props.openDetail(task.id);
       }}
     >
@@ -1208,7 +1208,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         {/* One dot per live agent, loudest first, capped so the title keeps its
             width. Clicking a dot opens that agent's terminal without expanding
             the Task; the full Session rows stay behind the chevron. */}
-        {liveAgents.length > 0 && !props.deleting ? (
+        {liveAgents.length > 0 && !props.deleting && !props.focused ? (
           <span className="task-agents" role="group" aria-label={`${liveAgents.length} live ${liveAgents.length === 1 ? "agent" : "agents"} in ${task.title}`}>
             {liveAgents.slice(0, 4).map(({ session, state }) => (
               <button
@@ -1299,6 +1299,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         issueInHeadline={props.focused}
         compactBranch={props.focused}
       />}
+      {props.focused && liveAgents.length > 0 && !props.deleting ? <TaskAgentStrip
+        taskTitle={task.title}
+        agents={liveAgents}
+        expanded={!collapsed}
+        toggle={toggleCollapsed}
+        openSession={props.selectSession}
+      /> : null}
       {action ? (
         action.kind === "nextStep" ? (
           <button
@@ -1533,6 +1540,61 @@ function Signal({ tone, label, title, ariaLabel, onClick }: {
   return onClick
     ? <button type="button" className={className} title={title} aria-label={ariaLabel} onClick={onClick}>{label}</button>
     : <small className={className} title={title}>{label}</small>;
+}
+
+type LiveAgent = { session: Session; state: ReturnType<typeof sessionState> };
+
+/// Orca-style agent summary under a board card: live agents grouped by state,
+/// each group one inset pill of a state dot plus up to three overlapping agent
+/// glyphs. A glyph opens that agent's terminal; the rest of the strip folds and
+/// unfolds the Task's Session rows, so the chevron reads as the disclosure.
+function TaskAgentStrip(props: { taskTitle: string; agents: LiveAgent[]; expanded: boolean; toggle: () => void; openSession: (sessionId: string) => void }) {
+  const groups: { tone: string; agents: LiveAgent[] }[] = [];
+  for (const agent of props.agents) {
+    const tone = agent.state.tone;
+    const group = groups.find((candidate) => candidate.tone === tone);
+    if (group) group.agents.push(agent);
+    else groups.push({ tone, agents: [agent] });
+  }
+  const visible = groups.slice(0, 3);
+  const hidden = groups.slice(3).reduce((count, group) => count + group.agents.length, 0);
+  return (
+    <div
+      className={`task-agent-strip${props.expanded ? " expanded" : ""}`}
+      role="group"
+      aria-label={`${props.agents.length} live ${props.agents.length === 1 ? "agent" : "agents"} in ${props.taskTitle}`}
+      onClick={(event) => { if (!(event.target as HTMLElement).closest(".task-agent-icon")) props.toggle(); }}
+    >
+      <span className="task-agent-groups">
+        {visible.map((group) => (
+          <span key={group.tone} className="task-agent-group" data-tone={group.tone}>
+            <i className="task-agent-state" aria-hidden="true" />
+            <span className="task-agent-icons">
+              {group.agents.slice(0, 3).map(({ session, state }) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={`task-agent-icon${session.process.agent_id ? ` agent-${session.process.agent_id}` : ""}`}
+                  data-tone={state.tone}
+                  title={`${agentName(session)}: ${state.label ?? "Idle"}. Opens its terminal.`}
+                  aria-label={`Open ${agentName(session)} terminal — ${state.label ?? "idle"}`}
+                  onClick={() => props.openSession(session.id)}
+                ><Icon name={agentIconName(session.process.agent_id ?? "")} /></button>
+              ))}
+            </span>
+            {group.agents.length > 3 ? <span className="task-agent-more">+{group.agents.length - 3}</span> : null}
+          </span>
+        ))}
+      </span>
+      {hidden > 0 ? <span className="task-agent-more">+{hidden}</span> : null}
+      <button
+        type="button"
+        className="task-agent-strip-toggle"
+        aria-expanded={props.expanded}
+        aria-label={`${props.expanded ? "Collapse" : "Expand"} agents in ${props.taskTitle}`}
+      ><Icon name="chevronDown" /></button>
+    </div>
+  );
 }
 
 /// Everything TermLoop derived about a Task lives on this one mono line, on
