@@ -86,6 +86,78 @@ pub fn read_agent_conversation(
     ConversationPage::default()
 }
 
+/// Makes one provider conversation resumable from another account of the same
+/// provider by linking its transcript to the same relative path below the new
+/// account's provider root. Both accounts then share one file, so history keeps
+/// accruing in a single place. Returns `false` when no transcript was found;
+/// an existing transcript at the destination is left untouched.
+pub fn bridge_agent_conversation(
+    from: &AgentAccountContext,
+    to: &AgentAccountContext,
+    resume: &ResumeRef,
+) -> Result<bool, &'static str> {
+    let (provider, directories, depth) = match resume.provider {
+        ResumeProvider::Codex => ("codex", &["sessions", "archived_sessions"][..], 5),
+        ResumeProvider::Claude => ("claude", &["projects"][..], 3),
+        _ => return Ok(false),
+    };
+    if !resume.validate() || from.agent_id != provider || to.agent_id != provider {
+        return Err("The conversation belongs to another provider.");
+    }
+    let root = |account: &AgentAccountContext| {
+        account
+            .config_directory
+            .clone()
+            .or_else(|| user_home_directory().map(|home| home.join(format!(".{provider}"))))
+    };
+    let (Some(source_root), Some(target_root)) = (root(from), root(to)) else {
+        return Err("The provider folder is unavailable.");
+    };
+    if source_root == target_root {
+        return Ok(true);
+    }
+    let suffix = format!("{}.jsonl", resume.native_session_id);
+    let never = AtomicBool::new(false);
+    for directory in directories {
+        let Ok(files) = discover_bounded_history_files_cancellable(
+            &source_root.join(directory),
+            "jsonl",
+            depth,
+            20_000,
+            &never,
+        ) else {
+            continue;
+        };
+        for file in files {
+            let Some(name) = file.path().file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name != suffix && !(provider == "codex" && name.ends_with(&format!("-{suffix}"))) {
+                continue;
+            }
+            let Ok(window) = read_bounded_history_file_window(&file, None, 256 * 1024, 256 * 1024)
+            else {
+                continue;
+            };
+            if !identifies_conversation(&window.head, resume) {
+                continue;
+            }
+            let Ok(relative) = file.path().strip_prefix(file.root()) else {
+                continue;
+            };
+            let relative = std::path::Path::new(directory).join(relative);
+            return termloop_platform::link_or_copy_private_file(
+                file.path(),
+                &target_root,
+                &relative,
+            )
+            .map(|_| true)
+            .map_err(|_| "The conversation could not be shared with the other account.");
+        }
+    }
+    Ok(false)
+}
+
 fn identifies_conversation(bytes: &[u8], resume: &ResumeRef) -> bool {
     bytes
         .split(|byte| *byte == b'\n')
@@ -257,6 +329,57 @@ mod tests {
 
     fn codex(role: &str, text: &str) -> Value {
         json!({"type":"response_item","payload":{"type":"message","role":role,"content":[{"type":"output_text","text":text}]}})
+    }
+
+    #[test]
+    fn bridging_links_the_exact_transcript_into_the_other_account_once() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-bridge-{}",
+            termloop_platform::generate_uuid_v4()
+        ));
+        let account = |id: &str| AgentAccountContext {
+            agent_id: "codex".into(),
+            account_id: id.into(),
+            name: id.into(),
+            config_directory: Some(root.join(id)),
+        };
+        let (from, to) = (account("a"), account("b"));
+        let resume = resume(ResumeProvider::Codex);
+        let day = root.join("a/sessions/2026/10/22");
+        std::fs::create_dir_all(&day).unwrap();
+        let name = format!(
+            "rollout-2026-10-22T10-00-00-{}.jsonl",
+            resume.native_session_id
+        );
+        let meta = json!({"type":"session_meta","payload":{"id":resume.native_session_id}});
+        std::fs::write(day.join(&name), format!("{meta}\n")).unwrap();
+        std::fs::write(day.join("rollout-other.jsonl"), "{}\n").unwrap();
+        std::fs::create_dir_all(root.join("b")).unwrap();
+
+        assert_eq!(bridge_agent_conversation(&from, &to, &resume), Ok(true));
+        let bridged = root.join("b/sessions/2026/10/22").join(&name);
+        assert_eq!(
+            std::fs::read(&bridged).unwrap(),
+            std::fs::read(day.join(&name)).unwrap()
+        );
+        assert!(
+            !root
+                .join("b/sessions/2026/10/22/rollout-other.jsonl")
+                .exists()
+        );
+        assert_eq!(bridge_agent_conversation(&from, &to, &resume), Ok(true));
+        let unknown = ResumeRef::for_provider(
+            ResumeProvider::Codex,
+            "019f1dae-0000-73d1-b3c7-08ddbbd1f035".into(),
+        )
+        .unwrap();
+        assert_eq!(bridge_agent_conversation(&from, &to, &unknown), Ok(false));
+        let claude = AgentAccountContext {
+            agent_id: "claude".into(),
+            ..to.clone()
+        };
+        assert!(bridge_agent_conversation(&from, &claude, &resume).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

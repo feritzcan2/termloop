@@ -1,4 +1,4 @@
-import type { AgentAccountDto, AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
+import type { AgentAccountDto, AgentAccountListResult, AgentAccountCreateParams, AgentAccountDeleteParams, AgentAccountIdentityDto, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountUsageDto, AgentAccountUsageListParams, AgentAccountUsageListResult, AgentAuthStatusListParams } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentAuthOperationDto, AgentAuthOperationParams, AgentAuthStatusDto, AgentAuthSubmitCodeParams, AgentConnectionProvider } from "@termloop/contract/current";
@@ -9,6 +9,8 @@ export type AgentConnectionActions = {
   create(profileId: string, params: AgentAccountCreateParams): Promise<AgentAccountListResult>;
   rename(profileId: string, params: AgentAccountRenameParams): Promise<AgentAccountListResult>;
   setDefault(profileId: string, params: AgentAccountSetDefaultParams): Promise<AgentAccountListResult>;
+  remove(profileId: string, params: AgentAccountDeleteParams): Promise<AgentAccountListResult>;
+  usage(profileId: string, params?: AgentAccountUsageListParams): Promise<AgentAccountUsageListResult>;
   list(profileId: string, params?: AgentAuthStatusListParams): Promise<AgentAuthStatusDto[]>;
   start(profileId: string, agentId: AgentConnectionProvider, accountId: string, action: "install" | "signIn" | "signOut"): Promise<AgentAuthOperationDto>;
   get(profileId: string, params: AgentAuthOperationParams): Promise<AgentAuthOperationDto>;
@@ -19,6 +21,44 @@ export type AgentConnectionActions = {
 
 export function operationActive(operation: AgentAuthOperationDto | null | undefined): boolean {
   return Boolean(operation && ["starting", "installing", "awaitingBrowser", "awaitingCode"].includes(operation.phase));
+}
+
+/** One line naming who an account is signed in as, e.g. `a@b.c · Acme · max`. */
+export function identityLabel(identity: AgentAccountIdentityDto | null | undefined): string | undefined {
+  const parts = [identity?.email, identity?.organizationName, identity?.plan].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+/** Other accounts of the same provider signed in as the same user and organization. */
+export function duplicateLogins(usage: AgentAccountUsageDto[], account: AgentAccountUsageDto): AgentAccountUsageDto[] {
+  const email = account.identity?.email?.toLowerCase();
+  if (!email) return [];
+  return usage.filter((other) => other.agentId === account.agentId && other.accountId !== account.accountId
+    && other.identity?.email?.toLowerCase() === email
+    && (other.identity.organizationName ?? null) === (account.identity?.organizationName ?? null));
+}
+
+export function UsageWindows({ usage, compact = false }: { usage: AgentAccountUsageDto; compact?: boolean }) {
+  if (usage.state !== "ok" || usage.windows.length === 0) return usage.message ? <p className="conn-note agent-usage-message">{usage.message}</p> : null;
+  return <ul className={`agent-usage-windows${compact ? " compact" : ""}`} aria-label="Usage limits">
+    {usage.windows.map((window) => <li key={`${window.kind}-${window.label}`}>
+      <span className="agent-usage-label">{window.label}</span>
+      <span className="agent-usage-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(window.usedPercent)} aria-label={`${window.label} usage`}>
+        <span className={window.usedPercent >= 90 ? "high" : window.usedPercent >= 70 ? "elevated" : ""} style={{ width: `${Math.max(2, window.usedPercent)}%` }} />
+      </span>
+      <span className="agent-usage-value">{Math.round(window.usedPercent)}%{window.resetsAtEpochMs ? <small> · resets {resetLabel(window.resetsAtEpochMs)}</small> : null}</span>
+    </li>)}
+  </ul>;
+}
+
+export function resetLabel(epochMs: number, now = Date.now()): string {
+  const date = new Date(epochMs);
+  const minutes = Math.round((epochMs - now) / 60_000);
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `in ${minutes}m`;
+  return date.toDateString() === new Date(now).toDateString()
+    ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
 export function AgentConnectionsPanel({ profile, actions }: { profile: ConnectionProfileSummary; actions: AgentConnectionActions }) {
@@ -66,17 +106,25 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
   const [selectedId, select] = useState(() => accounts.find((account) => account.isDefault)?.accountId ?? "default");
   const selected = accounts.find((account) => account.accountId === selectedId) ?? accounts[0]!;
   const [editing, setEditing] = useState<"add" | "rename">();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [usage, setUsage] = useState<AgentAccountUsageDto[]>([]);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    let current = true;
+    actions.usage(profileId, { agentId, refresh: refreshKey > 1 }).then((result) => { if (current) setUsage(result.accounts); }, () => { if (current) setUsage([]); });
+    return () => { current = false; };
+  }, [actions, profileId, agentId, refreshKey]);
   const mutate = async (work: () => Promise<AgentAccountListResult>) => {
     setPending(true); setError(undefined);
     try {
       const result = await work();
       if (!alive.current) return;
-      update(result); setEditing(undefined); setName("");
+      update(result); setEditing(undefined); setConfirmDelete(false); setName("");
+      if (!result.accounts.some((account) => account.accountId === selected.accountId && account.agentId === agentId)) select(result.accounts.find((account) => account.agentId === agentId && account.isDefault)?.accountId ?? "default");
       if (result.createdAccountId) select(result.createdAccountId);
     } catch (cause) { if (alive.current) { setError(message(cause)); await refresh(); } }
     finally { if (alive.current) setPending(false); }
@@ -85,14 +133,19 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
   return <section className="agent-provider-accounts" aria-label={`${agentId === "codex" ? "Codex" : "Claude"} accounts`}>
     <div className="agent-account-selector">
       <label className="conn-field"><span>{agentId === "codex" ? "Codex" : "Claude"} account</span>
-        <select aria-label={`${agentId} account`} value={selected.accountId} disabled={pending} onChange={(event) => { select(event.target.value); setEditing(undefined); setError(undefined); }}>
+        <select aria-label={`${agentId} account`} value={selected.accountId} disabled={pending} onChange={(event) => { select(event.target.value); setEditing(undefined); setConfirmDelete(false); setError(undefined); }}>
           {accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}{account.isDefault ? " · Default" : ""}</option>)}
         </select>
       </label>
       <button type="button" disabled={pending || accounts.length >= 16} onClick={() => { setEditing("add"); setName(""); }}>Add account</button>
       <button type="button" disabled={pending} onClick={() => { setEditing("rename"); setName(selected.name); }}>Rename</button>
       {!selected.isDefault ? <button type="button" disabled={pending} onClick={() => void mutate(() => actions.setDefault(profileId, params))}>Use by default</button> : <span className="conn-note">Default for new sessions</span>}
+      {selected.accountId !== "default" ? <button type="button" className="conn-danger" disabled={pending} onClick={() => { setConfirmDelete(true); setEditing(undefined); }}>Remove</button> : null}
     </div>
+    {confirmDelete ? <div className="conn-banner warning" role="alert">
+      <p>Remove <strong>{selected.name}</strong>? TermLoop signs it out on this server and deletes its private provider folder. Sessions still using it must switch to another account or be closed first.</p>
+      <button type="button" className="conn-danger" disabled={pending} onClick={() => void mutate(() => actions.remove(profileId, params))}>{pending ? "Removing…" : "Remove account"}</button> <button type="button" disabled={pending} onClick={() => setConfirmDelete(false)}>Keep account</button>
+    </div> : null}
     {editing ? <form className="agent-account-name-form" onSubmit={(event) => { event.preventDefault(); void mutate(() => editing === "add" ? actions.create(profileId, { agentId, name: name.trim(), expectedRevision: snapshot.revision }) : actions.rename(profileId, { ...params, name: name.trim() })); }}>
       <label className="conn-field"><span>{editing === "add" ? "New account name" : "Account name"}</span><input autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Work or Personal" /></label>
       <button className="conn-primary" type="submit" disabled={pending || !name.trim()}>{pending ? "Saving…" : editing === "add" ? "Create account" : "Save name"}</button>
@@ -100,11 +153,13 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
     </form> : null}
     {error ? <p role="alert" className="conn-banner error">{error}</p> : null}
     <p className="conn-note">Credentials for this account stay on the server. All connected TermLoop clients can use it.</p>
-    <AccountStatus key={selected.accountId} account={selected} profileId={profileId} actions={actions} refreshKey={refreshKey} />
+    <AccountStatus key={selected.accountId} account={selected} profileId={profileId} actions={actions} refreshKey={refreshKey} usage={usage} names={accounts} />
   </section>;
 }
 
-function AccountStatus({ account, profileId, actions, refreshKey }: { account: AgentAccountDto; profileId: string; actions: AgentConnectionActions; refreshKey: number }) {
+function AccountStatus({ account, profileId, actions, refreshKey, usage, names }: { account: AgentAccountDto; profileId: string; actions: AgentConnectionActions; refreshKey: number; usage: AgentAccountUsageDto[]; names: AgentAccountDto[] }) {
+  const own = usage.find((item) => item.accountId === account.accountId);
+  const duplicates = own ? duplicateLogins(usage, own).map((other) => names.find((name) => name.accountId === other.accountId)?.name ?? other.accountId) : [];
   const [status, setStatus] = useState<AgentAuthStatusDto>();
   const [error, setError] = useState<string>();
   const generation = useRef(0);
@@ -117,10 +172,11 @@ function AccountStatus({ account, profileId, actions, refreshKey }: { account: A
     } catch (cause) { if (request === generation.current) setError(message(cause)); }
   }, [actions, profileId, account.agentId, account.accountId]);
   useEffect(() => { void refresh(); return () => { generation.current += 1; }; }, [refresh, refreshKey]);
-  return <>{error ? <div role="alert" className="conn-banner error"><p>{error}</p><button type="button" onClick={() => { setError(undefined); void refresh(); }}>Retry account check</button></div> : null}{status ? <AgentAccountCard status={status} profileId={profileId} actions={actions} refresh={refresh} /> : !error ? <div role="status" className="conn-skeleton">Checking this account…</div> : null}</>;
+  return <>{error ? <div role="alert" className="conn-banner error"><p>{error}</p><button type="button" onClick={() => { setError(undefined); void refresh(); }}>Retry account check</button></div> : null}{status ? <AgentAccountCard status={status} usage={own} duplicates={duplicates} profileId={profileId} actions={actions} refresh={refresh} /> : !error ? <div role="status" className="conn-skeleton">Checking this account…</div> : null}</>;
 }
 
-function AgentAccountCard({ status, profileId, actions, refresh }: { status: AgentAuthStatusDto; profileId: string; actions: AgentConnectionActions; refresh(): Promise<void> }) {
+function AgentAccountCard({ status, usage, duplicates, profileId, actions, refresh }: { status: AgentAuthStatusDto; usage: AgentAccountUsageDto | undefined; duplicates: string[]; profileId: string; actions: AgentConnectionActions; refresh(): Promise<void> }) {
+  const signedInAs = identityLabel(status.identity ?? usage?.identity);
   const [operation, setOperation] = useState(status.operation);
   const cancelledOperation = useRef<string | undefined>(undefined);
   const acceptOperation = useCallback((next: AgentAuthOperationDto | null) => {
@@ -176,6 +232,9 @@ function AgentAccountCard({ status, profileId, actions, refresh }: { status: Age
       <div><h4>{status.label}</h4><span className="conn-note">{status.version ?? "Provider CLI"}</span></div>
       <span className={`agent-account-badge ${status.authState === "signedIn" ? "connected" : ""}`}>{busy ? (operation?.phase === "installing" ? "Installing…" : "Setup in progress") : label}</span>
     </header>
+    {status.authState === "signedIn" && signedInAs ? <p className="agent-account-identity">Signed in as <strong>{signedInAs}</strong></p> : null}
+    {status.authState === "signedIn" && duplicates.length ? <p className="conn-banner warning" role="status">{duplicates.join(", ")} {duplicates.length === 1 ? "is" : "are"} signed in to the same {status.label} login. Accounts that share a login also share its usage limits.</p> : null}
+    {status.authState === "signedIn" && usage ? <UsageWindows usage={usage} /> : null}
     <ol className="agent-account-steps" aria-label="Setup progress">
       <li className={status.installed ? "done" : ""}>1. Install</li>
       <li className={status.authState === "signedIn" ? "done" : ""}>2. Sign in</li>

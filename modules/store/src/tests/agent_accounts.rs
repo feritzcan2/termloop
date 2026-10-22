@@ -146,3 +146,73 @@ fn a_failed_account_commit_restores_the_previous_metadata() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn deleting_an_account_returns_default_and_remembered_launch_to_the_server_user() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-accounts-delete-{}",
+        termloop_platform::generate_uuid_v4()
+    ));
+    let path = root.join("state.json");
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let provider = AgentAccountProvider::Claude;
+    let id = termloop_platform::generate_uuid_v4();
+    let revision = store
+        .create_agent_account(
+            &authority,
+            AgentAccount {
+                agent_id: provider,
+                account_id: id.clone(),
+                name: "Work".into(),
+                is_default: false,
+            },
+            0,
+        )
+        .unwrap();
+    let revision = store
+        .set_default_agent_account(&authority, provider, &id, revision)
+        .unwrap();
+    let remembered = termloop_domain::AgentLaunchSelection {
+        account_id: Some(id.clone()),
+        ..Default::default()
+    };
+    store.state.last_agent_launch_selection = Some(
+        termloop_domain::SavedAgentLaunchSelection::new("claude", remembered),
+    );
+    assert!(matches!(
+        store.delete_agent_account(&authority, provider, "default", revision),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(matches!(
+        store.delete_agent_account(&authority, AgentAccountProvider::Codex, &id, revision),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(matches!(
+        store.delete_agent_account(&authority, provider, &id, revision + 1),
+        Err(StoreError::RevisionConflict)
+    ));
+    store
+        .delete_agent_account(&authority, provider, &id, revision)
+        .unwrap();
+    let claude: Vec<_> = store
+        .agent_accounts()
+        .iter()
+        .filter(|account| account.agent_id == provider)
+        .collect();
+    assert_eq!(claude.len(), 1);
+    assert!(claude[0].is_default && claude[0].account_id == "default");
+    assert_eq!(
+        store
+            .last_agent_launch_selection()
+            .unwrap()
+            .selection
+            .account_id,
+        None
+    );
+    assert_eq!(
+        Store::open(&path).unwrap().agent_accounts(),
+        store.agent_accounts()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

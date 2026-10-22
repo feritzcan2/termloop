@@ -836,6 +836,8 @@ export function DesktopApp() {
     create: (profileId, params) => desktopApi.source(profileId).agentAccountCreate(params),
     rename: (profileId, params) => desktopApi.source(profileId).agentAccountRename(params),
     setDefault: (profileId, params) => desktopApi.source(profileId).agentAccountSetDefault(params),
+    remove: (profileId, params) => desktopApi.source(profileId).agentAccountDelete(params),
+    usage: (profileId, params) => desktopApi.source(profileId).agentAccountUsageList(params),
     list: async (profileId, params) => {
       const api = desktopApi.source(profileId);
       const statuses = await api.agentAuthStatusList(params);
@@ -857,6 +859,14 @@ export function DesktopApp() {
     profileId: selectedConnectionProfileId,
     projectId: assistantProjectId,
   }), [assistantProjectId, selectedConnectionProfileId]);
+  const computerSessions = useMemo(
+    () => projection.sessions.filter((session) => connectionProfileIdOf(session) === selectedConnectionProfileId),
+    [projection.sessions, selectedConnectionProfileId],
+  );
+  const switchAgentSessionAccount = useCallback(async (sessionId: string, accountId: string) => {
+    const outcome = await sourceApiForSession(sessionId).sessionSwitchAgentAccount(sessionId, accountId);
+    return outcome.ok ? undefined : outcome.message;
+  }, []);
   const projectSessions = useMemo(
     () => {
       const sessions = projection.sessions.filter((session) => session.project_id === selectedProject?.id);
@@ -2567,6 +2577,8 @@ export function DesktopApp() {
       loadNotificationPreferences={desktopApi.notificationPreferencesGet}
       saveNotificationPreferences={desktopApi.notificationPreferencesSet}
       agentConnections={agentConnections}
+      computerSessions={computerSessions}
+      switchAgentSessionAccount={switchAgentSessionAccount}
       connectionProfiles={settingsComputers.profiles}
       computerKeepAwake={{ ...computerKeepAwake, refreshToken: keepAwakeRefreshToken }}
       integrationActions={integrationActions}

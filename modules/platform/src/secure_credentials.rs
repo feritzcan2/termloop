@@ -178,6 +178,56 @@ fn map_keyring_error(error: keyring::Error) -> SecureCredentialError {
     }
 }
 
+/// Reads a generic password that another program stored in the macOS login
+/// keychain. The read goes through `/usr/bin/security`, the tool such programs
+/// grant access when they write the item, so it neither prompts nor widens the
+/// daemon's own keychain access. Other platforms report `Unavailable`.
+pub fn read_external_keychain_password(
+    service: &str,
+) -> Result<SecureSecret, SecureCredentialError> {
+    if !valid_key_part(service) {
+        return Err(SecureCredentialError::NotFound);
+    }
+    read_external_keychain_password_impl(service)
+}
+
+#[cfg(target_os = "macos")]
+fn read_external_keychain_password_impl(
+    service: &str,
+) -> Result<SecureSecret, SecureCredentialError> {
+    let outcome = crate::run_command(
+        crate::CommandRequest::new("/usr/bin/security")
+            .args(["find-generic-password", "-s", service, "-w"])
+            .launch_environment(crate::LaunchEnvironment::os_baseline())
+            .timeout(std::time::Duration::from_secs(5))
+            .output_limit(SECRET_MAX_BYTES + 1),
+    )
+    .map_err(|_| SecureCredentialError::Unavailable)?;
+    let usable = outcome.success() && !outcome.stdout_truncated;
+    let mut stdout = outcome.stdout;
+    let result = match outcome.termination {
+        // `security` reports a missing item with exit status 44.
+        crate::CommandTermination::Exited { code: 44 } => Err(SecureCredentialError::NotFound),
+        _ if !usable => Err(SecureCredentialError::Unavailable),
+        _ => {
+            let end = stdout
+                .iter()
+                .rposition(|byte| !byte.is_ascii_whitespace())
+                .map_or(0, |end| end + 1);
+            SecureSecret::new(stdout[..end].to_vec()).ok_or(SecureCredentialError::NotFound)
+        }
+    };
+    stdout.zeroize();
+    result
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_external_keychain_password_impl(
+    _service: &str,
+) -> Result<SecureSecret, SecureCredentialError> {
+    Err(SecureCredentialError::Unavailable)
+}
+
 #[cfg(feature = "test-support")]
 pub mod test_support {
     use std::collections::HashMap;

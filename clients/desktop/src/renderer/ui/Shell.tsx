@@ -13,6 +13,7 @@ import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadR
 import type { SshSetupActions } from "../../ssh-setup-types.js";
 import type { AgentAccountDto } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
+import { AgentAccountSwitcher } from "./AgentAccountSwitcher.js";
 import { TerminalStatus } from "./TerminalStatus.js";
 import type { TerminalPresentationPort } from "../terminal-presentation.js";
 import type { AgentLibraryController } from "../agent-library.js";
@@ -214,6 +215,9 @@ export type ShellProps = {
   loadNotificationPreferences(): Promise<NotificationPreferences>;
   saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   agentConnections?: AgentConnectionActions;
+  /** Every Session of the selected computer, for moving running Agents to a new account. */
+  computerSessions?: readonly Session[];
+  switchAgentSessionAccount?(sessionId: string, accountId: string): Promise<string | undefined>;
   connectionProfiles: readonly ConnectionProfileSummary[];
   computerKeepAwake: KeepAwakeActions;
   integrationActions?: IntegrationActions | undefined;
@@ -1880,7 +1884,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}</div>
             <div className="sidebar-footer-actions sidebar-footer-end">
-              <KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              {props.agentConnections && props.switchAgentSessionAccount ? <AgentAccountSwitcher key={`accounts-${selectedConnectionProfileId}`} profileId={selectedConnectionProfileId} actions={props.agentConnections} sessions={props.computerSessions ?? props.projectSessions} agentStatuses={props.agentStatuses} switchSession={props.switchAgentSessionAccount} openSettings={() => setSettingsPage("servers")} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} /> : null}<KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>

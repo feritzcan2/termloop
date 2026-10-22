@@ -894,6 +894,29 @@ pub(in crate::app::control) async fn restart_agent_session(
     .await
 }
 
+/// Moves one Agent Session to another account of its provider. Its
+/// transcript is shared with the new account first, so a running Session
+/// restarts on that account and continues the same conversation.
+pub(in crate::app::control) async fn switch_agent_session_account(
+    params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    let plan = state.core.lock().await.plan_agent_account_switch(&params)?;
+    if plan.unchanged {
+        let session = state.core.lock().await.apply_agent_account_switch(&plan)?;
+        return Ok(session);
+    }
+    let plan = tokio::task::spawn_blocking(move || plan.share_transcript().map(|()| plan))
+        .await
+        .map_err(|_| CoreError::Terminal("Account switch worker unavailable.".into()))??;
+    let session = state.core.lock().await.apply_agent_account_switch(&plan)?;
+    publish_agent_resume_invalidation(state, &plan.session_id).await;
+    if !plan.running {
+        return Ok(session);
+    }
+    restart_agent_session(serde_json::json!({ "sessionId": plan.session_id }), state).await
+}
+
 pub(in crate::app::control) async fn preview_resume_agent_session(
     params: serde_json::Value,
     state: &AppState,

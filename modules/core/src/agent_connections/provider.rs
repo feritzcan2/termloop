@@ -1,4 +1,4 @@
-use super::{Action, Operation, Phase, Provider, SetupControl, Status};
+use super::{Action, Identity, Operation, Phase, Provider, SetupControl, Status};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, atomic::Ordering, mpsc};
@@ -28,6 +28,7 @@ pub(super) fn status(account: &AgentAccountContext, check_auth: bool) -> Status 
             && resolve_launch_target("npm", &environment).is_ok(),
         busy: false,
         operation: None,
+        identity: None,
     };
     let Some(target) = target else {
         return status;
@@ -75,18 +76,63 @@ pub(super) fn status(account: &AgentAccountContext, check_auth: bool) -> Status 
             {
                 "signedOut"
             }
-            Provider::Claude => match serde_json::from_slice::<Value>(&result.stdout)
-                .ok()
-                .and_then(|value| value["loggedIn"].as_bool())
-            {
-                Some(true) if result.success() => "signedIn",
-                Some(false) => "signedOut",
-                _ => "unknown",
-            },
+            Provider::Claude => {
+                let report = serde_json::from_slice::<Value>(&result.stdout).ok();
+                match report
+                    .as_ref()
+                    .and_then(|value| value["loggedIn"].as_bool())
+                {
+                    Some(true) if result.success() => {
+                        status.identity = report.as_ref().and_then(Identity::from_claude_status);
+                        "signedIn"
+                    }
+                    Some(false) => "signedOut",
+                    _ => "unknown",
+                }
+            }
             _ => "unknown",
         };
     }
     status
+}
+
+pub(super) fn discard(account: &AgentAccountContext) -> Result<(), &'static str> {
+    // Only a named account owns a directory; the server user's login is never removed here.
+    let Some(directory) = account.config_directory.as_deref() else {
+        return Err("The server account cannot be removed.");
+    };
+    if !directory.exists() {
+        return Ok(());
+    }
+    let provider = Provider::parse(&account.agent_id)?;
+    let environment = account.apply_environment(LaunchEnvironment::os_baseline());
+    // Claude keeps a named account's macOS credential in a Keychain item keyed by
+    // its directory, so sign out before the directory that names it disappears.
+    if let Ok(target) = resolve_launch_target(provider.command(), &environment) {
+        let args = account
+            .credential_args()
+            .into_iter()
+            .chain(match provider {
+                Provider::Codex => vec!["logout".to_owned()],
+                Provider::Claude => vec!["auth".to_owned(), "logout".to_owned()],
+            })
+            .collect::<Vec<_>>();
+        let (program, args) = target.command_line(args);
+        let _ = run_command(
+            CommandRequest::new(program)
+                .args(args)
+                .launch_environment(environment)
+                .timeout(Duration::from_secs(15))
+                .output_limit(8192),
+        );
+    }
+    let facts = termloop_platform::inspect_stale_disposal_target(directory, &[], &[])
+        .map_err(|_| "The account folder could not be inspected.")?;
+    if facts.protected_path_conflict || facts.target_is_mount || facts.has_git_metadata {
+        return Err("The account folder is not safe to remove.");
+    }
+    termloop_platform::remove_stale_disposal_target_exact(directory, &facts.leaf_identity, false)
+        .map_err(|_| "The account folder could not be removed.")
 }
 
 pub(super) fn run(

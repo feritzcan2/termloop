@@ -184,6 +184,63 @@ pub fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), PlatformError
     Ok(())
 }
 
+/// Makes `source` also reachable at the new path `target`, preferring a hard
+/// link so both names share one file. Falls back to a private copy across
+/// devices. Never replaces an existing entry (reported as `false`), and never
+/// follows a symlink at either end. Missing directories below `target_root`
+/// are created private.
+pub fn link_or_copy_private_file(
+    source: &Path,
+    target_root: &Path,
+    relative: &Path,
+) -> Result<bool, PlatformError> {
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "relative path escapes its root",
+        )
+        .into());
+    }
+    let metadata = fs::symlink_metadata(source)?;
+    if !metadata.is_file() {
+        return Err(
+            io::Error::new(io::ErrorKind::InvalidInput, "source must be a regular file").into(),
+        );
+    }
+    let target = target_root.join(relative);
+    // Existing directories keep the provider's own permissions; only the ones
+    // this call creates are private.
+    let mut directory = target_root.to_path_buf();
+    let prepare = |directory: &Path| match fs::symlink_metadata(directory) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(PlatformError::from(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target directory must not be a link",
+        ))),
+        Err(_) => ensure_private_directory(directory),
+    };
+    prepare(&directory)?;
+    for component in relative.parent().into_iter().flat_map(Path::components) {
+        directory.push(component);
+        prepare(&directory)?;
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Ok(false);
+    }
+    match fs::hard_link(source, &target) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(_) => {
+            let bytes = fs::read(source)?;
+            create_private_file(&target, &bytes).map(|()| true)
+        }
+    }
+}
+
 /// Creates one new private file without replacing an existing entry. This is
 /// the backup primitive for callers that must preserve the exact pre-mutation
 /// bytes before an atomic replacement.

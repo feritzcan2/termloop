@@ -1,4 +1,4 @@
-import type { AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
+import type { AgentAccountCreateParams, AgentAccountDeleteParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountUsageListParams, AgentAuthStatusListParams } from "@termloop/contract/current";
 import { shell, type IpcMain, type IpcMainInvokeEvent } from "electron";
 import type { AgentAuthOperationDto, AgentAuthOperationParams, AgentAuthSubmitCodeParams, AgentConnectionParams } from "@termloop/contract/current";
 import { controlCall } from "./control.js";
@@ -21,6 +21,8 @@ export function registerAgentConnectionIpc(handle: IpcMain["handle"], requireRen
   handle("termloop:agent-account-create", (event, params: AgentAccountCreateParams) => { requireRenderer(event); return controlCall("agent.accountCreate", params); });
   handle("termloop:agent-account-rename", (event, params: AgentAccountRenameParams) => { requireRenderer(event); return controlCall("agent.accountRename", params); });
   handle("termloop:agent-account-set-default", (event, params: AgentAccountSetDefaultParams) => { requireRenderer(event); return controlCall("agent.accountSetDefault", params); });
+  handle("termloop:agent-account-delete", (event, params: AgentAccountDeleteParams) => { requireRenderer(event); return controlCall("agent.accountDelete", params); });
+  handle("termloop:agent-account-usage-list", (event, params: AgentAccountUsageListParams = {}) => { requireRenderer(event); return controlCall("agent.accountUsageList", params); });
   handle("termloop:agent-auth-status-list", (event, params: AgentAuthStatusListParams = {}) => { requireRenderer(event); return controlCall("agent.authStatusList", params); });
   handle("termloop:agent-install", (event, params: AgentConnectionParams) => { requireRenderer(event); return controlCall("agent.install", params); });
   handle("termloop:agent-auth-start", (event, params: AgentConnectionParams) => { requireRenderer(event); return controlCall("agent.authStart", params); });
