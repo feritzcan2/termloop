@@ -236,8 +236,30 @@ fn a_skill_reached_through_a_symlinked_folder_exports_its_target() {
     let package = manager
         .read_package_at(&root, SkillCatalogScope::global(), &catalog.skills[0].id)
         .unwrap();
-    let paths: Vec<_> = package.files.iter().map(|file| file.path.as_str()).collect();
+    let paths: Vec<_> = package
+        .files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
     assert_eq!(paths, ["SKILL.md", "notes.md"]);
+
+    // The copy lands in the shared folder and is linked so Claude reads it too.
+    let remote = root.join("remote");
+    fs::create_dir_all(remote.join(".claude")).unwrap();
+    let copied = manager
+        .create_user_package_at(&remote, "example", &package.files)
+        .unwrap();
+    assert_eq!(
+        copied.skills[0].agents,
+        [
+            crate::skill_manager::SkillAgent::Claude,
+            crate::skill_manager::SkillAgent::Codex
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(remote.join(".claude/skills/example/notes.md")).unwrap(),
+        "notes"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

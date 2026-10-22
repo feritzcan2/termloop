@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     SkillCatalog, SkillCatalogItem, SkillCatalogScope, SkillManager, SkillManagerError,
-    SkillOrigin, host_home_directory, locate_skill, valid_skill_directory_name,
+    SkillOrigin, host_home_directory, link_shared_skill_for_claude, locate_skill,
+    valid_skill_directory_name,
 };
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -128,6 +129,7 @@ impl SkillManager {
             let _ = std::fs::remove_dir_all(&directory);
             return Err(error);
         }
+        link_shared_skill_for_claude(home, directory_name);
         self.catalog_at(home, SkillCatalogScope::global())
     }
 }
