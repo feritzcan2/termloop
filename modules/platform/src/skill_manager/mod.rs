@@ -357,6 +357,7 @@ impl SkillManager {
             let _ = std::fs::remove_dir(&directory);
             return Err(error.into());
         }
+        link_shared_skill_for_claude(home, directory_name);
         self.catalog_at(home, SkillCatalogScope::global())
     }
 
@@ -394,6 +395,31 @@ impl SkillManager {
             backend: Some(backend),
         }
     }
+}
+
+/// Claude Code reads only `.claude/skills`, so a skill created in the shared
+/// folder reaches it through a relative link, as `npx skills` installs do.
+/// Best effort: an existing entry is never replaced, nothing is created for a
+/// host without Claude, and a refused link leaves Claude deployable instead.
+fn link_shared_skill_for_claude(home: &Path, directory_name: &str) {
+    let claude = home.join(".claude");
+    if !claude.is_dir() {
+        return;
+    }
+    let parent = claude.join("skills");
+    let link = parent.join(directory_name);
+    if std::fs::symlink_metadata(&link).is_ok() || std::fs::create_dir_all(&parent).is_err() {
+        return;
+    }
+    let target = Path::new("..")
+        .join("..")
+        .join(".agents")
+        .join("skills")
+        .join(directory_name);
+    #[cfg(unix)]
+    let _ = std::os::unix::fs::symlink(&target, &link);
+    #[cfg(windows)]
+    let _ = std::os::windows::fs::symlink_dir(&target, &link);
 }
 
 fn locate_skill<'catalog>(
@@ -586,6 +612,7 @@ mod tests {
     fn user_definition_create_is_shared_and_never_overwrites() {
         let root = temporary_directory("skills-create");
         let home = root.join("home");
+        fs::create_dir_all(home.join(".claude")).unwrap();
         let manager = SkillManager { backend: None };
         let content = "---\nname: remote-review\ndescription: Review remotely.\n---\n";
 
@@ -601,6 +628,10 @@ mod tests {
         assert_eq!(created.agents, vec![SkillAgent::Claude, SkillAgent::Codex]);
         assert_eq!(
             fs::read_to_string(home.join(".agents/skills/remote-review/SKILL.md")).unwrap(),
+            content
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".claude/skills/remote-review/SKILL.md")).unwrap(),
             content
         );
         assert!(matches!(
@@ -672,7 +703,7 @@ mod tests {
                 .find(|skill| skill.name == "shared-review")
                 .unwrap()
                 .agents,
-            vec![SkillAgent::Claude, SkillAgent::Codex]
+            vec![SkillAgent::Codex]
         );
         assert!(result.provider_snapshot_included);
         assert!(!result.manager_available);

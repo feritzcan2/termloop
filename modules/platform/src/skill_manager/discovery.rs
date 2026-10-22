@@ -165,7 +165,9 @@ fn scan_standard_roots(state: &mut DiscoveryState, owner: &Path, scope: SkillSco
         SkillSource {
             scope,
             origin: SkillOrigin::Shared,
-            agents: vec![SkillAgent::Claude, SkillAgent::Codex],
+            // Claude Code reads only `.claude/skills`; a shared skill reaches
+            // it through a link there, which is discovered as its own location.
+            agents: vec![SkillAgent::Codex],
             source: format!("{prefix} shared skills"),
             availability: SkillAvailability::Folder,
             manageable: true,
