@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentAuthOperationDto, AgentAuthStatusDto } from "@termloop/contract/current";
-import { AgentConnectionsPanel, duplicateLogins, identityLabel, resetLabel, type AgentConnectionActions } from "../src/renderer/ui/AgentConnectionsPanel.js";
+import { AgentConnectionsPanel, columnWindows, duplicateLogins, identityLabel, isServerUserAccount, resetLabel, type AgentConnectionActions } from "../src/renderer/ui/AgentConnectionsPanel.js";
+import { connectionEntityKey } from "../src/connection-scope.js";
 import type { ConnectionProfileSummary } from "../src/connection-profile-types.js";
 
 const profile: ConnectionProfileSummary = { id: "netcup", name: "Netcup", transport: "ssh", scope: "full", endpoint: "server", enabled: true, persistence: "encrypted", state: "connected" };
@@ -199,20 +200,24 @@ describe("named account management", () => {
 
   it("removes only a named account after confirmation and shows who each account is", async () => {
     const api = actions();
-    const named = { agentId: "claude" as const, accountId: "8f0c3c2e-1111-4222-8333-944455556666", name: "Work", isDefault: false };
-    const snapshot = { revision: 4, accounts: [{ agentId: "codex" as const, accountId: "default", name: "Default account", isDefault: true }, { agentId: "claude" as const, accountId: "default", name: "Default account", isDefault: true }, named] };
+    // The desktop IPC hands every account ID over scoped to its server.
+    const scoped = (id: string) => connectionEntityKey("netcup", id);
+    const named = { agentId: "claude" as const, accountId: scoped("8f0c3c2e-1111-4222-8333-944455556666"), name: "Work", isDefault: false };
+    const snapshot = { revision: 4, accounts: [{ agentId: "codex" as const, accountId: scoped("default"), name: "Default account", isDefault: true }, { agentId: "claude" as const, accountId: scoped("default"), name: "Default account", isDefault: true }, named] };
     const removed = { revision: 5, accounts: snapshot.accounts.slice(0, 2) };
     api.accounts = vi.fn(async () => snapshot);
     api.remove = vi.fn(async () => removed);
     api.list = vi.fn(async (_profile, params) => [{ ...status, agentId: params?.agentId ?? "codex", accountId: params?.accountId ?? "default", label: "Claude", authState: "signedIn" as const, identity: { email: "me@example.com", organizationName: "Acme", plan: "max" } }]);
     api.usage = vi.fn(async () => ({ accounts: [
-      { agentId: "claude" as const, accountId: "default", state: "ok" as const, identity: { email: "ME@example.com", organizationName: "Acme", plan: "max" }, windows: [{ kind: "session" as const, label: "Session", usedPercent: 42, windowMinutes: 300, resetsAtEpochMs: null }], fetchedAtEpochMs: 1, message: null },
+      { agentId: "claude" as const, accountId: scoped("default"), state: "ok" as const, identity: { email: "ME@example.com", organizationName: "Acme", plan: "max" }, windows: [{ kind: "session" as const, label: "Session", usedPercent: 42, windowMinutes: 300, resetsAtEpochMs: null }], fetchedAtEpochMs: 1, message: null },
       { agentId: "claude" as const, accountId: named.accountId, state: "ok" as const, identity: { email: "me@example.com", organizationName: "Acme", plan: "max" }, windows: [], fetchedAtEpochMs: 1, message: null },
+      { agentId: "claude" as const, accountId: scoped("1f0c3c2e-1111-4222-8333-944455556666"), state: "ok" as const, identity: { email: "me@example.com", organizationName: "Acme", plan: "max" }, windows: [], fetchedAtEpochMs: 1, message: null },
     ] }));
     await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
     expect([...container.querySelectorAll("button")].some((item) => item.textContent === "Remove")).toBe(false);
     expect(container.textContent).toContain("me@example.com (Acme, Max plan)");
     expect(container.textContent).toContain("Same login as Work, so limits are shared");
+    expect(container.textContent).not.toContain("tlc:");
     expect(container.textContent).toContain("42%");
     await act(async () => row(container, "claude", "Work").click());
     const remove = [...container.querySelectorAll("button")].filter((item) => item.textContent === "Remove");
@@ -228,6 +233,7 @@ describe("named account management", () => {
     expect(identityLabel({ email: "a@b.c", organizationName: null, plan: "pro" })).toBe("a@b.c (Pro plan)");
     expect(identityLabel({ email: null, organizationName: "Acme", plan: null })).toBe("Acme");
     expect(identityLabel(null)).toBeUndefined();
+    expect(identityLabel({ email: "a@b.c", organizationName: "A@b.c's Organization", plan: "max" })).toBe("a@b.c (Max plan)");
     const base = { agentId: "codex" as const, state: "ok" as const, windows: [], fetchedAtEpochMs: 0, message: null };
     const a = { ...base, accountId: "a", identity: { email: "x@y.z", organizationName: null, plan: null } };
     const b = { ...base, accountId: "b", identity: { email: "X@y.z", organizationName: null, plan: "pro" } };
@@ -235,5 +241,32 @@ describe("named account management", () => {
     expect(duplicateLogins([a, b, c], a).map((item) => item.accountId)).toEqual(["b"]);
     expect(resetLabel(1_000 + 30 * 60_000, 1_000)).toBe("in 30m");
     expect(resetLabel(0, 1_000)).toBe("now");
+  });
+
+  it("recognizes the server user's account through its connection scope", () => {
+    expect(isServerUserAccount("default")).toBe(true);
+    expect(isServerUserAccount(connectionEntityKey("local", "default"))).toBe(true);
+    expect(isServerUserAccount(connectionEntityKey("local", "8f0c3c2e-1111-4222-8333-944455556666"))).toBe(false);
+  });
+
+  it("places a provider's non-standard windows in the closest shared column", () => {
+    const base = { agentId: "codex" as const, accountId: "default", state: "ok" as const, identity: null, fetchedAtEpochMs: 0, message: null };
+    const month = { kind: "other" as const, label: "30 days", usedPercent: 100, windowMinutes: 43_200, resetsAtEpochMs: null };
+    expect(columnWindows({ ...base, windows: [month] })).toEqual({ session: undefined, weekly: month, rest: [] });
+    const session = { kind: "session" as const, label: "Session", usedPercent: 5, windowMinutes: 300, resetsAtEpochMs: null };
+    const weekly = { kind: "weekly" as const, label: "Weekly", usedPercent: 9, windowMinutes: 10_080, resetsAtEpochMs: null };
+    const opus = { kind: "weeklyModel" as const, label: "Weekly Opus", usedPercent: 50, windowMinutes: 10_080, resetsAtEpochMs: null };
+    expect(columnWindows({ ...base, windows: [session, weekly, opus] })).toEqual({ session, weekly, rest: [opus] });
+    expect(columnWindows({ ...base, state: "signedOut", windows: [] })).toEqual({ session: undefined, weekly: undefined, rest: [] });
+  });
+
+  it("names a non-standard window inside its column", async () => {
+    const api = actions();
+    api.usage = vi.fn(async (_profile, params) => ({ accounts: params?.agentId === "codex" ? [
+      { agentId: "codex" as const, accountId: "default", state: "ok" as const, identity: null, windows: [{ kind: "other" as const, label: "30 days", usedPercent: 100, windowMinutes: 43_200, resetsAtEpochMs: null }], fetchedAtEpochMs: 1, message: null },
+    ] : [] }));
+    await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
+    const codexRow = row(container, "codex", "Default account");
+    expect(codexRow.querySelector('[aria-label="Default account weekly usage"]')?.textContent).toContain("100%30 days");
   });
 });
