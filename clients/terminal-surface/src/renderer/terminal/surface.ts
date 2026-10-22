@@ -13,6 +13,8 @@ export type TerminalSurface = {
   container?(): HTMLElement | undefined;
   readText?(): Promise<string | undefined> | string;
   scrollToBottom?(): void;
+  /** Pastes text with the surface's own paste semantics (bracketed paste when enabled). */
+  paste?(text: string): void | Promise<void>;
   onError?(listener: () => void): () => void;
   mount(container: HTMLElement, preferWebgl: boolean): void | Promise<void>;
   unmount(): void;
@@ -30,4 +32,5 @@ export type TerminalSurfaceFactory = (
   onInput: (data: string | Uint8Array) => void,
   onResize: (rows: number, cols: number) => void,
   onImagePaste: () => void,
+  onFileDrop: (paths: string[]) => void,
 ) => TerminalSurface;

@@ -126,6 +126,7 @@ export class TerminalPool<S extends TerminalSession> {
     private readonly diagnosticsEnabled = false,
     private readonly onImagePaste: (sessionId: string) => void,
     private readonly policy: TerminalRetentionPolicy<S>,
+    private readonly onFileDrop: (sessionId: string, paths: string[]) => void = () => {},
   ) {}
 
   reconcile(sessions: readonly S[]): void {
@@ -197,6 +198,7 @@ export class TerminalPool<S extends TerminalSession> {
           entry.attachment?.resize(rows, cols);
         },
         () => this.onImagePaste(entry.session.id),
+        (paths) => this.onFileDrop(entry.session.id, paths),
       );
       entry.surface.setAppearanceTheme?.(this.#appearanceTheme);
       const surface = entry.surface;
@@ -310,6 +312,19 @@ export class TerminalPool<S extends TerminalSession> {
     if (!entry.attachment.input(data)) {
       throw new Error("terminal input queue rejected the review notes");
     }
+  }
+
+  /// Pastes text into a live, mounted Session through its surface's paste
+  /// semantics, unlike submitInput which writes raw bytes.
+  async paste(sessionId: string, text: string): Promise<void> {
+    const entry = this.#entries.get(sessionId);
+    if (!entry || entry.session.lifecycle_state !== "running") {
+      throw new Error("target Session is no longer running");
+    }
+    if (!entry.surface?.paste || !entry.mounted || !entry.surfaceReady) {
+      throw new Error("target Session is not ready for paste");
+    }
+    await entry.surface.paste(text);
   }
 
   probe(sessionId: string): TerminalBufferProbe | undefined {

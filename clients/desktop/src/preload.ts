@@ -1,5 +1,5 @@
 import type { SshSetupInput, SshSetupLogin } from "./ssh-setup-types.js";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { LayoutDocument } from "./layout/model.js";
 import type { NotificationPreferences } from "./notification-preferences.js";
@@ -42,6 +42,10 @@ ipcRenderer.on("termloop:ghostty-closed", (_event, message: { surfaceId: number 
 
 ipcRenderer.on("termloop:ghostty-shell-shortcut", (_event, message: { shortcut: string }) => {
   window.postMessage({ source: "termloop", type: "ghostty-shell-shortcut", ...message }, "*");
+});
+
+ipcRenderer.on("termloop:ghostty-file-drop", (_event, message: { surfaceId: number; paths: string[] }) => {
+  window.postMessage({ source: "termloop", type: "ghostty-file-drop", ...message }, "*");
 });
 
 ipcRenderer.on("termloop:gateway-state", (_event, message: { profileId: string; state: string }) => {
@@ -126,6 +130,9 @@ contextBridge.exposeInMainWorld("termloop", {
     ipcRenderer.invoke("termloop:ghostty-surface-focus", surfaceId),
   ghosttySurfaceDiagnosticText: (surfaceId: number) =>
     ipcRenderer.invoke("termloop:ghostty-surface-diagnostic-text", surfaceId),
+  ghosttySurfacePaste: (surfaceId: number, text: string) =>
+    ipcRenderer.invoke("termloop:ghostty-surface-paste", surfaceId, text),
+  droppedFilePath: (file: File) => webUtils.getPathForFile(file),
   ghosttySurfaceDestroy: (surfaceId: number) =>
     ipcRenderer.invoke("termloop:ghostty-surface-destroy", surfaceId),
   promptAssetsGet: () => ipcRenderer.invoke("termloop:prompt-assets-get"),

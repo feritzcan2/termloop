@@ -28,6 +28,7 @@ export type GhosttyHostAddon = {
     onSurfaceClosed?(surfaceId: number): void;
     onOutputConsumed?(surfaceId: number, bytes: number): void;
     onShellShortcut?(shortcut: string): void;
+    onFileDrop?(surfaceId: number, paths: string[]): void;
   }): void;
   createSurface(options: {
     handle: Buffer;
@@ -44,6 +45,7 @@ export type GhosttyHostAddon = {
   surfaceSize(id: number): GhosttySurfaceGrid;
   surfacePng(id: number): Buffer | undefined;
   surfaceText(id: number): string | undefined;
+  pasteSurfaceText(id: number, text: string): void;
   destroySurface(id: number): void;
   surfaceCount(): number;
 };

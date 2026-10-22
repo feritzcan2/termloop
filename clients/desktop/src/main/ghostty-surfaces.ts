@@ -10,6 +10,7 @@ export class GhosttySurfaceManager extends NativeSurfaceManager {
       input: (surfaceId, data) => window.webContents.send("termloop:ghostty-input", { surfaceId, data }),
       closed: (surfaceId) => window.webContents.send("termloop:ghostty-closed", { surfaceId }),
       shortcut: (shortcut) => window.webContents.send("termloop:ghostty-shell-shortcut", { shortcut }),
+      fileDrop: (surfaceId, paths) => window.webContents.send("termloop:ghostty-file-drop", { surfaceId, paths }),
     }, TERMLOOP_NATIVE_INPUT_POLICY);
   }
 }

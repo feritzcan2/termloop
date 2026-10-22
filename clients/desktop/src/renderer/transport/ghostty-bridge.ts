@@ -10,10 +10,12 @@ export type GhosttyBridge = SurfaceBridge & {
 type GhosttyInputMessage =
   | { source: "termloop"; type: "ghostty-input"; surfaceId: number; data: ArrayBuffer }
   | { source: "termloop"; type: "ghostty-closed"; surfaceId: number }
-  | { source: "termloop"; type: "ghostty-shell-shortcut"; shortcut: unknown };
+  | { source: "termloop"; type: "ghostty-shell-shortcut"; shortcut: unknown }
+  | { source: "termloop"; type: "ghostty-file-drop"; surfaceId: number; paths: unknown };
 
 const inputListeners = new Map<number, Set<(data: Uint8Array) => void>>();
 const closedListeners = new Map<number, Set<() => void>>();
+const fileDropListeners = new Map<number, Set<(paths: string[]) => void>>();
 const shellShortcutListeners = new Set<(shortcut: GhosttyShellShortcut) => void>();
 
 if (typeof window !== "undefined") {
@@ -28,6 +30,12 @@ if (typeof window !== "undefined") {
     if (typeof message.surfaceId !== "number") return;
     if (message.type === "ghostty-closed") {
       for (const listener of closedListeners.get(message.surfaceId) ?? []) listener();
+      return;
+    }
+    if (message.type === "ghostty-file-drop") {
+      if (!Array.isArray(message.paths)) return;
+      const paths = message.paths.filter((path): path is string => typeof path === "string");
+      for (const listener of fileDropListeners.get(message.surfaceId) ?? []) listener(paths);
       return;
     }
     if (message.type !== "ghostty-input" || !(message.data instanceof ArrayBuffer)) return;
@@ -51,6 +59,7 @@ export const ghosttyBridge: GhosttyBridge = {
   snapshotAndHide: (surfaceId) => desktopApi.ghosttySurfaceSnapshotAndHide(surfaceId),
   scrollToBottom: (surfaceId) => desktopApi.ghosttySurfaceScrollBottom(surfaceId),
   focus: (surfaceId) => desktopApi.ghosttySurfaceFocus(surfaceId),
+  paste: (surfaceId, text) => desktopApi.ghosttySurfacePaste(surfaceId, text),
   diagnosticText: (surfaceId) => desktopApi.ghosttySurfaceDiagnosticText(surfaceId),
   destroy: (surfaceId) => desktopApi.ghosttySurfaceDestroy(surfaceId),
   onInput(surfaceId, listener) {
@@ -69,6 +78,15 @@ export const ghosttyBridge: GhosttyBridge = {
     return () => {
       listeners.delete(listener);
       if (listeners.size === 0) closedListeners.delete(surfaceId);
+    };
+  },
+  onFileDrop(surfaceId, listener) {
+    const listeners = fileDropListeners.get(surfaceId) ?? new Set();
+    listeners.add(listener);
+    fileDropListeners.set(surfaceId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) fileDropListeners.delete(surfaceId);
     };
   },
   onShellShortcut(listener) {
