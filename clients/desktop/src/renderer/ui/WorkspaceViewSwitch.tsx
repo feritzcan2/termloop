@@ -46,9 +46,9 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
   /// The selected view's one primary action — Create Task, agent search —
   /// rendered beside the tabs. The rails below carry no title row of their
   /// own, so this slot is where those actions live. The bar is two rows: the
-  /// tabs and this action say what the rail shows; the launch row beneath
-  /// (RUN, terminal, agents, history) starts something and belongs to the
-  /// Project, not to a view. One row could not hold both at the default width.
+  /// tabs and this action say what the rail shows, with the Project's dev
+  /// server slot at its far edge; the launch row beneath (terminal, agents,
+  /// history) starts Sessions. One row could not hold both at the default width.
   viewAction?: { label: string; icon: IconName; run(): void; pressed?: boolean; disabled?: boolean } | undefined;
   /// A trailing settings destination for the selected view. It stays at the
   /// far edge so Create Task remains beside the Tasks tab.
@@ -89,6 +89,45 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
           onClick={viewAction.run}
         ><Icon name={viewAction.icon} /></button>
       ) : null}
+      {setupDevServer || runDevServer ? (
+        <span className="workspace-dev-server-slot">
+          {setupDevServer ? (
+            <button
+              type="button"
+              className="setup-dev-server"
+              title="Describe this Project's dev server once, then start it here or in any Task"
+              disabled={disabled}
+              onClick={setupDevServer}
+            ><Icon name="play" />Set up dev server</button>
+          ) : runDevServer ? (
+            <span className="run-dev-server-chip">
+              <button
+                type="button"
+                className={`setup-dev-server run-dev-server${runDevServer.running ? " running" : ""}`}
+                title={runDevServer.running
+                  ? `${runDevServer.name} is already running in this Project's checkout — opens its terminal`
+                  : `Start ${runDevServer.name} in this Project's own checkout`}
+                aria-label={runDevServer.running
+                  ? `Open the running ${runDevServer.name}`
+                  : `Run ${runDevServer.name} in this Project's own checkout`}
+                disabled={disabled}
+                onClick={runDevServer.start}
+                onContextMenu={(event) => { event.preventDefault(); runDevServer.edit(); }}
+              >{runDevServer.running
+                ? <span className="run-dev-server-dot" aria-hidden="true" />
+                : <Icon name="play" />}<span className="run-dev-server-label">RUN</span></button>
+              <button
+                type="button"
+                className="run-dev-server-edit"
+                title={`Edit ${runDevServer.name}`}
+                aria-label={`Edit run configuration ${runDevServer.name}`}
+                disabled={disabled}
+                onClick={runDevServer.edit}
+              ><Icon name="edit" /></button>
+            </span>
+          ) : null}
+        </span>
+      ) : null}
       {settingsAction ? (
         <button
           type="button"
@@ -102,41 +141,6 @@ export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents 
       ) : null}
       </div>
       <div className="workspace-launch-actions" aria-label="Launch Session">
-        {setupDevServer ? (
-          <button
-            type="button"
-            className="setup-dev-server"
-            title="Describe this Project's dev server once, then start it here or in any Task"
-            disabled={disabled}
-            onClick={setupDevServer}
-          ><Icon name="play" />Set up dev server</button>
-        ) : runDevServer ? (
-          <span className="run-dev-server-chip">
-            <button
-              type="button"
-              className={`setup-dev-server run-dev-server${runDevServer.running ? " running" : ""}`}
-              title={runDevServer.running
-                ? `${runDevServer.name} is already running in this Project's checkout — opens its terminal`
-                : `Start ${runDevServer.name} in this Project's own checkout`}
-              aria-label={runDevServer.running
-                ? `Open the running ${runDevServer.name}`
-                : `Run ${runDevServer.name} in this Project's own checkout`}
-              disabled={disabled}
-              onClick={runDevServer.start}
-              onContextMenu={(event) => { event.preventDefault(); runDevServer.edit(); }}
-            >{runDevServer.running
-              ? <span className="run-dev-server-dot" aria-hidden="true" />
-              : <Icon name="play" />}<span className="run-dev-server-label">RUN</span></button>
-            <button
-              type="button"
-              className="run-dev-server-edit"
-              title={`Edit ${runDevServer.name}`}
-              aria-label={`Edit run configuration ${runDevServer.name}`}
-              disabled={disabled}
-              onClick={runDevServer.edit}
-            ><Icon name="edit" /></button>
-          </span>
-        ) : null}
         <span className="workspace-session-launchers">
         <button id="new-terminal" type="button" title="New Terminal" aria-label="New Terminal" disabled={disabled} onClick={() => void launchTerminal()}><Icon name="terminal" /></button>
         {groupQuickActionShortcuts(shortcutLaunchers?.shortcuts ?? [], agents.map((agent) => agent.agent_id)).map((group) => {
