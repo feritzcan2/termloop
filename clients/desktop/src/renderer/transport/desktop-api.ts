@@ -275,6 +275,9 @@ export type DesktopApi = {
   ghosttySurfaceScrollBottom(surfaceId: number): Promise<void>;
   ghosttySurfaceFocus(surfaceId: number): Promise<void>;
   ghosttySurfaceDiagnosticText(surfaceId: number): Promise<string | undefined>;
+  ghosttySurfacePaste(surfaceId: number, text: string): Promise<void>;
+  /** Local filesystem path of a File from an OS drag, or "" when it has none. */
+  droppedFilePath(file: File): string;
   ghosttySurfaceDestroy(surfaceId: number): Promise<void>;
   systemInfo(): Promise<Record<string, unknown>>;
   keepAwakeGet(): Promise<KeepAwakeStatusResult>;

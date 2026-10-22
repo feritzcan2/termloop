@@ -821,6 +821,12 @@ handleIpc("termloop:ghostty-surface-diagnostic-text", (event, surfaceId: unknown
   if (process.env.TERMLOOP_DESKTOP_DIAGNOSTICS !== "1") throw new Error("terminalDiagnosticsDisabled");
   return requireGhosttyManager(event).probeText(requireSurfaceId(surfaceId));
 });
+handleIpc("termloop:ghostty-surface-paste", (event, surfaceId: unknown, text: unknown) => {
+  const manager = requireGhosttyManager(event);
+  if (typeof text !== "string" || text.length === 0 || text.length > 65_536) throw new Error("invalidGhosttySurfacePaste");
+  if (!("paste" in manager)) throw new Error("terminalPasteUnavailable");
+  manager.paste(requireSurfaceId(surfaceId), text);
+});
 handleIpc("termloop:ghostty-surface-destroy", (event, surfaceId: unknown) => {
   requireGhosttyManager(event).destroy(requireSurfaceId(surfaceId));
 });

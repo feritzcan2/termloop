@@ -18,11 +18,17 @@ function sessionHasAttachableTerminal(session: Session): boolean {
 }
 
 export class TerminalPool extends EngineTerminalPool<Session> {
-  constructor(surfaceFactory: TerminalSurfaceFactory, attachmentFactory: AttachmentFactory<Session>, diagnosticsEnabled = false, onImagePaste: (sessionId: string) => void = () => {}) {
+  constructor(
+    surfaceFactory: TerminalSurfaceFactory,
+    attachmentFactory: AttachmentFactory<Session>,
+    diagnosticsEnabled = false,
+    onImagePaste: (sessionId: string) => void = () => {},
+    onFileDrop: (sessionId: string, paths: string[]) => void = () => {},
+  ) {
     super(surfaceFactory, attachmentFactory, diagnosticsEnabled, onImagePaste, {
       retain: sessionKeepsTerminalSurface,
       canAttach: sessionHasAttachableTerminal,
       connectionScope: connectionProfileIdOf,
-    });
+    }, onFileDrop);
   }
 }

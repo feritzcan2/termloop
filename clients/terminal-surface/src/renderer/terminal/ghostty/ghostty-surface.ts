@@ -30,6 +30,7 @@ export class GhosttySurface implements TerminalSurface {
   #frameRequest: number | undefined;
   #removeInputListener: (() => void) | undefined;
   #removeClosedListener: (() => void) | undefined;
+  #removeFileDropListener: (() => void) | undefined;
   #writeTail: Promise<void> = Promise.resolve();
   #grid: GhosttyGrid | undefined;
   #visibilityRevision = 0;
@@ -42,6 +43,7 @@ export class GhosttySurface implements TerminalSurface {
     private readonly onInput: (data: string | Uint8Array) => void,
     private readonly onResize: (rows: number, cols: number) => void,
     private readonly bridge: GhosttyBridge,
+    private readonly onFileDrop?: (paths: string[]) => void,
   ) {}
 
   async mount(container: HTMLElement, _preferWebgl: boolean): Promise<void> {
@@ -112,6 +114,10 @@ export class GhosttySurface implements TerminalSurface {
   scrollToBottom(): void {
     if (this.#surfaceId) void this.bridge.scrollToBottom?.(this.#surfaceId).catch(() => this.#fail());
   }
+  async paste(text: string): Promise<void> {
+    if (!this.#surfaceId || this.#failed || !this.bridge.paste) throw new Error("terminal paste is unavailable");
+    await this.bridge.paste(this.#surfaceId, text);
+  }
   onError(listener: () => void): () => void {
     this.#errorListeners.add(listener);
     if (this.#failed) listener();
@@ -170,6 +176,8 @@ export class GhosttySurface implements TerminalSurface {
     this.#removeInputListener = undefined;
     this.#removeClosedListener?.();
     this.#removeClosedListener = undefined;
+    this.#removeFileDropListener?.();
+    this.#removeFileDropListener = undefined;
     this.#retainedAlternateScreenImage = undefined;
     this.#terminalSequenceTail = "";
     if (surfaceId) void this.bridge.destroy(surfaceId);
@@ -246,6 +254,7 @@ export class GhosttySurface implements TerminalSurface {
       this.#surfaceId = created.surfaceId;
       await this.bridge.setColorScheme(created.surfaceId, this.#appearanceTheme).catch(() => {});
       this.#removeInputListener = this.bridge.onInput(created.surfaceId, this.onInput);
+      if (this.onFileDrop) this.#removeFileDropListener = this.bridge.onFileDrop?.(created.surfaceId, this.onFileDrop);
       this.#removeClosedListener = this.bridge.onClosed(created.surfaceId, () => {
         this.#fail();
         this.#removeInputListener?.();

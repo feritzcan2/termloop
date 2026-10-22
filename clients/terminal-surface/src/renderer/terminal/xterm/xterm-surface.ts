@@ -87,6 +87,8 @@ export class XtermSurface implements TerminalSurface {
     onInput: (data: string) => void,
     onResize: (rows: number, cols: number) => void,
     onImagePaste: () => void,
+    onFileDrop?: (paths: string[]) => void,
+    droppedFilePath?: (file: File) => string,
   ) {
     // Distinct from the sidebar's `.session-item.terminal` kind modifier, which
     // otherwise matches the same bare `.terminal` selector and inherits the
@@ -136,6 +138,26 @@ export class XtermSurface implements TerminalSurface {
       event.stopPropagation();
       onImagePaste();
     }, true);
+    if (onFileDrop && droppedFilePath) {
+      // OS file drops paste their local paths at the prompt. Only file drags
+      // are claimed, so in-app drags (Sessions, tree rows) keep their targets.
+      const filesDrag = (event: DragEvent) => event.dataTransfer?.types.includes("Files") === true;
+      this.#host.addEventListener("dragover", (event) => {
+        if (!filesDrag(event)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      });
+      this.#host.addEventListener("drop", (event) => {
+        if (!filesDrag(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const paths = [...(event.dataTransfer?.files ?? [])].map(droppedFilePath).filter((path) => path.length > 0);
+        if (paths.length > 0) {
+          this.#terminal.focus();
+          onFileDrop(paths);
+        }
+      });
+    }
     this.#terminal.attachCustomKeyEventHandler((event) => {
       // Explicit Ctrl+Shift+V paste / Ctrl+Shift+C copy for the xterm path
       // (Windows/Linux). `term.paste` preserves bracketed-paste semantics.
@@ -265,6 +287,7 @@ export class XtermSurface implements TerminalSurface {
   }
   setVisible(visible: boolean): void { this.#host.style.visibility = visible ? "visible" : "hidden"; }
   scrollToBottom(): void { this.#terminal.scrollToBottom(); }
+  paste(text: string): void { this.#terminal.paste(text); }
 
   write(data: Uint8Array, callback: () => void): void {
     this.#terminal.write(data, callback);

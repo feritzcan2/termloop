@@ -26,6 +26,7 @@
 #include <atomic>
 #include <map>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Ghostty app singleton + runtime callbacks
@@ -37,6 +38,7 @@ static ghostty_config_t g_light_config = nullptr;
 static Napi::ThreadSafeFunction *g_surfaceClosed = nullptr;
 static Napi::ThreadSafeFunction *g_surfaceConsumed = nullptr;
 static Napi::ThreadSafeFunction *g_shellShortcut = nullptr;
+static Napi::ThreadSafeFunction *g_fileDrop = nullptr;
 
 struct SurfaceCallbackContext {
   uint32_t id;
@@ -51,6 +53,15 @@ struct ConsumedPayload {
 struct ShellShortcutPayload {
   std::string id;
 };
+
+struct FileDropPayload {
+  uint32_t id;
+  std::vector<std::string> paths;
+};
+
+// A Finder drop is a deliberate gesture; this cap only bounds pathological
+// selections before they cross into JS.
+static const NSUInteger kMaxDroppedFiles = 64;
 
 static void externalIoConsumedCallback(void *userdata, size_t bytes) {
   auto *context = static_cast<SurfaceCallbackContext *>(userdata);
@@ -97,6 +108,7 @@ static bool actionCallback(ghostty_app_t, ghostty_target_s target, ghostty_actio
 @class TLGhosttyView;
 static ghostty_surface_t surfaceFromUserdata(void *userdata);
 static void notifySurfaceClosed(TLGhosttyView *view);
+static void notifyFileDrop(TLGhosttyView *view, NSArray<NSURL *> *urls);
 
 static bool readClipboardCallback(void *userdata,
                                   ghostty_clipboard_e,
@@ -248,6 +260,7 @@ static void notifyShellShortcut(const char *shortcut) {
             .CGColor;
     self.markedText = [[NSMutableAttributedString alloc] initWithString:@""];
     self.terminalLinks = [TLTerminalLinks new];
+    [self registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
     NSTrackingArea *area = [[NSTrackingArea alloc]
         initWithRect:NSZeroRect
              options:NSTrackingMouseMoved | NSTrackingActiveInKeyWindow |
@@ -754,6 +767,36 @@ static void notifyShellShortcut(const char *shortcut) {
   ghostty_surface_mouse_scroll(self.surface, dx, dy, mods);
 }
 
+// Finder file drops. AppKit delivers them to this native view because it
+// paints above the web contents, so the renderer never sees a DOM drop here.
+// The host only reports local file paths; the embedder decides whether and
+// how they reach the terminal.
+static NSArray<NSURL *> *droppedFileURLs(id<NSDraggingInfo> sender) {
+  NSArray *urls = [sender.draggingPasteboard
+      readObjectsForClasses:@[ [NSURL class] ]
+                    options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+  return urls.count > 0 ? urls : nil;
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+  return g_fileDrop != nullptr && self.surface != nullptr &&
+                 droppedFileURLs(sender) != nil
+             ? NSDragOperationCopy
+             : NSDragOperationNone;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+  return [self draggingEntered:sender];
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+  NSArray<NSURL *> *urls = droppedFileURLs(sender);
+  if (urls == nil || self.surface == nullptr) return NO;
+  notifyFileDrop(self, urls);
+  [self.window makeFirstResponder:self];
+  return YES;
+}
+
 @end
 
 static void updateHoveredLink(ghostty_surface_t surface, const char *url, size_t length) {
@@ -803,15 +846,43 @@ static SurfaceEntry *entryForId(uint32_t id) {
   return it == surfaces().end() ? nullptr : &it->second;
 }
 
+static uint32_t surfaceIdForView(TLGhosttyView *view) {
+  for (const auto &item : surfaces()) {
+    if (item.second.view == view) return item.first;
+  }
+  return 0;
+}
+
+static void notifyFileDrop(TLGhosttyView *view, NSArray<NSURL *> *urls) {
+  if (g_fileDrop == nullptr) return;
+  const uint32_t id = surfaceIdForView(view);
+  if (id == 0) return;
+  auto *payload = new FileDropPayload{id, {}};
+  for (NSURL *url in urls) {
+    if (payload->paths.size() >= kMaxDroppedFiles) break;
+    const char *path = url.fileURL ? url.path.fileSystemRepresentation : nullptr;
+    if (path != nullptr && path[0] != '\0') payload->paths.emplace_back(path);
+  }
+  if (payload->paths.empty()) {
+    delete payload;
+    return;
+  }
+  const napi_status status = g_fileDrop->NonBlockingCall(
+      payload, [](Napi::Env env, Napi::Function callback,
+                  FileDropPayload *value) {
+        Napi::Array paths = Napi::Array::New(env, value->paths.size());
+        for (size_t i = 0; i < value->paths.size(); i++) {
+          paths.Set(i, Napi::String::New(env, value->paths[i]));
+        }
+        callback.Call({Napi::Number::New(env, value->id), paths});
+        delete value;
+      });
+  if (status != napi_ok) delete payload;
+}
+
 static void notifySurfaceClosed(TLGhosttyView *view) {
   if (g_surfaceClosed == nullptr) return;
-  uint32_t id = 0;
-  for (const auto &item : surfaces()) {
-    if (item.second.view == view) {
-      id = item.first;
-      break;
-    }
-  }
+  const uint32_t id = surfaceIdForView(view);
   if (id == 0) return;
   uint32_t *payload = new uint32_t(id);
   const napi_status status = g_surfaceClosed->NonBlockingCall(
@@ -876,6 +947,12 @@ static Napi::Value InitApp(const Napi::CallbackInfo &info) {
           Napi::ThreadSafeFunction::New(
               env, opts.Get("onShellShortcut").As<Napi::Function>(),
               "GhosttyShellShortcut", 0, 1));
+    }
+    if (opts.Has("onFileDrop") && opts.Get("onFileDrop").IsFunction()) {
+      g_fileDrop = new Napi::ThreadSafeFunction(
+          Napi::ThreadSafeFunction::New(
+              env, opts.Get("onFileDrop").As<Napi::Function>(),
+              "GhosttyFileDrop", 0, 1));
     }
     if (opts.Has("configFile")) {
       configFile = opts.Get("configFile").As<Napi::String>();
@@ -1193,6 +1270,19 @@ static Napi::Value SendText(const Napi::CallbackInfo &info) {
   return env.Undefined();
 }
 
+// Delivers embedder-composed text through Ghostty's paste path, which honors
+// the application's bracketed-paste mode exactly like a clipboard paste.
+static Napi::Value PasteSurfaceText(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  SurfaceEntry *e =
+      entryForId(info[0].As<Napi::Number>().Uint32Value());
+  if (e == nullptr || e->view.surface == nullptr) return env.Undefined();
+  std::string text = info[1].As<Napi::String>();
+  if (text.empty()) return env.Undefined();
+  ghostty_surface_text(e->surface, text.data(), text.size());
+  return env.Undefined();
+}
+
 static Napi::Value DestroySurface(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   const uint32_t id = info[0].As<Napi::Number>().Uint32Value();
@@ -1242,6 +1332,11 @@ static void CleanupAddon() {
     delete g_shellShortcut;
     g_shellShortcut = nullptr;
   }
+  if (g_fileDrop != nullptr) {
+    g_fileDrop->Release();
+    delete g_fileDrop;
+    g_fileDrop = nullptr;
+  }
   if (g_app != nullptr) {
     ghostty_app_free(g_app);
     g_app = nullptr;
@@ -1271,6 +1366,7 @@ static Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("surfacePng", Napi::Function::New(env, SurfacePng));
   exports.Set("surfaceText", Napi::Function::New(env, SurfaceText));
   exports.Set("sendText", Napi::Function::New(env, SendText));
+  exports.Set("pasteSurfaceText", Napi::Function::New(env, PasteSurfaceText));
   exports.Set("destroySurface", Napi::Function::New(env, DestroySurface));
   exports.Set("surfaceCount", Napi::Function::New(env, SurfaceCount));
   exports.Set("tick", Napi::Function::New(env, Tick));

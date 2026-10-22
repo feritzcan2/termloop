@@ -13,9 +13,11 @@ export type GhosttyBridge = {
   snapshotImage(surfaceId: number): Promise<string | undefined>;
   snapshotAndHide(surfaceId: number): Promise<string | undefined>;
   scrollToBottom?(surfaceId: number): Promise<void>;
+  paste?(surfaceId: number, text: string): Promise<void>;
   focus(surfaceId: number): Promise<void>;
   diagnosticText(surfaceId: number): Promise<string | undefined>;
   destroy(surfaceId: number): Promise<void>;
   onInput(surfaceId: number, listener: (data: Uint8Array) => void): () => void;
   onClosed(surfaceId: number, listener: () => void): () => void;
+  onFileDrop?(surfaceId: number, listener: (paths: string[]) => void): () => void;
 };

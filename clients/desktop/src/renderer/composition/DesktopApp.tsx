@@ -102,6 +102,7 @@ import {
 } from "../../connection-scope.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 import { appearanceTheme, subscribeAppearanceTheme } from "../appearance-theme.js";
+import { droppedPathsText, dropTargetShell } from "../terminal-file-drop.js";
 
 type OrdinaryAgentLaunchPreset = {
   model: string;
@@ -142,12 +143,13 @@ declare global {
 
 const diagnosticsEnabled = new URLSearchParams(window.location.search).get("diagnostics") === "1";
 const terminalPool = new TerminalPool(
-  (onInput, onResize, onImagePaste) => terminalRendererKind() !== "xterm"
-    ? new GhosttySurface(onInput, onResize, ghosttyBridge)
-    : new XtermSurface(onInput, onResize, onImagePaste),
+  (onInput, onResize, onImagePaste, onFileDrop) => terminalRendererKind() !== "xterm"
+    ? new GhosttySurface(onInput, onResize, ghosttyBridge, onFileDrop)
+    : new XtermSurface(onInput, onResize, onImagePaste, onFileDrop, (file) => desktopApi.droppedFilePath(file)),
   attachTerminal,
   diagnosticsEnabled,
   (sessionId) => { void pasteImageToSession(sessionId); },
+  (sessionId, paths) => { void pasteDroppedFilesToSession(sessionId, paths); },
 );
 terminalPool.setAppearanceTheme(appearanceTheme());
 const terminalPresentation = withTerminalReconnect(
@@ -568,6 +570,27 @@ function sourceApiForTask(taskId: string): SourceDesktopApi {
 function sourceApiForSession(sessionId: string): SourceDesktopApi {
   const session = projectionStore.getSnapshot().sessions.find((candidate) => candidate.id === sessionId);
   return session ? desktopApi.source(connectionProfileIdOf(session)) : sourceApiForEntityId(sessionId);
+}
+
+/// Dropped files are paths on this computer, so they only make sense in a
+/// Session running on the local daemon; a remote Session would receive a path
+/// that does not exist on its host.
+async function pasteDroppedFilesToSession(sessionId: string, paths: readonly string[]): Promise<void> {
+  const session = projectionStore.getSnapshot().sessions.find((candidate) => candidate.id === sessionId);
+  if (!session || connectionProfileIdOf(session) !== "local") {
+    projectionStore.setMessage("Dropped files can only be pasted into a Session on this computer.");
+    return;
+  }
+  const { text, skipped } = droppedPathsText(paths, dropTargetShell(navigator.userAgent));
+  if (skipped > 0) {
+    projectionStore.setMessage(`${skipped} dropped ${skipped === 1 ? "path was" : "paths were"} not pasted because ${skipped === 1 ? "it" : "they"} cannot be pasted safely.`);
+  }
+  if (!text) return;
+  try {
+    await terminalPool.paste(sessionId, text);
+  } catch (error) {
+    projectionStore.setMessage(controlErrorMessage(error));
+  }
 }
 
 async function pasteImageToSession(sessionId: string): Promise<void> {

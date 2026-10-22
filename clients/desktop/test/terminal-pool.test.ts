@@ -420,6 +420,36 @@ describe("TerminalPool", () => {
     expect(attachment.inputs).toEqual(["review"]);
   });
 
+  it("routes surface file drops by Session and pastes only into a mounted running Session", async () => {
+    const pasted: string[] = [];
+    const drops: Array<{ sessionId: string; paths: string[] }> = [];
+    let dropFromSurface: ((paths: string[]) => void) | undefined;
+    const value = session("023e4567-e89b-12d3-a456-426614174003");
+    const pool = new TerminalPool(
+      (_onInput, _onResize, _onImagePaste, onFileDrop) => {
+        dropFromSurface = onFileDrop;
+        const surface = new FakeSurface();
+        return Object.assign(surface, { paste: (text: string) => { pasted.push(text); } });
+      },
+      async () => new FakeAttachment(),
+      false,
+      () => {},
+      (sessionId, paths) => drops.push({ sessionId, paths }),
+    );
+    pool.reconcile([value]);
+
+    await expect(pool.paste(value.id, "/a.png ")).rejects.toThrow("not ready for paste");
+    await pool.mount(value.id, {} as HTMLElement);
+    dropFromSurface?.(["/a.png"]);
+    await pool.paste(value.id, "/a.png ");
+
+    expect(drops).toEqual([{ sessionId: value.id, paths: ["/a.png"] }]);
+    expect(pasted).toEqual(["/a.png "]);
+    pool.reconcile([{ ...value, lifecycle_state: "exited" }]);
+    await expect(pool.paste(value.id, "late")).rejects.toThrow();
+    expect(pasted).toEqual(["/a.png "]);
+  });
+
   it("sends no bytes after a runtime change or bounded input rejection", async () => {
     const firstAttachment = new FakeAttachment();
     const secondAttachment = new FakeAttachment();

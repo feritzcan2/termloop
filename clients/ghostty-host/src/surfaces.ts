@@ -9,6 +9,7 @@ export type GhosttyHostEvents = {
   input(surfaceId: number, data: ArrayBuffer): void;
   closed(surfaceId: number): void;
   shortcut(shortcut: string): void;
+  fileDrop?(surfaceId: number, paths: string[]): void;
 };
 
 export type SurfaceFrame = { x: number; y: number; width: number; height: number };
@@ -106,6 +107,7 @@ export class GhosttySurfaceManager {
         onSurfaceClosed: (surfaceId) => this.#surfaceClosed(surfaceId),
         onOutputConsumed: (surfaceId, bytes) => this.#outputConsumed(surfaceId, bytes),
         onShellShortcut: (shortcut) => this.#shellShortcut(shortcut),
+        onFileDrop: (surfaceId, paths) => this.#fileDrop(surfaceId, paths),
       });
       this.#appInitialized = true;
     }
@@ -191,6 +193,14 @@ export class GhosttySurfaceManager {
     if (this.#surfaces.has(surfaceId)) this.#addon.scrollSurfaceToBottom(surfaceId);
   }
 
+  /// Pastes embedder-composed text through Ghostty's own paste path so the
+  /// application's bracketed-paste mode is honored.
+  paste(surfaceId: number, text: string): void {
+    const entry = this.#surfaces.get(surfaceId);
+    if (!entry || entry.closed) throw new Error("ghosttySurfaceClosed");
+    this.#addon.pasteSurfaceText(surfaceId, text);
+  }
+
   probeText(surfaceId: number): string | undefined {
     if (!this.#surfaces.has(surfaceId)) return undefined;
     return this.#addon.surfaceText(surfaceId);
@@ -242,6 +252,11 @@ export class GhosttySurfaceManager {
     const entry = this.#surfaces.get(surfaceId);
     if (!entry || !Number.isSafeInteger(bytes) || bytes <= 0) return;
     entry.writes.consume(bytes);
+  }
+
+  #fileDrop(surfaceId: number, paths: string[]): void {
+    if (this.#window.isDestroyed() || !this.#surfaces.has(surfaceId)) return;
+    this.events.fileDrop?.(surfaceId, paths);
   }
 
   #shellShortcut(shortcut: string): void {
