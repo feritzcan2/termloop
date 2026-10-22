@@ -386,6 +386,44 @@ describe("Skills rail", () => {
     expect(container.querySelector('[title="release is available on Studio Mac"]')).not.toBeNull();
   });
 
+  it("lets a symlinked personal skill that Skills Manager cannot adopt be copied", async () => {
+    const local: SkillCatalogResult = {
+      ...catalog,
+      skills: [{
+        id: "f".repeat(64),
+        name: "porting",
+        description: "Port guidance.",
+        agents: ["claude"],
+        scopes: ["user"],
+        origins: ["personal"],
+        locations: [{
+          path: "/home/.claude/skills/porting",
+          scope: "user",
+          origin: "personal",
+          agents: ["claude"],
+          source: "User Claude skills",
+          availability: "folder",
+        }],
+        agentStates: [
+          { agent: "claude", present: true, managed: false, targetPath: null },
+          { agent: "codex", present: false, managed: false, targetPath: null },
+        ],
+        manageable: false,
+      }],
+    };
+    await render({
+      load: async () => local,
+      listRemoteComputers: vi.fn().mockResolvedValue([{ profileId: "remote-a", name: "Studio Mac", writable: true }]),
+      loadRemoteCatalog: vi.fn().mockResolvedValue({ ...catalog, skills: [], projectIncluded: false, projectName: null }),
+      createRemoteSkill: vi.fn(),
+    });
+    await act(async () => undefined);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]')?.click());
+    await act(async () => undefined);
+
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Create porting on Studio Mac"]')?.disabled).toBe(false);
+  });
+
   it("omits the remote-computer switch when no remote computer is connected", async () => {
     await render({ listRemoteComputers: async () => [] });
     await act(async () => undefined);

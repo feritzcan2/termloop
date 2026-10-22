@@ -11,8 +11,8 @@ use cap_std::fs::{Dir, OpenOptions};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    SkillCatalog, SkillCatalogScope, SkillManager, SkillManagerError, host_home_directory,
-    locate_skill, valid_skill_directory_name,
+    SkillCatalog, SkillCatalogItem, SkillCatalogScope, SkillManager, SkillManagerError,
+    SkillOrigin, host_home_directory, locate_skill, valid_skill_directory_name,
 };
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -52,7 +52,7 @@ impl SkillManager {
     ) -> Result<SkillPackage, SkillManagerError> {
         let catalog = self.catalog_at(home, scope)?;
         let skill = locate_skill(&catalog, skill_id)?;
-        if !skill.manageable {
+        if !portable(skill) {
             return Err(SkillManagerError::SkillNotManageable);
         }
         let root = Dir::open_ambient_dir(&skill.canonical_path, cap_std::ambient_authority())?;
@@ -215,6 +215,16 @@ fn validate_files(files: &[SkillPackageFile]) -> Result<Vec<Vec<u8>>, SkillManag
         return Err(SkillManagerError::InvalidPackage);
     }
     Ok(decoded)
+}
+
+/// Export only reads files, so a skill reached through a symlinked user folder
+/// is portable even though Skills Manager must not adopt it in place.
+fn portable(skill: &SkillCatalogItem) -> bool {
+    skill.manageable
+        || skill
+            .locations
+            .iter()
+            .any(|location| location.origin != SkillOrigin::BuiltIn)
 }
 
 fn collect_files(
