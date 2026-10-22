@@ -15,8 +15,10 @@ import { Icon, type IconName } from "./Icon.js";
 import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
 import { MobileConnectDialog, type MobileConnectDialogProps } from "./MobileConnectDialog.js";
 import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSettings.js";
+import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
+import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 
-export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "integrations" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -32,7 +34,8 @@ const appNavItems: SettingsNavItem[] = [
 ];
 
 const computerNavItems: SettingsNavItem[] = [
-  { page: "servers", title: "Computers", icon: "monitor", keywords: "servers remote ssh tailscale host share connection keep awake power agent accounts" },
+  { page: "servers", title: "Computers", icon: "monitor", keywords: "servers remote ssh tailscale host share connection keep awake power" },
+  { page: "accounts", title: "Agent accounts", icon: "agent", keywords: "claude codex account login sign in sign out switch default usage limits rate remove" },
   { page: "integrations", title: "Integrations", icon: "link", keywords: "github gh azure devops az jira pull request pr build checks ci review token pat credentials providers" },
   { page: "mobile", title: "Pair phone", icon: "phone", keywords: "mobile iphone qr pairing voice transcription" },
 ];
@@ -75,6 +78,7 @@ export function SettingsDialog({
   const [saveError, setSaveError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [initialProfileId] = useState(connectionProps.initialProfileId);
+  const [accountsProfileId, setAccountsProfileId] = useState(initialProfileId);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const navGroups = [
@@ -83,6 +87,7 @@ export function SettingsDialog({
       title: "Computers",
       items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile)
         && (item.page !== "integrations" || integrations)
+        && (item.page !== "accounts" || connectionProps.agentConnections)
         && matchesSettingsQuery(item, query)),
     },
   ].filter((group) => group.items.length > 0);
@@ -233,20 +238,60 @@ export function SettingsDialog({
               initialProfileId={initialProfileId}
               openTaskSettings={integrations.openTaskSettings ? () => { close(); integrations.openTaskSettings?.(); } : undefined}
             />
+          ) : page === "accounts" && connectionProps.agentConnections ? (
+            <AgentAccountsSettings key={accountsProfileId} actions={connectionProps.agentConnections} listProfiles={connectionProps.list} initialProfileId={accountsProfileId} />
           ) : page === "mobile" && mobile ? (
             <MobileConnectDialog {...mobile} embedded computerName={showScope ? localComputerName : undefined} close={close} />
           ) : (
             <>
               <div className="settings-page-header">
                 <h3>Computers</h3>
-                <p>Manage your computers, agent accounts and remote access.</p>
+                <p>Manage your computers and remote access.</p>
               </div>
-              <ConnectionProfilesDialog {...connectionProps} initialProfileId={initialProfileId} embedded close={close} pairPhone={mobile ? () => { setQuery(""); setPage("mobile"); } : undefined} />
+              <ConnectionProfilesDialog {...connectionProps} initialProfileId={initialProfileId} embedded close={close} openAgentAccounts={connectionProps.agentConnections ? (profileId) => { setAccountsProfileId(profileId); setQuery(""); setPage("accounts"); } : undefined} pairPhone={mobile ? () => { setQuery(""); setPage("mobile"); } : undefined} />
             </>
           )}
         </div>
       </main>
     </div>
+  );
+}
+
+function AgentAccountsSettings({ actions, listProfiles, initialProfileId = "local" }: {
+  actions: AgentConnectionActions;
+  listProfiles(): Promise<ConnectionProfileSummary[]>;
+  initialProfileId?: string | undefined;
+}) {
+  const [profiles, setProfiles] = useState<ConnectionProfileSummary[]>();
+  const [profilesError, setProfilesError] = useState<string>();
+  const [selectedProfileId, setSelectedProfileId] = useState(initialProfileId);
+  useEffect(() => {
+    let active = true;
+    void listProfiles().then(
+      (value) => { if (active) { setProfiles(value); setProfilesError(undefined); } },
+      (error) => { if (active) setProfilesError(errorMessage(error)); },
+    );
+    return () => { active = false; };
+  }, [listProfiles]);
+  const profile = profiles?.find((candidate) => candidate.id === selectedProfileId)
+    ?? profiles?.find((candidate) => candidate.id === "local")
+    ?? profiles?.[0];
+  return (
+    <section className="agent-accounts-settings" aria-labelledby="agent-accounts-settings-title">
+      <div className="settings-page-header">
+        <h3 id="agent-accounts-settings-title">Agent accounts</h3>
+        <p>Sign Claude and Codex in with one or more accounts, choose which one new Agents use, and watch each account's usage limits.</p>
+      </div>
+      {profiles && profiles.length > 1 ? <label className="conn-field agent-server-select"><span>Computer</span>
+        <select aria-label="Computer" value={profile?.id ?? ""} onChange={(event) => setSelectedProfileId(event.target.value)}>
+          {profiles.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.state === "offline" ? " · Offline" : ""}</option>)}
+        </select>
+      </label> : null}
+      {profilesError ? <p className="settings-error" role="alert">Could not load computers: {profilesError}</p>
+        : !profiles ? <p className="settings-loading" role="status">Loading computers…</p>
+        : profile ? <AgentConnectionsPanel key={profile.id} profile={profile} actions={actions} />
+        : <p className="settings-empty">No computers are configured.</p>}
+    </section>
   );
 }
 

@@ -1597,7 +1597,7 @@ export function Shell(props: ShellProps) {
             </div>
           </ProjectCheckoutHeader>
           <WorkspaceViewSwitch
-            setupAgents={() => setSettingsPage("servers")}
+            setupAgents={() => setSettingsPage("accounts")}
             view={workspaceView}
             disabled={disabled}
             agents={props.agentCapabilities}
@@ -1884,7 +1884,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}</div>
             <div className="sidebar-footer-actions sidebar-footer-end">
-              {props.agentConnections && props.switchAgentSessionAccount ? <AgentAccountSwitcher key={`accounts-${selectedConnectionProfileId}`} profileId={selectedConnectionProfileId} actions={props.agentConnections} sessions={props.computerSessions ?? props.projectSessions} agentStatuses={props.agentStatuses} switchSession={props.switchAgentSessionAccount} openSettings={() => setSettingsPage("servers")} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} /> : null}<KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              {props.agentConnections && props.switchAgentSessionAccount ? <AgentAccountSwitcher key={`accounts-${selectedConnectionProfileId}`} profileId={selectedConnectionProfileId} actions={props.agentConnections} sessions={props.computerSessions ?? props.projectSessions} agentStatuses={props.agentStatuses} switchSession={props.switchAgentSessionAccount} openSettings={() => setSettingsPage("accounts")} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} /> : null}<KeepAwakePanel key={selectedConnectionProfileId} computerName={showSettingsScope ? computerName : undefined} scopeLabel={showSettingsScope ? scopeName : undefined} disabled={props.connection !== "connected" || selectedSourceOffline || selectedComputer?.scope === "readOnly" || selectedComputer?.enabled === false} load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
