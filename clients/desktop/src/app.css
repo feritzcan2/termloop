@@ -1289,17 +1289,8 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .agent-account-panel > footer { padding: 8px 12px; }
 .agent-account-panel > footer button { padding: 0; border: 0; background: none; color: var(--accent, inherit); font-size: 12px; cursor: pointer; }
 .agent-account-trigger.is-waiting { color: var(--accent, inherit); }
-.agent-account-identity { margin: 2px 0 0; color: var(--sidebar-dimmer); font-size: 11px; }
-.agent-usage-windows { display: grid; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; }
-.agent-usage-windows.compact { gap: 3px; margin-top: 3px; font-size: 10px; }
-.agent-usage-windows li { display: grid; grid-template-columns: minmax(64px, auto) 1fr auto; align-items: center; gap: 7px; }
-.agent-usage-label { color: var(--sidebar-dimmer); white-space: nowrap; }
-.agent-usage-bar { position: relative; height: 5px; overflow: hidden; border-radius: 3px; background: light-dark(rgba(0,0,0,.08), rgba(255,255,255,.1)); }
-.agent-usage-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--accent, #4b8bd1); }
-.agent-usage-bar > span.elevated { background: #d39b2c; }
-.agent-usage-bar > span.high { background: #d14b4b; }
-.agent-usage-value { color: var(--sidebar-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.agent-usage-value small { color: var(--sidebar-dimmer); }
+.agent-account-panel .agent-usage-windows { margin-top: 2px; }
+.agent-account-panel .agent-meter-text small { display: none; }
 .keep-awake-body { display: grid; gap: 10px; padding: 11px 12px 12px; }
 .keep-awake-status { margin: 0; color: var(--text); font-size: 11px; }
 .keep-awake-status.is-blocked { color: light-dark(#8e5e62, #d78e95); }

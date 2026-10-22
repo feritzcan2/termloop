@@ -9,6 +9,7 @@ import type { ConnectionProfileSummary } from "../src/connection-profile-types.j
 const profile: ConnectionProfileSummary = { id: "netcup", name: "Netcup", transport: "ssh", scope: "full", endpoint: "server", enabled: true, persistence: "encrypted", state: "connected" };
 const operation: AgentAuthOperationDto = { agentId: "codex", accountId: "default", operationId: "attempt", action: "signIn", phase: "awaitingBrowser", verificationUrl: "https://auth.openai.com/codex/device", userCode: "ABCD-1234", acceptsCode: false, message: "Enter the code in your browser.", expiresAtEpochMs: Date.now() + 900_000 };
 const status: AgentAuthStatusDto = { agentId: "codex", accountId: "default", label: "Codex", installed: true, version: "codex 1.0", authState: "signedOut", installSupported: true, busy: false, operation: null };
+const row = (container: HTMLElement, agentId: string, name: string) => [...container.querySelectorAll<HTMLButtonElement>(`.agent-provider-accounts.${agentId} .agent-roster-summary`)].find((item) => item.querySelector("strong")?.textContent === name)!;
 function actions(): AgentConnectionActions {
   const snapshot = { revision: 0, accounts: [{ agentId: "codex" as const, accountId: "default", name: "Default account", isDefault: true }, { agentId: "claude" as const, accountId: "default", name: "Default account", isDefault: true }] };
   return { accounts: vi.fn(async () => snapshot), create: vi.fn(async () => snapshot), rename: vi.fn(async () => snapshot), setDefault: vi.fn(async () => snapshot), remove: vi.fn(async () => snapshot), usage: vi.fn(async () => ({ accounts: [] })), list: vi.fn(async (_profile, params) => [{ ...status, agentId: params?.agentId ?? "codex", accountId: params?.accountId ?? "default", label: params?.agentId === "claude" ? "Claude" : "Codex" }]), start: vi.fn(async () => operation), get: vi.fn(async () => operation), cancel: vi.fn(async () => ({ ...operation, verificationUrl: null, userCode: null, phase: "cancelled" as const })), submitCode: vi.fn(async () => operation), openSignIn: vi.fn(async () => {}) };
@@ -171,12 +172,12 @@ describe("named account management", () => {
     await act(async () => button("Add account").click()); await typeName("Work");
     await act(async () => container.querySelector('form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(api.create).toHaveBeenCalledWith("netcup", { agentId: "codex", name: "Work", expectedRevision: 0 });
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="codex account"]')!.value).toBe(id);
+    expect(row(container, "codex", "Work").getAttribute("aria-expanded")).toBe("true");
     expect(api.list).toHaveBeenCalledWith("netcup", { agentId: "codex", accountId: id });
     await act(async () => button("Rename").click()); await typeName("Personal");
     await act(async () => container.querySelector('form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(api.rename).toHaveBeenCalledWith("netcup", { agentId: "codex", accountId: id, name: "Personal", expectedRevision: 1 });
-    await act(async () => button("Use by default").click());
+    await act(async () => button("Make default").click());
     expect(api.setDefault).toHaveBeenCalledWith("netcup", { agentId: "codex", accountId: id, expectedRevision: 2 });
     await act(async () => button("Sign in").click());
     expect(api.start).toHaveBeenCalledWith("netcup", "codex", id, "signIn");
@@ -190,7 +191,7 @@ describe("named account management", () => {
     vi.mocked(api.start).mockImplementationOnce(() => new Promise((resolve) => { deliver = resolve; }));
     await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
     await act(async () => button("Sign in").click());
-    await act(async () => { const select = container.querySelector<HTMLSelectElement>('select[aria-label="codex account"]')!; select.value = id; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => row(container, "codex", "Work").click());
     await act(async () => deliver(operation));
     expect(container.textContent).not.toContain("ABCD-1234");
     expect(button("Open sign-in page")).toBeUndefined();
@@ -209,23 +210,23 @@ describe("named account management", () => {
       { agentId: "claude" as const, accountId: named.accountId, state: "ok" as const, identity: { email: "me@example.com", organizationName: "Acme", plan: "max" }, windows: [], fetchedAtEpochMs: 1, message: null },
     ] }));
     await act(async () => root.render(createElement(AgentConnectionsPanel, { profile, actions: api })));
-    const select = container.querySelector<HTMLSelectElement>('select[aria-label="claude account"]')!;
     expect([...container.querySelectorAll("button")].some((item) => item.textContent === "Remove")).toBe(false);
-    expect(container.textContent).toContain("Signed in as me@example.com · Acme · max");
-    expect(container.textContent).toContain("Work is signed in to the same Claude login");
+    expect(container.textContent).toContain("me@example.com (Acme, Max plan)");
+    expect(container.textContent).toContain("Same login as Work, so limits are shared");
     expect(container.textContent).toContain("42%");
-    await act(async () => { select.value = named.accountId; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => row(container, "claude", "Work").click());
     const remove = [...container.querySelectorAll("button")].filter((item) => item.textContent === "Remove");
     expect(remove).toHaveLength(1);
     await act(async () => remove[0]!.click());
     expect(api.remove).not.toHaveBeenCalled();
     await act(async () => button("Remove account").click());
     expect(api.remove).toHaveBeenCalledWith("netcup", { agentId: "claude", accountId: named.accountId, expectedRevision: 4 });
-    expect(select.value).toBe("default");
+    expect(row(container, "claude", "Default account").getAttribute("aria-expanded")).toBe("true");
   });
 
   it("formats identities, duplicate logins and reset times", () => {
-    expect(identityLabel({ email: "a@b.c", organizationName: null, plan: "pro" })).toBe("a@b.c · pro");
+    expect(identityLabel({ email: "a@b.c", organizationName: null, plan: "pro" })).toBe("a@b.c (Pro plan)");
+    expect(identityLabel({ email: null, organizationName: "Acme", plan: null })).toBe("Acme");
     expect(identityLabel(null)).toBeUndefined();
     const base = { agentId: "codex" as const, state: "ok" as const, windows: [], fetchedAtEpochMs: 0, message: null };
     const a = { ...base, accountId: "a", identity: { email: "x@y.z", organizationName: null, plan: null } };
