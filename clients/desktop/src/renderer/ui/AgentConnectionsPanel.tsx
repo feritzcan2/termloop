@@ -1,6 +1,6 @@
-import type { AgentAccountDto, AgentAccountListResult, AgentAccountCreateParams, AgentAccountDeleteParams, AgentAccountIdentityDto, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountUsageDto, AgentAccountUsageListParams, AgentAccountUsageListResult, AgentAuthStatusListParams } from "@termloop/contract/current";
+import type { AgentAccountDto, AgentAccountListResult, AgentAccountCreateParams, AgentAccountDeleteParams, AgentAccountIdentityDto, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountUsageDto, AgentAccountUsageWindowDto, AgentAccountUsageListParams, AgentAccountUsageListResult, AgentAuthStatusListParams } from "@termloop/contract/current";
 import { Icon } from "./Icon.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentAuthOperationDto, AgentAuthOperationParams, AgentAuthStatusDto, AgentAuthSubmitCodeParams, AgentConnectionProvider } from "@termloop/contract/current";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 
@@ -23,10 +23,15 @@ export function operationActive(operation: AgentAuthOperationDto | null | undefi
   return Boolean(operation && ["starting", "installing", "awaitingBrowser", "awaitingCode"].includes(operation.phase));
 }
 
-/** One line naming who an account is signed in as, e.g. `a@b.c · Acme · max`. */
+const PROVIDER_LABEL: Record<AgentConnectionProvider, string> = { claude: "Claude", codex: "Codex" };
+
+/** Who an account is signed in as, e.g. `a@b.c (Acme, Max plan)`. */
 export function identityLabel(identity: AgentAccountIdentityDto | null | undefined): string | undefined {
-  const parts = [identity?.email, identity?.organizationName, identity?.plan].filter((part): part is string => Boolean(part));
-  return parts.length ? parts.join(" · ") : undefined;
+  const detail = [identity?.organizationName, identity?.plan ? `${identity.plan.charAt(0).toUpperCase()}${identity.plan.slice(1)} plan` : undefined]
+    .filter((part): part is string => Boolean(part));
+  const who = identity?.email ?? detail.shift();
+  if (!who) return undefined;
+  return detail.length ? `${who} (${detail.join(", ")})` : who;
 }
 
 /** Other accounts of the same provider signed in as the same user and organization. */
@@ -38,15 +43,27 @@ export function duplicateLogins(usage: AgentAccountUsageDto[], account: AgentAcc
     && (other.identity.organizationName ?? null) === (account.identity?.organizationName ?? null));
 }
 
+function meterTone(percent: number): string {
+  return percent >= 90 ? " high" : percent >= 70 ? " elevated" : "";
+}
+
+/** One limit window: a thin bar with the used share and when it resets. */
+export function UsageMeter({ window, label, column }: { window: AgentAccountUsageWindowDto | undefined; label: string; column?: string }) {
+  if (!window) return <span className="agent-meter empty" aria-label={`${label}: no data`}>{column ? <span className="agent-meter-column">{column}</span> : null}–</span>;
+  const used = Math.round(window.usedPercent);
+  return <span className="agent-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={used} aria-label={`${label} usage`}>
+    <span className="agent-meter-track"><span className={`agent-meter-fill${meterTone(window.usedPercent)}`} style={{ width: `${Math.max(2, Math.min(100, window.usedPercent))}%` }} /></span>
+    <span className="agent-meter-text">{column ? <span className="agent-meter-column">{column}</span> : null}<strong>{used}%</strong>{window.resetsAtEpochMs ? <small>resets {resetLabel(window.resetsAtEpochMs)}</small> : null}</span>
+  </span>;
+}
+
+/** Every limit window of an account, labelled; used where columns are not shared. */
 export function UsageWindows({ usage, compact = false }: { usage: AgentAccountUsageDto; compact?: boolean }) {
   if (usage.state !== "ok" || usage.windows.length === 0) return usage.message ? <p className="conn-note agent-usage-message">{usage.message}</p> : null;
   return <ul className={`agent-usage-windows${compact ? " compact" : ""}`} aria-label="Usage limits">
     {usage.windows.map((window) => <li key={`${window.kind}-${window.label}`}>
       <span className="agent-usage-label">{window.label}</span>
-      <span className="agent-usage-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(window.usedPercent)} aria-label={`${window.label} usage`}>
-        <span className={window.usedPercent >= 90 ? "high" : window.usedPercent >= 70 ? "elevated" : ""} style={{ width: `${Math.max(2, window.usedPercent)}%` }} />
-      </span>
-      <span className="agent-usage-value">{Math.round(window.usedPercent)}%{window.resetsAtEpochMs ? <small> · resets {resetLabel(window.resetsAtEpochMs)}</small> : null}</span>
+      <UsageMeter window={window} label={window.label} />
     </li>)}
   </ul>;
 }
@@ -84,30 +101,34 @@ export function AgentConnectionsPanel({ profile, actions }: { profile: Connectio
   }, [refresh]);
 
   return <section className="agent-connections" aria-label={`Agent accounts on ${profile.name}`}>
-    <div className="conn-section-head">
-      <div><h3>Agent accounts</h3><p className="conn-note">Install and sign in on <strong>{profile.name}</strong>. Your browser opens on this computer.</p></div>
-      <button type="button" className="conn-scan" disabled={loading || !canManage} onClick={() => void refresh()}>{loading ? "Checking…" : "Refresh"}</button>
+    <div className="agent-connections-bar">
+      <p>Accounts sign in on <strong>{profile.name}</strong>. New Agents use each provider's default; running Agents keep the account they started with.</p>
+      <button type="button" className="agent-quiet-button" disabled={loading || !canManage} onClick={() => void refresh()}>{loading ? "Checking…" : "Refresh"}</button>
     </div>
-    <p className="agent-account-scope">Add separate work or personal accounts for each provider. New sessions use the server default unless you select another account. Running sessions keep their original account.</p>
     {!canManage ? <p className="conn-banner warning">{profile.scope === "readOnly" ? "Full access is required to manage agent accounts." : "Connect to this server to manage its agent accounts."}</p> : <>
       {error ? <p role="alert" className="conn-banner error">{error}</p> : null}
       {!accounts && loading ? <div role="status" className="conn-skeleton">Loading accounts…</div> : null}
-      <div className="agent-account-list">{accounts ? (["codex", "claude"] as const).map((agentId) => <ProviderAccounts key={agentId} agentId={agentId} snapshot={accounts} profileId={profile.id} actions={actions} refresh={refresh} refreshKey={refreshKey} update={setAccounts} />) : null}</div>
-      <p className="conn-note">Installation uses the official npm package for this server user, without sudo. Node.js and npm must already be installed. Account login does not share this computer’s apps, files or browser sessions.</p>
+      {accounts ? (["codex", "claude"] as const).map((agentId) => <ProviderAccounts key={agentId} agentId={agentId} snapshot={accounts} profileId={profile.id} actions={actions} refresh={refresh} refreshKey={refreshKey} update={setAccounts} />) : null}
+      <p className="agent-connections-footnote">Installing uses the official npm package for this server user, without sudo, so Node.js and npm must already be there. Signing in never shares this computer's apps, files or browser sessions.</p>
     </>}
   </section>;
+}
+
+function windowOf(usage: AgentAccountUsageDto | undefined, kind: "session" | "weekly"): AgentAccountUsageWindowDto | undefined {
+  return usage?.state === "ok" ? usage.windows.find((window) => window.kind === kind) : undefined;
 }
 
 function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refreshKey, update }: {
   agentId: AgentConnectionProvider; snapshot: AgentAccountListResult; profileId: string; actions: AgentConnectionActions;
   refresh(): Promise<void>; refreshKey: number; update(value: AgentAccountListResult): void;
 }) {
+  const label = PROVIDER_LABEL[agentId];
   const accounts = snapshot.accounts.filter((account) => account.agentId === agentId);
   const [selectedId, select] = useState(() => accounts.find((account) => account.isDefault)?.accountId ?? "default");
   const selected = accounts.find((account) => account.accountId === selectedId) ?? accounts[0]!;
   const [editing, setEditing] = useState<"add" | "rename">();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [usage, setUsage] = useState<AgentAccountUsageDto[]>([]);
+  const [usage, setUsage] = useState<AgentAccountUsageDto[]>();
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -129,37 +150,64 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
     } catch (cause) { if (alive.current) { setError(message(cause)); await refresh(); } }
     finally { if (alive.current) setPending(false); }
   };
-  const params = { agentId, accountId: selected.accountId, expectedRevision: snapshot.revision };
-  return <section className="agent-provider-accounts" aria-label={`${agentId === "codex" ? "Codex" : "Claude"} accounts`}>
-    <div className="agent-account-selector">
-      <label className="conn-field"><span>{agentId === "codex" ? "Codex" : "Claude"} account</span>
-        <select aria-label={`${agentId} account`} value={selected.accountId} disabled={pending} onChange={(event) => { select(event.target.value); setEditing(undefined); setConfirmDelete(false); setError(undefined); }}>
-          {accounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}{account.isDefault ? " · Default" : ""}</option>)}
-        </select>
-      </label>
-      <button type="button" disabled={pending || accounts.length >= 16} onClick={() => { setEditing("add"); setName(""); }}>Add account</button>
-      <button type="button" disabled={pending} onClick={() => { setEditing("rename"); setName(selected.name); }}>Rename</button>
-      {!selected.isDefault ? <button type="button" disabled={pending} onClick={() => void mutate(() => actions.setDefault(profileId, params))}>Use by default</button> : <span className="conn-note">Default for new sessions</span>}
-      {selected.accountId !== "default" ? <button type="button" className="conn-danger" disabled={pending} onClick={() => { setConfirmDelete(true); setEditing(undefined); }}>Remove</button> : null}
+  const paramsFor = (account: AgentAccountDto) => ({ agentId, accountId: account.accountId, expectedRevision: snapshot.revision });
+  const open = (account: AgentAccountDto) => { select(account.accountId); setEditing(undefined); setConfirmDelete(false); setError(undefined); };
+  const nameForm = (mode: "add" | "rename") => <form className="agent-account-name-form" onSubmit={(event) => { event.preventDefault(); void mutate(() => mode === "add" ? actions.create(profileId, { agentId, name: name.trim(), expectedRevision: snapshot.revision }) : actions.rename(profileId, { ...paramsFor(selected), name: name.trim() })); }}>
+    <label className="conn-field"><span>{mode === "add" ? `Name the new ${label} account` : "Account name"}</span><input autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Work or Personal" /></label>
+    <button className="conn-primary" type="submit" disabled={pending || !name.trim()}>{pending ? "Saving…" : mode === "add" ? "Create account" : "Save name"}</button>
+    <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => setEditing(undefined)}>Cancel</button>
+  </form>;
+
+  return <section className={`agent-provider-accounts ${agentId}`} aria-label={`${label} accounts`}>
+    <header className="agent-provider-head">
+      <span className="agent-provider-mark" aria-hidden="true"><Icon name={agentId} /></span>
+      <h4>{label}</h4>
+      <button type="button" className="agent-quiet-button" disabled={pending || accounts.length >= 16} onClick={() => { setEditing("add"); setName(""); setConfirmDelete(false); }}>Add account</button>
+    </header>
+    <div className="agent-roster" role="list">
+      <div className="agent-roster-columns" aria-hidden="true"><span /><span>Account</span><span>Session</span><span>Weekly</span><span /></div>
+      {accounts.map((account) => {
+        const own = usage?.find((item) => item.accountId === account.accountId);
+        const shared = own ? duplicateLogins(usage ?? [], own).map((other) => accounts.find((candidate) => candidate.accountId === other.accountId)?.name ?? other.accountId) : [];
+        const expanded = account.accountId === selected.accountId;
+        const who = !usage ? "Checking…" : !own ? "Usage unavailable" : own.state === "ok" ? identityLabel(own.identity) ?? "Signed in" : own.state === "signedOut" ? "Not signed in" : own.message ?? "Usage unavailable";
+        return <div key={account.accountId} role="listitem" className={`agent-roster-row${expanded ? " expanded" : ""}${account.isDefault ? " is-default" : ""}`}>
+          <button type="button" className="agent-roster-summary" aria-expanded={expanded} aria-label={`${account.name}${account.isDefault ? ", default" : ""}`} onClick={() => open(account)}>
+            <span className="agent-roster-dot" aria-hidden="true" />
+            <span className="agent-roster-who">
+              <strong>{account.name}</strong>
+              <small className={own?.state === "ok" ? "" : "muted"}>{who}</small>
+              {shared.length ? <small className="agent-roster-shared">Same login as {shared.join(", ")}, so limits are shared</small> : null}
+            </span>
+            <UsageMeter window={windowOf(own, "session")} label={`${account.name} session`} column="Session" />
+            <UsageMeter window={windowOf(own, "weekly")} label={`${account.name} weekly`} column="Weekly" />
+          </button>
+          <span className="agent-roster-end">
+            {account.isDefault ? <span className="agent-roster-default">Default</span>
+              : <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => void mutate(() => actions.setDefault(profileId, paramsFor(account)))}>Make default</button>}
+          </span>
+          {expanded ? <div className="agent-roster-detail">
+            {own?.state === "ok" && own.windows.length > 2 ? <UsageWindows usage={{ ...own, windows: own.windows.filter((window) => window.kind !== "session" && window.kind !== "weekly") }} /> : null}
+            {editing === "rename" ? nameForm("rename") : null}
+            {confirmDelete ? <div className="conn-banner warning" role="alert">
+              <p>Remove <strong>{account.name}</strong>? TermLoop signs it out on this server and deletes its private provider folder. Agents still using it must move to another account or be closed first.</p>
+              <div className="agent-banner-actions"><button type="button" className="conn-danger" disabled={pending} onClick={() => void mutate(() => actions.remove(profileId, paramsFor(account)))}>{pending ? "Removing…" : "Remove account"}</button><button type="button" className="agent-quiet-button" disabled={pending} onClick={() => setConfirmDelete(false)}>Keep account</button></div>
+            </div> : null}
+            {error ? <p role="alert" className="conn-banner error">{error}</p> : null}
+            <AccountStatus key={account.accountId} account={account} profileId={profileId} actions={actions} refreshKey={refreshKey}
+              manage={<>
+                <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => { setEditing("rename"); setName(account.name); setConfirmDelete(false); }}>Rename</button>
+                {account.accountId !== "default" ? <button type="button" className="agent-quiet-button danger" disabled={pending} onClick={() => { setConfirmDelete(true); setEditing(undefined); }}>Remove</button> : null}
+              </>} />
+          </div> : null}
+        </div>;
+      })}
+      {editing === "add" ? <div role="listitem" className="agent-roster-row adding">{nameForm("add")}</div> : null}
     </div>
-    {confirmDelete ? <div className="conn-banner warning" role="alert">
-      <p>Remove <strong>{selected.name}</strong>? TermLoop signs it out on this server and deletes its private provider folder. Sessions still using it must switch to another account or be closed first.</p>
-      <button type="button" className="conn-danger" disabled={pending} onClick={() => void mutate(() => actions.remove(profileId, params))}>{pending ? "Removing…" : "Remove account"}</button> <button type="button" disabled={pending} onClick={() => setConfirmDelete(false)}>Keep account</button>
-    </div> : null}
-    {editing ? <form className="agent-account-name-form" onSubmit={(event) => { event.preventDefault(); void mutate(() => editing === "add" ? actions.create(profileId, { agentId, name: name.trim(), expectedRevision: snapshot.revision }) : actions.rename(profileId, { ...params, name: name.trim() })); }}>
-      <label className="conn-field"><span>{editing === "add" ? "New account name" : "Account name"}</span><input autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Work or Personal" /></label>
-      <button className="conn-primary" type="submit" disabled={pending || !name.trim()}>{pending ? "Saving…" : editing === "add" ? "Create account" : "Save name"}</button>
-      <button type="button" disabled={pending} onClick={() => setEditing(undefined)}>Cancel</button>
-    </form> : null}
-    {error ? <p role="alert" className="conn-banner error">{error}</p> : null}
-    <p className="conn-note">Credentials for this account stay on the server. All connected TermLoop clients can use it.</p>
-    <AccountStatus key={selected.accountId} account={selected} profileId={profileId} actions={actions} refreshKey={refreshKey} usage={usage} names={accounts} />
   </section>;
 }
 
-function AccountStatus({ account, profileId, actions, refreshKey, usage, names }: { account: AgentAccountDto; profileId: string; actions: AgentConnectionActions; refreshKey: number; usage: AgentAccountUsageDto[]; names: AgentAccountDto[] }) {
-  const own = usage.find((item) => item.accountId === account.accountId);
-  const duplicates = own ? duplicateLogins(usage, own).map((other) => names.find((name) => name.accountId === other.accountId)?.name ?? other.accountId) : [];
+function AccountStatus({ account, profileId, actions, refreshKey, manage }: { account: AgentAccountDto; profileId: string; actions: AgentConnectionActions; refreshKey: number; manage: ReactNode }) {
   const [status, setStatus] = useState<AgentAuthStatusDto>();
   const [error, setError] = useState<string>();
   const generation = useRef(0);
@@ -172,11 +220,10 @@ function AccountStatus({ account, profileId, actions, refreshKey, usage, names }
     } catch (cause) { if (request === generation.current) setError(message(cause)); }
   }, [actions, profileId, account.agentId, account.accountId]);
   useEffect(() => { void refresh(); return () => { generation.current += 1; }; }, [refresh, refreshKey]);
-  return <>{error ? <div role="alert" className="conn-banner error"><p>{error}</p><button type="button" onClick={() => { setError(undefined); void refresh(); }}>Retry account check</button></div> : null}{status ? <AgentAccountCard status={status} usage={own} duplicates={duplicates} profileId={profileId} actions={actions} refresh={refresh} /> : !error ? <div role="status" className="conn-skeleton">Checking this account…</div> : null}</>;
+  return <>{error ? <div role="alert" className="conn-banner error"><p>{error}</p><button type="button" className="agent-quiet-button" onClick={() => { setError(undefined); void refresh(); }}>Retry account check</button></div> : null}{status ? <AccountSetup status={status} profileId={profileId} actions={actions} refresh={refresh} manage={manage} /> : !error ? <div role="status" className="conn-skeleton">Checking this account…</div> : null}</>;
 }
 
-function AgentAccountCard({ status, usage, duplicates, profileId, actions, refresh }: { status: AgentAuthStatusDto; usage: AgentAccountUsageDto | undefined; duplicates: string[]; profileId: string; actions: AgentConnectionActions; refresh(): Promise<void> }) {
-  const signedInAs = identityLabel(status.identity ?? usage?.identity);
+function AccountSetup({ status, profileId, actions, refresh, manage }: { status: AgentAuthStatusDto; profileId: string; actions: AgentConnectionActions; refresh(): Promise<void>; manage: ReactNode }) {
   const [operation, setOperation] = useState(status.operation);
   const cancelledOperation = useRef<string | undefined>(undefined);
   const acceptOperation = useCallback((next: AgentAuthOperationDto | null) => {
@@ -225,21 +272,13 @@ function AgentAccountCard({ status, usage, duplicates, profileId, actions, refre
     void perform(() => actions.start(profileId, status.agentId, status.accountId, action));
   };
   const params = { agentId: status.agentId, accountId: status.accountId, operationId: operation?.operationId ?? "" };
-  const label = !status.installed ? "Not installed" : status.authState === "signedIn" ? "Connected" : status.authState === "signedOut" ? "Sign-in required" : "Status unknown";
-  return <article className="agent-account-card">
-    <header>
-      <span className={`agent-account-icon ${status.agentId}`} aria-hidden="true"><Icon name={status.agentId} /></span>
-      <div><h4>{status.label}</h4><span className="conn-note">{status.version ?? "Provider CLI"}</span></div>
-      <span className={`agent-account-badge ${status.authState === "signedIn" ? "connected" : ""}`}>{busy ? (operation?.phase === "installing" ? "Installing…" : "Setup in progress") : label}</span>
-    </header>
-    {status.authState === "signedIn" && signedInAs ? <p className="agent-account-identity">Signed in as <strong>{signedInAs}</strong></p> : null}
-    {status.authState === "signedIn" && duplicates.length ? <p className="conn-banner warning" role="status">{duplicates.join(", ")} {duplicates.length === 1 ? "is" : "are"} signed in to the same {status.label} login. Accounts that share a login also share its usage limits.</p> : null}
-    {status.authState === "signedIn" && usage ? <UsageWindows usage={usage} /> : null}
-    <ol className="agent-account-steps" aria-label="Setup progress">
-      <li className={status.installed ? "done" : ""}>1. Install</li>
-      <li className={status.authState === "signedIn" ? "done" : ""}>2. Sign in</li>
-      <li className={status.authState === "signedIn" ? "done" : ""}>3. Ready</li>
-    </ol>
+  const ready = status.installed && status.authState === "signedIn";
+  return <div className="agent-account-setup">
+    {!ready ? <ol className="agent-account-steps" aria-label="Setup progress">
+      <li className={status.installed ? "done" : "current"}>Install {status.label}</li>
+      <li className={status.authState === "signedIn" ? "done" : status.installed ? "current" : ""}>Sign in</li>
+      <li>Ready for Agents</li>
+    </ol> : null}
     {status.busy && !operation ? <p className="conn-note">Another connection is setting up this account. Refresh when it finishes.</p> : null}
     {operation ? <div className="agent-auth-progress" role="status" aria-live="polite">
       <p>{operation.message}</p>
@@ -250,22 +289,23 @@ function AgentAccountCard({ status, usage, duplicates, profileId, actions, refre
       </> : null}
       {active && operation.acceptsCode ? <form onSubmit={(event) => { event.preventDefault(); const submitted = code.trim(); setCode(""); void perform(() => actions.submitCode(profileId, { ...params, code: submitted })); }}>
         <label className="conn-field"><span>Authorization code from browser</span><input autoComplete="off" spellCheck={false} type="password" maxLength={2048} value={code} onChange={(event) => setCode(event.target.value)} /></label>
-        <button type="submit" disabled={pending || !code.trim()}>Complete sign-in</button>
+        <button type="submit" className="conn-primary" disabled={pending || !code.trim()}>Complete sign-in</button>
       </form> : null}
     </div> : null}
     {error ? <p role="alert" className="conn-banner error">{error}</p> : null}
+    {confirmLogout ? <div className="conn-banner warning" role="alert"><p>Sign out of this {status.label} account on the server? Agents using this account may need to sign in again. Other accounts stay connected.</p><div className="agent-banner-actions"><button type="button" className="conn-danger" disabled={busy} onClick={() => start("signOut")}>Sign out on server</button><button type="button" className="agent-quiet-button" onClick={() => setConfirmLogout(false)}>Keep connected</button></div></div> : null}
     <div className="agent-account-actions">
-      {active ? <button type="button" disabled={pending} onClick={() => { cancelledOperation.current = operation!.operationId; setCode(""); acceptOperation(operation); void perform(() => actions.cancel(profileId, params)); }}>Cancel setup</button> : <>
-        {!status.installed ? <button type="button" className="conn-primary" disabled={busy || !status.installSupported} onClick={() => start("install")}>Install {status.label}</button> : <>
-          <button type="button" className="conn-primary" disabled={busy} onClick={() => start("signIn")}>{status.authState === "signedIn" ? "Reconnect account" : "Sign in"}</button>
-          <button type="button" disabled={busy || !status.installSupported} onClick={() => start("install")}>Update CLI</button>
-          {status.authState === "signedIn" ? <button type="button" className="conn-danger" disabled={busy} onClick={() => setConfirmLogout(true)}>Sign out</button> : null}
-        </>}
+      {active ? <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => { cancelledOperation.current = operation!.operationId; setCode(""); acceptOperation(operation); void perform(() => actions.cancel(profileId, params)); }}>Cancel setup</button> : <>
+        {!status.installed ? <button type="button" className="conn-primary" disabled={busy || !status.installSupported} onClick={() => start("install")}>Install {status.label}</button>
+          : <button type="button" className={ready ? "agent-quiet-button" : "conn-primary"} disabled={busy} onClick={() => start("signIn")}>{ready ? "Reconnect account" : "Sign in"}</button>}
+        {status.installed ? <button type="button" className="agent-quiet-button" disabled={busy || !status.installSupported} onClick={() => start("install")}>Update CLI</button> : null}
       </>}
+      {manage}
+      {status.authState === "signedIn" && !active ? <button type="button" className="agent-quiet-button danger" disabled={busy} onClick={() => setConfirmLogout(true)}>Sign out</button> : null}
+      {status.version ? <span className="agent-account-version">{status.version}</span> : null}
     </div>
     {!status.installed && !status.installSupported ? <p className="conn-note">Install Node.js and npm on the server, or install this CLI manually, then refresh. Automatic installation is supported on Linux and macOS.</p> : null}
-    {confirmLogout ? <div className="conn-banner warning" role="alert"><p>Sign out of this {status.label} account on the server? Sessions using this account may need to sign in again. Other accounts stay connected.</p><button type="button" disabled={busy} onClick={() => start("signOut")}>Sign out on server</button> <button type="button" onClick={() => setConfirmLogout(false)}>Keep connected</button></div> : null}
-  </article>;
+  </div>;
 }
 
 function message(cause: unknown): string {
