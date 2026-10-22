@@ -36,6 +36,11 @@ function normalizedSkillName(name: string): string {
   return name.trim().toLocaleLowerCase("en-US");
 }
 
+/** Copying only reads files, so only provider built-ins stay on their computer. */
+function portableSkill(skill: SkillCatalogItemDto): boolean {
+  return skill.manageable || skill.locations.some((location) => location.origin !== "builtIn");
+}
+
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
 }
@@ -250,9 +255,10 @@ export function SkillsRail({
           className="skill-computer-chip on"
           title={`${skill.name} is available on ${computer.name}`}
         ><span>{computer.name}</span><em>✓</em></span>;
+        const portable = portableSkill(skill);
         const canCreate = Boolean(remoteCatalog)
           && computer.writable
-          && skill.manageable
+          && portable
           && Boolean(createRemoteSkill)
           && !disabled;
         const title = loadError
@@ -261,7 +267,7 @@ export function SkillsRail({
             ? `Loading skills from ${computer.name}…`
             : !computer.writable
               ? `${computer.name} is connected read-only`
-              : !skill.manageable
+              : !portable
                 ? `${skill.name} is provider-owned and cannot be copied`
                 : `Create ${skill.name} on ${computer.name}`;
         return <button

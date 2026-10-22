@@ -218,3 +218,44 @@ fn export_rejects_symbolic_links_instead_of_leaking_or_omitting_resources() {
     ));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn a_skill_reached_through_a_symlinked_folder_exports_its_target() {
+    let root = temporary_directory("skill-package-linked-folder");
+    let target = root.join("project/.termloop/skills/example");
+    write_skill(&target, "example", "Test.");
+    fs::write(target.join("notes.md"), "notes").unwrap();
+    fs::create_dir_all(root.join(".claude/skills")).unwrap();
+    std::os::unix::fs::symlink(&target, root.join(".claude/skills/example")).unwrap();
+    let manager = SkillManager { backend: None };
+    let catalog = manager
+        .catalog_at(&root, SkillCatalogScope::global())
+        .unwrap();
+    assert!(!catalog.skills[0].manageable);
+    let package = manager
+        .read_package_at(&root, SkillCatalogScope::global(), &catalog.skills[0].id)
+        .unwrap();
+    let paths: Vec<_> = package.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, ["SKILL.md", "notes.md"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn provider_built_in_skills_are_not_exported() {
+    let root = temporary_directory("skill-package-built-in");
+    write_skill(
+        &root.join(".codex/skills/.system/internal"),
+        "internal",
+        "Provider-owned.",
+    );
+    let manager = SkillManager { backend: None };
+    let catalog = manager
+        .catalog_at(&root, SkillCatalogScope::global())
+        .unwrap();
+    assert!(matches!(
+        manager.read_package_at(&root, SkillCatalogScope::global(), &catalog.skills[0].id),
+        Err(SkillManagerError::SkillNotManageable)
+    ));
+    fs::remove_dir_all(root).unwrap();
+}
