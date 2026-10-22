@@ -3,6 +3,7 @@
 mod cli;
 mod discovery;
 mod package;
+mod removal;
 
 pub use package::{SkillPackage, SkillPackageFile};
 
@@ -161,6 +162,8 @@ pub enum SkillManagerError {
     SkillNotFound,
     #[error("the selected skill cannot be managed")]
     SkillNotManageable,
+    #[error("another agent still reads this skill through a link; remove it there first")]
+    SkillStillLinked,
     #[error("skills-manager returned unsupported output")]
     InvalidOutput,
     #[error("SKILL.md is missing or could not be read")]
@@ -251,6 +254,20 @@ impl SkillManager {
         agent: SkillAgent,
         deployed: bool,
     ) -> Result<SkillCatalog, SkillManagerError> {
+        if !deployed {
+            // A copy found in a folder is removed directly; only Skills
+            // Manager deployments need the manager.
+            let catalog = discover_catalog(home, &scope, self.backend.as_deref(), false)?;
+            let skill = locate_skill(&catalog, skill_id)?;
+            if skill
+                .agent_states
+                .iter()
+                .any(|state| state.agent == agent && state.present && !state.managed)
+            {
+                removal::remove_folder_copies(skill, agent)?;
+                return discover_catalog(home, &scope, self.backend.as_deref(), false);
+            }
+        }
         let backend = self
             .backend
             .as_ref()

@@ -277,9 +277,34 @@ describe("Skills rail", () => {
     await act(async () => remove?.click());
     expect(setDeployment).toHaveBeenCalledWith("b".repeat(64), "codex", false);
 
-    const sourceChips = [...container.querySelectorAll(".skill-chip.source")];
-    expect(sourceChips).toHaveLength(2);
-    expect(sourceChips.every((chip) => chip.tagName === "SPAN")).toBe(true);
+    // A folder copy is the user's own file, so removal needs a second click.
+    setDeployment.mockClear();
+    const folderCopy = () => container.querySelector<HTMLButtonElement>('[aria-label$="shared-review from Claude"]');
+    expect(folderCopy()?.getAttribute("aria-label")).toBe("Remove shared-review from Claude");
+    await act(async () => folderCopy()?.click());
+    expect(setDeployment).not.toHaveBeenCalled();
+    expect(folderCopy()?.getAttribute("aria-label")).toBe("Confirm removing shared-review from Claude");
+    expect(folderCopy()?.title).toContain(".trash");
+    await act(async () => folderCopy()?.click());
+    expect(setDeployment).toHaveBeenCalledWith("a".repeat(64), "claude", false);
+  });
+
+  it("keeps plugin-provided copies as plain markers", async () => {
+    const plugin: SkillCatalogResult = {
+      ...catalog,
+      skills: [{
+        ...catalog.skills[0]!,
+        origins: ["plugin"],
+        locations: [{ ...catalog.skills[0]!.locations[0]!, origin: "plugin", source: "Claude plugin · tools" }],
+      }],
+    };
+    await render({ load: async () => plugin });
+    await act(async () => undefined);
+    await act(async () => container.querySelector<HTMLElement>(".skill-folder button, .rail-group-toggle")?.click());
+
+    const markers = [...container.querySelectorAll(".skill-chip.source")];
+    expect(markers.length).toBeGreaterThan(0);
+    expect(markers.every((chip) => chip.tagName === "SPAN")).toBe(true);
   });
 
   it("reveals where a skill lives per agent through chip and row tooltips", async () => {
@@ -288,7 +313,7 @@ describe("Skills rail", () => {
 
     const claudeSource = [...container.querySelectorAll<HTMLElement>(".skill-chip.claude.source")]
       .find((chip) => chip.title.includes("/home/.agents/skills/shared-review"));
-    expect(claudeSource?.title).toContain("Original copy in Claude");
+    expect(claudeSource?.title).toContain("Folder copy in Claude");
 
     const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remove release from Codex"]');
     expect(remove?.title).toContain("/project/.codex/skills/release");
@@ -302,7 +327,8 @@ describe("Skills rail", () => {
     await render({ load: async () => ({ ...catalog, managerAvailable: false }) });
     await act(async () => undefined);
 
-    const chips = [...container.querySelectorAll<HTMLButtonElement>("button.skill-chip")];
+    // Folder copies are removed without Skills Manager, so only managed chips wait on it.
+    const chips = [...container.querySelectorAll<HTMLButtonElement>("button.skill-chip:not(.source)")];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.every((chip) => chip.disabled)).toBe(true);
     expect(container.querySelector(".skills-rail-note")?.textContent).toContain("Read only");

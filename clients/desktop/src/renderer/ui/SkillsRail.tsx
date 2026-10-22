@@ -129,6 +129,7 @@ export function SkillsRail({
   const [error, setError] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   const [busyChip, setBusyChip] = useState<string>();
+  const [armedChip, setArmedChip] = useState<string>();
   const [remoteComputers, setRemoteComputers] = useState<RemoteSkillComputer[]>([]);
   const [showRemoteComputers, setShowRemoteComputers] = useState(false);
   const [remoteCatalogs, setRemoteCatalogs] = useState<Record<string, SkillCatalogResult>>({});
@@ -292,11 +293,33 @@ export function SkillsRail({
     const managerReady = Boolean(catalog?.managerAvailable) && skill.manageable && !disabled;
     const at = agentPath(skill, state);
     if (state.present && !state.managed) {
-      return <span
+      const copies = skill.locations.filter((location) => location.origin !== "managed" && location.agents.includes(state.agent));
+      if (!copies.every((location) => location.origin === "personal" || location.origin === "shared")) {
+        return <span
+          key={state.agent}
+          className={`skill-chip ${state.agent} source`}
+          title={`Provided to ${agentLabel(state.agent)} by a plugin or built-in${at ? `\n${at}` : ""}`}
+        ><Icon name={state.agent} /></span>;
+      }
+      // Folder copies are the user's own files, so removal takes a second click.
+      const key = `${skill.id}:${state.agent}`;
+      const armed = armedChip === key;
+      return <button
         key={state.agent}
-        className={`skill-chip ${state.agent} source`}
-        title={`Original copy in ${agentLabel(state.agent)} — TermLoop will not remove it${at ? `\n${at}` : ""}`}
-      ><Icon name={state.agent} /></span>;
+        className={`skill-chip ${state.agent} source${armed ? " armed" : ""}`}
+        type="button"
+        aria-label={armed ? `Confirm removing ${skill.name} from ${agentLabel(state.agent)}` : `Remove ${skill.name} from ${agentLabel(state.agent)}`}
+        title={armed
+          ? `Click again to remove from ${agentLabel(state.agent)}. A link is deleted; a folder moves to .trash beside it.${at ? `\n${at}` : ""}`
+          : `Folder copy in ${agentLabel(state.agent)} — click to remove${at ? `\n${at}` : ""}`}
+        disabled={Boolean(busyChip) || disabled}
+        onBlur={() => { if (armed) setArmedChip(undefined); }}
+        onClick={() => {
+          if (!armed) { setArmedChip(key); return; }
+          setArmedChip(undefined);
+          void changeDeployment(skill, state.agent, false);
+        }}
+      ><Icon name={state.agent} />{busy ? <em>…</em> : armed ? <em>×</em> : null}</button>;
     }
     if (state.managed) {
       return <button

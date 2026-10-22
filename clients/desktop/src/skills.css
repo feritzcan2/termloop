@@ -81,6 +81,8 @@ button.skill-folder-head:hover { color: var(--text-secondary); }
 .skill-chip.claude.on, .skill-chip.claude.source { border-color: rgba(224,163,92,.42); background: rgba(224,163,92,.12); color: light-dark(#7d6943, #e1bd79); }
 .skill-chip.codex.on, .skill-chip.codex.source { border-color: rgba(102,179,255,.42); background: rgba(102,179,255,.11); color: light-dark(#566d84, #a8d4ff); }
 .skill-chip.source { cursor: default; opacity: .8; }
+button.skill-chip.source { cursor: pointer; }
+button.skill-chip.source:not(:disabled):hover, .skill-chip.source.armed { border-color: rgba(225,117,126,.55); background: rgba(225,117,126,.1); color: light-dark(#845d5f, #eda6ac); opacity: 1; }
 button.skill-chip.on:not(:disabled):hover { border-color: rgba(225,117,126,.55); background: rgba(225,117,126,.1); color: light-dark(#845d5f, #eda6ac); }
 .skill-chip:disabled { cursor: default; opacity: .5; }
 .skill-computer-chips { display: flex; min-width: 0; flex-wrap: wrap; justify-content: flex-end; gap: 3px; padding-left: 3px; border-left: 1px solid rgba(102,179,255,.16); }
