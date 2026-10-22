@@ -13,6 +13,8 @@ import {
   resolveNotificationConnectionId,
   type NotificationDestination,
 } from "@/features/notifications/notification-navigation";
+import type { AttentionScope } from "@/features/notifications/notification-reconciliation";
+import { reconcileAttentionTray } from "@/features/notifications/notification-tray";
 import { useOverview } from "@/features/overview/overview-store";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 
@@ -75,9 +77,25 @@ export function NotificationCoordinator() {
     };
   }, [runtime, connections.selected?.id, connections.selected?.availability]);
 
+  /// Every fresh Mac read retires tray alerts already answered on the Mac, so the
+  /// phone does not keep presenting attention that no longer exists.
+  useEffect(() => {
+    if (Platform.OS !== "ios" || runtime.kind !== "production") return;
+    const scopes = [...overview.byConnection].flatMap(([connectionId, snapshot]): AttentionScope[] => (
+      snapshot.load === "ready" && snapshot.overview !== undefined && snapshot.readAtEpochMs !== undefined
+        ? [{
+          connectionId,
+          readAtEpochMs: snapshot.readAtEpochMs,
+          sessions: snapshot.overview.sessions,
+          agentStatuses: snapshot.overview.agentStatuses,
+        }]
+        : []));
+    void reconcileAttentionTray(scopes);
+  }, [runtime, overview.byConnection]);
+
   useEffect(() => {
     let active = true;
-    const receive = (response: Notifications.NotificationResponse | null) => {
+    const receive =(response: Notifications.NotificationResponse | null) => {
       if (!active || response === null) return;
       const identifier = response.notification.request.identifier;
       if (handledResponse.current === identifier) return;

@@ -30,6 +30,7 @@ import {
   resolveSessionRouteConnectionId,
   sessionParentRoute,
 } from "@/features/connection/connection-route";
+import { dismissSessionNotifications } from "@/features/notifications/notification-tray";
 import { useOverview } from "@/features/overview/overview-store";
 import { useSessionInterruptionAcknowledgement } from "@/features/overview/use-session-interruption-acknowledgement";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
@@ -162,7 +163,9 @@ export default function SessionRoute() {
     : streamPresentation[terminal.buffer.stream];
   useRouteConnection(resolvedRouteConnectionId, connections.select);
   useEffect(() => {
-    if (sessionId) store.dismissReview(sessionId);
+    if (!sessionId) return;
+    store.dismissReview(sessionId);
+    void dismissSessionNotifications(sessionId);
   }, [sessionId, store.dismissReview]);
   useEffect(() => {
     if (connections.selectedId === undefined || session === undefined) return;

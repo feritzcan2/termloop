@@ -16,6 +16,8 @@ import {
   type MobileAppState,
 } from "./app-lifecycle-state";
 import { mobileDiagnostics } from "./mobile-diagnostics";
+import { subscribeNetworkRevival } from "./network-revival";
+import { NETWORK_REVIVAL_QUIET_MS, type NetworkRevivalReason } from "./network-revival-state";
 
 const SUSPENSION_PROBE_MS = 5_000;
 
@@ -43,6 +45,7 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
     let backgroundStartedAtEpochMs = observed.backgrounded ? Date.now() : undefined;
     let lastJavascriptHeartbeatAtEpochMs = Date.now();
     let lastNativeState = AppState.currentState as MobileAppState;
+    let lastTransportRevisionAtEpochMs = Date.now();
     mobileDiagnostics.updateLifecycle({
       nativeState: AppState.currentState,
       foregroundRevision: observed.foregroundRevision,
@@ -57,10 +60,18 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
       nativeState: MobileAppState,
       resumeAfterGap: boolean,
       javascriptGapMs?: number,
+      networkRevival?: NetworkRevivalReason,
     ) => {
       const previous = observed;
-      const action: AppLifecycleAction = { nativeState, resumeAfterGap };
+      const action: AppLifecycleAction = {
+        nativeState,
+        resumeAfterGap,
+        ...(networkRevival === undefined ? {} : { networkRevived: true }),
+      };
       observed = reduceAppLifecycle(observed, action);
+      if (observed.foregroundRevision !== previous.foregroundRevision) {
+        lastTransportRevisionAtEpochMs = Date.now();
+      }
       const backgroundDurationMs = previous.backgrounded && !observed.backgrounded
         && backgroundStartedAtEpochMs !== undefined
         ? Math.max(0, Date.now() - backgroundStartedAtEpochMs)
@@ -79,6 +90,7 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
         changed: observed !== previous,
         resumeAfterGap,
         javascriptGapMs,
+        networkRevival,
       });
       if (!previous.backgrounded && observed.backgrounded) {
         backgroundStartedAtEpochMs = Date.now();
@@ -89,6 +101,11 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
           foregroundRevision: observed.foregroundRevision,
         });
         backgroundStartedAtEpochMs = undefined;
+      } else if (networkRevival !== undefined && observed !== previous) {
+        mobileDiagnostics.report("lifecycle", "network_revived", {
+          reason: networkRevival,
+          foregroundRevision: observed.foregroundRevision,
+        });
       }
       dispatch(action);
     };
@@ -105,6 +122,17 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
       transition(nativeState, resumeAfterGap, resumeAfterGap ? javascriptGapMs : undefined);
     };
     const subscription = AppState.addEventListener("change", observe);
+    /// A network return or Wi-Fi/cellular handoff while the app stays open leaves
+    /// sockets on a dead path that otherwise lingers until the inbound liveness
+    /// timeout. Reuse the foreground revision so every transport, overview read,
+    /// and terminal attachment repairs through the one tested resume path.
+    const unsubscribeNetwork = subscribeNetworkRevival((reason) => {
+      const nativeState = AppState.currentState as MobileAppState;
+      if (nativeState !== "active" || !observed.active) return;
+      if (Date.now() - lastTransportRevisionAtEpochMs < NETWORK_REVIVAL_QUIET_MS) return;
+      lastNativeState = nativeState;
+      transition(nativeState, false, undefined, reason);
+    });
     const suspensionProbe = setInterval(() => {
       const nativeState = AppState.currentState as MobileAppState;
       const now = Date.now();
@@ -123,6 +151,7 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
     return () => {
       clearInterval(suspensionProbe);
       subscription.remove();
+      unsubscribeNetwork();
       mobileDiagnostics.report("lifecycle", "provider_unmounted", {
         active: observed.active,
         backgrounded: observed.backgrounded,
