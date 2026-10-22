@@ -1425,6 +1425,9 @@ handleIpc("termloop:session-resume-agent", (_event, sessionId: string, launchTic
 handleIpc("termloop:session-restart-agent", (_event, sessionId: string) =>
   typedControlCall("session.restartAgent", { sessionId }),
 );
+handleIpc("termloop:session-switch-agent-account", (_event, sessionId: string, accountId: string) =>
+  typedControlCall("session.switchAgentAccount", { sessionId, accountId }),
+);
 handleIpc("termloop:session-preview-relocate-agent", (_event, sessionId: string, taskId: string, mode: "resume" | "fresh") =>
   controlCall("session.previewRelocateAgentToTask", { sessionId, taskId, mode }),
 );

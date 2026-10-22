@@ -50,7 +50,7 @@ pub(super) use session::{
     preview_run_configuration_improver, preview_session_history_resume, preview_workflow_creator,
     read_session_conversation, relocate_agent_session, repair_provider_history,
     restart_agent_session, restart_agents_for_client_launch, restore_deleted_session,
-    resume_agent_session, session_history_preview,
+    resume_agent_session, session_history_preview, switch_agent_session_account,
 };
 pub(in crate::app) use session::{launch_playbook_evaluation_fork, terminate_session};
 pub(in crate::app) use session::{

@@ -47,6 +47,7 @@ pub use error::{
 };
 pub(crate) use error::{json_error, required_string, store_error, terminal_error};
 pub use mcp_settings::{McpToolCatalogEntry, McpToolDescriptions, McpToolRole};
+pub use runtime::AgentAccountSwitchPlan;
 pub use runtime::generated_input_delivery::{
     GeneratedInputDeliveryCancelCause, GeneratedInputDeliveryDiagnostics,
     GeneratedInputDeliveryFailure, GeneratedInputDeliveryState, GeneratedInputRuntimeEvent,

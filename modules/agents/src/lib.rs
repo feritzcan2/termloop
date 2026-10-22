@@ -12,7 +12,9 @@ mod codex_settings;
 mod conversation;
 mod opencode;
 mod pending_wakes;
-pub use conversation::{ConversationMessage, ConversationPage, read_agent_conversation};
+pub use conversation::{
+    ConversationMessage, ConversationPage, bridge_agent_conversation, read_agent_conversation,
+};
 pub use opencode::opencode_uses_server_configuration;
 pub use pending_wakes::{AgentPendingWakes, normalize_claude_pending_wakes};
 mod provider_hooks;

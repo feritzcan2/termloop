@@ -733,6 +733,15 @@ pub(super) fn session_projection(
         "forkable": forkable,
         "ask_to_source_session_id": ask_to_source_session_id,
         "fork_source_session_id": fork_source_session_id,
+        "agent_account_id": (session.kind == SessionKind::Agent
+            && matches!(session.process.agent_id.as_deref(), Some("claude" | "codex")))
+        .then(|| {
+            session
+                .launch_selection
+                .account_id
+                .as_deref()
+                .unwrap_or(termloop_domain::SYSTEM_AGENT_ACCOUNT_ID)
+        }),
         "improver_target": session.improver_target.as_ref().map(|target| json!({
             "targetKind": match target.target_kind {
                 termloop_domain::ImproverSessionTargetKind::StewardInstructions => "stewardInstructions",

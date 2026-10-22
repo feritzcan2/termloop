@@ -1,5 +1,6 @@
 use termloop_domain::{
-    AgentConversationReadiness, ResumeFailureReason, ResumeRef, SessionKind, SessionRecord,
+    AgentAccountProvider, AgentConversationReadiness, ResumeFailureReason, ResumeRef, SessionKind,
+    SessionRecord,
 };
 
 use crate::migration::provider_matches_agent;
@@ -255,6 +256,54 @@ impl Store {
             return Ok(self.state.revision);
         }
         session.launch_selection = launch_selection.clone();
+        self.commit_or_restore(previous)
+    }
+
+    /// Moves one Agent Session's provider conversation to another account of
+    /// the same provider. Only the account changes; the next resume launches
+    /// with it while the same ResumeRef continues the conversation.
+    pub fn switch_agent_session_account(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        session_id: &str,
+        runtime_epoch: u64,
+        account_id: &str,
+    ) -> Result<u64, StoreError> {
+        let previous = self.state.clone();
+        let session = self
+            .state
+            .sessions
+            .iter()
+            .find(|value| value.id == session_id)
+            .ok_or(StoreError::NotFound)?;
+        let Some(provider) = session
+            .process
+            .agent_id
+            .as_deref()
+            .and_then(|agent_id| AgentAccountProvider::parse(agent_id).ok())
+        else {
+            return Err(StoreError::ConstraintViolation);
+        };
+        if session.kind != SessionKind::Agent
+            || session.runtime_epoch != runtime_epoch
+            || !self
+                .state
+                .agent_accounts
+                .iter()
+                .any(|account| account.agent_id == provider && account.account_id == account_id)
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        if session.launch_selection.account_id.as_deref() == Some(account_id) {
+            return Ok(self.state.revision);
+        }
+        let session = self
+            .state
+            .sessions
+            .iter_mut()
+            .find(|value| value.id == session_id)
+            .expect("session found above");
+        session.launch_selection.account_id = Some(account_id.to_owned());
         self.commit_or_restore(previous)
     }
 

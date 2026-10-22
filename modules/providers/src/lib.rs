@@ -1,12 +1,17 @@
 #![forbid(unsafe_code)]
 
 mod azure_pr_checks;
+mod claude_usage;
 mod integration_status;
 mod jira;
 mod openai_voice;
 mod pull_request_changes;
 mod repository_pull_requests;
 
+pub use claude_usage::{
+    AgentUsageWindow, AgentUsageWindowKind, ClaudeUsageError, claude_keychain_service,
+    claude_oauth_usage,
+};
 pub use openai_voice::{OpenAiVoiceService, VoiceProviderError};
 
 pub use integration_status::{

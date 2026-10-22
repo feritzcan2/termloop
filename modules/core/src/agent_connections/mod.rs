@@ -1,10 +1,12 @@
 //! Server-user account setup, separate from agent Sessions and their history.
 mod capabilities;
 mod provider;
+mod usage;
 pub use capabilities::{
     discover as discover_agent_connection_capabilities,
     prepare as prepare_agent_connection_capabilities,
 };
+pub use usage::{Identity, Usage, UsageState};
 #[cfg(test)]
 mod tests;
 
@@ -103,6 +105,7 @@ pub struct Status {
     install_supported: bool,
     busy: bool,
     operation: Option<Operation>,
+    identity: Option<Identity>,
 }
 
 impl Status {
@@ -125,13 +128,18 @@ impl Status {
 pub struct AgentConnections {
     jobs: Mutex<HashMap<(Provider, String), Job>>,
     registry: PathBuf,
+    usage: Mutex<HashMap<(Provider, String), Usage>>,
 }
+
+/// Provider usage endpoints are rate limited themselves; reuse a recent read.
+const USAGE_CACHE_MS: u64 = 60_000;
 
 impl AgentConnections {
     pub fn new(registry: PathBuf) -> Self {
         Self {
             jobs: Mutex::new(HashMap::new()),
             registry,
+            usage: Mutex::new(HashMap::new()),
         }
     }
 
@@ -157,6 +165,9 @@ impl AgentConnections {
                     )
                 };
                 let mut status = provider::status(account, !busy);
+                if provider == Provider::Codex && status.auth_state == "signedIn" {
+                    status.identity = usage::codex_identity(account, &self.registry);
+                }
                 status.busy = busy;
                 status.operation = operation;
                 status
@@ -229,6 +240,89 @@ impl AgentConnections {
             .map_err(|_| "Could not start account setup.")?;
         jobs.insert(key, job);
         Ok(operation)
+    }
+
+    /// Identity and limits for each account, read in parallel. A read newer
+    /// than the cache window is reused unless `refresh` asks for a new one.
+    pub fn usage_list(&self, accounts: &[AgentAccountContext], refresh: bool) -> Vec<Usage> {
+        let now = termloop_platform::current_epoch_ms();
+        std::thread::scope(|scope| {
+            let reads = accounts
+                .iter()
+                .map(|account| {
+                    let key = (
+                        Provider::parse(&account.agent_id).expect("validated account provider"),
+                        account.account_id.clone(),
+                    );
+                    let cached = self
+                        .usage
+                        .lock()
+                        .unwrap()
+                        .get(&key)
+                        .filter(|usage| {
+                            !refresh
+                                && now.saturating_sub(usage.fetched_at_epoch_ms) < USAGE_CACHE_MS
+                        })
+                        .cloned();
+                    match cached {
+                        Some(usage) => Err(usage),
+                        None => Ok((key, scope.spawn(|| self.read_usage(account)))),
+                    }
+                })
+                .collect::<Vec<_>>();
+            reads
+                .into_iter()
+                .map(|read| match read {
+                    Err(cached) => cached,
+                    Ok((key, handle)) => {
+                        let usage = handle.join().expect("usage read thread");
+                        self.usage.lock().unwrap().insert(key, usage.clone());
+                        usage
+                    }
+                })
+                .collect()
+        })
+    }
+
+    fn read_usage(&self, account: &AgentAccountContext) -> Usage {
+        let provider = Provider::parse(&account.agent_id).expect("validated account provider");
+        if self.account_busy(provider, &account.account_id) {
+            return usage::unread(
+                account,
+                UsageState::Unavailable,
+                "Account setup is in progress",
+            );
+        }
+        let status = provider::status(account, true);
+        match status.auth_state {
+            "signedOut" => usage::unread(account, UsageState::SignedOut, "Not signed in"),
+            _ if !status.installed => usage::unread(
+                account,
+                UsageState::Unavailable,
+                "The provider CLI is not installed",
+            ),
+            _ => usage::usage(account, status.identity, &self.registry),
+        }
+    }
+
+    /// Whether a setup operation still owns this account or its provider-wide install.
+    pub fn account_busy(&self, provider: Provider, account_id: &str) -> bool {
+        self.jobs.lock().unwrap().iter().any(|((p, id), job)| {
+            *p == provider
+                && (id == account_id || job.operation.lock().unwrap().action == Action::Install)
+                && job_busy(job)
+        })
+    }
+
+    /// Signs a removed account out and disposes of its private directory. Runs
+    /// after the record is gone, so a failure leaves only unreachable files.
+    pub fn discard(&self, account: &AgentAccountContext) -> Result<(), &'static str> {
+        let provider = Provider::parse(&account.agent_id)?;
+        self.jobs
+            .lock()
+            .unwrap()
+            .remove(&(provider, account.account_id.clone()));
+        provider::discard(account)
     }
 
     pub fn operation(

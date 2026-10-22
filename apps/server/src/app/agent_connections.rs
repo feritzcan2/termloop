@@ -92,6 +92,56 @@ pub(super) async fn handle(
     Ok(result)
 }
 
+pub(super) async fn delete_account(params: Value, state: &AppState) -> Result<Value, CoreError> {
+    let provider = Provider::parse(params["agentId"].as_str().unwrap_or_default())
+        .map_err(|error| CoreError::InvalidParams(error.into()))?;
+    let account_id = params["accountId"].as_str().unwrap_or_default().to_owned();
+    let connections = state.agent_connections.clone();
+    let (result, account) = {
+        let mut core = state.core.lock().await;
+        // Checked under the core lock so a setup started later sees the record gone.
+        if connections.account_busy(provider, &account_id) {
+            return Err(CoreError::InvalidParams(
+                "Finish or cancel this account's setup before removing it".into(),
+            ));
+        }
+        core.delete_agent_account(params)?
+    };
+    tokio::task::spawn_blocking(move || {
+        if let Err(error) = connections.discard(&account) {
+            tracing::warn!(%error, "Could not dispose of a removed agent account");
+        }
+    });
+    Ok(result)
+}
+
+pub(super) async fn usage_list(params: Value, state: &AppState) -> Result<Value, CoreError> {
+    let filter = params["agentId"].as_str();
+    let refresh = params["refresh"].as_bool().unwrap_or(false);
+    let accounts = {
+        let core = state.core.lock().await;
+        core.agent_account_list()["accounts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|account| {
+                Some((account["agentId"].as_str()?, account["accountId"].as_str()?))
+            })
+            .filter(|(agent_id, _)| filter.is_none_or(|filter| filter == *agent_id))
+            .map(|(agent_id, account_id)| {
+                core.resolve_agent_account(agent_id, Some(account_id))
+                    .and_then(|account| account.ok_or(CoreError::NotFound))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let connections = state.agent_connections.clone();
+    let accounts = tokio::task::spawn_blocking(move || connections.usage_list(&accounts, refresh))
+        .await
+        .map_err(|_| CoreError::Terminal("Account usage worker unavailable.".into()))?;
+    serde_json::to_value(serde_json::json!({ "accounts": accounts }))
+        .map_err(|_| CoreError::Terminal("Could not read account usage.".into()))
+}
+
 async fn refresh_capabilities(state: &AppState) -> Result<(), CoreError> {
     let (capabilities, updates) = tokio::task::spawn_blocking(|| {
         let capabilities =

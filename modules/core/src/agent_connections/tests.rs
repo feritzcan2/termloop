@@ -66,6 +66,7 @@ fn account_auth_changes_do_not_repeat_discovery_but_cli_installation_changes_do(
         install_supported: true,
         busy: false,
         operation: None,
+        identity: None,
     };
     let capabilities = [capability];
     assert!(!status.installation_changed(&capabilities));

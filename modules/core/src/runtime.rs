@@ -1,6 +1,7 @@
 //! Private serialized command/transaction runtime.
 
 mod agent_accounts;
+pub use agent_accounts::AgentAccountSwitchPlan;
 mod codex_thread_name;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod playbook_evaluation;

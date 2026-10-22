@@ -1,5 +1,7 @@
 use super::super::{CoreWriteAuthority, Store, StoreError};
-use termloop_domain::{AgentAccount, AgentAccountProvider, valid_agent_accounts};
+use termloop_domain::{
+    AgentAccount, AgentAccountProvider, SYSTEM_AGENT_ACCOUNT_ID, valid_agent_accounts,
+};
 
 impl Store {
     pub fn create_agent_account(
@@ -73,6 +75,51 @@ impl Store {
             if account.agent_id == provider {
                 account.is_default = account.account_id == id;
             }
+        }
+        self.commit_or_restore(previous)
+    }
+
+    /// Removes one named account. The server-user account cannot be removed; a
+    /// removed default hands default back to it, and a remembered launch that
+    /// named the account falls back to the provider default.
+    pub fn delete_agent_account(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        provider: AgentAccountProvider,
+        id: &str,
+        expected_revision: u64,
+    ) -> Result<u64, StoreError> {
+        if self.state.revision != expected_revision {
+            return Err(StoreError::RevisionConflict);
+        }
+        if id == SYSTEM_AGENT_ACCOUNT_ID {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let position = self
+            .state
+            .agent_accounts
+            .iter()
+            .position(|account| account.agent_id == provider && account.account_id == id)
+            .ok_or(StoreError::ConstraintViolation)?;
+        let mut accounts = self.state.agent_accounts.clone();
+        let removed = accounts.remove(position);
+        if removed.is_default {
+            for account in &mut accounts {
+                if account.agent_id == provider {
+                    account.is_default = account.account_id == SYSTEM_AGENT_ACCOUNT_ID;
+                }
+            }
+        }
+        if !valid_agent_accounts(&accounts) {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let previous = self.state.clone();
+        self.state.agent_accounts = accounts;
+        if let Some(saved) = self.state.last_agent_launch_selection.as_mut()
+            && saved.agent_id == provider.command()
+            && saved.selection.account_id.as_deref() == Some(id)
+        {
+            saved.selection.account_id = None;
         }
         self.commit_or_restore(previous)
     }

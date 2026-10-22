@@ -42,9 +42,9 @@ use super::handlers::{
     resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
     restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
     save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
-    set_steward_configuration, task_branch_commit_change_list, task_branch_commit_diff,
-    task_branch_commit_list, task_branch_commit_summary_list, task_worktree_change_list,
-    task_worktree_diff, task_worktree_pre_image, terminate_session,
+    set_steward_configuration, switch_agent_session_account, task_branch_commit_change_list,
+    task_branch_commit_diff, task_branch_commit_list, task_branch_commit_summary_list,
+    task_worktree_change_list, task_worktree_diff, task_worktree_pre_image, terminate_session,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -1066,6 +1066,12 @@ async fn dispatch_inner(
                     }
                 }
             }
+            "agent.accountDelete" => {
+                super::super::agent_connections::delete_account(request.params, state).await
+            }
+            "agent.accountUsageList" => {
+                super::super::agent_connections::usage_list(request.params, state).await
+            }
             "agent.authStatusList"
             | "agent.install"
             | "agent.authStart"
@@ -1545,6 +1551,9 @@ async fn dispatch_inner(
                 preview_resume_agent_session(request.params, state).await
             }
             "session.resumeAgent" => resume_agent_session(request.params, state).await,
+            "session.switchAgentAccount" => {
+                switch_agent_session_account(request.params, state).await
+            }
             "session.restartAgent" => restart_agent_session(request.params, state).await,
             "session.previewRelocateAgentToTask" => {
                 preview_relocate_agent_session(request.params, task_launch_deadline, state).await

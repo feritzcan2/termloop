@@ -942,6 +942,14 @@
         "$ref": "#/$defs/sessionDto"
       }
     },
+    "session.switchAgentAccount": {
+      "params": {
+        "$ref": "#/$defs/sessionSwitchAgentAccountParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sessionDto"
+      }
+    },
     "session.restartAgent": {
       "params": {
         "$ref": "#/$defs/sessionRestartAgentParams"
@@ -1646,6 +1654,22 @@
       },
       "result": {
         "$ref": "#/$defs/agentAccountListResult"
+      }
+    },
+    "agent.accountDelete": {
+      "params": {
+        "$ref": "#/$defs/agentAccountDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountListResult"
+      }
+    },
+    "agent.accountUsageList": {
+      "params": {
+        "$ref": "#/$defs/agentAccountUsageListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentAccountUsageListResult"
       }
     },
     "workspace.directoryList": {
@@ -2432,6 +2456,7 @@
         "session.terminate",
         "session.previewResumeAgent",
         "session.resumeAgent",
+        "session.switchAgentAccount",
         "session.restartAgent",
         "session.previewRelocateAgentToTask",
         "session.relocateAgentToTask",
@@ -2527,6 +2552,8 @@
         "agent.accountList",
         "agent.accountRename",
         "agent.accountSetDefault",
+        "agent.accountDelete",
+        "agent.accountUsageList",
         "workspace.directoryList",
         "workspace.fileRead",
         "workspace.fileSearch",
@@ -6242,6 +6269,11 @@
         },
         "forkable": {
           "type": "boolean"
+        },
+        "agent_account_id": {
+          "description": "Server account this Claude or Codex Session launches and resumes with; \"default\" is the server user's own login. Null for other Sessions.",
+          "type": ["string", "null"],
+          "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
         },
         "ask_to_source_session_id": {
           "description": "Exact source Session for a current Ask-To helper presentation relationship; null for every unrelated Session. This current provenance survives restart but is not generic Session parentage, history, or authority.",
@@ -17947,7 +17979,13 @@
             }
           ]
         },
-        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "identity": {
+          "anyOf": [
+            {"$ref": "#/$defs/agentAccountIdentityDto"},
+            {"type": "null"}
+          ]
+        }
       },
       "x-codegen": true
     },
@@ -18049,6 +18087,190 @@
         }
       },
       "x-codegen": true
+    },
+    "agentAccountDeleteParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "accountId",
+        "expectedRevision"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"},
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountIdentityDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "email",
+        "organizationName",
+        "plan"
+      ],
+      "properties": {
+        "email": {
+          "anyOf": [
+            {"type": "string", "minLength": 1, "maxLength": 320},
+            {"type": "null"}
+          ]
+        },
+        "organizationName": {
+          "anyOf": [
+            {"type": "string", "minLength": 1, "maxLength": 200},
+            {"type": "null"}
+          ]
+        },
+        "plan": {
+          "anyOf": [
+            {"type": "string", "minLength": 1, "maxLength": 64},
+            {"type": "null"}
+          ]
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountUsageListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "refresh": {
+          "type": "boolean"
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountUsageWindowDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "label",
+        "usedPercent",
+        "windowMinutes",
+        "resetsAtEpochMs"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["session", "weekly", "weeklyModel", "other"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "usedPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "windowMinutes": {
+          "anyOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "resetsAtEpochMs": {
+          "anyOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "null"}
+          ]
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountUsageDto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "accountId",
+        "state",
+        "identity",
+        "windows",
+        "fetchedAtEpochMs",
+        "message"
+      ],
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/agentConnectionProvider"
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"},
+        "state": {
+          "type": "string",
+          "enum": ["ok", "signedOut", "unavailable"]
+        },
+        "identity": {
+          "anyOf": [
+            {"$ref": "#/$defs/agentAccountIdentityDto"},
+            {"type": "null"}
+          ]
+        },
+        "windows": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/agentAccountUsageWindowDto"
+          }
+        },
+        "fetchedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message": {
+          "anyOf": [
+            {"type": "string", "minLength": 1, "maxLength": 300},
+            {"type": "null"}
+          ]
+        }
+      },
+      "x-codegen": true
+    },
+    "agentAccountUsageListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accounts"
+      ],
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/agentAccountUsageDto"
+          }
+        }
+      },
+      "x-codegen": true
+    },
+    "sessionSwitchAgentAccountParams": {
+      "x-codegen": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "accountId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accountId": {"type": "string", "pattern": "^(default|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$"}
+      }
     },
     "agentAccountSetDefaultParams": {
       "type": "object",

@@ -2,7 +2,7 @@ import type { SourceControlCommitParams, SourceControlCommitResult, SourceContro
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupInput, SshSetupLogin, SshSetupState } from "../../ssh-setup-types.js";
 import type { WorkflowCreatorParams, WorkflowCreatorLaunchParams, WorkflowCreatorDraftGetParams, WorkflowCreatorDraftGetResult } from "@termloop/contract/current";
-import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAuthStatusListParams } from "@termloop/contract/current";
+import type { AgentAccountListResult, AgentAccountCreateParams, AgentAccountRenameParams, AgentAccountSetDefaultParams, AgentAccountDeleteParams, AgentAccountUsageListParams, AgentAccountUsageListResult, AgentAuthStatusListParams } from "@termloop/contract/current";
 import type { AgentStatus, Project, Session, Task } from "../model.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
 import type { PromptAsset } from "../prompt-settings.js";
@@ -386,6 +386,8 @@ export type DesktopApi = {
   agentAccountCreate(params: AgentAccountCreateParams): Promise<AgentAccountListResult>;
   agentAccountRename(params: AgentAccountRenameParams): Promise<AgentAccountListResult>;
   agentAccountSetDefault(params: AgentAccountSetDefaultParams): Promise<AgentAccountListResult>;
+  agentAccountDelete(params: AgentAccountDeleteParams): Promise<AgentAccountListResult>;
+  agentAccountUsageList(params?: AgentAccountUsageListParams): Promise<AgentAccountUsageListResult>;
   agentAuthStatusList(params?: AgentAuthStatusListParams): Promise<AgentAuthStatusDto[]>;
   agentInstall(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
   agentAuthStart(params: AgentConnectionParams): Promise<AgentAuthOperationDto>;
@@ -483,6 +485,7 @@ export type DesktopApi = {
   sessionPreviewResumeAgent(sessionId: string): Promise<AgentLaunchPreviewResult>;
   sessionResumeAgent(sessionId: string, launchTicket: string): Promise<Session>;
   sessionRestartAgent(sessionId: string): Promise<TaskControlDesktopResult<Session>>;
+  sessionSwitchAgentAccount(sessionId: string, accountId: string): Promise<TaskControlDesktopResult<Session>>;
   sessionPreviewRelocateAgent(sessionId: string, taskId: string, mode: "resume" | "fresh"): Promise<SessionRelocationPreviewDto>;
   sessionRelocateAgent(sessionId: string, taskId: string, operationId: string, relocationTicket: string): Promise<Session>;
   sessionPreviewRelocateAgentToProject(sessionId: string, projectId: string): Promise<SessionRelocationPreviewDto>;
