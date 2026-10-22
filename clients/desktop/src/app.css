@@ -2717,19 +2717,22 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
   .project-path { max-width: 35vw; }
 }
 
-/* Two rows: the view tabs with the selected view's action, then the Project's
-   launch row (RUN, terminal, agents, history). Side by side they needed ~430px
+/* Two rows: the view tabs with the selected view's action and the Project's
+   dev server slot, then the launch row (terminal, agents, history). Side by side they needed ~430px
    of a 270px rail. */
 .workspace-view-bar { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; margin: -4px 10px 5px; padding-left: 2px; }
 .workspace-view-row, .workspace-view-switch, .workspace-launch-actions { display: flex; min-height: 22px; align-items: center; gap: 2px; }
 .workspace-view-row { gap: 6px; flex-wrap: wrap; }
 .workspace-view-switch { flex-wrap: wrap; }
-/* RUN holds the left of the launch row; the Session launchers gather on the
-   right with Session History, so the row reads start-here | new-Session. */
+/* The Session launchers gather on the right with Session History. */
 .workspace-launch-actions { justify-content: flex-end; flex-wrap: wrap; row-gap: 4px; min-width: 0; }
 .workspace-session-launchers { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px; min-width: 0; }
 .workspace-session-launchers > button { flex-shrink: 0; }
-.workspace-launch-actions > .setup-dev-server, .workspace-launch-actions > .run-dev-server-chip { margin-right: auto; }
+/* The dev server slot holds the far edge of the tab row; a settings
+   destination, when present, sits right after it. */
+.workspace-dev-server-slot { display: inline-flex; flex: none; align-items: center; margin-left: auto; }
+.workspace-dev-server-slot ~ .workspace-view-action.settings { margin-left: 0; }
+.workspace-dev-server-slot button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--sidebar-dim); }
 .workspace-view-switch button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); }
 .workspace-view-switch button:hover { background: light-dark(rgba(15,23,42,.05), rgba(255,255,255,.05)); color: var(--sidebar-text); }
 .workspace-view-switch button.selected { background: var(--accent-wash); color: var(--accent-strong); }
@@ -2749,24 +2752,24 @@ button.folder-crumb:hover { background: light-dark(rgba(15,23,42,.07), rgba(255,
 .workspace-launch-actions .workspace-history.selected { border-color: rgba(102,179,255,.34); background: var(--accent-wash); color: var(--accent-strong); }
 /* The one launcher that names itself, because a Project with no dev server has
    nothing on screen that would teach the glyph. It retires once one exists. */
-.workspace-launch-actions .setup-dev-server { width: auto; gap: 5px; height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--accent-strong); font: 600 9.5px/1 var(--font-ui); white-space: nowrap; }
-.workspace-launch-actions .setup-dev-server:hover:not(:disabled) { border-color: rgba(102,179,255,.5); color: light-dark(#617488, #b8dcff); }
-.workspace-launch-actions .setup-dev-server svg { width: 10px; height: 10px; }
+.workspace-dev-server-slot .setup-dev-server { width: auto; gap: 5px; height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: var(--accent-strong); font: 600 9.5px/1 var(--font-ui); white-space: nowrap; }
+.workspace-dev-server-slot .setup-dev-server:hover:not(:disabled) { border-color: rgba(102,179,255,.5); color: light-dark(#617488, #b8dcff); }
+.workspace-dev-server-slot .setup-dev-server svg { width: 10px; height: 10px; }
 /* Once configured, the same slot starts it. A live run keeps its name but
    swaps the play glyph for the presence dot every other row uses. */
-.workspace-launch-actions .run-dev-server.running { border-color: rgba(92,201,149,.3); background: rgba(92,201,149,.08); color: var(--success); }
-.workspace-launch-actions .run-dev-server.running:hover:not(:disabled) { border-color: rgba(92,201,149,.5); color: light-dark(#49735e, #8fe0b8); }
+.workspace-dev-server-slot .run-dev-server.running { border-color: rgba(92,201,149,.3); background: rgba(92,201,149,.08); color: var(--success); }
+.workspace-dev-server-slot .run-dev-server.running:hover:not(:disabled) { border-color: rgba(92,201,149,.5); color: light-dark(#49735e, #8fe0b8); }
 .run-dev-server-dot { width: 5px; height: 5px; border-radius: 2px; background: var(--success); box-shadow: 0 0 0 3px rgba(92,201,149,.1); }
 .run-dev-server-label { font: 800 9px/1 var(--font-ui); letter-spacing: .13em; }
 /* The pencil rides on the chip the way a Task run chip's does: invisible until
    the chip is under the pointer, so the bar still reads as one launch button. */
 .run-dev-server-chip { display: inline-flex; align-items: stretch; }
-.workspace-launch-actions .run-dev-server-chip .setup-dev-server { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; padding-right: 5px; }
+.workspace-dev-server-slot .run-dev-server-chip .setup-dev-server { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; padding-right: 5px; }
 /* Unlike the Task chip, this one keeps a border at rest, so a transparent
    pencil reads as an empty cell welded to RUN. It stays faint instead. */
-.workspace-launch-actions .run-dev-server-edit { width: 18px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 0 4px 4px 0; border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: rgba(184,220,255,.5); }
-.workspace-launch-actions .run-dev-server-chip:has(.running) .run-dev-server-edit { border-color: rgba(92,201,149,.3); background: rgba(92,201,149,.08); color: rgba(143,224,184,.5); }
-.workspace-launch-actions .run-dev-server-edit svg { width: 10px; height: 10px; }
+.workspace-dev-server-slot .run-dev-server-edit { width: 18px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 0 4px 4px 0; border-color: rgba(102,179,255,.28); background: var(--accent-wash); color: rgba(184,220,255,.5); }
+.workspace-dev-server-slot .run-dev-server-chip:has(.running) .run-dev-server-edit { border-color: rgba(92,201,149,.3); background: rgba(92,201,149,.08); color: rgba(143,224,184,.5); }
+.workspace-dev-server-slot .run-dev-server-edit svg { width: 10px; height: 10px; }
 .run-dev-server-chip:hover .run-dev-server-edit, .run-dev-server-edit:focus-visible { color: var(--accent-strong); }
 
 /* The aggregate view is deliberately denser than the ownership-oriented Task

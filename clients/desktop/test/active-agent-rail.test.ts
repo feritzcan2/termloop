@@ -783,10 +783,10 @@ describe("Workspace view switch", () => {
     const launch = markup.indexOf('<div class="workspace-launch-actions"');
     expect(action).toBeGreaterThan(-1);
     expect(action).toBeLessThan(launch);
-    // ...and the row closes before the launch row opens; RUN leads it and
-    // Session History closes it.
-    expect(markup.slice(action, launch)).toMatch(/<\/button><\/div>$/u);
-    expect(markup.slice(launch)).toMatch(/^<div class="workspace-launch-actions" aria-label="Launch Session"><span class="run-dev-server-chip">/u);
+    // ...with RUN at the row's far edge; the row closes before the launch row
+    // opens, which the terminal leads and Session History closes.
+    expect(markup.slice(action, launch)).toMatch(/<span class="workspace-dev-server-slot"><span class="run-dev-server-chip">[^]*<\/span><\/span><\/div>$/u);
+    expect(markup.slice(launch)).toMatch(/^<div class="workspace-launch-actions" aria-label="Launch Session"><span class="workspace-session-launchers"><button id="new-terminal"/u);
     expect(markup).toMatch(/aria-label="Session History"[^>]*><svg[^]*?<\/svg><\/button><\/span><\/div><\/div>$/u);
   });
 
@@ -831,7 +831,7 @@ describe("Workspace view switch", () => {
     expect(markup).toContain('class="workspace-launch-actions"');
   });
 
-  it("names the dev server offer beside the launchers until a Project has one", () => {
+  it("names the dev server offer in the tab row until a Project has one", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceViewSwitch, {
       view: "overview",
       disabled: false,
@@ -842,8 +842,9 @@ describe("Workspace view switch", () => {
     }));
     expect(markup).toContain("Set up dev server");
     expect(markup).toContain('class="setup-dev-server"');
-    // It sits with the launchers, ahead of the terminal and agent glyphs.
-    expect(markup.indexOf("setup-dev-server")).toBeLessThan(markup.indexOf('id="new-terminal"'));
+    // It sits in the tab row, after the tabs and before the launch row.
+    expect(markup.indexOf("setup-dev-server")).toBeGreaterThan(markup.indexOf('class="workspace-view-switch"'));
+    expect(markup.indexOf("setup-dev-server")).toBeLessThan(markup.indexOf('class="workspace-launch-actions"'));
   });
 
   it("turns the same slot into the run button once the dev server exists", () => {
