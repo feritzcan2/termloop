@@ -192,6 +192,20 @@ describe("SettingsDialog", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("closes on Escape from the overlay window it is portaled into", async () => {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const overlay = frame.contentDocument!.body.appendChild(frame.contentDocument!.createElement("div"));
+    const overlayRoot = createRoot(overlay);
+    const close = vi.fn();
+    await act(async () => overlayRoot.render(createElement(SettingsDialog, props({ close }))));
+
+    await act(async () => frame.contentWindow!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(close).toHaveBeenCalledOnce();
+    await act(async () => overlayRoot.unmount());
+    frame.remove();
+  });
+
   it("pairs the local computer inside Settings while a remote project is selected", async () => {
     const prepare = vi.fn(async () => ({ ok: true as const, qrSvg: '<svg data-test="local-qr"></svg>' }));
     await act(async () => root.render(createElement(SettingsDialog, props({

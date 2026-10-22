@@ -80,6 +80,7 @@ export function SettingsDialog({
   const [initialProfileId] = useState(connectionProps.initialProfileId);
   const [accountsProfileId, setAccountsProfileId] = useState(initialProfileId);
   const searchRef = useRef<HTMLInputElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
 
   const navGroups = [
     { title: showScope ? "This app" : "General", items: appNavItems.filter((item) => matchesSettingsQuery(item, query)) },
@@ -124,8 +125,11 @@ export function SettingsDialog({
       if (searchRef.current?.value) setQuery("");
       else close();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Over native terminals Settings is portaled into the overlay window, whose
+    // keys never reach this renderer's own window.
+    const owner = viewRef.current?.ownerDocument.defaultView ?? window;
+    owner.addEventListener("keydown", onKeyDown);
+    return () => owner.removeEventListener("keydown", onKeyDown);
   }, [close]);
 
   const savePreferences = async (
@@ -167,7 +171,7 @@ export function SettingsDialog({
   };
 
   return (
-    <div className="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div ref={viewRef} className="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <aside className="settings-sidebar">
         {showsWindowDragRegion(platform) ? <div className="window-drag-region" aria-hidden="true" /> : null}
         <div className="settings-sidebar-head">
