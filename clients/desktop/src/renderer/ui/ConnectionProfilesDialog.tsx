@@ -35,6 +35,8 @@ export type ConnectionProfilesDialogProps = {
   initialProfileId?: string | undefined;
   keepAwake?: KeepAwakeActions | undefined;
   pairPhone?: (() => void) | undefined;
+  /** Opens the dedicated Agent accounts page instead of the inline view. */
+  openAgentAccounts?: ((profileId: string) => void) | undefined;
   prepareRemoteMobileAccess?: ((profileId: string) => Promise<MobileAccessPairingResult>) | undefined;
   close(): void;
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
@@ -55,6 +57,7 @@ export function ConnectionProfilesDialog({
   agentConnections,
   keepAwake,
   pairPhone,
+  openAgentAccounts,
   prepareRemoteMobileAccess,
   initialProfileId = "local",
   close,
@@ -338,7 +341,7 @@ export function ConnectionProfilesDialog({
           >
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
-          {agentConnections ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("agents"); }}>Manage agents</button> : null}
+          {agentConnections ? <button type="button" className="conn-manage" onClick={() => { if (openAgentAccounts) openAgentAccounts(profile.id); else { setSelectedProfileId(profile.id); setView("agents"); } }}>Manage agents</button> : null}
           {keepAwake ? <button type="button" className="conn-manage" onClick={() => { setSelectedProfileId(profile.id); setView("power"); }}>Keep Awake</button> : null}
           {isLocal && pairPhone ? <button type="button" className="conn-manage" onClick={pairPhone}>Pair phone</button> : null}
           {profile.transport === "ssh" && prepareRemoteMobileAccess ? <button
@@ -541,7 +544,7 @@ export function ConnectionProfilesDialog({
     <>
       <div className="conn-toggle" role="group" aria-label="Connection settings">
         <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Computers</button>
-        {agentConnections ? <button type="button" aria-pressed={view === "agents"} className={view === "agents" ? "active" : ""} onClick={() => setView("agents")}>Agent accounts</button> : null}
+        {agentConnections && !openAgentAccounts ? <button type="button" aria-pressed={view === "agents"} className={view === "agents" ? "active" : ""} onClick={() => setView("agents")}>Agent accounts</button> : null}
         {keepAwake ? <button type="button" aria-pressed={view === "power"} className={view === "power" ? "active" : ""} onClick={() => setView("power")}>Keep Awake</button> : null}
         {view === "mobile" ? <button type="button" aria-pressed="true" className="active">Connect Mobile</button> : null}
         <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>

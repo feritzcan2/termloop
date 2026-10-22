@@ -339,4 +339,22 @@ describe("SettingsDialog", () => {
     expect(refresh.closest(".conn-card")?.textContent).not.toContain("Connected");
     expect(refresh.disabled).toBe(false);
   });
+
+  it("gives agent accounts their own page and opens it from a computer card", async () => {
+    const snapshot = { revision: 0, accounts: [{ agentId: "claude" as const, accountId: "default", name: "Default account", isDefault: true }, { agentId: "codex" as const, accountId: "default", name: "Default account", isDefault: true }] };
+    const agentConnections = {
+      accounts: vi.fn(async () => snapshot), create: vi.fn(), rename: vi.fn(), setDefault: vi.fn(), remove: vi.fn(),
+      usage: vi.fn(async () => ({ accounts: [] })), list: vi.fn(async () => []), start: vi.fn(), get: vi.fn(), cancel: vi.fn(), submitCode: vi.fn(), openSignIn: vi.fn(),
+    };
+    const list = vi.fn(async () => [local, { ...netcup, state: "connected" as const }]);
+    await act(async () => root.render(createElement(SettingsDialog, props({ initialPage: "servers", list, agentConnections }))));
+    const nav = [...container.querySelectorAll<HTMLButtonElement>(".settings-nav button")].map((item) => item.textContent);
+    expect(nav).toContain("Agent accounts");
+    expect([...container.querySelectorAll(".conn-toggle button")].map((item) => item.textContent)).not.toContain("Agent accounts");
+    const manage = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((item) => item.textContent === "Manage agents");
+    await act(async () => manage.find((item) => item.closest(".conn-card")?.textContent?.includes("Netcup"))!.click());
+    expect(container.querySelector("#agent-accounts-settings-title")?.textContent).toBe("Agent accounts");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Computer"]')?.value).toBe("netcup");
+    expect(agentConnections.accounts).toHaveBeenCalledWith("netcup");
+  });
 });
