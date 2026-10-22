@@ -3,6 +3,7 @@ import { Icon } from "./Icon.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentAuthOperationDto, AgentAuthOperationParams, AgentAuthStatusDto, AgentAuthSubmitCodeParams, AgentConnectionProvider } from "@termloop/contract/current";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
+import { connectionEntityIdentity } from "../../connection-scope.js";
 
 export type AgentConnectionActions = {
   accounts(profileId: string): Promise<AgentAccountListResult>;
@@ -25,9 +26,16 @@ export function operationActive(operation: AgentAuthOperationDto | null | undefi
 
 const PROVIDER_LABEL: Record<AgentConnectionProvider, string> = { claude: "Claude", codex: "Codex" };
 
+/** The server user's own login; IPC hands account IDs over connection-scoped. */
+export function isServerUserAccount(accountId: string): boolean {
+  return (connectionEntityIdentity(accountId)?.entityId ?? accountId) === "default";
+}
+
 /** Who an account is signed in as, e.g. `a@b.c (Acme, Max plan)`. */
 export function identityLabel(identity: AgentAccountIdentityDto | null | undefined): string | undefined {
-  const detail = [identity?.organizationName, identity?.plan ? `${identity.plan.charAt(0).toUpperCase()}${identity.plan.slice(1)} plan` : undefined]
+  // Claude names a personal organization after its email; that repeats nothing new.
+  const organization = identity?.email && identity.organizationName?.toLowerCase().includes(identity.email.toLowerCase()) ? undefined : identity?.organizationName;
+  const detail = [organization, identity?.plan ? `${identity.plan.charAt(0).toUpperCase()}${identity.plan.slice(1)} plan` : undefined]
     .filter((part): part is string => Boolean(part));
   const who = identity?.email ?? detail.shift();
   if (!who) return undefined;
@@ -49,11 +57,12 @@ function meterTone(percent: number): string {
 
 /** One limit window: a thin bar with the used share and when it resets. */
 export function UsageMeter({ window, label, column }: { window: AgentAccountUsageWindowDto | undefined; label: string; column?: string }) {
+  const named = window && column && window.label !== column ? window.label : undefined;
   if (!window) return <span className="agent-meter empty" aria-label={`${label}: no data`}>{column ? <span className="agent-meter-column">{column}</span> : null}–</span>;
   const used = Math.round(window.usedPercent);
   return <span className="agent-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={used} aria-label={`${label} usage`}>
     <span className="agent-meter-track"><span className={`agent-meter-fill${meterTone(window.usedPercent)}`} style={{ width: `${Math.max(2, Math.min(100, window.usedPercent))}%` }} /></span>
-    <span className="agent-meter-text">{column ? <span className="agent-meter-column">{column}</span> : null}<strong>{used}%</strong>{window.resetsAtEpochMs ? <small>resets {resetLabel(window.resetsAtEpochMs)}</small> : null}</span>
+    <span className="agent-meter-text">{column ? <span className="agent-meter-column">{column}</span> : null}<strong>{used}%</strong>{named || window.resetsAtEpochMs ? <small>{[named, window.resetsAtEpochMs ? `resets ${resetLabel(window.resetsAtEpochMs)}` : undefined].filter(Boolean).join(", ")}</small> : null}</span>
   </span>;
 }
 
@@ -114,8 +123,19 @@ export function AgentConnectionsPanel({ profile, actions }: { profile: Connectio
   </section>;
 }
 
-function windowOf(usage: AgentAccountUsageDto | undefined, kind: "session" | "weekly"): AgentAccountUsageWindowDto | undefined {
-  return usage?.state === "ok" ? usage.windows.find((window) => window.kind === kind) : undefined;
+const WEEK_MINUTES = 10_080;
+
+/**
+ * The windows shown in the shared Session and Weekly columns. A provider
+ * without one of them (Codex free plans report a single 30-day window) fills
+ * the column whose length is closest, labelled with its own name.
+ */
+export function columnWindows(usage: AgentAccountUsageDto | undefined): { session: AgentAccountUsageWindowDto | undefined; weekly: AgentAccountUsageWindowDto | undefined; rest: AgentAccountUsageWindowDto[] } {
+  const windows = usage?.state === "ok" ? usage.windows : [];
+  const other = windows.filter((window) => window.kind === "other");
+  const session = windows.find((window) => window.kind === "session") ?? other.find((window) => window.windowMinutes !== null && window.windowMinutes < WEEK_MINUTES);
+  const weekly = windows.find((window) => window.kind === "weekly") ?? other.find((window) => window !== session && (window.windowMinutes === null || window.windowMinutes >= WEEK_MINUTES));
+  return { session, weekly, rest: windows.filter((window) => window !== session && window !== weekly) };
 }
 
 function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refreshKey, update }: {
@@ -124,7 +144,7 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
 }) {
   const label = PROVIDER_LABEL[agentId];
   const accounts = snapshot.accounts.filter((account) => account.agentId === agentId);
-  const [selectedId, select] = useState(() => accounts.find((account) => account.isDefault)?.accountId ?? "default");
+  const [selectedId, select] = useState(() => (accounts.find((account) => account.isDefault) ?? accounts[0])?.accountId);
   const selected = accounts.find((account) => account.accountId === selectedId) ?? accounts[0]!;
   const [editing, setEditing] = useState<"add" | "rename">();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -145,7 +165,7 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
       const result = await work();
       if (!alive.current) return;
       update(result); setEditing(undefined); setConfirmDelete(false); setName("");
-      if (!result.accounts.some((account) => account.accountId === selected.accountId && account.agentId === agentId)) select(result.accounts.find((account) => account.agentId === agentId && account.isDefault)?.accountId ?? "default");
+      if (!result.accounts.some((account) => account.accountId === selected.accountId && account.agentId === agentId)) select(result.accounts.find((account) => account.agentId === agentId && account.isDefault)?.accountId);
       if (result.createdAccountId) select(result.createdAccountId);
     } catch (cause) { if (alive.current) { setError(message(cause)); await refresh(); } }
     finally { if (alive.current) setPending(false); }
@@ -168,7 +188,8 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
       <div className="agent-roster-columns" aria-hidden="true"><span /><span>Account</span><span>Session</span><span>Weekly</span><span /></div>
       {accounts.map((account) => {
         const own = usage?.find((item) => item.accountId === account.accountId);
-        const shared = own ? duplicateLogins(usage ?? [], own).map((other) => accounts.find((candidate) => candidate.accountId === other.accountId)?.name ?? other.accountId) : [];
+        const shared = own ? duplicateLogins(usage ?? [], own).flatMap((other) => accounts.find((candidate) => candidate.accountId === other.accountId)?.name ?? []) : [];
+        const columns = columnWindows(own);
         const expanded = account.accountId === selected.accountId;
         const who = !usage ? "Checking…" : !own ? "Usage unavailable" : own.state === "ok" ? identityLabel(own.identity) ?? "Signed in" : own.state === "signedOut" ? "Not signed in" : own.message ?? "Usage unavailable";
         return <div key={account.accountId} role="listitem" className={`agent-roster-row${expanded ? " expanded" : ""}${account.isDefault ? " is-default" : ""}`}>
@@ -179,15 +200,15 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
               <small className={own?.state === "ok" ? "" : "muted"}>{who}</small>
               {shared.length ? <small className="agent-roster-shared">Same login as {shared.join(", ")}, so limits are shared</small> : null}
             </span>
-            <UsageMeter window={windowOf(own, "session")} label={`${account.name} session`} column="Session" />
-            <UsageMeter window={windowOf(own, "weekly")} label={`${account.name} weekly`} column="Weekly" />
+            <UsageMeter window={columns.session} label={`${account.name} session`} column="Session" />
+            <UsageMeter window={columns.weekly} label={`${account.name} weekly`} column="Weekly" />
           </button>
           <span className="agent-roster-end">
             {account.isDefault ? <span className="agent-roster-default">Default</span>
               : <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => void mutate(() => actions.setDefault(profileId, paramsFor(account)))}>Make default</button>}
           </span>
           {expanded ? <div className="agent-roster-detail">
-            {own?.state === "ok" && own.windows.length > 2 ? <UsageWindows usage={{ ...own, windows: own.windows.filter((window) => window.kind !== "session" && window.kind !== "weekly") }} /> : null}
+            {own && columns.rest.length ? <UsageWindows usage={{ ...own, windows: columns.rest }} /> : null}
             {editing === "rename" ? nameForm("rename") : null}
             {confirmDelete ? <div className="conn-banner warning" role="alert">
               <p>Remove <strong>{account.name}</strong>? TermLoop signs it out on this server and deletes its private provider folder. Agents still using it must move to another account or be closed first.</p>
@@ -197,7 +218,7 @@ function ProviderAccounts({ agentId, snapshot, profileId, actions, refresh, refr
             <AccountStatus key={account.accountId} account={account} profileId={profileId} actions={actions} refreshKey={refreshKey}
               manage={<>
                 <button type="button" className="agent-quiet-button" disabled={pending} onClick={() => { setEditing("rename"); setName(account.name); setConfirmDelete(false); }}>Rename</button>
-                {account.accountId !== "default" ? <button type="button" className="agent-quiet-button danger" disabled={pending} onClick={() => { setConfirmDelete(true); setEditing(undefined); }}>Remove</button> : null}
+                {!isServerUserAccount(account.accountId) ? <button type="button" className="agent-quiet-button danger" disabled={pending} onClick={() => { setConfirmDelete(true); setEditing(undefined); }}>Remove</button> : null}
               </>} />
           </div> : null}
         </div>;
