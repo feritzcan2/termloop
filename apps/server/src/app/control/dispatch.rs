@@ -586,6 +586,48 @@ fn agent_plan_update(
     }
 }
 
+fn agent_subagent_update(
+    subagent: termloop_contract::current::AgentSubagentObservation,
+) -> termloop_core::AgentSubagentUpdate {
+    use termloop_contract::current::AgentSubagentObservation;
+    use termloop_core::AgentSubagentUpdate;
+    match subagent {
+        AgentSubagentObservation::Launching {
+            agent_type,
+            description,
+        } => AgentSubagentUpdate::Launching {
+            agent_type,
+            description,
+        },
+        AgentSubagentObservation::Started { key, agent_type } => {
+            AgentSubagentUpdate::Started { key, agent_type }
+        }
+        AgentSubagentObservation::Active {
+            key,
+            agent_type,
+            activity,
+        } => AgentSubagentUpdate::Active {
+            key,
+            agent_type,
+            activity,
+        },
+        AgentSubagentObservation::Described { key, description } => {
+            AgentSubagentUpdate::Described { key, description }
+        }
+        AgentSubagentObservation::Stopped { key } => AgentSubagentUpdate::Stopped { key },
+        AgentSubagentObservation::Inventory { children } => AgentSubagentUpdate::Inventory(
+            children
+                .into_iter()
+                .map(|child| termloop_core::AgentSubagentListing {
+                    key: child.key,
+                    agent_type: child.agent_type,
+                    description: child.description,
+                })
+                .collect(),
+        ),
+    }
+}
+
 pub(in crate::app) struct DispatchOutcome {
     pub(in crate::app) response: String,
     pub(in crate::app) subscription: Option<Vec<ProjectionTopic>>,
@@ -974,6 +1016,7 @@ async fn dispatch_inner(
                     transcript_path: params.transcript_path,
                     prompt_id: params.prompt_id,
                     plan: params.plan.map(agent_plan_update),
+                    subagent: params.subagent.map(agent_subagent_update),
                     pending_wakes: params.pending_wakes.map(|pending| {
                         termloop_core::AgentPendingWakes {
                             background_tasks: pending.background_tasks,

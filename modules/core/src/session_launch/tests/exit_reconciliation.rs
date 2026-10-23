@@ -208,6 +208,7 @@ fn provisional_resume_exit_retries_without_consuming_reservations_on_write_failu
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
         },
     );
     // The retired generation may report after the new resume was reserved.

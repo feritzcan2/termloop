@@ -595,6 +595,7 @@ impl CoreRuntime {
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
                     pending_wakes: Default::default(),
+                    subagents: Default::default(),
                 },
             );
         }
@@ -1004,6 +1005,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
             },
         );
         // This is the exact state after the first wake was accepted while the

@@ -1932,6 +1932,7 @@ mod tests {
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: Some(termloop_agents::AgentObservation {
                 state: termloop_agents::AgentState::Idle,
                 source: termloop_agents::AgentSignalSource::DaemonBridge,
@@ -1947,6 +1948,7 @@ mod tests {
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: pending.observation,
             pending_generated_input: None,
         };

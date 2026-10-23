@@ -123,6 +123,8 @@ pub type AgentPlanStepStatus = termloop_agents::AgentPlanStepStatus;
 pub type ObservationCapability = termloop_agents::ObservationCapability;
 pub type ProviderHookObservationInput = termloop_agents::ProviderHookObservationInput;
 pub type AgentPendingWakes = termloop_agents::AgentPendingWakes;
+pub type AgentSubagentUpdate = termloop_agents::AgentSubagentUpdate;
+pub type AgentSubagentListing = termloop_agents::AgentSubagentListing;
 pub type ProviderHookSettings = termloop_agents::ProviderHookSettings;
 pub type ProviderHookSettingsDelivery = termloop_agents::ProviderHookSettingsDelivery;
 pub type ResumeFailureReason = termloop_domain::ResumeFailureReason;
@@ -897,6 +899,13 @@ impl CoreRuntime {
             capability.pending_wakes = pending_wakes;
         }
         let pending_wakes_changed = capability.pending_wakes != previous_pending_wakes;
+        let subagents_changed = if signal == termloop_agents::AgentSignal::SessionEnded {
+            capability.subagents.clear()
+        } else {
+            normalized
+                .subagent
+                .is_some_and(|update| capability.subagents.apply(update, observed_at_epoch_ms))
+        };
         let defer_generated_input_until_hook_response =
             session_started && capability.pending_generated_input.is_some();
         if defer_generated_input_until_hook_response {
@@ -943,6 +952,7 @@ impl CoreRuntime {
         }
         let status_changed = observation_projection_changed(previous, next)
             || pending_wakes_changed
+            || subagents_changed
             || plan_changed
             || readiness_changed
             || generated_input_confirmed
@@ -1046,6 +1056,7 @@ impl CoreRuntime {
                 prompt_id: None,
                 plan,
                 pending_wakes: None,
+                subagent: None,
             },
             sequence,
             observed_at_epoch_ms,
@@ -2409,6 +2420,26 @@ impl CoreRuntime {
                             "scheduledWakes": pending.scheduled_wakes,
                         })
                     });
+                let subagents: Vec<Value> = live
+                    .then(|| self.agent_observations.get(&session.id))
+                    .flatten()
+                    .map(|capability| {
+                        capability
+                            .subagents
+                            .children()
+                            .iter()
+                            .map(|child| {
+                                serde_json::json!({
+                                    "key": child.key,
+                                    "agentType": child.agent_type,
+                                    "description": child.description,
+                                    "activity": child.activity,
+                                    "startedAtEpochMs": child.started_at_epoch_ms,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 serde_json::json!({
                     "sessionId": session.id,
                     "status": agent_state_name(state),
@@ -2417,6 +2448,7 @@ impl CoreRuntime {
                     "plan": plan,
                     "generatedInputDelivery": generated_input_delivery,
                     "pendingWakes": pending_wakes,
+                    "subagents": subagents,
                 })
             })
             .collect();
@@ -2961,6 +2993,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3240,6 +3273,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3263,6 +3297,7 @@ mod tests {
                         prompt_id: None,
                         plan: None,
                         pending_wakes,
+                        subagent: None,
                     },
                     sequence,
                     sequence,
@@ -3303,6 +3338,95 @@ mod tests {
         observe(&mut runtime, "SessionEnd", None, 7);
         observe(&mut runtime, "SessionStart", None, 8);
         assert!(runtime.agent_status_list().unwrap()[0]["pendingWakes"].is_null());
+
+        // Subagents are a runtime-only roster folded from child hooks and
+        // projected at any live state until the child or the conversation ends.
+        let observe_subagent = |runtime: &mut CoreRuntime,
+                                event: &str,
+                                subagent: AgentSubagentUpdate,
+                                sequence: u64| {
+            runtime
+                .record_provider_hook_observation(
+                    "token-live",
+                    "claude-live",
+                    ProviderHookObservationInput {
+                        event_name: event.into(),
+                        notification_type: None,
+                        native_session_id: None,
+                        provider_model_id: None,
+                        permission_mode: None,
+                        reasoning_level: None,
+                        transcript_path: None,
+                        prompt_id: None,
+                        plan: None,
+                        pending_wakes: None,
+                        subagent: Some(subagent),
+                    },
+                    sequence,
+                    sequence,
+                )
+                .unwrap()
+                .status_changed
+        };
+        observe(&mut runtime, "UserPromptSubmit", None, 9);
+        assert!(!observe_subagent(
+            &mut runtime,
+            "PreToolUse",
+            AgentSubagentUpdate::Launching {
+                agent_type: Some("code-reviewer".into()),
+                description: Some("Review the diff".into()),
+            },
+            10
+        ));
+        assert!(observe_subagent(
+            &mut runtime,
+            "SubagentStart",
+            AgentSubagentUpdate::Started {
+                key: "0123456789abcdef".into(),
+                agent_type: Some("code-reviewer".into()),
+            },
+            11
+        ));
+        let projected = runtime.agent_status_list().unwrap();
+        assert_eq!(projected[0]["status"], "working");
+        assert_eq!(projected[0]["subagents"][0]["agentType"], "code-reviewer");
+        assert_eq!(
+            projected[0]["subagents"][0]["description"],
+            "Review the diff"
+        );
+        assert_eq!(projected[0]["subagents"][0]["startedAtEpochMs"], 11);
+        assert!(observe_subagent(
+            &mut runtime,
+            "SubagentStop",
+            AgentSubagentUpdate::Stopped {
+                key: "0123456789abcdef".into(),
+            },
+            12
+        ));
+        assert_eq!(runtime.agent_status_list().unwrap()[0]["status"], "working");
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["subagents"],
+            serde_json::json!([])
+        );
+        observe_subagent(
+            &mut runtime,
+            "Stop",
+            AgentSubagentUpdate::Inventory(vec![AgentSubagentListing {
+                key: "fedcba9876543210".into(),
+                agent_type: None,
+                description: Some("Sleep 8 seconds".into()),
+            }]),
+            13,
+        );
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["subagents"][0]["description"],
+            "Sleep 8 seconds"
+        );
+        assert!(observe(&mut runtime, "SessionEnd", None, 14));
+        assert_eq!(
+            runtime.agent_status_list().unwrap()[0]["subagents"],
+            serde_json::json!([])
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -3360,6 +3484,7 @@ mod tests {
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
                     pending_wakes: Default::default(),
+                    subagents: Default::default(),
                     observation: None,
                     pending_generated_input: None,
                 },
@@ -3541,6 +3666,7 @@ mod tests {
                     defer_generated_input_until_hook_response: false,
                     last_notification_type: None,
                     pending_wakes: Default::default(),
+                    subagents: Default::default(),
                     observation: None,
                     pending_generated_input: None,
                 },
@@ -3742,6 +3868,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3761,6 +3888,7 @@ mod tests {
                     prompt_id: None,
                     plan: None,
                     pending_wakes: None,
+                    subagent: None,
                 },
                 1,
                 1,
@@ -3797,6 +3925,7 @@ mod tests {
                     prompt_id: None,
                     plan: None,
                     pending_wakes: None,
+                    subagent: None,
                 },
                 2,
                 2,
@@ -3878,6 +4007,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3891,6 +4021,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -3930,6 +4061,7 @@ mod tests {
                     prompt_id: None,
                     plan: None,
                     pending_wakes: None,
+                    subagent: None,
                 },
                 1,
                 1,
@@ -3952,6 +4084,7 @@ mod tests {
                     prompt_id: None,
                     plan: None,
                     pending_wakes: None,
+                    subagent: None,
                 },
                 2,
                 2,
@@ -4025,6 +4158,7 @@ mod tests {
                         prompt_id: None,
                         plan: None,
                         pending_wakes: None,
+                        subagent: None,
                     },
                     sequence,
                     2,
@@ -4046,6 +4180,7 @@ mod tests {
                     prompt_id: None,
                     plan: None,
                     pending_wakes: None,
+                    subagent: None,
                 },
                 257,
                 2,
@@ -4306,6 +4441,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -4700,6 +4836,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },

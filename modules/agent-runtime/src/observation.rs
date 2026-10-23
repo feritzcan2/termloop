@@ -13,6 +13,8 @@ pub struct SessionObservation {
     pub last_notification_type: Option<String>,
     /// The latest `Stop` snapshot of what the resting turn still waits on.
     pub pending_wakes: termloop_agents::AgentPendingWakes,
+    /// Runtime-only children the provider session is running right now.
+    pub subagents: termloop_agents::AgentSubagentRoster,
 }
 
 pub fn observation_token_matches(expected: &str, token: &str) -> bool {

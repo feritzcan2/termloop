@@ -37,3 +37,18 @@
 
 .agent-creator-card { margin: 0 10px 14px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
 .agent-creator-card > p { margin: 8px 0 0; font-size: 11px; color: var(--text-secondary); }
+
+/* An agent's in-process subagents nest under its row like Orca's child rows: an
+   elbow rail on the left, a working dot, and one truncating line that leads with
+   the task and trails with what the child is doing now. */
+.agent-subagents { position: relative; display: grid; gap: 1px; margin: 3px 0 1px; padding-left: 11px; font: 10px/1.35 var(--font-mono); }
+.agent-subagents::before { position: absolute; top: -1px; bottom: 7px; left: 2px; border-left: 1px solid light-dark(rgba(66,111,151,.22), rgba(102,179,255,.24)); content: ""; }
+.agent-subagent { position: relative; display: flex; min-width: 0; align-items: center; gap: 5px; color: var(--sidebar-dim, #8a9194); }
+.agent-subagent::before { position: absolute; top: 50%; left: -9px; width: 6px; border-top: 1px solid light-dark(rgba(66,111,151,.22), rgba(102,179,255,.24)); content: ""; }
+.agent-subagent-dot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--agent-status-working); animation: agent-subagent-pulse 1.6s ease-in-out infinite; }
+.agent-subagent-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-subagent-lead { color: light-dark(#4f5759, #c3c8c9); }
+.agent-subagent-more { padding-left: 10px; }
+.session-item.with-subagents { align-items: start; }
+@keyframes agent-subagent-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .agent-subagent-dot { animation: none; } }

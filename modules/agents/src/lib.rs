@@ -20,6 +20,11 @@ pub use pending_wakes::{AgentPendingWakes, normalize_claude_pending_wakes};
 mod provider_hooks;
 mod provider_observation;
 mod session_history;
+mod subagents;
+pub use subagents::{
+    AgentSubagent, AgentSubagentListing, AgentSubagentRoster, AgentSubagentUpdate,
+    MAX_AGENT_SUBAGENTS, normalize_claude_subagent_update,
+};
 
 pub use catalog::{
     AgentDescriptor, BuiltinAgentAdapter, ResumeIdentityScope, agent_catalog, agent_descriptor,
@@ -419,6 +424,9 @@ pub fn normalize_hook_event(value: &str, notification_type: Option<&str>) -> Opt
         "UserPromptSubmit" => Some(AgentSignal::PromptSubmitted),
         "PreToolUse" => Some(AgentSignal::ToolStarted),
         "PostToolUse" | "TaskCreated" | "TaskCompleted" => Some(AgentSignal::ToolFinished),
+        // A child's lifecycle says nothing about the lead turn; it only feeds
+        // the subagent roster.
+        "SubagentStart" | "SubagentStop" => Some(AgentSignal::AmbientNotification),
         "PermissionRequest" => Some(AgentSignal::PermissionRequested),
         "Notification" => Some(notification_signal(notification_type)),
         "PreCompact" => Some(AgentSignal::CompactStarted),

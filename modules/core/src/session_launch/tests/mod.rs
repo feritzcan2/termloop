@@ -1405,6 +1405,7 @@ fn quick_action_permission_modal_blocks_before_terminal_submission() {
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: None,
             pending_generated_input: Some(crate::test_generated_terminal_submission(
                 "Do not accept this modal",
@@ -1625,6 +1626,7 @@ fn only_an_assistant_wake_follows_a_failed_claude_turn() {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: Some(submission),
             },
@@ -1769,6 +1771,7 @@ async fn steward_activation_waits_for_post_hook_and_confirms_once() {
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: None,
             pending_generated_input: Some(crate::test_generated_terminal_submission(
                 "Activate this Steward",
@@ -1988,6 +1991,7 @@ async fn assert_quick_action_initial_input_delivery(
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: None,
             pending_generated_input: (!submit_after_interrupted_turn)
                 .then(|| crate::test_generated_terminal_submission("Review this diff")),
@@ -3770,6 +3774,7 @@ fn quick_action_ticket_keeps_the_exact_once_resolved_private_payload() {
             defer_generated_input_until_hook_response: false,
             last_notification_type: None,
             pending_wakes: Default::default(),
+            subagents: Default::default(),
             observation: Some(termloop_agents::AgentObservation {
                 state: termloop_agents::AgentState::Working,
                 source: termloop_agents::AgentSignalSource::Hook,
@@ -5580,6 +5585,7 @@ fn client_launch_restart_marks_only_a_working_codex_interrupted() {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: None,
                 pending_generated_input: None,
             },
@@ -5696,6 +5702,7 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: Some(termloop_agents::AgentObservation {
                     state: termloop_agents::AgentState::Working,
                     source: if agent_id == "claude" {
@@ -5792,6 +5799,7 @@ fn daemon_restart_handoff_interrupts_working_claude_and_codex() {
                 prompt_id: None,
                 plan: None,
                 pending_wakes: None,
+                subagent: None,
             },
             session_start_sequence,
             201,
