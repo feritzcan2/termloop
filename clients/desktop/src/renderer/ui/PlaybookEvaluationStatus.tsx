@@ -3,7 +3,7 @@ import type { Session } from "../model.js";
 import "./playbook-evaluation.css";
 
 const waitingReason: Record<NonNullable<PlaybookEvaluationDto["reason"]>, string> = {
-  noUnambiguousTaskAgent: "No task agent could be selected unambiguously.",
+  noUnambiguousTaskAgent: "This Task has no single running agent to check it, so no evaluator was started.",
   forkUnsupported: "The task agent does not support conversation forks.",
   forkUnavailable: "The task agent fork could not start.",
   evaluatorUnavailable: "The evaluator could not start.",
@@ -33,7 +33,7 @@ export function PlaybookEvaluationStatus(props: {
     {waiting ? <small>{evaluation.reason ? waitingReason[evaluation.reason] : "Task agent review is unavailable."} No check was performed.</small>
       : <small>{source ? `Source: ${source.name ?? source.process.agent_id ?? "Task agent"}`
         : evaluation.mode === "starting" ? "Selecting and starting the task evaluator."
-        : evaluation.mode === "freshEvaluator" ? "Read-only fresh evaluation. The task has no agent to fork."
+        : evaluation.mode === "freshEvaluator" ? "Read-only fresh evaluation. The task agent cannot be forked."
         : "Read-only task agent evaluation."}</small>}
     {running && !canOpen ? <small>Connecting to the evaluation terminal…</small> : null}
   </div>;
