@@ -13,7 +13,7 @@ function fixture() {
       return { surfaceId, rows: 24, cols: 80 };
     }),
     write: vi.fn(), setFrame: vi.fn(), setVisible: vi.fn(), setColorScheme: vi.fn(),
-    focus: vi.fn(), scrollToBottom: vi.fn(), readText: vi.fn(async () => "contents"),
+    focus: vi.fn(), blur: vi.fn(), scrollToBottom: vi.fn(), readText: vi.fn(async () => "contents"),
     snapshot: vi.fn(() => ({ data: Buffer.alloc(4), width: 1, height: 1 })), destroy: vi.fn(),
   };
   const events = { input: vi.fn(), closed: vi.fn(), shortcut: vi.fn() };
@@ -50,6 +50,16 @@ describe("Windows Terminal surfaces", () => {
     vi.mocked(addon.write).mockImplementation(() => {});
     await expect(manager.write(id, new Uint8Array([66]))).resolves.toBeUndefined();
     await expect(manager.write(id, new Uint8Array(1024 * 1024 + 1))).rejects.toThrow("OutputTooLarge");
+  });
+
+  it("releases keyboard focus from every live pane", () => {
+    const { manager, addon } = fixture();
+    const first = manager.create().surfaceId;
+    const second = manager.create().surfaceId;
+    manager.destroy(first);
+    manager.releaseFocus();
+    expect(addon.blur).toHaveBeenCalledTimes(1);
+    expect(addon.blur).toHaveBeenCalledWith(second);
   });
 
   it("captures before hiding, and still hides on capture failure", () => {

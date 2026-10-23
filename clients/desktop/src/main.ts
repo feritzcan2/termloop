@@ -1646,6 +1646,12 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
         closed: (surfaceId) => window.webContents.send("termloop:ghostty-closed", { surfaceId }),
         shortcut: (shortcut) => window.webContents.send("termloop:ghostty-shell-shortcut", { shortcut }),
       }, ({ data, width, height }) => nativeImage.createFromBitmap(data, { width, height, scaleFactor: 1 }).toPNG());
+      const surfaces = ghosttySurfaces;
+      // A click on web content never reaches the native child window, so hand
+      // Win32 keyboard focus back to Chromium for inputs such as commit messages.
+      window.webContents.on("before-mouse-event", (_event, mouse) => {
+        if (mouse.type === "mouseDown") surfaces.releaseFocus();
+      });
       effectiveTerminalRenderer = "windows-terminal";
     }
   }
