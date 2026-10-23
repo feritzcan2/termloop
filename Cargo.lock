@@ -2490,6 +2490,7 @@ dependencies = [
  "futures-util",
  "serde",
  "serde_json",
+ "sha2",
  "termloop-domain",
  "termloop-platform",
  "tokio",

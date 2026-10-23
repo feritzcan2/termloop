@@ -1017,6 +1017,7 @@ impl CoreRuntime {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
             },
         );
         let retired_codex_runtime = restart_running

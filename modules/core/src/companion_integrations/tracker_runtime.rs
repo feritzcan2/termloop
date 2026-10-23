@@ -1038,6 +1038,7 @@ mod tests {
                 defer_generated_input_until_hook_response: false,
                 last_notification_type: None,
                 pending_wakes: Default::default(),
+                subagents: Default::default(),
                 observation: Some(termloop_agents::reduce_observation(
                     None,
                     termloop_agents::AgentSignal::PromptSubmitted,

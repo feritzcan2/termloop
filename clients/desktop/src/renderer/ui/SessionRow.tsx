@@ -205,15 +205,19 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
   const plan = currentPlanKey === dismissedPlanKey ? undefined : currentPlan;
   const accessibleName = sessionRowAccessibleName({ session, state, relationship: relationshipLabel, displayName: titleKey && displayName ? `${titleKey} ${displayName}` : displayName });
   const planProgress = plan ? agentPlanProgress(plan) : undefined;
+  const subagents = liveAgentStatus?.subagents ?? [];
+  const subagentSummary = subagents.length ? `${subagents.length} ${subagents.length === 1 ? "subagent" : "subagents"} running` : undefined;
   const forking = useContext(ForkingSessionsContext).has(session.id);
   return (
     <button
-      className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""} state-${state.tone}`}
+      className={`session-item ${session.kind === "Agent" ? "agent" : "terminal"}${subagents.length ? " with-subagents" : ""}${session.run_configuration_id ? " run" : ""}${sessionIsImprover(session) ? " improver" : ""}${active ? " active" : ""}${visible ? " visible" : ""} state-${state.tone}`}
       type="button"
       {...dragAttributes}
-      aria-label={planProgress
-        ? `${accessibleName}, ${planProgress.completed} of ${planProgress.total} todos completed`
-        : accessibleName}
+      aria-label={[
+        accessibleName,
+        planProgress ? `${planProgress.completed} of ${planProgress.total} todos completed` : undefined,
+        subagentSummary,
+      ].filter(Boolean).join(", ")}
       aria-pressed={active}
       aria-busy={forking || undefined}
       aria-haspopup="menu"
@@ -361,6 +365,47 @@ function agentPlanForRow(session: Session, status: AgentStatus | undefined): Age
   return status?.plan?.steps.length ? status.plan : undefined;
 }
 
+type AgentSubagent = NonNullable<AgentStatus["subagents"]>[number];
+
+/// Rows past this many collapse into one "+N more" line, so a fan-out of
+/// children cannot push the rest of the rail off screen.
+const VISIBLE_SUBAGENT_ROWS = 3;
+
+/// A child's line leads with what it was asked to do and trails with what it
+/// is doing right now, falling back to its role when it reported neither.
+export function agentSubagentRowText(subagent: AgentSubagent): { lead: string; trail: string } {
+  const role = subagent.agentType ? subagentRoleLabel(subagent.agentType) : undefined;
+  const lead = subagent.description ?? role ?? "Subagent";
+  const trail = subagent.activity ?? (subagent.description ? role : undefined);
+  return { lead, trail: trail && trail !== lead ? trail : "" };
+}
+
+function subagentRoleLabel(agentType: string): string {
+  const words = agentType.replace(/[-_]+/g, " ").trim();
+  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : agentType;
+}
+
+/// The in-process children an agent is running, nested under its row. They
+/// have no terminal of their own, so they are part of the parent's button
+/// rather than rows that could be selected.
+function AgentSubagentRows({ subagents }: { subagents: readonly AgentSubagent[] }) {
+  const visible = subagents.slice(0, VISIBLE_SUBAGENT_ROWS);
+  const hidden = subagents.length - visible.length;
+  return <span className="agent-subagents" aria-hidden="true">
+    {visible.map((subagent, index) => {
+      const { lead, trail } = agentSubagentRowText(subagent);
+      return <span key={`${subagent.startedAtEpochMs}:${index}`} className="agent-subagent" title={trail ? `${lead} · ${trail}` : lead}>
+        <span className="agent-subagent-dot" />
+        <span className="agent-subagent-line">
+          <span className="agent-subagent-lead">{lead}</span>
+          {trail ? <span className="agent-subagent-trail"> · {trail}</span> : null}
+        </span>
+      </span>;
+    })}
+    {hidden > 0 ? <span className="agent-subagent agent-subagent-more">+{hidden} more</span> : null}
+  </span>;
+}
+
 function agentPlanProgress(plan: AgentPlan): { completed: number; total: number } {
   return {
     completed: plan.steps.filter((step) => step.status === "completed").length,
@@ -459,6 +504,7 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
             ? <code className="row-run-command" title={runCommand}>{runCommand}</code>
             : provenance.folder ? <small className="row-subtitle" title={session.process.cwd}>{provenance.folder}</small> : null}
         </span>
+        {agentStatus?.subagents?.length ? <AgentSubagentRows subagents={agentStatus.subagents} /> : null}
         {plan ? <AgentTodoTooltip plan={plan} /> : null}
       </span>
       <span className="session-presence">{visible ? <span className="pane-dot" title={active ? "Active pane" : "Visible in layout"} /> : null}</span>

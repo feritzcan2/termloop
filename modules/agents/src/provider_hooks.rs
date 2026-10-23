@@ -57,6 +57,8 @@ fn claude_hook_settings(command: &str) -> Result<ProviderHookSettings, serde_jso
         "PreToolUse",
         "PermissionRequest",
         "PostToolUse",
+        "SubagentStart",
+        "SubagentStop",
         "TaskCreated",
         "TaskCompleted",
         "Notification",

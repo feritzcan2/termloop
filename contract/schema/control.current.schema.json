@@ -6091,6 +6091,102 @@
         }
       ]
     },
+    "agentSubagentObservation": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentSubagentObservation",
+      "x-codegen-tagged-union": "kind",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "agentType", "description"],
+          "properties": {
+            "kind": { "const": "launching" },
+            "agentType": { "type": ["string", "null"], "minLength": 1, "maxLength": 64, "x-utf8-max-bytes": 64 },
+            "description": { "type": ["string", "null"], "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "key", "agentType"],
+          "properties": {
+            "kind": { "const": "started" },
+            "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" },
+            "agentType": { "type": ["string", "null"], "minLength": 1, "maxLength": 64, "x-utf8-max-bytes": 64 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "key", "agentType", "activity"],
+          "properties": {
+            "kind": { "const": "active" },
+            "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" },
+            "agentType": { "type": ["string", "null"], "minLength": 1, "maxLength": 64, "x-utf8-max-bytes": 64 },
+            "activity": { "type": ["string", "null"], "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "key", "description"],
+          "properties": {
+            "kind": { "const": "described" },
+            "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" },
+            "description": { "type": "string", "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "key"],
+          "properties": {
+            "kind": { "const": "stopped" },
+            "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "children"],
+          "properties": {
+            "kind": { "const": "inventory" },
+            "children": {
+              "type": "array",
+              "maxItems": 16,
+              "items": { "$ref": "#/$defs/agentSubagentListingDto" }
+            }
+          }
+        }
+      ]
+    },
+    "agentSubagentListingDto": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentSubagentListingDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "agentType", "description"],
+      "properties": {
+        "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" },
+        "agentType": { "type": ["string", "null"], "minLength": 1, "maxLength": 64, "x-utf8-max-bytes": 64 },
+        "description": { "type": ["string", "null"], "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 }
+      }
+    },
+    "agentSubagentDto": {
+      "x-codegen": true,
+      "x-codegen-name": "AgentSubagentDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "agentType", "description", "activity", "startedAtEpochMs"],
+      "properties": {
+        "key": { "type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[0-9a-f]{16}$" },
+        "agentType": { "type": ["string", "null"], "minLength": 1, "maxLength": 64, "x-utf8-max-bytes": 64 },
+        "description": { "type": ["string", "null"], "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 },
+        "activity": { "type": ["string", "null"], "minLength": 1, "maxLength": 256, "x-utf8-max-bytes": 256 },
+        "startedAtEpochMs": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
+      }
+    },
     "agentObservationTransport": {
       "x-codegen": true,
       "x-codegen-name": "AgentObservationTransport",
@@ -9405,6 +9501,13 @@
               "type": "null"
             }
           ]
+        },
+        "subagents": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/agentSubagentDto"
+          }
         }
       }
     },
@@ -9532,6 +9635,9 @@
               "type": "null"
             }
           ]
+        },
+        "subagent": {
+          "$ref": "#/$defs/agentSubagentObservation"
         }
       }
     },

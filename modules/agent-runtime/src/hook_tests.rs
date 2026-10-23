@@ -95,3 +95,29 @@ fn opencode_hook_identity_accepts_only_provider_session_ids() {
         None
     );
 }
+
+#[test]
+fn subagent_observations_carry_an_opaque_key_instead_of_the_provider_id() {
+    let started = termloop_agents::normalize_claude_subagent_update(&serde_json::json!({
+        "hook_event_name": "SubagentStart",
+        "agent_id": "a89b41394dcd804b3",
+        "agent_type": "general-purpose",
+    }))
+    .unwrap();
+    let wire = subagent_observation_json(started);
+    assert_eq!(wire["kind"], "started");
+    assert_eq!(wire["agentType"], "general-purpose");
+    assert_eq!(wire["key"].as_str().unwrap().len(), 16);
+    assert!(!wire.to_string().contains("a89b41394dcd804b3"));
+
+    let inventory = termloop_agents::normalize_claude_subagent_update(&serde_json::json!({
+        "hook_event_name": "Stop",
+        "background_tasks": [{ "id": "a89b41394dcd804b3", "type": "subagent", "status": "running", "description": "Sleep" }],
+    }))
+    .unwrap();
+    let wire = subagent_observation_json(inventory);
+    assert_eq!(wire["kind"], "inventory");
+    assert_eq!(wire["children"][0]["description"], "Sleep");
+    assert!(wire["children"][0]["agentType"].is_null());
+    assert!(!wire.to_string().contains("a89b41394dcd804b3"));
+}

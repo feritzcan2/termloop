@@ -39,110 +39,113 @@ static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLo
 static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[0-9]+$").expect("generated contract pattern"));
 static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
+    regex::Regex::new("^[0-9a-f]{16}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{40,64}$").expect("generated contract pattern")
+    regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
+    regex::Regex::new("^[0-9a-f]{40,64}$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z2-9]{4}-[A-Z2-9]{4}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[^\\s\\x00-\\x1f\\x7f]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_33: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_34: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_35: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_36: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_36: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_37: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_37: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_38: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/remotes/[^/]+/.+").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_38: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_39: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_39: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_40: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
@@ -163,65 +166,66 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
             CONTRACT_PATTERN_5.is_match(text)
         }
         "^[0-9]+$" => CONTRACT_PATTERN_6.is_match(text),
-        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_7.is_match(text),
-        "^[0-9a-f]{40,64}$" => CONTRACT_PATTERN_8.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[0-9a-f]{16}$" => CONTRACT_PATTERN_7.is_match(text),
+        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_8.is_match(text),
+        "^[0-9a-f]{40,64}$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$" => CONTRACT_PATTERN_11.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_11.is_match(text)
-        }
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
             CONTRACT_PATTERN_12.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_13.is_match(text),
-        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_14.is_match(text),
-        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_16.is_match(text),
-        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_17.is_match(text),
-        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_18.is_match(text),
-        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_19.is_match(text),
-        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_20.is_match(text),
-        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_21.is_match(text),
-        "^[^\\s\\x00-\\x1f\\x7f]+$" => CONTRACT_PATTERN_22.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_23.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_24.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_25.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_26.is_match(text),
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_27.is_match(text)
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
+            CONTRACT_PATTERN_13.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_14.is_match(text),
+        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_15.is_match(text),
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_17.is_match(text),
+        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_18.is_match(text),
+        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_19.is_match(text),
+        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_20.is_match(text),
+        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_21.is_match(text),
+        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_22.is_match(text),
+        "^[^\\s\\x00-\\x1f\\x7f]+$" => CONTRACT_PATTERN_23.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_24.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_25.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_26.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_27.is_match(text),
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_28.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_29.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_30.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_31.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_32.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_33.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_34.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_35.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_36.is_match(text),
-        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_37.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_38.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_39.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_35.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_36.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_37.is_match(text),
+        "^refs/remotes/[^/]+/.+" => CONTRACT_PATTERN_38.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_39.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_40.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:17d5262f6aaacad24ff0f8fbb222a6a773b2c5d414b2c1dfc1b0ac9fe5f064ac";
+    "sha256:cad459be098520a81188d3c19e2e3ddc880b851a0509e6039220580d923f27cf";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -2747,6 +2751,68 @@ pub enum AgentPlanObservation {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum AgentSubagentObservation {
+    #[serde(rename = "launching")]
+    Launching {
+        #[serde(rename = "agentType")]
+        agent_type: Option<String>,
+        description: Option<String>,
+    },
+    #[serde(rename = "started")]
+    Started {
+        key: String,
+        #[serde(rename = "agentType")]
+        agent_type: Option<String>,
+    },
+    #[serde(rename = "active")]
+    Active {
+        key: String,
+        #[serde(rename = "agentType")]
+        agent_type: Option<String>,
+        activity: Option<String>,
+    },
+    #[serde(rename = "described")]
+    Described { key: String, description: String },
+    #[serde(rename = "stopped")]
+    Stopped { key: String },
+    #[serde(rename = "inventory")]
+    Inventory {
+        children: Vec<AgentSubagentListingDto>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentSubagentListingDto {
+    pub key: String,
+    #[serde(
+        rename = "agentType",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub agent_type: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentSubagentDto {
+    pub key: String,
+    #[serde(
+        rename = "agentType",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub agent_type: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub description: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub activity: Option<String>,
+    #[serde(rename = "startedAtEpochMs")]
+    pub started_at_epoch_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentObservationTransport {
     #[serde(rename = "launchScopedHook")]
@@ -4161,6 +4227,8 @@ pub struct AgentStatusDto {
     pub generated_input_delivery: Option<GeneratedInputDeliveryDto>,
     #[serde(rename = "pendingWakes", skip_serializing_if = "Option::is_none")]
     pub pending_wakes: Option<AgentPendingWakes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagents: Option<Vec<AgentSubagentDto>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -4200,6 +4268,8 @@ pub struct AgentObserveParams {
     pub plan: Option<AgentPlanObservation>,
     #[serde(rename = "pendingWakes", skip_serializing_if = "Option::is_none")]
     pub pending_wakes: Option<AgentPendingWakes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<AgentSubagentObservation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14869,6 +14939,205 @@ fn validate_agent_plan_observation(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_agent_subagent_observation(value: &Value) -> bool {
+    (value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("launching"))
+            && object.get("agentType").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64
+                }) || field.is_null())
+            })
+            && object.get("description").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+                }) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "agentType", "description"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("started"))
+            && object.get("key").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 16
+                        && contract_pattern_matches("^[0-9a-f]{16}$", text)
+                })
+            })
+            && object.get("agentType").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64
+                }) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "key", "agentType"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("active"))
+            && object.get("key").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 16
+                        && contract_pattern_matches("^[0-9a-f]{16}$", text)
+                })
+            })
+            && object.get("agentType").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64
+                }) || field.is_null())
+            })
+            && object.get("activity").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+                }) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "key", "agentType", "activity"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("described"))
+            && object.get("key").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 16
+                        && contract_pattern_matches("^[0-9a-f]{16}$", text)
+                })
+            })
+            && object.get("description").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "key", "description"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("stopped"))
+            && object.get("key").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 16
+                        && text.chars().count() <= 16
+                        && contract_pattern_matches("^[0-9a-f]{16}$", text)
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "key"].contains(&key.as_str()))
+    }) || value.as_object().is_some_and(|object| {
+        object
+            .get("kind")
+            .is_some_and(|field| field == &serde_json::json!("inventory"))
+            && object.get("children").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 16
+                        && items
+                            .iter()
+                            .all(|item| validate_agent_subagent_listing_dto(item))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["kind", "children"].contains(&key.as_str()))
+    }))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_subagent_listing_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("key").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 16
+                    && text.chars().count() <= 16
+                    && contract_pattern_matches("^[0-9a-f]{16}$", text)
+            })
+        }) && object.get("agentType").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64
+            }) || field.is_null())
+        }) && object.get("description").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+            }) || field.is_null())
+        }) && object
+            .keys()
+            .all(|key| ["key", "agentType", "description"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_agent_subagent_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("key").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 16
+                    && text.chars().count() <= 16
+                    && contract_pattern_matches("^[0-9a-f]{16}$", text)
+            })
+        }) && object.get("agentType").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64
+            }) || field.is_null())
+        }) && object.get("description").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+            }) || field.is_null())
+        }) && object.get("activity").is_some_and(|field| {
+            (field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1 && text.chars().count() <= 256 && text.len() <= 256
+            }) || field.is_null())
+        }) && object.get("startedAtEpochMs").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            })
+        }) && object.keys().all(|key| {
+            [
+                "key",
+                "agentType",
+                "description",
+                "activity",
+                "startedAtEpochMs",
+            ]
+            .contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_observation_transport(value: &Value) -> bool {
     value
         .as_str()
@@ -19101,6 +19370,11 @@ fn validate_agent_status_dto(value: &Value) -> bool {
             && object
                 .get("pendingWakes")
                 .is_none_or(|field| (validate_agent_pending_wakes(field) || field.is_null()))
+            && object.get("subagents").is_none_or(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 16 && items.iter().all(|item| validate_agent_subagent_dto(item))
+                })
+            })
             && object.keys().all(|key| {
                 [
                     "sessionId",
@@ -19110,6 +19384,7 @@ fn validate_agent_status_dto(value: &Value) -> bool {
                     "plan",
                     "generatedInputDelivery",
                     "pendingWakes",
+                    "subagents",
                 ]
                 .contains(&key.as_str())
             })
@@ -19155,7 +19430,7 @@ fn validate_agent_pending_wakes(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_agent_observe_params(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 5 && text.chars().count() <= 256 && contract_pattern_matches("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.get("pendingWakes").is_none_or(|field| (validate_agent_pending_wakes(field) || field.is_null())) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan", "pendingWakes"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("sessionId").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("observationProtocolVersion").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)) && (number.as_u64().is_some_and(|number| number <= 1_u64)))) && object.get("transport").is_some_and(|field| validate_agent_observation_transport(field)) && object.get("eventName").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64 && text.len() <= 64 && contract_pattern_matches("\\S", text))) && object.get("notificationType").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("nativeSessionId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 5 && text.chars().count() <= 256 && contract_pattern_matches("^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|ses_[A-Za-z0-9_-]+)$", text)) || field.is_null())) && object.get("providerModelId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("permissionMode").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("effortLevel").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64) || field.is_null())) && object.get("transcriptPath").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096) || field.is_null())) && object.get("promptId").is_none_or(|field| (field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128) || field.is_null())) && object.get("plan").is_none_or(|field| validate_agent_plan_observation(field)) && object.get("pendingWakes").is_none_or(|field| (validate_agent_pending_wakes(field) || field.is_null())) && object.get("subagent").is_none_or(|field| validate_agent_subagent_observation(field)) && object.keys().all(|key| ["sessionId", "observationProtocolVersion", "transport", "eventName", "notificationType", "nativeSessionId", "providerModelId", "permissionMode", "effortLevel", "transcriptPath", "promptId", "plan", "pendingWakes", "subagent"].contains(&key.as_str())))
 }
 
 #[allow(

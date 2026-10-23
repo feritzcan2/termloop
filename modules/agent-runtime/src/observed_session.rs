@@ -344,6 +344,7 @@ mod tests {
             prompt_id: None,
             plan: None,
             pending_wakes: None,
+            subagent: None,
         }
     }
     #[test]

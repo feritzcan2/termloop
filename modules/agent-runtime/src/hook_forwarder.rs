@@ -112,6 +112,9 @@ where
     let pending_wakes = is_claude
         .then(|| termloop_agents::normalize_claude_pending_wakes(&payload))
         .flatten();
+    let subagent = is_claude
+        .then(|| termloop_agents::normalize_claude_subagent_update(&payload))
+        .flatten();
     // Every hook payload carries the mode the Session is on right now, so an
     // in-TUI `Shift+Tab` is observable without reading the transcript.
     let permission_mode = is_claude
@@ -167,6 +170,9 @@ where
             "scheduledWakes": pending_wakes.scheduled_wakes,
         });
     }
+    if let Some(subagent) = subagent {
+        params["subagent"] = subagent_observation_json(subagent);
+    }
     if let Some(plan) = plan {
         params["plan"] = match plan {
             termloop_agents::AgentPlanUpdate::Replace(plan) => json!({
@@ -199,6 +205,39 @@ where
     let request = protocol.encode(&request_id, &config.token, params)?;
     let response = post_hook_observation(config.address, &request).await?;
     protocol.accept(&request_id, response)
+}
+
+fn subagent_observation_json(update: termloop_agents::AgentSubagentUpdate) -> serde_json::Value {
+    use termloop_agents::AgentSubagentUpdate;
+    match update {
+        AgentSubagentUpdate::Launching {
+            agent_type,
+            description,
+        } => json!({ "kind": "launching", "agentType": agent_type, "description": description }),
+        AgentSubagentUpdate::Started { key, agent_type } => {
+            json!({ "kind": "started", "key": key, "agentType": agent_type })
+        }
+        AgentSubagentUpdate::Active {
+            key,
+            agent_type,
+            activity,
+        } => json!({ "kind": "active", "key": key, "agentType": agent_type, "activity": activity }),
+        AgentSubagentUpdate::Described { key, description } => {
+            json!({ "kind": "described", "key": key, "description": description })
+        }
+        AgentSubagentUpdate::Stopped { key } => json!({ "kind": "stopped", "key": key }),
+        AgentSubagentUpdate::Inventory(children) => json!({
+            "kind": "inventory",
+            "children": children
+                .into_iter()
+                .map(|child| json!({
+                    "key": child.key,
+                    "agentType": child.agent_type,
+                    "description": child.description,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+    }
 }
 
 fn hook_native_session_id(agent_id: &str, payload: &serde_json::Value) -> Option<String> {
