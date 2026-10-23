@@ -504,10 +504,12 @@ fn reopen_resumes_worktree_removed_agent_inside_recreated_worktree() {
         .unwrap();
     assert_eq!(reopened["status"], "open");
     assert_eq!(resume_session_ids, vec![session_id.to_owned()]);
-    assert_eq!(
-        fixture.runtime.store.sessions()[0].process.cwd,
-        worktree_path
-    );
+    let session = &fixture.runtime.store.sessions()[0];
+    assert_eq!(session.process.cwd, worktree_path);
+    // Resume is guarded by the recreated checkout, not the removed one.
+    let guard = session.resume_launch_guard.as_ref().unwrap();
+    assert_eq!(guard.path, worktree_path);
+    assert_eq!(guard.managed_worktree_operation_id, plan.operation_id);
 }
 
 #[test]

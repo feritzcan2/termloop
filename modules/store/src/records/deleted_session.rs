@@ -100,15 +100,27 @@ impl Store {
             .iter()
             .position(|deleted| deleted.session.id == session_id)
             .ok_or(StoreError::NotFound)?;
+        let effective_cwd = relocated_cwd.map_or_else(
+            || {
+                self.state.deleted_sessions[deleted_index]
+                    .session
+                    .process
+                    .cwd
+                    .clone()
+            },
+            str::to_owned,
+        );
+        // A checkout recreated at the same path has a new managed tuple, and a
+        // relocated Agent has none; either way the old guard is stale.
+        let guard = self.current_worktree_guard(&effective_cwd);
         let previous = self.state.clone();
         let deleted = self.state.deleted_sessions.remove(deleted_index);
         let mut session = deleted.session;
+        session.resume_launch_guard = guard;
         session.lifecycle_state = "exited".into();
         session.resume_failure = None;
         session.ask_to_continuation = None;
-        if let Some(cwd) = relocated_cwd {
-            session.process.cwd = cwd.to_owned();
-        }
+        session.process.cwd = effective_cwd;
         self.state
             .agent_conversation_readiness
             .push(AgentConversationReadinessRecord {

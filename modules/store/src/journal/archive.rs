@@ -1,12 +1,34 @@
 use termloop_domain::{
-    ResumeFailureReason, SessionArchiveOperation, SessionArchiveOperationState, SessionRecord,
-    TaskArchiveOperation, TaskArchiveOperationState, TaskArchiveSuspension, TaskStatus,
-    TaskSuspensionReason, WorktreeCleanupOutcome, WorktreeStaleResolutionMode,
+    ResumeFailureReason, ResumeLaunchGuard, SessionArchiveOperation, SessionArchiveOperationState,
+    SessionRecord, TaskArchiveOperation, TaskArchiveOperationState, TaskArchiveSuspension,
+    TaskStatus, TaskSuspensionReason, WorktreeCleanupOutcome, WorktreeStaleResolutionMode,
 };
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
 impl Store {
+    /// The launch guard an Agent moved to `cwd` must carry: the current managed
+    /// checkout's exact tuple when `cwd` is a Task worktree, otherwise none. A
+    /// guard left from a removed checkout would refuse every later resume.
+    pub(crate) fn current_worktree_guard(&self, cwd: &str) -> Option<ResumeLaunchGuard> {
+        let task = self.state.tasks.iter().find(|task| {
+            task.worktree
+                .as_ref()
+                .is_some_and(|worktree| worktree.path == cwd)
+        })?;
+        let proof = self.state.managed_worktrees.iter().find(|proof| {
+            proof.task_id == task.id
+                && proof.worktree_generation == task.worktree_generation
+                && proof.registered_worktree_path == cwd
+        })?;
+        Some(ResumeLaunchGuard {
+            task_id: task.id.clone(),
+            managed_worktree_operation_id: proof.operation_id.clone(),
+            worktree_generation: proof.worktree_generation,
+            path: cwd.to_owned(),
+        })
+    }
+
     pub fn begin_session_archive(
         &mut self,
         _authority: &CoreWriteAuthority,
@@ -405,6 +427,7 @@ impl Store {
             // The managed checkout is gone by definition. Keep the same
             // provider conversation resumable from the durable Project root.
             session.process.cwd = project_folder.clone();
+            session.resume_launch_guard = None;
         }
         let task = &mut self.state.tasks[task_index];
         task.archived_at_epoch_ms = None;
@@ -474,6 +497,9 @@ impl Store {
                 })
                 .ok_or(StoreError::ConstraintViolation)?;
             let suspension = self.state.task_archive_suspensions.remove(suspension_index);
+            let recreated_guard = recreated_worktree
+                .as_deref()
+                .and_then(|cwd| self.current_worktree_guard(cwd));
             let session = self
                 .state
                 .sessions
@@ -484,11 +510,13 @@ impl Store {
                 && let Some(cwd) = relocated_cwd.as_ref()
             {
                 session.process.cwd = cwd.clone();
+                session.resume_launch_guard = None;
             }
             if suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
                 && let Some(cwd) = recreated_worktree.as_ref()
             {
                 session.process.cwd = cwd.clone();
+                session.resume_launch_guard = recreated_guard;
             }
             if suspension.prior_lifecycle_state == "running" {
                 session.lifecycle_state = "resumeFailed".into();

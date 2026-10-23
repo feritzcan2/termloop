@@ -96,3 +96,40 @@ fn deleted_agent_retains_recovery_state_for_thirty_days_and_restores_atomically(
     assert!(reopened.deleted_sessions().is_empty());
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn mismatched_resume_launch_guard_is_cleared_but_a_matching_one_is_kept() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-stale-guard-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    let guard = |path: &str| termloop_domain::ResumeLaunchGuard {
+        task_id: "task-1".into(),
+        managed_worktree_operation_id: "operation-1".into(),
+        worktree_generation: 1,
+        path: path.into(),
+    };
+    let mut relocated = deleted_agent();
+    relocated.resume_launch_guard = Some(guard("/removed/worktree"));
+    store.insert_session(&authority, relocated).unwrap();
+    let mut guarded = deleted_agent();
+    guarded.id = "guarded-agent".into();
+    guarded.resume_launch_guard = Some(guard("/tmp"));
+    store.insert_session(&authority, guarded).unwrap();
+
+    let cleared = store
+        .clear_mismatched_resume_launch_guard(&authority, "deleted-agent")
+        .unwrap();
+    assert!(cleared.resume_launch_guard.is_none());
+    let kept = store
+        .clear_mismatched_resume_launch_guard(&authority, "guarded-agent")
+        .unwrap();
+    assert_eq!(kept.resume_launch_guard, Some(guard("/tmp")));
+    let _ = std::fs::remove_file(path);
+}

@@ -1413,7 +1413,12 @@ fn deleted_agent_with_removed_task_worktree_restores_in_project_root() {
                     ResumeProvider::Codex,
                     Uuid::new_v4().to_string(),
                 ),
-                resume_launch_guard: None,
+                resume_launch_guard: Some(termloop_domain::ResumeLaunchGuard {
+                    task_id: "task-1".into(),
+                    managed_worktree_operation_id: "removed-checkout".into(),
+                    worktree_generation: 1,
+                    path: worktree.display().to_string(),
+                }),
                 resume_failure: None,
             },
         )
@@ -1450,6 +1455,8 @@ fn deleted_agent_with_removed_task_worktree_restores_in_project_root() {
         runtime.store.sessions()[0].process.cwd,
         project.display().to_string(),
     );
+    // The removed checkout's guard would refuse every resume from the new folder.
+    assert!(runtime.store.sessions()[0].resume_launch_guard.is_none());
     assert!(runtime.store.deleted_sessions().is_empty());
     let _ = terminal.terminate("worktree-agent");
     let _ = std::fs::remove_dir_all(root);
