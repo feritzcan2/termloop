@@ -58,13 +58,14 @@ describe("mobile APNs attention projection", () => {
     expect(withNotificationPreview(notification, undefined)).toBe(notification);
   });
 
-  it("never notifies for Steward or Worker Sessions across Projects", () => {
+  it("never notifies for Steward, Worker, or Playbook evaluator Sessions across Projects", () => {
     const silentSessions = [
       { template_ref: "builtin.steward.executor", name: "Project Steward" },
       { template_ref: "builtin.worker.executor", name: "Routine Runner" },
       { template_ref: "builtin.steward.task-assignment", name: "Assigned work" },
       { template_ref: "builtin.worker.future-lane", name: "Future Worker" },
       { template_ref: "builtin.assistant.activation", name: "Custom assistant name" },
+      { template_ref: "builtin.agent.playbook-evaluator", name: "Fix login evaluation" },
       { template_ref: null, name: "Project Steward" },
       { template_ref: null, name: "Worker 12" },
     ];

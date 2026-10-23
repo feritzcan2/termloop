@@ -66,6 +66,7 @@ export function attentionTransitions(previous, statuses, sessions) {
 export function isStewardOrWorkerSession(session) {
   const template = session.process?.template_ref;
   if (template === "builtin.assistant.activation"
+    || template === "builtin.agent.playbook-evaluator"
     || template?.startsWith("builtin.steward.")
     || template?.startsWith("builtin.worker.")) return true;
 
