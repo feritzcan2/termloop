@@ -51,29 +51,28 @@ impl CoreRuntime {
         self.playbook_evaluation
             .waiting
             .remove(&(capability.tracker_id.clone(), task_id.clone()));
-        // Prefer a fork of the Agent that did the work: it knows where the
-        // evidence is. Without one, a fresh evaluator checks the same rule.
-        let (fork, unavailable) =
-            match self.select_playbook_source(&capability.project_id, &task_id, now)? {
-                Some(source) => match self.plan_evaluation_fork(&source) {
-                    Ok(plan) => (Some((plan, source)), None),
-                    Err(reason) => (None, Some(reason)),
-                },
-                None => (None, Some("noUnambiguousTaskAgent")),
-            };
-        let (mut plan, source) = match fork {
-            Some((plan, source)) => (plan, Some(source)),
-            None => match self.plan_fresh_playbook_evaluator(&capability.project_id, &task_id)? {
-                Some(plan) => (plan, None),
-                None => {
-                    return Ok(PlaybookEvaluationLaunch::Skipped(
-                        self.defer_playbook_evaluation(
-                            claim,
-                            unavailable.expect("no fork has a reason"),
-                        )?,
-                    ));
+        // Evaluate through a fork of the Agent that did the work: it knows
+        // where the evidence is. A Task with no such Agent waits for one
+        // rather than getting an evaluator that never saw the work. A fresh
+        // evaluator only stands in when that Agent exists but cannot fork.
+        let Some(source) = self.select_playbook_source(&capability.project_id, &task_id, now)?
+        else {
+            return Ok(PlaybookEvaluationLaunch::Skipped(
+                self.defer_playbook_evaluation(claim, "noUnambiguousTaskAgent")?,
+            ));
+        };
+        let (mut plan, source) = match self.plan_evaluation_fork(&source) {
+            Ok(plan) => (plan, Some(source)),
+            Err(reason) => {
+                match self.plan_fresh_playbook_evaluator(&capability.project_id, &task_id)? {
+                    Some(plan) => (plan, None),
+                    None => {
+                        return Ok(PlaybookEvaluationLaunch::Skipped(
+                            self.defer_playbook_evaluation(claim, reason)?,
+                        ));
+                    }
                 }
-            },
+            }
         };
         plan.mcp_role = AgentMcpRole::PlaybookEvaluator {
             check_id: capability.check_id.clone(),
@@ -378,10 +377,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_task_without_an_agent_gets_a_fresh_evaluator_from_the_last_launch_selection() {
-        let (mut runtime, root, project) = pipeline_runtime();
-        runtime.configure_agent_observations(crate::test_agent_observation_transport(root.clone()));
+    fn remember_last_launch(runtime: &mut CoreRuntime) {
         let mut remembered = runtime
             .store
             .sessions()
@@ -391,12 +387,48 @@ mod tests {
             .clone();
         remembered.id = "remembered".into();
         remembered.process.template_ref = Some("builtin.agent.interactive".into());
+        remembered.process.cwd = "/elsewhere".into();
         remembered.launch_selection =
             termloop_domain::AgentLaunchSelection::new("gpt-6-astra", "bypassPermissions", "high");
         runtime
             .store
             .insert_session_and_remember_agent_launch(&runtime.write_authority, remembered)
             .unwrap();
+    }
+
+    #[test]
+    fn a_task_without_an_agent_waits_instead_of_getting_a_fresh_evaluator() {
+        let (mut runtime, root, project) = pipeline_runtime();
+        runtime.configure_agent_observations(crate::test_agent_observation_transport(root.clone()));
+        remember_last_launch(&mut runtime);
+        let claim = runtime
+            .claim_next_playbook_step_or_idle(
+                &project,
+                "evaluation-check".into(),
+                termloop_platform::current_epoch_ms(),
+            )
+            .unwrap();
+        let PlaybookEvaluationLaunch::Skipped(result) =
+            runtime.plan_playbook_evaluation(&claim).unwrap()
+        else {
+            panic!("a Task without an Agent must not launch an evaluator");
+        };
+        assert_eq!(result["evaluation"]["mode"], "waitingForTaskAgent");
+        assert_eq!(result["evaluation"]["reason"], "noUnambiguousTaskAgent");
+        assert!(runtime.store.playbook_evaluations().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_task_agent_that_cannot_fork_gets_a_fresh_evaluator_from_the_last_launch_selection() {
+        let (mut runtime, root, project) = pipeline_runtime();
+        crate::runtime::playbook_evaluation::tests::attach_agents(&mut runtime, &root, &["source"]);
+        let mut transport = crate::test_agent_observation_transport(root.clone());
+        for capability in transport.agents.values_mut() {
+            capability.native_fork_supported = false;
+        }
+        runtime.configure_agent_observations(transport);
+        remember_last_launch(&mut runtime);
 
         let claim = runtime
             .claim_next_playbook_step_or_idle(
@@ -411,7 +443,7 @@ mod tests {
             result,
         } = runtime.plan_playbook_evaluation(&claim).unwrap()
         else {
-            panic!("a Task without an Agent must still be evaluated");
+            panic!("a Task Agent that cannot fork must still be evaluated");
         };
         assert_eq!(plan.agent_id, "codex");
         assert!(matches!(
