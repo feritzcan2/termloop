@@ -1721,7 +1721,6 @@ export function Shell(props: ShellProps) {
             archivedTaskCount={archived.count}
             archivedTasksChanged={archived.reload}
             closeTaskAndWorktree={props.closeTaskAndWorktree}
-            deleteTaskAndWorktree={props.deleteTaskAndWorktree}
             openExternal={props.openExternal}
             provisionRequestedTaskId={provisionRequestedTaskId}
             provisionRequestHandled={() => setProvisionRequestedTaskId(undefined)}

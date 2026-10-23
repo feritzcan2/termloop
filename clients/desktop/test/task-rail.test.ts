@@ -287,7 +287,6 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     archivedTaskCount: options.archivedTaskCount ?? 0,
     archivedTasksChanged: () => {},
     closeTaskAndWorktree: options.closeTaskAndWorktree ?? unused,
-    deleteTaskAndWorktree: unused,
     openExternal: async () => {},
     overlayVisibilityChanged: () => {},
     overlayContainer: undefined,
