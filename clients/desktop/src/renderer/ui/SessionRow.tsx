@@ -12,7 +12,7 @@ import {
   sessionState,
   type SessionState,
 } from "../session-presentation.js";
-import { Icon, type IconName } from "./Icon.js";
+import { Icon, agentIconName, type IconName } from "./Icon.js";
 import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 
 export type SessionMenuState = { sessionId: string; x: number; y: number; invoker: HTMLElement };
@@ -170,11 +170,14 @@ export function SessionRowClose({ session, dismiss, archive, resume }: { session
 /// context menu it opens.
 export type SessionPresenceBadge = { glyph: string; title: string; open(): void };
 
-export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, displayName, titleKey, openTitleKey, presenceBadge, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
+export function SessionRowButton({ session, agentStatus, reviewReady = false, subtitle, agentGlyph = false, displayName, titleKey, openTitleKey, presenceBadge, relationshipLabel, active, visible, menuOpen, runCommand, dragAttributes, dragListeners, select, openMenu }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   reviewReady?: boolean;
   subtitle: string;
+  /// Prints the agent's own glyph beside the state dot, for the active Task
+  /// card where the row stands in for the retired agent summary strip.
+  agentGlyph?: boolean;
   displayName?: string | undefined;
   /// A short identity token (a ticket key) printed before the title.
   titleKey?: string | undefined;
@@ -254,7 +257,7 @@ export function SessionRowButton({ session, agentStatus, reviewReady = false, su
         openMenu(rect.left + 28, rect.top + rect.height / 2, event.currentTarget);
       }}
     >
-      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} presenceBadge={presenceBadge} visible={visible} active={active} runCommand={runCommand} forking={forking} />
+      <SessionRowContent session={session} agentStatus={liveAgentStatus} plan={plan} state={state} reviewReady={reviewReady} subtitle={subtitle} agentGlyph={agentGlyph} displayName={displayName} titleKey={titleKey} titleKeyLinked={Boolean(openTitleKey)} presenceBadge={presenceBadge} visible={visible} active={active} runCommand={runCommand} forking={forking} />
     </button>
   );
 }
@@ -444,13 +447,14 @@ function AgentTodoTooltip({ plan }: { plan: AgentPlan }) {
   </span>;
 }
 
-function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, displayName, titleKey, titleKeyLinked = false, presenceBadge, visible, active, runCommand, forking = false }: {
+function SessionRowContent({ session, agentStatus, plan, state, reviewReady, subtitle, agentGlyph = false, displayName, titleKey, titleKeyLinked = false, presenceBadge, visible, active, runCommand, forking = false }: {
   session: Session;
   agentStatus: AgentStatus | undefined;
   plan: AgentPlan | undefined;
   state: SessionState;
   reviewReady: boolean;
   subtitle: string;
+  agentGlyph?: boolean;
   displayName?: string | undefined;
   titleKey?: string | undefined;
   titleKeyLinked?: boolean;
@@ -490,6 +494,11 @@ function SessionRowContent({ session, agentStatus, plan, state, reviewReady, sub
             title={agentStatus ? agentStatusTooltip(agentStatus, reviewReady) : state.summary}
           />
         )}
+        {agentGlyph && session.kind === "Agent" ? (
+          <span className={`row-agent-glyph${session.process.agent_id ? ` agent-${session.process.agent_id}` : ""}`} aria-hidden="true">
+            <Icon name={agentIconName(session.process.agent_id ?? "")} />
+          </span>
+        ) : null}
       </span>
       <span className="row-copy">
         <strong className={`row-title${titleKey ? " with-key" : ""}`}>{titleKey ? <span className={`row-title-key${titleKeyLinked ? " linked" : ""}`} {...(titleKeyLinked ? { "data-title-key-link": "", title: `Open ${titleKey} in browser` } : {})}>{titleKey}</span> : null}{displayName ?? sessionLabel(session)}</strong>

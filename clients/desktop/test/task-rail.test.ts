@@ -2084,35 +2084,25 @@ describe("Task rail agent cue", () => {
     expect(expanded).not.toContain("task-attention ");
   });
 
-  it("summarizes an active card's agents in an Orca-style strip that opens terminals and folds Sessions", async () => {
-    const working = agentSession("strip-working");
-    const waiting = agentSession("strip-waiting");
+  it("shows an active card's agents as glyph pill rows instead of a separate strip", async () => {
+    const working = agentSession("pill-working");
     const selectSession = vi.fn();
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     await act(async () => root.render(createElement(TaskRail, {
-      ...railProps({ sessions: [working, waiting], statuses: [agentStatus(working.id, "working"), agentStatus(waiting.id, "awaitingInput")] }),
+      ...railProps({ sessions: [working], statuses: [agentStatus(working.id, "working")] }),
       selectSession,
     })));
 
-    const strip = container.querySelector<HTMLElement>(".task-agent-strip")!;
-    expect(strip).not.toBeNull();
-    /// Active cards drop the inline title-row dots in favor of the strip.
+    expect(container.querySelector(".task-agent-strip")).toBeNull();
     expect(container.querySelector(".task-group.focused .task-agents")).toBeNull();
-    const groups = [...strip.querySelectorAll<HTMLElement>(".task-agent-group")].map((group) => group.dataset.tone);
-    expect(groups).toEqual(["attention", "working"]);
-
-    await act(async () => strip.querySelector<HTMLButtonElement>('.task-agent-group[data-tone="attention"] .task-agent-icon')!.click());
-    expect(selectSession).toHaveBeenCalledWith("strip-waiting");
-    expect(container.querySelector(".task-children")).not.toBeNull();
-
-    const toggle = strip.querySelector<HTMLButtonElement>(".task-agent-strip-toggle")!;
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    await act(async () => toggle.click());
-    expect(container.querySelector(".task-children")).toBeNull();
-    expect(container.querySelector(".task-agent-strip-toggle")!.getAttribute("aria-expanded")).toBe("false");
+    const row = container.querySelector<HTMLButtonElement>('.task-children .session-item[data-session-id="pill-working"]')!;
+    expect(row.classList.contains("state-working")).toBe(true);
+    expect(row.querySelector(".row-agent-glyph.agent-codex")).not.toBeNull();
+    await act(async () => row.click());
+    expect(selectSession).toHaveBeenCalledWith("pill-working");
 
     await act(async () => root.unmount());
     container.remove();

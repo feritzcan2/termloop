@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -353,5 +354,20 @@ describe("Session rail structure", () => {
     expect(live).toContain("Open dev server");
     expect(live).toContain("Dev server is already running in this Task&#x27;s worktree");
     expect(live).not.toContain("Run dev server");
+  });
+});
+
+describe("Terminal dock placement", () => {
+  it("docks Terminals below the scrolling Agent rows with its own capped scroll", async () => {
+    const shell = await readFile(new URL("../src/renderer/ui/Shell.tsx", import.meta.url), "utf8");
+    const stylesheet = await readFile(new URL("../src/app.css", import.meta.url), "utf8");
+    const scrollStart = shell.indexOf('className="sidebar-scroll"');
+    const rail = shell.indexOf("<SessionRail\n");
+    const tips = shell.indexOf("<SidebarShortcutTips");
+
+    expect(scrollStart).toBeGreaterThan(-1);
+    expect(shell.lastIndexOf("</div>", rail)).toBeGreaterThan(scrollStart);
+    expect(rail).toBeLessThan(tips);
+    expect(stylesheet).toMatch(/\.session-navigation \{[^}]*flex: none;[^}]*max-height: 40%;[^}]*overflow-y: auto;/);
   });
 });

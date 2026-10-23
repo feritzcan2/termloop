@@ -34,13 +34,13 @@
 .source-control-commit textarea:focus { border-color: light-dark(#a1a1a1, #737373); outline: 0; }
 .source-control-commit textarea::placeholder { color: var(--text-muted); }
 .source-control-primary { position: relative; display: flex; height: 28px; }
-.source-control-primary > button { border: 0; background: var(--accent); color: light-dark(#fafafa, #171717); font: 600 12px/1 var(--font-ui); }
+.source-control-primary > button:not(.context-menu-backdrop) { border: 0; background: var(--accent); color: light-dark(#fafafa, #171717); font: 600 12px/1 var(--font-ui); }
 .source-control-primary-main { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; min-width: 0; border-radius: 6px 0 0 6px; }
 .source-control-primary-main svg { width: 13px; height: 13px; }
 .source-control-primary-more { display: grid; place-items: center; width: 28px; border-left: 1px solid light-dark(rgb(255 255 255 / .2), rgb(0 0 0 / .2)) !important; border-radius: 0 6px 6px 0; }
 .source-control-primary-more svg { width: 12px; height: 12px; }
-.source-control-primary > button:hover { background: var(--accent-strong); }
-.source-control-primary > button:is([aria-disabled="true"], :disabled) { opacity: .45; cursor: default; }
+.source-control-primary > button:not(.context-menu-backdrop):hover { background: var(--accent-strong); }
+.source-control-primary > button:not(.context-menu-backdrop):is([aria-disabled="true"], :disabled) { opacity: .45; cursor: default; }
 .source-control-primary > .context-menu-backdrop { position: fixed; z-index: 1; background: transparent; }
 .source-control-menu { position: absolute; top: 32px; right: 0; z-index: 2; width: 200px; }
 .source-control-section ul { margin: 0 0 6px; padding: 0; list-style: none; }

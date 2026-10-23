@@ -1776,24 +1776,6 @@ export function Shell(props: ShellProps) {
                 : [])}
             openQuickAction={disabled ? undefined : () => openQuickAction()}
           />
-          <SessionRail
-            sessions={looseSessions}
-            selectedSession={props.selectedSession}
-            visibleSessionIds={props.visibleSessionIds}
-            menuSessionId={sessionMenu?.sessionId}
-            selectSession={selectSession}
-            navigateSession={navigateSession}
-            openSessionMenu={openSessionMenu}
-            dismissSession={dismissSession}
-            resumeSession={retrySession}
-            reorderSession={props.reorderSession}
-            runRuntimes={props.runRuntimes}
-            runConfigurations={props.runConfigurations}
-            restartRun={props.selectedProject
-              ? (configurationId) => props.launchProjectRun(props.selectedProject!.id, configurationId, true)
-              : undefined}
-            openExternal={props.openExternal}
-          />
           </WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}
@@ -1826,6 +1808,27 @@ export function Shell(props: ShellProps) {
             restoreTask={archived.restore}
           /> : null}
           </div>
+          {/* Terminals dock under the scrolling Agent rows so they keep one place as Agents come and go. */}
+          <WorkspaceRailCache visible={workspaceView === "agents"}>
+            <SessionRail
+              sessions={looseSessions}
+              selectedSession={props.selectedSession}
+              visibleSessionIds={props.visibleSessionIds}
+              menuSessionId={sessionMenu?.sessionId}
+              selectSession={selectSession}
+              navigateSession={navigateSession}
+              openSessionMenu={openSessionMenu}
+              dismissSession={dismissSession}
+              resumeSession={retrySession}
+              reorderSession={props.reorderSession}
+              runRuntimes={props.runRuntimes}
+              runConfigurations={props.runConfigurations}
+              restartRun={props.selectedProject
+                ? (configurationId) => props.launchProjectRun(props.selectedProject!.id, configurationId, true)
+                : undefined}
+              openExternal={props.openExternal}
+            />
+          </WorkspaceRailCache>
           {workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}
           {/* Archived Agent history lives in History; this footer is Task-only. */}
           <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
@@ -1845,7 +1848,7 @@ export function Shell(props: ShellProps) {
           {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
             <div className="sidebar-footer-actions sidebar-footer-start">
-              <div className="sidebar-footer-control"><button className="sidebar-footer-button settings-trigger" type="button" aria-label="Settings" aria-describedby="sidebar-footer-settings-card" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /></button><SidebarFooterHoverCard
+              <div className="sidebar-footer-control"><button className="sidebar-footer-button settings-trigger" type="button" aria-describedby="sidebar-footer-settings-card" onClick={() => setSettingsPage("notifications")}><Icon name="settings" /><span className="settings-trigger-label">Settings</span></button><SidebarFooterHoverCard
                 id="sidebar-footer-settings-card"
                 eyebrow={showSettingsScope ? `Preferences · ${scopeName}` : "Preferences"}
                 title="Settings"
