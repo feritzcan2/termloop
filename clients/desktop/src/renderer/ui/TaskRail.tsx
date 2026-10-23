@@ -285,7 +285,6 @@ export type TaskRailProps = {
   archivedTaskCount: number;
   archivedTasksChanged(): void;
   closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
-  deleteTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   provisionRequestedTaskId?: string | undefined;
   provisionRequestHandled?(): void;
@@ -320,7 +319,6 @@ export function TaskRail(props: TaskRailProps) {
     return () => window.clearInterval(handle);
   }, [props.nowEpochMs]);
   const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
-  const [deleteTarget, setDeleteTarget] = useState<Task>();
   const [closeTarget, setCloseTarget] = useState<Task>();
   const [bindTarget, setBindTarget] = useState<Task>();
   const [provisionTarget, setProvisionTarget] = useState<Task>();
@@ -379,14 +377,11 @@ export function TaskRail(props: TaskRailProps) {
   const archiveVisible = archiveMatches.slice(0, archivePageCount * ARCHIVE_PAGE_SIZE);
   const archiveRemaining = archiveMatches.length - archiveVisible.length;
   const menuTask = menu ? props.tasks.find((task) => task.id === menu.taskId) : undefined;
-  const currentDeleteTarget = deleteTarget
-    ? props.tasks.find((task) => task.id === deleteTarget.id) ?? deleteTarget
-    : undefined;
   const currentCloseTarget = closeTarget
     ? props.tasks.find((task) => task.id === closeTarget.id) ?? closeTarget
     : undefined;
   const overlayVisible = Boolean(
-    menu || editor || currentDeleteTarget || currentCloseTarget || bindTarget || provisionTarget || cleanupTarget ||
+    menu || editor || currentCloseTarget || bindTarget || provisionTarget || cleanupTarget ||
     repairTarget || archiveTarget,
   );
   const renderTask = (task: Task, focused = false) => (
@@ -466,7 +461,6 @@ export function TaskRail(props: TaskRailProps) {
     setClosingTaskTab(undefined);
     setEditor(undefined);
     setMenu(undefined);
-    setDeleteTarget(undefined);
     setCloseTarget(undefined);
     setBindTarget(undefined);
     setProvisionTarget(undefined);
@@ -704,8 +698,6 @@ export function TaskRail(props: TaskRailProps) {
               <MenuButton icon="reopen" label="Reopen Task" detail="Return it to open work" action={() => perform(() => props.setTaskClosed(menuTask.id, false))} />
             )}
             <MenuButton icon="archive" label="Archive Task" detail="Park safe context and remove it from active work" action={() => perform(() => setArchiveTarget(menuTask))} />
-            <div className="context-menu-divider" />
-            <MenuButton icon="trash" label={menuTask.worktree ? "Delete Task and worktree" : "Delete Task"} detail={menuTask.worktree ? "Stop Sessions, remove checkout, and permanently delete Task" : "Permanently remove its record"} danger action={() => perform(() => setDeleteTarget(menuTask))} />
           </div>
         </div>
       ) : null}
@@ -744,12 +736,6 @@ export function TaskRail(props: TaskRailProps) {
           if (!failure) props.archivedTasksChanged();
           return failure;
         }}
-      /> : null}
-      {currentDeleteTarget ? <DeleteTaskDialog
-        task={currentDeleteTarget}
-        inspect={props.inspectTaskWorktreeCleanup}
-        close={() => setDeleteTarget(undefined)}
-        remove={(review) => { void props.deleteTaskAndWorktree(currentDeleteTarget.id, review); }}
       /> : null}
       {currentCloseTarget ? <DeleteTaskDialog
         task={currentCloseTarget}
