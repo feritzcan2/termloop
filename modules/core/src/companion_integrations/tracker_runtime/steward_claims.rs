@@ -361,6 +361,7 @@ pub(super) fn assigned_routine_result(
                         "lastEvidence": task.last_evidence,
                         "lastEvidenceKind": "previousEvaluation",
                         "lastEvidenceIndependentlyVerified": false,
+                        "agentReport": task.agent_report,
                         "passedEarlierSteps": task
                             .passed_earlier_steps
                             .iter()

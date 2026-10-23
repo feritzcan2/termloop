@@ -55,6 +55,28 @@ pub struct PlaybookMilestone {
     /// completion is anything else, and for documents written before it.
     #[serde(default)]
     pub deterministic_check: Option<PlaybookDeterministicCheck>,
+    /// What the Task's own Agent may do when it reports reaching this step.
+    /// Documents written before agent reports default to `Signal`.
+    #[serde(default)]
+    pub agent_report: PlaybookAgentReportPolicy,
+}
+
+/// How a Task Agent's own report that it reached a step is treated.
+///
+/// An Agent's report is a claim about its own work, not independent proof.
+/// `Signal` only brings the step's evaluation forward; `Trusted` records the
+/// claim as the verdict and is never available on a human gate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybookAgentReportPolicy {
+    /// The Task Agent cannot report this step.
+    Off,
+    /// The report asks the step's evaluator to check now, with the Agent's
+    /// claim attached as unverified context.
+    #[default]
+    Signal,
+    /// The report passes the step without independent evaluation.
+    Trusted,
 }
 
 /// The pull-request state a deterministic step check reads.
@@ -93,6 +115,8 @@ pub enum PlaybookStepEvaluator {
     /// The step's Routine evaluated it.
     #[default]
     Routine,
+    /// The Task's own Agent reported it under a `Trusted` step policy.
+    Agent,
 }
 
 /// Why a step with a deterministic check was answered by its Routine instead.
@@ -277,6 +301,9 @@ impl PlaybookMilestone {
                 (PlaybookGateKind::Human, Some(_)) => false,
                 (PlaybookGateKind::Automatic, Some(check)) => check.is_valid(),
             }
+            // An Agent cannot approve on behalf of a named person.
+            && !(self.gate == PlaybookGateKind::Human
+                && self.agent_report == PlaybookAgentReportPolicy::Trusted)
     }
 }
 
@@ -381,6 +408,7 @@ mod tests {
             retry_delay_seconds: 600,
             approver: Some("ferit".into()),
             deterministic_check: None,
+            agent_report: PlaybookAgentReportPolicy::Signal,
         }
     }
 
@@ -639,5 +667,37 @@ mod tests {
         assert!(!deterministic.is_valid());
         deterministic.deterministic_fallback = None;
         assert!(deterministic.is_valid());
+    }
+
+    #[test]
+    fn an_agent_report_can_pass_only_an_automatic_step() {
+        // Documents written before agent reports treat a report as a signal.
+        assert_eq!(
+            PlaybookAgentReportPolicy::default(),
+            PlaybookAgentReportPolicy::Signal
+        );
+
+        for policy in [
+            PlaybookAgentReportPolicy::Off,
+            PlaybookAgentReportPolicy::Signal,
+            PlaybookAgentReportPolicy::Trusted,
+        ] {
+            let mut document = automatic(None);
+            document.milestones[0].agent_report = policy;
+            assert!(document.is_valid(), "{policy:?} on an automatic step");
+        }
+
+        // An Agent cannot approve on behalf of a named person.
+        let mut human = playbook();
+        human.milestones[0].agent_report = PlaybookAgentReportPolicy::Signal;
+        assert!(human.is_valid());
+        human.milestones[0].agent_report = PlaybookAgentReportPolicy::Trusted;
+        assert!(!human.is_valid());
+
+        let mut agent = passed("task-1", "pr-approved");
+        agent.evaluator = PlaybookStepEvaluator::Agent;
+        assert!(agent.is_valid());
+        agent.deterministic_fallback = Some(PlaybookDeterministicFallback::Timeout);
+        assert!(!agent.is_valid());
     }
 }

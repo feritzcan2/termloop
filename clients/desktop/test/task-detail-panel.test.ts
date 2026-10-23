@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   TaskDetailPanel,
   pipelineProgressLabel,
+  stepAgentReportCopy,
   stepAnswerSource,
   stepEvidence,
   stepIsCheckable,
@@ -33,7 +34,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     completeWhen: "The Task branch has commits and no agent is still working.",
     whileWaiting: { mode: "off", instructions: "" },
     approver: null,
-    deterministicCheck: null,
+    deterministicCheck: null, agentReport: "signal",
     ...overrides,
   };
 }
@@ -66,7 +67,7 @@ function runtimeStep(overrides: Partial<PlaybookRuntimeStepDto> = {}): PlaybookR
   return {
     milestoneId: "code-done",
     routineId: "routine-code",
-    waitingTaskIds: [],
+    waitingTaskIds: [], agentReports: [],
     progress: [],
     nextAttemptAtEpochMs: null,
     ...overrides,
@@ -118,7 +119,7 @@ function standingRuntime(processingTaskId: string | null = null): PlaybookRuntim
       runtimeStep({
         milestoneId: "review-requested",
         routineId: "routine-review",
-        waitingTaskIds: ["task-1"],
+        waitingTaskIds: ["task-1"], agentReports: [],
         progress: [progress({
           verdict: "waiting",
           evidence: "No review request seen in the channel.",
@@ -143,7 +144,7 @@ describe("a Task's place on the pipeline", () => {
         runtimeStep({
           milestoneId: "review-requested",
           routineId: "routine-review",
-          waitingTaskIds: ["task-1"],
+          waitingTaskIds: ["task-1"], agentReports: [],
           progress: [progress({ verdict: "waiting", evidence: "No review request seen in the channel.", decidedAtEpochMs: NOW - 600_000, nextAttemptAtEpochMs: NOW + 720_000 })],
           nextAttemptAtEpochMs: NOW + 720_000,
         }),
@@ -165,7 +166,7 @@ describe("a Task's place on the pipeline", () => {
       playbook(THREE_STEPS),
       runtime([
         runtimeStep({
-          waitingTaskIds: ["task-2", "task-1"],
+          waitingTaskIds: ["task-2", "task-1"], agentReports: [],
           progress: [
             progress({ taskId: "task-2", verdict: "waiting", evidence: "Task 2 has no commits.", nextAttemptAtEpochMs: NOW + 60_000 }),
             progress({ taskId: "task-1", verdict: "waiting", evidence: "Task 1 still has an agent working.", nextAttemptAtEpochMs: NOW + 300_000 }),
@@ -285,6 +286,17 @@ describe("what a step tells the reader", () => {
     expect(stepIsCheckable(step({ routine: { name: "Deployment watch", enabled: false } }))).toBe(false);
     // A human gate waits on a person; there is nothing for TermLoop to run.
     expect(stepIsCheckable(step({ milestone: milestone({ gate: "human", approver: "ferit" }) }))).toBe(false);
+  });
+
+  it("shows the Task Agent's claim as a claim, and an agent-decided pass by its source", () => {
+    const report = { taskId: "task-1", sessionId: "s-1", status: "reached" as const, evidence: "Opened PR #4", reportedAtEpochMs: NOW };
+    expect(stepAgentReportCopy(step())).toBeUndefined();
+    expect(stepAgentReportCopy(step({ agentReport: report })))
+      .toEqual({ label: "Agent reported · verifying", evidence: "Opened PR #4", blocked: false });
+    expect(stepAgentReportCopy(step({ agentReport: { ...report, status: "blocked" } }))?.blocked).toBe(true);
+    expect(stepAgentReportCopy(step({ standing: "passed", agentReport: report }))).toBeUndefined();
+    expect(stepVerdictSource(step({ progress: progress({ evaluator: "agent" }) }), "github")?.label)
+      .toBe("Passed on Task Agent report");
   });
 
   it("keeps a cleared question silent when no evidence was recorded", () => {
@@ -591,7 +603,7 @@ describe("the Task detail page on screen", () => {
         runtimeStep({
           milestoneId: "review-requested",
           routineId: "routine-review",
-          waitingTaskIds: ["task-1"],
+          waitingTaskIds: ["task-1"], agentReports: [],
           progress: [progress({ verdict: "waiting", evidence, nextAttemptAtEpochMs: NOW + 720_000 })],
           nextAttemptAtEpochMs: NOW + 720_000,
         }),

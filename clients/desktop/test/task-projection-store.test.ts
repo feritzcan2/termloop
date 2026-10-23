@@ -149,7 +149,7 @@ describe("scoped Task projection merge", () => {
       evaluations: [],
       processingTaskId: "one",
       processingTaskIds: ["one"],
-      steps: [{ milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["one"], progress: [], nextAttemptAtEpochMs: null }],
+      steps: [{ milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["one"], agentReports: [], progress: [], nextAttemptAtEpochMs: null }],
       doneTaskIds: [],
       stateRevision: 3,
     };

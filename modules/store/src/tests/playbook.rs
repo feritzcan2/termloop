@@ -82,6 +82,7 @@ fn playbook(project_id: &str, revision: u64) -> PlaybookConfiguration {
             retry_delay_seconds: 600,
             approver: Some("ferit".into()),
             deterministic_check: None,
+            agent_report: Default::default(),
         }],
         updated_at_epoch_ms: 1,
     }

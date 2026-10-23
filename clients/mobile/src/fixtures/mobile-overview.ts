@@ -225,6 +225,7 @@ export const fixturePlaybook: PlaybookDto = {
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
       deterministicCheck: null,
+      agentReport: "signal",
     },
     {
       id: "self-review",
@@ -236,6 +237,7 @@ export const fixturePlaybook: PlaybookDto = {
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
       deterministicCheck: null,
+      agentReport: "signal",
     },
     {
       id: "review-requested",
@@ -247,6 +249,7 @@ export const fixturePlaybook: PlaybookDto = {
       whileWaiting: { mode: "ask", instructions: "Offer to request review." },
       approver: null,
       deterministicCheck: null,
+      agentReport: "signal",
     },
     {
       id: "approved",
@@ -258,6 +261,7 @@ export const fixturePlaybook: PlaybookDto = {
       whileWaiting: { mode: "off", instructions: "" },
       approver: "Nurguyl",
       deterministicCheck: null,
+      agentReport: "signal",
     },
     {
       id: "deployed",
@@ -269,6 +273,7 @@ export const fixturePlaybook: PlaybookDto = {
       whileWaiting: { mode: "off", instructions: "" },
       approver: null,
       deterministicCheck: null,
+      agentReport: "signal",
     },
   ],
   savedPipelines: [],
@@ -286,6 +291,7 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
       milestoneId: "code-done",
       routineId: "routine-code",
       waitingTaskIds: [],
+      agentReports: [],
       nextAttemptAtEpochMs: null,
       progress: [{
         taskId: "task-mobile",
@@ -301,6 +307,7 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
       milestoneId: "self-review",
       routineId: "routine-review",
       waitingTaskIds: [],
+      agentReports: [],
       nextAttemptAtEpochMs: null,
       progress: [{
         taskId: "task-mobile",
@@ -316,6 +323,7 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
       milestoneId: "review-requested",
       routineId: "routine-request",
       waitingTaskIds: ["task-mobile"],
+      agentReports: [],
       nextAttemptAtEpochMs: now + 660_000,
       progress: [{
         taskId: "task-mobile",
@@ -331,6 +339,7 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
       milestoneId: "approved",
       routineId: "",
       waitingTaskIds: [],
+      agentReports: [],
       nextAttemptAtEpochMs: null,
       progress: [],
     },
@@ -338,6 +347,7 @@ export const fixturePlaybookRuntime: PlaybookRuntimeResult = {
       milestoneId: "deployed",
       routineId: "routine-deploy",
       waitingTaskIds: [],
+      agentReports: [],
       nextAttemptAtEpochMs: null,
       progress: [],
     },
