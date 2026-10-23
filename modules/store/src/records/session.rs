@@ -368,6 +368,34 @@ impl Store {
         self.commit_or_restore(previous)
     }
 
+    /// Clears a launch guard that names a folder other than the Session's own.
+    /// Such a guard can never pass and would refuse every resume.
+    pub fn clear_mismatched_resume_launch_guard(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        session_id: &str,
+    ) -> Result<SessionRecord, StoreError> {
+        let index = self
+            .state
+            .sessions
+            .iter()
+            .position(|session| session.id == session_id)
+            .ok_or(StoreError::NotFound)?;
+        let session = &self.state.sessions[index];
+        if session
+            .resume_launch_guard
+            .as_ref()
+            .is_none_or(|guard| guard.path == session.process.cwd)
+        {
+            return Ok(session.clone());
+        }
+        let previous = self.state.clone();
+        self.state.sessions[index].resume_launch_guard = None;
+        let session = self.state.sessions[index].clone();
+        self.commit_or_restore(previous)?;
+        Ok(session)
+    }
+
     pub fn mark_session_resume_failed(
         &mut self,
         _authority: &CoreWriteAuthority,

@@ -838,6 +838,19 @@ impl CoreRuntime {
             .find(|session| session.id == session_id)
             .cloned()
             .ok_or(CoreError::NotFound)?;
+        // A guard naming another folder is left from a relocation that did not
+        // refresh it; it can never pass, so drop it instead of refusing forever.
+        let session = if session
+            .resume_launch_guard
+            .as_ref()
+            .is_some_and(|guard| guard.path != session.process.cwd)
+        {
+            self.store
+                .clear_mismatched_resume_launch_guard(&self.write_authority, &session_id)
+                .map_err(store_error)?
+        } else {
+            session
+        };
         if session.process.template_ref.as_deref()
             == Some(crate::runtime::playbook_evaluation::EVALUATOR_TEMPLATE)
         {
