@@ -14,7 +14,9 @@ export type HistoryRailProps = {
   sessions: readonly Session[];
   archivedSessions: readonly Session[];
   deletedSessions: readonly DeletedSessionDto[];
-  /// Closed (archived) Tasks; restoring one recovers its resumable Agents.
+  /// Active-projection Tasks; only the closed ones are listed, with Reopen.
+  tasks: readonly Task[];
+  /// Archived Tasks; restoring one recovers its resumable Agents.
   archivedTasks: readonly Task[];
   favoriteSessionIds: ReadonlySet<string>;
   termLoopHistoryLoading: boolean;
@@ -28,8 +30,11 @@ export type HistoryRailProps = {
   restoreArchivedSession(sessionId: string): void;
   deleteArchivedSession(sessionId: string): void;
   restoreDeletedSession(sessionId: string): void;
+  reopenTask(taskId: string): void;
   restoreTask(taskId: string): void;
 };
+
+type HistoryTask = { task: Task; archived: boolean; closedAt: number | null };
 
 const HISTORY_PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -226,10 +231,17 @@ export function HistoryRail(props: HistoryRailProps) {
   }, [locationFilter, props.currentCwd, props.projectBranch, props.projectPath, sourceFilter]);
 
   const normalizedQuery = query.trim().toLowerCase();
+  const historyTasks = useMemo<HistoryTask[]>(() => [
+    // Closing is the last write Core makes to a closed Task, so `updated_at` is its close time.
+    ...props.tasks
+      .filter((task) => task.status === "closed")
+      .map((task) => ({ task, archived: false, closedAt: task.updated_at_epoch_ms })),
+    ...props.archivedTasks.map((task) => ({ task, archived: true, closedAt: task.archived_at_epoch_ms })),
+  ].sort((left, right) => (right.closedAt ?? 0) - (left.closedAt ?? 0)), [props.archivedTasks, props.tasks]);
   const visibleTasks = showTermLoopTasks(sourceFilter, stateFilter, locationFilter)
-    ? props.archivedTasks.filter((task) => (
+    ? historyTasks.filter(({ task, closedAt }) => (
       (!normalizedQuery || task.title.toLowerCase().includes(normalizedQuery) || task.branch?.name.toLowerCase().includes(normalizedQuery))
-      && (timeFilter === "all" || (task.archived_at_epoch_ms !== null && externalTimeMatches(task.archived_at_epoch_ms, timeFilter)))
+      && (timeFilter === "all" || (closedAt !== null && externalTimeMatches(closedAt, timeFilter)))
     ))
     : [];
   const filtersActive = Boolean(normalizedQuery)
@@ -402,16 +414,18 @@ export function HistoryRail(props: HistoryRailProps) {
       {showTermLoopTasks(sourceFilter, stateFilter, locationFilter) ? <section className="history-section" aria-labelledby="task-history-label">
         <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span>{visibleTasks.length}</span></div>
         <div className="history-list">
-          {visibleTasks.map((task) => (
-            <article key={`task-${task.id}`} className="history-row task">
+          {visibleTasks.map(({ task, archived, closedAt }) => (
+            <article key={`task-${task.id}`} className={`history-row task${archived ? " archived" : ""}`}>
               <span className="history-row-main" title={task.title}>
                 <span className="history-provider task" aria-hidden="true"><Icon name="archive" /></span>
                 <span className="history-copy">
                   <strong>{task.title}</strong>
-                  <small>{task.branch ? `${task.branch.name} · ` : ""}closed{task.archived_at_epoch_ms === null ? "" : ` · ${historyDate(task.archived_at_epoch_ms)}`}</small>
+                  <small>{task.branch ? `${task.branch.name} · ` : ""}{archived ? "archived" : "closed"}{closedAt === null ? "" : ` · ${historyDate(closedAt)}`}</small>
                 </span>
               </span>
-              <button type="button" className="history-action" title="Reopen this Task and recover its resumable Agents" aria-label={`Restore Task ${task.title}`} disabled={props.disabled} onClick={() => props.restoreTask(task.id)}>Restore</button>
+              {archived
+                ? <button type="button" className="history-action" title="Restore this Task and recover its resumable Agents" aria-label={`Restore Task ${task.title}`} disabled={props.disabled} onClick={() => props.restoreTask(task.id)}>Restore</button>
+                : <button type="button" className="history-action" title="Reopen this Task" aria-label={`Reopen Task ${task.title}`} disabled={props.disabled} onClick={() => props.reopenTask(task.id)}>Reopen</button>}
             </article>
           ))}
           {!props.termLoopHistoryLoading && visibleTasks.length === 0 ? <p className="history-empty">{filtersActive ? "No matching closed Tasks." : "No closed Tasks."}</p> : null}

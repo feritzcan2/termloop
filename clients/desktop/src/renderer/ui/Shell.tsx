@@ -1802,6 +1802,7 @@ export function Shell(props: ShellProps) {
             sessions={props.projectSessions}
             archivedSessions={archived.sessions}
             deletedSessions={deleted.sessions}
+            tasks={props.projectTasks}
             archivedTasks={archived.tasks}
             favoriteSessionIds={favoriteAgentSessionIds}
             termLoopHistoryLoading={archived.loading || deleted.loading}
@@ -1821,6 +1822,7 @@ export function Shell(props: ShellProps) {
               });
             }}
             restoreDeletedSession={deleted.restore}
+            reopenTask={(taskId) => void props.setTaskClosed(taskId, false)}
             restoreTask={archived.restore}
           /> : null}
           </div>
