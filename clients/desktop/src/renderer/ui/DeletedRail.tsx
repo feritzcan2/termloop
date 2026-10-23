@@ -44,6 +44,11 @@ export function deletedRetentionLabel(purgeAtEpochMs: number, nowEpochMs = Date.
   return `${days}d left`;
 }
 
+/// A missing folder no longer blocks restore; it only changes where the Agent comes back.
+function folderMissingCopy(item: DeletedSessionDto): string | undefined {
+  return !item.source_available && item.restore_blocker === null ? "Folder missing · restores elsewhere" : undefined;
+}
+
 function restoreBlockerCopy(item: DeletedSessionDto): string | undefined {
   if (item.restore_blocker === "sourceUnavailable") return "Source folder is no longer available";
   if (item.restore_blocker === "taskArchived") return "Restore the containing Task first";
@@ -70,7 +75,7 @@ export function DeletedRail(props: {
           {props.sessions.map((item) => {
             const label = sessionLabel(item.session);
             const blocker = restoreBlockerCopy(item);
-            const retention = deletedRetentionLabel(item.purge_at_epoch_ms);
+            const retention = folderMissingCopy(item) ?? deletedRetentionLabel(item.purge_at_epoch_ms);
             return (
               <div key={item.session.id} className="archived-row deleted-row" role="listitem">
                 <span className="archived-glyph" aria-hidden="true"><Icon name={agentIconName(item.session.process.agent_id ?? "")} /></span>

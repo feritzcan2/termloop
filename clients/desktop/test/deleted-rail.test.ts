@@ -92,6 +92,17 @@ describe("Deleted Agent rail", () => {
     await view.dispose();
   });
 
+  it("labels a missing folder but still allows restore", async () => {
+    const view = await renderDeleted([deleted({
+      source_available: false,
+      restore_blocker: null,
+    })]);
+    await act(async () => view.container.querySelector<HTMLButtonElement>(".rail-toggle")!.click());
+    expect(view.container.textContent).toContain("Folder missing");
+    expect(view.container.querySelector<HTMLButtonElement>(".deleted-restore")?.disabled).toBe(false);
+    await view.dispose();
+  });
+
   it("rounds retention up to whole remaining days", () => {
     expect(deletedRetentionLabel(100 + 30 * DAY_MS, 100)).toBe("30d left");
     expect(deletedRetentionLabel(100 + 1, 100)).toBe("1d left");

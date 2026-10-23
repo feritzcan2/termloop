@@ -1321,6 +1321,140 @@ fn deleted_agent_restore_stays_blocked_after_its_source_directory_is_removed() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn deleted_agent_with_removed_task_worktree_restores_in_project_root() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-deleted-worktree-missing-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let project = root.join("repo");
+    let worktree = root.join("feature-gone_worktree");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::create_dir_all(&worktree).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let terminal = TerminalService::default();
+    let mut runtime = CoreRuntime::new(store, authority, terminal.clone(), 4).unwrap();
+    runtime
+        .store
+        .insert_project(
+            &runtime.write_authority,
+            termloop_domain::ProjectRecord {
+                id: "project-1".into(),
+                name: "Project".into(),
+                folder_path: project.display().to_string(),
+            },
+        )
+        .unwrap();
+    runtime
+        .store
+        .insert_task(
+            &runtime.write_authority,
+            termloop_domain::TaskRecord {
+                id: "task-1".into(),
+                project_id: "project-1".into(),
+                title: "Task".into(),
+                brief: None,
+                developer_notes: vec![],
+                status: termloop_domain::TaskStatus::Closed,
+                archived_at_epoch_ms: None,
+                branch: None,
+                worktree: None,
+                worktree_generation: 0,
+                steward_brief_markdown: String::new(),
+                steward_brief_revision: 1,
+                rank: 1,
+                created_at_epoch_ms: 1,
+                updated_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    runtime
+        .store
+        .bind_task_branch(
+            &runtime.write_authority,
+            "task-1",
+            termloop_domain::TaskBranchBinding {
+                repository_root: project.display().to_string(),
+                name: "feature/gone".into(),
+            },
+            2,
+        )
+        .unwrap();
+    runtime
+        .store
+        .insert_session(
+            &runtime.write_authority,
+            SessionRecord {
+                launch_selection: Default::default(),
+                id: "worktree-agent".into(),
+                project_id: "project-1".into(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "codex".into(),
+                    args: vec![],
+                    cwd: worktree.display().to_string(),
+                    agent_id: Some("codex".into()),
+                    template_ref: Some("builtin.agent.interactive".into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "exited".into(),
+                runtime_epoch: 3,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(
+                    ResumeProvider::Codex,
+                    Uuid::new_v4().to_string(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+            },
+        )
+        .unwrap();
+    runtime
+        .close_session(json!({ "sessionId": "worktree-agent" }))
+        .unwrap();
+    std::fs::remove_dir_all(&worktree).unwrap();
+
+    let recreation = runtime
+        .plan_deleted_session_worktree("worktree-agent")
+        .unwrap();
+    assert_eq!(recreation.task_id, "task-1");
+    assert_eq!(recreation.branch_name, "feature/gone");
+    assert_eq!(
+        recreation.destination_path.as_deref(),
+        Some(worktree.display().to_string().as_str()),
+    );
+    let listed = runtime
+        .plan_deleted_session_list(json!({ "projectId": "project-1" }))
+        .unwrap()
+        .observe();
+    assert_eq!(listed[0]["source_available"], false);
+    assert!(listed[0]["restore_blocker"].is_null());
+
+    let observed = runtime
+        .plan_deleted_session_restore(json!({ "sessionId": "worktree-agent" }))
+        .unwrap()
+        .observe(terminal.clone())
+        .unwrap();
+    let restored = runtime.apply_deleted_session_restore(observed).unwrap();
+    assert_eq!(restored["id"], "worktree-agent");
+    assert_eq!(
+        runtime.store.sessions()[0].process.cwd,
+        project.display().to_string(),
+    );
+    assert!(runtime.store.deleted_sessions().is_empty());
+    let _ = terminal.terminate("worktree-agent");
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[tokio::test]
 async fn quick_action_initial_input_waits_for_codex_idle_and_survives_periodic_redraw() {
     assert_quick_action_initial_input_delivery("codex", false, false, false).await;

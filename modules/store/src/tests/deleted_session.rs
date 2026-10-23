@@ -75,7 +75,7 @@ fn deleted_agent_retains_recovery_state_for_thirty_days_and_restores_atomically(
         0
     );
     let restored = reopened
-        .restore_deleted_session_descriptor(&authority, "deleted-agent")
+        .restore_deleted_session_descriptor(&authority, "deleted-agent", None)
         .unwrap();
     assert_eq!(restored.lifecycle_state, "exited");
     assert!(reopened.deleted_sessions().is_empty());
