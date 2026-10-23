@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeletedSessionDto, SessionHistoryEntryDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
-import type { Session } from "../model.js";
+import type { Session, Task } from "../model.js";
 import { basename, isLiveSession, sessionIsImprover, sessionLabel } from "../model.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { deletedRetentionLabel } from "./DeletedRail.js";
@@ -14,6 +14,8 @@ export type HistoryRailProps = {
   sessions: readonly Session[];
   archivedSessions: readonly Session[];
   deletedSessions: readonly DeletedSessionDto[];
+  /// Closed (archived) Tasks; restoring one recovers its resumable Agents.
+  archivedTasks: readonly Task[];
   favoriteSessionIds: ReadonlySet<string>;
   termLoopHistoryLoading: boolean;
   selectedSessionId: string | undefined;
@@ -26,13 +28,14 @@ export type HistoryRailProps = {
   restoreArchivedSession(sessionId: string): void;
   deleteArchivedSession(sessionId: string): void;
   restoreDeletedSession(sessionId: string): void;
+  restoreTask(taskId: string): void;
 };
 
 const HISTORY_PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 type HistorySourceFilter = "all" | "termloop" | "claude" | "codex";
-type HistoryStateFilter = "all" | "favorited" | "inactive" | "archived" | "deleted";
+type HistoryStateFilter = "all" | "favorited" | "inactive" | "archived" | "deleted" | "tasks";
 type HistoryTimeFilter = "all" | "today" | "7d" | "30d";
 type HistoryLocationFilter = "all" | "project" | "branch" | "cwd";
 type HistoryRelationship = "ask-to" | "fork";
@@ -118,6 +121,11 @@ function TermLoopConversationPreview(props: { preview: TermLoopPreviewState | un
     {result.preview_messages.map((message, index) => <p key={`${message.role}-${index}`}><b>{message.role === "user" ? "You" : result.provider}</b>{message.text}</p>)}
     {result.preview_messages.length === 0 ? <p>No conversation messages are available.</p> : null}
   </>;
+}
+
+/// Closed Tasks carry no cwd, so a location filter hides them rather than guessing a match.
+function showTermLoopTasks(source: HistorySourceFilter, state: HistoryStateFilter, location: HistoryLocationFilter): boolean {
+  return (source === "all" || source === "termloop") && (state === "all" || state === "tasks") && location === "all";
 }
 
 export function HistoryRail(props: HistoryRailProps) {
@@ -218,6 +226,12 @@ export function HistoryRail(props: HistoryRailProps) {
   }, [locationFilter, props.currentCwd, props.projectBranch, props.projectPath, sourceFilter]);
 
   const normalizedQuery = query.trim().toLowerCase();
+  const visibleTasks = showTermLoopTasks(sourceFilter, stateFilter, locationFilter)
+    ? props.archivedTasks.filter((task) => (
+      (!normalizedQuery || task.title.toLowerCase().includes(normalizedQuery) || task.branch?.name.toLowerCase().includes(normalizedQuery))
+      && (timeFilter === "all" || (task.archived_at_epoch_ms !== null && externalTimeMatches(task.archived_at_epoch_ms, timeFilter)))
+    ))
+    : [];
   const filtersActive = Boolean(normalizedQuery)
     || sourceFilter !== "all"
     || stateFilter !== "all"
@@ -241,7 +255,8 @@ export function HistoryRail(props: HistoryRailProps) {
     const matchesFavorite = stateFilter !== "favorited" || props.favoriteSessionIds.has(session.id);
     return matchesQuery && matchesTime && matchesLocation && matchesFavorite;
   };
-  const visibleInactive = showTermLoop && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "inactive")
+  const showTermLoopSessions = stateFilter !== "tasks";
+  const visibleInactive = showTermLoop && showTermLoopSessions && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "inactive")
     ? inactive.filter((session) => matchesTermLoopSession(session, undefined))
     : [];
   const visibleArchived = showTermLoop && (stateFilter === "all" || stateFilter === "favorited" || stateFilter === "archived")
@@ -270,7 +285,7 @@ export function HistoryRail(props: HistoryRailProps) {
   const external = matchingExternal.slice(0, visibleExternalCount);
   const cachedMore = external.length < matchingExternal.length;
   const termLoopTotal = visibleInactive.length + visibleArchived.length + visibleDeleted.length;
-  const total = termLoopTotal + matchingExternal.length;
+  const total = visibleTasks.length + termLoopTotal + matchingExternal.length;
   const issues = issueTotal(result);
   const toggleExpanded = (rowKey: string) => {
     setExpandedRowKey((current) => current === rowKey ? undefined : rowKey);
@@ -373,6 +388,7 @@ export function HistoryRail(props: HistoryRailProps) {
           <option value="inactive">Inactive</option>
           <option value="archived">Archived</option>
           <option value="deleted">Deleted</option>
+          <option value="tasks">Closed Tasks</option>
         </select>
         <select className="history-location-filter" aria-label="Filter Session History by location" value={locationFilter} onChange={(event) => setLocationFilter(event.currentTarget.value as HistoryLocationFilter)}>
           <option value="all">Any location</option>
@@ -383,7 +399,25 @@ export function HistoryRail(props: HistoryRailProps) {
       </div>
       {failureMessage ? <p className="history-notice error" role="alert">{failureMessage}</p> : null}
       {showExternal && issues > 0 ? <p className="history-notice">{issues} local history file{issues === 1 ? "" : "s"} could not be read.</p> : null}
-      {showTermLoop ? <section className="history-section" aria-labelledby="termloop-history-label">
+      {showTermLoopTasks(sourceFilter, stateFilter, locationFilter) ? <section className="history-section" aria-labelledby="task-history-label">
+        <div className="rail-subhead" id="task-history-label"><span>Tasks</span><span>{visibleTasks.length}</span></div>
+        <div className="history-list">
+          {visibleTasks.map((task) => (
+            <article key={`task-${task.id}`} className="history-row task">
+              <span className="history-row-main" title={task.title}>
+                <span className="history-provider task" aria-hidden="true"><Icon name="archive" /></span>
+                <span className="history-copy">
+                  <strong>{task.title}</strong>
+                  <small>{task.branch ? `${task.branch.name} · ` : ""}closed{task.archived_at_epoch_ms === null ? "" : ` · ${historyDate(task.archived_at_epoch_ms)}`}</small>
+                </span>
+              </span>
+              <button type="button" className="history-action" title="Reopen this Task and recover its resumable Agents" aria-label={`Restore Task ${task.title}`} disabled={props.disabled} onClick={() => props.restoreTask(task.id)}>Restore</button>
+            </article>
+          ))}
+          {!props.termLoopHistoryLoading && visibleTasks.length === 0 ? <p className="history-empty">{filtersActive ? "No matching closed Tasks." : "No closed Tasks."}</p> : null}
+        </div>
+      </section> : null}
+      {showTermLoop && showTermLoopSessions ? <section className="history-section" aria-labelledby="termloop-history-label">
         <div className="rail-subhead" id="termloop-history-label"><span>TermLoop</span><span>{termLoopTotal}</span></div>
         <div className="history-list">
           {visibleInactive.map((session) => {

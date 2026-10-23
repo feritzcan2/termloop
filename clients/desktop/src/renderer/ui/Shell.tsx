@@ -1802,6 +1802,7 @@ export function Shell(props: ShellProps) {
             sessions={props.projectSessions}
             archivedSessions={archived.sessions}
             deletedSessions={deleted.sessions}
+            archivedTasks={archived.tasks}
             favoriteSessionIds={favoriteAgentSessionIds}
             termLoopHistoryLoading={archived.loading || deleted.loading}
             selectedSessionId={props.selectedSession?.id}
@@ -1820,6 +1821,7 @@ export function Shell(props: ShellProps) {
               });
             }}
             restoreDeletedSession={deleted.restore}
+            restoreTask={archived.restore}
           /> : null}
           </div>
           {workspaceView === "agents" ? <SidebarShortcutTips platform={platform} scrollRef={sidebarScrollRef} /> : null}

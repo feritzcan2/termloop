@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentLaunchPreviewResult, DeletedSessionDto, SessionDto, SessionHistoryListResult, SessionHistoryPreviewResult } from "@termloop/contract/current";
-import type { Session } from "../src/renderer/model.js";
+import type { Session, Task } from "../src/renderer/model.js";
 import { HistoryRail, inactiveHistorySessions } from "../src/renderer/ui/HistoryRail.js";
 import { resumeWorkspaceSession } from "../src/renderer/ui/Shell.js";
 import { retryAgentSession, type SessionResumeApi } from "../src/renderer/composition/session-resume.js";
@@ -110,6 +110,7 @@ describe("Session History rail", () => {
         currentCwd: "/repo/exited-codex",
         sessions: [session],
         archivedSessions: [],
+        archivedTasks: [],
         deletedSessions: [],
         favoriteSessionIds: new Set<string>(),
         termLoopHistoryLoading: false,
@@ -123,6 +124,7 @@ describe("Session History rail", () => {
         restoreArchivedSession: vi.fn(),
         deleteArchivedSession: vi.fn(),
         restoreDeletedSession: vi.fn(),
+        restoreTask: vi.fn(),
       })));
 
       const button = container.querySelector<HTMLButtonElement>(".history-row .history-action")!;
@@ -186,6 +188,7 @@ describe("Session History rail", () => {
           agent("forked-agent", { fork_source_session_id: "stopped" }),
         ],
         archivedSessions: [],
+        archivedTasks: [],
         deletedSessions: [],
         favoriteSessionIds: new Set<string>(),
         termLoopHistoryLoading: false,
@@ -199,6 +202,7 @@ describe("Session History rail", () => {
         restoreArchivedSession: () => {},
         deleteArchivedSession: () => {},
         restoreDeletedSession: () => {},
+        restoreTask: () => {},
       }));
     });
 
@@ -248,6 +252,7 @@ describe("Session History rail", () => {
         currentCwd: "/repo/termloop-next",
         sessions: [],
         archivedSessions: [],
+        archivedTasks: [],
         deletedSessions: [],
         favoriteSessionIds: new Set<string>(),
         termLoopHistoryLoading: false,
@@ -261,6 +266,7 @@ describe("Session History rail", () => {
         restoreArchivedSession: () => {},
         deleteArchivedSession: () => {},
         restoreDeletedSession: () => {},
+        restoreTask: () => {},
       }));
     });
 
@@ -296,6 +302,7 @@ describe("Session History rail", () => {
         currentCwd: "/repo/termloop-next",
         sessions: [agent("recent-managed")],
         archivedSessions: [],
+        archivedTasks: [],
         deletedSessions: [],
         favoriteSessionIds: new Set<string>(),
         termLoopHistoryLoading: false,
@@ -309,6 +316,7 @@ describe("Session History rail", () => {
         restoreArchivedSession: () => {},
         deleteArchivedSession: () => {},
         restoreDeletedSession: () => {},
+        restoreTask: () => {},
       }));
       await Promise.resolve();
     });
@@ -391,6 +399,7 @@ describe("Session History rail", () => {
         currentCwd: "/repo/worktrees/history",
         sessions: [agent("termloop", { process: { ...agent("termloop").process, cwd: "/repo/worktrees/history" } })],
         archivedSessions: [],
+        archivedTasks: [],
         deletedSessions: [],
         favoriteSessionIds: new Set<string>(),
         termLoopHistoryLoading: false,
@@ -404,6 +413,7 @@ describe("Session History rail", () => {
         restoreArchivedSession: () => {},
         deleteArchivedSession: () => {},
         restoreDeletedSession: () => {},
+        restoreTask: () => {},
       }));
     });
 
@@ -452,6 +462,73 @@ describe("Session History rail", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
+  it("lists closed Tasks and restores one from Session History", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const restoreTask = vi.fn();
+    const closed = {
+      id: "task-1",
+      project_id: "project-1",
+      title: "Ship the history rail",
+      brief: null,
+      jira_url: null,
+      status: "done",
+      archived_at_epoch_ms: Date.now(),
+      branch: { repository_root: "/repo", name: "task/history" },
+      worktree: null,
+      rank: 0,
+      created_at_epoch_ms: 1,
+      updated_at_epoch_ms: 1,
+    } as unknown as Task;
+
+    await act(async () => root.render(createElement(HistoryRail, {
+      projectId: "project-1",
+      projectPath: "/repo",
+      projectBranch: "main",
+      currentCwd: "/repo",
+      sessions: [agent("ordinary")],
+      archivedSessions: [],
+      archivedTasks: [closed, { ...closed, id: "task-2", title: "Unrelated chore" }],
+      deletedSessions: [],
+      favoriteSessionIds: new Set<string>(),
+      termLoopHistoryLoading: false,
+      selectedSessionId: undefined,
+      disabled: false,
+      load: async () => ({ ...externalHistory, entries: [] }),
+      loadTermLoopPreview: async () => termLoopPreview,
+      resumeExternal: async () => undefined,
+      selectSession: () => {},
+      resumeSession: () => {},
+      restoreArchivedSession: vi.fn(),
+      deleteArchivedSession: vi.fn(),
+      restoreDeletedSession: vi.fn(),
+      restoreTask,
+    })));
+
+    expect(container.querySelectorAll(".history-row.task")).toHaveLength(2);
+    const state = container.querySelector<HTMLSelectElement>('[aria-label="Filter Session History by state"]')!;
+    await act(async () => {
+      state.value = "tasks";
+      state.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector("#termloop-history-label")).toBeNull();
+    expect(container.textContent).not.toContain("ordinary");
+    const search = container.querySelector<HTMLInputElement>('[aria-label="Search Session History"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "ship");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelectorAll(".history-row.task")).toHaveLength(1);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Restore Task Ship the history rail"]')!.click());
+    expect(restoreTask).toHaveBeenCalledWith("task-1");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("filters favorited, archived, and deleted Agents inside TermLoop history", async () => {
     const container = document.createElement("div");
     document.body.append(container);
@@ -479,6 +556,7 @@ describe("Session History rail", () => {
         currentCwd: "/repo/termloop-next",
         sessions: [agent("ordinary")],
         archivedSessions: [archived],
+        archivedTasks: [],
         deletedSessions: [deleted],
         favoriteSessionIds: new Set([archived.id, deletedAgent.id]),
         termLoopHistoryLoading: false,
@@ -492,6 +570,7 @@ describe("Session History rail", () => {
         restoreArchivedSession,
         deleteArchivedSession,
         restoreDeletedSession,
+        restoreTask: vi.fn(),
       }));
     });
 
