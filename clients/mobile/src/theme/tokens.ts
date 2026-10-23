@@ -151,10 +151,11 @@ export const geometry = {
 } as const;
 
 export const terminalGeometry = {
-  /// The `Aa` control cycles these three, and the line height is round(size×1.35)
-  /// at each step rather than a single ratio that only looks right at one size.
-  fontSizes: [11, 13, 15] as const,
-  lineHeights: [15, 18, 20] as const,
+  /// The `Aa` control and pinch both step through these, and the line height is
+  /// round(size×1.35) at each step rather than a single ratio that only looks right at
+  /// one size. Index 2 is the default.
+  fontSizes: [9, 11, 13, 15, 17, 20] as const,
+  lineHeights: [12, 15, 18, 20, 23, 27] as const,
   contentPadding: 12,
   composerInputMin: 44,
   composerInputMax: 96,

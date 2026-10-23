@@ -29,23 +29,6 @@ import {
 /// Detach is not termination. Leaving the screen stops this phone listening; the PTY
 /// keeps running on the Mac, so nothing here may print or imply an exit.
 
-/// The keys a phone keyboard cannot produce but an agent TUI needs.
-export type TerminalKey = "escape" | "tab" | "interrupt" | "eof" | "up" | "down" | "left" | "right" | "enter";
-
-const keyBytes: Record<TerminalKey, readonly number[]> = {
-  escape: [0x1b],
-  tab: [0x09],
-  /// Ctrl-C and Ctrl-D are sent as the control codes themselves, not as a named
-  /// command. The daemon owns the PTY; the phone is a keyboard.
-  interrupt: [0x03],
-  eof: [0x04],
-  up: [0x1b, 0x5b, 0x41],
-  down: [0x1b, 0x5b, 0x42],
-  right: [0x1b, 0x5b, 0x43],
-  left: [0x1b, 0x5b, 0x44],
-  enter: [0x0d],
-};
-
 const INITIAL_ATTACH_RETRY_MS = 1_000;
 /// A visible terminal is interactive demand, like the transport's own reconnect
 /// cap: once the Tailnet path heals, the next attach must not sit out a long backoff.
@@ -71,7 +54,10 @@ export interface TerminalSession {
   /// foreground. Force a fresh attach when the picker returns rather than leaving
   /// the composer waiting for the old socket to notice that suspension.
   reconnect: () => void;
-  sendKey: (key: TerminalKey) => void;
+  /// Sends terminal text as it is, with no Return appended: an accessory key, a
+  /// chord, a custom key, or a live keystroke. Ctrl-C is the control code itself,
+  /// not a named command — the daemon owns the PTY; the phone is a keyboard.
+  sendText: (text: string) => Promise<boolean>;
   /// Asks the running program to scroll its own history. Negative is backwards.
   ///
   /// This is the only way back past the current frame. The alternate screen has no
@@ -213,11 +199,11 @@ export function useTerminalSession(
     }
   }, []);
 
-  const sendKey = useCallback((key: TerminalKey) => {
+  const sendText = useCallback(async (text: string): Promise<boolean> => {
     const open = attachment.current;
-    if (!canSend || open === undefined) return;
-    void deliver(open, new Uint8Array(keyBytes[key]));
-  }, [canSend, deliver]);
+    if (!canSend || open === undefined || text.length === 0) return false;
+    return await deliver(open, encoder.encode(text));
+  }, [canSend, deliver, encoder]);
 
   const reconnect = useCallback(() => {
     const open = attachment.current;
@@ -302,7 +288,7 @@ export function useTerminalSession(
     submit,
     submitWithImage,
     reconnect,
-    sendKey,
+    sendText,
     scrollBack,
     returnToLive,
     programScroll,
