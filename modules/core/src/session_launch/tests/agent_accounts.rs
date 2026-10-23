@@ -320,3 +320,80 @@ fn a_session_switches_account_and_pins_the_account_against_removal() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_claude_conversation_missing_from_its_account_fails_resume_without_retry() {
+    let root = std::env::temp_dir().join(format!("termloop-account-missing-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let cwd = termloop_platform::canonical_existing_directory_path(&root)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let mut core =
+        CoreRuntime::open(root.join("state.json"), TerminalService::default(), 1).unwrap();
+    let project = core
+        .handle(
+            "project.create",
+            json!({"name":"Accounts","folderPath":cwd}),
+        )
+        .unwrap();
+    let created = core
+        .handle(
+            "agent.accountCreate",
+            json!({"agentId":"claude","name":"Work","expectedRevision":core.state_revision()}),
+        )
+        .unwrap();
+    let mut selection: termloop_domain::AgentLaunchSelection = serde_json::from_value(
+        json!({"model":"default","permission":"default","reasoning":"default"}),
+    )
+    .unwrap();
+    selection.account_id = Some(created["createdAccountId"].as_str().unwrap().into());
+    core.store
+        .insert_session(
+            &core.write_authority,
+            SessionRecord {
+                id: "missing-transcript".into(),
+                project_id: project["id"].as_str().unwrap().into(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "claude".into(),
+                    args: vec![],
+                    cwd: cwd.clone(),
+                    agent_id: Some("claude".into()),
+                    template_ref: Some("builtin.agent.interactive".into()),
+                    template_version: Some(1),
+                },
+                launch_selection: selection,
+                lifecycle_state: "running".into(),
+                runtime_epoch: 1,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(
+                    ResumeProvider::Claude,
+                    Uuid::new_v4().to_string(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+            },
+        )
+        .unwrap();
+    core.configure_agent_observations(crate::test_agent_observation_transport(root.clone()));
+    let crate::AgentResumePlanOutcome::Prepare(mut plan) = core
+        .plan_running_agent_restart(json!({"sessionId":"missing-transcript"}), 10)
+        .unwrap()
+    else {
+        panic!("expected a restart plan");
+    };
+    // Claude would exit with "No conversation found"; preparation reports the
+    // loss before any provider process starts, and the mapped reason is final.
+    assert_eq!(
+        plan.prepare_runtime(),
+        Err(AgentResumePreparationError::ConversationUnavailable)
+    );
+    assert!(!ResumeFailureReason::ProviderSessionUnavailable.is_retryable());
+    std::fs::remove_dir_all(root).unwrap();
+}

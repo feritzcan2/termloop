@@ -1003,6 +1003,11 @@ async fn run_agent_resume_session(
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| CoreError::InvalidParams("sessionId".into()))?
         .to_owned();
+    // `attempt_deadline` bounds admission. Once admitted, the attempt gets its
+    // full startup budget again: Sessions resuming together after a restart or
+    // account switch must not spend a later Session's provider startup time
+    // waiting behind earlier ones in the fair gate.
+    let startup_budget = attempt_deadline.saturating_duration_since(Instant::now());
     record_resume_cycle(state, &session_id_param, trigger, "request", None, None);
     let requires_ownership_recovery = !restart_running
         && state
@@ -1206,6 +1211,7 @@ async fn run_agent_resume_session(
         None,
         Some(plan.runtime_epoch()),
     );
+    let attempt_deadline = Instant::now() + startup_budget;
     record_resume_cycle(
         state,
         &session_id,
@@ -1376,6 +1382,9 @@ async fn run_agent_resume_session(
             }
             termloop_core::AgentResumePreparationError::ProviderHistoryDamaged => {
                 termloop_core::ResumeFailureReason::ProviderHistoryDamaged
+            }
+            termloop_core::AgentResumePreparationError::ConversationUnavailable => {
+                termloop_core::ResumeFailureReason::ProviderSessionUnavailable
             }
             termloop_core::AgentResumePreparationError::DaemonInterrupted => {
                 termloop_core::ResumeFailureReason::DaemonInterrupted
@@ -2229,6 +2238,13 @@ async fn run_automatic_resume_lane(
                     _ => None,
                 },
                 _ = shutdown.changed() => None,
+            };
+            // Admission waited above; the admitted attempt starts its own
+            // full startup budget instead of inheriting what is left.
+            let attempt_deadline = if permit.is_some() {
+                Instant::now() + AGENT_RESUME_ATTEMPT_TIMEOUT
+            } else {
+                attempt_deadline
             };
             let Some(permit) = permit else {
                 if restart_running && !*state.resume_shutdown.borrow() {

@@ -158,6 +158,44 @@ pub fn bridge_agent_conversation(
     Ok(false)
 }
 
+/// Whether Claude can still find one conversation's transcript in an account
+/// with its own provider root. Claude keeps each transcript directly below one
+/// `projects/<folder>` entry, so this checks that exact file name in every
+/// folder. `Some(false)` means every folder was checked and none holds it;
+/// an ambient root, another provider, or any unreadable or oversized listing
+/// stays unknown so a resume is never refused on incomplete evidence.
+pub fn claude_conversation_transcript_exists(
+    account: Option<&AgentAccountContext>,
+    resume: &ResumeRef,
+) -> Option<bool> {
+    const MAX_PROJECT_FOLDERS: usize = 20_000;
+    if resume.provider != ResumeProvider::Claude || !resume.validate() {
+        return None;
+    }
+    let account = account.filter(|account| account.agent_id == "claude")?;
+    let projects = account.config_directory.as_ref()?.join("projects");
+    let entries = match std::fs::read_dir(&projects) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(false),
+        Err(_) => return None,
+    };
+    let name = format!("{}.jsonl", resume.native_session_id);
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_PROJECT_FOLDERS {
+            return None;
+        }
+        let entry = entry.ok()?;
+        match std::fs::metadata(entry.path().join(&name)) {
+            Ok(metadata) if metadata.is_file() => return Some(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {}
+            Err(_) => return None,
+        }
+    }
+    Some(false)
+}
+
 fn identifies_conversation(bytes: &[u8], resume: &ResumeRef) -> bool {
     bytes
         .split(|byte| *byte == b'\n')
@@ -379,6 +417,60 @@ mod tests {
             ..to.clone()
         };
         assert!(bridge_agent_conversation(&from, &claude, &resume).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_transcript_absence_is_reported_only_after_every_project_folder_is_checked() {
+        let root = std::env::temp_dir().join(format!(
+            "termloop-claude-transcript-{}",
+            termloop_platform::generate_uuid_v4()
+        ));
+        let account = AgentAccountContext {
+            agent_id: "claude".into(),
+            account_id: "work".into(),
+            name: "work".into(),
+            config_directory: Some(root.clone()),
+        };
+        let resume = resume(ResumeProvider::Claude);
+        assert_eq!(
+            claude_conversation_transcript_exists(Some(&account), &resume),
+            Some(false)
+        );
+        let project = root.join("projects/-Users-me-project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(root.join("projects/stray.json"), "{}").unwrap();
+        std::fs::write(project.join("other.jsonl"), "{}\n").unwrap();
+        assert_eq!(
+            claude_conversation_transcript_exists(Some(&account), &resume),
+            Some(false)
+        );
+        std::fs::write(
+            project.join(format!("{}.jsonl", resume.native_session_id)),
+            "{}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            claude_conversation_transcript_exists(Some(&account), &resume),
+            Some(true)
+        );
+        // The ambient root and other providers are never judged absent.
+        assert_eq!(claude_conversation_transcript_exists(None, &resume), None);
+        let ambient = AgentAccountContext {
+            config_directory: None,
+            ..account.clone()
+        };
+        assert_eq!(
+            claude_conversation_transcript_exists(Some(&ambient), &resume),
+            None
+        );
+        assert_eq!(
+            claude_conversation_transcript_exists(
+                Some(&account),
+                &self::resume(ResumeProvider::Codex)
+            ),
+            None
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

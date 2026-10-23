@@ -10,6 +10,8 @@ pub enum PreparationError {
     ProviderRejected,
     #[error("the provider history is damaged and requires explicit repair")]
     ProviderHistoryDamaged,
+    #[error("the provider conversation no longer exists")]
+    ConversationUnavailable,
     #[error("daemon shutdown interrupted resume preparation")]
     DaemonInterrupted,
     #[error("exact runtime absence could not be proven")]

@@ -372,6 +372,17 @@ impl AgentResumePlan {
             }
         }
         self.target_validation().validate()?;
+        // A conversation whose transcript was never written or was removed
+        // makes Claude exit with "No conversation found". Report that as a
+        // permanent loss instead of a retryable rejection; unknown evidence
+        // still lets the provider decide.
+        if termloop_agents::claude_conversation_transcript_exists(
+            self.account.as_ref(),
+            &self.resume_ref,
+        ) == Some(false)
+        {
+            return Err(AgentResumePreparationError::ConversationUnavailable);
+        }
         // Automatic restart has no preview ticket. Compose its launch before
         // provider preparation so Codex receives the saved permissions before
         // the TUI attaches; preparation also binds the real bridge endpoint.
