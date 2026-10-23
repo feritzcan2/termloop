@@ -59,7 +59,8 @@ export function StewardHowItWorks(props: { close(): void }) {
         <ol>
           <li><strong>Position.</strong> A Task stands at the first step it has not passed. The steps it already passed, including ones you set by hand, are its passed earlier steps.</li>
           <li><strong>Scheduling.</strong> When a step is due, TermLoop starts the check itself. It does not wait for the Steward to be idle. Up to 8 checks run at once per Project. The Steward only has to be enabled; turning it off pauses Playbook automation.</li>
-          <li><strong>Choosing the evaluator.</strong> TermLoop first forks the agent that worked most on the Task, because it knows where the evidence is. If there is no agent to fork, it starts a fresh evaluator with your last agent’s provider, in the Task’s worktree or else the Project folder. If neither is possible, the step shows as waiting and is retried later.</li>
+          <li><strong>Direct checks first.</strong> A step with a commit or pull request check is answered straight from Git or the Git host. Only when that cannot answer does the step go to an evaluator.</li>
+          <li><strong>Choosing the evaluator.</strong> TermLoop forks the agent that worked most on the Task, because it knows where the evidence is. If that agent cannot be forked, a fresh evaluator starts with your last agent’s provider, in the Task’s worktree or else the Project folder. If the Task has no running agent, no evaluator is started: the step shows as waiting and is retried later.</li>
           <li><strong>Evaluation.</strong> The evaluator reads the step and the Task, then checks evidence live in the repository, pull requests, the issue tracker, or CI. It does not re-check earlier steps; it treats them as passed. It reports <em>satisfied</em>, <em>pending</em>, or <em>blocked</em> with short evidence and then closes.</li>
         </ol>
 
@@ -76,6 +77,17 @@ export function StewardHowItWorks(props: { close(): void }) {
           <li>The Steward never disputes an evaluator’s verdict or re-judges the step. After it acts, the next evaluation verifies the result. The Steward can never declare a step passed.</li>
         </ul>
 
+        <h3>Reports from the Task Agent</h3>
+        <p>The Task Agent can read the step its Task stands at and report that its work reached it, or is blocked there. Each step decides what such a report does:</p>
+        <ul>
+          <li><em>Signal</em> (default): the step is checked early. The evaluator sees the report as a claim, never as proof.</li>
+          <li><em>Trusted:</em> the report passes the step without a separate check. A human gate can never trust a report.</li>
+          <li><em>Off:</em> reports are refused; the step is checked only on its own schedule.</li>
+        </ul>
+
+        <h3>Human gates</h3>
+        <p>A human gate waits for its named approver. To approve, click ✓ next to the Task at that step in the Playbook. The Task moves to the next step, which is checked right away when it is automatic.</p>
+
         <h3>When a running check is discarded</h3>
         <p>A check’s report is rejected if the step’s Routine was edited, the Task left that step, the Task was closed or archived, or its worktree changed. A Steward restart, model change, or long turn no longer affects running checks.</p>
 
@@ -83,7 +95,7 @@ export function StewardHowItWorks(props: { close(): void }) {
         <ul>
           <li>A new step added behind a Task counts as passed for that Task, so it never moves back.</li>
           <li>Editing one step does not disturb running checks of other steps.</li>
-          <li>You can set a Task’s position by hand, or check a step immediately with Run now.</li>
+          <li>You can set a Task’s position by hand by dragging it to a step, or check a step immediately with Run now.</li>
         </ul>
 
         <h3>The Steward’s other work</h3>
@@ -96,7 +108,7 @@ export function StewardHowItWorks(props: { close(): void }) {
         <h3>What you see</h3>
         <ul>
           <li>A ✦ badge on an agent’s row means an evaluator is checking its work. Click it to open the evaluator.</li>
-          <li>A step shows Checking · Task agent, Checking · Evaluator, or Waiting.</li>
+          <li>A step shows Checking · Task agent, Checking · Evaluator, or Waiting · Task agent.</li>
           <li>History lists every check with its evaluator, outcome, and evidence.</li>
         </ul>
       </div>

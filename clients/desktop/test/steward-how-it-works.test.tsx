@@ -35,7 +35,7 @@ it("explains the Playbook and Steward from the Steward header and closes again",
   expect(dialog()).toBeNull();
   await act(async () => howItWorks()!.click());
   expect(dialog()!.textContent).toContain("How the Playbook and Steward work");
-  for (const text of ["It never evaluates steps.", "fresh evaluator", "proposes once to close it", "never disputes an evaluator’s verdict"]) {
+  for (const text of ["It never evaluates steps.", "fresh evaluator", "If the Task has no running agent, no evaluator is started", "A human gate can never trust a report", "click ✓ next to the Task", "proposes once to close it", "never disputes an evaluator’s verdict"]) {
     expect(dialog()!.textContent).toContain(text);
   }
   await act(async () => {
