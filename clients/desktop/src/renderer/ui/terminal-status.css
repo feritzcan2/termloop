@@ -7,7 +7,8 @@
 .terminal-pane-body, .assistant-terminal-frame { display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); min-height: 0; position: relative; }
 .terminal-pane-body > .terminal-mount, .assistant-terminal-frame > .assistant-terminal-host { grid-area: 1 / 1; height: 100%; min-height: 0; }
 .terminal-stream-status { grid-area: 2 / 1; }
-.assistant-terminal-frame { height: 100%; }
+/* Its parents are flex rows; without growing, the frame shrinks to the status bar's width. */
+.assistant-terminal-frame { flex: 1; min-width: 0; width: 100%; height: 100%; }
 
 .terminal-pane-body .terminal-resize-owner-badge, .terminal-pane-body > .terminal-recovery-strip { grid-area: 1 / 1; }
 

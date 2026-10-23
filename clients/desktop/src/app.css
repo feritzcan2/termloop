@@ -488,7 +488,7 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .task-group.focused:hover .task-open-hint { opacity: 1; }
 /* The hint speaks for the card's own click, so it stays up over the title row
    too and yields only above controls that do something else. */
-.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-agent-strip, .task-workflow-activity, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
+.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-workflow-activity, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .task-open-hint { transition: none; } }
 .task-group.focused[data-disclosed] { margin: 0 8px 6px; padding: 7px 7px 8px; }
 .task-group.focused:has(.task-item.showing-detail) { border-color: rgba(102,179,255,.28); background: rgba(102,179,255,.05); }
@@ -1087,8 +1087,9 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .sidebar-shortcut-tips dl > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sidebar-shortcut-tips dt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-shortcut-tips dd { flex: none; margin: 0; }
-.session-navigation { padding: 0 0 12px; }
-.active-agent-rail + .session-navigation { border-top: 1px solid var(--rule); padding-top: 9px; }
+/* Docked below the scrolling rails; capped so a long terminal list scrolls on its own instead of squeezing the Agents above. */
+.session-navigation { flex: none; max-height: 40%; overflow-y: auto; overscroll-behavior: contain; padding: 4px 0 8px; border-top: 1px solid var(--rule); scrollbar-color: light-dark(#cbd5e1, #272d2f) transparent; }
+.session-navigation .rail-header { position: sticky; top: 0; z-index: 1; background: var(--bg-sidebar); }
 .session-group + .session-group { margin-top: 13px; }
 .count-badge { flex: none; min-width: 17px; padding: 1px 5px; border-radius: 999px; background: light-dark(#eef2f7, #1a1e20); color: #757f83; font: 700 9px/1.5 var(--font-ui); text-align: center; }
 .session-list { display: grid; gap: 2px; padding: 0 7px; }
@@ -1218,6 +1219,7 @@ button.workflow-tree-session:hover { background: var(--hover); }
    state (a countdown or an error count) and tints only while that state holds. */
 .sidebar-footer-button { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 4px; height: 24px; min-width: 24px; padding: 0 5px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); white-space: nowrap; transition: background-color .12s ease, color .12s ease; }
 .sidebar-footer-button > svg { flex: none; width: 14px; height: 14px; stroke-width: 1.6; }
+.sidebar-footer-button > .settings-trigger-label { font: 600 11px/1 var(--font-ui); }
 .sidebar-footer-button:hover, .sidebar-footer-button[aria-expanded="true"] { background: light-dark(rgba(15,23,42,.07), rgba(255,255,255,.08)); color: var(--sidebar-text); }
 /* Hover card for the glyph-only footer tiles. It opens upward, aligned to its
    group's outer edge so every card stays inside the sidebar, after a short
@@ -1874,6 +1876,21 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .quick-action svg { stroke-width: 1.4; }
 .quick-action select { appearance: none; max-width: 100%; overflow: hidden; padding: 0; border: 0; outline: 0; background: transparent; color: var(--qa-text); font: 500 12px var(--qa-font); text-overflow: ellipsis; }
 .quick-action option { background: var(--bg-raised); color: var(--qa-text); }
+/* Customizable select keeps the native control (keyboard, a11y, form value) but
+   replaces the platform popup, which on Windows rendered as a square, unthemed
+   Win32-style list. Browsers without base-select keep the appearance:none path. */
+@supports (appearance: base-select) {
+  .quick-action select, .quick-action ::picker(select) { appearance: base-select; }
+  .quick-action select { min-height: 0; padding: 0; border: 0; background: transparent; }
+  .quick-action select::picker-icon { color: var(--qa-secondary); font-size: 9px; }
+  .quick-action ::picker(select) { min-width: max(anchor-size(width), 128px); max-height: min(280px, 50vh); margin-block: 6px; padding: 4px; overflow-y: auto; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg-raised); box-shadow: 0 14px 40px #0007; font: 500 12px var(--qa-font); }
+  .quick-action option { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 10px 0 8px; border-radius: 6px; background: transparent; color: var(--qa-text); font: inherit; white-space: nowrap; cursor: pointer; }
+  .quick-action option::checkmark { order: 1; margin-left: auto; color: var(--accent); font-size: 11px; }
+  .quick-action option:is(:hover, :focus-visible) { outline: 0; background: var(--accent-wash); }
+  .quick-action option:checked { color: var(--accent); }
+  .quick-action option:disabled { color: var(--qa-secondary); cursor: default; }
+  .quick-action-options option { font: 600 11px var(--qa-mono); }
+}
 
 .quick-action-header { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border-bottom: 1px solid var(--qa-rule); }
 .quick-action-kind-slot { flex: 0 0 360px; min-width: 0; }
@@ -1922,6 +1939,12 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .quick-action-options label > span { color: light-dark(rgba(15,23,42,.52), rgba(255,255,255,.52)); font: 700 9px var(--qa-mono); letter-spacing: .06em; }
 .quick-action-options label > em { color: light-dark(#6a6c6d, #a1a3a5); font: 600 11px var(--qa-mono); font-style: normal; }
 .quick-action-options select { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+/* opacity would also fade the base-select picker, so the chip overlay hides only
+   its own button rendering and lets the visible <em> label show through. */
+@supports (appearance: base-select) {
+  .quick-action-options select { opacity: 1; color: transparent; }
+  .quick-action-options select::picker-icon { display: none; }
+}
 .quick-action-options label.agent > em { color: light-dark(#567ca1, #8cc6ff); }
 .quick-action-options label.danger > em { color: light-dark(#9b603f, #ff9f68); }
 .quick-action-options label.accept > em { color: light-dark(#8f6229, #ffb04a); }
@@ -3682,27 +3705,25 @@ button.history-row-main { cursor: pointer; }
 .task-group.focused .task-meta-flag.blocked { color: var(--state-error); }
 .task-group.focused .task-meta-branch, .task-group.focused .task-meta .task-signal { font: 11.5px/1.5 var(--font-ui); }
 .task-group.focused .task-meta-branch { color: var(--sidebar-dim); }
-.task-agent-strip { display: flex; min-width: 0; height: 30px; align-items: center; gap: 6px; margin: 8px 0 0 22px; padding: 0 4px 0 4px; border: 1px solid light-dark(rgba(15,23,42,.08), rgb(255 255 255 / .06)); border-radius: 8px; background: light-dark(rgba(15,23,42,.025), rgb(0 0 0 / .14)); color: var(--sidebar-dimmer); cursor: pointer; }
-.task-agent-strip:hover { background: light-dark(rgba(15,23,42,.05), rgb(255 255 255 / .035)); }
-.task-agent-groups { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; overflow: hidden; }
-.task-agent-group { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 22px; padding: 0 5px; border-radius: 6px; background: light-dark(rgba(15,23,42,.06), rgb(0 0 0 / .28)); }
-.task-agent-state { width: 10px; height: 10px; flex: none; border: 1.5px solid var(--sidebar-dimmer); border-radius: 50%; }
-.task-agent-group[data-tone="working"] .task-agent-state { border-color: #22c55e; }
-.task-agent-group[data-tone="review"] .task-agent-state { border-color: var(--agent-status-review); }
-.task-agent-group[data-tone="attention"] .task-agent-state { border-color: var(--agent-status-awaiting); background: var(--agent-status-awaiting); }
-.task-agent-group[data-tone="interrupted"] .task-agent-state { border-color: var(--warning); }
-.task-agent-group[data-tone="blocked"] .task-agent-state { border-color: var(--state-error); }
-.task-agent-icons { display: inline-flex; align-items: center; }
-.task-agent-icon { display: grid; width: 18px; height: 18px; place-items: center; padding: 0; border: 1px solid light-dark(rgba(15,23,42,.1), rgb(255 255 255 / .08)); border-radius: 50%; background: var(--bg-sidebar); color: var(--sidebar-dim); transition: transform 100ms ease; }
-.task-agent-icon + .task-agent-icon { margin-left: -4px; }
-.task-agent-icon svg { width: 12px; height: 12px; }
-.task-agent-icon.agent-claude { color: var(--agent-claude); }
-.task-agent-icon.agent-codex { color: var(--agent-codex); }
-.task-agent-icon.agent-opencode { color: var(--agent-opencode); }
-.task-agent-icon:hover, .task-agent-icon:focus-visible { z-index: 1; transform: scale(1.15); }
-.task-agent-more { flex: none; color: var(--sidebar-dimmer); font: 11px/1 var(--font-ui); font-variant-numeric: tabular-nums; }
-.task-agent-strip-toggle { display: grid; width: 20px; height: 20px; flex: none; place-items: center; padding: 0; border: 0; background: transparent; color: var(--sidebar-dimmer); }
-.task-agent-strip-toggle svg { width: 13px; height: 13px; transform: rotate(-90deg); transition: transform 150ms ease; }
-.task-agent-strip.expanded .task-agent-strip-toggle svg { transform: none; }
-.task-agent-strip:hover .task-agent-strip-toggle { color: var(--sidebar-text); }
-@media (prefers-reduced-motion: reduce) { .task-agent-icon, .task-agent-strip-toggle svg { transition: none; } }
+/* The active card's Session rows are inset pills: a state ring and the agent's
+   glyph in one chip, then the name and state on a single line. */
+.task-group.focused .task-session .session-item { min-height: 30px; padding: 0 8px 0 4px; grid-template-columns: auto minmax(0,1fr) 10px; gap: 7px; border: 1px solid light-dark(rgba(15,23,42,.08), rgb(255 255 255 / .06)); border-radius: 8px; background: light-dark(rgba(15,23,42,.025), rgb(0 0 0 / .14)); }
+.task-group.focused .task-session .session-item:hover { background: light-dark(rgba(15,23,42,.05), rgb(255 255 255 / .035)); }
+.task-group.focused .task-session .session-item.active { border-color: rgba(102,179,255,.22); background: rgba(102,179,255,.08); }
+.task-group.focused .task-session .row-rail { display: none; }
+.task-group.focused .task-session .session-item > .session-presence:first-of-type { display: inline-flex; width: auto; align-items: center; gap: 5px; height: 22px; padding: 0 5px; border-radius: 6px; background: light-dark(rgba(15,23,42,.06), rgb(0 0 0 / .28)); }
+.task-group.focused .task-session .session-item .live-dot { box-sizing: border-box; width: 10px; height: 10px; border: 1.5px solid var(--sidebar-dimmer); background: transparent; box-shadow: none; }
+.task-group.focused .task-session .session-item.state-working .live-dot { border-color: #22c55e; }
+.task-group.focused .task-session .session-item.state-review .live-dot { border-color: var(--agent-status-review); }
+.task-group.focused .task-session .session-item.state-attention .live-dot { border-color: var(--agent-status-awaiting); background: var(--agent-status-awaiting); }
+.task-group.focused .task-session .session-item.state-interrupted .live-dot { border-color: var(--warning); }
+.task-group.focused .task-session .session-item.state-blocked .live-dot { border-color: var(--state-error); }
+.row-agent-glyph { display: grid; width: 18px; height: 18px; flex: none; place-items: center; border: 1px solid light-dark(rgba(15,23,42,.1), rgb(255 255 255 / .08)); border-radius: 50%; background: var(--bg-sidebar); color: var(--sidebar-dim); }
+.row-agent-glyph svg { width: 12px; height: 12px; }
+.row-agent-glyph.agent-claude { color: var(--agent-claude); }
+.row-agent-glyph.agent-codex { color: var(--agent-codex); }
+.row-agent-glyph.agent-opencode { color: var(--agent-opencode); }
+.task-group.focused .task-session .row-copy { display: flex; flex-wrap: wrap; align-items: center; column-gap: 7px; row-gap: 3px; }
+.task-group.focused .task-session .row-title { flex: 0 1 auto; font-size: 12px; font-weight: 500; }
+.task-group.focused .task-session .session-state-line { flex: 1 1 0; }
+.task-group.focused .task-session :is(.row-agent, .row-subtitle) { display: none; }
