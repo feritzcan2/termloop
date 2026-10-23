@@ -317,6 +317,44 @@ describe("Assistant rail Session classification", () => {
     expect(calls).toEqual(["position:task-1:3", "check:routine-review:task-1"]);
   });
 
+  it("passes a Task through the last gate without asking any step to check it", async () => {
+    const getPlaybook = vi.fn(async () => ({
+      playbook: {
+        projectId: "project-1",
+        revision: 4,
+        activePipelineName: "Delivery",
+        milestones: [],
+        savedPipelines: [],
+        updatedAtEpochMs: 100,
+      },
+      stateRevision: 9,
+    } satisfies PlaybookGetResult));
+    const setPosition = vi.fn(async () => ({
+      ok: true as const,
+      result: { taskId: "task-1", passedMilestoneCount: 5, stateRevision: 10 },
+    }));
+    const runNow = vi.fn(async () => ({ accepted: true as const }));
+    await expect(moveTaskToPlaybookStepAndCheck("project-1", "task-1", 5, undefined, { getPlaybook, setPosition, runNow }))
+      .resolves.toBeUndefined();
+    expect(setPosition).toHaveBeenCalledOnce();
+    expect(runNow).not.toHaveBeenCalled();
+  });
+
+  it("offers a human gate's approval only on an open Task waiting there", () => {
+    const open = { id: "task-1", project_id: "project-1", title: "Waiting at the gate", status: "open", branch: null, worktree: null } as Task;
+    const approve = { approver: "Ferit", busy: false, run: () => undefined };
+    const row = (task: Task, withApprove = true) => renderToStaticMarkup(AssistantTaskRow({
+      task,
+      processingTaskIds: [],
+      openTask: () => undefined,
+      approve: withApprove ? approve : undefined,
+    }));
+    expect(row(open)).toContain('class="assistant-task-approve"');
+    expect(row(open)).toContain("Approve as Ferit");
+    expect(row(open, false)).not.toContain("assistant-task-approve");
+    expect(row({ ...open, status: "closed" })).not.toContain("assistant-task-approve");
+  });
+
   it("keeps a successful Task move when the immediate check is refused", async () => {
     const getPlaybook = vi.fn(async () => ({
       playbook: {

@@ -685,6 +685,46 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
+  it("lets the approver pass a human gate the Task is waiting at", async () => {
+    const requested: number[] = [];
+    let passedCount = 1;
+    let stateRevision = 12;
+    const steps = THREE_STEPS.map((entry, index) => index === 1
+      ? { ...entry, gate: "human" as const, approver: "Ferit" }
+      : entry);
+    const positionedRuntime = () => runtime(steps.map((entry, index) => runtimeStep({
+      milestoneId: entry.id,
+      routineId: entry.routineId,
+      waitingTaskIds: index === passedCount ? ["task-1"] : [],
+      progress: index < passedCount ? [progress()] : [],
+    })));
+    const { container, unmount } = await mount({
+      getPlaybook: async () => ({ playbook: playbook(steps), stateRevision }),
+      getPlaybookRuntime: async () => ({ ...positionedRuntime(), stateRevision }),
+      listRoutines: async () => ({ configurations: [], stateRevision }),
+      setPlaybookTaskPosition: async (params: { taskId: string; passedMilestoneCount: number }) => {
+        requested.push(params.passedMilestoneCount);
+        passedCount = params.passedMilestoneCount;
+        stateRevision += 1;
+        return {
+          ok: true as const,
+          result: { taskId: params.taskId, passedMilestoneCount: params.passedMilestoneCount, stateRevision },
+        };
+      },
+    });
+
+    const approve = container.querySelector<HTMLButtonElement>(".td-approve")!;
+    expect(approve.title).toContain("Approve as Ferit");
+    await act(async () => approve.click());
+    expect(requested).toEqual([2]);
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 3 of 3");
+    // The Task moved on to an automatic step, which offers no approval.
+    expect(container.querySelector(".td-approve")).toBeNull();
+
+    await unmount();
+  });
+
   it("says the daemon's own refusal instead of failing silently", async () => {
     const { container, unmount } = await mount({
       runRoutineNow: async () => { throw new Error("no Task is waiting at this pipeline step right now"); },

@@ -98,7 +98,8 @@ export async function moveTaskToPlaybookStepAndCheck(
   projectId: string,
   taskId: string,
   passedMilestoneCount: number,
-  routineId: string,
+  /** The step the Task lands at; absent when it passed the last one. */
+  routineId: string | undefined,
   deps: {
     getPlaybook(): Promise<PlaybookGetResult>;
     setPosition(params: PlaybookTaskPositionSetParams): Promise<PlaybookTaskPositionSetOutcome>;
@@ -118,6 +119,7 @@ export async function moveTaskToPlaybookStepAndCheck(
     if (outcome.code === "conflict") throw new Error("state revision changed");
     throw new Error(outcome.message);
   }
+  if (routineId === undefined) return undefined;
   try {
     await deps.runNow(routineId, taskId);
     return undefined;
@@ -612,6 +614,24 @@ export function AssistantRail(props: Props) {
     setDraggedTaskId(undefined);
     setDropRoutineId(undefined);
   };
+  /** One position write for a Task, then a check of the step it lands at
+      when that step is one TermLoop can check. */
+  const moveTaskAndCheck = (taskId: string, passedMilestoneCount: number, routineId: string | undefined) =>
+    void guard(`playbook-position-${taskId}`, async () => {
+      const warning = await moveTaskToPlaybookStepAndCheck(
+        props.projectId,
+        taskId,
+        passedMilestoneCount,
+        routineId,
+        {
+          getPlaybook: props.getPlaybook,
+          setPosition: props.setPlaybookTaskPosition,
+          runNow: (selectedRoutineId, selectedTaskId) => props.runRoutineNow(selectedRoutineId, selectedTaskId),
+        },
+      );
+      if (warning) setActionError(warning);
+      await refreshSnapshots();
+    });
   const dropTaskAtStep = (
     routine: RoutineConfigurationDto,
     passedMilestoneCount: number,
@@ -623,21 +643,14 @@ export function AssistantRail(props: Props) {
     if (!taskId || props.disabled || mutatingKey !== undefined) return;
     const task = props.tasks.find((candidate) => candidate.id === taskId);
     if (!task || task.status !== "open") return;
-    void guard(`playbook-position-${taskId}`, async () => {
-      const warning = await moveTaskToPlaybookStepAndCheck(
-        props.projectId,
-        taskId,
-        passedMilestoneCount,
-        routine.id,
-        {
-          getPlaybook: props.getPlaybook,
-          setPosition: props.setPlaybookTaskPosition,
-          runNow: (routineId, selectedTaskId) => props.runRoutineNow(routineId, selectedTaskId),
-        },
-      );
-      if (warning) setActionError(warning);
-      await refreshSnapshots();
-    });
+    moveTaskAndCheck(taskId, passedMilestoneCount, routine.id);
+  };
+  /** Passing a human gate is the approver's own position write. A next step
+      that is another human gate waits on its person, so nothing is checked. */
+  const approveTaskAtGate = (task: Task, step: number) => {
+    if (props.disabled || mutatingKey !== undefined || task.status !== "open") return;
+    const next = playbookDoc?.milestones[step + 1];
+    moveTaskAndCheck(task.id, step + 1, next?.gate === "automatic" ? next.routineId : undefined);
   };
 
   const applySteward = (agentId: StewardAgentId, enabled: boolean) => guard("steward", async () => {
@@ -983,6 +996,11 @@ export function AssistantRail(props: Props) {
           endDrag={endTaskDrag}
           decision={taskDecision}
           openSteward={openStewardChat}
+          approve={milestone?.gate === "human" && step !== undefined ? {
+            approver: milestone.approver,
+            busy: mutatingKey !== undefined,
+            run: () => approveTaskAtGate(task, step),
+          } : undefined}
         />)}
       </div> : null}
     </div>;

@@ -753,6 +753,18 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
               </span>
               {verdictSource ? <span className="td-evaluator">{verdictSource.label}</span> : null}
               {timing ? <span className="td-timing">{timing}</span> : null}
+              {step.milestone.gate === "human" && canSetPosition ? (
+                <button
+                  type="button"
+                  className="td-check-now td-approve"
+                  disabled={controlsBusy}
+                  aria-label={`Approve ${step.milestone.title} and move to the next step`}
+                  title={step.milestone.approver
+                    ? `Approve as ${step.milestone.approver} and move this Task to the next step`
+                    : "Approve and move this Task to the next step"}
+                  onClick={() => void setPosition(step.position)}
+                >{settingPosition === step.position ? "Approving…" : "✓ Approve"}</button>
+              ) : null}
               {checkable && step.milestone.routineId ? (
                 <button
                   type="button"

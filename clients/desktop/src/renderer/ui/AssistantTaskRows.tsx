@@ -104,6 +104,8 @@ export function AssistantTaskRow(props: {
   decision?: PlaybookTaskDecisionHandle | null | undefined;
   openSteward?: (() => void) | undefined;
   closeTask?: CloseCompletedTask | undefined;
+  /** Offered only at a human gate: the approver passes the Task through it. */
+  approve?: { approver: string | null; busy: boolean; run(): void } | undefined;
 }) {
   const decision = props.decision?.decision.taskIds.includes(props.task.id) ? props.decision : null;
   const processing = props.processingTaskIds.includes(props.task.id);
@@ -125,7 +127,16 @@ export function AssistantTaskRow(props: {
       <small>{props.task.branch?.name ?? (props.task.worktree ? "Worktree ready" : "No worktree")}</small>
     </span>
     {processing ? <em>Active</em> : null}
-  </button>{props.closeTask && props.task.status === "open"
+  </button>{props.approve && props.task.status === "open"
+    ? <button
+      type="button"
+      className="assistant-task-approve"
+      aria-label={`Approve ${props.task.title} and pass this gate`}
+      title={props.approve.approver ? `Approve as ${props.approve.approver} and move to the next step` : "Approve and move to the next step"}
+      disabled={props.notesDisabled || props.approve.busy}
+      onClick={props.approve.run}
+    ><Icon name="check" /></button>
+    : null}{props.closeTask && props.task.status === "open"
     ? <CloseCompletedTaskButton task={props.task} close={props.closeTask} disabled={props.notesDisabled} />
     : null}{props.saveTaskNotes ? <PlaybookTaskNotes task={props.task} save={props.saveTaskNotes} disabled={props.notesDisabled} /> : null}
   {decision ? <PlaybookTaskDecisionStrip
