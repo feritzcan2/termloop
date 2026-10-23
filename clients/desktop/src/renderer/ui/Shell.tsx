@@ -143,8 +143,7 @@ type AssistantActions = Pick<StewardPanelProps,
   | "listRoutines" | "createRoutine" | "updateRoutine" | "updateRoutineContext" | "deleteRoutine"
   | "listRoutineRuntime" | "runRoutineNow" | "getPlaybook" | "getPlaybookRuntime" | "getEvaluationHistory"
   | "promptImprovement"
-> & Pick<ComponentProps<typeof TaskDetailPanel>, "setPlaybookTaskPosition">
-  & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {
+> & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook" | "setPlaybookTaskPosition"> & {
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
   getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
@@ -1098,7 +1097,6 @@ export function Shell(props: ShellProps) {
     },
     [dismissChanges, updateFilesSidebar],
   );
-  const revealStewardRail = useCallback(() => updateFilesSidebar({ open: true, view: "steward" }), [updateFilesSidebar]);
   const assistantStageVisible = shellAssistantStageVisible(filesSidebar.open ? filesSidebar.view : undefined, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
@@ -1937,7 +1935,6 @@ export function Shell(props: ShellProps) {
             /> : detailTask ? <TaskDetailPanel
               key={detailTask.id}
               task={detailTask}
-              refreshToken={props.assistantRefreshToken}
               sessions={detailSessions}
               statusesById={statusesById}
               reviewReadySessionIds={props.reviewReadySessionIds}
@@ -1948,17 +1945,9 @@ export function Shell(props: ShellProps) {
               openFiles={() => openFiles(detailTask.id)}
               openChanges={(source) => setChangesPresentation({ kind: "task", taskId: detailTask.id, source })}
               openExternal={props.openExternal}
-              openPlaybook={revealStewardRail}
-              getPlaybook={props.assistantActions.getPlaybook}
-              getPlaybookRuntime={props.assistantActions.getPlaybookRuntime}
-              setPlaybookTaskPosition={props.assistantActions.setPlaybookTaskPosition}
-              listRoutines={props.assistantActions.listRoutines}
-              listRoutineRuntime={props.assistantActions.listRoutineRuntime}
-              runRoutineNow={props.assistantActions.runRoutineNow}
               agentCapabilities={props.agentCapabilities}
               launchTerminal={props.launchTaskTerminal}
               launchAgent={props.launchTaskAgent}
-              openIntegrationsSettings={props.integrationActions ? () => setSettingsPage("integrations") : undefined}
             /> : stagePage?.kind === "workflow" && props.selectedProject ? (stagePage.id && !props.workflowConfigurations.some((configuration) => configuration.id === stagePage.id)
               ? <StageEditorPlaceholder label="Workflow template" error="This template is no longer available. Your draft has been kept; it cannot overwrite another template." loaded={false} close={() => setStagePage(undefined)} />
               : <WorkflowEditorPanel
