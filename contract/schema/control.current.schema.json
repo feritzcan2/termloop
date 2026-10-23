@@ -2853,7 +2853,9 @@
         "agent_library_read",
         "agent_profile_create",
         "playbook_evaluation_read",
-        "playbook_evaluation_complete"
+        "playbook_evaluation_complete",
+        "playbook_step_read",
+        "playbook_step_report"
       ]
     },
     "mcpToolRole": {
@@ -2935,8 +2937,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 36,
-          "maxItems": 36,
+          "minItems": 38,
+          "maxItems": 38,
           "uniqueItems": true
         }
       }
@@ -16364,7 +16366,8 @@
         "completeWhen",
         "whileWaiting",
         "approver",
-        "deterministicCheck"
+        "deterministicCheck",
+        "agentReport"
       ],
       "properties": {
         "id": {
@@ -16419,6 +16422,9 @@
               "type": "null"
             }
           ]
+        },
+        "agentReport": {
+          "$ref": "#/$defs/playbookAgentReportPolicy"
         }
       }
     },
@@ -16485,6 +16491,9 @@
               "type": "null"
             }
           ]
+        },
+        "agentReport": {
+          "$ref": "#/$defs/playbookAgentReportPolicy"
         }
       }
     },
@@ -16698,6 +16707,7 @@
         "routineId",
         "waitingTaskIds",
         "progress",
+        "agentReports",
         "nextAttemptAtEpochMs"
       ],
       "properties": {
@@ -16725,6 +16735,13 @@
           "maxItems": 512,
           "items": {
             "$ref": "#/$defs/playbookStepProgressDto"
+          }
+        },
+        "agentReports": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/playbookAgentReportDto"
           }
         },
         "nextAttemptAtEpochMs": {
@@ -18656,8 +18673,69 @@
       "type": "string",
       "enum": [
         "deterministic",
-        "routine"
+        "routine",
+        "agent"
       ]
+    },
+    "playbookAgentReportPolicy": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookAgentReportPolicy",
+      "description": "How the Task's own Agent may report reaching a step. off refuses reports; signal asks the step's evaluator to check now with the report attached as unverified context; trusted records the report as the passed verdict and is invalid on a human gate.",
+      "type": "string",
+      "enum": [
+        "off",
+        "signal",
+        "trusted"
+      ]
+    },
+    "playbookAgentReportStatus": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookAgentReportStatus",
+      "type": "string",
+      "enum": [
+        "reached",
+        "blocked"
+      ]
+    },
+    "playbookAgentReportDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookAgentReportDto",
+      "description": "The Task Agent's latest unverified report for the step it currently stands at. Runtime-only; it never decides the Task's position.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "sessionId",
+        "status",
+        "evidence",
+        "reportedAtEpochMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "$ref": "#/$defs/playbookAgentReportStatus"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "x-utf8-max-bytes": 600
+        },
+        "reportedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
     },
     "playbookDeterministicFallbackReason": {
       "x-codegen": true,

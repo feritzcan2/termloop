@@ -1,6 +1,7 @@
 import type {
   ErrorCode,
   GitHostProvider,
+  PlaybookAgentReportPolicy,
   PlaybookDeterministicCheckDto,
   PlaybookDeterministicCheckKind,
   PlaybookDeterministicFallbackReason,
@@ -84,6 +85,9 @@ export type PlaybookDraft = {
   savedPipelines: PlaybookPipelineEditorDraft[];
 };
 
+export const PLAYBOOK_DEFAULT_AGENT_REPORT: PlaybookAgentReportPolicy = "signal";
+export const PLAYBOOK_AGENT_REPORT_POLICIES: readonly PlaybookAgentReportPolicy[] = ["off", "signal", "trusted"];
+
 const ENTRY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 // Mirrors Rust `char::is_control`: C0 controls, DEL, and C1 controls.
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
@@ -156,6 +160,9 @@ export function playbookMilestoneFieldIssues(
       if (deterministicCheck.baseBranch.trim() && /\s/u.test(deterministicCheck.baseBranch)) check.push("Base branch cannot contain spaces.");
     }
   }
+  if (milestone.gate === "human" && milestone.agentReport === "trusted") {
+    gate.push("A human gate waits for its approver, so it cannot trust a Task Agent report.");
+  }
   if (milestone.gate === "human") {
     if (milestone.approver === null) approver = ["A human gate names its approver."];
     else approver = requiredTextIssues(milestone.approver, PLAYBOOK_APPROVER_MAX_BYTES, "Approver");
@@ -223,14 +230,22 @@ export function playbookDraftIsValid(draft: PlaybookDraft): boolean {
 
 /** A milestone written before deterministic checks existed — or relayed from a
     Builder conversation that never mentions them — carries no check at all.
-    That is the agent Routine, so it reads as `null`, never as a guess. */
-export function normalizePlaybookMilestone<T extends { deterministicCheck: PlaybookDeterministicCheckDto | null }>(
-  milestone: Omit<T, "deterministicCheck"> & { deterministicCheck?: PlaybookDeterministicCheckDto | null | undefined },
+    That is the agent Routine, so it reads as `null`, never as a guess. One
+    written before Task Agent reports existed takes the daemon's default. */
+export function normalizePlaybookMilestone<T extends {
+  deterministicCheck: PlaybookDeterministicCheckDto | null;
+  agentReport: PlaybookAgentReportPolicy;
+}>(
+  milestone: Omit<T, "deterministicCheck" | "agentReport"> & {
+    deterministicCheck?: PlaybookDeterministicCheckDto | null | undefined;
+    agentReport?: PlaybookAgentReportPolicy | undefined;
+  },
 ): T {
   const check = milestone.deterministicCheck ?? null;
   return {
     ...milestone,
     deterministicCheck: check === null ? null : { kind: check.kind, baseBranch: check.baseBranch ?? null },
+    agentReport: milestone.agentReport ?? PLAYBOOK_DEFAULT_AGENT_REPORT,
   } as T;
 }
 
@@ -361,6 +376,7 @@ function templateMilestone(
     whileWaiting,
     approver,
     deterministicCheck: null,
+    agentReport: PLAYBOOK_DEFAULT_AGENT_REPORT,
   };
 }
 
@@ -606,7 +622,13 @@ export function playbookMilestoneWithGate<T extends PlaybookMilestoneDraft>(
   approver: string | null = milestone.approver,
 ): T {
   return gate === "human"
-    ? { ...milestone, gate, approver: approver ?? "", deterministicCheck: null }
+    ? {
+      ...milestone,
+      gate,
+      approver: approver ?? "",
+      deterministicCheck: null,
+      agentReport: milestone.agentReport === "trusted" ? PLAYBOOK_DEFAULT_AGENT_REPORT : milestone.agentReport,
+    }
     : { ...milestone, gate, approver: null };
 }
 
@@ -618,12 +640,25 @@ export function changeMilestoneCheckForRoutine(
   routineId: string,
   check: PlaybookDeterministicCheckDto | null,
 ): PlaybookDraft | undefined {
+  return changeMilestoneForRoutine(draft, routineId, (milestone) =>
+    milestone.gate === "human" && check !== null ? undefined : { ...milestone, deterministicCheck: check });
+}
+
+/** Replaces the stage whose completion Routine is `routineId`, wherever the
+    Project keeps it. Undefined when there is no such stage or `change`
+    refuses it. */
+function changeMilestoneForRoutine(
+  draft: PlaybookDraft,
+  routineId: string,
+  change: (milestone: PlaybookMilestoneDraft) => PlaybookMilestoneDraft | undefined,
+): PlaybookDraft | undefined {
   const apply = (milestones: PlaybookMilestoneDraft[]): PlaybookMilestoneDraft[] | undefined => {
     const index = milestones.findIndex((milestone) => milestone.routineId === routineId);
     const milestone = milestones[index];
     if (!milestone) return undefined;
-    if (milestone.gate === "human" && check !== null) return undefined;
-    return milestones.map((value, at) => at === index ? { ...value, deterministicCheck: check } : value);
+    const changed = change(milestone);
+    if (!changed) return undefined;
+    return milestones.map((value, at) => at === index ? changed : value);
   };
   const active = apply(draft.milestones);
   if (active) return { ...draft, milestones: active };
@@ -637,6 +672,34 @@ export function changeMilestoneCheckForRoutine(
     }
   }
   return undefined;
+}
+
+export function playbookAgentReportLabel(policy: PlaybookAgentReportPolicy): string {
+  switch (policy) {
+    case "off": return "Ignore Task Agent reports";
+    case "signal": return "Report triggers a check";
+    case "trusted": return "Report passes the step";
+  }
+}
+
+export function playbookAgentReportDescription(policy: PlaybookAgentReportPolicy): string {
+  switch (policy) {
+    case "off": return "The Task Agent cannot report this step; it is checked only on its own cadence.";
+    case "signal": return "When the Task Agent reports this step reached, its check runs early. The report is context for the check, never proof.";
+    case "trusted": return "When the Task Agent reports this step reached, the step passes without a separate check.";
+  }
+}
+
+/** Sets how the stage whose completion Routine is `routineId` treats its Task
+    Agent's report. Undefined when there is no such stage, or when a human gate
+    would trust one. */
+export function changeMilestoneAgentReportForRoutine(
+  draft: PlaybookDraft,
+  routineId: string,
+  agentReport: PlaybookAgentReportPolicy,
+): PlaybookDraft | undefined {
+  return changeMilestoneForRoutine(draft, routineId, (milestone) =>
+    milestone.gate === "human" && agentReport === "trusted" ? undefined : { ...milestone, agentReport });
 }
 
 /** Why the last verdict came from the agent Routine although the step has a

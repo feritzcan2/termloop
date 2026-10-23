@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  PlaybookDto, PlaybookMilestoneDto, PlaybookGetResult, PlaybookRuntimeResult,
+  PlaybookAgentReportDto, PlaybookDto, PlaybookMilestoneDto, PlaybookGetResult, PlaybookRuntimeResult,
   PlaybookStepProgressDto, PlaybookTaskPositionSetParams, PlaybookTaskPositionSetResult,
   RoutineConfigurationListResult, RoutineRunNowResult, RoutineRuntimeListResult,
 } from "@termloop/contract/current";
@@ -42,6 +42,9 @@ export type TaskPipelineStep = {
   /** This Task's own recorded answer at this step, when one exists. */
   progress: PlaybookStepProgressDto | undefined;
   routine: TaskStepRoutine | undefined;
+  /** The Task Agent's own unverified report about this step, when it made
+      one the step has not answered yet. */
+  agentReport?: PlaybookAgentReportDto | undefined;
 };
 
 export type TaskPipelineView = {
@@ -87,7 +90,9 @@ export function taskPipelineView(
     ? "waiting"
     : runtime?.doneTaskIds.includes(taskId) ? "done" : "away";
   const steps = playbook.milestones.map((milestone, index) => {
-    const progress = byMilestone.get(milestone.id)?.progress.find((entry) => entry.taskId === taskId);
+    const runtimeStep = byMilestone.get(milestone.id);
+    const progress = runtimeStep?.progress.find((entry) => entry.taskId === taskId);
+    const agentReport = runtimeStep?.agentReports?.find((entry) => entry.taskId === taskId);
     const routine = routines.find((candidate) => candidate.id === milestone.routineId);
     return {
       position: index + 1,
@@ -95,6 +100,7 @@ export function taskPipelineView(
       standing: stepStanding(placement, waitingIndex, index, progress),
       progress,
       routine: routine ? { name: routine.name, enabled: routine.enabled } : undefined,
+      agentReport,
     };
   });
   return {
@@ -137,6 +143,18 @@ export function stepEvidence(step: TaskPipelineStep): string | undefined {
   if (evidence) return evidence;
   if (step.standing === "waiting") return "No completion result recorded for this Task yet.";
   return undefined;
+}
+
+/** What the Task Agent said about the step this Task stands at, and what the
+    step does with it. A claim is never shown as the step's own answer. */
+export function stepAgentReportCopy(step: TaskPipelineStep): { label: string; evidence: string; blocked: boolean } | undefined {
+  const report = step.agentReport;
+  if (!report || step.standing !== "waiting") return undefined;
+  if (report.status === "blocked") return { label: "Agent blocked", evidence: report.evidence, blocked: true };
+  const label = step.milestone.gate === "automatic" && step.milestone.agentReport === "signal"
+    ? "Agent reported · verifying"
+    : "Agent reported";
+  return { label, evidence: report.evidence, blocked: false };
 }
 
 /** The Task's pull requests a step's check reads, so the reader can open the
@@ -191,6 +209,9 @@ export function stepVerdictSource(
   const progress = step.progress;
   if (!progress) return undefined;
   const hasCheck = step.milestone.gate === "automatic" && (step.milestone.deterministicCheck ?? null) !== null;
+  if (progress.evaluator === "agent") {
+    return { label: "Passed on Task Agent report", fallback: undefined, needsIntegrations: false };
+  }
   if (progress.evaluator === "deterministic") {
     const label = step.milestone.deterministicCheck?.kind === "branchCommitted"
       ? "Decided by commit check"
@@ -677,6 +698,7 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
   </p> : null;
   const timing = stepTiming(step, nowEpochMs);
   const evidence = stepEvidence(step);
+  const agentReport = stepAgentReportCopy(step);
   const answers = stepAnswerSource(step);
   const checkable = stepIsCheckable(step);
   return (
@@ -720,6 +742,10 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
         {step.standing === "waiting" ? (
           <>
             <p className="td-evidence">{evidence}</p>
+            {agentReport ? <p className={`td-agent-report${agentReport.blocked ? " blocked" : ""}`} role="note">
+              <span className="td-agent-report-label">{agentReport.label}</span>
+              <span>{agentReport.evidence}</span>
+            </p> : null}
             {fallback}
             <div className="td-step-foot">
               <span className={`td-answers${answers.blocked ? " blocked" : ""}`}>

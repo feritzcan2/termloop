@@ -626,6 +626,40 @@
         "idempotentHint": false,
         "openWorldHint": false
       }
+    },
+    "playbook_step_read": {
+      "description": "Read the delivery Playbook step your Task stands at, when this Session is its Task Agent. Returns the Playbook revision, every step's title, completion criteria, and report policy, the steps your Task already passed, and your latest report. Call it before playbook_step_report and whenever you are unsure what the next step requires. noTaskPlaybook means this Session is not a Task Agent with an active Playbook: do not report.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/assistantEmptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/assistantTextResult"
+      },
+      "annotations": {
+        "title": "Read your Task's Playbook step",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    "playbook_step_report": {
+      "description": "Tell TermLoop that your own work reached, or is blocked at, the Playbook step your Task currently stands at. Use the exact milestoneId and playbookRevision from playbook_step_read and one short factual evidence sentence naming the artifact (for example a pull request URL or commit SHA). reached on a signal step asks its evaluator to verify now; on a trusted step it passes the step; on an off step it is refused. blocked tells the Steward you cannot continue. Report each transition once; do not report a step you only plan to reach, and stop on staleCheck and read again.",
+      "role": "interactive",
+      "params": {
+        "$ref": "#/$defs/playbookStepReportParams"
+      },
+      "result": {
+        "$ref": "#/$defs/playbookStepReportResult"
+      },
+      "annotations": {
+        "title": "Report your Task's Playbook step",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     }
   },
   "$defs": {
@@ -1113,6 +1147,7 @@
         "taskAgentStartFailed",
         "jiraUrlAlreadySet",
         "proposalPending",
+        "noTaskPlaybook",
         "operationFailed"
       ]
     },
@@ -2202,6 +2237,80 @@
           "minLength": 1,
           "maxLength": 600,
           "x-utf8-max-bytes": 600
+        }
+      }
+    },
+    "playbookStepReportParams": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookStepReportParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "milestoneId",
+        "playbookRevision",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "milestoneId": {
+          "description": "The exact current step ID returned by playbook_step_read.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "x-utf8-max-bytes": 64,
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "playbookRevision": {
+          "description": "The Playbook revision returned by playbook_step_read.",
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "reached",
+            "blocked"
+          ]
+        },
+        "evidence": {
+          "description": "One short factual sentence with artifact references, at most 600 UTF-8 bytes. It is shown to the evaluator as an unverified claim.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "x-utf8-max-bytes": 600
+        }
+      }
+    },
+    "playbookStepReportResult": {
+      "x-codegen": true,
+      "x-codegen-name": "PlaybookStepReportResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "milestoneId",
+        "stateRevision"
+      ],
+      "properties": {
+        "outcome": {
+          "description": "verificationRequested: the step's evaluator checks soon. verificationPending: a check is already due or running and will see the report. passed: a trusted step recorded the report as its verdict. recorded: a blocked report was kept for the Steward.",
+          "type": "string",
+          "enum": [
+            "verificationRequested",
+            "verificationPending",
+            "passed",
+            "recorded"
+          ]
+        },
+        "milestoneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "stateRevision": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

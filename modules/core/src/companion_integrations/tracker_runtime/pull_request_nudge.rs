@@ -7,7 +7,7 @@ use super::*;
 
 /// Coalesces a burst of observations (checks starting, then finishing) into
 /// one evaluation.
-const NUDGE_DEBOUNCE_MS: u64 = 15_000;
+pub(super) const NUDGE_DEBOUNCE_MS: u64 = 15_000;
 const NUDGES_MAX: usize = 256;
 
 impl CoreRuntime {

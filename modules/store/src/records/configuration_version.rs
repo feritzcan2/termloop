@@ -364,6 +364,7 @@ fn playbook_milestone_snapshot(
         "retryDelaySeconds": milestone.retry_delay_seconds,
         "approver": milestone.approver,
         "deterministicCheck": milestone.deterministic_check,
+        "agentReport": milestone.agent_report,
     })
 }
 

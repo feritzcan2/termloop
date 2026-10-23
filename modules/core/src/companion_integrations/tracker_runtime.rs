@@ -6,11 +6,14 @@
 
 use std::collections::{HashMap, VecDeque};
 
+mod agent_step_report;
 mod pull_request_nudge;
 mod report;
 mod run_now;
 mod step_claims;
 mod steward_claims;
+
+pub use agent_step_report::{AgentStepReportReceipt, AgentStepReportStatus};
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde_json::{Value, json};
@@ -106,6 +109,9 @@ pub(crate) struct TrackerRuntimeState {
     /// When one Task's step should be asked early because its pull request
     /// changed. Runtime-only and cleared once that Task is claimed.
     step_task_nudge: HashMap<(String, String), u64>,
+    /// Each Task Agent's latest unverified report about its Task's step.
+    /// Runtime-only; it never decides a position.
+    agent_step_reports: HashMap<String, agent_step_report::AgentStepReport>,
 }
 
 #[derive(Debug, Clone)]

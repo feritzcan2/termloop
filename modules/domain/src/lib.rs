@@ -71,10 +71,10 @@ pub use playbook::{
     PLAYBOOK_EVIDENCE_MAX_BYTES, PLAYBOOK_MILESTONES_MAX, PLAYBOOK_PIPELINE_NAME_MAX_BYTES,
     PLAYBOOK_RETRY_DELAY_MAX_SECONDS, PLAYBOOK_RETRY_DELAY_MIN_SECONDS,
     PLAYBOOK_ROUTINE_ID_MAX_BYTES, PLAYBOOK_SAVED_PIPELINES_MAX, PLAYBOOK_TITLE_MAX_BYTES,
-    PlaybookConfiguration, PlaybookDeterministicCheck, PlaybookDeterministicCheckKind,
-    PlaybookDeterministicFallback, PlaybookGateKind, PlaybookMilestone, PlaybookPipeline,
-    PlaybookPosition, PlaybookStepEvaluator, PlaybookStepProgress, PlaybookStepVerdict,
-    pipeline_position,
+    PlaybookAgentReportPolicy, PlaybookConfiguration, PlaybookDeterministicCheck,
+    PlaybookDeterministicCheckKind, PlaybookDeterministicFallback, PlaybookGateKind,
+    PlaybookMilestone, PlaybookPipeline, PlaybookPosition, PlaybookStepEvaluator,
+    PlaybookStepProgress, PlaybookStepVerdict, pipeline_position,
 };
 pub use task_source::{
     TASK_SOURCE_AUTO_IMPORT_ACTIVE_TASK_LIMIT_DEFAULT,
@@ -183,10 +183,14 @@ pub enum McpToolName {
     AgentLibraryRead,
     #[serde(rename = "agent_profile_create")]
     AgentProfileCreate,
+    #[serde(rename = "playbook_step_read")]
+    PlaybookStepRead,
+    #[serde(rename = "playbook_step_report")]
+    PlaybookStepReport,
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 38] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -223,6 +227,8 @@ impl McpToolName {
         Self::ConfigurationVersionWrite,
         Self::AgentLibraryRead,
         Self::AgentProfileCreate,
+        Self::PlaybookStepRead,
+        Self::PlaybookStepReport,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -263,6 +269,8 @@ impl McpToolName {
             Self::ConfigurationVersionWrite => "configuration_version_write",
             Self::AgentLibraryRead => "agent_library_read",
             Self::AgentProfileCreate => "agent_profile_create",
+            Self::PlaybookStepRead => "playbook_step_read",
+            Self::PlaybookStepReport => "playbook_step_report",
         }
     }
 }
@@ -310,6 +318,8 @@ impl std::str::FromStr for McpToolName {
             "configuration_version_write" => Ok(Self::ConfigurationVersionWrite),
             "agent_library_read" => Ok(Self::AgentLibraryRead),
             "agent_profile_create" => Ok(Self::AgentProfileCreate),
+            "playbook_step_read" => Ok(Self::PlaybookStepRead),
+            "playbook_step_report" => Ok(Self::PlaybookStepReport),
             _ => Err(()),
         }
     }
@@ -1518,6 +1528,8 @@ mod tests {
                 "configuration_version_write",
                 "agent_library_read",
                 "agent_profile_create",
+                "playbook_step_read",
+                "playbook_step_report",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

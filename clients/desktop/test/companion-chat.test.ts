@@ -271,16 +271,16 @@ describe("Playbook current-state strip", () => {
   const playbook = {
     projectId: "project-1", revision: 1, activePipelineName: "Delivery",
     milestones: [
-      { id: "ms-1", title: "Build green", gate: "automatic", routineId: "routine-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null },
-      { id: "ms-2", title: "Review approved", gate: "automatic", routineId: "routine-2", retryDelaySeconds: 600, completeWhen: "Approved", whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null },
+      { id: "ms-1", title: "Build green", gate: "automatic", routineId: "routine-1", retryDelaySeconds: 600, completeWhen: "CI green", whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null, agentReport: "signal" },
+      { id: "ms-2", title: "Review approved", gate: "automatic", routineId: "routine-2", retryDelaySeconds: 600, completeWhen: "Approved", whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null, agentReport: "signal" },
     ],
     savedPipelines: [], updatedAtEpochMs: 1,
   } as PlaybookDto;
   const runtime = {
     activePipelineName: "Delivery", evaluation: null, evaluations: [], processingTaskId: "task-9", processingTaskIds: ["task-9"],
     steps: [
-      { milestoneId: "ms-1", routineId: "routine-1", waitingTaskIds: ["task-1", "task-2"], progress: [], nextAttemptAtEpochMs: 2000 },
-      { milestoneId: "ms-2", routineId: "routine-2", waitingTaskIds: [], progress: [], nextAttemptAtEpochMs: 1000 },
+      { milestoneId: "ms-1", routineId: "routine-1", waitingTaskIds: ["task-1", "task-2"], agentReports: [], progress: [], nextAttemptAtEpochMs: 2000 },
+      { milestoneId: "ms-2", routineId: "routine-2", waitingTaskIds: [], agentReports: [], progress: [], nextAttemptAtEpochMs: 1000 },
     ],
     doneTaskIds: ["task-0"], stateRevision: 1,
   } as PlaybookRuntimeResult;

@@ -200,6 +200,7 @@ impl TryFrom<LegacyPlaybookMilestoneDraft> for PlaybookMilestoneDraft {
             retry_delay_seconds: value.retry_delay_seconds,
             approver: value.approver,
             deterministic_check: None,
+            agent_report: termloop_domain::PlaybookAgentReportPolicy::default(),
         })
     }
 }

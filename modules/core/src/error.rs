@@ -142,6 +142,8 @@ pub enum CoreError {
     TrackerReportInvalid,
     #[error("no Task is waiting at this pipeline step right now")]
     PlaybookStepIdle,
+    #[error("this Session is not the Agent of a Task on an active Playbook")]
+    NoTaskPlaybook,
     #[error("agent provider identity replacement was rejected")]
     ResumeRefReplacement,
     #[error("an Ask-To request is already current for this Session")]

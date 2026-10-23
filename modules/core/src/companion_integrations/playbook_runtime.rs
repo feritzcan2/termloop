@@ -33,6 +33,9 @@ pub struct PlaybookWaitingTask {
     /// The steps before this question that the Task has already passed, in
     /// pipeline order, so a check never re-derives its own prerequisites.
     pub passed_earlier_steps: Vec<PlaybookPassedStep>,
+    /// The Task Agent's own unverified report about this question, if it
+    /// made one. Context for the evaluator, never proof.
+    pub agent_report: Option<Value>,
 }
 
 /// One earlier step a Task has passed, as recorded. A step set by the user
@@ -276,6 +279,25 @@ impl CoreRuntime {
             .collect()
     }
 
+    /// Where one open Task stands on its Project's active pipeline, with the
+    /// answers that position was derived from.
+    pub(crate) fn task_playbook_position(
+        &self,
+        task_id: &str,
+    ) -> Option<(PlaybookPosition, Vec<PlaybookStepProgress>)> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        let playbook = self.store.playbook_for_project(&task.project_id)?;
+        self.pipeline_standings(playbook)
+            .into_iter()
+            .find(|standing| standing.task.id == task_id)
+            .map(|standing| {
+                (
+                    standing.position,
+                    standing.answers.into_iter().cloned().collect(),
+                )
+            })
+    }
+
     /// The automatic step this open Task stands at right now, as its Routine
     /// and its own stored due time. Human gates and finished Tasks have none.
     pub(crate) fn playbook_automatic_step_for_task(&self, task_id: &str) -> Option<(String, u64)> {
@@ -361,6 +383,9 @@ impl CoreRuntime {
                         .filter(|evidence| !evidence.is_empty()),
                     passed_earlier_steps: standing
                         .passed_earlier_steps(&playbook.milestones, index),
+                    agent_report: self
+                        .current_agent_step_report(&standing.task.id, milestone)
+                        .map(|report| report.evaluator_context()),
                 }],
                 due_at_epoch_ms,
             };
@@ -406,6 +431,9 @@ impl CoreRuntime {
                     .map(|answer| answer.evidence.clone())
                     .filter(|evidence| !evidence.is_empty()),
                 passed_earlier_steps: standing.passed_earlier_steps(&playbook.milestones, index),
+                agent_report: self
+                    .current_agent_step_report(&standing.task.id, milestone)
+                    .map(|report| report.evaluator_context()),
             }],
             due_at_epoch_ms,
         })
@@ -745,6 +773,15 @@ impl CoreRuntime {
             )
             .map_err(crate::store_error)?;
         self.finish_steward_step_check(capability, completed_at_epoch_ms, &configuration);
+        for answer in &answers {
+            self.settle_agent_step_report(
+                &answer.task_id,
+                &answer.milestone_id,
+                capability.claimed_at_epoch_ms,
+                answer.verdict,
+                completed_at_epoch_ms,
+            );
+        }
         self.push_runtime_report(report);
         let still_waiting = answers.len() - passed.len();
         let blocked = answers
@@ -826,6 +863,7 @@ impl CoreRuntime {
                 json!({
                     "milestoneId": milestone.id,
                     "routineId": milestone.routine_id,
+                    "agentReports": self.agent_step_report_projections(milestone, &waiting_at[index]),
                     "waitingTaskIds": waiting_at[index],
                     "progress": progress,
                     "nextAttemptAtEpochMs": self
@@ -904,6 +942,7 @@ pub(crate) mod tests {
             retry_delay_seconds: retry,
             approver: None,
             deterministic_check: None,
+            agent_report: Default::default(),
         }
     }
 

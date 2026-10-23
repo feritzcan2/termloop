@@ -9,7 +9,7 @@ import type {
   RoutineConfigurationMutationResult, RoutineConfigurationUpdateParams, RoutineHealthDto,
   RoutineReportDto, RoutineRuntimeListResult,
   RoutineRunNowResult,
-  PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
+  PlaybookAgentReportPolicy, PlaybookDto, PlaybookGetResult, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookUpdateParams,
   AssistantPromptImproverTarget,
   PlaybookEvaluatorSettingsDto, PlaybookEvaluationHistoryResult,
 } from "@termloop/contract/current";
@@ -23,10 +23,11 @@ import { ConfigurationVersions, PromptImproveButton, promptImprovementActionLabe
 import { assistantInstructionsEditableSuffix } from "../prompt-settings.js";
 import { routineDisplayStatus, statusExplanation } from "./assistant-status.js";
 import { CompanionTopicCard, currentStewardInteraction, groupCompanionTopics } from "./companion-chat.js";
+import { PlaybookAgentReportSelector } from "./PlaybookAgentReportSelector.js";
 import { PlaybookCheckSelector } from "./PlaybookCheckSelector.js";
 import {
-  changeMilestoneCheckForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
-  type PlaybookUpdateOutcome,
+  changeMilestoneAgentReportForRoutine, changeMilestoneCheckForRoutine, playbookDraftFromDto, playbookRefusalMessage, resolvePlaybookSave,
+  type PlaybookDraft, type PlaybookUpdateOutcome,
 } from "./playbook-policy.js";
 
 export { assistantInstructionsEditableSuffix };
@@ -478,9 +479,16 @@ export function StewardPanel(props: StewardPanelProps) {
     routine={selectedRoutine}
     stepRetryDelaySeconds={selectedRoutineRetryDelaySeconds}
     completionEvidence={selectedRoutineCompletionEvidence}
-    stepCheck={selectedRoutineStep ? { gate: selectedRoutineStep.gate, check: selectedRoutineStep.deterministicCheck ?? null } : undefined}
+    stepCheck={selectedRoutineStep ? {
+      gate: selectedRoutineStep.gate,
+      check: selectedRoutineStep.deterministicCheck ?? null,
+      agentReport: selectedRoutineStep.agentReport ?? "signal",
+    } : undefined}
     saveCheck={updatePlaybook ? (check) => run(async () => {
       setPlaybook(await saveStepCheck(props.projectId, selectedRoutine.id, check, props.getPlaybook, updatePlaybook));
+    }) : undefined}
+    saveAgentReport={updatePlaybook ? (agentReport) => run(async () => {
+      setPlaybook(await saveStepAgentReport(props.projectId, selectedRoutine.id, agentReport, props.getPlaybook, updatePlaybook));
     }) : undefined}
     health={selectedRoutineHealth}
     reports={reports.filter((report) => report.routineId === selectedRoutine.id)}
@@ -705,12 +713,48 @@ export async function saveStepCheck(
   getPlaybook: () => Promise<PlaybookGetResult>,
   updatePlaybook: (params: PlaybookUpdateParams) => Promise<PlaybookUpdateOutcome>,
 ): Promise<PlaybookDto> {
+  return saveStepChange(
+    projectId,
+    (draft) => changeMilestoneCheckForRoutine(draft, routineId, check),
+    check === null
+      ? "This step is no longer in the Playbook."
+      : "This step is a human gate or no longer in the Playbook, so it cannot use a pull request check.",
+    getPlaybook,
+    updatePlaybook,
+  );
+}
+
+/** The same atomic save, changing only how this step treats its Task Agent's
+    report. */
+export async function saveStepAgentReport(
+  projectId: string,
+  routineId: string,
+  agentReport: PlaybookAgentReportPolicy,
+  getPlaybook: () => Promise<PlaybookGetResult>,
+  updatePlaybook: (params: PlaybookUpdateParams) => Promise<PlaybookUpdateOutcome>,
+): Promise<PlaybookDto> {
+  return saveStepChange(
+    projectId,
+    (draft) => changeMilestoneAgentReportForRoutine(draft, routineId, agentReport),
+    agentReport === "trusted"
+      ? "This step is a human gate or no longer in the Playbook, so it cannot trust a Task Agent report."
+      : "This step is no longer in the Playbook.",
+    getPlaybook,
+    updatePlaybook,
+  );
+}
+
+async function saveStepChange(
+  projectId: string,
+  change: (draft: PlaybookDraft) => PlaybookDraft | undefined,
+  refusal: string,
+  getPlaybook: () => Promise<PlaybookGetResult>,
+  updatePlaybook: (params: PlaybookUpdateParams) => Promise<PlaybookUpdateOutcome>,
+): Promise<PlaybookDto> {
   for (let attempt = 1; ; attempt += 1) {
     const latest = await getPlaybook();
-    const next = changeMilestoneCheckForRoutine(playbookDraftFromDto(latest.playbook), routineId, check);
-    if (!next) throw new Error(check === null
-      ? "This step is no longer in the Playbook."
-      : "This step is a human gate or no longer in the Playbook, so it cannot use a pull request check.");
+    const next = change(playbookDraftFromDto(latest.playbook));
+    if (!next) throw new Error(refusal);
     const decision = resolvePlaybookSave(projectId, next, latest.playbook?.revision ?? 0, latest);
     if (decision.kind === "proceed") {
       const outcome = await updatePlaybook(decision.params);
@@ -726,8 +770,13 @@ export function RoutineContextEditor(props: {
   routine: RoutineConfigurationDto;
   stepRetryDelaySeconds?: number | undefined;
   completionEvidence?: string | undefined;
-  stepCheck?: { gate: PlaybookMilestoneDto["gate"]; check: PlaybookMilestoneDto["deterministicCheck"] } | undefined;
+  stepCheck?: {
+    gate: PlaybookMilestoneDto["gate"];
+    check: PlaybookMilestoneDto["deterministicCheck"];
+    agentReport: PlaybookAgentReportPolicy;
+  } | undefined;
   saveCheck?: ((check: PlaybookMilestoneDto["deterministicCheck"]) => Promise<void>) | undefined;
+  saveAgentReport?: ((agentReport: PlaybookAgentReportPolicy) => Promise<void>) | undefined;
   health: RoutineHealthDto | undefined;
   reports: readonly RoutineReportDto[];
   busy: boolean;
@@ -790,6 +839,12 @@ export function RoutineContextEditor(props: {
         check={props.stepCheck.check}
         busy={props.busy}
         save={props.saveCheck}
+      /> : null}
+      {props.stepRetryDelaySeconds !== undefined && props.stepCheck && props.saveAgentReport ? <PlaybookAgentReportSelector
+        gate={props.stepCheck.gate}
+        agentReport={props.stepCheck.agentReport}
+        busy={props.busy}
+        save={props.saveAgentReport}
       /> : null}
       <details className="ap-details ap-instructions-details" open>
         <summary>What should the Steward verify?</summary>

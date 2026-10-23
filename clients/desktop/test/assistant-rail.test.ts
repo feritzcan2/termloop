@@ -221,8 +221,8 @@ describe("Assistant rail Session classification", () => {
       processingTaskId: "task-2",
       processingTaskIds: ["task-2", "task-5"],
       steps: [
-        { milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["task-1", "task-2"], progress: [], nextAttemptAtEpochMs: null },
-        { milestoneId: "deploy", routineId: "routine-deploy", waitingTaskIds: ["task-6"], progress: [], nextAttemptAtEpochMs: null },
+        { milestoneId: "code", routineId: "routine-code", waitingTaskIds: ["task-1", "task-2"], agentReports: [], progress: [], nextAttemptAtEpochMs: null },
+        { milestoneId: "deploy", routineId: "routine-deploy", waitingTaskIds: ["task-6"], agentReports: [], progress: [], nextAttemptAtEpochMs: null },
       ],
       doneTaskIds: ["task-3"],
       stateRevision: 1,

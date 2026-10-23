@@ -33,6 +33,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
     whileWaiting: { mode: "off", instructions: "" },
     approver: null,
     deterministicCheck: null,
+    agentReport: "signal",
     ...overrides,
   };
 }
@@ -66,6 +67,7 @@ function step(overrides: Partial<PlaybookRuntimeStepDto> = {}): PlaybookRuntimeS
     milestoneId: "code-done",
     routineId: "routine-code",
     waitingTaskIds: [],
+    agentReports: [],
     progress: [],
     nextAttemptAtEpochMs: null,
     ...overrides,
@@ -113,6 +115,7 @@ describe("a Task's place on the pipeline", () => {
       runtime([
         step({
           waitingTaskIds: ["task-1", "task-2"],
+          agentReports: [],
           progress: [
             progress({ taskId: "task-2", evidence: "Another Task's answer." }),
             progress({ taskId: "task-1", verdict: "waiting", evidence: "This Task's answer." }),
@@ -171,6 +174,7 @@ describe("what a step tells a phone", () => {
         milestoneId: "review",
         routineId: "routine-review",
         waitingTaskIds: ["task-1"],
+        agentReports: [],
         progress: [progress({
           verdict: "waiting",
           evidence: "No review request seen yet.",
@@ -244,6 +248,7 @@ describe("the collapsed rail", () => {
         milestoneId: "review",
         routineId: "routine-review",
         waitingTaskIds: ["task-1"],
+        agentReports: [],
         progress: [progress({ verdict: "waiting", nextAttemptAtEpochMs: NOW + 480_000 })],
       }),
       step({ milestoneId: "deployed", routineId: "routine-deploy" }),

@@ -130,7 +130,7 @@ try {
   assert.equal(helper.selectedModel, "opus");
   assert.equal(helper.selectedReasoning, "high");
   assert.equal(asker.followUpSelectionChangeDenied, true);
-  assert.deepEqual(asker.tools, ["ask_to", "send_to_agent", "workflow_delegate", "workflow_step_complete"]);
+  assert.deepEqual(asker.tools, ["ask_to", "send_to_agent", "workflow_delegate", "workflow_step_complete", "playbook_step_read", "playbook_step_report"]);
   assert.deepEqual(helper.tools, ["ask_to", "send_to_agent", "reply_to_request"]);
   assert.equal(asker.discoveryFallback, true);
   assert.equal(asker.idempotentRequest, true);

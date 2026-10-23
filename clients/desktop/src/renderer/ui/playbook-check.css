@@ -13,3 +13,6 @@
 .td-fallback button { padding: 0; border: 0; background: none; color: light-dark(#607488, #b4daff); font: 600 10.5px/1.5 var(--font-ui); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 
 .ar-copy small > .ar-step-check { flex: none; max-width: 55%; padding: 0 5px; border: 1px solid rgba(102,179,255,.3); border-radius: 999px; color: light-dark(#4f6478, #b4daff); font-size: 8.5px; line-height: 1.5; text-overflow: ellipsis; }
+.td-agent-report { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 6px 0 0; color: var(--text-muted); font: 10.5px/1.5 var(--font-mono); }
+.td-agent-report-label { font: 600 10.5px/1.5 var(--font-ui); color: light-dark(#607488, #b4daff); }
+.td-agent-report.blocked .td-agent-report-label { color: var(--warning); }

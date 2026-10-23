@@ -17,7 +17,8 @@ fn milestone() -> serde_json::Value {
             "instructions": "Propose asking the reviewer and ask the user whether to send it."
         },
         "approver": "ferit",
-        "deterministicCheck": null
+        "deterministicCheck": null,
+        "agentReport": "signal"
     })
 }
 
@@ -434,6 +435,13 @@ fn the_board_reads_where_every_task_is_standing() {
         "milestoneId": "pr-approved",
         "routineId": "routine-pr",
         "waitingTaskIds": ["task-2"],
+        "agentReports": [{
+            "taskId": "task-2",
+            "sessionId": "session-2",
+            "status": "reached",
+            "evidence": "Opened PR #13 for review.",
+            "reportedAtEpochMs": 30
+        }],
         "progress": [{
             "taskId": "task-1",
             "verdict": "passed",
@@ -583,4 +591,57 @@ fn a_step_check_uses_the_single_steward_assignment_outcome() {
             &invalid
         ));
     }
+}
+
+#[test]
+fn a_task_agent_reports_its_step_through_two_interactive_tools() {
+    use termloop_contract::current::MCP_INTERACTIVE_TOOLS;
+    assert!(MCP_INTERACTIVE_TOOLS.contains(&"playbook_step_read"));
+    assert!(MCP_INTERACTIVE_TOOLS.contains(&"playbook_step_report"));
+    assert!(!MCP_STEWARD_TOOLS.contains(&"playbook_step_report"));
+    assert!(!METHODS.contains(&"playbook_step_report"));
+
+    assert!(validate_mcp_tool_params("playbook_step_read", &json!({})));
+    let report = json!({
+        "milestoneId": "pr-open",
+        "playbookRevision": 3,
+        "status": "reached",
+        "evidence": "Opened PR #12 against develop."
+    });
+    assert!(validate_mcp_tool_params("playbook_step_report", &report));
+    let mut extra = report.clone();
+    extra["taskId"] = json!("task-1");
+    assert!(!validate_mcp_tool_params("playbook_step_report", &extra));
+    assert!(validate_mcp_tool_result(
+        "playbook_step_report",
+        &json!({"outcome": "verificationRequested", "milestoneId": "pr-open", "stateRevision": 9})
+    ));
+
+    // Older drafts without a policy remain valid; a stored step always has one.
+    let mut draft = milestone_draft();
+    draft["agentReport"] = json!("trusted");
+    assert!(validate_method_params(
+        "playbook.update",
+        &json!({
+            "projectId": "project-1",
+            "activePipelineName": "Ship to production",
+            "savedPipelines": [],
+            "milestones": [draft],
+            "expectedPlaybookRevision": 0,
+            "expectedRevision": 4
+        })
+    ));
+    let mut stored = milestone();
+    stored.as_object_mut().unwrap().remove("agentReport");
+    assert!(!validate_method_result(
+        "playbook.get",
+        &json!({"playbook": {
+            "projectId": "project-1",
+            "revision": 2,
+            "activePipelineName": "Ship to production",
+            "savedPipelines": [],
+            "milestones": [stored],
+            "updatedAtEpochMs": 5
+        }, "stateRevision": 9})
+    ));
 }

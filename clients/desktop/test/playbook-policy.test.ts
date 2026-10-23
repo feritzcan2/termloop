@@ -24,6 +24,7 @@ import {
   switchToSavedPipeline,
   truncatePlaybookLabel,
   utf8ByteLength,
+  changeMilestoneAgentReportForRoutine,
   changeMilestoneCheckForRoutine,
   normalizePlaybookMilestone,
   playbookCheckCaption,
@@ -45,7 +46,7 @@ function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMiles
       instructions: "Propose asking the reviewer and ask the user whether to send it.",
     },
     approver: "ferit",
-    deterministicCheck: null,
+    deterministicCheck: null, agentReport: "signal",
     ...overrides,
   };
 }
@@ -144,7 +145,7 @@ describe("Atomic Playbook mutation payload", () => {
         instructions: "Propose asking the reviewer and ask the user whether to send it.",
       },
       approver: "ferit",
-      deterministicCheck: null,
+      deterministicCheck: null, agentReport: "signal",
     }]);
     expect(wire[0]).not.toHaveProperty("routineId");
   });
@@ -153,7 +154,7 @@ describe("Atomic Playbook mutation payload", () => {
     const wire = playbookMilestonesForWire([{
       id: "ci-green", title: "Is CI green?", gate: "automatic",
       routineId: null, retryDelaySeconds: 600, completeWhen: "Required checks pass.",
-      whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null,
+      whileWaiting: { mode: "off", instructions: "" }, approver: null, deterministicCheck: null, agentReport: "signal",
     }]);
     expect(wire[0]).toMatchObject({
       completeWhen: "Required checks pass.",
@@ -323,5 +324,27 @@ describe("Deterministic pull request checks", () => {
       expect(draft.milestones[0]?.deterministicCheck).toEqual(committed);
       expect(playbookDraftIsValid(draft)).toBe(true);
     }
+  });
+});
+
+describe("Task Agent step reports", () => {
+  const automatic = () => milestone({
+    id: "pr-merged", title: "PR merged", gate: "automatic", approver: null, routineId: "routine-merged",
+  });
+
+  it("defaults an older step to signal and never lets a human gate trust a report", () => {
+    const { agentReport: _omitted, ...legacy } = automatic();
+    expect(normalizePlaybookMilestone<PlaybookMilestoneDto>(legacy).agentReport).toBe("signal");
+
+    const draft = playbookDraftFromDto(playbook({ milestones: [automatic()] }));
+    const trusted = changeMilestoneAgentReportForRoutine(draft, "routine-merged", "trusted");
+    expect(trusted?.milestones[0]?.agentReport).toBe("trusted");
+    expect(playbookMilestonesForWire(trusted!.milestones)[0]?.agentReport).toBe("trusted");
+
+    const human = playbookDraftFromDto(playbook());
+    expect(changeMilestoneAgentReportForRoutine(human, "routine-pr", "trusted")).toBeUndefined();
+    expect(changeMilestoneAgentReportForRoutine(human, "routine-pr", "off")?.milestones[0]?.agentReport).toBe("off");
+    expect(playbookMilestoneWithGate({ ...automatic(), agentReport: "trusted" }, "human", "ferit").agentReport).toBe("signal");
+    expect(playbookMilestoneFieldIssues({ ...milestone(), agentReport: "trusted" }).gate).not.toHaveLength(0);
   });
 });

@@ -35,6 +35,7 @@ mod health;
 mod invalidation;
 mod keep_awake;
 mod mcp;
+mod playbook_agent_report;
 mod playbook_deterministic;
 mod playbook_evaluation;
 mod runtime_health;

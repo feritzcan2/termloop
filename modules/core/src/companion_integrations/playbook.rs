@@ -47,6 +47,9 @@ pub(crate) struct PlaybookMilestoneDraft {
     /// Absent in snapshots written before deterministic checks existed.
     #[serde(default)]
     pub(crate) deterministic_check: Option<PlaybookDeterministicCheck>,
+    /// Absent in snapshots and drafts written before Task Agent reports.
+    #[serde(default)]
+    pub(crate) agent_report: termloop_domain::PlaybookAgentReportPolicy,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -627,6 +630,7 @@ fn materialize_pipeline(
             retry_delay_seconds: draft.retry_delay_seconds,
             approver: draft.approver.clone(),
             deterministic_check: draft.deterministic_check.clone(),
+            agent_report: draft.agent_report,
         });
     }
     Ok((milestones, changed))
@@ -691,6 +695,7 @@ fn playbook_projection(
             },
             "approver": value.approver,
             "deterministicCheck": value.deterministic_check,
+            "agentReport": value.agent_report,
         }))
     };
     let milestones = configuration

@@ -627,6 +627,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
         retry_delay_seconds: 60,
         approver: None,
         deterministic_check: None,
+        agent_report: Default::default(),
     };
     store
         .state

@@ -365,6 +365,14 @@ async fn tool_call_inner(
             }
             result
         }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_read") => {
+            text_result(super::playbook_agent_report::read_step(token, state).await)
+        }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_report") => {
+            let params: protocol::PlaybookStepReportParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            super::playbook_agent_report::report_step(token, params, state).await
+        }
         (
             termloop_core::session_launch::AgentMcpRole::Helper { request_id },
             "reply_to_request",
@@ -697,7 +705,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
     match role {
         role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -1784,6 +1792,12 @@ fn core_tool_error(id: Value, error: &termloop_core::CoreError) -> Response {
             "Routine check expired or changed; call steward_next_assignment again",
             None,
         ),
+        termloop_core::CoreError::NoTaskPlaybook => tool_error(
+            id,
+            "noTaskPlaybook",
+            "this Session is not the Agent of a Task on an active Playbook; there is no step to read or report",
+            None,
+        ),
         termloop_core::CoreError::TrackerReportInvalid => {
             tool_error(id, "invalidReport", "Routine report is invalid", None)
         }
@@ -1916,7 +1930,9 @@ mod tests {
                 "ask_to",
                 "send_to_agent",
                 "workflow_delegate",
-                "workflow_step_complete"
+                "workflow_step_complete",
+                "playbook_step_read",
+                "playbook_step_report"
             ]
         );
         let creator_role = termloop_core::session_launch::AgentMcpRole::Improver {
