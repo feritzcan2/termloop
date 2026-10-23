@@ -325,10 +325,10 @@ fn archived_task_reuses_cleanup_then_deletes_only_its_exact_suspension_cohort() 
     );
 }
 
-#[test]
-fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
-    let mut fixture = Fixture::new();
-    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+/// Parks one running Agent by archiving its Task, removes the checkout, and
+/// finalizes the Task as closed, the state close-with-worktree-removal leaves.
+fn close_with_worktree_removed(fixture: &mut Fixture) -> (String, &'static str) {
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(fixture);
     let worktree_cwd = termloop_platform::canonical_existing_directory_path(&destination)
         .unwrap()
         .to_string_lossy()
@@ -439,6 +439,13 @@ fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
         termloop_domain::TaskSuspensionReason::ClosedWorktreeRemoved,
     );
 
+    (task_id, session_id)
+}
+
+#[test]
+fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
+    let mut fixture = Fixture::new();
+    let (task_id, session_id) = close_with_worktree_removed(&mut fixture);
     let (reopened, resume_session_ids) = fixture
         .runtime
         .reopen_task_with_resume_plan(json!({ "taskId": task_id }))
@@ -449,5 +456,79 @@ fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
     assert_eq!(
         fixture.runtime.store.sessions()[0].resume_failure,
         Some(termloop_domain::ResumeFailureReason::DaemonInterrupted),
+    );
+}
+
+#[test]
+fn reopen_resumes_worktree_removed_agent_inside_recreated_worktree() {
+    let mut fixture = Fixture::new();
+    let (task_id, session_id) = close_with_worktree_removed(&mut fixture);
+    let plan = fixture.runtime.plan_task_reopen_worktree(&task_id).unwrap();
+    assert_eq!(plan.branch_name, "feature/cleanup");
+    assert_eq!(plan.worktree_leaf, "feature-cleanup_worktree");
+    let destination = fixture.project_directory.with_file_name(format!(
+        "{}-{}",
+        plan.worktree_leaf,
+        Uuid::new_v4()
+    ));
+    fixture
+        .runtime
+        .provision_task_worktree(json!({
+            "operationId": plan.operation_id,
+            "taskId": task_id,
+            "repositoryPath": fixture.project_directory,
+            "destinationPath": destination,
+            "branchName": plan.branch_name,
+            "branchMode": "existing",
+        }))
+        .unwrap();
+    assert!(
+        fixture
+            .runtime
+            .plan_task_reopen_worktree(&task_id)
+            .is_none()
+    );
+    let worktree_path = fixture
+        .runtime
+        .store
+        .tasks()
+        .iter()
+        .find(|task| task.id == task_id)
+        .and_then(|task| task.worktree.as_ref())
+        .map(|worktree| worktree.path.clone())
+        .unwrap();
+
+    let (reopened, resume_session_ids) = fixture
+        .runtime
+        .reopen_task_with_resume_plan(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(reopened["status"], "open");
+    assert_eq!(resume_session_ids, vec![session_id.to_owned()]);
+    assert_eq!(
+        fixture.runtime.store.sessions()[0].process.cwd,
+        worktree_path
+    );
+}
+
+#[test]
+fn reopen_plans_no_worktree_for_open_or_agentless_tasks() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("No agents", Value::Null);
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    assert!(
+        fixture
+            .runtime
+            .plan_task_reopen_worktree(&task_id)
+            .is_none()
+    );
+    fixture
+        .runtime
+        .close_task(json!({ "taskId": task_id }))
+        .unwrap();
+    assert!(
+        fixture
+            .runtime
+            .plan_task_reopen_worktree(&task_id)
+            .is_none()
     );
 }

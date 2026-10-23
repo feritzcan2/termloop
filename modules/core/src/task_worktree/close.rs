@@ -30,6 +30,17 @@ impl TaskClosePlan {
     }
 }
 
+/// What reopen needs to recreate a checkout that was removed at close, so the
+/// Agents parked with it resume inside the Task again instead of at the
+/// Project root.
+pub struct TaskReopenWorktreePlan {
+    pub project_id: String,
+    pub task_id: String,
+    pub branch_name: String,
+    pub worktree_leaf: String,
+    pub operation_id: String,
+}
+
 pub enum TaskClosePreparation {
     /// No live Agent had to stop; the Task is already closed.
     Closed(Value),
@@ -38,6 +49,44 @@ pub enum TaskClosePreparation {
 }
 
 impl CoreRuntime {
+    /// Present only for a closed Task whose checkout was removed at close while
+    /// its branch binding and close-parked Agents remain.
+    pub fn plan_task_reopen_worktree(&self, task_id: &str) -> Option<TaskReopenWorktreePlan> {
+        let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
+        if task.status != TaskStatus::Closed
+            || task.archived_at_epoch_ms.is_some()
+            || task.worktree.is_some()
+        {
+            return None;
+        }
+        let branch = task.branch.as_ref()?;
+        let parked = self
+            .store
+            .task_archive_suspensions()
+            .iter()
+            .any(|suspension| {
+                suspension.task_id.as_deref() == Some(task_id)
+                    && suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+            });
+        let provisioning = self
+            .store
+            .provisioning_operations()
+            .iter()
+            .any(|operation| operation.task_id == task_id);
+        if !parked || provisioning {
+            return None;
+        }
+        Some(TaskReopenWorktreePlan {
+            project_id: task.project_id.clone(),
+            task_id: task.id.clone(),
+            branch_name: branch.name.clone(),
+            // Same leaf shape as managed checkouts: `prefix/slug` becomes
+            // `prefix-slug_worktree`, `UKIE-931` becomes `UKIE-931_worktree`.
+            worktree_leaf: format!("{}_worktree", branch.name.replace('/', "-")),
+            operation_id: termloop_platform::generate_uuid_v4(),
+        })
+    }
+
     pub(crate) fn close_task(&mut self, params: Value) -> Result<Value, CoreError> {
         let plan = match self.prepare_task_close(params)? {
             TaskClosePreparation::Closed(result) => return Ok(result),
