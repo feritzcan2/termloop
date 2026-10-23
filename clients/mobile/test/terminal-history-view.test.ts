@@ -590,3 +590,51 @@ it("copies a long-pressed row through the owner and never marks rows selectable"
   text.props.onLongPress();
   expect(onCopyLine).toHaveBeenCalledWith("pnpm test");
 });
+
+it("extends a long-press into a row selection and copies the range", async () => {
+  const onCopyLine = vi.fn();
+  const style = { foreground: "x", background: undefined, bold: false, italic: false, underline: false };
+  const screen = ["$ pnpm test   ", "  ok 12 tests", "", "$ "].map((text, index) => ({ id: index + 1, spans: text.length === 0 ? [] : [{ text, style }] }));
+  const harness = await terminalHarness({ buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" }, fontSizeIndex: 1, capNotice: undefined, onCopyLine });
+  harness.render();
+  const row = (id: number) => nodes(harness.tree()).find((node) => node.props.spans && node.props.id === id)!;
+  expect(row(1).props.onPressRow).toBeUndefined();
+  row(1).props.onLongPressRow(1, "$ pnpm test   ");
+  expect(onCopyLine).toHaveBeenLastCalledWith("$ pnpm test");
+  harness.render();
+  expect(row(1).props.selected).toBe(true);
+  row(3).props.onPressRow(3);
+  harness.render();
+  expect([1, 2, 3, 4].map((id) => row(id).props.selected)).toEqual([true, true, true, false]);
+  const copy = nodes(harness.tree()).find((node) => node.props.accessibilityLabel === "Copy selected lines")!;
+  copy.props.onPress();
+  expect(onCopyLine).toHaveBeenLastCalledWith("$ pnpm test\n  ok 12 tests");
+  harness.render();
+  expect(nodes(harness.tree()).find((node) => node.props.accessibilityLabel === "Copy selected lines")).toBeUndefined();
+  expect(row(1).props.selected).toBe(false);
+});
+
+it("steps text size from a two-finger pinch without scrolling the program", async () => {
+  const onTextSizeStep = vi.fn();
+  const onScrollBack = vi.fn();
+  const screen = Array.from({ length: 40 }, (_, index) => ({ id: index + 1, spans: [] }));
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" },
+    fontSizeIndex: 1, capNotice: undefined, onTextSizeStep, onScrollBack, programScroll: true,
+  });
+  harness.render();
+  const touches = (distance: number) => ({ nativeEvent: { touches: [{ pageX: 0, pageY: 0 }, { pageX: distance, pageY: 0 }] } });
+  const gesture = harness.gesture();
+  expect(gesture.onStartShouldSetPanResponderCapture(touches(100))).toBe(true);
+  gesture.onPanResponderGrant(touches(100));
+  gesture.onPanResponderMove(touches(110), { dy: 40 });
+  expect(onTextSizeStep).not.toHaveBeenCalled();
+  gesture.onPanResponderMove(touches(125), { dy: 80 });
+  expect(onTextSizeStep).toHaveBeenLastCalledWith(1);
+  expect(gesture.onPanResponderTerminationRequest()).toBe(false);
+  gesture.onPanResponderMove(touches(90), { dy: 80 });
+  expect(onTextSizeStep).toHaveBeenLastCalledWith(-1);
+  gesture.onPanResponderRelease();
+  expect(onScrollBack).not.toHaveBeenCalled();
+  expect(gesture.onPanResponderTerminationRequest()).toBe(true);
+});

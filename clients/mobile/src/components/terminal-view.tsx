@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type GestureResponderEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextStyle,
@@ -26,6 +27,8 @@ import { DEFAULT_TERMINAL_STYLE, type TerminalScreenLine, type TerminalSpan, typ
 import { terminalStyleColors } from "@/presentation/terminal-colors";
 import type { MobileTheme } from "@/theme/tokens";
 import { terminalLinkSpans } from "@/presentation/terminal-links";
+import { pinchDistance, pinchStep } from "@/presentation/terminal-pinch";
+import { selectedRowRange, selectedText, type TerminalSelection } from "@/presentation/terminal-selection";
 import { ExternalLink } from "@/components/external-link";
 import { space, terminalGeometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
@@ -43,14 +46,18 @@ import { fontFamily } from "@/theme/typography";
 ///
 /// Long lines scroll horizontally rather than wrapping, because wrapping a 300-column
 /// diff at 39 characters produces a column of fragments nobody can read.
-export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLive, onCopyLine, programScroll = false }: {
+export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLive, onCopyLine, onTextSizeStep, programScroll = false }: {
   buffer: TerminalBuffer;
   fontSizeIndex: number;
   capNotice: string | undefined;
-  /// Receives the text of a long-pressed row. Rows are not natively selectable: on
-  /// iOS every selectable Text is a full text view, and a hundred of them mounting
-  /// and unmounting under a scroll was most of what made the transcript stutter.
+  /// Receives text to copy: a long-pressed row at once, then a whole selected range.
+  /// Rows are not natively selectable: on iOS every selectable Text is a full text
+  /// view, and a hundred of them mounting and unmounting under a scroll was most of
+  /// what made the transcript stutter. A long-press instead copies its row and opens
+  /// a row selection that further taps extend.
   onCopyLine?: (text: string) => void;
+  /// A pinch asks for the next larger or smaller text size preset.
+  onTextSizeStep?: (step: 1 | -1) => void;
   /// Asks the running program to scroll its own history. Absent for a stream with no
   /// history of its own to ask about.
   onScrollBack?: (lines: number) => void;
@@ -80,15 +87,16 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     });
   }, []);
   const [unread, setUnread] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | undefined>(undefined);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const copyLine = useCallback((text: string) => {
+  const copyText = useCallback((text: string, notice: string) => {
     if (onCopyLine === undefined) return;
     onCopyLine(text);
-    setCopied(true);
+    setCopied(notice);
     if (copiedTimer.current !== undefined) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => { copiedTimer.current = undefined; setCopied(false); }, 1500);
+    copiedTimer.current = setTimeout(() => { copiedTimer.current = undefined; setCopied(undefined); }, 1500);
   }, [onCopyLine]);
+  const [selection, setSelection] = useState<TerminalSelection | undefined>(undefined);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });
   const [initialPosition, setInitialPosition] = useState<InitialTerminalPosition>("waitingForContent");
   const revealFrame = useRef<number | undefined>(undefined);
@@ -120,6 +128,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const lastRevision = useRef(buffer.outputRevision);
   const scrolling = useRef(false);
   const drag = useRef({ y: 0, remainder: 0, active: false });
+  const pinch = useRef<{ baseline: number } | undefined>(undefined);
   const dragViewport = useRef({ offset: 0, maxOffset: 0 });
   dragViewport.current = {
     offset: viewport.offset,
@@ -133,6 +142,25 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
     returningToLive.current = false;
     setFrozen((current) => current ?? { rows: historyRef.current, kind: historyKind });
   }, [historyKind]);
+  /// Selecting holds the rows still, exactly as scrolling back does, so the range
+  /// the user is building cannot scroll out from under the next tap.
+  const startSelection = useCallback((id: number, text: string) => {
+    copyText(text.trimEnd(), "Line copied · tap rows to extend");
+    leaveLive();
+    setSelection({ anchorId: id, endId: id });
+  }, [copyText, leaveLive]);
+  const extendSelection = useCallback((id: number) => {
+    setSelection((current) => current === undefined ? current : { ...current, endId: id });
+  }, []);
+  const selectedRange = selection === undefined ? undefined : selectedRowRange(displayed, selection);
+  if (selection !== undefined && selectedRange === undefined) setSelection(undefined);
+  const copySelection = () => {
+    if (selectedRange === undefined) return;
+    const texts = displayed.slice(selectedRange.start, selectedRange.end + 1).map((row) => rowText(liveById?.get(row.id) ?? row));
+    const count = selectedRange.end - selectedRange.start + 1;
+    copyText(selectedText(texts), count === 1 ? "Line copied" : `${count} lines copied`);
+    setSelection(undefined);
+  };
   const scrollGesture = useMemo(() => {
     const reset = () => { drag.current = { y: 0, remainder: 0, active: false }; };
     const move = (y: number) => {
@@ -155,23 +183,53 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
       if (lines < 0) setProgramReading(true);
       if (lines !== 0) onScrollBack?.(lines);
     };
+    const touchDistance = (event: GestureResponderEvent) => (
+      onTextSizeStep === undefined ? undefined : pinchDistance(event.nativeEvent.touches)
+    );
+    const pinching = (event: GestureResponderEvent) => touchDistance(event) !== undefined;
+    const end = () => {
+      pinch.current = undefined;
+      reset();
+    };
     return PanResponder.create({
+      // Two fingers are a pinch, taken before the native ScrollView reads them as a
+      // two-finger pan.
+      onStartShouldSetPanResponderCapture: (event) => pinching(event),
       // Capture vertical drags before the nested native ScrollViews take them.
       // Horizontal panning, taps, and text selection keep their native handlers.
-      onMoveShouldSetPanResponderCapture: (_event, gesture) => directScroll
+      onMoveShouldSetPanResponderCapture: (event, gesture) => pinching(event) || (directScroll
         && initialPosition === "ready" && gesture.numberActiveTouches === 1
-        && Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
-      onPanResponderGrant: () => {
+        && Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15),
+      onPanResponderGrant: (event) => {
+        const distance = touchDistance(event);
+        if (distance !== undefined) {
+          pinch.current = { baseline: distance };
+          return;
+        }
         returningToLive.current = false;
         reset();
         drag.current.active = true;
       },
-      onPanResponderMove: (_event, gesture) => { move(gesture.dy); },
-      onPanResponderRelease: reset,
-      onPanResponderTerminate: reset,
-      onPanResponderTerminationRequest: () => true,
+      onPanResponderMove: (event, gesture) => {
+        const distance = touchDistance(event);
+        // A second finger landing mid-drag turns the gesture into a pinch.
+        if (pinch.current === undefined && distance !== undefined) pinch.current = { baseline: distance };
+        if (pinch.current !== undefined) {
+          if (distance === undefined) return;
+          const step = pinchStep(pinch.current.baseline, distance);
+          if (step !== 0) {
+            onTextSizeStep?.(step);
+            pinch.current = { baseline: distance };
+          }
+          return;
+        }
+        move(gesture.dy);
+      },
+      onPanResponderRelease: end,
+      onPanResponderTerminate: end,
+      onPanResponderTerminationRequest: () => pinch.current === undefined,
     });
-  }, [directScroll, initialPosition, lineHeight, onScrollBack]);
+  }, [directScroll, initialPosition, lineHeight, onScrollBack, onTextSizeStep]);
 
   useEffect(() => {
     if (lastRevision.current !== buffer.outputRevision && (!atBottomRef.current || programReading)) setUnread(true);
@@ -293,11 +351,14 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         <ScrollView horizontal contentContainerStyle={styles.horizontal} showsHorizontalScrollIndicator={false}>
           <View>
             <View style={{ height: rows.before }} />
-            {displayed.slice(rows.start, rows.end).map((row) => {
+            {displayed.slice(rows.start, rows.end).map((row, offset) => {
               const line = liveById?.get(row.id) ?? row;
+              const index = rows.start + offset;
+              const selected = selectedRange !== undefined && index >= selectedRange.start && index <= selectedRange.end;
+              const onPress = selection === undefined ? undefined : extendSelection;
               return "spans" in line
-                ? <TerminalScreenRow key={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />
-                : <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} onCopyLine={copyLine} />;
+                ? <TerminalScreenRow key={line.id} id={line.id} spans={line.spans} fontSize={fontSize} lineHeight={lineHeight} selected={selected} onLongPressRow={startSelection} onPressRow={onPress} />
+                : <TerminalLineText key={line.id} line={line} fontSize={fontSize} lineHeight={lineHeight} selected={selected} onLongPressRow={startSelection} onPressRow={onPress} />;
             })}
             <View style={{ height: rows.after }} />
             {buffer.screen === undefined && buffer.pending.length !== 0 ? <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1}>{renderSpans([{ text: buffer.pending, style: DEFAULT_TERMINAL_STYLE }], theme)}</Text> : null}
@@ -311,7 +372,20 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
         <Text style={styles.loadingLabel}>{loading.label}</Text>
         {loading.percent === undefined ? null : <Text style={styles.loadingProgress}>{loading.percent}%</Text>}
       </View> : null}
-      {copied ? <View pointerEvents="none" style={[styles.pill, styles.copied]}><Text style={styles.jumpGlyph}>Line copied</Text></View> : null}
+      {selectedRange === undefined ? null : (
+        <View style={styles.selectionBar}>
+          <Text style={styles.selectionLabel}>
+            {selectedRange.end - selectedRange.start + 1} {selectedRange.end === selectedRange.start ? "line" : "lines"} selected
+          </Text>
+          <Pressable onPress={copySelection} accessibilityRole="button" accessibilityLabel="Copy selected lines" style={styles.selectionAction}>
+            <Text style={styles.selectionActionLabel}>Copy</Text>
+          </Pressable>
+          <Pressable onPress={() => setSelection(undefined)} accessibilityRole="button" accessibilityLabel="End selection" style={styles.selectionAction}>
+            <Text style={styles.selectionDone}>Done</Text>
+          </Pressable>
+        </View>
+      )}
+      {copied === undefined ? null : <View pointerEvents="none" style={[styles.pill, styles.copied]}><Text style={styles.jumpGlyph}>{copied}</Text></View>}
       {atBottom && !programReading ? null : <Pressable onPress={jumpToLive} accessibilityRole="button" accessibilityLabel="Return to live output" style={[styles.pill, styles.jump]}>
         <Text style={styles.jumpGlyph}>{unread ? "New output · " : ""}↓ Live</Text>
       </Pressable>}
@@ -321,6 +395,10 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
 
 type HistoryLine = TerminalScreenLine | TerminalLine;
 type HistoryKind = "stream" | "screen";
+
+function rowText(line: HistoryLine): string {
+  return "spans" in line ? line.spans.map((span) => span.text).join("") : line.text;
+}
 
 /// Resolved styles are cached against the interned cell style they came from, so a
 /// frame that reuses a dozen colours allocates a dozen style objects rather than one
@@ -350,17 +428,21 @@ function spanStyle(style: TerminalStyle, theme: MobileTheme): TextStyle {
 /// Memoised on the span array, which the projector keeps referentially stable for any
 /// row a redraw left unchanged. Without that, every frame of a full-screen redraw would
 /// reconcile every row on the screen.
-const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lineHeight, onCopyLine }: {
+const TerminalScreenRow = memo(function TerminalScreenRow({ id, spans, fontSize, lineHeight, selected, onLongPressRow, onPressRow }: {
+  id: number;
   spans: readonly TerminalSpan[];
   fontSize: number;
   lineHeight: number;
-  onCopyLine: (text: string) => void;
+  selected: boolean;
+  onLongPressRow: (id: number, text: string) => void;
+  onPressRow: ((id: number) => void) | undefined;
 }) {
   const styles = useStyles();
   const theme = useTheme();
-  const copy = useCallback(() => { onCopyLine(spans.map((span) => span.text).join("").trimEnd()); }, [onCopyLine, spans]);
+  const longPress = useCallback(() => { onLongPressRow(id, spans.map((span) => span.text).join("")); }, [id, onLongPressRow, spans]);
+  const press = useMemo(() => onPressRow === undefined ? undefined : () => onPressRow(id), [id, onPressRow]);
   return (
-    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} onLongPress={copy}>
+    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }, selected ? styles.selected : null]} numberOfLines={1} onLongPress={longPress} onPress={press}>
       {spans.length === 0
         ? " "
         : renderSpans(spans, theme)}
@@ -368,18 +450,25 @@ const TerminalScreenRow = memo(function TerminalScreenRow({ spans, fontSize, lin
   );
 });
 
-function TerminalLineText({ line, fontSize, lineHeight, onCopyLine }: {
+function TerminalLineText({ line, fontSize, lineHeight, selected, onLongPressRow, onPressRow }: {
   line: TerminalLine;
   fontSize: number;
   lineHeight: number;
-  onCopyLine: (text: string) => void;
+  selected: boolean;
+  onLongPressRow: (id: number, text: string) => void;
+  onPressRow: ((id: number) => void) | undefined;
 }) {
   const styles = useStyles();
   const theme = useTheme();
   /// A long-press hands the line to the owner, which holds the clipboard; the view
   /// itself owns no clipboard dependency.
   return (
-    <Text style={[styles.output, { fontSize, lineHeight, height: lineHeight }]} numberOfLines={1} onLongPress={() => onCopyLine(line.text)}>
+    <Text
+      style={[styles.output, { fontSize, lineHeight, height: lineHeight }, selected ? styles.selected : null]}
+      numberOfLines={1}
+      onLongPress={() => onLongPressRow(line.id, line.text)}
+      onPress={onPressRow === undefined ? undefined : () => onPressRow(line.id)}
+    >
       {line.text.length === 0 ? " " : renderSpans([{ text: line.text, style: DEFAULT_TERMINAL_STYLE }], theme)}
     </Text>
   );
@@ -426,4 +515,24 @@ const useStyles = createThemedStyles(({ color }) => ({
   jump: { right: space.md },
   jumpGlyph: { color: color.text, fontSize: 12, lineHeight: 20 },
   copied: { left: space.md },
+  selected: { backgroundColor: color.accentWash },
+  selectionBar: {
+    position: "absolute",
+    top: space.sm,
+    left: space.md,
+    right: space.md,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    paddingLeft: space.md,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: color.borderStrong,
+    backgroundColor: color.bgRaised,
+  },
+  selectionLabel: { flex: 1, color: color.text, fontSize: 12 },
+  selectionAction: { minHeight: 44, justifyContent: "center", paddingHorizontal: space.md },
+  selectionActionLabel: { color: color.accentStrong, fontSize: 13, fontWeight: "700" },
+  selectionDone: { color: color.textSecondary, fontSize: 13 },
 }));

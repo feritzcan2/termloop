@@ -1,5 +1,6 @@
 import { useTheme, createThemedStyles } from "@/theme/context";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "expo-router";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 
 import { Banner, Card, CardDivider, EmptyState, SectionHeader } from "@/components/primitives";
@@ -17,6 +18,7 @@ import { space } from "@/theme/tokens";
 export default function SettingsRoute() {
   const { color } = useTheme();
   const styles = useStyles();
+  const router = useRouter();
   const runtime = useMobileRuntime();
   const connections = useConnections();
   const overview = useOverview();
@@ -71,6 +73,18 @@ export default function SettingsRoute() {
     <Screen>
       <ScreenHeader back="Projects" title="Settings" right={<MockBadge />} />
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.section}>
+          <SectionHeader label="This phone" />
+          <Card>
+            <Row
+              tone="quiet"
+              title="Terminal"
+              detail="Text size, autocorrect, and custom keys"
+              accessibleName="Terminal settings"
+              onPress={() => router.push("./terminal-settings")}
+            />
+          </Card>
+        </View>
         {connectionId === undefined ? (
           <EmptyState
             title="No Mac selected"

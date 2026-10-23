@@ -1,6 +1,7 @@
 import { useTheme } from "@/theme/context";
 import { ThemeProvider } from "@/theme/provider";
 import { appearancePreferences } from "@/platform/appearance-preferences";
+import { terminalPreferencesStorage } from "@/platform/terminal-preferences";
 import * as Sentry from "@sentry/react-native";
 import { ErrorBoundary as ExpoErrorBoundary, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -11,6 +12,7 @@ import { RuntimeProvider } from "@/composition/runtime-context";
 import { ConnectionProvider } from "@/features/connection/connection-store";
 import { NotificationCoordinator } from "@/features/notifications/notification-coordinator";
 import { OverviewProvider } from "@/features/overview/overview-store";
+import { TerminalPreferencesProvider } from "@/features/terminal/terminal-preferences";
 import { WatchSyncCoordinator } from "@/features/watch/watch-sync-coordinator";
 import { StewardVoiceDock } from "@/components/steward-voice-dock";
 import { AppLifecycleProvider } from "@/platform/app-lifecycle";
@@ -36,27 +38,30 @@ function ThemedRootLayout() {
         <RuntimeProvider runtime={mobileRuntime}>
           <ConnectionProvider>
             <OverviewProvider>
-              <NotificationCoordinator />
-              <WatchSyncCoordinator />
-              <StatusBar style={mode === "dark" ? "light" : "dark"} />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: color.bgApp },
-                }}
-              >
-                <Stack.Screen name="index" />
-                <Stack.Screen name="force-update" />
-                <Stack.Screen name="settings" />
-                <Stack.Screen name="pair" options={{ presentation: "modal" }} />
-                <Stack.Screen name="project/[projectId]" />
-                <Stack.Screen name="task/[taskId]" />
-                <Stack.Screen name="workflows/[projectId]" />
-                <Stack.Screen name="launch/[taskId]" options={{ presentation: "modal" }} />
-                <Stack.Screen name="steward/[projectId]" />
-                <Stack.Screen name="session/[sessionId]" />
-              </Stack>
-              <StewardVoiceDock />
+              <TerminalPreferencesProvider storage={terminalPreferencesStorage}>
+                <NotificationCoordinator />
+                <WatchSyncCoordinator />
+                <StatusBar style={mode === "dark" ? "light" : "dark"} />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: color.bgApp },
+                  }}
+                >
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="force-update" />
+                  <Stack.Screen name="settings" />
+                  <Stack.Screen name="terminal-settings" />
+                  <Stack.Screen name="pair" options={{ presentation: "modal" }} />
+                  <Stack.Screen name="project/[projectId]" />
+                  <Stack.Screen name="task/[taskId]" />
+                  <Stack.Screen name="workflows/[projectId]" />
+                  <Stack.Screen name="launch/[taskId]" options={{ presentation: "modal" }} />
+                  <Stack.Screen name="steward/[projectId]" />
+                  <Stack.Screen name="session/[sessionId]" />
+                </Stack>
+                <StewardVoiceDock />
+              </TerminalPreferencesProvider>
             </OverviewProvider>
           </ConnectionProvider>
         </RuntimeProvider>

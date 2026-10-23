@@ -36,7 +36,19 @@ import { useSessionInterruptionAcknowledgement } from "@/features/overview/use-s
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { AgentVoiceButton } from "@/features/terminal/agent-voice-button";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
-import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
+import { useTerminalSession } from "@/features/terminal/use-terminal-session";
+import {
+  composerMemoryKey,
+  rememberDraft,
+  rememberedDraft,
+  rememberedInputMode,
+  rememberInputMode,
+  type TerminalInputMode,
+} from "@/features/terminal/composer-memory";
+import { QuickCommandsSheet } from "@/features/terminal/quick-commands-sheet";
+import { TerminalKeyBar } from "@/features/terminal/terminal-key-bar";
+import { useTerminalPreferences, useTerminalPreferencesStore } from "@/features/terminal/terminal-preferences";
+import type { QuickCommand } from "@/features/terminal/terminal-preferences-store";
 import { clipboardBridge } from "@/platform/clipboard";
 import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
@@ -46,6 +58,14 @@ import { connectionPresentation } from "@/presentation/connection-presentation";
 import { agentName, basename, sessionLabel, taskIdBySessionId } from "@/presentation/dto-readers";
 import { sessionState } from "@/presentation/session-presentation";
 import type { TerminalStreamState } from "@/presentation/terminal-buffer";
+import {
+  NO_MODIFIERS,
+  accessoryKeyText,
+  characterChordText,
+  hasModifier,
+  liveInputText,
+  type TerminalModifiers,
+} from "@/presentation/terminal-keys";
 import type { RowTone } from "@/presentation/tone";
 import { geometry, radius, space, terminalGeometry } from "@/theme/tokens";
 
@@ -66,18 +86,6 @@ const streamPresentation: Record<TerminalStreamState, { label: string; tone: Row
   detached: { label: "Detached", tone: "quiet" },
   exited: { label: "Exited", tone: "blocked" },
 };
-
-const keyRow: readonly { key: TerminalKey; glyph: string; name: string }[] = [
-  { key: "escape", glyph: "esc", name: "Escape" },
-  { key: "tab", glyph: "tab", name: "Tab" },
-  { key: "interrupt", glyph: "^C", name: "Interrupt" },
-  { key: "eof", glyph: "^D", name: "End of input" },
-  { key: "up", glyph: "↑", name: "Up" },
-  { key: "down", glyph: "↓", name: "Down" },
-  { key: "left", glyph: "←", name: "Left" },
-  { key: "right", glyph: "→", name: "Right" },
-  { key: "enter", glyph: "⏎", name: "Enter" },
-];
 
 type PickerImageSource = "library" | "camera";
 type ImageAttachmentSource = PickerImageSource | "clipboard";
@@ -108,7 +116,18 @@ export default function SessionRoute() {
   const [imageAction, setImageAction] = useState<ImageAttachmentSource | undefined>(undefined);
   const [imageSending, setImageSending] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
-  const [fontSizeIndex, setFontSizeIndex] = useState(1);
+  const terminalPreferences = useTerminalPreferences();
+  const terminalPreferencesStore = useTerminalPreferencesStore();
+  const fontSizeIndex = terminalPreferences.textSizeIndex;
+  const stepTextSize = useCallback((step: 1 | -1) => {
+    void terminalPreferencesStore.setTextSizeIndex(terminalPreferencesStore.get().textSizeIndex + step);
+  }, [terminalPreferencesStore]);
+  const [modifiers, setModifiers] = useState<TerminalModifiers>(NO_MODIFIERS);
+  const [inputMode, setInputMode] = useState<TerminalInputMode>("compose");
+  const [quickCommandsOpen, setQuickCommandsOpen] = useState(false);
+  const liveInput = useRef<TextInput>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const copyLine = useCallback((text: string) => { void clipboardBridge.copyText(text).catch(() => undefined); }, []);
   const [actionsOpen, setActionsOpen] = useState(false);
   const lastRouteDiagnostic = useRef<string | undefined>(undefined);
@@ -167,6 +186,19 @@ export default function SessionRoute() {
     store.dismissReview(sessionId);
     void dismissSessionNotifications(sessionId);
   }, [sessionId, store.dismissReview]);
+  const memoryKey = connections.selectedId === undefined || session === undefined
+    ? undefined
+    : composerMemoryKey(connections.selectedId, session.id, session.runtime_epoch);
+  const agentSession = session?.kind === "Agent";
+  /// The unsent draft and the input mode come back when the user returns to this
+  /// Session, and are handed back to memory when the route leaves it.
+  useEffect(() => {
+    if (memoryKey === undefined) return;
+    setDraft((current) => current.length === 0 ? rememberedDraft(memoryKey) : current);
+    setInputMode(rememberedInputMode(memoryKey, agentSession));
+    setModifiers(NO_MODIFIERS);
+    return () => { rememberDraft(memoryKey, draftRef.current); };
+  }, [memoryKey, agentSession]);
   useEffect(() => {
     if (connections.selectedId === undefined || session === undefined) return;
     const pending = takePendingSessionInput(
@@ -393,6 +425,42 @@ export default function SessionRoute() {
     if (await terminal.submit(submitted)) setDraft((current) => current === submitted ? "" : current);
   };
 
+  const chooseInputMode = (mode: TerminalInputMode) => {
+    setInputMode(mode);
+    if (memoryKey !== undefined) rememberInputMode(memoryKey, mode);
+    if (mode === "live") requestAnimationFrame(() => liveInput.current?.focus());
+  };
+
+  /// An armed modifier claims the next typed character, in either mode, so Ctrl+R
+  /// reaches the shell instead of landing as an "r" in the composer.
+  const changeDraft = (next: string) => {
+    if (hasModifier(modifiers) && next.length === draft.length + 1 && next.startsWith(draft)) {
+      void terminal.sendText(characterChordText(next.slice(-1), modifiers));
+      setModifiers(NO_MODIFIERS);
+      return;
+    }
+    setDraft(next);
+  };
+
+  /// Live typing: every change is sent and the field emptied, so the field never
+  /// holds text the terminal has not seen.
+  const sendLiveText = (text: string) => {
+    liveInput.current?.clear();
+    if (text.length === 0) return;
+    const [first = "", ...rest] = Array.from(text);
+    const chorded = hasModifier(modifiers) ? characterChordText(first, modifiers) + rest.join("") : text;
+    if (hasModifier(modifiers)) setModifiers(NO_MODIFIERS);
+    void terminal.sendText(liveInputText(chorded));
+  };
+  const sendLiveKey = (key: "backspace" | "enter") => {
+    void terminal.sendText(accessoryKeyText(key, modifiers));
+    if (hasModifier(modifiers)) setModifiers(NO_MODIFIERS);
+  };
+
+  const runQuickCommand = (command: QuickCommand) => {
+    void (command.enter ? terminal.submit(command.body) : terminal.sendText(command.body));
+  };
+
   return (
     <Screen edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -434,7 +502,7 @@ export default function SessionRoute() {
                 </Pressable>
               )}
               <Pressable
-                onPress={() => setFontSizeIndex((index) => (index + 1) % terminalGeometry.fontSizes.length)}
+                onPress={() => void terminalPreferencesStore.setTextSizeIndex((fontSizeIndex + 1) % terminalGeometry.fontSizes.length)}
                 accessibilityRole="button"
                 accessibilityLabel={`Text size ${terminalGeometry.fontSizes[fontSizeIndex]} point. Tap to change.`}
                 hitSlop={10}
@@ -491,6 +559,7 @@ export default function SessionRoute() {
           onScrollBack={terminal.scrollBack}
           onReturnToLive={terminal.returnToLive}
           onCopyLine={copyLine}
+          onTextSizeStep={stepTextSize}
           programScroll={terminal.programScroll}
         />
       </View>
@@ -538,118 +607,148 @@ export default function SessionRoute() {
                 </Pressable>
               </View>
             )}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.keys}
-              keyboardShouldPersistTaps="always"
-            >
-              {keyRow.map((entry) => (
-                <Pressable
-                  key={entry.key}
-                  onPress={() => terminal.sendKey(entry.key)}
-                  disabled={!terminal.canSend}
-                  accessibilityRole="button"
-                  accessibilityLabel={entry.name}
-                  accessibilityState={{ disabled: !terminal.canSend }}
-                  style={({ pressed }) => [
-                    styles.key,
-                    pressed && terminal.canSend ? styles.keyPressed : null,
-                    !terminal.canSend && styles.keyDisabled,
-                  ]}
-                >
-                  <Text style={styles.keyGlyph}>{entry.glyph}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+            <TerminalKeyBar
+              canSend={terminal.canSend}
+              inputMode={inputMode}
+              onInputModeChange={chooseInputMode}
+              modifiers={modifiers}
+              onModifiersChange={setModifiers}
+              customKeys={terminalPreferences.customKeys}
+              onSend={(text) => { void terminal.sendText(text); }}
+              onOpenQuickCommands={() => setQuickCommandsOpen(true)}
+            />
 
             <View style={styles.composer}>
-              {session.kind !== "Agent" ? null : (
-                <View style={styles.imageActions}>
+              {inputMode === "compose" ? (
+                <>
+                  {session.kind !== "Agent" ? null : (
+                    <View style={styles.imageActions}>
+                      <Pressable
+                        onPress={chooseImageSource}
+                        disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
+                        accessibilityRole="button"
+                        accessibilityLabel={selectedImage === undefined ? "Choose or take an image" : "Replace with a photo"}
+                        accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
+                        style={({ pressed }) => [
+                          styles.attach,
+                          pressed && terminal.canSend ? styles.attachPressed : null,
+                          (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
+                        ]}
+                      >
+                        {imageAction === "library" || imageAction === "camera"
+                          ? <ActivityIndicator color={color.accentStrong} />
+                          : <Text style={styles.attachGlyph}>+</Text>}
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void pasteImage()}
+                        disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
+                        accessibilityRole="button"
+                        accessibilityLabel={selectedImage === undefined ? "Paste copied image" : "Replace with copied image"}
+                        accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
+                        style={({ pressed }) => [
+                          styles.pasteImage,
+                          pressed && terminal.canSend ? styles.attachPressed : null,
+                          (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
+                        ]}
+                      >
+                        {imageAction === "clipboard"
+                          ? <ActivityIndicator color={color.accentStrong} />
+                          : <Text style={styles.pasteImageLabel}>Paste</Text>}
+                      </Pressable>
+                    </View>
+                  )}
+                  <TextInput
+                    value={draft}
+                    onChangeText={changeDraft}
+                    editable={terminal.canSend}
+                    placeholder={
+                      terminal.canSend
+                        ? selectedImage !== undefined
+                          ? "Add a message (optional)…"
+                          : session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
+                        : exited
+                          ? "Session ended"
+                          : terminal.buffer.connectionIssue === "gatewayUnreachable"
+                            ? "Mac unreachable — check Tailscale"
+                            : "Reconnecting…"
+                    }
+                    placeholderTextColor={color.textMuted}
+                    accessibilityLabel="Terminal input"
+                    autoCorrect={terminalPreferences.autocorrect}
+                    autoCapitalize={terminalPreferences.autocorrect ? "sentences" : "none"}
+                    spellCheck={terminalPreferences.autocorrect}
+                    multiline
+                    style={styles.input}
+                  />
+                  {session.kind !== "Agent" ? null : (
+                    <AgentVoiceButton
+                      connectionId={connections.selectedId}
+                      disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                      sessionScope={`${connections.selectedId ?? "none"}:${session.id}:${session.runtime_epoch}`}
+                      onBusyChange={setVoiceBusy}
+                      onTranscript={(transcript) => {
+                        setDraft((current) => appendVoiceTranscript(current, transcript));
+                      }}
+                    />
+                  )}
                   <Pressable
-                    onPress={chooseImageSource}
-                    disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
+                    onPress={() => void submit()}
+                    disabled={!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
                     accessibilityRole="button"
-                    accessibilityLabel={selectedImage === undefined ? "Choose or take an image" : "Replace with a photo"}
-                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
+                    accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
                     style={({ pressed }) => [
-                      styles.attach,
-                      pressed && terminal.canSend ? styles.attachPressed : null,
-                      (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
+                      styles.send,
+                      pressed && styles.sendPressed,
+                      (!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
                     ]}
                   >
-                    {imageAction === "library" || imageAction === "camera"
-                      ? <ActivityIndicator color={color.accentStrong} />
-                      : <Text style={styles.attachGlyph}>+</Text>}
+                    {imageSending
+                      ? <ActivityIndicator color={color.onAccent} />
+                      : <Text style={styles.sendGlyph}>⏎</Text>}
                   </Pressable>
-                  <Pressable
-                    onPress={() => void pasteImage()}
-                    disabled={!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy}
-                    accessibilityRole="button"
-                    accessibilityLabel={selectedImage === undefined ? "Paste copied image" : "Replace with copied image"}
-                    accessibilityState={{ disabled: !terminal.canSend || imageAction !== undefined || imageSending || voiceBusy }}
-                    style={({ pressed }) => [
-                      styles.pasteImage,
-                      pressed && terminal.canSend ? styles.attachPressed : null,
-                      (!terminal.canSend || imageAction !== undefined || imageSending || voiceBusy) && styles.attachDisabled,
-                    ]}
-                  >
-                    {imageAction === "clipboard"
-                      ? <ActivityIndicator color={color.accentStrong} />
-                      : <Text style={styles.pasteImageLabel}>Paste</Text>}
-                  </Pressable>
-                </View>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    ref={liveInput}
+                    onChangeText={sendLiveText}
+                    onKeyPress={(event) => { if (event.nativeEvent.key === "Backspace") sendLiveKey("backspace"); }}
+                    onSubmitEditing={() => sendLiveKey("enter")}
+                    submitBehavior="submit"
+                    editable={terminal.canSend}
+                    placeholder={terminal.canSend ? "Live · keys go straight to the terminal" : exited ? "Session ended" : "Reconnecting…"}
+                    placeholderTextColor={color.textMuted}
+                    accessibilityLabel="Live terminal keyboard"
+                    accessibilityHint="Each keystroke is sent to the terminal as you type."
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    spellCheck={false}
+                    returnKeyType="default"
+                    style={[styles.input, styles.liveInput]}
+                  />
+                  {session.kind !== "Agent" ? null : (
+                    <AgentVoiceButton
+                      connectionId={connections.selectedId}
+                      disabled={!terminal.canSend || imageAction !== undefined || imageSending}
+                      sessionScope={`${connections.selectedId ?? "none"}:${session.id}:${session.runtime_epoch}`}
+                      onBusyChange={setVoiceBusy}
+                      onTranscript={(transcript) => { sendLiveText(transcript); }}
+                    />
+                  )}
+                </>
               )}
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                editable={terminal.canSend}
-                placeholder={
-                  terminal.canSend
-                    ? selectedImage !== undefined
-                      ? "Add a message (optional)…"
-                      : session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
-                    : exited
-                      ? "Session ended"
-                      : terminal.buffer.connectionIssue === "gatewayUnreachable"
-                        ? "Mac unreachable — check Tailscale"
-                        : "Reconnecting…"
-                }
-                placeholderTextColor={color.textMuted}
-                accessibilityLabel="Terminal input"
-                multiline
-                style={styles.input}
-              />
-              {session.kind !== "Agent" ? null : (
-                <AgentVoiceButton
-                  connectionId={connections.selectedId}
-                  disabled={!terminal.canSend || imageAction !== undefined || imageSending}
-                  sessionScope={`${connections.selectedId ?? "none"}:${session.id}:${session.runtime_epoch}`}
-                  onBusyChange={setVoiceBusy}
-                  onTranscript={(transcript) => {
-                    setDraft((current) => appendVoiceTranscript(current, transcript));
-                  }}
-                />
-              )}
-              <Pressable
-                onPress={() => void submit()}
-                disabled={!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)}
-                accessibilityRole="button"
-                accessibilityLabel={selectedImage === undefined ? "Send" : "Send image and message"}
-                style={({ pressed }) => [
-                  styles.send,
-                  pressed && styles.sendPressed,
-                  (!terminal.canSend || terminal.submitting || imageSending || voiceBusy || (draft.length === 0 && selectedImage === undefined)) && styles.sendDisabled,
-                ]}
-              >
-                {imageSending
-                  ? <ActivityIndicator color={color.onAccent} />
-                  : <Text style={styles.sendGlyph}>⏎</Text>}
-              </Pressable>
             </View>
           </>
         )}
       </KeyboardAvoidingView>
+      <QuickCommandsSheet
+        visible={quickCommandsOpen}
+        canSend={terminal.canSend}
+        onClose={() => setQuickCommandsOpen(false)}
+        onRun={runQuickCommand}
+        onInsert={inputMode === "compose" ? (body) => setDraft((current) => current.length === 0 ? body : `${current}${body}`) : undefined}
+      />
       <SessionActionsSheet
         session={session}
         visible={actionsOpen}
@@ -815,6 +914,7 @@ const useStyles = createThemedStyles((theme) => {
       backgroundColor: color.bgRaised,
     },
     pasteImageLabel: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10.5, fontWeight: "700" },
+    liveInput: { borderColor: color.accent, minHeight: geometry.touchTarget, maxHeight: geometry.touchTarget },
     input: {
       flex: 1,
       minHeight: terminalGeometry.composerInputMin,
