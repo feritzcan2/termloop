@@ -27,8 +27,11 @@ impl DeletedSessionListPlan {
                 .into_iter()
                 .map(|item| {
                     let source = crate::task_worktree::comparison_key(Path::new(&item.cwd));
+                    // A missing folder no longer blocks restore: the Agent comes
+                    // back in the Project root. `source_available` still says so.
+                    let source_available = source.is_ok();
                     let restore_blocker = match source {
-                        Err(_) => Some("sourceUnavailable"),
+                        Err(_) => None,
                         Ok(source)
                             if archived_roots
                                 .iter()
@@ -42,7 +45,7 @@ impl DeletedSessionListPlan {
                         "session": item.session,
                         "deleted_at_epoch_ms": item.deleted_at_epoch_ms,
                         "purge_at_epoch_ms": item.purge_at_epoch_ms,
-                        "source_available": restore_blocker != Some("sourceUnavailable"),
+                        "source_available": source_available,
                         "restore_blocker": restore_blocker,
                     })
                 })
@@ -55,6 +58,7 @@ impl DeletedSessionListPlan {
 pub struct DeletedSessionRestorePlan {
     deleted: DeletedSessionRecord,
     archived_worktree_paths: Vec<String>,
+    project_folder: Option<String>,
 }
 
 impl DeletedSessionRestorePlan {
@@ -66,9 +70,23 @@ impl DeletedSessionRestorePlan {
         self,
         terminal: TerminalService,
     ) -> Result<ObservedDeletedSessionRestore, CoreError> {
-        let source =
-            crate::task_worktree::comparison_key(Path::new(&self.deleted.session.process.cwd))
-                .map_err(|_| CoreError::InvalidParams("sourceUnavailable".into()))?;
+        let original_cwd = &self.deleted.session.process.cwd;
+        let (source, relocated_cwd) =
+            match crate::task_worktree::comparison_key(Path::new(original_cwd)) {
+                Ok(source) => (source, None),
+                // The Agent's folder is gone; keep its conversation by restoring
+                // it in the durable Project root instead.
+                Err(_) => {
+                    let project_folder = self
+                        .project_folder
+                        .clone()
+                        .ok_or_else(|| CoreError::InvalidParams("sourceUnavailable".into()))?;
+                    let source =
+                        crate::task_worktree::comparison_key(Path::new(&project_folder))
+                            .map_err(|_| CoreError::InvalidParams("sourceUnavailable".into()))?;
+                    (source, Some(project_folder))
+                }
+            };
         if comparable_existing_paths(&self.archived_worktree_paths)
             .iter()
             .any(|root| root.contains_or_equals(&source))
@@ -88,18 +106,24 @@ impl DeletedSessionRestorePlan {
                 runtime_epoch: self.deleted.session.runtime_epoch,
                 program,
                 args,
-                cwd: self.deleted.session.process.cwd.clone(),
+                cwd: relocated_cwd
+                    .clone()
+                    .unwrap_or_else(|| original_cwd.clone()),
                 environment: termloop_platform::LaunchEnvironment::os_baseline(),
                 recent_output_replay: true,
             })
             .map_err(terminal_error)?;
-        Ok(ObservedDeletedSessionRestore { plan: self })
+        Ok(ObservedDeletedSessionRestore {
+            plan: self,
+            relocated_cwd,
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct ObservedDeletedSessionRestore {
     plan: DeletedSessionRestorePlan,
+    relocated_cwd: Option<String>,
 }
 
 impl ObservedDeletedSessionRestore {
@@ -176,9 +200,16 @@ impl CoreRuntime {
             .find(|deleted| deleted.session.id == session_id)
             .cloned()
             .ok_or(CoreError::NotFound)?;
+        let project_folder = self
+            .store
+            .projects()
+            .iter()
+            .find(|project| project.id == deleted.session.project_id)
+            .map(|project| project.folder_path.clone());
         Ok(DeletedSessionRestorePlan {
             deleted,
             archived_worktree_paths: self.archived_worktree_paths(),
+            project_folder,
         })
     }
 
@@ -186,7 +217,10 @@ impl CoreRuntime {
         &mut self,
         observed: ObservedDeletedSessionRestore,
     ) -> Result<Value, CoreError> {
-        let plan = observed.plan;
+        let ObservedDeletedSessionRestore {
+            plan,
+            relocated_cwd,
+        } = observed;
         let current = self
             .store
             .deleted_sessions()
@@ -207,7 +241,11 @@ impl CoreRuntime {
         }
         let restored = self
             .store
-            .restore_deleted_session_descriptor(&self.write_authority, &plan.deleted.session.id)
+            .restore_deleted_session_descriptor(
+                &self.write_authority,
+                &plan.deleted.session.id,
+                relocated_cwd.as_deref(),
+            )
             .map_err(store_error)?;
         self.agent_terminal_holds.insert(restored.id.clone());
         Ok(self.project_session(&restored))

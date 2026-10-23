@@ -37,6 +37,7 @@ export type HistoryRailProps = {
 type HistoryTask = { task: Task; archived: boolean; closedAt: number | null };
 
 const HISTORY_PAGE_SIZE = 20;
+const DELETED_FOLDER_MISSING_HINT = "This Agent's folder is gone. Restore recreates its Task worktree when the branch still exists, otherwise it reopens in the Project root.";
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 type HistorySourceFilter = "all" | "termloop" | "claude" | "codex";
@@ -476,6 +477,8 @@ export function HistoryRail(props: HistoryRailProps) {
             const blocker = item.restore_blocker === "sourceUnavailable"
               ? "Source folder unavailable"
               : item.restore_blocker === "taskArchived" ? "Task is archived" : undefined;
+            const folderMissing = !blocker && !item.source_available;
+            const status = blocker ?? (folderMissing ? "Folder missing" : deletedRetentionLabel(item.purge_at_epoch_ms));
             const rowKey = `deleted:${item.session.id}`;
             const expanded = expandedRowKey === rowKey;
             const title = sessionLabel(item.session);
@@ -485,11 +488,11 @@ export function HistoryRail(props: HistoryRailProps) {
                 <span className={`history-provider ${item.session.process.agent_id ?? "agent"}`} aria-hidden="true"><Icon name={providerIcon(item.session.process.agent_id ?? "")} /></span>
                 <span className="history-copy">
                   <HistorySessionTitle session={item.session} title={title} />
-                  <small>{basename(item.session.process.cwd)} · deleted · {blocker ?? deletedRetentionLabel(item.purge_at_epoch_ms)}</small>
+                  <small title={item.session.process.cwd}><span className={`history-row-status${blocker ? " blocked" : folderMissing ? " relocates" : ""}`}>{status}</span> · {basename(item.session.process.cwd)}</small>
                 </span>
                 <span className="history-disclosure" aria-hidden="true"><Icon name="chevronDown" /></span>
               </button>
-              <button type="button" className="history-action" title={blocker} disabled={props.disabled || Boolean(blocker)} onClick={() => props.restoreDeletedSession(item.session.id)}>Restore</button>
+              <button type="button" className="history-action" title={blocker ?? (folderMissing ? DELETED_FOLDER_MISSING_HINT : undefined)} disabled={props.disabled || Boolean(blocker)} onClick={() => props.restoreDeletedSession(item.session.id)}>Restore</button>
               {expanded ? <div className="history-detail history-preview">
                 <TermLoopConversationPreview preview={preview} />
               </div> : null}

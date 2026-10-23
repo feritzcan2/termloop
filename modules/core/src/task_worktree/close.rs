@@ -30,15 +30,22 @@ impl TaskClosePlan {
     }
 }
 
-/// What reopen needs to recreate a checkout that was removed at close, so the
-/// Agents parked with it resume inside the Task again instead of at the
-/// Project root.
-pub struct TaskReopenWorktreePlan {
+/// What it takes to recreate a Task checkout that was removed, so the Agents
+/// that worked in it come back inside the Task instead of at the Project root.
+pub struct TaskWorktreeRecreationPlan {
     pub project_id: String,
     pub task_id: String,
     pub branch_name: String,
     pub worktree_leaf: String,
+    /// The exact folder to recreate; absent means beside the repository root.
+    pub destination_path: Option<String>,
     pub operation_id: String,
+}
+
+/// Same leaf shape as managed checkouts: `prefix/slug` becomes
+/// `prefix-slug_worktree`, `UKIE-931` becomes `UKIE-931_worktree`.
+fn branch_worktree_leaf(branch_name: &str) -> String {
+    format!("{}_worktree", branch_name.replace('/', "-"))
 }
 
 pub enum TaskClosePreparation {
@@ -51,7 +58,7 @@ pub enum TaskClosePreparation {
 impl CoreRuntime {
     /// Present only for a closed Task whose checkout was removed at close while
     /// its branch binding and close-parked Agents remain.
-    pub fn plan_task_reopen_worktree(&self, task_id: &str) -> Option<TaskReopenWorktreePlan> {
+    pub fn plan_task_reopen_worktree(&self, task_id: &str) -> Option<TaskWorktreeRecreationPlan> {
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
         if task.status != TaskStatus::Closed
             || task.archived_at_epoch_ms.is_some()
@@ -76,13 +83,61 @@ impl CoreRuntime {
         if !parked || provisioning {
             return None;
         }
-        Some(TaskReopenWorktreePlan {
+        Some(TaskWorktreeRecreationPlan {
             project_id: task.project_id.clone(),
             task_id: task.id.clone(),
             branch_name: branch.name.clone(),
-            // Same leaf shape as managed checkouts: `prefix/slug` becomes
-            // `prefix-slug_worktree`, `UKIE-931` becomes `UKIE-931_worktree`.
-            worktree_leaf: format!("{}_worktree", branch.name.replace('/', "-")),
+            worktree_leaf: branch_worktree_leaf(&branch.name),
+            destination_path: None,
+            operation_id: termloop_platform::generate_uuid_v4(),
+        })
+    }
+
+    /// Present only when a deleted Agent's folder is exactly the checkout
+    /// location of a non-archived Task that has no worktree now, so restore
+    /// can recreate that checkout in place before reopening the Agent there.
+    pub fn plan_deleted_session_worktree(
+        &self,
+        session_id: &str,
+    ) -> Option<TaskWorktreeRecreationPlan> {
+        let session = &self
+            .store
+            .deleted_sessions()
+            .iter()
+            .find(|deleted| deleted.session.id == session_id)?
+            .session;
+        let cwd = Path::new(&session.process.cwd);
+        let project = self
+            .store
+            .projects()
+            .iter()
+            .find(|project| project.id == session.project_id)?;
+        // Pure path arithmetic under the lock: managed checkouts sit beside the
+        // Project folder, which core stores canonically.
+        let checkout_parent = Path::new(&project.folder_path).parent()?;
+        let task = self.store.tasks().iter().find(|task| {
+            task.project_id == session.project_id
+                && task.archived_at_epoch_ms.is_none()
+                && task.worktree.is_none()
+                && task.branch.as_ref().is_some_and(|branch| {
+                    checkout_parent.join(branch_worktree_leaf(&branch.name)) == cwd
+                })
+        })?;
+        if self
+            .store
+            .provisioning_operations()
+            .iter()
+            .any(|operation| operation.task_id == task.id)
+        {
+            return None;
+        }
+        let branch = task.branch.as_ref()?;
+        Some(TaskWorktreeRecreationPlan {
+            project_id: task.project_id.clone(),
+            task_id: task.id.clone(),
+            branch_name: branch.name.clone(),
+            worktree_leaf: branch_worktree_leaf(&branch.name),
+            destination_path: Some(session.process.cwd.clone()),
             operation_id: termloop_platform::generate_uuid_v4(),
         })
     }

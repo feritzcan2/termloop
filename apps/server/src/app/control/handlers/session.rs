@@ -2095,6 +2095,7 @@ pub(in crate::app::control) async fn restore_deleted_session(
     params: serde_json::Value,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {
+    super::recreate_deleted_session_worktree(&params, state).await;
     let (plan, terminal) = {
         let mut core = state.core.lock().await;
         (

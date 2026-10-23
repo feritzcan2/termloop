@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use termloop_core::CoreError;
-use termloop_core::task_worktree::{TaskClosePreparation, TaskReopenWorktreePlan};
+use termloop_core::task_worktree::{TaskClosePreparation, TaskWorktreeRecreationPlan};
 
 use super::super::super::AppState;
 use super::super::super::invalidation::{
@@ -18,13 +18,40 @@ pub(in crate::app) async fn recreate_reopened_task_worktree(params: &Value, stat
     let Some(plan) = plan else {
         return;
     };
-    if let Err(error) = provision_reopen_worktree(&plan, state).await {
+    if let Err(error) = recreate_task_worktree(&plan, state).await {
         tracing::warn!(%error, task_id, "Reopened Task worktree could not be recreated");
     }
 }
 
-async fn provision_reopen_worktree(
-    plan: &TaskReopenWorktreePlan,
+/// Recreates the Task checkout a deleted Agent worked in, at its exact former
+/// path, so restore reopens the Agent inside the Task. Without it, restore
+/// falls back to the Project root.
+pub(in crate::app) async fn recreate_deleted_session_worktree(params: &Value, state: &AppState) {
+    let Some(session_id) = params.get("sessionId").and_then(Value::as_str) else {
+        return;
+    };
+    let plan = state
+        .core
+        .lock()
+        .await
+        .plan_deleted_session_worktree(session_id);
+    let Some(plan) = plan else {
+        return;
+    };
+    if plan
+        .destination_path
+        .as_deref()
+        .is_some_and(|path| std::path::Path::new(path).exists())
+    {
+        return;
+    }
+    if let Err(error) = recreate_task_worktree(&plan, state).await {
+        tracing::warn!(%error, session_id, "Deleted Agent's Task worktree could not be recreated");
+    }
+}
+
+async fn recreate_task_worktree(
+    plan: &TaskWorktreeRecreationPlan,
     state: &AppState,
 ) -> Result<(), CoreError> {
     let branches =
@@ -43,12 +70,14 @@ async fn provision_reopen_worktree(
     if !branch_exists {
         return Err(CoreError::InvalidParams("branchName".into()));
     }
-    let destination =
-        termloop_platform::sibling_directory_path(repository_path, &plan.worktree_leaf)
-            .map_err(|_| CoreError::InvalidParams("projectId".into()))?;
-    let destination = destination
-        .to_str()
-        .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
+    let destination = match &plan.destination_path {
+        Some(path) => path.clone(),
+        None => termloop_platform::sibling_directory_path(repository_path, &plan.worktree_leaf)
+            .map_err(|_| CoreError::InvalidParams("projectId".into()))?
+            .to_str()
+            .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?
+            .to_owned(),
+    };
     super::provision_task_worktree(
         json!({
             "operationId": plan.operation_id,

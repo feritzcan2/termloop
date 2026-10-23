@@ -560,7 +560,7 @@ describe("Session History rail", () => {
       session: deletedAgent,
       deleted_at_epoch_ms: Date.now(),
       purge_at_epoch_ms: Date.now() + 30 * 24 * 60 * 60 * 1_000,
-      source_available: true,
+      source_available: false,
       restore_blocker: null,
     };
 
@@ -645,6 +645,7 @@ describe("Session History rail", () => {
     await act(async () => container.querySelector<HTMLButtonElement>(".history-row.deleted .history-action")!.click());
     expect(restoreArchivedSession).toHaveBeenCalledWith("archived");
     expect(deleteArchivedSession).toHaveBeenCalledWith("archived");
+    expect(container.querySelector(".history-row.deleted .history-row-status.relocates")?.textContent).toBe("Folder missing");
     expect(restoreDeletedSession).toHaveBeenCalledWith("deleted");
 
     await act(async () => root.unmount());

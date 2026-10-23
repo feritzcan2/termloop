@@ -84,6 +84,7 @@ impl Store {
         &mut self,
         _authority: &CoreWriteAuthority,
         session_id: &str,
+        relocated_cwd: Option<&str>,
     ) -> Result<SessionRecord, StoreError> {
         if self
             .state
@@ -105,6 +106,9 @@ impl Store {
         session.lifecycle_state = "exited".into();
         session.resume_failure = None;
         session.ask_to_continuation = None;
+        if let Some(cwd) = relocated_cwd {
+            session.process.cwd = cwd.to_owned();
+        }
         self.state
             .agent_conversation_readiness
             .push(AgentConversationReadinessRecord {

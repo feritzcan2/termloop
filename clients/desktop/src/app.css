@@ -2974,6 +2974,9 @@ button.history-row-main { cursor: pointer; }
 .history-relationship-label { flex: none; padding: 1px 4px; border: 1px solid rgba(102,179,255,.22); border-radius: 3px; background: rgba(102,179,255,.1); color: light-dark(#61768b, #9bbddf); font: 700 7px/1.25 var(--font-mono); letter-spacing: .06em; }
 .history-relationship-label.fork { border-color: rgba(102,179,255,.2); background: rgba(102,179,255,.08); color: light-dark(#56718b, #8ebce4); }
 .history-copy small, .history-meta { overflow: hidden; color: var(--sidebar-dimmer); font: 9.5px/1.35 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.history-row-status { font-weight: 600; }
+.history-row-status.blocked { color: light-dark(#a3473f, #e0867c); }
+.history-row-status.relocates { color: light-dark(#8a6a1f, #d9b464); }
 .history-meta { color: light-dark(#62707e, #7e93a7); }
 .history-action, .history-import { margin-right: 6px; padding: 4px 7px; border: 1px solid rgba(102,179,255,.3); border-radius: 5px; background: var(--accent-wash); color: var(--accent-strong); font: 600 9px/1 var(--font-ui); white-space: nowrap; }
 .history-action:hover:not(:disabled), .history-import:hover:not(:disabled) { border-color: rgba(102,179,255,.55); color: light-dark(#5f6972, #d5eaff); }
