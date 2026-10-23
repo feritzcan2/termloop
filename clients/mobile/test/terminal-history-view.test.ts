@@ -614,6 +614,21 @@ it("extends a long-press into a row selection and copies the range", async () =>
   expect(row(1).props.selected).toBe(false);
 });
 
+it("confirms a copy only once the clipboard accepted it", async () => {
+  const style = { foreground: "x", background: undefined, bold: false, italic: false, underline: false };
+  const screen = [{ id: 1, spans: [{ text: "pnpm test", style }] }];
+  const notice = () => nodes(harness.tree()).some((node) => node.props.children === "Couldn't copy");
+  const harness = await terminalHarness({
+    buffer: { ...emptyTerminalBuffer(), screen, ready: true, stream: "live" }, fontSizeIndex: 1, capNotice: undefined,
+    onCopyLine: () => Promise.reject(new Error("refused")),
+  });
+  harness.render();
+  nodes(harness.tree()).find((node) => node.props.spans && node.props.id === 1)!.props.onLongPressRow(1, "pnpm test");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  harness.render();
+  expect(notice()).toBe(true);
+});
+
 it("steps text size from a two-finger pinch without scrolling the program", async () => {
   const onTextSizeStep = vi.fn();
   const onScrollBack = vi.fn();

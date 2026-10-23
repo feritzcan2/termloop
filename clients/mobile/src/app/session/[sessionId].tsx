@@ -128,7 +128,7 @@ export default function SessionRoute() {
   const liveInput = useRef<TextInput>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const copyLine = useCallback((text: string) => { void clipboardBridge.copyText(text).catch(() => undefined); }, []);
+  const copyLine = useCallback((text: string) => clipboardBridge.copyText(text), []);
   const [actionsOpen, setActionsOpen] = useState(false);
   const lastRouteDiagnostic = useRef<string | undefined>(undefined);
 

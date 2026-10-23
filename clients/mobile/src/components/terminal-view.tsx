@@ -55,7 +55,7 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   /// view, and a hundred of them mounting and unmounting under a scroll was most of
   /// what made the transcript stutter. A long-press instead copies its row and opens
   /// a row selection that further taps extend.
-  onCopyLine?: (text: string) => void;
+  onCopyLine?: (text: string) => Promise<void> | void;
   /// A pinch asks for the next larger or smaller text size preset.
   onTextSizeStep?: (step: 1 | -1) => void;
   /// Asks the running program to scroll its own history. Absent for a stream with no
@@ -91,10 +91,20 @@ export function TerminalView({ buffer, fontSizeIndex, onScrollBack, onReturnToLi
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const copyText = useCallback((text: string, notice: string) => {
     if (onCopyLine === undefined) return;
-    onCopyLine(text);
-    setCopied(notice);
-    if (copiedTimer.current !== undefined) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => { copiedTimer.current = undefined; setCopied(undefined); }, 1500);
+    const show = (message: string) => {
+      setCopied(message);
+      if (copiedTimer.current !== undefined) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => { copiedTimer.current = undefined; setCopied(undefined); }, 1500);
+    };
+    // Confirm only what the clipboard accepted; a refused copy says so.
+    let copying: Promise<void> | void;
+    try {
+      copying = onCopyLine(text);
+    } catch {
+      show("Couldn't copy");
+      return;
+    }
+    void Promise.resolve(copying).then(() => show(notice), () => show("Couldn't copy"));
   }, [onCopyLine]);
   const [selection, setSelection] = useState<TerminalSelection | undefined>(undefined);
   const [viewport, setViewport] = useState({ offset: 0, height: 600 });

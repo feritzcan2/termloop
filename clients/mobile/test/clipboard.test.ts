@@ -31,7 +31,7 @@ describe("clipboard bridge", () => {
 
     await bridge.copyText("session-id");
 
-    expect(setStringAsync).toHaveBeenCalledWith("session-id");
+    expect(setStringAsync).toHaveBeenCalledWith("session-id", {});
   });
 
   it("reads a copied image only when paste is explicitly requested", async () => {

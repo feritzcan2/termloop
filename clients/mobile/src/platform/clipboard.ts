@@ -1,7 +1,9 @@
 import { requireOptionalNativeModule } from "expo";
 
 export interface NativeClipboardModule {
-  setStringAsync(text: string): Promise<boolean>;
+  /// The native function takes its options positionally and rejects a call that
+  /// omits them, so the bridge always passes them.
+  setStringAsync(text: string, options: Record<string, never>): Promise<boolean>;
   getImageAsync?(options: {
     format: "png" | "jpeg";
     jpegQuality?: number;
@@ -31,7 +33,7 @@ export function createClipboardBridge(native: NativeClipboardModule | null): Cli
           "Copying requires the latest TermLoop app build. Update or reinstall the app, then try again.",
         );
       }
-      await native.setStringAsync(text);
+      await native.setStringAsync(text, {});
     },
     async pasteImage() {
       if (native?.getImageAsync === undefined) {
