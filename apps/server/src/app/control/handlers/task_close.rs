@@ -1,11 +1,68 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 use termloop_core::CoreError;
-use termloop_core::task_worktree::TaskClosePreparation;
+use termloop_core::task_worktree::{TaskClosePreparation, TaskReopenWorktreePlan};
 
 use super::super::super::AppState;
 use super::super::super::invalidation::{
     CommitImpact, queue_changed_commit_invalidation, queue_durable_commit_invalidation,
 };
+
+/// Recreates the checkout a closed Task lost at close, before reopen resumes
+/// its parked Agents, so they come back inside the Task's worktree. Any
+/// failure leaves reopen's Project-root fallback in place.
+pub(in crate::app) async fn recreate_reopened_task_worktree(params: &Value, state: &AppState) {
+    let Some(task_id) = params.get("taskId").and_then(Value::as_str) else {
+        return;
+    };
+    let plan = state.core.lock().await.plan_task_reopen_worktree(task_id);
+    let Some(plan) = plan else {
+        return;
+    };
+    if let Err(error) = provision_reopen_worktree(&plan, state).await {
+        tracing::warn!(%error, task_id, "Reopened Task worktree could not be recreated");
+    }
+}
+
+async fn provision_reopen_worktree(
+    plan: &TaskReopenWorktreePlan,
+    state: &AppState,
+) -> Result<(), CoreError> {
+    let branches =
+        super::project_list_local_branches(json!({ "projectId": plan.project_id }), state).await?;
+    let repository_path = branches
+        .get("repository_root")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
+    let branch_ref = format!("refs/heads/{}", plan.branch_name);
+    let branch_exists = branches
+        .get("branches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|branch| branch.get("exact_ref").and_then(Value::as_str) == Some(branch_ref.as_str()));
+    if !branch_exists {
+        return Err(CoreError::InvalidParams("branchName".into()));
+    }
+    let destination =
+        termloop_platform::sibling_directory_path(repository_path, &plan.worktree_leaf)
+            .map_err(|_| CoreError::InvalidParams("projectId".into()))?;
+    let destination = destination
+        .to_str()
+        .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
+    super::provision_task_worktree(
+        json!({
+            "operationId": plan.operation_id,
+            "taskId": plan.task_id,
+            "repositoryPath": repository_path,
+            "destinationPath": destination,
+            "branchName": plan.branch_name,
+            "branchMode": "existing",
+        }),
+        state,
+    )
+    .await?;
+    Ok(())
+}
 
 /// Closes a Task and parks the live Agents in its checkout. Core plans the
 /// cohort under the lock; the PTYs are terminated outside it.

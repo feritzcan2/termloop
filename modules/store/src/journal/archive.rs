@@ -432,6 +432,12 @@ impl Store {
         {
             return Err(StoreError::ConstraintViolation);
         }
+        // A checkout recreated at reopen takes back the Agents parked when the
+        // previous one was removed.
+        let recreated_worktree = self.state.tasks[task_index]
+            .worktree
+            .as_ref()
+            .map(|worktree| worktree.path.clone());
         // A checkout removed after close leaves close-parked Agents without
         // their directory; resume them from the durable Project root instead.
         let relocated_cwd = if self.state.tasks[task_index].worktree.is_none() {
@@ -476,6 +482,11 @@ impl Store {
                 .ok_or(StoreError::NotFound)?;
             if suspension.reason == TaskSuspensionReason::Closed
                 && let Some(cwd) = relocated_cwd.as_ref()
+            {
+                session.process.cwd = cwd.clone();
+            }
+            if suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+                && let Some(cwd) = recreated_worktree.as_ref()
             {
                 session.process.cwd = cwd.clone();
             }

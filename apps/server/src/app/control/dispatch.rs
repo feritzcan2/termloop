@@ -38,13 +38,14 @@ use super::handlers::{
     preview_task_agent_session, preview_task_workflow_session, project_list_local_branches,
     project_worktree_change_list, project_worktree_diff, project_worktree_pre_image,
     project_worktree_summary, provision_task_worktree, read_session_conversation,
-    relocate_agent_session, repair_provider_history, repair_task_worktree,
-    resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
-    restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
-    save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
-    set_steward_configuration, switch_agent_session_account, task_branch_commit_change_list,
-    task_branch_commit_diff, task_branch_commit_list, task_branch_commit_summary_list,
-    task_worktree_change_list, task_worktree_diff, task_worktree_pre_image, terminate_session,
+    recreate_reopened_task_worktree, relocate_agent_session, repair_provider_history,
+    repair_task_worktree, resolve_context_bank_sibling_conflict, resolve_stale_task_worktree,
+    restart_agent_session, restart_agents_for_client_launch, restore_deleted_session,
+    resume_agent_session, save_context_bank_file, save_skill_definition, session_history_preview,
+    set_skill_deployment, set_steward_configuration, switch_agent_session_account,
+    task_branch_commit_change_list, task_branch_commit_diff, task_branch_commit_list,
+    task_branch_commit_summary_list, task_worktree_change_list, task_worktree_diff,
+    task_worktree_pre_image, terminate_session,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -454,6 +455,7 @@ pub(in crate::app) async fn reopen_task(
     params: Value,
     state: &AppState,
 ) -> Result<Value, termloop_core::CoreError> {
+    recreate_reopened_task_worktree(&params, state).await;
     let (result, previous_revision, state_revision) = {
         let mut core = state.core.lock().await;
         let previous_revision = core.state_revision();
