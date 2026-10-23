@@ -392,6 +392,11 @@ Napi::Object Module(Napi::Env env, Napi::Object exports) {
   }));
   exports.Set("setColorScheme", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetTheme(Get(info), info[1].As<Napi::String>().Utf8Value() == "light"); }));
   exports.Set("focus", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { SetFocus(Get(info).window); }));
+  exports.Set("blur", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    // Clicking Chromium does not take Win32 focus back from this child window.
+    auto& surface = Get(info);
+    if (GetFocus() == surface.window) SetFocus(surface.parent);
+  }));
   exports.Set("scrollToBottom", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { auto& s = Get(info); ScrollTo(s, s.bufferSize.load()); }));
   exports.Set("readText", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { return ReadTerminalText(info.Env(), Get(info).window); }));
   exports.Set("snapshot", Napi::Function::New(env, [](const Napi::CallbackInfo& info) { return CaptureTerminal(info.Env(), Get(info).window); }));

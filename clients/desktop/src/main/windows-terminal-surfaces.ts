@@ -51,6 +51,7 @@ export class WindowsTerminalSurfaceManager {
   setVisible(id: number, visible: boolean): void { if (this.#surfaces.has(id)) this.addon.setVisible(id, visible); }
   setColorScheme(id: number, theme: "dark" | "light"): void { if (this.#surfaces.has(id)) this.addon.setColorScheme(id, theme); }
   focus(id: number): void { if (this.#surfaces.has(id)) this.addon.focus(id); }
+  releaseFocus(): void { for (const id of this.#surfaces.keys()) this.addon.blur(id); }
   scrollToBottom(id: number): void { if (this.#surfaces.has(id)) this.addon.scrollToBottom(id); }
   async probeText(id: number): Promise<string | undefined> {
     if (!this.#surfaces.has(id)) return undefined;

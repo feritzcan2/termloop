@@ -97,6 +97,9 @@ app.whenReady().then(async () => {
     addon.focus(second.surfaceId);
     addon.setFrame(first.surfaceId, 0, 0, 400, 300);
     assert(driver.children(window.getNativeWindowHandle()).find(child => child.x > 0).focused, "layout stole another pane's focus");
+    addon.blur(second.surfaceId);
+    assert(!driver.children(window.getNativeWindowHandle()).some(child => child.focused), "blur left keyboard focus in a terminal pane");
+    addon.focus(second.surfaceId);
     driver.key(children[0].handle, 0x52, 1, 0x12); // Ctrl+R stays terminal history search.
     driver.key(children[0].handle, 0x52, 3, 0x12); // Ctrl+Shift+R renames the Session.
     driver.key(children[0].handle, 0x50, 3, 0x10); // Ctrl+Shift+P opens the palette.

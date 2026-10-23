@@ -12,6 +12,7 @@ export type WindowsTerminalAddon = {
   setVisible(id: number, visible: boolean): void;
   setColorScheme(id: number, theme: "dark" | "light"): void;
   focus(id: number): void;
+  blur(id: number): void;
   scrollToBottom(id: number): void;
   readText(id: number): Promise<string>;
   snapshot(id: number): { data: Buffer; width: number; height: number } | undefined;
