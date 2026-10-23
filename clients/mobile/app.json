@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "20261008093649",
+      "buildNumber": "20261023071722",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
