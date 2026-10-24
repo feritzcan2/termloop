@@ -3,7 +3,7 @@ import type { AgentAccountDto } from "@termloop/contract/current";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentCapabilityDto, AgentLibraryEntry, AgentProfileDto, QuickActionParams, QuickActionPreviewResult } from "@termloop/contract/current";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
-import type { Project } from "../model.js";
+import type { Project, Task } from "../model.js";
 import {
   defaultAgentPermission,
   permissionLabel,
@@ -56,9 +56,10 @@ const PuzzleGlyph = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M
 const profileSupportsCapability = (profile: AgentProfileDto, capability: AgentCapabilityDto) =>
   profile.agent_ids.includes(capability.agent_id) && capability.permissions.length > 0;
 
-export function QuickActionComposer({ projects, selectedProject, capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
+export function QuickActionComposer({ projects, selectedProject, tasks = [], capabilities, profiles, libraryProfiles = [], initialTemplateRef, manageAgents, initialAgent, loadAccounts, pasteImage, restoreImage, discardImage, preview, launch, createShortcut, close }: {
   projects: readonly Project[];
   selectedProject: Project | undefined;
+  tasks?: readonly Task[];
   capabilities: readonly AgentCapabilityDto[];
   profiles: readonly AgentProfileDto[];
   libraryProfiles?: readonly AgentLibraryEntry[];
@@ -70,8 +71,8 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
   pasteImage(projectId: string): Promise<QuickActionImageHandle>;
   restoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardImage(attachmentId: string): Promise<void>;
-  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
-  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<string | undefined>;
+  preview(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
+  launch(projectId: string, agentId: AgentId, model: string, permission: Permission, reasoning: Reasoning, templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<string | undefined>;
   close(): void;
 }) {
   const [templateRef, setTemplateRef] = useState<QuickActionParams["templateRef"]>(initialTemplateRef ?? FREE_PROMPT_TEMPLATE_REF);
@@ -100,6 +101,14 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     ?? (projects.some((project) => project.id === memory.projectId) ? memory.projectId : undefined)
     ?? projects[0]?.id ?? "");
   const [agentId, setAgentId] = useState<AgentId>(initialAgentId);
+  const [target, setTarget] = useState<"run" | "worktree">("run");
+  const [selectedTaskId, setSelectedTaskId] = useState<string>();
+  const worktreeTasks = useMemo(() => tasks.filter((task) => task.project_id === projectId && task.worktree && task.archived_at_epoch_ms === null), [projectId, tasks]);
+  const worktreeTask = worktreeTasks.find((task) => task.id === selectedTaskId) ?? worktreeTasks[0];
+  // Run mode launches in the Project folder; Worktree mode launches in the
+  // selected Task's managed worktree, resolved again by the main process.
+  const taskId = target === "worktree" ? worktreeTask?.id : undefined;
+  const targetUnavailable = target === "worktree" && !taskId;
   const [accountChoices, setAccountChoices] = useState<{ projectId: string; accounts: AgentAccountDto[] }>();
   const [selectedAccount, setSelectedAccount] = useState<{ projectId: string; agentId: string; accountId: string }>();
   const [accountError, setAccountError] = useState<string>();
@@ -192,10 +201,10 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
     setPreviewResult(undefined);
   }, [agentId, capabilityByAgent, memory.presets, selectedProfile]);
   useEffect(() => {
-    if (!projectId || !prompt || !attachmentReady || profileUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
+    if (!projectId || !prompt || !attachmentReady || profileUnavailable || targetUnavailable) { setPreviewResult(undefined); if (attachmentReady) setError(undefined); return; }
     let live = true;
     const timer = window.setTimeout(() => {
-      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)
+      void preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)
         .then((value) => {
           const result = requireQuickActionPreview(value);
           if (live) { setPreviewResult(result); setError(undefined); }
@@ -203,16 +212,16 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
         .catch((cause) => { if (live) { setPreviewResult(undefined); setError(cause instanceof Error ? cause.message : String(cause)); } });
     }, 180);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [accountId, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, templateRef]);
+  }, [accountId, agentId, attachmentIds, attachmentReady, model, permission, preview, profileUnavailable, projectId, prompt, reasoning, selectedProfile?.version, targetUnavailable, taskId, templateRef]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable || shortcutOpen) return;
+    if (!projectId || !prompt || !attachmentReady || running || profileUnavailable || targetUnavailable || shortcutOpen) return;
     setRunning(true);
     try {
-      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId));
+      const inspected = requireQuickActionPreview(await preview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId));
       setPreviewResult(inspected);
-      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId);
+      const message = await launch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, inspected.launch_ticket, accountId, taskId);
       if (message) setError(message); else {
         rememberQuickActionRun(projectId, agentId, { model, permission, reasoning });
         close();
@@ -294,14 +303,19 @@ export function QuickActionComposer({ projects, selectedProject, capabilities, p
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.connectionProfileName ? ` · ${project.connectionProfileName}` : ""}</option>)}
             </select>
             <b><ChevronDown /></b>
-            <span>·</span><code><FolderGlyph />{middleTruncate(projects.find((project) => project.id === projectId)?.folder_path ?? "")}</code>
+            <span>·</span><code><FolderGlyph />{middleTruncate((target === "worktree" ? worktreeTask?.worktree?.path : undefined) ?? projects.find((project) => project.id === projectId)?.folder_path ?? "")}</code>
           </label>
         </header>
         <div className="quick-action-target">
           <div className="quick-action-segmented">
-            <button type="button" className="active">Run</button>
-            <button type="button" disabled title="Task worktree targeting follows in a separate packet">Worktree</button>
+            <button type="button" className={target === "run" ? "active" : undefined} aria-pressed={target === "run"} onClick={() => setTarget("run")}>Run</button>
+            <button type="button" className={target === "worktree" ? "active" : undefined} aria-pressed={target === "worktree"} onClick={() => setTarget("worktree")}>Worktree</button>
           </div>
+          {target === "worktree" ? worktreeTasks.length > 0
+            ? <select className="quick-action-worktree" aria-label="Task worktree" value={worktreeTask?.id ?? ""} disabled={running} onChange={(event) => setSelectedTaskId(event.target.value)}>
+              {worktreeTasks.map((task) => <option key={task.id} value={task.id}>{task.title}{task.branch ? ` · ${task.branch.name}` : ""}</option>)}
+            </select>
+            : <span className="quick-action-worktree-empty" role="status">No Task worktree in this Project</span> : null}
           {shortcutCreated ? <span className="shortcut-created" role="status">Shortcut created</span> : null}
           {createShortcut ? <button ref={shortcutTriggerRef} className="create-shortcut" type="button" disabled={shortcutDisabled} aria-expanded={shortcutOpen} onClick={() => { setShortcutCreated(false); setShortcutOpen((open) => !open); }}><Icon name="star" />Create shortcut</button> : null}
         </div>

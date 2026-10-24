@@ -1171,14 +1171,14 @@ export function DesktopApp() {
     }
   }, []);
   const loadAgentAccounts = useCallback(async (projectId: string) => (await sourceApiForProject(projectId).agentAccountList()).accounts, [sourceApiForProject]);
-  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
+  const launchQuickAction = useCallback(async (projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string) => {
     const activation = captureSessionActivation();
     try {
       const session = requireQuickActionSession(
-        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId),
+        await sourceApiForProject(projectId).quickActionLaunch(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, launchTicket, accountId, taskId),
         projectId,
       );
-      await activateSession(activation, session);
+      await activateSession(activation, session, taskId ? { kind: "task", taskId } : undefined);
       return undefined;
     } catch (error) {
       const message = controlErrorMessage(error);
@@ -2703,7 +2703,7 @@ export function DesktopApp() {
       loadSessionHistoryPreview={loadSessionHistoryPreview}
       resumeHistorySession={resumeHistorySession}
       loadAgentAccounts={loadAgentAccounts}
-      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)}
+      previewQuickAction={(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId) => sourceApiForProject(projectId).quickActionPreview(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)}
       pasteQuickActionImage={(projectId) => sourceApiForProject(projectId).quickActionPasteImage()}
       restoreQuickActionImage={createQuickActionImageRestore({
         selectedProfileId: () => connectionProfileIdOf(selectedProject),

@@ -66,4 +66,36 @@ describe("Quick Action run target", () => {
     expect(runTarget(container)).toBe(TERMLOOP.id);
   });
 
+  it("targets a Task worktree of the selected Project in Worktree mode", async () => {
+    vi.useFakeTimers();
+    const task = (id: string, projectId: string, worktree: string | null) => ({
+      id, project_id: projectId, title: `Task ${id}`, branch: { repository_root: "/repo", name: `feature/${id}` },
+      worktree: worktree ? { path: worktree } : null, archived_at_epoch_ms: null,
+    });
+    const preview = vi.fn().mockReturnValue(new Promise(() => undefined));
+    const props = {
+      ...composerProps(NUCLEUS),
+      preview,
+      tasks: [task("a", NUCLEUS.id, "/tmp/wt-a"), task("b", NUCLEUS.id, null), task("c", TERMLOOP.id, "/tmp/wt-c")],
+    };
+
+    await act(async () => root.render(createElement(QuickActionComposer, props as never)));
+    const worktreeButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Worktree")!;
+    expect(worktreeButton.disabled).toBe(false);
+    await act(async () => worktreeButton.click());
+
+    const choices = container.querySelector<HTMLSelectElement>('select[aria-label="Task worktree"]')!;
+    expect([...choices.options].map((option) => option.value)).toEqual(["a"]);
+    expect(container.querySelector(".quick-action-header code")?.textContent).toContain("/tmp/wt-a");
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("#quick-action-prompt")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "do it");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => { vi.advanceTimersByTime(200); });
+    expect(preview).toHaveBeenLastCalledWith(NUCLEUS.id, "codex", expect.any(String), expect.any(String), expect.any(String), expect.any(String), "do it", [], undefined, "a");
+    vi.useRealTimers();
+  });
+
 });

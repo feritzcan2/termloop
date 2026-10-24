@@ -1914,6 +1914,8 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .quick-action-segmented button { min-width: 76px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: light-dark(#6a6a6b, #e0e1e2); font: 500 13px var(--qa-font); }
 .quick-action-segmented button.active { background: #3a6ef9; color: #fff; }
 .quick-action-segmented button:disabled { opacity: .5; }
+.quick-action-worktree { max-width: 280px; height: 24px; margin-left: 10px; padding: 0 6px; border: 1px solid var(--qa-rule); border-radius: 6px; background: transparent; color: var(--qa-text); font: 12px var(--qa-font); }
+.quick-action-worktree-empty { margin-left: 10px; color: light-dark(#6a6a6b, #8b9093); font: 12px var(--qa-font); }
 
 .quick-action-body { display: grid; grid-template-rows: 14px minmax(0,1fr) auto; row-gap: 6px; height: 141px; padding: 6px 12px; border-bottom: 1px solid var(--qa-rule); }
 .quick-action-body label { padding: 0 2px; color: rgba(222,223,224,.75); font-size: 11px; line-height: 14px; }

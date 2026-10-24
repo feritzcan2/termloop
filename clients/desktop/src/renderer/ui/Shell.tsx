@@ -343,8 +343,8 @@ export type ShellProps = {
   restoreQuickActionImage(attachmentId: string): Promise<QuickActionImageHandle>;
   discardQuickActionImage(attachmentId: string): Promise<void>;
   loadAgentAccounts?(projectId: string): Promise<AgentAccountDto[]>;
-  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
-  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<string | undefined>;
+  previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
+  launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
   launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   launchTaskWorkflow(taskId: string, workflowId: string, goal: string): Promise<string | undefined>;
@@ -2333,6 +2333,7 @@ export function Shell(props: ShellProps) {
           project.connectionProfileId === props.selectedProject?.connectionProfileId
         ))}
         selectedProject={props.selectedProject}
+        tasks={props.projectTasks}
         capabilities={props.agentCapabilities}
         profiles={props.agentLibrary?.value?.profiles ?? props.agentProfiles}
         libraryProfiles={props.agentLibrary?.value?.profiles ?? []}

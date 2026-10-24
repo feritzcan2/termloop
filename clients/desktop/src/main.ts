@@ -1374,6 +1374,14 @@ handleIpc(
     });
   },
 );
+// Worktree-targeted Quick Actions run in the Task's managed worktree. The path
+// is re-read from the daemon so the renderer never chooses an arbitrary cwd.
+const taskWorktreeCwd = async (projectId: string, taskId: string) => {
+  const [task] = await readProjectTasks((params) => controlCall("task.list", params), { projectId, archiveScope: "active", taskIds: [taskId] });
+  if (!task || task.project_id !== projectId) throw new Error("taskNotFound");
+  if (!task.worktree) throw new Error("Task worktree is not available.");
+  return task.worktree.path;
+};
 const quickActionParams = async (
   projectId: string,
   agentId: string,
@@ -1384,10 +1392,11 @@ const quickActionParams = async (
   prompt: string,
   attachmentIds: string[],
   accountId?: string,
+  taskId?: string,
 ): Promise<QuickActionParams> => ({
   projectId,
   ...(accountId ? { accountId } : {}),
-  cwd: await projectCwd(projectId),
+  cwd: taskId ? await taskWorktreeCwd(projectId, taskId) : await projectCwd(projectId),
   agentId: requireAgentId(agentId),
   model,
   permission,
@@ -1398,14 +1407,14 @@ const quickActionParams = async (
 });
 handleIpc(
   "termloop:quick-action-preview",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string) =>
-    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId)),
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string) =>
+    controlCall("quickAction.preview", await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId)),
 );
 handleIpc(
   "termloop:quick-action-launch",
-  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string) => {
+  async (_event, projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string) => {
     const params: QuickActionLaunchParams = {
-      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId),
+      ...await quickActionParams(projectId, agentId, model, permission, reasoning, templateRef, prompt, attachmentIds, accountId, taskId),
       launchTicket,
     };
     const result = await controlCall("quickAction.launch", params);

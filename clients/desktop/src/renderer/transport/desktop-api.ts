@@ -468,8 +468,8 @@ export type DesktopApi = {
   quickActionPasteImage(): Promise<QuickActionImageHandle>;
   quickActionRestoreImage(attachmentId: string): Promise<QuickActionImageHandle>;
   quickActionDiscardImage(attachmentId: string): Promise<void>;
-  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string): Promise<QuickActionPreviewResult>;
-  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string): Promise<Session>;
+  quickActionPreview(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], accountId?: string, taskId?: string): Promise<QuickActionPreviewResult>;
+  quickActionLaunch(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: QuickActionParams["reasoning"], templateRef: QuickActionParams["templateRef"], prompt: string, attachmentIds: string[], launchTicket: string, accountId?: string, taskId?: string): Promise<Session>;
   taskTerminalLaunch(taskId: string): Promise<TaskControlDesktopResult<Session>>;
   taskStartRun(params: TaskStartRunParams): Promise<TaskControlDesktopResult<Session>>;
   taskRestartRun(params: TaskRestartRunParams): Promise<TaskControlDesktopResult<Session>>;
