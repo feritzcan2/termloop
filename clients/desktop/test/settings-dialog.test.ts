@@ -135,6 +135,20 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".server-profiles-layer")).toBeNull();
   });
 
+  it("switches the selected computer's experimental Project Manager mode", async () => {
+    const change = vi.fn(async () => "capabilityDenied");
+    await act(async () => root.render(createElement(SettingsDialog, props({
+      initialPage: "experimental",
+      projectManagerMode: { enabled: false, available: true, change },
+    }))));
+    expect([...container.querySelectorAll(".settings-nav button")].map((button) => button.textContent)).toContain("Experimental");
+    const toggle = container.querySelector<HTMLButtonElement>('.settings-content [role="switch"]')!;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(async () => toggle.click());
+    expect(change).toHaveBeenCalledWith(true);
+    expect(container.querySelector('.settings-content [role="alert"]')?.textContent).toBe("capabilityDenied");
+  });
+
   it("offers system, light, and dark appearance choices", async () => {
     const changeAppearancePreference = vi.fn();
     await act(async () => root.render(createElement(SettingsDialog, props({
@@ -170,7 +184,7 @@ describe("SettingsDialog", () => {
     await act(async () => root.render(createElement(SettingsDialog, props({ close, initialPage: "appearance" }))));
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!;
     const navLabels = () => [...container.querySelectorAll(".settings-nav button")].map((button) => button.textContent);
-    expect(navLabels()).toEqual(["Appearance", "Notifications", "Updates", "Experimental", "Computers"]);
+    expect(navLabels()).toEqual(["Appearance", "Notifications", "Updates", "Computers"]);
 
     const type = async (value: string) => act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, value);

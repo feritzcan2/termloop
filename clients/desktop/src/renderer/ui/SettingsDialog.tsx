@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   DesktopNotificationPreferences,
@@ -10,11 +10,6 @@ import {
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
 import type { AppearancePreference } from "../appearance-theme.js";
-import {
-  projectManagerModeEnabled,
-  setProjectManagerModeEnabled,
-  subscribeProjectManagerModeFlag,
-} from "../project-manager-mode-flag.js";
 import { showsWindowDragRegion, type KeyboardPlatform } from "../command-surface.js";
 import { Icon, type IconName } from "./Icon.js";
 import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
@@ -36,7 +31,6 @@ const appNavItems: SettingsNavItem[] = [
   { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
   { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
   { page: "updates", title: "Updates", icon: "download", keywords: "version about upgrade release check restart install download" },
-  { page: "experimental", title: "Experimental", icon: "sparkles", keywords: "experimental preview beta project manager pm mode" },
 ];
 
 const computerNavItems: SettingsNavItem[] = [
@@ -44,6 +38,7 @@ const computerNavItems: SettingsNavItem[] = [
   { page: "accounts", title: "Agent accounts", icon: "agent", keywords: "claude codex account login sign in sign out switch default usage limits rate remove" },
   { page: "integrations", title: "Integrations", icon: "link", keywords: "github gh azure devops az jira pull request pr build checks ci review token pat credentials providers" },
   { page: "mobile", title: "Pair phone", icon: "phone", keywords: "mobile iphone qr pairing voice transcription" },
+  { page: "experimental", title: "Experimental", icon: "sparkles", keywords: "experimental preview beta project manager pm mode" },
 ];
 
 type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedded"> & {
@@ -58,6 +53,8 @@ type SettingsDialogProps = Omit<ConnectionProfilesDialogProps, "close" | "embedd
   localComputerName?: string | undefined;
   mobile?: Omit<MobileConnectDialogProps, "close" | "embedded" | "computerName">;
   update?: AppUpdateControls | undefined;
+  /** The selected computer's experimental Project Manager mode switch. */
+  projectManagerMode?: { enabled: boolean; available: boolean; change(enabled: boolean): Promise<string | undefined> } | undefined;
   /** Per-computer provider status. Absent hosts simply omit the page. */
   integrations?: { actions: IntegrationActions; openTaskSettings?: (() => void) | undefined } | undefined;
 };
@@ -75,6 +72,7 @@ export function SettingsDialog({
   mobile,
   update,
   integrations,
+  projectManagerMode,
   ...connectionProps
 }: SettingsDialogProps) {
   const [selectedPage, setPage] = useState<SettingsPage>(initialPage);
@@ -95,6 +93,7 @@ export function SettingsDialog({
       items: computerNavItems.filter((item) => (item.page !== "mobile" || mobile)
         && (item.page !== "integrations" || integrations)
         && (item.page !== "accounts" || connectionProps.agentConnections)
+        && (item.page !== "experimental" || projectManagerMode)
         && matchesSettingsQuery(item, query)),
     },
   ].filter((group) => group.items.length > 0);
@@ -225,7 +224,7 @@ export function SettingsDialog({
       </aside>
       <main className="settings-content">
         <div className="settings-content-inner">
-          {showScope && (page === "appearance" || page === "notifications" || page === "updates" || page === "experimental") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {showScope && (page === "appearance" || page === "notifications" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
           {page === undefined ? (
             <p className="settings-empty">No settings found for “{query.trim()}”</p>
           ) : page === "appearance" ? (
@@ -242,7 +241,7 @@ export function SettingsDialog({
           ) : page === "updates" ? (
             <UpdateSettings update={update} />
           ) : page === "experimental" ? (
-            <ExperimentalSettings />
+            <ExperimentalSettings projectManagerMode={projectManagerMode} />
           ) : page === "integrations" && integrations ? (
             <IntegrationsSettings
               actions={integrations.actions}
@@ -545,12 +544,9 @@ function RemoteNotificationSection({
   );
 }
 
-function ExperimentalSettings() {
-  const projectManagerMode = useSyncExternalStore(
-    subscribeProjectManagerModeFlag,
-    projectManagerModeEnabled,
-    projectManagerModeEnabled,
-  );
+function ExperimentalSettings({ projectManagerMode }: { projectManagerMode: SettingsDialogProps["projectManagerMode"] }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
   return (
     <section aria-labelledby="experimental-settings-title">
       <div className="settings-page-header">
@@ -559,11 +555,20 @@ function ExperimentalSettings() {
       </div>
       <SettingsSwitch
         title="Project Manager mode"
-        description="Lets a Project be opened as Project Manager or Developer. Developer keeps TermLoop exactly as it is today."
-        checked={projectManagerMode}
-        disabled={false}
-        change={setProjectManagerModeEnabled}
+        description="Lets a Project on this computer be opened as Project Manager or Developer. While it is off every Project works as a Developer Project, exactly as today."
+        checked={projectManagerMode?.enabled ?? false}
+        disabled={!projectManagerMode?.available || busy}
+        change={(enabled) => {
+          if (!projectManagerMode) return;
+          setBusy(true);
+          setError(undefined);
+          void projectManagerMode.change(enabled).then((failure) => {
+            setError(failure);
+            setBusy(false);
+          });
+        }}
       />
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
     </section>
   );
 }

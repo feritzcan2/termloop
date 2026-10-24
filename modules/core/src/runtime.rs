@@ -48,6 +48,8 @@ impl CoreRuntime {
             "project.taskAutomationSet" => self.set_project_task_automation(params),
             "project.modeGet" => self.get_project_mode(params),
             "project.modeSet" => self.set_project_mode(params),
+            "projectManager.modeGet" => Ok(self.get_project_manager_mode()),
+            "projectManager.modeSet" => self.set_project_manager_mode(params),
             "task.investigationRequest" => self.request_task_reinvestigation_command(params),
             "projectManager.boardGet" => self.project_manager_board_command(params),
             "projectManager.sprintCreate" => self.create_project_sprint_command(params),

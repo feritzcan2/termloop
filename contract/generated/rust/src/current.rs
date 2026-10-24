@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:644b68b716f6b9a0ec51941598230cc5092186b9ca29448c0665bb478d5f062f";
+    "sha256:2d82ca0a6922617530d1b5acb71d9c2eb5737e82304beebbf3faec54de96e2b0";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -278,6 +278,8 @@ pub const METHODS: &[&str] = &[
     "projectManager.ticketSave",
     "projectManager.ticketVersions",
     "projectManager.ticketRestore",
+    "projectManager.modeGet",
+    "projectManager.modeSet",
     "project.worktreeSummary",
     "project.worktreeChangeList",
     "project.worktreeDiff",
@@ -478,6 +480,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "project.list",
     "project.taskAutomationGet",
     "project.modeGet",
+    "projectManager.modeGet",
     "projectManager.boardGet",
     "projectManager.ticketVersions",
     "task.list",
@@ -1766,6 +1769,20 @@ pub struct TaskInvestigationRequestResult {
     #[serde(rename = "sessionId")]
     pub session_id: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerModeSetParams {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerModeResult {
+    pub enabled: bool,
+    #[serde(rename = "stateRevision")]
+    pub state_revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -9676,6 +9693,9 @@ pub type ProjectManagerSprintDeleteParams = ProjectManagerSprintIdParams;
 pub type ProjectManagerSprintDeleteResult = ProjectManagerBoardResult;
 pub type ProjectManagerTaskTrackingSetResult = ProjectManagerBoardResult;
 pub type ProjectManagerTicketRestoreResult = ProjectManagerTicketSaveResult;
+pub type ProjectManagerModeGetParams = EmptyParams;
+pub type ProjectManagerModeGetResult = ProjectManagerModeResult;
+pub type ProjectManagerModeSetResult = ProjectManagerModeResult;
 pub type ProjectWorktreeSummaryParams = ProjectIdParams;
 pub type ProjectWorktreeSummaryResult = ProjectWorktreeSummaryDto;
 pub type ProjectWorktreeChangeListParams = ProjectIdParams;
@@ -10468,6 +10488,8 @@ fn validate_method(value: &Value) -> bool {
             "projectManager.ticketSave",
             "projectManager.ticketVersions",
             "projectManager.ticketRestore",
+            "projectManager.modeGet",
+            "projectManager.modeSet",
             "project.worktreeSummary",
             "project.worktreeChangeList",
             "project.worktreeDiff",
@@ -13349,6 +13371,50 @@ fn validate_task_investigation_request_result(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["taskId", "sessionId", "status"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_mode_set_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("enabled")
+            .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| ["enabled"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_mode_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("enabled")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("stateRevision").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                })
+            })
+            && object
+                .keys()
+                .all(|key| ["enabled", "stateRevision"].contains(&key.as_str()))
     })
 }
 
@@ -35452,6 +35518,14 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<ProjectManagerTicketRestoreParams>(params.clone()).is_ok()
                 && validate_project_manager_ticket_restore_params(params)
         }
+        "projectManager.modeGet" => {
+            serde_json::from_value::<ProjectManagerModeGetParams>(params.clone()).is_ok()
+                && validate_empty_params(params)
+        }
+        "projectManager.modeSet" => {
+            serde_json::from_value::<ProjectManagerModeSetParams>(params.clone()).is_ok()
+                && validate_project_manager_mode_set_params(params)
+        }
         "project.worktreeSummary" => {
             serde_json::from_value::<ProjectWorktreeSummaryParams>(params.clone()).is_ok()
                 && validate_project_id_params(params)
@@ -36415,6 +36489,14 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "projectManager.ticketRestore" => {
             serde_json::from_value::<ProjectManagerTicketRestoreResult>(result.clone()).is_ok()
                 && validate_project_manager_ticket_save_result(result)
+        }
+        "projectManager.modeGet" => {
+            serde_json::from_value::<ProjectManagerModeGetResult>(result.clone()).is_ok()
+                && validate_project_manager_mode_result(result)
+        }
+        "projectManager.modeSet" => {
+            serde_json::from_value::<ProjectManagerModeSetResult>(result.clone()).is_ok()
+                && validate_project_manager_mode_result(result)
         }
         "project.worktreeSummary" => {
             serde_json::from_value::<ProjectWorktreeSummaryResult>(result.clone()).is_ok()

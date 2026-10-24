@@ -592,6 +592,14 @@ handleIpc(
   (_event, params: import("@termloop/contract/current").ProjectModeSetParams) =>
     controlCall("project.modeSet", params),
 );
+handleIpc("termloop:project-manager-mode-get", () =>
+  controlCall("projectManager.modeGet", {}),
+);
+handleIpc(
+  "termloop:project-manager-mode-set",
+  (_event, params: import("@termloop/contract/current").ProjectManagerModeSetParams) =>
+    controlCall("projectManager.modeSet", params),
+);
 handleIpc("termloop:task-investigation-request", (_event, taskId: string) =>
   controlCall("task.investigationRequest", { taskId }),
 );

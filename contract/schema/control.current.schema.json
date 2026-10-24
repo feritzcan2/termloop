@@ -16,6 +16,7 @@
       "project.list",
       "project.taskAutomationGet",
       "project.modeGet",
+      "projectManager.modeGet",
       "projectManager.boardGet",
       "projectManager.ticketVersions",
       "task.list",
@@ -434,6 +435,14 @@
       "result": {
         "$ref": "#/$defs/projectManagerTicketSaveResult"
       }
+    },
+    "projectManager.modeGet": {
+      "params": { "$ref": "#/$defs/emptyParams" },
+      "result": { "$ref": "#/$defs/projectManagerModeResult" }
+    },
+    "projectManager.modeSet": {
+      "params": { "$ref": "#/$defs/projectManagerModeSetParams" },
+      "result": { "$ref": "#/$defs/projectManagerModeResult" }
     },
     "project.worktreeSummary": {
       "params": {
@@ -2508,6 +2517,8 @@
         "projectManager.ticketSave",
         "projectManager.ticketVersions",
         "projectManager.ticketRestore",
+        "projectManager.modeGet",
+        "projectManager.modeSet",
         "project.worktreeSummary",
         "project.worktreeChangeList",
         "project.worktreeDiff",
@@ -4477,6 +4488,28 @@
             "submitting"
           ]
         }
+      }
+    },
+    "projectManagerModeSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerModeSetParams",
+      "description": "Switches the experimental Project Manager mode for this daemon. While it is off every Project behaves as a Developer Project; stored Project modes are kept.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "projectManagerModeResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerModeResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "stateRevision"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "stateRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       }
     },
     "projectModeResult": {

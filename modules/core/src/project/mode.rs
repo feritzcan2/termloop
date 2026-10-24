@@ -6,10 +6,21 @@ use termloop_domain::ProjectMode;
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 
 impl CoreRuntime {
-    /// A Project without a stored setting is a `Developer` Project.
+    /// Whether the experimental Project Manager mode is switched on for this
+    /// daemon. While it is off every Project is a `Developer` Project, whatever
+    /// mode it has stored.
+    pub fn project_manager_mode_enabled(&self) -> bool {
+        self.store.project_manager_mode_enabled()
+    }
+
+    /// A Project without a stored setting is a `Developer` Project, and so is
+    /// every Project while the Project Manager mode switch is off.
     pub fn project_mode(&self, project_id: &str) -> Result<ProjectMode, CoreError> {
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
+        }
+        if !self.project_manager_mode_enabled() {
+            return Ok(ProjectMode::Developer);
         }
         Ok(self
             .store
@@ -72,10 +83,31 @@ impl CoreRuntime {
         if !self.project_exists(&project_id) {
             return Err(CoreError::NotFound);
         }
+        if mode != ProjectMode::Developer && !self.project_manager_mode_enabled() {
+            return Err(CoreError::CapabilityDenied);
+        }
         self.store
             .set_project_mode(&self.write_authority, &project_id, mode, expected_revision)
             .map_err(store_error)?;
         Ok(self.project_mode_result(&project_id, mode))
+    }
+
+    pub(crate) fn get_project_manager_mode(&self) -> Value {
+        json!({
+            "enabled": self.project_manager_mode_enabled(),
+            "stateRevision": self.store.revision(),
+        })
+    }
+
+    pub(crate) fn set_project_manager_mode(&mut self, params: Value) -> Result<Value, CoreError> {
+        let enabled = params
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| CoreError::InvalidParams("enabled".into()))?;
+        self.store
+            .set_project_manager_mode_enabled(&self.write_authority, enabled)
+            .map_err(store_error)?;
+        Ok(self.get_project_manager_mode())
     }
 
     fn project_mode_result(&self, project_id: &str, mode: ProjectMode) -> Value {
@@ -115,6 +147,9 @@ mod tests {
                 "project.create",
                 json!({ "name": "Payments", "folderPath": std::env::temp_dir() }),
             )
+            .unwrap();
+        runtime
+            .handle("projectManager.modeSet", json!({ "enabled": true }))
             .unwrap();
         (runtime, project["id"].as_str().unwrap().to_owned(), path)
     }
@@ -190,6 +225,51 @@ mod tests {
             Err(CoreError::NotFound)
         ));
         assert_eq!(runtime.state_revision(), revision);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_mode_switch_gates_every_stored_project_mode() {
+        let (mut runtime, project_id, path) = runtime_with_project();
+        let revision = runtime.state_revision();
+        runtime
+            .handle(
+                "project.modeSet",
+                json!({ "projectId": project_id, "mode": "projectManager", "expectedRevision": revision }),
+            )
+            .unwrap();
+        let off = runtime
+            .handle("projectManager.modeSet", json!({ "enabled": false }))
+            .unwrap();
+        assert_eq!(off["enabled"], false);
+        assert!(!runtime.is_project_manager_project(&project_id));
+        assert_eq!(
+            runtime
+                .handle("project.modeGet", json!({ "projectId": project_id }))
+                .unwrap()["mode"],
+            "developer"
+        );
+        let revision = runtime.state_revision();
+        assert!(matches!(
+            runtime.handle(
+                "project.modeSet",
+                json!({ "projectId": project_id, "mode": "projectManager", "expectedRevision": revision }),
+            ),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime.handle("projectManager.modeSet", json!({ "enabled": "yes" })),
+            Err(CoreError::InvalidParams(field)) if field == "enabled"
+        ));
+        // Switching back on restores the stored mode without another write.
+        runtime
+            .handle("projectManager.modeSet", json!({ "enabled": true }))
+            .unwrap();
+        assert!(runtime.is_project_manager_project(&project_id));
+        assert_eq!(
+            runtime.handle("projectManager.modeGet", json!({})).unwrap()["enabled"],
+            true
+        );
         let _ = std::fs::remove_file(path);
     }
 }

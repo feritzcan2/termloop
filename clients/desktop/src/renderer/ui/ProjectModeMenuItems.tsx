@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ProjectMode, ProjectModeResult, ProjectModeSetParams } from "@termloop/contract/current";
+import type { ProjectManagerModeResult, ProjectMode, ProjectModeResult, ProjectModeSetParams } from "@termloop/contract/current";
 
 import { Icon } from "./Icon.js";
 
@@ -7,6 +7,52 @@ export type ProjectModeActions = {
   load(projectId: string): Promise<ProjectModeResult>;
   save(params: ProjectModeSetParams): Promise<ProjectModeResult>;
 };
+
+/// The daemon-wide experimental Project Manager mode switch of the selected
+/// connection.
+export type ProjectManagerSwitchActions = {
+  load(): Promise<ProjectManagerModeResult>;
+  save(enabled: boolean): Promise<ProjectManagerModeResult>;
+  /// Changes whenever the daemon may have changed the switch.
+  refreshToken: number;
+};
+
+/// The selected connection's switch as last read. `enabled` stays false until
+/// the daemon answered, so nothing about Project modes shows before then.
+export function useProjectManagerSwitch(actions: ProjectManagerSwitchActions | undefined): {
+  enabled: boolean;
+  known: boolean;
+  set(enabled: boolean): Promise<string | undefined>;
+} {
+  const [state, setState] = useState<{ actions: ProjectManagerSwitchActions; enabled: boolean }>();
+  const load = actions?.load;
+  const refreshToken = actions?.refreshToken;
+  useEffect(() => {
+    if (!actions || !load) return;
+    let active = true;
+    load().then(
+      (result) => { if (active) setState({ actions, enabled: result.enabled }); },
+      () => { if (active) setState(undefined); },
+    );
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, refreshToken]);
+  const current = state && actions && state.actions.load === actions.load ? state : undefined;
+  return {
+    enabled: current?.enabled ?? false,
+    known: current !== undefined,
+    set: async (enabled) => {
+      if (!actions) return "Project Manager mode is not available on this connection.";
+      try {
+        const result = await actions.save(enabled);
+        setState({ actions, enabled: result.enabled });
+        return undefined;
+      } catch (failure) {
+        return errorMessage(failure);
+      }
+    },
+  };
+}
 
 const MODES: readonly { mode: ProjectMode; label: string }[] = [
   { mode: "developer", label: "Developer" },

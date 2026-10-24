@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectModeResult, ProjectModeSetParams } from "@termloop/contract/current";
 
 import { PROFILED_DESKTOP_OPERATIONS, isProfiledIpcChannel } from "../src/source-operations.js";
+import { takeLegacyProjectManagerModeFlag } from "../src/renderer/project-manager-mode-flag.js";
 import {
-  projectManagerModeEnabled,
-  readProjectManagerModeFlag,
-  setProjectManagerModeEnabled,
-  subscribeProjectManagerModeFlag,
-} from "../src/renderer/project-manager-mode-flag.js";
-import { ProjectModeMenuItems, type ProjectModeActions } from "../src/renderer/ui/ProjectModeMenuItems.js";
+  ProjectModeMenuItems,
+  useProjectManagerSwitch,
+  type ProjectManagerSwitchActions,
+  type ProjectModeActions,
+} from "../src/renderer/ui/ProjectModeMenuItems.js";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -26,7 +26,7 @@ afterEach(async () => {
 
 function memoryStorage(initial?: string) {
   const values = new Map<string, string>(initial === undefined ? [] : [["termloop.experimental.projectManagerMode.v1", initial]]);
-  return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  return { getItem: (key: string) => values.get(key) ?? null, removeItem: (key: string) => { values.delete(key); } };
 }
 
 /// A daemon double: reads return the stored mode at the current revision, and
@@ -50,25 +50,50 @@ function daemon(initial: ProjectModeResult["mode"] = "developer") {
 
 const radios = () => [...host.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]')];
 
-describe("Project Manager mode flag", () => {
-  it("is off unless this computer turned it on", () => {
-    expect(readProjectManagerModeFlag(memoryStorage())).toBe(false);
-    expect(readProjectManagerModeFlag(memoryStorage("off"))).toBe(false);
-    expect(readProjectManagerModeFlag(memoryStorage("on"))).toBe(true);
-    expect(readProjectManagerModeFlag({ getItem: () => { throw new Error("blocked"); } })).toBe(false);
+describe("Project Manager mode switch", () => {
+  it("hands an old client-local switch that was on to the daemon once", () => {
+    expect(takeLegacyProjectManagerModeFlag(memoryStorage())).toBe(false);
+    expect(takeLegacyProjectManagerModeFlag(memoryStorage("off"))).toBe(false);
+    const storage = memoryStorage("on");
+    expect(takeLegacyProjectManagerModeFlag(storage)).toBe(true);
+    expect(takeLegacyProjectManagerModeFlag(storage)).toBe(false);
+    expect(takeLegacyProjectManagerModeFlag({ getItem: () => { throw new Error("blocked"); }, removeItem: () => undefined })).toBe(false);
   });
 
-  it("notifies subscribers and remembers the choice", () => {
-    const storage = memoryStorage();
-    let notified = 0;
-    const unsubscribe = subscribeProjectManagerModeFlag(() => { notified += 1; });
-    setProjectManagerModeEnabled(true, storage);
-    expect(projectManagerModeEnabled()).toBe(true);
-    expect(readProjectManagerModeFlag(storage)).toBe(true);
-    setProjectManagerModeEnabled(false, storage);
-    expect(projectManagerModeEnabled()).toBe(false);
-    expect(notified).toBe(2);
-    unsubscribe();
+  it("allowlists the switch operations as source-targeted channels", () => {
+    expect(PROFILED_DESKTOP_OPERATIONS.projectManagerModeGet).toBe("termloop:project-manager-mode-get");
+    expect(PROFILED_DESKTOP_OPERATIONS.projectManagerModeSet).toBe("termloop:project-manager-mode-set");
+    expect(isProfiledIpcChannel("termloop:project-manager-mode-set")).toBe(true);
+  });
+
+  it("shows the daemon's switch, stays off until it answers, and reports a refused write", async () => {
+    let enabled = false;
+    let answer: () => void = () => undefined;
+    let refuse = false;
+    const actions: ProjectManagerSwitchActions = {
+      load: () => new Promise((resolve) => { answer = () => resolve({ enabled, stateRevision: 1 }); }),
+      save: async (next) => {
+        if (refuse) throw new Error("capabilityDenied");
+        enabled = next;
+        return { enabled, stateRevision: 2 };
+      },
+      refreshToken: 0,
+    };
+    let view: ReturnType<typeof useProjectManagerSwitch> | undefined;
+    function Probe() { view = useProjectManagerSwitch(actions); return null; }
+    await act(async () => root.render(<Probe />));
+    expect(view).toMatchObject({ enabled: false, known: false });
+    enabled = true;
+    await act(async () => answer());
+    expect(view).toMatchObject({ enabled: true, known: true });
+    let failure: string | undefined;
+    await act(async () => { failure = await view!.set(false); });
+    expect(failure).toBeUndefined();
+    expect(view!.enabled).toBe(false);
+    refuse = true;
+    await act(async () => { failure = await view!.set(true); });
+    expect(failure).toBe("capabilityDenied");
+    expect(view!.enabled).toBe(false);
   });
 });
 

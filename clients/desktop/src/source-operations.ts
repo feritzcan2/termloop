@@ -30,6 +30,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   projectTaskAutomationSet: "termloop:project-task-automation-set",
   projectModeGet: "termloop:project-mode-get",
   projectModeSet: "termloop:project-mode-set",
+  projectManagerModeGet: "termloop:project-manager-mode-get",
+  projectManagerModeSet: "termloop:project-manager-mode-set",
   taskInvestigationRequest: "termloop:task-investigation-request",
   taskProjectManagerAgentStart: "termloop:task-project-manager-agent-start",
   projectManagerBoardGet: "termloop:project-manager-board-get",

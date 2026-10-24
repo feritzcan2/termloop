@@ -266,6 +266,9 @@ mod tests {
     }
 
     fn open_as_project_manager(runtime: &mut CoreRuntime, project_id: &str) {
+        runtime
+            .handle("projectManager.modeSet", json!({"enabled": true}))
+            .unwrap();
         let revision = runtime.state_revision();
         runtime
             .handle(

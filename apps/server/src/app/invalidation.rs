@@ -406,7 +406,9 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
         Some(CommitImpact::Playbook)
     } else if method.starts_with("companion.transcript") {
         Some(CommitImpact::Companion)
-    } else if method.starts_with("project.") {
+    } else if method.starts_with("project.") || method == "projectManager.modeSet" {
+        // The Project Manager mode switch changes every Project's effective
+        // mode at once.
         Some(CommitImpact::Project)
     } else if matches!(method, "task.abandonArchive" | "task.deleteArchived") {
         Some(CommitImpact::TaskSessionAgent)
@@ -529,6 +531,10 @@ mod tests {
         assert_eq!(
             fallback_mutation_impact("workflow.configurationCreate"),
             Some(CommitImpact::Workflow)
+        );
+        assert_eq!(
+            fallback_mutation_impact("projectManager.modeSet"),
+            Some(CommitImpact::Project)
         );
         for dedicated in [
             "project.delete",

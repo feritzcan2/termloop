@@ -257,6 +257,45 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
 }
 
 #[test]
+fn the_project_manager_mode_switch_is_off_by_default_persists_and_keeps_project_modes() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-project-manager-switch-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    assert!(!store.project_manager_mode_enabled());
+    store.insert_project(&authority, project("switch")).unwrap();
+    let revision = store.revision();
+    store
+        .set_project_mode(&authority, "switch", ProjectMode::ProjectManager, revision)
+        .unwrap();
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .set_project_manager_mode_enabled(&authority, false)
+            .unwrap(),
+        revision,
+        "writing the current value commits nothing"
+    );
+    assert!(
+        store
+            .set_project_manager_mode_enabled(&authority, true)
+            .unwrap()
+            > revision
+    );
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert!(store.project_manager_mode_enabled());
+    store
+        .set_project_manager_mode_enabled(&authority, false)
+        .unwrap();
+    assert_eq!(store.project_mode_settings().len(), 1);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn project_mode_is_revision_checked_stores_only_non_default_and_is_deleted_with_the_project() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-project-mode-{}-{}.json",

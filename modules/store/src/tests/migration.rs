@@ -18,6 +18,7 @@ fn schema_65_reads_every_project_as_developer_without_inference() {
     .unwrap();
     let store = Store::open(&path).unwrap();
     assert!(store.project_mode_settings().is_empty());
+    assert!(!store.project_manager_mode_enabled());
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);

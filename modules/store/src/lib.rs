@@ -75,7 +75,8 @@ use termloop_domain::{
 // Version 66 adds Project mode settings for Projects opened as Project Manager.
 // Version 67 adds local sprints and per-Task Project Manager tracking records.
 // Version 68 adds bounded Project Manager ticket versions.
-const CURRENT_SCHEMA_VERSION: u32 = 68;
+// Version 69 adds the daemon-wide experimental Project Manager mode switch.
+const CURRENT_SCHEMA_VERSION: u32 = 69;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -117,6 +118,8 @@ struct CurrentState {
     task_source_configurations: Vec<TaskSourceConfiguration>,
     #[serde(default)]
     project_task_automation_configurations: Vec<ProjectTaskAutomationConfiguration>,
+    #[serde(default)]
+    project_manager_mode_enabled: bool,
     #[serde(default)]
     project_mode_settings: Vec<ProjectModeSetting>,
     #[serde(default)]
@@ -204,6 +207,7 @@ impl Default for CurrentState {
             issue_links: vec![],
             task_source_configurations: vec![],
             project_task_automation_configurations: vec![],
+            project_manager_mode_enabled: false,
             project_mode_settings: vec![],
             project_sprints: vec![],
             task_tracking_records: vec![],
@@ -415,6 +419,9 @@ impl Store {
     }
     pub fn project_task_automation_configurations(&self) -> &[ProjectTaskAutomationConfiguration] {
         &self.state.project_task_automation_configurations
+    }
+    pub fn project_manager_mode_enabled(&self) -> bool {
+        self.state.project_manager_mode_enabled
     }
     pub fn project_mode_settings(&self) -> &[ProjectModeSetting] {
         &self.state.project_mode_settings

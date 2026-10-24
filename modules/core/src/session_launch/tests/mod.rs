@@ -2980,6 +2980,9 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
         .unwrap();
     assert!(developer_plan.task_kickoff.is_none());
     drop(developer_plan);
+    runtime
+        .handle("projectManager.modeSet", json!({"enabled": true}))
+        .unwrap();
     let revision = runtime.state_revision();
     runtime
         .handle(
@@ -4048,6 +4051,9 @@ fn a_project_manager_project_launches_agents_under_the_project_manager_protocol(
         protocol_source(&mut runtime).as_deref(),
         Some("resources/prompts/builtin.agent.interactive@7")
     );
+    runtime
+        .handle("projectManager.modeSet", json!({"enabled": true}))
+        .unwrap();
     runtime
         .handle(
             "project.modeSet",

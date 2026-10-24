@@ -36,6 +36,8 @@ import type {
   ProjectModeGetResult,
   ProjectModeSetParams,
   ProjectModeSetResult,
+  ProjectManagerModeResult,
+  ProjectManagerModeSetParams,
   TaskInvestigationRequestResult,
   TaskProjectManagerAgentStartParams,
   TaskProjectManagerAgentStartResult,
@@ -346,6 +348,8 @@ export type DesktopApi = {
   projectTaskAutomationSet(params: ProjectTaskAutomationSetParams): Promise<ProjectTaskAutomationSetResult>;
   projectModeGet(projectId: string): Promise<ProjectModeGetResult>;
   projectModeSet(params: ProjectModeSetParams): Promise<ProjectModeSetResult>;
+  projectManagerModeGet(): Promise<ProjectManagerModeResult>;
+  projectManagerModeSet(params: ProjectManagerModeSetParams): Promise<ProjectManagerModeResult>;
   taskInvestigationRequest(taskId: string): Promise<TaskInvestigationRequestResult>;
   taskProjectManagerAgentStart(params: TaskProjectManagerAgentStartParams): Promise<TaskProjectManagerAgentStartResult>;
   projectManagerBoardGet(projectId: string): Promise<ProjectManagerBoardResult>;

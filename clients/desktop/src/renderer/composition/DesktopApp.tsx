@@ -37,7 +37,8 @@ import { ghosttyBridge } from "../transport/ghostty-bridge.js";
 import { terminalRendererKind } from "../terminal/renderer-kind.js";
 import { attachTerminal } from "../transport/terminal-port.js";
 import type { TaskSourceActions } from "../ui/TaskSourcesPanel.js";
-import type { ProjectModeActions } from "../ui/ProjectModeMenuItems.js";
+import type { ProjectManagerSwitchActions, ProjectModeActions } from "../ui/ProjectModeMenuItems.js";
+import { takeLegacyProjectManagerModeFlag } from "../project-manager-mode-flag.js";
 import { Shell } from "../ui/Shell.js";
 import { AgentLaunchInspector } from "../ui/AgentLaunchInspector.js";
 import { createPromptSettingsActions } from "./prompt-settings-actions.js";
@@ -744,6 +745,7 @@ export function DesktopApp() {
   const [assistantRefreshToken, setAssistantRefreshToken] = useState(0);
   const [keepAwakeRefreshToken, setKeepAwakeRefreshToken] = useState(0);
   const [taskSourceRefreshToken, setTaskSourceRefreshToken] = useState(0);
+  const [projectManagerSwitchToken, setProjectManagerSwitchToken] = useState(0);
   const [deletingTaskIds, setDeletingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [forkingSessionIds, setForkingSessionIds] = useState<ReadonlySet<string>>(() => new Set());
   /// Synchronous twin of forkingSessionIds: a repeated shortcut or menu click
@@ -832,6 +834,18 @@ export function DesktopApp() {
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const agentLibrary = useAgentLibrary(selectedSourceApi, projection.connection === "connected");
+  const projectManagerSwitch = useMemo<ProjectManagerSwitchActions>(() => ({
+    load: () => desktopApi.source(selectedConnectionProfileId).projectManagerModeGet(),
+    save: (enabled) => withControlError(desktopApi.source(selectedConnectionProfileId).projectManagerModeSet({ enabled })),
+    refreshToken: projectManagerSwitchToken,
+  }), [selectedConnectionProfileId, projectManagerSwitchToken]);
+  // The experimental switch used to be stored in this window; a computer that
+  // had it on hands the choice to its daemon once.
+  useEffect(() => {
+    if (projection.connection !== "connected" || !takeLegacyProjectManagerModeFlag()) return;
+    void desktopApi.source(selectedConnectionProfileId).projectManagerModeSet({ enabled: true })
+      .then(() => setProjectManagerSwitchToken((current) => current + 1), () => undefined);
+  }, [projection.connection, selectedConnectionProfileId]);
   const repositoryProjectId = projection.connection === "connected" ? selectedProject?.id : undefined;
   const [projectRepository, setProjectRepository] = useState<{ projectId: string; supported: boolean }>();
   useEffect(() => {
@@ -1073,6 +1087,11 @@ export function DesktopApp() {
       // projection without riding the whole-Project snapshot.
       if (selectedSourceMatches && (payload.topics.includes("taskSource") || payload.topics.includes("project"))) {
         setTaskSourceRefreshToken((current) => current + 1);
+      }
+      // The Project Manager mode switch changes every Project's effective mode,
+      // so the daemon announces it as a Project change.
+      if (selectedSourceMatches && payload.topics.includes("project")) {
+        setProjectManagerSwitchToken((current) => current + 1);
       }
       const gitHostIds = payload.topics.length === 1 && payload.topics[0] === "gitHost"
         ? payload.entityScopes?.find((scope) => scope.topic === "gitHost")?.ids
@@ -2714,6 +2733,7 @@ export function DesktopApp() {
       resetPromptAsset={promptSettings.reset}
       pullRequestsAvailable={pullRequestsAvailable}
       projectMode={projectModeActions}
+      projectManagerSwitch={projectManagerSwitch}
       projectManagerTaskActions={projectManagerTaskActions}
       loadRepositoryPullRequests={loadRepositoryPullRequests}
       loadSkillCatalog={loadSkillCatalog}

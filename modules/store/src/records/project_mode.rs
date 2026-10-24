@@ -3,6 +3,22 @@ use termloop_domain::{ProjectMode, ProjectModeSetting};
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
 impl Store {
+    /// Replaces the daemon-wide experimental Project Manager mode switch.
+    /// Turning it off keeps every stored Project mode; they only stop taking
+    /// effect until it is turned on again.
+    pub fn set_project_manager_mode_enabled(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        enabled: bool,
+    ) -> Result<u64, StoreError> {
+        if self.state.project_manager_mode_enabled == enabled {
+            return Ok(self.state.revision);
+        }
+        let previous = self.state.clone();
+        self.state.project_manager_mode_enabled = enabled;
+        self.commit_or_restore(previous)
+    }
+
     /// Replaces one Project's current mode. `Developer` is stored as the
     /// absence of a record, so switching back removes it.
     pub fn set_project_mode(

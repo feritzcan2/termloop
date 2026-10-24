@@ -118,8 +118,7 @@ import {
   setAppearancePreference,
   subscribeAppearancePreference,
 } from "../appearance-theme.js";
-import { projectManagerModeEnabled, subscribeProjectManagerModeFlag } from "../project-manager-mode-flag.js";
-import { ProjectModeMenuItems, projectManagerLayoutActive, useProjectMode, type ProjectModeActions } from "./ProjectModeMenuItems.js";
+import { ProjectModeMenuItems, projectManagerLayoutActive, useProjectManagerSwitch, useProjectMode, type ProjectManagerSwitchActions, type ProjectModeActions } from "./ProjectModeMenuItems.js";
 import {
   ProjectManagerStage,
   useProjectManagerBoard,
@@ -251,8 +250,10 @@ export type ShellProps = {
   /// GitHub or Azure DevOps remote.
   pullRequestsAvailable: boolean;
   /// Present when the connection can store Project modes. Shown only while the
-  /// experimental Project Manager mode flag is on.
+  /// selected daemon's experimental Project Manager mode switch is on.
   projectMode?: ProjectModeActions;
+  /// The selected daemon's experimental Project Manager mode switch.
+  projectManagerSwitch?: ProjectManagerSwitchActions;
   /// Project Manager Task commands; present while the experimental mode can
   /// be used.
   projectManagerTaskActions?: Pick<ProjectManagerWorkspaceActions, "startTaskAgent" | "requestInvestigation"> & ProjectManagerProjectActions;
@@ -549,11 +550,8 @@ export function Shell(props: ShellProps) {
     appearancePreference,
     appearancePreference,
   );
-  const projectManagerModeFlag = useSyncExternalStore(
-    subscribeProjectManagerModeFlag,
-    projectManagerModeEnabled,
-    projectManagerModeEnabled,
-  );
+  const projectManagerSwitch = useProjectManagerSwitch(props.projectManagerSwitch);
+  const projectManagerModeFlag = projectManagerSwitch.enabled;
   const selectedProjectMode = useProjectMode(props.selectedProject?.id, props.projectMode, projectManagerModeFlag);
   const projectManagerActive = projectManagerLayoutActive(projectManagerModeFlag, selectedProjectMode.mode)
     && Boolean(props.selectedProject && props.projectManagerTaskActions);
@@ -2580,6 +2578,11 @@ export function Shell(props: ShellProps) {
         showScope={showSettingsScope}
         localComputerName={localComputerName}
         keepAwake={props.computerKeepAwake}
+        projectManagerMode={props.projectManagerSwitch ? {
+          enabled: projectManagerSwitch.enabled,
+          available: projectManagerSwitch.known && props.connection === "connected",
+          change: projectManagerSwitch.set,
+        } : undefined}
         mobile={{ prepare: props.prepareMobileAccess, loadVoiceSettings: props.loadVoiceSettings, saveVoiceCredentials: props.saveVoiceCredentials }}
         update={props.appUpdate}
         integrations={props.integrationActions ? {
