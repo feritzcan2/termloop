@@ -137,6 +137,7 @@ pub struct AgentLaunchPlan {
     steward_task_assignment: Option<StewardTaskAssignmentLaunch>,
     task_kickoff: Option<TaskKickoffLaunch>,
     workflow_launch: Option<WorkflowLaunch>,
+    project_mode: termloop_domain::ProjectMode,
 }
 
 pub(crate) struct QuickActionPreviewTicket {
@@ -204,7 +205,12 @@ struct TaskKickoffLaunch {
     title: String,
     brief: Option<String>,
     jira_url: Option<String>,
+    /// Empty only for a Project Manager investigation without configured
+    /// Project instructions.
     kickoff_message: String,
+    /// A Task Agent in a Project Manager Project opens by investigating its
+    /// Task instead of with the configured kickoff message alone.
+    investigation: bool,
 }
 
 #[derive(Clone)]
@@ -247,6 +253,20 @@ pub enum AgentResumeLane {
 impl AgentMcpRole {
     pub fn is_agent_creator(&self) -> bool {
         matches!(self, Self::Improver { target } if target.target_kind == ImproverSessionTargetKind::AgentCreator && target.target_id.is_none())
+    }
+
+    /// An ordinary interactive Agent in a Project Manager Project keeps its
+    /// Interactive authority but runs under the Project Manager instructions.
+    pub(super) fn invocation_profile_in(
+        &self,
+        mode: termloop_domain::ProjectMode,
+    ) -> termloop_invocation::AgentMcpProfile {
+        match (self, mode) {
+            (Self::Interactive, termloop_domain::ProjectMode::ProjectManager) => {
+                termloop_invocation::AgentMcpProfile::ProjectManager
+            }
+            _ => self.invocation_profile(),
+        }
     }
 
     pub(super) fn invocation_profile(&self) -> termloop_invocation::AgentMcpProfile {
@@ -379,6 +399,7 @@ impl AgentLaunchPlan {
                 .mcp_token
                 .as_deref()
                 .map(|token| (token, &self.mcp_role)),
+            project_mode: self.project_mode,
             signals: &mut self.runtime_signal_sender,
             launch: self.prepared_launch.as_mut(),
             history: self
@@ -620,7 +641,9 @@ impl CoreRuntime {
         let account_prepared = account
             .as_ref()
             .is_none_or(|account| account.config_directory.is_none());
+        let project_mode = self.project_mode_or_developer(&project_id);
         Ok(AgentLaunchPlan {
+            project_mode,
             account,
             account_prepared,
             session_id,
@@ -1599,9 +1622,32 @@ impl CoreRuntime {
 
     pub fn attach_task_kickoff(
         &self,
-        mut plan: AgentLaunchPlan,
+        plan: AgentLaunchPlan,
         task_id: &str,
         kickoff_message: &str,
+    ) -> Result<AgentLaunchPlan, CoreError> {
+        self.attach_task_opening(plan, task_id, Some(kickoff_message))
+    }
+
+    /// A Task Agent launched without a kickoff message in a Project opened as
+    /// Project Manager still opens by investigating its Task. Developer
+    /// Projects launch it exactly as before.
+    pub fn attach_project_manager_investigation(
+        &self,
+        plan: AgentLaunchPlan,
+        task_id: &str,
+    ) -> Result<AgentLaunchPlan, CoreError> {
+        if plan.project_mode != termloop_domain::ProjectMode::ProjectManager {
+            return Ok(plan);
+        }
+        self.attach_task_opening(plan, task_id, None)
+    }
+
+    fn attach_task_opening(
+        &self,
+        mut plan: AgentLaunchPlan,
+        task_id: &str,
+        kickoff_message: Option<&str>,
     ) -> Result<AgentLaunchPlan, CoreError> {
         if plan
             .task_guard
@@ -1622,20 +1668,32 @@ impl CoreRuntime {
             .iter()
             .find(|link| link.task_id == task_id && link.provider == IssueLinkProvider::Jira)
             .and_then(|link| link.url.as_deref());
-        termloop_invocation::task_kickoff_prompt(
-            task_id,
-            &task.title,
-            task.brief.as_deref(),
-            jira_url,
-            kickoff_message,
-        )
+        let investigation = plan.project_mode == termloop_domain::ProjectMode::ProjectManager;
+        if investigation {
+            termloop_invocation::task_investigation_prompt(
+                task_id,
+                &task.title,
+                task.brief.as_deref(),
+                jira_url,
+                kickoff_message,
+            )
+        } else {
+            termloop_invocation::task_kickoff_prompt(
+                task_id,
+                &task.title,
+                task.brief.as_deref(),
+                jira_url,
+                kickoff_message.unwrap_or_default(),
+            )
+        }
         .map_err(|_| CoreError::InvalidParams("kickoffMessage".into()))?;
         plan.task_kickoff = Some(TaskKickoffLaunch {
             task_id: task_id.to_owned(),
             title: task.title.clone(),
             brief: task.brief.clone(),
             jira_url: jira_url.map(str::to_owned),
-            kickoff_message: kickoff_message.to_owned(),
+            kickoff_message: kickoff_message.unwrap_or_default().to_owned(),
+            investigation,
         });
         Ok(plan)
     }
@@ -1862,7 +1920,7 @@ impl CoreRuntime {
                     endpoint: &transport.mcp_endpoint,
                     token,
                     claude_config_path: &transport.claude_mcp_config_path,
-                    profile: plan.mcp_role.invocation_profile(),
+                    profile: plan.mcp_role.invocation_profile_in(plan.project_mode),
                 }
             })
         });
@@ -2487,7 +2545,7 @@ fn preview_transport_bindings(
                 endpoint: &transport.mcp_endpoint,
                 token,
                 claude_config_path: &transport.claude_mcp_config_path,
-                profile: plan.mcp_role.invocation_profile(),
+                profile: plan.mcp_role.invocation_profile_in(plan.project_mode),
             })
     });
     (observation, mcp)
@@ -2539,7 +2597,7 @@ fn resolve_interactive_agent_launch(
                 endpoint: &transport.mcp_endpoint,
                 token,
                 claude_config_path: &transport.claude_mcp_config_path,
-                profile: plan.mcp_role.invocation_profile(),
+                profile: plan.mcp_role.invocation_profile_in(plan.project_mode),
             })
     });
     resolve_interactive_agent_launch_with_transport(plan, conversation, observation, mcp)
@@ -2628,6 +2686,28 @@ fn resolve_interactive_agent_launch_with_transport(
             workflow.jira_url.as_deref(),
             &workflow.goal,
             &workflow.configuration,
+            conversation,
+            observation,
+            mcp,
+        )
+    } else if let Some(kickoff) = plan
+        .task_kickoff
+        .as_ref()
+        .filter(|kickoff| kickoff.investigation)
+    {
+        let selection = plan.interactive_options.clone().unwrap_or_default();
+        termloop_invocation::task_agent_with_investigation_for_conversation(
+            &plan.agent_id,
+            &plan.cwd,
+            &selection.model,
+            &selection.permission,
+            &selection.reasoning,
+            &kickoff.task_id,
+            &kickoff.title,
+            kickoff.brief.as_deref(),
+            kickoff.jira_url.as_deref(),
+            Some(kickoff.kickoff_message.as_str()).filter(|message| !message.is_empty()),
+            managed_worktree,
             conversation,
             observation,
             mcp,

@@ -21,12 +21,13 @@ use termloop_domain::{
     AgentConversationReadiness, AgentConversationReadinessRecord, CompanionMessage,
     ConfigurationVersion, ConfigurationVersionSelection, DeletedSessionRecord, DurableAgentPlan,
     IssueLink, KeepAwakePreference, ManagedWorktreeProof, McpToolDescriptionOverride,
-    PlaybookConfiguration, PlaybookStepProgress, ProjectRecord, ProjectTaskAutomationConfiguration,
-    RunConfiguration, RunSetupMark, SavedAgentLaunchSelection, SessionArchiveOperation,
-    SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
-    StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
-    TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
-    WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    PlaybookConfiguration, PlaybookStepProgress, ProjectModeSetting, ProjectRecord, ProjectSprint,
+    ProjectTaskAutomationConfiguration, RunConfiguration, RunSetupMark, SavedAgentLaunchSelection,
+    SessionArchiveOperation, SessionRecord, SessionRelocationOperation, SessionRelocationReceipt,
+    StewardConfiguration, StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension,
+    TaskBranchBinding, TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskTicketVersion,
+    TaskTrackingRecord, TaskWorktreeBinding, TrackerConfiguration, WorkflowConfiguration,
+    WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
     WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
     WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
@@ -71,7 +72,10 @@ use termloop_domain::{
 // Version 63 removes orphan branch sets left by Project deletion.
 // Version 64 adds bounded, user-requested Playbook fork evaluation receipts.
 // Version 65 adds close-parked Agent sidecars for Tasks closed with a checkout.
-const CURRENT_SCHEMA_VERSION: u32 = 65;
+// Version 66 adds Project mode settings for Projects opened as Project Manager.
+// Version 67 adds local sprints and per-Task Project Manager tracking records.
+// Version 68 adds bounded Project Manager ticket versions.
+const CURRENT_SCHEMA_VERSION: u32 = 68;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -113,6 +117,14 @@ struct CurrentState {
     task_source_configurations: Vec<TaskSourceConfiguration>,
     #[serde(default)]
     project_task_automation_configurations: Vec<ProjectTaskAutomationConfiguration>,
+    #[serde(default)]
+    project_mode_settings: Vec<ProjectModeSetting>,
+    #[serde(default)]
+    project_sprints: Vec<ProjectSprint>,
+    #[serde(default)]
+    task_tracking_records: Vec<TaskTrackingRecord>,
+    #[serde(default)]
+    task_ticket_versions: Vec<TaskTicketVersion>,
     #[serde(default)]
     provisioning_operations: Vec<WorktreeProvisioningOperation>,
     #[serde(default)]
@@ -192,6 +204,10 @@ impl Default for CurrentState {
             issue_links: vec![],
             task_source_configurations: vec![],
             project_task_automation_configurations: vec![],
+            project_mode_settings: vec![],
+            project_sprints: vec![],
+            task_tracking_records: vec![],
+            task_ticket_versions: vec![],
             provisioning_operations: vec![],
             managed_worktrees: vec![],
             cleanup_operations: vec![],
@@ -399,6 +415,18 @@ impl Store {
     }
     pub fn project_task_automation_configurations(&self) -> &[ProjectTaskAutomationConfiguration] {
         &self.state.project_task_automation_configurations
+    }
+    pub fn project_mode_settings(&self) -> &[ProjectModeSetting] {
+        &self.state.project_mode_settings
+    }
+    pub fn project_sprints(&self) -> &[ProjectSprint] {
+        &self.state.project_sprints
+    }
+    pub fn task_tracking_records(&self) -> &[TaskTrackingRecord] {
+        &self.state.task_tracking_records
+    }
+    pub fn task_ticket_versions(&self) -> &[TaskTicketVersion] {
+        &self.state.task_ticket_versions
     }
     pub fn sessions(&self) -> &[SessionRecord] {
         &self.state.sessions

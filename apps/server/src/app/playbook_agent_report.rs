@@ -6,7 +6,9 @@
 use std::sync::atomic::Ordering;
 
 use serde_json::Value;
-use termloop_contract::current::{PlaybookStepReportParams, ProjectionTopic};
+use termloop_contract::current::{
+    PlaybookStepReportParams, ProjectionTopic, TaskStatusRecordParams,
+};
 use termloop_core::companion_integrations::tracker_runtime::AgentStepReportStatus;
 
 use super::AppState;
@@ -54,4 +56,35 @@ pub(super) async fn report_step(
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
     Ok(receipt.result)
+}
+
+/// A Project Manager Task Agent replaces its Task's status record. Core owns
+/// the Task-Agent identity, Project-mode, and revision checks.
+pub(super) async fn record_status(
+    token: &str,
+    params: TaskStatusRecordParams,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let (result, state_revision) = {
+        let mut core = state.core.lock().await;
+        let result = core.record_task_agent_status(
+            token,
+            params.status_markdown,
+            params.expected_status_revision,
+            termloop_core::companion_integrations::tracker_runtime::TaskAgentTicketUpdate {
+                tracking: params.tracking,
+                ticket: params.ticket,
+                change_summary: params.change_summary,
+                expected_version: params.expected_ticket_version,
+            },
+            super::current_epoch_ms(),
+        )?;
+        (result, core.state_revision())
+    };
+    let _ = state.invalidation_requests.try_send(InvalidationRequest {
+        topics: vec![ProjectionTopic::Task],
+        state_revision,
+        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+    });
+    Ok(result)
 }

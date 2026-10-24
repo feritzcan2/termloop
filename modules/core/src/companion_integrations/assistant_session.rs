@@ -83,6 +83,7 @@ impl PersistentAssistantLaunchPlan {
                 mode: ProviderRuntimeMode::OptionalObservation,
                 authorizer: &self.mcp_authorizer,
                 mcp: Some((&self.mcp_token, &self.mcp_role)),
+                project_mode: termloop_domain::ProjectMode::Developer,
                 signals: &mut self.runtime_signal_sender,
                 launch: Some(&mut self.launch),
                 history: None,

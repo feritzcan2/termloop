@@ -96,7 +96,14 @@ struct TaskAgentStanding {
 }
 
 impl CoreRuntime {
-    fn task_agent_standing(&self, token: &str) -> Result<TaskAgentStanding, CoreError> {
+    /// The open Task whose one canonical Task Agent this authenticated
+    /// interactive Session is, as `(session_id, project_id, task)`. Only the
+    /// Agent that Steward coordination would address for a Task may speak for
+    /// it; a peer or helper in the same worktree cannot.
+    pub(crate) fn task_agent_own_task(
+        &self,
+        token: &str,
+    ) -> Result<Option<(String, String, termloop_domain::TaskRecord)>, CoreError> {
         let principal = self.mcp_authorizer.authenticate(token)?;
         if !matches!(
             principal.role(),
@@ -112,8 +119,6 @@ impl CoreRuntime {
             .find(|session| session.id == session_id)
             .map(|session| session.project_id.clone())
             .ok_or(CoreError::CapabilityDenied)?;
-        // Only the one Agent that Steward coordination would address for a
-        // Task may speak for it; a peer or helper in the same worktree cannot.
         let task = self
             .store
             .tasks()
@@ -131,6 +136,13 @@ impl CoreRuntime {
                 )
                 .is_ok()
             })
+            .cloned();
+        Ok(task.map(|task| (session_id.to_owned(), project_id, task)))
+    }
+
+    fn task_agent_standing(&self, token: &str) -> Result<TaskAgentStanding, CoreError> {
+        let (session_id, project_id, task) = self
+            .task_agent_own_task(token)?
             .ok_or(CoreError::NoTaskPlaybook)?;
         let playbook = self
             .store
@@ -142,7 +154,7 @@ impl CoreRuntime {
             .task_playbook_position(&task.id)
             .ok_or(CoreError::NoTaskPlaybook)?;
         Ok(TaskAgentStanding {
-            session_id: session_id.to_owned(),
+            session_id,
             project_id,
             task_id: task.id.clone(),
             task_title: task.title.clone(),

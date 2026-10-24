@@ -150,6 +150,22 @@ describe("Add Project dialog", () => {
     return createProject;
   };
 
+  it("asks Developer or Project Manager only while Project Manager mode is on", async () => {
+    const modeChoices = () => [...container.querySelectorAll<HTMLButtonElement>('.project-mode-choice [role="radio"]')];
+    await render();
+    expect(modeChoices()).toEqual([]);
+
+    const createProject = await render(vi.fn(async () => undefined), { overrides: { chooseMode: true } });
+    expect(modeChoices().map((button) => [button.querySelector("strong")?.textContent, button.getAttribute("aria-checked")])).toEqual([
+      ["Developer", "true"],
+      ["Project Manager", "false"],
+    ]);
+    await act(async () => modeChoices()[1]?.click());
+    await act(async () => rows(container)[1]?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".primary-button")?.click());
+    expect(createProject).toHaveBeenCalledWith("local", "Projects", "/Users/dev/Projects", "projectManager");
+  });
+
   it("selects a folder on one click without leaving the folder on screen", async () => {
     await render();
     expect(rowNames(container)).toEqual(["Downloads", "Projects"]);
@@ -208,7 +224,7 @@ describe("Add Project dialog", () => {
     await act(async () => rows(container)[1]?.click());
     await act(async () => container.querySelector<HTMLButtonElement>(".dialog-actions .primary-button")?.click());
 
-    expect(createProject).toHaveBeenCalledWith("local", "termloop-next", "/Users/dev/Projects/termloop-next");
+    expect(createProject).toHaveBeenCalledWith("local", "termloop-next", "/Users/dev/Projects/termloop-next", "developer");
   });
 
   it("has no OS panel button until one is wired in", async () => {
@@ -228,7 +244,7 @@ describe("Add Project dialog", () => {
     expect(selectedPath(container)).toBe("/Users/dev/Projects/termloop-next");
 
     await act(async () => container.querySelector<HTMLButtonElement>(".primary-button")?.click());
-    expect(createProject).toHaveBeenCalledWith("local", "termloop-next", "/Users/dev/Projects/termloop-next");
+    expect(createProject).toHaveBeenCalledWith("local", "termloop-next", "/Users/dev/Projects/termloop-next", "developer");
   });
 
   it("keeps the current choice when the OS panel is cancelled", async () => {

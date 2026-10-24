@@ -44,6 +44,7 @@ pub struct AgentResumePlan {
     pub(super) shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(super) cancellation: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(super) relocation: Option<super::relocation::AgentRelocationContext>,
+    pub(super) project_mode: termloop_domain::ProjectMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,8 +246,8 @@ impl AgentResumePlan {
                 profile: self
                     .mcp_role
                     .as_ref()
-                    .map(super::AgentMcpRole::invocation_profile)
-                    .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
+                    .unwrap_or(&super::AgentMcpRole::Interactive)
+                    .invocation_profile_in(self.project_mode),
             });
         if let Some(super::AgentMcpRole::Helper { request_id }) = &self.mcp_role {
             let launch = if self.managed_worktree_trust {
@@ -410,6 +411,7 @@ impl AgentResumePlan {
                 mode: ProviderRuntimeMode::Resume,
                 authorizer: &self.mcp_authorizer,
                 mcp: self.mcp_token.as_deref().zip(self.mcp_role.as_ref()),
+                project_mode: self.project_mode,
                 signals: &mut self.runtime_signal_sender,
                 launch: self.prepared_launch.as_mut(),
                 history: (self.agent_id == "codex")
@@ -608,8 +610,8 @@ impl CoreRuntime {
                 claude_config_path: &transport.claude_mcp_config_path,
                 profile: mcp_role
                     .as_ref()
-                    .map(super::AgentMcpRole::invocation_profile)
-                    .unwrap_or(termloop_invocation::AgentMcpProfile::Interactive),
+                    .unwrap_or(&super::AgentMcpRole::Interactive)
+                    .invocation_profile_in(self.project_mode_or_developer(&session.project_id)),
             });
         let managed_worktree_trust = self.session_has_current_managed_worktree_proof(session);
         let agent_profile_ref = session
@@ -1060,6 +1062,7 @@ impl CoreRuntime {
         Ok(crate::AgentResumePlanOutcome::Prepare(Box::new(
             crate::AgentResumePlan {
                 session_id,
+                project_mode: self.project_mode_or_developer(&session.project_id),
                 project_id: session.project_id,
                 cwd: session.process.cwd,
                 cwd_identity,

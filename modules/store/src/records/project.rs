@@ -160,6 +160,18 @@ impl Store {
             .project_task_automation_configurations
             .retain(|configuration| configuration.project_id != project_id);
         self.state
+            .project_mode_settings
+            .retain(|setting| setting.project_id != project_id);
+        self.state
+            .project_sprints
+            .retain(|sprint| sprint.project_id != project_id);
+        self.state
+            .task_tracking_records
+            .retain(|record| !task_ids.contains(&record.task_id));
+        self.state
+            .task_ticket_versions
+            .retain(|version| !task_ids.contains(&version.task_id));
+        self.state
             .provisioning_operations
             .retain(|operation| !task_ids.contains(&operation.task_id));
         self.state

@@ -15,6 +15,9 @@
       "skill.catalogGet",
       "project.list",
       "project.taskAutomationGet",
+      "project.modeGet",
+      "projectManager.boardGet",
+      "projectManager.ticketVersions",
       "task.list",
       "gitHost.pullRequestList",
       "session.list",
@@ -318,6 +321,118 @@
       },
       "result": {
         "$ref": "#/$defs/projectTaskAutomationResult"
+      }
+    },
+    "project.modeGet": {
+      "params": {
+        "$ref": "#/$defs/projectIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectModeResult"
+      }
+    },
+    "project.modeSet": {
+      "params": {
+        "$ref": "#/$defs/projectModeSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectModeResult"
+      }
+    },
+    "task.projectManagerAgentStart": {
+      "params": {
+        "$ref": "#/$defs/taskProjectManagerAgentStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskProjectManagerAgentStartResult"
+      }
+    },
+    "task.investigationRequest": {
+      "params": {
+        "$ref": "#/$defs/taskIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskInvestigationRequestResult"
+      }
+    },
+    "projectManager.boardGet": {
+      "params": {
+        "$ref": "#/$defs/projectIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.sprintCreate": {
+      "params": {
+        "$ref": "#/$defs/projectManagerSprintCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.sprintUpdate": {
+      "params": {
+        "$ref": "#/$defs/projectManagerSprintUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.sprintDelete": {
+      "params": {
+        "$ref": "#/$defs/projectManagerSprintIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.taskTrackingSet": {
+      "params": {
+        "$ref": "#/$defs/projectManagerTaskTrackingSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.taskCreate": {
+      "params": {
+        "$ref": "#/$defs/projectManagerTaskCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerTaskCreateResult"
+      }
+    },
+    "projectManager.jiraSearch": {
+      "params": {
+        "$ref": "#/$defs/projectManagerJiraSearchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerJiraSearchResult"
+      }
+    },
+    "projectManager.ticketSave": {
+      "params": {
+        "$ref": "#/$defs/projectManagerTicketSaveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerTicketSaveResult"
+      }
+    },
+    "projectManager.ticketVersions": {
+      "params": {
+        "$ref": "#/$defs/projectManagerTicketVersionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerTicketVersionsResult"
+      }
+    },
+    "projectManager.ticketRestore": {
+      "params": {
+        "$ref": "#/$defs/projectManagerTicketRestoreParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerTicketSaveResult"
       }
     },
     "project.worktreeSummary": {
@@ -2379,6 +2494,20 @@
         "project.list",
         "project.taskAutomationGet",
         "project.taskAutomationSet",
+        "project.modeGet",
+        "project.modeSet",
+        "task.projectManagerAgentStart",
+        "task.investigationRequest",
+        "projectManager.boardGet",
+        "projectManager.sprintCreate",
+        "projectManager.sprintUpdate",
+        "projectManager.sprintDelete",
+        "projectManager.taskTrackingSet",
+        "projectManager.taskCreate",
+        "projectManager.jiraSearch",
+        "projectManager.ticketSave",
+        "projectManager.ticketVersions",
+        "projectManager.ticketRestore",
         "project.worktreeSummary",
         "project.worktreeChangeList",
         "project.worktreeDiff",
@@ -2855,7 +2984,9 @@
         "playbook_evaluation_read",
         "playbook_evaluation_complete",
         "playbook_step_read",
-        "playbook_step_report"
+        "playbook_step_report",
+        "task_status_read",
+        "task_status_record"
       ]
     },
     "mcpToolRole": {
@@ -2937,8 +3068,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 38,
-          "maxItems": 38,
+          "minItems": 40,
+          "maxItems": 40,
           "uniqueItems": true
         }
       }
@@ -3393,6 +3524,972 @@
           }
         }
       ]
+    },
+    "projectMode": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectMode",
+      "type": "string",
+      "enum": ["developer", "projectManager"]
+    },
+    "projectModeSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectModeSetParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "mode", "expectedRevision"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "mode": { "$ref": "#/$defs/projectMode" },
+        "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
+      }
+    },
+    "taskProjectManagerAgentStartParams": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskProjectManagerAgentStartParams",
+      "description": "The Agent to start for the Task. Without agentId the Project's Task automation Agent, or the last ordinary Agent launch, is used.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "permission": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reasoning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "taskProjectManagerAgentStartResult": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskProjectManagerAgentStartResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "status"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "started"
+          ]
+        }
+      }
+    },
+    "sprintState": {
+      "x-codegen": true,
+      "x-codegen-name": "SprintState",
+      "type": "string",
+      "enum": [
+        "planned",
+        "active",
+        "closed"
+      ]
+    },
+    "environmentDeployState": {
+      "x-codegen": true,
+      "x-codegen-name": "EnvironmentDeployState",
+      "type": "string",
+      "enum": [
+        "unknown",
+        "notDeployed",
+        "inProgress",
+        "deployed"
+      ]
+    },
+    "projectSprintDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectSprintDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "state",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "$ref": "#/$defs/sprintState"
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "taskEnvironmentStatusDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskEnvironmentStatusDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "state",
+        "detail"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "$ref": "#/$defs/environmentDeployState"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      }
+    },
+    "taskEnvironmentStatusInput": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskEnvironmentStatusInput",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "$ref": "#/$defs/environmentDeployState"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      }
+    },
+    "taskTrackingDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTrackingDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "sprintId",
+        "developer",
+        "jiraStatus",
+        "environments",
+        "blockers",
+        "note",
+        "updatedAtEpochMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "developer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/taskEnvironmentStatusDto"
+          }
+        },
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "projectManagerBoardResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerBoardResult",
+      "description": "A Project Manager Project's local sprints and per-Task tracking records.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "sprints",
+        "tracking",
+        "tickets",
+        "stateRevision"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sprints": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/projectSprintDto"
+          }
+        },
+        "tracking": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskTrackingDto"
+          }
+        },
+        "tickets": {
+          "description": "The newest version of each Task ticket that has one.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskTicketHeadDto"
+          }
+        },
+        "stateRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "projectManagerSprintCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerSprintCreateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "name"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "$ref": "#/$defs/sprintState"
+        }
+      }
+    },
+    "projectManagerSprintUpdateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerSprintUpdateParams",
+      "description": "Only one sprint per Project is active; starting a sprint while another is active is refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId",
+        "name",
+        "state"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "$ref": "#/$defs/sprintState"
+        }
+      }
+    },
+    "projectManagerSprintIdParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerSprintIdParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "projectManagerTaskTrackingSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTaskTrackingSetParams",
+      "description": "Replaces the Task's whole tracking record; an omitted field is cleared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "developer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/taskEnvironmentStatusInput"
+          }
+        },
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        }
+      }
+    },
+    "projectManagerTaskCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTaskCreateParams",
+      "description": "Creates a local Task, optionally copied from one Jira issue, in a sprint or the backlog.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "title"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "brief": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "jiraUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048
+        },
+        "sprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "developer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      }
+    },
+    "projectManagerTaskCreateResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTaskCreateResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task",
+        "board"
+      ],
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/taskDto"
+        },
+        "board": {
+          "$ref": "#/$defs/projectManagerBoardResult"
+        }
+      }
+    },
+    "projectManagerJiraSearchParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraSearchParams",
+      "description": "A Jira issue key or free text, searched through the Project's enabled Jira Task Source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "query"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "projectManagerJiraIssueDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraIssueDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "url",
+        "summary",
+        "description",
+        "statusName",
+        "assigneeDisplay",
+        "taskId"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statusName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assigneeDisplay": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "taskId": {
+          "description": "The local Task already copied from this issue, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "projectManagerJiraSearchResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerJiraSearchResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issues",
+        "truncated",
+        "failureReason"
+      ],
+      "properties": {
+        "issues": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/projectManagerJiraIssueDto"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/taskSourceFailureReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ticketAuthor": {
+      "x-codegen": true,
+      "x-codegen-name": "TicketAuthor",
+      "type": "string",
+      "enum": [
+        "projectManager",
+        "agent"
+      ]
+    },
+    "taskTicketContentDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketContentDto",
+      "description": "Everything a ticket says: the Task title, its Markdown description, and its tracked delivery facts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "brief",
+        "developer",
+        "jiraStatus",
+        "environments",
+        "blockers",
+        "note"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "brief": {
+          "description": "Markdown.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "developer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/taskEnvironmentStatusDto"
+          }
+        },
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        }
+      }
+    },
+    "taskTicketHeadDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketHeadDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "number",
+        "author",
+        "summary",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "author": {
+          "$ref": "#/$defs/ticketAuthor"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "taskTicketVersionDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketVersionDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "author",
+        "summary",
+        "createdAtEpochMs",
+        "content"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "author": {
+          "$ref": "#/$defs/ticketAuthor"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "content": {
+          "$ref": "#/$defs/taskTicketContentDto"
+        }
+      }
+    },
+    "projectManagerTicketSaveParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTicketSaveParams",
+      "description": "Saves the whole ticket as its next version; an omitted field is cleared and the sprint stays. With expectedVersion, a newer save is refused as a revision conflict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "title"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "brief": {
+          "description": "Markdown.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "developer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "jiraStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/taskEnvironmentStatusInput"
+          }
+        },
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "projectManagerTicketSaveResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTicketSaveResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "version",
+        "board"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "board": {
+          "$ref": "#/$defs/projectManagerBoardResult"
+        }
+      }
+    },
+    "projectManagerTicketVersionsParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTicketVersionsParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "projectManagerTicketVersionsResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTicketVersionsResult",
+      "description": "The kept versions of one ticket, newest first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "versions"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "versions": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/taskTicketVersionDto"
+          }
+        }
+      }
+    },
+    "projectManagerTicketRestoreParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerTicketRestoreParams",
+      "description": "Saves an earlier version's content as the newest version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "number"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "taskInvestigationRequestResult": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskInvestigationRequestResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "sessionId",
+        "status"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "submitting"
+          ]
+        }
+      }
+    },
+    "projectModeResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectModeResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "mode", "stateRevision"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1 },
+        "mode": { "$ref": "#/$defs/projectMode" },
+        "stateRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
+      }
     },
     "projectWorktreeSummaryDto": {
       "x-codegen": true,

@@ -10,6 +10,8 @@ mod mcp_settings;
 pub(crate) mod playbook;
 pub(crate) mod playbook_evaluation;
 mod project;
+mod project_mode;
+mod project_sprint;
 mod project_task_automation;
 mod run_configuration;
 mod session;

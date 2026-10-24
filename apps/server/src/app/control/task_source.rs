@@ -936,6 +936,66 @@ async fn publish(state: &AppState, state_revision: u64, observation_sequence: u6
     .await;
 }
 
+/// Searches Jira through the Project's enabled Task Source so a Project
+/// Manager can copy one issue into a local Task. Nothing is stored.
+pub(super) async fn project_manager_jira_search(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let project_id = params
+        .get("projectId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let plan = state
+        .core
+        .lock()
+        .await
+        .plan_project_manager_jira_search(&params)?;
+    let secret = match read_stored_credential(state, &plan.source_id).await {
+        Ok(secret) => secret,
+        Err(reason) => {
+            return Ok(
+                json!({ "issues": [], "truncated": false, "failureReason": termloop_core::task_source_failure_wire(reason) }),
+            );
+        }
+    };
+    let source_id = plan.source_id.clone();
+    let observer = state.task_source_refresh_observer.clone();
+    let outcome = tokio::task::spawn_blocking(move || match expose_credential(&secret) {
+        Ok((email, token)) => observer.observe(&plan, email, token),
+        Err(reason) => TaskSourceRefreshOutcome::Failure {
+            reason,
+            retry_after_seconds: None,
+        },
+    })
+    .await
+    .unwrap_or(TaskSourceRefreshOutcome::Failure {
+        reason: TaskSourceFailure::ProviderUnavailable,
+        retry_after_seconds: None,
+    });
+    match outcome {
+        TaskSourceRefreshOutcome::Success(result) => {
+            set_credential_state(state, &source_id, TaskSourceCredentialPresence::Present);
+            Ok(state
+                .core
+                .lock()
+                .await
+                .project_manager_jira_search_result(&project_id, result))
+        }
+        TaskSourceRefreshOutcome::Failure { reason, .. } => {
+            set_credential_state(
+                state,
+                &source_id,
+                credential_presence_for_failure(Some(reason)),
+            );
+            Ok(
+                json!({ "issues": [], "truncated": false, "failureReason": termloop_core::task_source_failure_wire(reason) }),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

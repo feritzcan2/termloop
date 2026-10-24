@@ -416,6 +416,12 @@ impl Store {
         self.state
             .issue_links
             .retain(|link| link.task_id != task_id);
+        self.state
+            .task_tracking_records
+            .retain(|record| record.task_id != task_id);
+        self.state
+            .task_ticket_versions
+            .retain(|version| version.task_id != task_id);
         // A deleted Task asks no questions, so its pipeline answers go with it.
         self.state
             .playbook_step_progress
@@ -543,6 +549,12 @@ impl Store {
         self.state
             .issue_links
             .retain(|link| link.task_id != task_id);
+        self.state
+            .task_tracking_records
+            .retain(|record| record.task_id != task_id);
+        self.state
+            .task_ticket_versions
+            .retain(|version| version.task_id != task_id);
         // A deleted Task asks no questions, so its pipeline answers go with it.
         self.state
             .playbook_step_progress

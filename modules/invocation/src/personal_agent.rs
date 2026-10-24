@@ -26,14 +26,12 @@ pub(super) fn personal_agent_provider_instructions(
             ("instructions", profile.instructions.as_str()),
         ],
     )?;
-    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
-        format!(
-            "{}\n\n{instructions}",
-            crate::INTERACTIVE_AGENT_TEMPLATE.authored_body
-        )
-    } else {
-        instructions
-    };
+    let instructions =
+        if let Some(protocol) = mcp.and_then(|mcp| mcp.profile.interactive_instructions()) {
+            format!("{}\n\n{instructions}", protocol.authored_body)
+        } else {
+            instructions
+        };
     if instructions.len() > 64 * 1024 {
         return Err(InvocationError::InvalidDeveloperInstructions);
     }

@@ -410,7 +410,7 @@ pub(super) fn fallback_mutation_impact(method: &str) -> Option<CommitImpact> {
         Some(CommitImpact::Project)
     } else if matches!(method, "task.abandonArchive" | "task.deleteArchived") {
         Some(CommitImpact::TaskSessionAgent)
-    } else if method.starts_with("task.") {
+    } else if method.starts_with("task.") || method.starts_with("projectManager.") {
         Some(CommitImpact::Task)
     } else if method.starts_with("session.") {
         if method == "session.deleteArchived" {

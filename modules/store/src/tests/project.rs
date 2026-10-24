@@ -1,8 +1,8 @@
 use super::*;
 use termloop_domain::{
-    NormalizedWorktreeSpec, ProcessDescriptor, ProjectRecord, ProjectTaskAutomationConfiguration,
-    ProvisioningBranchMode, ProvisioningStage, SessionKind, SessionRecord, TaskRecord, TaskStatus,
-    WorktreeProvisioningOperation,
+    NormalizedWorktreeSpec, ProcessDescriptor, ProjectMode, ProjectModeSetting, ProjectRecord,
+    ProjectTaskAutomationConfiguration, ProvisioningBranchMode, ProvisioningStage, SessionKind,
+    SessionRecord, TaskRecord, TaskStatus, WorktreeProvisioningOperation,
 };
 
 fn project(id: &str) -> ProjectRecord {
@@ -31,6 +31,297 @@ fn task(id: &str, project_id: &str) -> TaskRecord {
         created_at_epoch_ms: 1,
         updated_at_epoch_ms: 1,
     }
+}
+
+#[test]
+fn sprints_keep_one_active_per_project_and_tracking_follows_tasks_and_sprints() {
+    use termloop_domain::{
+        EnvironmentDeployState, ProjectSprint, SprintState, TaskEnvironmentStatus,
+        TaskTrackingRecord,
+    };
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-sprints-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    store.insert_task(&authority, task("task-a", "pm")).unwrap();
+    let sprint = |id: &str, state| ProjectSprint {
+        id: id.into(),
+        project_id: "pm".into(),
+        name: format!("Sprint {id}"),
+        state,
+        created_at_epoch_ms: 1,
+    };
+    store
+        .create_project_sprint(&authority, sprint("1", SprintState::Active))
+        .unwrap();
+    assert!(matches!(
+        store.create_project_sprint(&authority, sprint("2", SprintState::Active)),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .create_project_sprint(&authority, sprint("2", SprintState::Planned))
+        .unwrap();
+    assert!(matches!(
+        store.update_project_sprint(&authority, "2", "Sprint 2", SprintState::Active),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .update_project_sprint(&authority, "1", "Sprint 1", SprintState::Closed)
+        .unwrap();
+    store
+        .update_project_sprint(&authority, "2", "Sprint 2", SprintState::Active)
+        .unwrap();
+    assert_eq!(
+        store.active_sprint("pm").map(|sprint| sprint.id.as_str()),
+        Some("2")
+    );
+
+    let record = TaskTrackingRecord {
+        task_id: "task-a".into(),
+        sprint_id: Some("2".into()),
+        developer: Some("Ada".into()),
+        environments: vec![TaskEnvironmentStatus {
+            name: "Staging".into(),
+            state: EnvironmentDeployState::Deployed,
+            detail: None,
+        }],
+        updated_at_epoch_ms: 5,
+        ..TaskTrackingRecord::default()
+    };
+    store.set_task_tracking(&authority, record.clone()).unwrap();
+    assert!(matches!(
+        store.set_task_tracking(
+            &authority,
+            TaskTrackingRecord {
+                sprint_id: Some("missing".into()),
+                ..record.clone()
+            }
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .set_task_tracking(
+                &authority,
+                TaskTrackingRecord {
+                    updated_at_epoch_ms: 9,
+                    ..record.clone()
+                }
+            )
+            .unwrap(),
+        revision,
+        "an unchanged record commits nothing"
+    );
+    store.delete_project_sprint(&authority, "2").unwrap();
+    assert_eq!(store.task_tracking("task-a").unwrap().sprint_id, None);
+    assert_eq!(
+        store.task_tracking("task-a").unwrap().developer.as_deref(),
+        Some("Ada")
+    );
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.project_sprints().len(), 1);
+    store.delete_task(&authority, "task-a").unwrap();
+    assert!(store.task_tracking_records().is_empty());
+    store
+        .delete_project_and_related_records(&authority, "pm")
+        .unwrap();
+    assert!(store.project_sprints().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
+    use termloop_domain::{
+        ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX, TaskTicketContent,
+        TaskTrackingRecord, TicketAuthor,
+    };
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-tickets-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    store.insert_task(&authority, task("task-a", "pm")).unwrap();
+    store
+        .create_project_sprint(
+            &authority,
+            ProjectSprint {
+                id: "s1".into(),
+                project_id: "pm".into(),
+                name: "Sprint 1".into(),
+                state: SprintState::Active,
+                created_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    store
+        .set_task_tracking(
+            &authority,
+            TaskTrackingRecord {
+                task_id: "task-a".into(),
+                sprint_id: Some("s1".into()),
+                updated_at_epoch_ms: 2,
+                ..TaskTrackingRecord::default()
+            },
+        )
+        .unwrap();
+    let content = |brief: &str| TaskTicketContent {
+        title: "Ship CORS fix".into(),
+        brief: Some(brief.into()),
+        developer: Some("Ada".into()),
+        ..TaskTicketContent::default()
+    };
+    let saved = store
+        .save_task_ticket(
+            &authority,
+            "task-a",
+            content("First"),
+            TicketAuthor::ProjectManager,
+            None,
+            Some(0),
+            10,
+        )
+        .unwrap();
+    assert_eq!(saved, 2, "the ticket as it was is version 1");
+    let original = &store.task_ticket_versions()[0];
+    assert_eq!(original.content.title, "task-a");
+    assert_eq!(store.tasks()[0].brief.as_deref(), Some("First"));
+    let tracking = store.task_tracking("task-a").unwrap();
+    assert_eq!(tracking.sprint_id.as_deref(), Some("s1"));
+    assert_eq!(tracking.developer.as_deref(), Some("Ada"));
+
+    assert!(matches!(
+        store.save_task_ticket(
+            &authority,
+            "task-a",
+            content("Stale"),
+            TicketAuthor::ProjectManager,
+            None,
+            Some(1),
+            11
+        ),
+        Err(StoreError::RevisionConflict)
+    ));
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .save_task_ticket(
+                &authority,
+                "task-a",
+                content("First"),
+                TicketAuthor::Agent,
+                None,
+                None,
+                12
+            )
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        store.revision(),
+        revision,
+        "unchanged content records nothing"
+    );
+    for index in 0..TASK_TICKET_VERSIONS_MAX {
+        store
+            .save_task_ticket(
+                &authority,
+                "task-a",
+                content(&format!("Edit {index}")),
+                TicketAuthor::Agent,
+                Some("Checked Jira".into()),
+                None,
+                20 + index as u64,
+            )
+            .unwrap();
+    }
+    assert_eq!(store.task_ticket_versions().len(), TASK_TICKET_VERSIONS_MAX);
+    assert_eq!(
+        store.task_ticket_head("task-a").unwrap().number,
+        2 + TASK_TICKET_VERSIONS_MAX as u64
+    );
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.task_ticket_versions().len(), TASK_TICKET_VERSIONS_MAX);
+    store.delete_task(&authority, "task-a").unwrap();
+    assert!(store.task_ticket_versions().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn project_mode_is_revision_checked_stores_only_non_default_and_is_deleted_with_the_project() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-project-mode-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(&authority, project("project-mode"))
+        .unwrap();
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .set_project_mode(&authority, "project-mode", ProjectMode::Developer, revision)
+            .unwrap(),
+        revision,
+        "the default mode is already current and commits nothing"
+    );
+    assert!(matches!(
+        store.set_project_mode(&authority, "missing", ProjectMode::ProjectManager, revision),
+        Err(StoreError::NotFound)
+    ));
+    let switched = store
+        .set_project_mode(
+            &authority,
+            "project-mode",
+            ProjectMode::ProjectManager,
+            revision,
+        )
+        .unwrap();
+    assert!(switched > revision);
+    assert_eq!(
+        store.project_mode_settings(),
+        &[ProjectModeSetting {
+            project_id: "project-mode".into(),
+            mode: ProjectMode::ProjectManager,
+        }]
+    );
+    assert!(matches!(
+        store.set_project_mode(&authority, "project-mode", ProjectMode::Developer, revision),
+        Err(StoreError::RevisionConflict)
+    ));
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.project_mode_settings().len(), 1);
+    let revision = store.revision();
+    store
+        .set_project_mode(&authority, "project-mode", ProjectMode::Developer, revision)
+        .unwrap();
+    assert!(store.project_mode_settings().is_empty());
+    let revision = store.revision();
+    store
+        .set_project_mode(
+            &authority,
+            "project-mode",
+            ProjectMode::ProjectManager,
+            revision,
+        )
+        .unwrap();
+    store
+        .delete_project_and_related_records(&authority, "project-mode")
+        .unwrap();
+    assert!(store.project_mode_settings().is_empty());
+    let _ = std::fs::remove_file(path);
 }
 
 #[test]

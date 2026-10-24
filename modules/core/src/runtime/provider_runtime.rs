@@ -23,6 +23,7 @@ pub(crate) struct ProviderRuntimePreparation<'a> {
     pub mode: ProviderRuntimeMode,
     pub authorizer: &'a McpAuthorizer,
     pub mcp: Option<(&'a str, &'a AgentMcpRole)>,
+    pub project_mode: termloop_domain::ProjectMode,
     pub signals: &'a mut Option<Sender<AgentRuntimeSignal>>,
     pub launch: Option<&'a mut termloop_invocation::LaunchPayload>,
     pub history: Option<&'a str>,
@@ -139,7 +140,7 @@ impl PreparedProviderRuntime {
                     endpoint: &transport.mcp_endpoint,
                     token,
                     claude_config_path: &transport.claude_mcp_config_path,
-                    profile: role.invocation_profile(),
+                    profile: role.invocation_profile_in(request.project_mode),
                 }
                 .connection()
             }),

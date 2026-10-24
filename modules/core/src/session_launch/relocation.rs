@@ -215,7 +215,9 @@ impl CoreRuntime {
                 endpoint: &transport.mcp_endpoint,
                 token,
                 claude_config_path: &transport.claude_mcp_config_path,
-                profile: termloop_invocation::AgentMcpProfile::Interactive,
+                profile: super::AgentMcpRole::Interactive.invocation_profile_in(
+                    self.project_mode_or_developer(&current_session.project_id),
+                ),
             });
         let target_cwd = current_task
             .worktree
@@ -363,7 +365,8 @@ impl CoreRuntime {
                 endpoint: &transport.mcp_endpoint,
                 token,
                 claude_config_path: &transport.claude_mcp_config_path,
-                profile: mcp_role.invocation_profile(),
+                profile: mcp_role
+                    .invocation_profile_in(self.project_mode_or_developer(&session.project_id)),
             });
         let account = self.session_agent_account(&session)?;
         let base_conversation = termloop_invocation::AgentConversationLaunch::Resume {
@@ -622,6 +625,7 @@ impl CoreRuntime {
         Ok(AgentResumePlanOutcome::Prepare(Box::new(AgentResumePlan {
             account,
             session_id,
+            project_mode: self.project_mode_or_developer(&session.project_id),
             project_id: session.project_id,
             cwd: target_cwd.clone(),
             cwd_identity,

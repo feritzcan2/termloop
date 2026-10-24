@@ -258,7 +258,7 @@ impl CoreRuntime {
         self.task_current_projection(task_id)
     }
 
-    fn task_agent_session_ids_for_executor(
+    pub(crate) fn task_agent_session_ids_for_executor(
         &self,
         project_id: &str,
         task_id: &str,

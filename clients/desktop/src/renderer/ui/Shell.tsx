@@ -11,7 +11,7 @@ import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
-import type { AgentAccountDto } from "@termloop/contract/current";
+import type { AgentAccountDto, ProjectMode } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { AgentAccountSwitcher } from "./AgentAccountSwitcher.js";
 import { TerminalStatus } from "./TerminalStatus.js";
@@ -118,6 +118,17 @@ import {
   setAppearancePreference,
   subscribeAppearancePreference,
 } from "../appearance-theme.js";
+import { projectManagerModeEnabled, subscribeProjectManagerModeFlag } from "../project-manager-mode-flag.js";
+import { ProjectModeMenuItems, projectManagerLayoutActive, useProjectMode, type ProjectModeActions } from "./ProjectModeMenuItems.js";
+import {
+  ProjectManagerStage,
+  useProjectManagerBoard,
+  useProjectManagerPlaybook,
+  type ProjectManagerProjectActions,
+  type ProjectManagerWorkspaceActions,
+} from "./ProjectManagerWorkspace.js";
+import { ProjectManagerTaskList } from "./ProjectManagerSidebar.js";
+import { ProjectManagerAddTaskDialog } from "./ProjectManagerAddTaskDialog.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
 import {
   SIDEBAR_MIN_WIDTH,
@@ -239,6 +250,12 @@ export type ShellProps = {
   /// True only once the selected Project's checkout is known to have a
   /// GitHub or Azure DevOps remote.
   pullRequestsAvailable: boolean;
+  /// Present when the connection can store Project modes. Shown only while the
+  /// experimental Project Manager mode flag is on.
+  projectMode?: ProjectModeActions;
+  /// Project Manager Task commands; present while the experimental mode can
+  /// be used.
+  projectManagerTaskActions?: Pick<ProjectManagerWorkspaceActions, "startTaskAgent" | "requestInvestigation"> & ProjectManagerProjectActions;
   loadRepositoryPullRequests(
     projectId: string,
     filter: import("@termloop/contract/current").GitHostRepositoryPullRequestFilter,
@@ -287,7 +304,7 @@ export type ShellProps = {
   closeProjectDialog(): void;
   defaultProjectsRoot(profileId: string): Promise<{ path: string }>;
   browseDirectory(profileId: string, path: string): ReturnType<FolderPickerActions["browse"]>;
-  createProject(profileId: string, name: string, folderPath: string): Promise<void>;
+  createProject(profileId: string, name: string, folderPath: string, mode: ProjectMode): Promise<void>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   updateProject(projectId: string, name: string, folderPath: string): Promise<string | undefined>;
   deleteProject(projectId: string): Promise<string | undefined>;
@@ -521,6 +538,7 @@ export function shellNativeOverlayOpen(state: {
   workflowClose?: boolean;
   archivedRail: boolean;
   playbook?: boolean;
+  projectManagerDialog?: boolean;
 }): boolean {
   return Object.values(state).some(Boolean);
 }
@@ -531,6 +549,19 @@ export function Shell(props: ShellProps) {
     appearancePreference,
     appearancePreference,
   );
+  const projectManagerModeFlag = useSyncExternalStore(
+    subscribeProjectManagerModeFlag,
+    projectManagerModeEnabled,
+    projectManagerModeEnabled,
+  );
+  const selectedProjectMode = useProjectMode(props.selectedProject?.id, props.projectMode, projectManagerModeFlag);
+  const projectManagerActive = projectManagerLayoutActive(projectManagerModeFlag, selectedProjectMode.mode)
+    && Boolean(props.selectedProject && props.projectManagerTaskActions);
+  const [projectManagerTaskId, setProjectManagerTaskId] = useState<string>();
+  /// A Task Agent opened from the sidebar fills the stage as an ordinary
+  /// terminal until a Task is chosen again.
+  const [projectManagerTerminal, setProjectManagerTerminal] = useState(false);
+  useEffect(() => { setProjectManagerTerminal(false); }, [props.selectedProject?.id]);
   const [renameSessionId, setRenameSessionId] = useState<string>();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
@@ -1119,6 +1150,60 @@ export function Shell(props: ShellProps) {
   const openPlaybookBuilder = useCallback(() => {
     openAssistant({ kind: "steward", initialView: "builder" });
   }, [openAssistant]);
+  const projectManagerProjectId = props.selectedProject?.id;
+  const projectManagerActions = useMemo<ProjectManagerWorkspaceActions | undefined>(() => {
+    const pm = props.projectManagerTaskActions;
+    if (!pm || !projectManagerProjectId) return undefined;
+    const projectId = projectManagerProjectId;
+    return {
+      loadPlaybook: props.assistantActions.getPlaybook,
+      startTaskAgent: pm.startTaskAgent,
+      requestInvestigation: pm.requestInvestigation,
+      openTaskSources: () => openStagePage({ kind: "taskSettings" }),
+      openPlaybookBuilder,
+      openExternal: props.openExternal,
+      loadBoard: () => pm.loadBoard(projectId),
+      createSprint: (name, state) => pm.createSprint(projectId, name, state),
+      updateSprint: (sprintId, name, state) => pm.updateSprint(projectId, sprintId, name, state),
+      deleteSprint: (sprintId) => pm.deleteSprint(projectId, sprintId),
+      setTracking: (params) => pm.setTracking(projectId, params),
+      createTask: (params) => pm.createTask(projectId, params),
+      searchJira: (query) => pm.searchJira(projectId, query),
+      saveTicket: (params) => pm.saveTicket(projectId, params),
+      loadTicketVersions: (taskId) => pm.loadTicketVersions(projectId, taskId),
+      restoreTicket: (taskId, number, expectedVersion) => pm.restoreTicket(projectId, taskId, number, expectedVersion),
+    };
+  }, [props.projectManagerTaskActions, projectManagerProjectId, props.assistantActions.getPlaybook, openStagePage, openPlaybookBuilder, props.openExternal]);
+  const projectManagerBoard = useProjectManagerBoard(
+    projectManagerActive && projectManagerActions ? projectManagerActions.loadBoard : undefined,
+    props.projectTasks,
+  );
+  const [projectManagerAddTask, setProjectManagerAddTask] = useState<{ sprintId: string | null }>();
+  const setProjectManagerTracking = useCallback(
+    (params: Parameters<ProjectManagerWorkspaceActions["setTracking"]>[0]) =>
+      projectManagerActions ? projectManagerBoard.apply(() => projectManagerActions.setTracking(params)) : Promise.resolve(undefined),
+    [projectManagerActions, projectManagerBoard.apply],
+  );
+  const saveProjectManagerTicket = useCallback(
+    (params: Parameters<ProjectManagerWorkspaceActions["saveTicket"]>[0]) =>
+      projectManagerActions
+        ? projectManagerBoard.apply(async () => (await projectManagerActions.saveTicket(params)).board)
+        : Promise.resolve(undefined),
+    [projectManagerActions, projectManagerBoard.apply],
+  );
+  const restoreProjectManagerTicket = useCallback(
+    (taskId: string, number: number, expectedVersion: number | null) =>
+      projectManagerActions
+        ? projectManagerBoard.apply(async () => (await projectManagerActions.restoreTicket(taskId, number, expectedVersion)).board)
+        : Promise.resolve(undefined),
+    [projectManagerActions, projectManagerBoard.apply],
+  );
+  const projectManagerPlaybook = useProjectManagerPlaybook(
+    projectManagerActive && projectManagerActions ? projectManagerActions.loadPlaybook : noPlaybook,
+    projectManagerActive ? props.playbookRuntime?.stateRevision : undefined,
+  );
+  const projectManagerTask = props.projectTasks.find((task) => task.id === projectManagerTaskId)
+    ?? props.projectTasks.find((task) => task.status === "open" && task.archived_at_epoch_ms === null);
   useEffect(() => {
     if (props.connection !== "connected") setChangesPresentation(undefined);
   }, [props.connection]);
@@ -1153,7 +1238,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(workflowCloseTarget) || Boolean(settingsPage) || shellShortcutsBlocked({
+  const shortcutsBlocked = projectWorkflowOverlayOpen || Boolean(workflowCloseTarget) || Boolean(settingsPage) || Boolean(projectManagerAddTask) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -1184,6 +1269,7 @@ export function Shell(props: ShellProps) {
     workflowClose: Boolean(workflowCloseTarget),
     archivedRail: archivedRailOverlayOpen,
     playbook: playbookOverlayOpen,
+    projectManagerDialog: Boolean(projectManagerAddTask),
   });
   useEffect(() => {
     props.setNativeOverlayOpen(nativeOverlayOpen);
@@ -1497,7 +1583,7 @@ export function Shell(props: ShellProps) {
       return;
     }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')];
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled), button[role="menuitemradio"]:not(:disabled)')];
     if (items.length === 0) return;
     event.preventDefault();
     const current = items.indexOf(event.currentTarget.ownerDocument.activeElement as HTMLButtonElement);
@@ -1594,6 +1680,42 @@ export function Shell(props: ShellProps) {
               ) : null}
             </div>
           </ProjectCheckoutHeader>
+          {projectManagerActive && projectManagerActions ? <ProjectManagerTaskList
+            tasks={props.projectTasks}
+            board={projectManagerBoard.board}
+            sessionsById={sessionsById}
+            statusesById={statusesById}
+            milestones={projectManagerPlaybook.milestones}
+            playbookRuntime={props.playbookRuntime}
+            selectedTaskId={projectManagerTask?.id}
+            disabled={disabled}
+            select={(taskId) => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(taskId); }}
+            openAgent={(taskId, sessionId) => {
+              setProjectManagerTaskId(taskId);
+              selectSession(sessionId);
+              setProjectManagerTerminal(true);
+            }}
+            terminalSessionId={projectManagerTerminal ? props.selectedSession?.id : undefined}
+            openTaskSources={projectManagerActions.openTaskSources}
+            actions={{
+              addTask: (sprintId) => setProjectManagerAddTask({ sprintId }),
+              createSprint: (name) => projectManagerBoard.apply(() => projectManagerActions.createSprint(name)),
+              updateSprint: (sprint, state) => projectManagerBoard.apply(() => projectManagerActions.updateSprint(sprint.id, sprint.name, state)),
+              deleteSprint: (sprintId) => projectManagerBoard.apply(() => projectManagerActions.deleteSprint(sprintId)),
+              moveTask: (taskId, sprintId) => {
+                const record = projectManagerBoard.board?.tracking.find((candidate) => candidate.taskId === taskId);
+                return setProjectManagerTracking({
+                  taskId,
+                  sprintId,
+                  developer: record?.developer ?? null,
+                  jiraStatus: record?.jiraStatus ?? null,
+                  environments: (record?.environments ?? []).map((environment) => ({ ...environment })),
+                  blockers: record?.blockers ?? null,
+                  note: record?.note ?? null,
+                });
+              },
+            }}
+          /> : <>
           <WorkspaceViewSwitch
             setupAgents={() => setSettingsPage("accounts")}
             view={workspaceView}
@@ -1842,6 +1964,7 @@ export function Shell(props: ShellProps) {
             overlayVisibilityChanged={setArchivedRailOverlayOpen}
             overlayContainer={props.overlayContainer}
           /></WorkspaceRailCache>
+          </>}
           {props.appUpdate ? <UpdateNotice update={props.appUpdate} /> : null}
           <footer className="sidebar-footer">
             <div className="sidebar-footer-actions sidebar-footer-start">
@@ -1902,7 +2025,7 @@ export function Shell(props: ShellProps) {
           draggingChanged={setSidebarDragging}
         />
         <section className="workspace" aria-label="Terminal workspace">
-          {!assistantStageVisible && !detailTask && !stagePage && props.selectedProject ? <SessionTabStrip
+          {!assistantStageVisible && !detailTask && !stagePage && (!projectManagerActive || projectManagerTerminal) && props.selectedProject ? <SessionTabStrip
             sessions={props.projectSessions.filter((session) => !isAssistantSession(session))}
             selectedSessionId={props.selectedSession?.id}
             disabled={disabled}
@@ -2060,7 +2183,37 @@ export function Shell(props: ShellProps) {
               <span><Icon name="sparkles" /><strong>Workflow Creator</strong><small>Proposals stay separate until you save them.</small></span>
               <button type="button" className="secondary-button" onClick={() => openStagePage({ kind: "workflow", id: props.selectedSession!.improver_target!.targetId })}>Review AI draft</button>
             </div> : null}
-            {props.layout ? (
+            {projectManagerActive && projectManagerActions && projectManagerTerminal && projectManagerTask ? <div className="pm-terminal-bar">
+              <button type="button" className="td-mini" onClick={() => setProjectManagerTerminal(false)}>
+                <Icon name="arrowLeft" />{projectManagerTask.title}
+              </button>
+            </div> : null}
+            {projectManagerActive && projectManagerActions && !projectManagerTerminal ? <ProjectManagerStage
+              task={projectManagerTask}
+              board={projectManagerBoard.board}
+              setTracking={setProjectManagerTracking}
+              saveTicket={saveProjectManagerTicket}
+              restoreTicket={restoreProjectManagerTicket}
+              addTask={() => setProjectManagerAddTask({ sprintId: projectManagerBoard.board?.sprints.find((sprint) => sprint.state === "active")?.id ?? null })}
+              sessionsById={sessionsById}
+              statusesById={statusesById}
+              milestones={projectManagerPlaybook.milestones}
+              playbookError={projectManagerPlaybook.error}
+              playbookRuntime={props.playbookRuntime}
+              agents={props.agentCapabilities
+                .filter((capability) => capability.available)
+                .map((capability) => ({ id: capability.agent_id, label: capability.label }))}
+              disabled={disabled}
+              actions={projectManagerActions}
+              renderTerminal={(sessionId) => <AssistantTerminalHost
+                sessionId={sessionId}
+                session={sessionsById.get(sessionId)}
+                terminalPresentation={props.terminalPresentation}
+                bindTerminalHost={props.bindTerminalHost}
+                resumeSession={props.resumeSession}
+                repairProviderHistory={setProviderHistoryRepairSessionId}
+              />}
+            /> : props.layout ? (
               <PaneTree
                 node={props.layout.root}
                 activePaneId={props.layout.activePaneId}
@@ -2270,6 +2423,12 @@ export function Shell(props: ShellProps) {
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); openStagePage({ kind: "taskSettings" }); }}><Icon name="settings" /><span className="project-menu-label">Task Settings</span></button>
             <button type="button" role="menuitem" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setEditProjectOpen(true); }}><Icon name="edit" /><span className="project-menu-label">Edit Project</span></button>
             <button type="button" role="menuitem" className="danger" disabled={projectActionDisabled} onClick={() => { closeProjectMenu(); setDeleteProjectOpen(true); }}><Icon name="trash" /><span className="project-menu-label">Delete Project</span></button>
+            {projectManagerModeFlag && props.projectMode && props.selectedProject ? <ProjectModeMenuItems
+              projectId={props.selectedProject.id}
+              disabled={projectActionDisabled}
+              actions={props.projectMode}
+              changed={selectedProjectMode.changed}
+            /> : null}
           </div>
         </>
       ) : null}
@@ -2283,6 +2442,7 @@ export function Shell(props: ShellProps) {
         browseDirectory={props.browseDirectory}
         createProject={props.createProject}
         pickLocalFolder={props.pickLocalFolder}
+        chooseMode={projectManagerModeFlag && Boolean(props.projectMode)}
       />
       {editProjectOpen && props.selectedProject ? <ProjectDetailsDialog
         key={props.selectedProject.id}
@@ -2396,6 +2556,23 @@ export function Shell(props: ShellProps) {
         save={props.saveRunConfiguration}
         remove={props.deleteRunConfiguration}
         run={async () => undefined}
+      /> : null}
+      {projectManagerAddTask && projectManagerActions ? <ProjectManagerAddTaskDialog
+        sprints={projectManagerBoard.board?.sprints ?? []}
+        defaultSprintId={projectManagerAddTask.sprintId}
+        searchJira={projectManagerActions.searchJira}
+        create={async (params) => {
+          let created: string | undefined;
+          const failure = await projectManagerBoard.apply(async () => {
+            const result = await projectManagerActions.createTask(params);
+            created = result.task.id;
+            return result.board;
+          });
+          if (!failure && created) { dismissStagePages(); setProjectManagerTaskId(created); }
+          return failure;
+        }}
+        openTaskSources={projectManagerActions.openTaskSources}
+        close={() => setProjectManagerAddTask(undefined)}
       /> : null}
       {settingsPage ? <SettingsDialog
         initialPage={settingsPage}
@@ -2590,6 +2767,8 @@ function PaneTree(props: PaneTreeProps) {
     </div>
   );
 }
+
+const noPlaybook = async (): Promise<import("@termloop/contract/current").PlaybookGetResult> => ({ playbook: null, stateRevision: 0 });
 
 export function AssistantTerminalHost({ sessionId, session, terminalPresentation, bindTerminalHost, resumeSession, repairProviderHistory }: {
   sessionId: string;

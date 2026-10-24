@@ -54,6 +54,10 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || super::records::task_branch::task_branch_sets_are_invalid(state)
         || task_source_configurations_are_invalid(state)
         || project_task_automation_configurations_are_invalid(state)
+        || project_mode_settings_are_invalid(state)
+        || project_sprints_are_invalid(state)
+        || task_tracking_records_are_invalid(state)
+        || task_ticket_versions_are_invalid(state)
         || archive_records_are_invalid(state)
         || relocation_records_are_invalid(state)
         || state
@@ -654,6 +658,99 @@ fn project_task_automation_configurations_are_invalid(state: &CurrentState) -> b
                 || state.project_task_automation_configurations[index + 1..]
                     .iter()
                     .any(|candidate| candidate.project_id == configuration.project_id)
+        })
+}
+
+fn project_mode_settings_are_invalid(state: &CurrentState) -> bool {
+    state
+        .project_mode_settings
+        .iter()
+        .enumerate()
+        .any(|(index, setting)| {
+            !setting.is_valid()
+                || !state
+                    .projects
+                    .iter()
+                    .any(|project| project.id == setting.project_id)
+                || state.project_mode_settings[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.project_id == setting.project_id)
+        })
+}
+
+fn project_sprints_are_invalid(state: &CurrentState) -> bool {
+    state
+        .project_sprints
+        .iter()
+        .enumerate()
+        .any(|(index, sprint)| {
+            !sprint.is_valid()
+                || !state
+                    .projects
+                    .iter()
+                    .any(|project| project.id == sprint.project_id)
+                || state.project_sprints[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.id == sprint.id)
+                || (sprint.state == termloop_domain::SprintState::Active
+                    && state.project_sprints[index + 1..].iter().any(|candidate| {
+                        candidate.project_id == sprint.project_id
+                            && candidate.state == termloop_domain::SprintState::Active
+                    }))
+        })
+        || state.projects.iter().any(|project| {
+            state
+                .project_sprints
+                .iter()
+                .filter(|sprint| sprint.project_id == project.id)
+                .count()
+                > termloop_domain::PROJECT_SPRINTS_MAX
+        })
+}
+
+fn task_tracking_records_are_invalid(state: &CurrentState) -> bool {
+    state
+        .task_tracking_records
+        .iter()
+        .enumerate()
+        .any(|(index, record)| {
+            let Some(task) = state.tasks.iter().find(|task| task.id == record.task_id) else {
+                return true;
+            };
+            !record.is_valid()
+                || record.is_empty()
+                || record.sprint_id.as_deref().is_some_and(|sprint_id| {
+                    !state.project_sprints.iter().any(|sprint| {
+                        sprint.id == sprint_id && sprint.project_id == task.project_id
+                    })
+                })
+                || state.task_tracking_records[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.task_id == record.task_id)
+        })
+}
+
+fn task_ticket_versions_are_invalid(state: &CurrentState) -> bool {
+    state
+        .task_ticket_versions
+        .iter()
+        .enumerate()
+        .any(|(index, version)| {
+            !version.is_valid()
+                || !state.tasks.iter().any(|task| task.id == version.task_id)
+                || state.task_ticket_versions[index + 1..]
+                    .iter()
+                    .any(|candidate| {
+                        candidate.task_id == version.task_id && candidate.number == version.number
+                    })
+        })
+        || state.tasks.iter().any(|task| {
+            state
+                .task_ticket_versions
+                .iter()
+                .filter(|version| version.task_id == task.id)
+                .count()
+                > termloop_domain::TASK_TICKET_VERSIONS_MAX
         })
 }
 

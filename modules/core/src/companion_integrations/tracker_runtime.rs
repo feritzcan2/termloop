@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+mod agent_status;
 mod agent_step_report;
 mod pull_request_nudge;
 mod report;
@@ -13,6 +14,7 @@ mod run_now;
 mod step_claims;
 mod steward_claims;
 
+pub use agent_status::{TaskAgentTicketUpdate, TaskReinvestigationReason};
 pub use agent_step_report::{AgentStepReportReceipt, AgentStepReportStatus};
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};

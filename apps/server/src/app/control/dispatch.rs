@@ -1232,6 +1232,28 @@ async fn dispatch_inner(
             "taskSource.candidateList" => {
                 super::task_source::candidate_list(request.params, state).await
             }
+            "projectManager.sprintCreate"
+            | "projectManager.sprintUpdate"
+            | "projectManager.sprintDelete"
+            | "projectManager.taskTrackingSet"
+            | "projectManager.taskCreate" => {
+                super::super::task_automation::project_manager_command(
+                    &request.method,
+                    request.params,
+                    state,
+                )
+                .await
+            }
+            "projectManager.jiraSearch" => {
+                super::task_source::project_manager_jira_search(request.params, state).await
+            }
+            "task.projectManagerAgentStart" => {
+                super::super::task_automation::start_project_manager_task_agent(
+                    request.params,
+                    state,
+                )
+                .await
+            }
             "taskSource.candidateImport" => {
                 super::task_source::candidate_import(request.params, state).await
             }

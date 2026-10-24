@@ -2950,6 +2950,74 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
             && !input.contains("Kickoff ID")
             && !input.contains("builtin.agent.task-kickoff")
     }));
+    drop(kickoff_plan);
+
+    // A Developer Project launches a Task Agent without a kickoff unchanged;
+    // a Project Manager Project opens the same launch with an investigation.
+    let task_agent_plan = |runtime: &CoreRuntime| {
+        let mut plan = runtime
+            .plan_agent_launch(json!({
+                "projectId": project["id"],
+                "cwd": root,
+                "agentId": "codex",
+                "model": "gpt-5.6-sol",
+                "permission": "default",
+                "reasoning": "high"
+            }))
+            .unwrap();
+        plan.task_guard = Some(TaskLaunchGuard {
+            task_id: task_id.into(),
+            managed_worktree_operation_id: task_id.into(),
+            worktree_generation: 1,
+            cwd: root.display().to_string(),
+            repository_common_dir: root.display().to_string(),
+            branch_ref: "refs/heads/termloop/linked-task".into(),
+        });
+        plan
+    };
+    let developer_plan = runtime
+        .attach_project_manager_investigation(task_agent_plan(&runtime), task_id)
+        .unwrap();
+    assert!(developer_plan.task_kickoff.is_none());
+    drop(developer_plan);
+    let revision = runtime.state_revision();
+    runtime
+        .handle(
+            "project.modeSet",
+            json!({"projectId": project["id"], "mode": "projectManager", "expectedRevision": revision}),
+        )
+        .unwrap();
+    let investigation_plan = runtime
+        .attach_project_manager_investigation(task_agent_plan(&runtime), task_id)
+        .unwrap();
+    let investigation = resolve_interactive_agent_launch(&investigation_plan).unwrap();
+    assert_eq!(
+        investigation.provenance().template_ref,
+        "builtin.agent.task-investigation"
+    );
+    assert!(investigation.initial_input().is_some_and(|input| {
+        input.contains("task_status_record")
+            && input.contains("Jira: https://example.atlassian.net/browse/TERM-42")
+            && !input.contains("Project instructions:")
+    }));
+    drop(investigation_plan);
+    let configured = runtime
+        .attach_task_kickoff(
+            task_agent_plan(&runtime),
+            task_id,
+            "Watch the release train.",
+        )
+        .unwrap();
+    let configured = resolve_interactive_agent_launch(&configured).unwrap();
+    assert_eq!(
+        configured.provenance().template_ref,
+        "builtin.agent.task-investigation"
+    );
+    assert!(
+        configured.initial_input().is_some_and(|input| {
+            input.contains("Project instructions: Watch the release train.")
+        })
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -3948,6 +4016,48 @@ fn quick_action_ticket_keeps_the_exact_once_resolved_private_payload() {
     assert!(args.contains("first-private-value"));
     assert!(!args.contains("second-private-value"));
     assert!(!preview.to_string().contains("first-private-value"));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_project_manager_project_launches_agents_under_the_project_manager_protocol() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-project-manager-agent-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    runtime.configure_agent_observations(crate::test_agent_observation_transport(root.clone()));
+    let project = runtime
+        .handle("project.create", json!({"name":"Demo","folderPath":root}))
+        .unwrap();
+    let params = json!({"projectId":project["id"],"cwd":root,"agentId":"claude"});
+    let protocol_source = |runtime: &mut CoreRuntime| {
+        let preview = runtime.preview_agent_launch(params.clone()).unwrap();
+        preview["manifest"]["content_parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|part| part["id"] == "interactive-session-protocol")
+            .map(|part| part["source"].as_str().unwrap().to_owned())
+    };
+    assert_eq!(
+        protocol_source(&mut runtime).as_deref(),
+        Some("resources/prompts/builtin.agent.interactive@7")
+    );
+    runtime
+        .handle(
+            "project.modeSet",
+            json!({"projectId":project["id"],"mode":"projectManager","expectedRevision":runtime.state_revision()}),
+        )
+        .unwrap();
+    assert_eq!(
+        protocol_source(&mut runtime).as_deref(),
+        Some("resources/prompts/builtin.agent.project-manager@3")
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -5473,6 +5583,7 @@ fn prepared_resume_target_is_revalidated_before_final_commit() {
     let cwd_identity =
         termloop_platform::existing_directory_comparison_input(std::path::Path::new(&cwd)).unwrap();
     let plan = crate::AgentResumePlan {
+        project_mode: termloop_domain::ProjectMode::Developer,
         account: None,
         session_id: "agent-revalidate".into(),
         project_id: "project-a".into(),

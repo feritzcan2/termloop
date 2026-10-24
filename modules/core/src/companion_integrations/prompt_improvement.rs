@@ -89,6 +89,7 @@ pub struct AssistantPromptImproverBindings {
     built_in_instructions: String,
     routine_summary: String,
     checkout_path: String,
+    project_manager: bool,
 }
 
 impl AssistantPromptImproverBindings {
@@ -143,6 +144,7 @@ impl AssistantPromptImproverBindings {
             }
             AssistantPromptSurface::Playbook => termloop_invocation::ImproverTarget::Playbook {
                 project_name: &self.subject_name,
+                project_manager: self.project_manager,
             },
         }
     }
@@ -163,6 +165,7 @@ impl CoreRuntime {
             built_in_instructions: String::new(),
             routine_summary: String::new(),
             checkout_path: self.project_checkout_path(project_id)?,
+            project_manager: false,
         };
         match target.surface {
             AssistantPromptSurface::StewardInstructions => {
@@ -197,6 +200,7 @@ impl CoreRuntime {
             }
             AssistantPromptSurface::Playbook => {
                 bindings.subject_name = self.project_display_name(project_id)?;
+                bindings.project_manager = self.is_project_manager_project(project_id);
             }
         }
         Ok(bindings)

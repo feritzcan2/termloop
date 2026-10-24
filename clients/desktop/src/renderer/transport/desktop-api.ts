@@ -33,6 +33,24 @@ import type {
   IntegrationStatusListResult,
   ProjectTaskAutomationSetParams,
   ProjectTaskAutomationSetResult,
+  ProjectModeGetResult,
+  ProjectModeSetParams,
+  ProjectModeSetResult,
+  TaskInvestigationRequestResult,
+  TaskProjectManagerAgentStartParams,
+  TaskProjectManagerAgentStartResult,
+  ProjectManagerBoardResult,
+  ProjectManagerJiraSearchParams,
+  ProjectManagerJiraSearchResult,
+  ProjectManagerSprintCreateParams,
+  ProjectManagerSprintUpdateParams,
+  ProjectManagerTaskCreateParams,
+  ProjectManagerTaskCreateResult,
+  ProjectManagerTaskTrackingSetParams,
+  ProjectManagerTicketRestoreParams,
+  ProjectManagerTicketSaveParams,
+  ProjectManagerTicketSaveResult,
+  ProjectManagerTicketVersionsResult,
   TaskSourceCandidateImportParams,
   TaskSourceListParams,
   TaskSourceListResult,
@@ -326,6 +344,20 @@ export type DesktopApi = {
   projectListLocalBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   projectTaskAutomationGet(projectId: string): Promise<ProjectTaskAutomationGetResult>;
   projectTaskAutomationSet(params: ProjectTaskAutomationSetParams): Promise<ProjectTaskAutomationSetResult>;
+  projectModeGet(projectId: string): Promise<ProjectModeGetResult>;
+  projectModeSet(params: ProjectModeSetParams): Promise<ProjectModeSetResult>;
+  taskInvestigationRequest(taskId: string): Promise<TaskInvestigationRequestResult>;
+  taskProjectManagerAgentStart(params: TaskProjectManagerAgentStartParams): Promise<TaskProjectManagerAgentStartResult>;
+  projectManagerBoardGet(projectId: string): Promise<ProjectManagerBoardResult>;
+  projectManagerSprintCreate(params: ProjectManagerSprintCreateParams): Promise<ProjectManagerBoardResult>;
+  projectManagerSprintUpdate(params: ProjectManagerSprintUpdateParams): Promise<ProjectManagerBoardResult>;
+  projectManagerSprintDelete(sprintId: string): Promise<ProjectManagerBoardResult>;
+  projectManagerTaskTrackingSet(params: ProjectManagerTaskTrackingSetParams): Promise<ProjectManagerBoardResult>;
+  projectManagerTaskCreate(params: ProjectManagerTaskCreateParams): Promise<ProjectManagerTaskCreateResult>;
+  projectManagerJiraSearch(params: ProjectManagerJiraSearchParams): Promise<ProjectManagerJiraSearchResult>;
+  projectManagerTicketSave(params: ProjectManagerTicketSaveParams): Promise<ProjectManagerTicketSaveResult>;
+  projectManagerTicketVersions(taskId: string): Promise<ProjectManagerTicketVersionsResult>;
+  projectManagerTicketRestore(params: ProjectManagerTicketRestoreParams): Promise<ProjectManagerTicketSaveResult>;
   taskList(
     projectId: string,
     taskIds?: string[],

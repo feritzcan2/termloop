@@ -584,6 +584,66 @@ handleIpc(
   (_event, params: import("@termloop/contract/current").ProjectTaskAutomationSetParams) =>
     controlCall("project.taskAutomationSet", params),
 );
+handleIpc("termloop:project-mode-get", (_event, projectId: string) =>
+  controlCall("project.modeGet", { projectId }),
+);
+handleIpc(
+  "termloop:project-mode-set",
+  (_event, params: import("@termloop/contract/current").ProjectModeSetParams) =>
+    controlCall("project.modeSet", params),
+);
+handleIpc("termloop:task-investigation-request", (_event, taskId: string) =>
+  controlCall("task.investigationRequest", { taskId }),
+);
+handleIpc(
+  "termloop:task-project-manager-agent-start",
+  (_event, params: import("@termloop/contract/current").TaskProjectManagerAgentStartParams) =>
+    controlCall("task.projectManagerAgentStart", params),
+);
+handleIpc("termloop:project-manager-board-get", (_event, projectId: string) =>
+  controlCall("projectManager.boardGet", { projectId }),
+);
+handleIpc(
+  "termloop:project-manager-sprint-create",
+  (_event, params: import("@termloop/contract/current").ProjectManagerSprintCreateParams) =>
+    controlCall("projectManager.sprintCreate", params),
+);
+handleIpc(
+  "termloop:project-manager-sprint-update",
+  (_event, params: import("@termloop/contract/current").ProjectManagerSprintUpdateParams) =>
+    controlCall("projectManager.sprintUpdate", params),
+);
+handleIpc("termloop:project-manager-sprint-delete", (_event, sprintId: string) =>
+  controlCall("projectManager.sprintDelete", { sprintId }),
+);
+handleIpc(
+  "termloop:project-manager-task-tracking-set",
+  (_event, params: import("@termloop/contract/current").ProjectManagerTaskTrackingSetParams) =>
+    controlCall("projectManager.taskTrackingSet", params),
+);
+handleIpc(
+  "termloop:project-manager-task-create",
+  (_event, params: import("@termloop/contract/current").ProjectManagerTaskCreateParams) =>
+    controlCall("projectManager.taskCreate", params),
+);
+handleIpc(
+  "termloop:project-manager-jira-search",
+  (_event, params: import("@termloop/contract/current").ProjectManagerJiraSearchParams) =>
+    controlCall("projectManager.jiraSearch", params),
+);
+handleIpc(
+  "termloop:project-manager-ticket-save",
+  (_event, params: import("@termloop/contract/current").ProjectManagerTicketSaveParams) =>
+    controlCall("projectManager.ticketSave", params),
+);
+handleIpc("termloop:project-manager-ticket-versions", (_event, taskId: string) =>
+  controlCall("projectManager.ticketVersions", { taskId }),
+);
+handleIpc(
+  "termloop:project-manager-ticket-restore",
+  (_event, params: import("@termloop/contract/current").ProjectManagerTicketRestoreParams) =>
+    controlCall("projectManager.ticketRestore", params),
+);
 handleIpc("termloop:task-list", async (
   _event,
   projectId: string,

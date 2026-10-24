@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -37,6 +37,7 @@ import { ghosttyBridge } from "../transport/ghostty-bridge.js";
 import { terminalRendererKind } from "../terminal/renderer-kind.js";
 import { attachTerminal } from "../transport/terminal-port.js";
 import type { TaskSourceActions } from "../ui/TaskSourcesPanel.js";
+import type { ProjectModeActions } from "../ui/ProjectModeMenuItems.js";
 import { Shell } from "../ui/Shell.js";
 import { AgentLaunchInspector } from "../ui/AgentLaunchInspector.js";
 import { createPromptSettingsActions } from "./prompt-settings-actions.js";
@@ -542,10 +543,24 @@ const profileProjectionRefresh = new ProfileProjectionRefresh(
   },
 );
 
+/// Rejects with the readable control error so presentation shows it as is.
+async function withControlError<T>(operation: Promise<T>): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    throw new Error(controlErrorMessage(error));
+  }
+}
+
 function sourceApiForProject(projectId: string): SourceDesktopApi {
   const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
   return project ? desktopApi.source(connectionProfileIdOf(project)) : sourceApiForEntityId(projectId);
 }
+
+const projectModeActions: ProjectModeActions = {
+  load: (projectId) => sourceApiForProject(projectId).projectModeGet(projectId),
+  save: (params) => sourceApiForProject(params.projectId).projectModeSet(params),
+};
 
 const loadRepositoryPullRequests = (projectId: string, filter: GitHostRepositoryPullRequestFilter) =>
   sourceApiForProject(projectId).gitHostRepositoryPullRequestList(projectId, filter);
@@ -717,6 +732,7 @@ function activateAgentAttention(sessionId: string): boolean {
 }
 
 const refreshProjection = createProjectionRefreshQueue(refreshProjectionOnce);
+
 
 export function DesktopApp() {
   // Fail closed: a renderer that cannot prove it is a development build must
@@ -1502,6 +1518,65 @@ export function DesktopApp() {
       return message;
     }
   }, [admitRunSession]);
+  /// Project Manager Task commands. Each returns the failure to show beside
+  /// the Task, or undefined once the daemon accepted it.
+  const projectManagerTaskActions = useMemo(() => ({
+    startTaskAgent: async (taskId: string, agentId?: string) => {
+      const capability = agentId
+        ? agentCapabilities.find((candidate) => candidate.agent_id === agentId && candidate.available)
+        : undefined;
+      if (agentId && !capability) return "The selected agent CLI is unavailable.";
+      const preset = capability && agentId
+        ? isQuickActionAgentId(agentId) ? readTaskAgentPreset(agentId) : defaultCapabilityLaunchPreset(capability)
+        : undefined;
+      try {
+        await sourceApiForTask(taskId).taskProjectManagerAgentStart({
+          taskId,
+          ...(agentId && preset ? { agentId, ...preset } : {}),
+        });
+        await refreshProjection();
+        return undefined;
+      } catch (error) {
+        return controlErrorMessage(error);
+      }
+    },
+    requestInvestigation: async (taskId: string) => {
+      try {
+        await sourceApiForTask(taskId).taskInvestigationRequest(taskId);
+        return undefined;
+      } catch (error) {
+        return controlErrorMessage(error);
+      }
+    },
+    loadBoard: (projectId: string) => withControlError(sourceApiForProject(projectId).projectManagerBoardGet(projectId)),
+    createSprint: (projectId: string, name: string, state?: SprintState) =>
+      withControlError(sourceApiForProject(projectId).projectManagerSprintCreate({ projectId, name, ...(state ? { state } : {}) })),
+    updateSprint: (projectId: string, sprintId: string, name: string, state: SprintState) =>
+      withControlError(sourceApiForProject(projectId).projectManagerSprintUpdate({ sprintId, name, state })),
+    deleteSprint: (projectId: string, sprintId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerSprintDelete(sprintId)),
+    setTracking: (projectId: string, params: ProjectManagerTaskTrackingSetParams) =>
+      withControlError(sourceApiForProject(projectId).projectManagerTaskTrackingSet(params)),
+    createTask: async (projectId: string, params: Omit<ProjectManagerTaskCreateParams, "projectId">) => {
+      const result = await withControlError(sourceApiForProject(projectId).projectManagerTaskCreate({ projectId, ...params }));
+      await refreshProjection();
+      return result;
+    },
+    searchJira: (projectId: string, query: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerJiraSearch({ projectId, query })),
+    saveTicket: async (projectId: string, params: ProjectManagerTicketSaveParams) => {
+      const result = await withControlError(sourceApiForProject(projectId).projectManagerTicketSave(params));
+      await refreshProjection();
+      return result;
+    },
+    loadTicketVersions: (projectId: string, taskId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerTicketVersions(taskId)),
+    restoreTicket: async (projectId: string, taskId: string, number: number, expectedVersion: number | null) => {
+      const result = await withControlError(sourceApiForProject(projectId).projectManagerTicketRestore({ taskId, number, expectedVersion }));
+      await refreshProjection();
+      return result;
+    },
+  }), [agentCapabilities]);
   const launchTaskAgent = useCallback(async (
     taskId: string,
     agentId: string,
@@ -1784,9 +1859,20 @@ export function DesktopApp() {
     refreshProjection,
     setMessage: (message) => projectionStore.setMessage(message),
   }), []);
-  const createProject = useCallback(async (profileId: string, name: string, folderPath: string) => {
-    const project = await desktopApi.source(profileId).projectCreate(name, folderPath);
+  const createProject = useCallback(async (profileId: string, name: string, folderPath: string, mode: ProjectMode) => {
+    const source = desktopApi.source(profileId);
+    const project = await source.projectCreate(name, folderPath);
     presentationStore.getState().selectProject(project.id);
+    // The Project already exists, so a refused mode write is reported rather
+    // than failing the dialog into a retry that would add it twice.
+    if (mode !== "developer") {
+      try {
+        const current = await source.projectModeGet(project.id);
+        await source.projectModeSet({ projectId: project.id, mode, expectedRevision: current.stateRevision });
+      } catch (error) {
+        projectionStore.setMessage(controlErrorMessage(error));
+      }
+    }
     await refreshProjection();
   }, []);
   const updateProject = useCallback(async (projectId: string, name: string, folderPath: string) => {
@@ -2627,6 +2713,8 @@ export function DesktopApp() {
       updatePromptAsset={promptSettings.update}
       resetPromptAsset={promptSettings.reset}
       pullRequestsAvailable={pullRequestsAvailable}
+      projectMode={projectModeActions}
+      projectManagerTaskActions={projectManagerTaskActions}
       loadRepositoryPullRequests={loadRepositoryPullRequests}
       loadSkillCatalog={loadSkillCatalog}
       setSkillDeployment={setSkillDeployment}

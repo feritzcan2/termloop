@@ -40,6 +40,28 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     version: 7,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.interactive.md"),
 };
+const AGENT_TASK_INVESTIGATION_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.task-investigation",
+    version: 3,
+    authored_body: include_str!("../../../resources/prompts/builtin.agent.task-investigation.md"),
+};
+const AGENT_TASK_REINVESTIGATION_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.task-reinvestigation",
+    version: 3,
+    authored_body: include_str!("../../../resources/prompts/builtin.agent.task-reinvestigation.md"),
+};
+const PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.policy.project-manager-playbook",
+    version: 2,
+    authored_body: include_str!(
+        "../../../resources/prompts/builtin.policy.project-manager-playbook.md"
+    ),
+};
+const PROJECT_MANAGER_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
+    id: "builtin.agent.project-manager",
+    version: 3,
+    authored_body: include_str!("../../../resources/prompts/builtin.agent.project-manager.md"),
+};
 #[cfg(test)]
 const CODEX_DISABLE_STARTUP_UPDATE_CHECK: &str = "check_for_update_on_startup=false";
 pub const QUICK_ACTION_FREE_PROMPT_TEMPLATE_REF: &str = "builtin.quick-action.free-prompt";
@@ -119,7 +141,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 25,
+    version: 26,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -242,6 +264,7 @@ const AGENT_TASK_WORKFLOW_TEMPLATE: PromptTemplate = PromptTemplate {
 pub fn prompt_templates() -> &'static [PromptTemplate] {
     &[
         INTERACTIVE_AGENT_TEMPLATE,
+        PROJECT_MANAGER_AGENT_TEMPLATE,
         QUICK_ACTION_TEMPLATE,
         personal_agent::PERSONAL_AGENT_TEMPLATE,
         profiles::SCATTERED_ORCHESTRATION_FINDER_TEMPLATE,
@@ -260,6 +283,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         WORKFLOW_CREATOR_TEMPLATE,
         PLAYBOOK_BUILDER_TEMPLATE,
         TASK_EVIDENCE_POLICY_TEMPLATE,
+        PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE,
         STEWARD_EXECUTOR_TEMPLATE,
         ROUTINE_TRACKER_TEMPLATE,
         STEP_CHECK_TRACKER_TEMPLATE,
@@ -278,6 +302,8 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         AGENT_MENU_HANDOVER_TO_TEMPLATE,
         STEWARD_TASK_ASSIGNMENT_TEMPLATE,
         AGENT_TASK_KICKOFF_TEMPLATE,
+        AGENT_TASK_INVESTIGATION_TEMPLATE,
+        AGENT_TASK_REINVESTIGATION_TEMPLATE,
         AGENT_TASK_WORKFLOW_TEMPLATE,
         project_workflow::PROJECT_WORKFLOW_TEMPLATE,
     ]
@@ -585,15 +611,12 @@ fn profile_provider_instructions(
     profile: &AgentProfile,
     mcp: Option<&AgentMcpLaunch<'_>>,
 ) -> Result<String, InvocationError> {
-    let instructions = if mcp.is_some_and(|mcp| mcp.profile.includes_interactive_instructions()) {
-        format!(
-            "{}\n\n{}",
-            INTERACTIVE_AGENT_TEMPLATE.authored_body,
-            profile.instructions()
-        )
-    } else {
-        profile.instructions().to_owned()
-    };
+    let instructions =
+        if let Some(protocol) = mcp.and_then(|mcp| mcp.profile.interactive_instructions()) {
+            format!("{}\n\n{}", protocol.authored_body, profile.instructions())
+        } else {
+            profile.instructions().to_owned()
+        };
     if instructions.len() > 64 * 1024 {
         return Err(InvocationError::InvalidDeveloperInstructions);
     }
@@ -711,6 +734,9 @@ pub enum ImproverTarget<'a> {
     /// these legacy bindings remain validated for launch compatibility.
     Playbook {
         project_name: &'a str,
+        /// The Project is opened as Project Manager: the Builder researches
+        /// how the Project ships and designs delivery-tracking steps.
+        project_manager: bool,
     },
 }
 
@@ -883,13 +909,22 @@ impl ImproverTarget<'_> {
                     ],
                 )
             }
-            Self::Playbook { project_name } => {
+            Self::Playbook {
+                project_name,
+                project_manager,
+            } => {
                 bounded_binding(project_name, 200)?;
+                let project_manager_policy = if project_manager {
+                    format!("\n\n{}", project_manager_playbook_policy_body())
+                } else {
+                    String::new()
+                };
                 bind_ordered(
                     template.authored_body,
                     &[
                         ("project_name", project_name),
                         ("task_evidence_policy", task_evidence_policy_body()),
+                        ("project_manager_policy", project_manager_policy.as_str()),
                     ],
                 )
             }
@@ -1910,6 +1945,33 @@ fn task_agent_with_kickoff_for_conversation_with_codex_project_trust(
 ) -> Result<LaunchPayload, InvocationError> {
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
     let composed = compose_task_kickoff(task_id, title, brief, jira_url, kickoff_message)?;
+    task_agent_with_composed_message(
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        composed,
+        conversation,
+        observation,
+        mcp,
+        codex_project_trust,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn task_agent_with_composed_message(
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    composed: ComposedTaskKickoff,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+    codex_project_trust: CodexProjectTrust,
+) -> Result<LaunchPayload, InvocationError> {
     resolve_launch_manifest_with_codex_project_trust(
         agent_id,
         cwd,
@@ -1939,26 +2001,130 @@ fn compose_task_kickoff(
     jira_url: Option<&str>,
     kickoff_message: &str,
 ) -> Result<ComposedTaskKickoff, InvocationError> {
+    if kickoff_message.trim().is_empty() || kickoff_message.len() > 8_192 {
+        return Err(InvocationError::InvalidPromptBinding);
+    }
+    compose_task_message(
+        "builtin.agent.task-kickoff",
+        task_id,
+        &[
+            ("kickoff_message", kickoff_message.to_owned()),
+            ("title", title.to_owned()),
+        ],
+        title,
+        brief,
+        jira_url,
+        &[],
+    )
+}
+
+/// The first message of a Task Agent in a Project opened as Project Manager:
+/// it investigates where the Task stands and records it. Any Project-configured
+/// kickoff message rides along as extra instructions.
+fn compose_task_investigation(
+    task_id: &str,
+    title: &str,
+    brief: Option<&str>,
+    jira_url: Option<&str>,
+    project_instructions: Option<&str>,
+) -> Result<ComposedTaskKickoff, InvocationError> {
+    if project_instructions
+        .is_some_and(|instructions| instructions.trim().is_empty() || instructions.len() > 8_192)
+    {
+        return Err(InvocationError::InvalidPromptBinding);
+    }
+    let project_instructions = project_instructions
+        .map(|instructions| format!("Project instructions: {instructions}\n"))
+        .unwrap_or_default();
+    compose_task_message(
+        "builtin.agent.task-investigation",
+        task_id,
+        &[("title", title.to_owned())],
+        title,
+        brief,
+        jira_url,
+        &[("project_instructions", project_instructions)],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compose_task_message(
+    template_id: &str,
+    task_id: &str,
+    leading: &[(&'static str, String)],
+    title: &str,
+    brief: Option<&str>,
+    jira_url: Option<&str>,
+    trailing: &[(&'static str, String)],
+) -> Result<ComposedTaskKickoff, InvocationError> {
     let brief_context = brief
         .map(|brief| format!("Context: {brief}\n"))
         .unwrap_or_default();
     let jira_context = jira_url
         .map(|jira_url| format!("Jira: {jira_url}\n"))
         .unwrap_or_default();
+    let delivered_bindings: Vec<(&str, String)> = leading
+        .iter()
+        .cloned()
+        .chain([
+            ("jira_context", jira_context),
+            ("brief_context", brief_context),
+        ])
+        .chain(trailing.iter().cloned())
+        .collect();
     if task_id.trim().is_empty()
         || title.trim().is_empty()
-        || kickoff_message.trim().is_empty()
-        || kickoff_message.len() > 8_192
         || jira_url.is_some_and(|jira_url| jira_url.trim().is_empty() || jira_url.len() > 2_048)
-        || [
-            task_id,
-            title,
-            brief_context.as_str(),
-            jira_context.as_str(),
-            kickoff_message,
-        ]
+        || std::iter::once(task_id)
+            .chain(delivered_bindings.iter().map(|(_, value)| value.as_str()))
+            .any(|value| {
+                value
+                    .chars()
+                    .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
+            })
+    {
+        return Err(InvocationError::InvalidPromptBinding);
+    }
+    let template = prompt_templates()
         .iter()
-        .any(|value| {
+        .find(|template| template.id == template_id)
+        .ok_or(InvocationError::TemplateMissing)?;
+    assistant::validate_template_asset(template)?;
+    let message_template = template
+        .authored_body
+        .split_once("\n---\n")
+        .map(|(_, message)| message.trim_start())
+        .ok_or(InvocationError::UnprovenancedPrompt)?;
+    let borrowed: Vec<(&str, &str)> = delivered_bindings
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let delivered_prompt = bind_ordered(message_template, &borrowed)?;
+    Ok(ComposedTaskKickoff {
+        template,
+        bindings: std::iter::once(("task_id".to_owned(), task_id.to_owned()))
+            .chain(
+                delivered_bindings
+                    .into_iter()
+                    .map(|(name, value)| (name.to_owned(), value)),
+            )
+            .collect(),
+        delivered_prompt,
+    })
+}
+
+/// Composes the visible request that asks a running Project Manager Task Agent
+/// to check its Task again, scheduled or asked for by the project manager.
+pub fn task_reinvestigation_prompt(
+    task_id: &str,
+    title: &str,
+    reason: &str,
+) -> Result<AskToTerminalPrompt, InvocationError> {
+    if task_id.trim().is_empty()
+        || title.trim().is_empty()
+        || reason.trim().is_empty()
+        || reason.len() > 200
+        || [task_id, title, reason].iter().any(|value| {
             value
                 .chars()
                 .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
@@ -1968,7 +2134,7 @@ fn compose_task_kickoff(
     }
     let template = prompt_templates()
         .iter()
-        .find(|template| template.id == "builtin.agent.task-kickoff")
+        .find(|template| template.id == "builtin.agent.task-reinvestigation")
         .ok_or(InvocationError::TemplateMissing)?;
     assistant::validate_template_asset(template)?;
     let message_template = template
@@ -1976,24 +2142,71 @@ fn compose_task_kickoff(
         .split_once("\n---\n")
         .map(|(_, message)| message.trim_start())
         .ok_or(InvocationError::UnprovenancedPrompt)?;
-    let delivered_bindings = [
-        ("kickoff_message", kickoff_message),
-        ("title", title),
-        ("jira_context", jira_context.as_str()),
-        ("brief_context", brief_context.as_str()),
-    ];
-    let delivered_prompt = bind_ordered(message_template, &delivered_bindings)?;
-    Ok(ComposedTaskKickoff {
+    let delivered_prompt = bind_ordered(message_template, &[("reason", reason), ("title", title)])?;
+    terminal_prompt(
         template,
-        bindings: std::iter::once(("task_id".to_owned(), task_id.to_owned()))
-            .chain(
-                delivered_bindings
-                    .into_iter()
-                    .map(|(name, value)| (name.to_owned(), value.to_owned())),
-            )
-            .collect(),
+        vec![
+            ("task_id".into(), task_id.into()),
+            ("reason".into(), reason.into()),
+            ("title".into(), title.into()),
+        ],
         delivered_prompt,
-    })
+    )
+}
+
+/// Composes the investigating first message for one Project Manager Task Agent.
+pub fn task_investigation_prompt(
+    task_id: &str,
+    title: &str,
+    brief: Option<&str>,
+    jira_url: Option<&str>,
+    project_instructions: Option<&str>,
+) -> Result<AskToTerminalPrompt, InvocationError> {
+    let composed =
+        compose_task_investigation(task_id, title, brief, jira_url, project_instructions)?;
+    terminal_prompt(
+        composed.template,
+        composed.bindings,
+        composed.delivered_prompt,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn task_agent_with_investigation_for_conversation(
+    agent_id: &str,
+    cwd: &str,
+    model: &str,
+    permission: &str,
+    reasoning: &str,
+    task_id: &str,
+    title: &str,
+    brief: Option<&str>,
+    jira_url: Option<&str>,
+    project_instructions: Option<&str>,
+    managed_worktree: bool,
+    conversation: AgentConversationLaunch<'_>,
+    observation: Option<AgentObservationLaunch<'_>>,
+    mcp: Option<AgentMcpLaunch<'_>>,
+) -> Result<LaunchPayload, InvocationError> {
+    validate_agent_configuration(agent_id, model, permission, reasoning)?;
+    let composed =
+        compose_task_investigation(task_id, title, brief, jira_url, project_instructions)?;
+    task_agent_with_composed_message(
+        agent_id,
+        cwd,
+        model,
+        permission,
+        reasoning,
+        composed,
+        conversation,
+        observation,
+        mcp,
+        if managed_worktree {
+            CodexProjectTrust::ManagedWorkspace
+        } else {
+            CodexProjectTrust::Inherit
+        },
+    )
 }
 
 /// Composes the visible first message for a saved workflow coordinator.
@@ -2478,6 +2691,15 @@ fn compose_steward_task_assignment(
             .collect(),
         delivered_prompt,
     })
+}
+
+fn project_manager_playbook_policy_body() -> &'static str {
+    PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE
+        .authored_body
+        .splitn(3, "\n\n")
+        .nth(2)
+        .expect("Project Manager Playbook policy has metadata and instructions")
+        .trim()
 }
 
 fn task_evidence_policy_body() -> &'static str {

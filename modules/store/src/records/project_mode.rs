@@ -1,0 +1,47 @@
+use termloop_domain::{ProjectMode, ProjectModeSetting};
+
+use super::super::{CoreWriteAuthority, Store, StoreError};
+
+impl Store {
+    /// Replaces one Project's current mode. `Developer` is stored as the
+    /// absence of a record, so switching back removes it.
+    pub fn set_project_mode(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        project_id: &str,
+        mode: ProjectMode,
+        expected_revision: u64,
+    ) -> Result<u64, StoreError> {
+        if expected_revision != self.state.revision {
+            return Err(StoreError::RevisionConflict);
+        }
+        if !self
+            .state
+            .projects
+            .iter()
+            .any(|project| project.id == project_id)
+        {
+            return Err(StoreError::NotFound);
+        }
+        let current = self
+            .state
+            .project_mode_settings
+            .iter()
+            .find(|setting| setting.project_id == project_id)
+            .map_or(ProjectMode::Developer, |setting| setting.mode);
+        if current == mode {
+            return Ok(self.state.revision);
+        }
+        let previous = self.state.clone();
+        self.state
+            .project_mode_settings
+            .retain(|setting| setting.project_id != project_id);
+        if mode != ProjectMode::Developer {
+            self.state.project_mode_settings.push(ProjectModeSetting {
+                project_id: project_id.to_owned(),
+                mode,
+            });
+        }
+        self.commit_or_restore(previous)
+    }
+}

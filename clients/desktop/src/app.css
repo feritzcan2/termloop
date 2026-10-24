@@ -1,6 +1,7 @@
 @import "./agents.css";
 @import "./agent-connections.css";
 @import "./skills.css";
+@import "./project-manager.css";
 
 :root {
   color-scheme: dark;
@@ -233,6 +234,14 @@ kbd { padding: 2px 5px; border: 1px solid light-dark(rgba(15,23,42,.07), rgba(25
 .project-menu button[role="menuitem"].danger:hover:not(:disabled), .project-menu button[role="menuitem"].danger:focus-visible { background: rgba(225,117,126,.1); color: var(--danger); }
 .project-menu .project-selected-mark { color: var(--accent-strong); text-align: center; }
 .project-menu-divider { height: 1px; margin: 4px 5px; background: var(--border); }
+.project-menu button[role="menuitemradio"] { display: grid; grid-template-columns: 20px minmax(0,1fr); align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; }
+.project-menu button[role="menuitemradio"] > svg { width: 13px; height: 13px; color: #727c80; }
+.project-menu button[role="menuitemradio"][aria-checked="true"] { color: var(--text); }
+.project-menu button[role="menuitemradio"][aria-checked="true"] > svg { color: var(--accent, currentColor); }
+.project-menu button[role="menuitemradio"]:hover:not(:disabled), .project-menu button[role="menuitemradio"]:focus-visible { outline: 0; background: var(--accent-wash); color: var(--text); }
+.project-menu button[role="menuitemradio"]:disabled { color: #4f585b; }
+.project-menu-section-label { padding: 4px 8px 2px; color: var(--text-secondary); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.project-menu-error { padding: 4px 8px; color: var(--danger); font-size: 11px; }
 
 /* Shared rail anatomy. Task worktree controls retain their richer row body below,
    while agent and terminal sections use this compact system-header layout. */
@@ -2043,6 +2052,12 @@ button.workflow-tree-session:hover { background: var(--hover); }
 .dialog-body .project-field-aside select { width: auto; max-width: 190px; height: 26px; padding: 0 6px; border-radius: 6px; font-size: 10px; }
 .project-dialog-body > .project-field > input { height: 34px; font-size: 12px; }
 .project-field .field-help { margin: 7px 3px 0; }
+.project-mode-choice { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.project-mode-choice button { display: grid; gap: 3px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: light-dark(#f8fafc, #1e2224); color: var(--text-secondary); text-align: left; }
+.project-mode-choice button:hover { border-color: var(--border-strong); color: var(--text); }
+.project-mode-choice button.selected { border-color: var(--accent); color: var(--text); }
+.project-mode-choice strong { font-size: 12px; font-weight: 600; }
+.project-mode-choice span { color: var(--text-muted); font-size: 10.5px; }
 .project-dialog .dialog-actions .primary-button { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .folder-picker { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: light-dark(#f8fafc, #1e2224); }

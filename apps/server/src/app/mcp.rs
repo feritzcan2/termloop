@@ -368,6 +368,14 @@ async fn tool_call_inner(
         (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_read") => {
             text_result(super::playbook_agent_report::read_step(token, state).await)
         }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "task_status_read") => {
+            text_result(state.core.lock().await.read_task_agent_status(token))
+        }
+        (termloop_core::session_launch::AgentMcpRole::Interactive, "task_status_record") => {
+            let params: protocol::TaskStatusRecordParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            super::playbook_agent_report::record_status(token, params, state).await
+        }
         (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_report") => {
             let params: protocol::PlaybookStepReportParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
@@ -705,7 +713,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
     match role {
         role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. In a Project opened as Project Manager, the Agent of a Task records its complete current findings on that Task with task_status_record after reading it with task_status_read."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -1932,7 +1940,9 @@ mod tests {
                 "workflow_delegate",
                 "workflow_step_complete",
                 "playbook_step_read",
-                "playbook_step_report"
+                "playbook_step_report",
+                "task_status_read",
+                "task_status_record"
             ]
         );
         let creator_role = termloop_core::session_launch::AgentMcpRole::Improver {

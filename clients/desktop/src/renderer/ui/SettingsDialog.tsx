@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type {
   DesktopNotificationPreferences,
@@ -10,6 +10,11 @@ import {
   type ConnectionProfilesDialogProps,
 } from "./ConnectionProfilesDialog.js";
 import type { AppearancePreference } from "../appearance-theme.js";
+import {
+  projectManagerModeEnabled,
+  setProjectManagerModeEnabled,
+  subscribeProjectManagerModeFlag,
+} from "../project-manager-mode-flag.js";
 import { showsWindowDragRegion, type KeyboardPlatform } from "../command-surface.js";
 import { Icon, type IconName } from "./Icon.js";
 import { UpdateSettings, type AppUpdateControls } from "./AppUpdate.js";
@@ -18,7 +23,7 @@ import { IntegrationsSettings, type IntegrationActions } from "./IntegrationsSet
 import { AgentConnectionsPanel, type AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 
-export type SettingsPage = "appearance" | "notifications" | "updates" | "servers" | "accounts" | "integrations" | "mobile";
+export type SettingsPage = "appearance" | "notifications" | "updates" | "experimental" | "servers" | "accounts" | "integrations" | "mobile";
 
 type SettingsNavItem = {
   page: SettingsPage;
@@ -31,6 +36,7 @@ const appNavItems: SettingsNavItem[] = [
   { page: "appearance", title: "Appearance", icon: "palette", keywords: "theme color dark light system mode look" },
   { page: "notifications", title: "Notifications", icon: "bell", keywords: "alerts sound push desktop iphone mobile apple watch steward review input" },
   { page: "updates", title: "Updates", icon: "download", keywords: "version about upgrade release check restart install download" },
+  { page: "experimental", title: "Experimental", icon: "sparkles", keywords: "experimental preview beta project manager pm mode" },
 ];
 
 const computerNavItems: SettingsNavItem[] = [
@@ -219,7 +225,7 @@ export function SettingsDialog({
       </aside>
       <main className="settings-content">
         <div className="settings-content-inner">
-          {showScope && (page === "appearance" || page === "notifications" || page === "updates") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
+          {showScope && (page === "appearance" || page === "notifications" || page === "updates" || page === "experimental") ? <p className="settings-scope-label">This app · {localComputerName ?? "This computer"}</p> : null}
           {page === undefined ? (
             <p className="settings-empty">No settings found for “{query.trim()}”</p>
           ) : page === "appearance" ? (
@@ -235,6 +241,8 @@ export function SettingsDialog({
             />
           ) : page === "updates" ? (
             <UpdateSettings update={update} />
+          ) : page === "experimental" ? (
+            <ExperimentalSettings />
           ) : page === "integrations" && integrations ? (
             <IntegrationsSettings
               actions={integrations.actions}
@@ -534,6 +542,29 @@ function RemoteNotificationSection({
         change={(checked) => void update(target, "playSound", checked)}
       />
     </NotificationDeviceSection>
+  );
+}
+
+function ExperimentalSettings() {
+  const projectManagerMode = useSyncExternalStore(
+    subscribeProjectManagerModeFlag,
+    projectManagerModeEnabled,
+    projectManagerModeEnabled,
+  );
+  return (
+    <section aria-labelledby="experimental-settings-title">
+      <div className="settings-page-header">
+        <h3 id="experimental-settings-title">Experimental</h3>
+        <p>Features that are still being built. They may change or disappear.</p>
+      </div>
+      <SettingsSwitch
+        title="Project Manager mode"
+        description="Lets a Project be opened as Project Manager or Developer. Developer keeps TermLoop exactly as it is today."
+        checked={projectManagerMode}
+        disabled={false}
+        change={setProjectManagerModeEnabled}
+      />
+    </section>
   );
 }
 

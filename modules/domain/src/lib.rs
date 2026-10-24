@@ -54,6 +54,17 @@ pub use workflow::{
 
 mod companion;
 
+mod project_mode;
+pub use project_mode::{ProjectMode, ProjectModeSetting};
+mod project_sprint;
+pub use project_sprint::{
+    EnvironmentDeployState, PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_ENVIRONMENTS_MAX,
+    TASK_TICKET_BRIEF_MAX_CHARS, TASK_TICKET_SUMMARY_MAX_CHARS, TASK_TICKET_TITLE_MAX_CHARS,
+    TASK_TICKET_VERSIONS_MAX, TASK_TRACKING_SHORT_MAX_CHARS, TASK_TRACKING_TEXT_MAX_BYTES,
+    TaskEnvironmentStatus, TaskTicketContent, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
+    valid_sprint_name,
+};
+
 mod project_task_automation;
 pub use project_task_automation::{
     PROJECT_TASK_AUTOMATION_KICKOFF_MESSAGE_MAX_BYTES,
@@ -187,10 +198,14 @@ pub enum McpToolName {
     PlaybookStepRead,
     #[serde(rename = "playbook_step_report")]
     PlaybookStepReport,
+    #[serde(rename = "task_status_read")]
+    TaskStatusRead,
+    #[serde(rename = "task_status_record")]
+    TaskStatusRecord,
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 40] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -229,6 +244,8 @@ impl McpToolName {
         Self::AgentProfileCreate,
         Self::PlaybookStepRead,
         Self::PlaybookStepReport,
+        Self::TaskStatusRead,
+        Self::TaskStatusRecord,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -271,6 +288,8 @@ impl McpToolName {
             Self::AgentProfileCreate => "agent_profile_create",
             Self::PlaybookStepRead => "playbook_step_read",
             Self::PlaybookStepReport => "playbook_step_report",
+            Self::TaskStatusRead => "task_status_read",
+            Self::TaskStatusRecord => "task_status_record",
         }
     }
 }
@@ -320,6 +339,8 @@ impl std::str::FromStr for McpToolName {
             "agent_profile_create" => Ok(Self::AgentProfileCreate),
             "playbook_step_read" => Ok(Self::PlaybookStepRead),
             "playbook_step_report" => Ok(Self::PlaybookStepReport),
+            "task_status_read" => Ok(Self::TaskStatusRead),
+            "task_status_record" => Ok(Self::TaskStatusRecord),
             _ => Err(()),
         }
     }
@@ -1530,6 +1551,8 @@ mod tests {
                 "agent_profile_create",
                 "playbook_step_read",
                 "playbook_step_report",
+                "task_status_read",
+                "task_status_record",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

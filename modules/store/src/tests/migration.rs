@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn schema_65_reads_every_project_as_developer_without_inference() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-project-mode-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 65, "revision": 4,
+            "projects": [{"id":"project-1","name":"Demo","folder_path":"/tmp/demo"}],
+            "sessions": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let store = Store::open(&path).unwrap();
+    assert!(store.project_mode_settings().is_empty());
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(persisted["revision"], 4);
+    assert_eq!(persisted["project_mode_settings"], serde_json::json!([]));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn schema_59_preserves_single_agent_automation_without_inferring_a_workflow() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-automation-workflow-{}.json",

@@ -44,6 +44,7 @@ mod steward_change;
 mod steward_presence;
 mod steward_task_start;
 mod task_automation;
+mod task_reinvestigation;
 mod terminal_grids;
 mod terminal_plane;
 mod tracker_runtime;
@@ -569,6 +570,9 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(keep_awake::supervise(state.clone()));
     tokio::spawn(tracker_runtime::run_tracker_deadlines(state.clone()));
     tokio::spawn(control::run_task_source_deadlines(state.clone()));
+    tokio::spawn(task_reinvestigation::run_task_reinvestigations(
+        state.clone(),
+    ));
     tokio::spawn(control::load_azure_devops_credential(state.clone()));
     tokio::spawn(reconcile_agent_runtime_signals(
         bridge_agent_runtime_signals(agent_runtime_signals),

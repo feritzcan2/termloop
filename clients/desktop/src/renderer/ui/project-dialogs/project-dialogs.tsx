@@ -6,7 +6,7 @@ import { Icon } from "../Icon.js";
 import { worktreePathParent } from "../worktree-path-suggestion.js";
 import { folderLeafName, folderQuickJumps } from "./folder-path.js";
 import { FolderPicker, type FolderPickerActions } from "./folder-picker.js";
-import type { AgentCapabilityDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, ProjectMode } from "@termloop/contract/current";
 
 const NAME_LIMIT = 120;
 
@@ -25,6 +25,11 @@ function projectParentFolders(projects: readonly Project[], profileId: string): 
     .reverse();
 }
 
+const PROJECT_MODES: readonly { mode: ProjectMode; label: string; detail: string }[] = [
+  { mode: "developer", label: "Developer", detail: "Write code with Agents, as today." },
+  { mode: "projectManager", label: "Project Manager", detail: "Follow Tasks through the Playbook and environments." },
+];
+
 export function ProjectDialog({
   open,
   close,
@@ -35,6 +40,7 @@ export function ProjectDialog({
   subscribeConnectionStatus,
   createProject,
   pickLocalFolder,
+  chooseMode = false,
 }: {
   open: boolean;
   close(): void;
@@ -43,7 +49,10 @@ export function ProjectDialog({
   defaultProjectsRoot(profileId: string): Promise<{ path: string }>;
   browseDirectory(profileId: string, path: string): ReturnType<FolderPickerActions["browse"]>;
   subscribeConnectionStatus?: FolderPickerActions["subscribeStatus"];
-  createProject(profileId: string, name: string, folderPath: string): Promise<void>;
+  createProject(profileId: string, name: string, folderPath: string, mode: ProjectMode): Promise<void>;
+  /// Offers the Developer / Project Manager choice while the experimental
+  /// Project Manager mode is on; otherwise every new Project is a Developer one.
+  chooseMode?: boolean;
   /// The OS folder panel. Offered only while the browsed filesystem is this
   /// computer, because it cannot see a remote connection's disks.
   pickLocalFolder?(defaultPath?: string): Promise<string | null>;
@@ -56,6 +65,7 @@ export function ProjectDialog({
   const [defaultRoot, setDefaultRoot] = useState<string>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<ProjectMode>("developer");
   // The composition layer rebuilds these callbacks on every render, so the
   // dialog reads them through refs: an effect keyed on them would reset the
   // form and re-ask the daemon for a root on each unrelated repaint.
@@ -71,6 +81,7 @@ export function ProjectDialog({
     setNameEdited(false);
     setFolder("");
     setError("");
+    setMode("developer");
     void listProfilesRef.current()
       .then((values) => {
         if (!active) return;
@@ -116,7 +127,7 @@ export function ProjectDialog({
     setBusy(true);
     setError("");
     try {
-      await createProject(profileId, name.trim(), folder.trim());
+      await createProject(profileId, name.trim(), folder.trim(), chooseMode ? mode : "developer");
       close();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -172,6 +183,26 @@ export function ProjectDialog({
               pickLocalFolder={profileId === "local" ? pickLocalFolder : undefined}
             />
           </div>
+          {chooseMode ? (
+            <div className="project-field">
+              <label id="project-mode-label">Open as</label>
+              <div className="project-mode-choice" role="radiogroup" aria-labelledby="project-mode-label">
+                {PROJECT_MODES.map((item) => (
+                  <button
+                    key={item.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === item.mode}
+                    className={mode === item.mode ? "selected" : undefined}
+                    onClick={() => setMode(item.mode)}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.detail}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {error ? <p className="form-error" role="alert">{error}</p> : null}
         </div>
         <footer className="dialog-actions">

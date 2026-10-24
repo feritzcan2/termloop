@@ -772,7 +772,7 @@ async fn preview_task_agent_session_with_initial_message(
             Some(TaskAgentInitialMessage::Kickoff(message)) => {
                 core.attach_task_kickoff(plan, &task_id, message)?
             }
-            None => plan,
+            None => core.attach_project_manager_investigation(plan, &task_id)?,
         }
     };
     state

@@ -320,6 +320,7 @@ fn improver_assets_bind_visible_context_and_require_version_tools() {
         },
         ImproverTarget::Playbook {
             project_name: "Nucleus",
+            project_manager: false,
         },
     ];
     for target in targets {
@@ -376,8 +377,9 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
         (
             ImproverTarget::Playbook {
                 project_name: "Nucleus",
+                project_manager: false,
             },
-            25,
+            26,
         ),
     ];
 
@@ -410,16 +412,54 @@ fn configuration_improvers_share_the_provider_neutral_task_evidence_policy() {
 }
 
 #[test]
+fn playbook_builder_adds_the_visible_delivery_policy_only_for_project_manager_projects() {
+    let developer = prompt_improver_launch(ImproverTarget::Playbook {
+        project_name: "Nucleus",
+        project_manager: false,
+    });
+    let developer = developer.delivered_prompt().unwrap().to_owned();
+    assert!(!developer.contains("This Project is opened as Project Manager"));
+    assert!(!developer.contains("{{project_manager_policy}}"));
+
+    let manager = prompt_improver_launch(ImproverTarget::Playbook {
+        project_name: "Nucleus",
+        project_manager: true,
+    });
+    let manager = manager.delivered_prompt().unwrap();
+    assert!(manager.contains("This Project is opened as Project Manager"));
+    assert!(manager.contains("deployed to each environment the Project really has"));
+    // The Task branch is only the Task Agent's tracking checkout, so the
+    // policy turns off every check that reads it.
+    assert!(manager.contains("do not add the **Committed** first"));
+    assert!(manager.contains("`deterministicCheck` to `null` on every step"));
+    assert!(manager.contains(project_manager_playbook_policy_body()));
+    // The policy only adds to the Developer prompt; nothing else changes.
+    assert_eq!(
+        manager.replace(
+            &format!("\n\n{}", project_manager_playbook_policy_body()),
+            ""
+        ),
+        developer
+    );
+    assert!(
+        prompt_templates()
+            .iter()
+            .any(|template| template.id == "builtin.policy.project-manager-playbook")
+    );
+}
+
+#[test]
 fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() {
     let target = ImproverTarget::Playbook {
         project_name: "Nucleus",
+        project_manager: false,
     };
     let template = target.template().unwrap();
     let launch = prompt_improver_launch(target);
     let delivered = launch.delivered_prompt().unwrap();
 
-    assert_eq!(template.version, 25);
-    assert_eq!(launch.provenance().template_version, 25);
+    assert_eq!(template.version, 26);
+    assert_eq!(launch.provenance().template_version, 26);
     for expected in [
         "two compact review",
         "For a scoped edit to one or a few existing steps",
@@ -2019,6 +2059,62 @@ fn an_unconfigured_claude_opens_in_auto_mode_on_launch_and_resume() {
         !provider_args(&codex)
             .iter()
             .any(|argument| argument == "--permission-mode")
+    );
+}
+
+#[test]
+fn project_manager_profile_delivers_its_own_visible_protocol_with_interactive_tools() {
+    for agent_id in ["claude", "codex"] {
+        let launch = interactive_agent_for_conversation(
+            agent_id,
+            "/tmp/project",
+            AgentConversationLaunch::Fresh { resume_ref: None },
+            None,
+            Some(AgentMcpLaunch {
+                endpoint: "http://127.0.0.1:1234/mcp",
+                token: "secret-mcp-token",
+                claude_config_path: "/tmp/mcp.json",
+                profile: AgentMcpProfile::ProjectManager,
+            }),
+        )
+        .unwrap();
+        let protocol = launch
+            .inspectable_manifest()
+            .content_parts
+            .iter()
+            .find(|part| part.id == "interactive-session-protocol")
+            .expect("protocol part");
+        assert_eq!(
+            protocol.source,
+            "resources/prompts/builtin.agent.project-manager@3"
+        );
+        assert_eq!(
+            protocol.content,
+            PROJECT_MANAGER_AGENT_TEMPLATE.authored_body
+        );
+        assert!(
+            protocol
+                .content
+                .contains("Do not write, edit, commit, or push code")
+        );
+        assert!(protocol.content.contains("`ask_to`"));
+        assert!(!launch.args().join(" ").contains("secret-mcp-token"));
+    }
+    assert!(
+        prompt_templates()
+            .iter()
+            .any(|template| template.id == "builtin.agent.project-manager")
+    );
+    assert_eq!(
+        AgentMcpProfile::Interactive
+            .interactive_instructions()
+            .map(|template| template.id),
+        Some("builtin.agent.interactive")
+    );
+    assert!(
+        AgentMcpProfile::Steward
+            .interactive_instructions()
+            .is_none()
     );
 }
 
