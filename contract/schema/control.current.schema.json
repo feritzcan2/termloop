@@ -20514,7 +20514,8 @@
         "pullRequestOpen",
         "pullRequestChecksPassing",
         "pullRequestMerged",
-        "branchCommitted"
+        "branchCommitted",
+        "environmentDeployed"
       ]
     },
     "playbookDeterministicCheckDto": {
@@ -20539,6 +20540,15 @@
           "maxLength": 255,
           "x-utf8-max-bytes": 255,
           "description": "Optional exact target branch the Task branch pull request must target."
+        },
+        "environment": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "The environment an environmentDeployed check reads from the Task's delivery facts; omitted or null for every other kind."
         }
       }
     },
@@ -20627,7 +20637,8 @@
         "providerFailure",
         "multipleMatches",
         "checksUnsupported",
-        "commitsUnavailable"
+        "commitsUnavailable",
+        "environmentUnknown"
       ]
     }
   }

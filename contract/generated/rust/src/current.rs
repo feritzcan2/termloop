@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:caea986262711ecaa6f4326462a018a1a362eb540631d898cb7bbaee29554f41";
+    "sha256:e0e4198b91a9958829ea4f3681c0a643df6b171e2550fdc1f52e63b84e8e6738";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -9015,6 +9015,8 @@ pub enum PlaybookDeterministicCheckKind {
     PullRequestMerged,
     #[serde(rename = "branchCommitted")]
     BranchCommitted,
+    #[serde(rename = "environmentDeployed")]
+    EnvironmentDeployed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -9026,6 +9028,8 @@ pub struct PlaybookDeterministicCheckDto {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub base_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -9093,6 +9097,8 @@ pub enum PlaybookDeterministicFallbackReason {
     ChecksUnsupported,
     #[serde(rename = "commitsUnavailable")]
     CommitsUnavailable,
+    #[serde(rename = "environmentUnknown")]
+    EnvironmentUnknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -33755,6 +33761,7 @@ fn validate_playbook_deterministic_check_kind(value: &Value) -> bool {
             "pullRequestChecksPassing",
             "pullRequestMerged",
             "branchCommitted",
+            "environmentDeployed",
         ]
         .contains(&text)
     })
@@ -33779,9 +33786,15 @@ fn validate_playbook_deterministic_check_dto(value: &Value) -> bool {
                     text.chars().count() >= 1 && text.chars().count() <= 255 && text.len() <= 255
                 }) || field.is_null())
             })
+            && object.get("environment").is_none_or(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+                    || field.is_null())
+            })
             && object
                 .keys()
-                .all(|key| ["kind", "baseBranch"].contains(&key.as_str()))
+                .all(|key| ["kind", "baseBranch", "environment"].contains(&key.as_str()))
     })
 }
 
@@ -33899,6 +33912,7 @@ fn validate_playbook_deterministic_fallback_reason(value: &Value) -> bool {
             "multipleMatches",
             "checksUnsupported",
             "commitsUnavailable",
+            "environmentUnknown",
         ]
         .contains(&text)
     })

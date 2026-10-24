@@ -1,7 +1,7 @@
 # Project Manager Playbook policy
 
 - id: `builtin.policy.project-manager-playbook`
-- version: `3`
+- version: `4`
 
 This Project is opened as Project Manager. Its Playbook follows delivery, not
 implementation: each Task is imported from Jira, and TermLoop itself reads the
@@ -18,7 +18,12 @@ the rules above: do not add the **Committed** first step and never use the
 `branchCommitted` check. The pull request checks `pullRequestOpen`,
 `pullRequestChecksPassing`, and `pullRequestMerged` work here: TermLoop answers
 them from the pull requests in this Project's repository that name the Task's
-Jira key, so use them for those stages.
+Jira key, so use them for those stages. For a deployment step, use the
+`environmentDeployed` check with `baseBranch: null` and `environment` set to the
+environment's name, for example `{"kind": "environmentDeployed", "baseBranch":
+null, "environment": "Production"}`: TermLoop answers it from the Task's
+delivery facts, which approved probes and delivery checks keep current, and the
+step's Routine decides only while no fact places the Task there.
 
 Design the steps as the stages a Task passes on its way to production, in
 order, for example: pull request open; reviewed and checks passing; merged;

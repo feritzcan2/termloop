@@ -47,6 +47,7 @@ fn check(kind: PlaybookDeterministicCheckKind, base: Option<&str>) -> PlaybookDe
     PlaybookDeterministicCheck {
         kind,
         base_branch: base.map(str::to_owned),
+        environment: None,
     }
 }
 
@@ -322,6 +323,7 @@ fn a_commit_check_reads_local_git_only_and_passes_through_the_verdict_path() {
     let committed = PlaybookDeterministicCheck {
         kind: BranchCommitted,
         base_branch: None,
+        environment: None,
     };
     let (mut runtime, root, capability) = claimed(committed, RoutineActionHandling::Off);
     let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
@@ -353,6 +355,90 @@ fn a_commit_check_reads_local_git_only_and_passes_through_the_verdict_path() {
     let recorded = answer(&runtime, "pr-open").expect("the verdict is stored");
     assert_eq!(recorded.verdict, PlaybookStepVerdict::Passed);
     assert_eq!(recorded.evaluator, PlaybookStepEvaluator::Deterministic);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_environment_check_reads_the_tasks_delivery_facts_only() {
+    let deployed = PlaybookDeterministicCheck {
+        kind: PlaybookDeterministicCheckKind::EnvironmentDeployed,
+        base_branch: None,
+        environment: Some("production".into()),
+    };
+    let (mut runtime, root, capability) = claimed(deployed, RoutineActionHandling::Off);
+    let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
+    assert!(plan.github.is_none() && plan.azure.is_none() && plan.commits.is_none());
+    // Without a fact the Routine decides.
+    assert_eq!(
+        plan.clone().observe().read,
+        StepRead::Environment(EnvironmentRead::Unknown)
+    );
+    assert!(matches!(
+        runtime
+            .apply_deterministic_step_check(plan.observe(), NOW + 5)
+            .unwrap(),
+        DeterministicStepOutcome::Routine
+    ));
+    assert_eq!(
+        decide_environment(&EnvironmentRead::Read {
+            environment: "Production".into(),
+            state: termloop_domain::EnvironmentDeployState::Deployed,
+            detail: Some("Runs abc1234".into()),
+            source: termloop_domain::FactSource::Probe,
+        }),
+        DeterministicDecision::Passed(
+            "Deployed to Production (Runs abc1234), according to a probe.".into()
+        )
+    );
+    assert!(matches!(
+        decide_environment(&EnvironmentRead::Read {
+            environment: "Production".into(),
+            state: termloop_domain::EnvironmentDeployState::NotDeployed,
+            detail: None,
+            source: termloop_domain::FactSource::Check,
+        }),
+        DeterministicDecision::Waiting(evidence) if evidence == "Not deployed to Production, according to a delivery check."
+    ));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_deployed_environment_passes_through_the_verdict_path() {
+    let deployed = PlaybookDeterministicCheck {
+        kind: PlaybookDeterministicCheckKind::EnvironmentDeployed,
+        base_branch: None,
+        environment: Some("Staging".into()),
+    };
+    let (mut runtime, root, capability) = claimed(deployed, RoutineActionHandling::Off);
+    let mut facts = termloop_domain::TaskDeliveryFacts {
+        task_id: "task-1".into(),
+        ..Default::default()
+    };
+    facts.observe_environment(
+        "staging",
+        termloop_domain::EnvironmentDeployState::Deployed,
+        None,
+        termloop_domain::FactSource::ProjectManager,
+        NOW,
+    );
+    runtime
+        .store
+        .set_task_delivery_facts(&runtime.write_authority, vec![facts])
+        .unwrap();
+    let plan = runtime.plan_deterministic_step_check(&capability).unwrap();
+    assert!(matches!(
+        runtime
+            .apply_deterministic_step_check(plan.observe(), NOW + 5)
+            .unwrap(),
+        DeterministicStepOutcome::Recorded { .. }
+    ));
+    let recorded = answer(&runtime, "pr-open").expect("the verdict is stored");
+    assert_eq!(recorded.verdict, PlaybookStepVerdict::Passed);
+    assert_eq!(recorded.evaluator, PlaybookStepEvaluator::Deterministic);
+    assert_eq!(
+        recorded.evidence,
+        "Deployed to staging, according to the Project Manager."
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

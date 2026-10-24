@@ -44,7 +44,7 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
 };
 const PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.policy.project-manager-playbook",
-    version: 3,
+    version: 4,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.policy.project-manager-playbook.md"
     ),

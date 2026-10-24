@@ -28,9 +28,9 @@ use crate::{CoreError, CoreRuntime};
 use serde_json::Value;
 use std::time::Duration;
 use termloop_domain::{
-    PLAYBOOK_EVIDENCE_MAX_BYTES, PlaybookDeterministicCheck, PlaybookDeterministicCheckKind,
-    PlaybookDeterministicFallback as Fallback, PlaybookGateKind, PlaybookStepEvaluator,
-    PlaybookStepVerdict, RoutineActionHandling,
+    EnvironmentDeployState, FactSource, PLAYBOOK_EVIDENCE_MAX_BYTES, PlaybookDeterministicCheck,
+    PlaybookDeterministicCheckKind, PlaybookDeterministicFallback as Fallback, PlaybookGateKind,
+    PlaybookStepEvaluator, PlaybookStepVerdict, RoutineActionHandling,
 };
 use termloop_gitio::{BranchCommitState, BranchCommitUnavailable, GitRunner};
 use termloop_providers::{
@@ -55,6 +55,9 @@ pub struct DeterministicStepPlan {
     /// Set for a pull request check of a Project Manager Task: its Jira key
     /// and the Project checkout whose repository holds the developer's work.
     issue_key: Option<IssueKeyScope>,
+    /// Set only for an environment check, whose answer is the Task's stored
+    /// delivery fact; nothing is read from outside.
+    environment: Option<EnvironmentRead>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +81,19 @@ pub struct DeterministicStepObservation {
 pub(crate) enum StepRead {
     PullRequests(PullRequestRead),
     Commits(CommitRead),
+    Environment(EnvironmentRead),
+}
+
+/// Where the Task's delivery facts place it on one environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum EnvironmentRead {
+    Unknown,
+    Read {
+        environment: String,
+        state: EnvironmentDeployState,
+        detail: Option<String>,
+        source: FactSource,
+    },
 }
 
 /// The Task branch's own commits, as one fresh local Git read counted them.
@@ -151,11 +167,15 @@ impl CoreRuntime {
         let task_id = self.claimed_step_task_id(capability)?;
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
         let commit_check = check.kind == PlaybookDeterministicCheckKind::BranchCommitted;
-        let issue_key = (!commit_check && self.is_project_manager_project(&task.project_id))
+        let environment_check = check.kind == PlaybookDeterministicCheckKind::EnvironmentDeployed;
+        let pull_request_check = !commit_check && !environment_check;
+        let issue_key = (pull_request_check && self.is_project_manager_project(&task.project_id))
             .then(|| self.issue_key_scope(task))
             .flatten();
+        let environment = environment_check.then(|| self.task_environment_read(&task.id, &check));
         Some(DeterministicStepPlan {
             issue_key,
+            environment,
             capability: capability.clone(),
             milestone_id,
             commits: commit_check
@@ -163,10 +183,10 @@ impl CoreRuntime {
                 .flatten(),
             check,
             snapshot: snapshot(task),
-            github: (!commit_check)
+            github: pull_request_check
                 .then(|| self.github_client.clone())
                 .flatten(),
-            azure: (!commit_check)
+            azure: pull_request_check
                 .then(|| self.azure_devops_client.clone())
                 .flatten(),
         })
@@ -194,12 +214,15 @@ impl CoreRuntime {
                 current.task_id == observation.snapshot.task_id
                     && current.branch_name == observation.snapshot.branch_name
                     && current.repository_root == observation.snapshot.repository_root
-                    && (observation.check.kind == PlaybookDeterministicCheckKind::BranchCommitted
-                        || self
-                            .is_project_manager_project(&task.project_id)
-                            .then(|| self.issue_key_scope(task))
-                            .flatten()
-                            == observation.issue_key)
+                    && (matches!(
+                        observation.check.kind,
+                        PlaybookDeterministicCheckKind::BranchCommitted
+                            | PlaybookDeterministicCheckKind::EnvironmentDeployed
+                    ) || self
+                        .is_project_manager_project(&task.project_id)
+                        .then(|| self.issue_key_scope(task))
+                        .flatten()
+                        == observation.issue_key)
             });
         // The board or the Task's branch moved while the read ran. The read
         // proves nothing about the current question; the Routine asks it.
@@ -253,6 +276,28 @@ impl CoreRuntime {
 }
 
 impl CoreRuntime {
+    fn task_environment_read(
+        &self,
+        task_id: &str,
+        check: &PlaybookDeterministicCheck,
+    ) -> EnvironmentRead {
+        let fact = check.environment.as_deref().and_then(|name| {
+            self.store
+                .task_delivery_facts_for(task_id)?
+                .environment(name)
+                .cloned()
+        });
+        match fact {
+            Some(fact) if fact.state != EnvironmentDeployState::Unknown => EnvironmentRead::Read {
+                environment: fact.name,
+                state: fact.state,
+                detail: fact.detail,
+                source: fact.source,
+            },
+            _ => EnvironmentRead::Unknown,
+        }
+    }
+
     fn issue_key_scope(&self, task: &termloop_domain::TaskRecord) -> Option<IssueKeyScope> {
         let project = self
             .store
@@ -275,7 +320,9 @@ impl DeterministicStepPlan {
     /// Runs the fresh Git and provider read. Blocking; call without the core
     /// lock.
     pub fn observe(self) -> DeterministicStepObservation {
-        let read = if self.is_commit_check() {
+        let read = if let Some(read) = &self.environment {
+            StepRead::Environment(read.clone())
+        } else if self.is_commit_check() {
             StepRead::Commits(read_task_branch_commits(
                 &self.snapshot,
                 self.commits.as_ref(),
@@ -305,7 +352,9 @@ impl DeterministicStepPlan {
 
     /// The observation for a read whose worker failed before answering.
     pub fn failed(self) -> DeterministicStepObservation {
-        let reason = if self.is_commit_check() {
+        let reason = if self.environment.is_some() {
+            Fallback::EnvironmentUnknown
+        } else if self.is_commit_check() {
             Fallback::CommitsUnavailable
         } else {
             Fallback::ProviderFailure
@@ -318,7 +367,9 @@ impl DeterministicStepPlan {
     }
 
     fn unavailable(self, reason: Fallback) -> DeterministicStepObservation {
-        let read = if self.is_commit_check() {
+        let read = if self.environment.is_some() {
+            StepRead::Environment(EnvironmentRead::Unknown)
+        } else if self.is_commit_check() {
             StepRead::Commits(CommitRead::Unavailable(reason))
         } else {
             StepRead::PullRequests(PullRequestRead::Unavailable(reason))
@@ -583,6 +634,47 @@ fn decide_step(check: &PlaybookDeterministicCheck, read: &StepRead) -> Determini
     match read {
         StepRead::PullRequests(read) => decide(check, read),
         StepRead::Commits(read) => decide_commits(read),
+        StepRead::Environment(read) => decide_environment(read),
+    }
+}
+
+/// An environment check passes once the Task's facts show it deployed there.
+/// Pure.
+pub(crate) fn decide_environment(read: &EnvironmentRead) -> DeterministicDecision {
+    let EnvironmentRead::Read {
+        environment,
+        state,
+        detail,
+        source,
+    } = read
+    else {
+        return DeterministicDecision::Fallback(Fallback::EnvironmentUnknown);
+    };
+    let source = match source {
+        FactSource::Jira => "Jira",
+        FactSource::GitHost => "the Git host",
+        FactSource::Probe => "a probe",
+        FactSource::Check => "a delivery check",
+        FactSource::ProjectManager => "the Project Manager",
+    };
+    let detail = detail
+        .as_deref()
+        .map(|detail| format!(" ({detail})"))
+        .unwrap_or_default();
+    let evidence = |text: String| bounded_evidence(text);
+    match state {
+        EnvironmentDeployState::Deployed => DeterministicDecision::Passed(evidence(format!(
+            "Deployed to {environment}{detail}, according to {source}."
+        ))),
+        EnvironmentDeployState::InProgress => DeterministicDecision::Waiting(evidence(format!(
+            "Deploying to {environment}{detail}, according to {source}."
+        ))),
+        EnvironmentDeployState::NotDeployed => DeterministicDecision::Waiting(evidence(format!(
+            "Not deployed to {environment}{detail}, according to {source}."
+        ))),
+        EnvironmentDeployState::Unknown => {
+            DeterministicDecision::Fallback(Fallback::EnvironmentUnknown)
+        }
     }
 }
 
@@ -651,6 +743,9 @@ pub(crate) fn decide(
         // Never planned as a pull request read.
         PlaybookDeterministicCheckKind::BranchCommitted => {
             return DeterministicDecision::Fallback(Fallback::CommitsUnavailable);
+        }
+        PlaybookDeterministicCheckKind::EnvironmentDeployed => {
+            return DeterministicDecision::Fallback(Fallback::EnvironmentUnknown);
         }
     };
     let matching = in_state(wanted);
@@ -724,6 +819,9 @@ pub(crate) fn decide(
         }
         PlaybookDeterministicCheckKind::BranchCommitted => {
             DeterministicDecision::Fallback(Fallback::CommitsUnavailable)
+        }
+        PlaybookDeterministicCheckKind::EnvironmentDeployed => {
+            DeterministicDecision::Fallback(Fallback::EnvironmentUnknown)
         }
         PlaybookDeterministicCheckKind::PullRequestChecksPassing => match found.checks {
             CheckState::Passing => DeterministicDecision::Passed(bounded_evidence(format!(

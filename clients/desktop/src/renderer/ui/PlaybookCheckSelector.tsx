@@ -11,6 +11,7 @@ import {
   playbookCheckDescription,
   playbookCheckKindLabel,
   playbookCheckTakesBaseBranch,
+  playbookCheckTakesEnvironment,
   utf8ByteLength,
 } from "./playbook-policy.js";
 import "./playbook-check.css";
@@ -19,7 +20,8 @@ const ROUTINE = "routine";
 type CheckChoice = PlaybookDeterministicCheckKind | typeof ROUTINE;
 
 function sameCheck(left: PlaybookDeterministicCheckDto | null, right: PlaybookDeterministicCheckDto | null): boolean {
-  return left === right || (left !== null && right !== null && left.kind === right.kind && left.baseBranch === right.baseBranch);
+  return left === right || (left !== null && right !== null && left.kind === right.kind
+    && left.baseBranch === right.baseBranch && (left.environment ?? null) === (right.environment ?? null));
 }
 
 /** How one Playbook step decides it is complete: by its agent Routine, or
@@ -39,15 +41,22 @@ export function PlaybookCheckSelector({
   const human = gate === "human";
   const [choice, setChoice] = useState<CheckChoice>(check?.kind ?? ROUTINE);
   const [baseBranch, setBaseBranch] = useState(check?.baseBranch ?? "");
+  const [environment, setEnvironment] = useState(check?.environment ?? "");
   useEffect(() => {
     setChoice(human ? ROUTINE : check?.kind ?? ROUTINE);
     setBaseBranch(check?.baseBranch ?? "");
-  }, [human, check?.kind, check?.baseBranch]);
+    setEnvironment(check?.environment ?? "");
+  }, [human, check?.kind, check?.baseBranch, check?.environment]);
   const takesBase = choice !== ROUTINE && playbookCheckTakesBaseBranch(choice);
+  const takesEnvironment = choice !== ROUTINE && playbookCheckTakesEnvironment(choice);
   const trimmedBase = takesBase ? baseBranch.trim() : "";
+  const trimmedEnvironment = environment.trim();
   const next: PlaybookDeterministicCheckDto | null = human || choice === ROUTINE
     ? null
-    : { kind: choice, baseBranch: trimmedBase === "" ? null : trimmedBase };
+    : takesEnvironment
+      ? { kind: choice, baseBranch: null, environment: trimmedEnvironment }
+      : { kind: choice, baseBranch: trimmedBase === "" ? null : trimmedBase };
+  const environmentMissing = takesEnvironment && (trimmedEnvironment === "" || trimmedEnvironment.length > 120);
   const baseTooLong = utf8ByteLength(trimmedBase) > PLAYBOOK_BASE_BRANCH_MAX_BYTES;
   const baseHasSpace = /\s/u.test(trimmedBase);
   const changed = !sameCheck(next, check);
@@ -66,13 +75,18 @@ export function PlaybookCheckSelector({
           placeholder="Any branch" spellCheck={false}
           onChange={(event) => setBaseBranch(event.target.value)} />
       </label> : null}
-      <button type="button" className="ap-btn primary" disabled={busy || human || !changed || baseTooLong || baseHasSpace}
+      {!human && takesEnvironment ? <label>Environment
+        <input aria-label="Deployment environment" value={environment} disabled={busy}
+          placeholder="Production" maxLength={120}
+          onChange={(event) => setEnvironment(event.target.value)} />
+      </label> : null}
+      <button type="button" className="ap-btn primary" disabled={busy || human || !changed || baseTooLong || baseHasSpace || environmentMissing}
         onClick={() => void save(next)}>Save check</button>
     </div>
     <p className="ap-hint">{human
       ? "Human gates wait for their approver, so they cannot use a pull request check."
       : next
-        ? `${playbookCheckDescription(next)} TermLoop reads ${takesBase ? "the pull request" : "the Task branch"} directly; if it cannot answer, the agent Routine decides instead.`
+        ? `${playbookCheckDescription(next)} TermLoop reads ${takesEnvironment ? "the Task's delivery facts" : takesBase ? "the pull request" : "the Task branch"} directly; if it cannot answer, the agent Routine decides instead.`
         : "The agent Routine checks the completion rule above with the verification instructions below."}</p>
     {baseTooLong ? <p className="ap-problem">Base branch is too long (max {PLAYBOOK_BASE_BRANCH_MAX_BYTES} bytes).</p> : null}
     {baseHasSpace ? <p className="ap-problem">Base branch cannot contain spaces.</p> : null}

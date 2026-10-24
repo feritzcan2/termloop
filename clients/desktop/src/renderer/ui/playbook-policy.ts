@@ -580,6 +580,7 @@ export const PLAYBOOK_CHECK_KINDS: readonly PlaybookDeterministicCheckKind[] = [
   "pullRequestOpen",
   "pullRequestChecksPassing",
   "pullRequestMerged",
+  "environmentDeployed",
 ];
 
 export function playbookCheckKindLabel(kind: PlaybookDeterministicCheckKind): string {
@@ -588,20 +589,27 @@ export function playbookCheckKindLabel(kind: PlaybookDeterministicCheckKind): st
     case "pullRequestChecksPassing": return "PR checks passing";
     case "pullRequestMerged": return "PR merged";
     case "branchCommitted": return "Committed";
+    case "environmentDeployed": return "Deployed to";
   }
 }
 
 /** Only pull request checks name a target; commits are counted from the Task
     branch's own base. */
 export function playbookCheckTakesBaseBranch(kind: PlaybookDeterministicCheckKind): boolean {
-  return kind !== "branchCommitted";
+  return kind !== "branchCommitted" && kind !== "environmentDeployed";
+}
+
+/** Only an environment check names the environment it reads. */
+export function playbookCheckTakesEnvironment(kind: PlaybookDeterministicCheckKind): boolean {
+  return kind === "environmentDeployed";
 }
 
 /** The compact caption a step shows beside its cadence. */
 export function playbookCheckCaption(check: PlaybookDeterministicCheckDto | null | undefined): string | undefined {
   if (!check) return undefined;
   const base = check.baseBranch ? ` → ${truncatePlaybookLabel(check.baseBranch, 16)}` : "";
-  return `${playbookCheckKindLabel(check.kind)}${base}`;
+  const environment = check.environment ? ` ${truncatePlaybookLabel(check.environment, 16)}` : "";
+  return `${playbookCheckKindLabel(check.kind)}${environment}${base}`;
 }
 
 export function playbookCheckDescription(check: PlaybookDeterministicCheckDto): string {
@@ -611,6 +619,7 @@ export function playbookCheckDescription(check: PlaybookDeterministicCheckDto): 
     case "pullRequestChecksPassing": return `Passes when the Task branch pull request${target} reports all build checks passing.`;
     case "pullRequestMerged": return `Passes when the Task branch pull request${target} is merged.`;
     case "branchCommitted": return "Passes when the Task branch has at least one commit of its own. Pushing is not required.";
+    case "environmentDeployed": return `Passes when the Task's delivery facts show it deployed to ${check.environment ?? "the environment"}. Only Project Manager Projects keep these facts.`;
   }
 }
 
@@ -723,6 +732,7 @@ export function playbookFallbackReasonCopy(
       case "multipleMatches": return "several pull requests match the Task branch";
       case "checksUnsupported": return `${host} does not report build checks for this pull request`;
       case "commitsUnavailable": return "the Task branch's commits could not be counted";
+      case "environmentUnknown": return "no delivery fact places the Task on that environment";
     }
   })();
   return `Fell back to agent routine: ${detail}`;

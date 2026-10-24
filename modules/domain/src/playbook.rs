@@ -92,6 +92,9 @@ pub enum PlaybookDeterministicCheckKind {
     /// The Task branch has at least one commit of its own, counted from where
     /// it left its base. Read from local Git; the commits need not be pushed.
     BranchCommitted,
+    /// The Task's delivery facts show it deployed to the named environment.
+    /// Only a Project opened as Project Manager keeps those facts.
+    EnvironmentDeployed,
 }
 
 /// A step's completion expressed as the Task branch's own pull request state.
@@ -104,6 +107,10 @@ pub struct PlaybookDeterministicCheck {
     /// any target branch.
     #[serde(default)]
     pub base_branch: Option<String>,
+    /// The environment an `EnvironmentDeployed` check reads, matched without
+    /// regard to case; absent for every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
 }
 
 /// Who produced a stored verdict.
@@ -135,6 +142,8 @@ pub enum PlaybookDeterministicFallback {
     ChecksUnsupported,
     /// Local Git could not count the Task branch's own commits.
     CommitsUnavailable,
+    /// No delivery fact says where the Task's environment stands.
+    EnvironmentUnknown,
 }
 
 /// The one current Playbook document for a Project. Replace-only: updates
@@ -312,7 +321,18 @@ impl PlaybookDeterministicCheck {
         // Commits are counted from the Task branch's own base, so naming
         // another target would describe a different question.
         if self.kind == PlaybookDeterministicCheckKind::BranchCommitted {
-            return self.base_branch.is_none();
+            return self.base_branch.is_none() && self.environment.is_none();
+        }
+        // An environment check names its environment and no branch.
+        if self.kind == PlaybookDeterministicCheckKind::EnvironmentDeployed {
+            return self.base_branch.is_none()
+                && self
+                    .environment
+                    .as_deref()
+                    .is_some_and(crate::valid_probe_environment);
+        }
+        if self.environment.is_some() {
+            return false;
         }
         self.base_branch.as_deref().is_none_or(|branch| {
             !branch.is_empty()
@@ -621,6 +641,7 @@ mod tests {
         let check = |base: Option<&str>| PlaybookDeterministicCheck {
             kind: PlaybookDeterministicCheckKind::PullRequestMerged,
             base_branch: base.map(str::to_owned),
+            environment: None,
         };
         assert!(automatic(None).is_valid());
         assert!(automatic(Some(check(None))).is_valid());
@@ -638,9 +659,24 @@ mod tests {
         let committed = |base: Option<&str>| PlaybookDeterministicCheck {
             kind: PlaybookDeterministicCheckKind::BranchCommitted,
             base_branch: base.map(str::to_owned),
+            environment: None,
         };
         assert!(automatic(Some(committed(None))).is_valid());
         assert!(!automatic(Some(committed(Some("development")))).is_valid());
+
+        let deployed = |environment: Option<&str>, base: Option<&str>| PlaybookDeterministicCheck {
+            kind: PlaybookDeterministicCheckKind::EnvironmentDeployed,
+            base_branch: base.map(str::to_owned),
+            environment: environment.map(str::to_owned),
+        };
+        assert!(automatic(Some(deployed(Some("Production"), None))).is_valid());
+        assert!(!automatic(Some(deployed(None, None))).is_valid());
+        assert!(!automatic(Some(deployed(Some(" Production"), None))).is_valid());
+        assert!(!automatic(Some(deployed(Some("Production"), Some("main")))).is_valid());
+        // Only an environment check names an environment.
+        let mut named = check(None);
+        named.environment = Some("Production".into());
+        assert!(!automatic(Some(named)).is_valid());
 
         // A pull-request read cannot prove a named person's approval.
         let mut human = playbook();

@@ -816,6 +816,7 @@ fn deterministic_checks_and_answer_provenance_survive_reopen() {
         Some(termloop_domain::PlaybookDeterministicCheck {
             kind: termloop_domain::PlaybookDeterministicCheckKind::PullRequestMerged,
             base_branch: Some("develop".into()),
+            environment: None,
         });
     let revision = store.revision();
     store

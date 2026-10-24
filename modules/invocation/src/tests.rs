@@ -432,6 +432,7 @@ fn playbook_builder_adds_the_visible_delivery_policy_only_for_project_manager_pr
     // off the check that reads one.
     assert!(manager.contains("do not add the **Committed** first"));
     assert!(manager.contains("never use the\n`branchCommitted` check"));
+    assert!(manager.contains("use the\n`environmentDeployed` check"));
     assert!(manager.contains(project_manager_playbook_policy_body()));
     // The policy only adds to the Developer prompt; nothing else changes.
     assert_eq!(

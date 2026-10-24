@@ -1718,6 +1718,16 @@ mod tests {
             "pullRequestOpen"
         );
 
+        // An environment check names its environment and round-trips it.
+        let mut deployed = two_step_milestones(600, 600, "Live in production.");
+        deployed[1]["deterministicCheck"] =
+            json!({"kind": "environmentDeployed", "baseBranch": null, "environment": "Production"});
+        let saved = save_two_steps(&mut runtime, &project_id, deployed, 3);
+        assert_eq!(
+            saved["playbook"]["milestones"][1]["deterministicCheck"],
+            json!({"kind": "environmentDeployed", "baseBranch": null, "environment": "Production"})
+        );
+
         // A human gate never carries a check, and a base branch is bounded and
         // non-blank.
         let rejected = |runtime: &mut CoreRuntime, milestone: Value| {
@@ -1758,7 +1768,7 @@ mod tests {
                 .playbook_for_project(&project_id)
                 .unwrap()
                 .revision,
-            2
+            3
         );
 
         let _ = std::fs::remove_file(path);
