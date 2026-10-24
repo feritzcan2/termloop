@@ -93,6 +93,7 @@ impl PreparedProviderRuntime {
         use ProviderRuntimePreparationError::{AccountUnavailable, EndpointBindingFailed, Runtime};
         if let Some(account) = request.account {
             account.prepare().map_err(|_| AccountUnavailable)?;
+            account.share_user_setup();
         }
         let resume = matches!(request.mode, ProviderRuntimeMode::Resume);
         let codex_supported = request.agent_id == "codex"
