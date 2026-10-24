@@ -952,12 +952,31 @@ pub(super) async fn project_manager_jira_search(
         .lock()
         .await
         .plan_project_manager_jira_search(&params)?;
+    match observe_jira(state, plan).await {
+        TaskSourceRefreshOutcome::Success(result) => Ok(state
+            .core
+            .lock()
+            .await
+            .project_manager_jira_search_result(&project_id, result)),
+        TaskSourceRefreshOutcome::Failure { reason, .. } => Ok(
+            json!({ "issues": [], "truncated": false, "failureReason": termloop_core::task_source_failure_wire(reason) }),
+        ),
+    }
+}
+
+/// Runs one planned Jira search with the Task Source's stored credential,
+/// outside the core lock, and keeps the credential state current.
+pub(crate) async fn observe_jira(
+    state: &AppState,
+    plan: termloop_core::TaskSourceRefreshPlan,
+) -> TaskSourceRefreshOutcome {
     let secret = match read_stored_credential(state, &plan.source_id).await {
         Ok(secret) => secret,
         Err(reason) => {
-            return Ok(
-                json!({ "issues": [], "truncated": false, "failureReason": termloop_core::task_source_failure_wire(reason) }),
-            );
+            return TaskSourceRefreshOutcome::Failure {
+                reason,
+                retry_after_seconds: None,
+            };
         }
     };
     let source_id = plan.source_id.clone();
@@ -974,26 +993,19 @@ pub(super) async fn project_manager_jira_search(
         reason: TaskSourceFailure::ProviderUnavailable,
         retry_after_seconds: None,
     });
-    match outcome {
-        TaskSourceRefreshOutcome::Success(result) => {
+    match &outcome {
+        TaskSourceRefreshOutcome::Success(_) => {
             set_credential_state(state, &source_id, TaskSourceCredentialPresence::Present);
-            Ok(state
-                .core
-                .lock()
-                .await
-                .project_manager_jira_search_result(&project_id, result))
         }
         TaskSourceRefreshOutcome::Failure { reason, .. } => {
             set_credential_state(
                 state,
                 &source_id,
-                credential_presence_for_failure(Some(reason)),
+                credential_presence_for_failure(Some(*reason)),
             );
-            Ok(
-                json!({ "issues": [], "truncated": false, "failureReason": termloop_core::task_source_failure_wire(reason) }),
-            )
         }
     }
+    outcome
 }
 
 #[cfg(test)]

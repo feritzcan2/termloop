@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  DeliveryCheckDto,
+  ProjectManagerEnvironmentSetParams,
   ProjectManagerTaskTrackingSetParams,
   ProjectManagerTicketSaveParams,
   ProjectManagerTicketVersionsResult,
   ProjectSprintDto,
+  TaskDeliveryFactsDto,
   TaskTicketHeadDto,
+  TaskTicketProposalDto,
   TaskTrackingDto,
 } from "@termloop/contract/current";
 
-import type { AgentStatus, Session, Task } from "../model.js";
-import { Icon, agentIconName } from "./Icon.js";
-import { agentLabel } from "./workflow-presentation.js";
+import type { Task } from "../model.js";
+import { Icon } from "./Icon.js";
 import { ProjectManagerMarkdownEditor } from "./ProjectManagerMarkdownEditor.js";
-import { ProjectManagerTicketEnvironments, ProjectManagerTicketText } from "./ProjectManagerTicketFields.js";
+import { ProjectManagerDeliveryFacts, ProjectManagerTicketText } from "./ProjectManagerTicketFields.js";
 import { ProjectManagerTicketHistory, ticketAuthorLabel } from "./ProjectManagerTicketHistory.js";
 import {
   isRevisionConflict,
@@ -22,50 +25,52 @@ import {
   ticketSaveParams,
   type TicketDraft,
 } from "./project-manager-ticket.js";
-import {
-  agentStatusLabel,
-  errorText,
-  jiraIssueKey,
-  projectManagerFindingsSections,
-  type PlaybookStepTrack,
-} from "./ProjectManagerWorkspace.js";
+import { errorText, jiraIssueKey, type PlaybookStepTrack } from "./ProjectManagerWorkspace.js";
 
 export type ProjectManagerTicketActions = {
-  startTaskAgent(taskId: string, agentId?: string): Promise<string | undefined>;
-  requestInvestigation(taskId: string): Promise<string | undefined>;
   openExternal(url: string): void;
   loadTicketVersions(taskId: string): Promise<ProjectManagerTicketVersionsResult>;
 };
 
-/// The Project Manager's ticket: one document holding the Task's title, its
-/// Markdown description, and its delivery facts, saved together as numbered
-/// versions by the Project Manager or the Task Agent. While the Project
-/// Manager edits, a version the Agent saves is announced instead of
-/// replacing the draft.
+type TrackingDraft = { developer: string; blockers: string; note: string };
+
+function trackingDraft(tracking: TaskTrackingDto | undefined): TrackingDraft {
+  return { developer: tracking?.developer ?? "", blockers: tracking?.blockers ?? "", note: tracking?.note ?? "" };
+}
+
+/// The Project Manager's ticket: the Task's title and Markdown description,
+/// saved together as numbered versions; the Project Manager's own developer,
+/// blockers, and note; and the delivery facts TermLoop read. A delivery check
+/// only proposes ticket changes, which the Project Manager accepts or
+/// dismisses.
 export function ProjectManagerTicket(props: {
   task: Task;
   tracking: TaskTrackingDto | undefined;
+  facts: TaskDeliveryFactsDto | undefined;
+  proposal: TaskTicketProposalDto | undefined;
+  check: DeliveryCheckDto | undefined;
   head: TaskTicketHeadDto | undefined;
   sprints: readonly ProjectSprintDto[];
   activeSprint: ProjectSprintDto | undefined;
   inActiveSprint: boolean;
-  agent: Session | undefined;
-  agentStatus: AgentStatus | undefined;
   track: readonly PlaybookStepTrack[];
-  agents: readonly { id: string; label: string }[];
   disabled: boolean;
   actions: ProjectManagerTicketActions;
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<string | undefined>;
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<string | undefined>;
   setTracking(params: ProjectManagerTaskTrackingSetParams): Promise<string | undefined>;
-  renderTerminal(sessionId: string): ReactNode;
+  setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
+  acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
+  dismissProposal(taskId: string): Promise<string | undefined>;
+  requestCheck(taskIds: string[]): Promise<string | undefined>;
+  openCheck(sessionId: string): void;
 }) {
-  const { task, agent, actions, track, head } = props;
+  const { task, actions, track, head, proposal, check } = props;
   const headNumber = head?.number ?? null;
   const saved = useMemo(
-    () => ticketDraft(task, props.tracking, head !== undefined),
+    () => ticketDraft(task, head !== undefined),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [task.id, task.title, task.brief, task.jira_url, props.tracking?.updatedAtEpochMs, head !== undefined],
+    [task.id, task.title, task.brief, task.jira_url, head !== undefined],
   );
   const [draft, setDraft] = useState<TicketDraft>(saved);
   const [baseVersion, setBaseVersion] = useState(headNumber);
@@ -73,15 +78,23 @@ export function ProjectManagerTicket(props: {
   const [briefTouched, setBriefTouched] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [summary, setSummary] = useState("");
-  const [busy, setBusy] = useState<"save" | "start" | "check" | "move" | "sprint">();
+  const [busy, setBusy] = useState<"save" | "check" | "move" | "sprint" | "proposal" | "tracking">();
   const [message, setMessage] = useState<string>();
   const [conflict, setConflict] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const savedTracking = useMemo(
+    () => trackingDraft(props.tracking),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.tracking?.updatedAtEpochMs],
+  );
+  const [ownFields, setOwnFields] = useState<TrackingDraft>(savedTracking);
+  useEffect(() => { setOwnFields(savedTracking); }, [savedTracking]);
   const reloadNext = useRef(false);
 
   const briefDirty = briefTouched && draft.brief.trim() !== briefBaseline.trim();
-  const otherDirty = !sameTicket({ ...draft, brief: saved.brief }, saved);
-  const dirty = briefDirty || otherDirty;
+  const titleDirty = !sameTicket({ ...draft, brief: saved.brief }, saved);
+  const dirty = briefDirty || titleDirty;
   const effective: TicketDraft = { ...draft, brief: briefDirty ? draft.brief : saved.brief };
   const newerVersion = headNumber !== null && headNumber !== baseVersion;
 
@@ -132,38 +145,43 @@ export function ProjectManagerTicket(props: {
       }
     }
   };
-  const restore = (number: number) => {
+  const settled = (action: () => Promise<string | undefined>) => {
     reloadNext.current = true;
-    return props.restoreTicket(task.id, number, headNumber).then((failure) => {
+    return action().then((failure) => {
       if (failure) reloadNext.current = false;
       return failure;
     });
   };
-  const trackingWithSprint = (sprintId: string | null): ProjectManagerTaskTrackingSetParams => ({
+  const restore = (number: number) => settled(() => props.restoreTicket(task.id, number, headNumber));
+  const tracked = (patch: Partial<ProjectManagerTaskTrackingSetParams>): ProjectManagerTaskTrackingSetParams => ({
     taskId: task.id,
-    sprintId,
+    sprintId: props.tracking?.sprintId ?? null,
     developer: props.tracking?.developer ?? null,
-    jiraStatus: props.tracking?.jiraStatus ?? null,
-    environments: (props.tracking?.environments ?? []).map((environment) => ({ ...environment })),
     blockers: props.tracking?.blockers ?? null,
     note: props.tracking?.note ?? null,
+    ...patch,
   });
+  const commitOwnFields = () => {
+    const text = (value: string) => value.trim() || null;
+    const next = { developer: text(ownFields.developer), blockers: text(ownFields.blockers), note: text(ownFields.note) };
+    const previous = { developer: text(savedTracking.developer), blockers: text(savedTracking.blockers), note: text(savedTracking.note) };
+    if (JSON.stringify(next) === JSON.stringify(previous) || props.disabled) return;
+    void run("tracking", () => props.setTracking(tracked(next)));
+  };
+  const own = (patch: Partial<TrackingDraft>) => setOwnFields((current) => ({ ...current, ...patch }));
   const update = (patch: Partial<TicketDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
-  const findings = useMemo(() => projectManagerFindingsSections(task.steward_brief_markdown?.trim() ?? ""), [task.steward_brief_markdown]);
   const jiraKey = jiraIssueKey(task.jira_url);
   const currentIndex = track.findIndex((step) => step.state === "current");
   const current = currentIndex >= 0 ? track[currentIndex] : undefined;
   const next = currentIndex >= 0 ? track[currentIndex + 1] : undefined;
   const passed = track.filter((step) => step.state === "passed").length;
   const done = track.length > 0 && passed === track.length;
-  const agentState = agentStatusLabel(props.agentStatus?.status);
-  const agentName = agent ? agentLabel(agent.process.agent_id ?? null) : undefined;
-  const agentRunning = agent?.lifecycle_state === "running";
   const sprintId = props.tracking?.sprintId ?? "";
   const selectableSprints = props.sprints.filter((sprint) => sprint.state !== "closed" || sprint.id === sprintId);
+  const open = task.status === "open";
 
-  return <div className={`task-detail pm-ticket${agent ? "" : " no-agent"}${historyOpen ? " with-history" : ""}`}>
+  return <div className={`task-detail pm-ticket${historyOpen ? " with-history" : ""}`}>
     <header className="pm-doc-bar">
       <div className="pm-meta">
         {task.jira_url ? <button
@@ -177,7 +195,7 @@ export function ProjectManagerTicket(props: {
             aria-label="Sprint"
             value={sprintId}
             disabled={props.disabled || busy !== undefined}
-            onChange={(event) => void run("sprint", () => props.setTracking(trackingWithSprint(event.target.value || null)))}
+            onChange={(event) => void run("sprint", () => props.setTracking(tracked({ sprintId: event.target.value || null })))}
           >
             <option value="">Backlog</option>
             {selectableSprints.map((sprint) => <option key={sprint.id} value={sprint.id}>
@@ -189,25 +207,27 @@ export function ProjectManagerTicket(props: {
         {track.length > 0 && props.inActiveSprint ? <span className={`pm-meta-step${done ? " done" : ""}`} title={`${passed} of ${track.length} Playbook steps passed`}>
           <i aria-hidden="true" />{done ? "Delivered" : current?.title ?? track[0]!.title}
         </span> : null}
-        {props.inActiveSprint ? <span className={`pm-meta-agent${agent ? "" : " none"}`}>
-          <span className={`pm-agent-dot ${props.agentStatus?.status ?? (agent ? "unknown" : "none")}`} aria-hidden="true" />
-          {agent ? [agentName, agentState].filter(Boolean).join(" · ") : "No Agent"}
-        </span> : null}
+        {check ? <button
+          type="button"
+          className="pm-meta-check"
+          title="Open the delivery check's terminal"
+          onClick={() => props.openCheck(check.sessionId)}
+        ><span className="pm-agent-dot working" aria-hidden="true" />Checking<Icon name="terminal" /></button> : null}
       </div>
       <div className="pm-doc-bar-actions">
-        {agent ? <button
+        {open && !check ? <button
           type="button"
           className="td-mini"
-          disabled={props.disabled || busy !== undefined || !agentRunning}
-          title="Ask the Agent to check Jira, pull requests, and environments again and update the ticket"
-          onClick={() => void run("check", () => actions.requestInvestigation(task.id))}
-        ><Icon name="restart" />{busy === "check" ? "Asking…" : "Check again"}</button> : null}
+          disabled={props.disabled || busy !== undefined}
+          title="Start a short-lived Agent that looks at deployments and the ticket, records what it finds, and proposes ticket changes"
+          onClick={() => void run("check", () => props.requestCheck([task.id]))}
+        ><Icon name="restart" />{busy === "check" ? "Starting…" : "Check now"}</button> : null}
         <button
           type="button"
           className={`pm-version-badge${historyOpen ? " open" : ""}`}
           aria-pressed={historyOpen}
           title="Show the ticket's versions"
-          onClick={() => setHistoryOpen((open) => !open)}
+          onClick={() => setHistoryOpen((value) => !value)}
         >
           {head ? <>
             <strong>v{head.number}</strong>
@@ -233,7 +253,7 @@ export function ProjectManagerTicket(props: {
           {conflict || (dirty && newerVersion) ? <div className="pm-banner warning" role="status">
             <Icon name="history" />
             <span>
-              {head?.author === "agent" ? "The Agent" : "Someone"} saved v{headNumber} while you were editing.
+              v{headNumber} was saved while you were editing.
               {conflict ? " Saving yours would replace it." : ""}
             </span>
             <button type="button" className="td-mini" onClick={() => setHistoryOpen(true)}>See changes</button>
@@ -241,25 +261,35 @@ export function ProjectManagerTicket(props: {
             {conflict ? <button type="button" className="td-mini danger" disabled={busy !== undefined} onClick={() => void save(true)}>Save mine anyway</button> : null}
           </div> : null}
           {message ? <div className="pm-banner danger" role="alert"><span>{message}</span></div> : null}
-          {!props.inActiveSprint ? <div className="pm-banner">
+          {proposal ? <div className="pm-banner proposal" role="status" aria-label="Proposed ticket update">
+            <Icon name="sparkles" />
+            <span>A delivery check proposes: <strong>{proposal.summary}</strong> · {relativeTime(proposal.proposedAtEpochMs)}</span>
+            <button type="button" className="td-mini" aria-expanded={proposalOpen} onClick={() => setProposalOpen((value) => !value)}>
+              {proposalOpen ? "Hide" : "Review"}
+            </button>
+            <button
+              type="button"
+              className="td-mini"
+              disabled={props.disabled || busy !== undefined || dirty}
+              title={dirty ? "Save or discard your edits first" : "Save the proposal as the ticket's next version"}
+              onClick={() => void run("proposal", () => settled(() => props.acceptProposal(task.id, headNumber)))}
+            >Accept</button>
+            <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
+              onClick={() => void run("proposal", () => props.dismissProposal(task.id))}>Dismiss</button>
+            {proposalOpen ? <div className="pm-proposal">
+              {proposal.baseVersion !== headNumber ? <p className="td-note">Proposed against v{proposal.baseVersion}; the ticket is now v{headNumber ?? 0}.</p> : null}
+              {proposal.title ? <p><strong>Title:</strong> {proposal.title}</p> : null}
+              {proposal.brief ? <pre className="pm-proposal-brief">{proposal.brief}</pre> : null}
+            </div> : null}
+          </div> : null}
+          {!props.inActiveSprint && open ? <div className="pm-banner">
             <span>
-              Agents run only for Tasks in the active sprint{props.activeSprint ? ` (${props.activeSprint.name})` : ""}. The ticket stays as it is.
+              TermLoop reads Jira and pull requests only for Tasks in the active sprint{props.activeSprint ? ` (${props.activeSprint.name})` : ""}.
             </span>
-            {props.activeSprint && task.status === "open" ? <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
-              onClick={() => void run("move", () => props.setTracking(trackingWithSprint(props.activeSprint!.id)))}>
+            {props.activeSprint ? <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
+              onClick={() => void run("move", () => props.setTracking(tracked({ sprintId: props.activeSprint!.id })))}>
               {busy === "move" ? "Moving…" : `Move to ${props.activeSprint.name}`}
             </button> : null}
-          </div> : !agent ? <div className="pm-banner">
-            <span>{props.agents.length === 0 ? "No Agent CLI is available. Set one up in Settings." : "The Task Agent is starting. If it does not appear, start it with:"}</span>
-            {props.agents.length > 0 ? <div className="pm-agent-choices" role="group" aria-label="Start the Task Agent">
-              {props.agents.map((choice) => <button
-                key={choice.id}
-                type="button"
-                className={`td-mini agent-${choice.id}`}
-                disabled={props.disabled || busy !== undefined}
-                onClick={() => void run("start", () => actions.startTaskAgent(task.id, choice.id))}
-              ><Icon name={agentIconName(choice.id)} />{busy === "start" ? "Starting…" : `Start with ${choice.label}`}</button>)}
-            </div> : null}
           </div> : null}
 
           <textarea
@@ -276,13 +306,9 @@ export function ProjectManagerTicket(props: {
           <dl className="pm-props">
             <div className="pm-prop">
               <dt><Icon name="agent" />Developer</dt>
-              <dd><input aria-label="Developer" value={draft.developer} placeholder="Empty" maxLength={120} disabled={props.disabled}
-                onChange={(event) => update({ developer: event.target.value })} /></dd>
-            </div>
-            <div className="pm-prop">
-              <dt><Icon name="check" />Jira status</dt>
-              <dd><input aria-label="Jira status" value={draft.jiraStatus} placeholder="Empty" maxLength={120} disabled={props.disabled}
-                onChange={(event) => update({ jiraStatus: event.target.value })} /></dd>
+              <dd><input aria-label="Developer" value={ownFields.developer} placeholder={props.facts?.jira?.assignee ?? "Empty"} maxLength={120} disabled={props.disabled}
+                onChange={(event) => own({ developer: event.target.value })}
+                onBlur={commitOwnFields} /></dd>
             </div>
             {track.length > 0 ? <div className="pm-prop">
               <dt><Icon name="branch" />Delivery</dt>
@@ -311,27 +337,18 @@ export function ProjectManagerTicket(props: {
             {task.jira_url ? <p className="td-note">Edits stay in TermLoop; Jira is not changed.</p> : null}
           </section>
 
-          <ProjectManagerTicketEnvironments
-            environments={draft.environments}
+          <ProjectManagerDeliveryFacts
+            facts={props.facts}
             disabled={props.disabled}
-            change={(environments) => update({ environments })}
+            openExternal={actions.openExternal}
+            setEnvironment={(command) => props.setEnvironment({ taskId: task.id, ...command })}
           />
           <div className="pm-doc-pair">
-            <ProjectManagerTicketText label="Blockers" tone="warning" value={draft.blockers} placeholder="What stops delivery right now" disabled={props.disabled}
-              change={(blockers) => update({ blockers })} />
-            <ProjectManagerTicketText label="Note" value={draft.note} placeholder="Your own note; the Agent never changes it" disabled={props.disabled}
-              change={(note) => update({ note })} />
+            <ProjectManagerTicketText label="Blockers" tone="warning" value={ownFields.blockers} placeholder="What stops delivery right now" disabled={props.disabled}
+              change={(blockers) => own({ blockers })} commit={commitOwnFields} />
+            <ProjectManagerTicketText label="Note" value={ownFields.note} placeholder="Your own note; no Agent changes it" disabled={props.disabled}
+              change={(note) => own({ note })} commit={commitOwnFields} />
           </div>
-
-          {findings.length > 0 ? <details className="pm-doc-section pm-findings-card" aria-label="Agent findings">
-            <summary><h2>Agent findings</h2><span className="pm-dim">How the Agent knows</span></summary>
-            <div className="pm-findings">
-              {findings.map((section, index) => <div key={index} className={`pm-finding ${section.tone}`}>
-                <h3>{section.title}</h3>
-                <ul>{section.lines.map((line, lineIndex) => <li key={lineIndex}>{line}</li>)}</ul>
-              </div>)}
-            </div>
-          </details> : null}
         </article>
       </div>
       {historyOpen ? <ProjectManagerTicketHistory
@@ -364,12 +381,5 @@ export function ProjectManagerTicket(props: {
         onClick={() => void save()}
       >{busy === "save" ? "Saving…" : "Save version"}</button>
     </footer> : null}
-
-    {agent ? <div className="pm-terminal">
-      <div className="pm-terminal-head">
-        <Icon name="terminal" /><span>{agentName} terminal</span>
-      </div>
-      <div className="pm-terminal-body">{props.renderTerminal(agent.id)}</div>
-    </div> : null}
   </div>;
 }

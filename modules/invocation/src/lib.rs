@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
 mod assistant;
+mod delivery_check;
 mod personal_agent;
 mod playbook_evaluation;
+pub use delivery_check::delivery_check_for_conversation;
 mod profiles;
 pub use playbook_evaluation::playbook_evaluator_for_conversation;
 mod project_workflow;
@@ -40,26 +42,16 @@ const INTERACTIVE_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     version: 7,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.interactive.md"),
 };
-const AGENT_TASK_INVESTIGATION_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.agent.task-investigation",
-    version: 3,
-    authored_body: include_str!("../../../resources/prompts/builtin.agent.task-investigation.md"),
-};
-const AGENT_TASK_REINVESTIGATION_TEMPLATE: PromptTemplate = PromptTemplate {
-    id: "builtin.agent.task-reinvestigation",
-    version: 3,
-    authored_body: include_str!("../../../resources/prompts/builtin.agent.task-reinvestigation.md"),
-};
 const PROJECT_MANAGER_PLAYBOOK_POLICY_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.policy.project-manager-playbook",
-    version: 2,
+    version: 3,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.policy.project-manager-playbook.md"
     ),
 };
 const PROJECT_MANAGER_AGENT_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.agent.project-manager",
-    version: 3,
+    version: 4,
     authored_body: include_str!("../../../resources/prompts/builtin.agent.project-manager.md"),
 };
 #[cfg(test)]
@@ -302,8 +294,7 @@ pub fn prompt_templates() -> &'static [PromptTemplate] {
         AGENT_MENU_HANDOVER_TO_TEMPLATE,
         STEWARD_TASK_ASSIGNMENT_TEMPLATE,
         AGENT_TASK_KICKOFF_TEMPLATE,
-        AGENT_TASK_INVESTIGATION_TEMPLATE,
-        AGENT_TASK_REINVESTIGATION_TEMPLATE,
+        delivery_check::DELIVERY_CHECK_TEMPLATE,
         AGENT_TASK_WORKFLOW_TEMPLATE,
         project_workflow::PROJECT_WORKFLOW_TEMPLATE,
     ]
@@ -2018,35 +2009,6 @@ fn compose_task_kickoff(
     )
 }
 
-/// The first message of a Task Agent in a Project opened as Project Manager:
-/// it investigates where the Task stands and records it. Any Project-configured
-/// kickoff message rides along as extra instructions.
-fn compose_task_investigation(
-    task_id: &str,
-    title: &str,
-    brief: Option<&str>,
-    jira_url: Option<&str>,
-    project_instructions: Option<&str>,
-) -> Result<ComposedTaskKickoff, InvocationError> {
-    if project_instructions
-        .is_some_and(|instructions| instructions.trim().is_empty() || instructions.len() > 8_192)
-    {
-        return Err(InvocationError::InvalidPromptBinding);
-    }
-    let project_instructions = project_instructions
-        .map(|instructions| format!("Project instructions: {instructions}\n"))
-        .unwrap_or_default();
-    compose_task_message(
-        "builtin.agent.task-investigation",
-        task_id,
-        &[("title", title.to_owned())],
-        title,
-        brief,
-        jira_url,
-        &[("project_instructions", project_instructions)],
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn compose_task_message(
     template_id: &str,
@@ -2111,102 +2073,6 @@ fn compose_task_message(
             .collect(),
         delivered_prompt,
     })
-}
-
-/// Composes the visible request that asks a running Project Manager Task Agent
-/// to check its Task again, scheduled or asked for by the project manager.
-pub fn task_reinvestigation_prompt(
-    task_id: &str,
-    title: &str,
-    reason: &str,
-) -> Result<AskToTerminalPrompt, InvocationError> {
-    if task_id.trim().is_empty()
-        || title.trim().is_empty()
-        || reason.trim().is_empty()
-        || reason.len() > 200
-        || [task_id, title, reason].iter().any(|value| {
-            value
-                .chars()
-                .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
-        })
-    {
-        return Err(InvocationError::InvalidPromptBinding);
-    }
-    let template = prompt_templates()
-        .iter()
-        .find(|template| template.id == "builtin.agent.task-reinvestigation")
-        .ok_or(InvocationError::TemplateMissing)?;
-    assistant::validate_template_asset(template)?;
-    let message_template = template
-        .authored_body
-        .split_once("\n---\n")
-        .map(|(_, message)| message.trim_start())
-        .ok_or(InvocationError::UnprovenancedPrompt)?;
-    let delivered_prompt = bind_ordered(message_template, &[("reason", reason), ("title", title)])?;
-    terminal_prompt(
-        template,
-        vec![
-            ("task_id".into(), task_id.into()),
-            ("reason".into(), reason.into()),
-            ("title".into(), title.into()),
-        ],
-        delivered_prompt,
-    )
-}
-
-/// Composes the investigating first message for one Project Manager Task Agent.
-pub fn task_investigation_prompt(
-    task_id: &str,
-    title: &str,
-    brief: Option<&str>,
-    jira_url: Option<&str>,
-    project_instructions: Option<&str>,
-) -> Result<AskToTerminalPrompt, InvocationError> {
-    let composed =
-        compose_task_investigation(task_id, title, brief, jira_url, project_instructions)?;
-    terminal_prompt(
-        composed.template,
-        composed.bindings,
-        composed.delivered_prompt,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn task_agent_with_investigation_for_conversation(
-    agent_id: &str,
-    cwd: &str,
-    model: &str,
-    permission: &str,
-    reasoning: &str,
-    task_id: &str,
-    title: &str,
-    brief: Option<&str>,
-    jira_url: Option<&str>,
-    project_instructions: Option<&str>,
-    managed_worktree: bool,
-    conversation: AgentConversationLaunch<'_>,
-    observation: Option<AgentObservationLaunch<'_>>,
-    mcp: Option<AgentMcpLaunch<'_>>,
-) -> Result<LaunchPayload, InvocationError> {
-    validate_agent_configuration(agent_id, model, permission, reasoning)?;
-    let composed =
-        compose_task_investigation(task_id, title, brief, jira_url, project_instructions)?;
-    task_agent_with_composed_message(
-        agent_id,
-        cwd,
-        model,
-        permission,
-        reasoning,
-        composed,
-        conversation,
-        observation,
-        mcp,
-        if managed_worktree {
-            CodexProjectTrust::ManagedWorkspace
-        } else {
-            CodexProjectTrust::Inherit
-        },
-    )
 }
 
 /// Composes the visible first message for a saved workflow coordinator.

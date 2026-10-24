@@ -565,9 +565,9 @@ impl CoreRuntime {
             .iter()
             .find(|session| session.id == session_id)
             .ok_or(CoreError::NotFound)?;
-        if session.process.template_ref.as_deref()
-            == Some(crate::runtime::playbook_evaluation::EVALUATOR_TEMPLATE)
-        {
+        if crate::runtime::delivery_check::is_temporary_check_template(
+            session.process.template_ref.as_deref(),
+        ) {
             return Err(CoreError::CapabilityDenied);
         }
         let agent_id = session
@@ -853,9 +853,9 @@ impl CoreRuntime {
         } else {
             session
         };
-        if session.process.template_ref.as_deref()
-            == Some(crate::runtime::playbook_evaluation::EVALUATOR_TEMPLATE)
-        {
+        if crate::runtime::delivery_check::is_temporary_check_template(
+            session.process.template_ref.as_deref(),
+        ) {
             return Err(CoreError::CapabilityDenied);
         }
         if session.kind != SessionKind::Agent {
@@ -1320,8 +1320,9 @@ impl CoreRuntime {
         >(|_| std::collections::BTreeMap::new());
         for session in self.store.sessions().iter().filter(|session| {
             session.kind == SessionKind::Agent
-                && session.process.template_ref.as_deref()
-                    != Some(crate::runtime::playbook_evaluation::EVALUATOR_TEMPLATE)
+                && !crate::runtime::delivery_check::is_temporary_check_template(
+                    session.process.template_ref.as_deref(),
+                )
                 && (session.lifecycle_state == "resuming"
                     || session.lifecycle_state == "resumeFailed"
                         && self.session_is_persistent_assistant_executor(&session.id))

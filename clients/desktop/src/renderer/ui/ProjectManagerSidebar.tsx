@@ -8,14 +8,12 @@ import type {
   TaskTrackingDto,
 } from "@termloop/contract/current";
 
-import type { AgentStatus, Session, Task } from "../model.js";
+import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
-import { agentLabel } from "./workflow-presentation.js";
 import {
-  agentStatusLabel,
   jiraIssueKey,
   projectManagerStepTrack,
-  projectManagerTaskAgent,
+  projectManagerTaskCheck,
   visibleProjectManagerTasks,
 } from "./ProjectManagerWorkspace.js";
 
@@ -66,23 +64,26 @@ export type ProjectManagerSidebarActions = {
   updateSprint(sprint: ProjectSprintDto, state: SprintState): Promise<string | undefined>;
   deleteSprint(sprintId: string): Promise<string | undefined>;
   moveTask(taskId: string, sprintId: string | null): Promise<string | undefined>;
+  /// Reads Jira and pull requests for the active sprint now.
+  refreshFacts(): Promise<string | undefined>;
+  /// Starts one delivery check of every open Task in the active sprint.
+  checkSprint(): Promise<string | undefined>;
 };
 
-/// The Project Manager sidebar: local sprints with their Tasks. Only the
-/// active sprint's Tasks have Agents, so only they show one.
+/// The Project Manager sidebar: local sprints with their Tasks. TermLoop
+/// reads facts for the active sprint's Tasks, so only they show Jira status
+/// and a running delivery check.
 export function ProjectManagerTaskList(props: {
   tasks: readonly Task[];
   board: ProjectManagerBoardResult | null;
-  sessionsById: ReadonlyMap<string, Session>;
-  statusesById: ReadonlyMap<string, AgentStatus>;
   milestones: readonly Pick<PlaybookMilestoneDto, "id" | "title">[];
   playbookRuntime: PlaybookRuntimeResult | null;
   selectedTaskId: string | undefined;
   disabled: boolean;
   select(taskId: string): void;
-  /// Opens the Task's Agent as a full terminal in place of the Task page.
-  openAgent(taskId: string, sessionId: string): void;
-  /// The Agent terminal currently filling the stage, if any.
+  /// Opens a running delivery check's terminal in place of the Task page.
+  openCheck(taskId: string, sessionId: string): void;
+  /// The check terminal currently filling the stage, if any.
   terminalSessionId: string | undefined;
   openTaskSources(): void;
   actions: ProjectManagerSidebarActions;
@@ -98,6 +99,7 @@ export function ProjectManagerTaskList(props: {
   );
   const groups = useMemo(() => projectManagerSprintGroups(visibleTasks, props.board), [visibleTasks, props.board]);
   const tracking = useMemo(() => trackingByTask(props.board), [props.board]);
+  const facts = useMemo(() => new Map((props.board?.facts ?? []).map((record) => [record.taskId, record])), [props.board]);
   const run = async (operation: Promise<string | undefined>) => {
     setMessage(undefined);
     const failure = await operation;
@@ -125,21 +127,21 @@ export function ProjectManagerTaskList(props: {
       }}
       addTask={() => props.actions.addTask(group.sprint?.id ?? null)}
       setState={(next) => group.sprint ? void run(props.actions.updateSprint(group.sprint, next)) : undefined}
+      check={active && group.tasks.some((task) => task.status === "open") ? () => void run(props.actions.checkSprint()) : undefined}
       remove={() => group.sprint ? void run(props.actions.deleteSprint(group.sprint.id)) : undefined}
     >
       {group.tasks.map((task) => {
         const record = tracking.get(task.id);
-        const agent = active ? projectManagerTaskAgent(task, props.sessionsById) : undefined;
-        const status = agent ? props.statusesById.get(agent.id)?.status : undefined;
+        const check = active ? projectManagerTaskCheck(task.id, props.board) : undefined;
         const track = projectManagerStepTrack(task.id, props.milestones, props.playbookRuntime);
         const step = track.length > 0 && track.every((entry) => entry.state === "passed")
           ? "Done"
           : track.find((entry) => entry.state === "current")?.title;
-        const terminalOpen = Boolean(agent && agent.id === props.terminalSessionId);
+        const terminalOpen = Boolean(check && check.sessionId === props.terminalSessionId);
         const selected = task.id === props.selectedTaskId && !terminalOpen;
-        const detail = active
-          ? agent ? null : "No Agent yet"
-          : [record?.developer, record?.jiraStatus].filter(Boolean).join(" · ") || null;
+        const detail = [record?.developer ?? facts.get(task.id)?.jira?.assignee, facts.get(task.id)?.jira?.status]
+          .filter(Boolean).join(" · ") || null;
+        const failing = (facts.get(task.id)?.readFailures.length ?? 0) > 0;
         return <li key={task.id}>
           <button
             type="button"
@@ -149,23 +151,22 @@ export function ProjectManagerTaskList(props: {
             onDragStart={(event) => { event.dataTransfer.setData("text/plain", task.id); event.dataTransfer.effectAllowed = "move"; }}
             onClick={() => props.select(task.id)}
           >
-            {active
-              ? <span className={`pm-agent-dot ${status ?? (agent ? "unknown" : "none")}`} title={status ?? (agent ? "Agent" : "No Agent")} aria-hidden="true" />
-              : <span className={`pm-task-status ${task.status}`} aria-hidden="true" />}
+            <span className={`pm-task-status ${task.status}`} aria-hidden="true" />
             <span className="pm-task-key">{jiraIssueKey(task.jira_url) ?? "Local"}</span>
             <span className="pm-task-title">{task.title}</span>
-            {detail ? <span className={`pm-task-agent${active && !agent ? " none" : ""}`}>{detail}</span> : null}
+            {detail ? <span className="pm-task-agent">{detail}</span> : null}
+            {failing ? <span className="pm-task-failing" title="A read failed; the facts may be stale"><Icon name="alert" /></span> : null}
             {active && step ? <span className="pm-task-step">{step}</span> : null}
           </button>
-          {agent ? <button
+          {check ? <button
             type="button"
             className={`pm-task-agent-open${terminalOpen ? " selected" : ""}`}
             aria-current={terminalOpen ? "true" : undefined}
-            title="Open the Agent's terminal"
-            onClick={() => props.openAgent(task.id, agent.id)}
+            title="Open the delivery check's terminal"
+            onClick={() => props.openCheck(task.id, check.sessionId)}
           >
-            <Icon name="terminal" />
-            <span>{[agentLabel(agent.process.agent_id ?? null), agentStatusLabel(status)].filter(Boolean).join(" · ")}</span>
+            <span className="pm-agent-dot working" aria-hidden="true" />
+            <span>Checking</span>
           </button> : null}
         </li>;
       })}
@@ -177,6 +178,10 @@ export function ProjectManagerTaskList(props: {
     <header className="pm-task-list-header">
       <span className="pm-eyebrow">Project Manager · {openCount} open</span>
       <div className="pm-task-list-actions">
+        <button type="button" className="icon-button quiet" aria-label="Read Jira and pull requests now" title="Read Jira and pull requests now"
+          disabled={props.disabled || !groups.active} onClick={() => void run(props.actions.refreshFacts())}>
+          <Icon name="restart" />
+        </button>
         <button type="button" className="icon-button quiet" aria-label="Jira settings" title="Jira settings" onClick={props.openTaskSources}>
           <Icon name="settings" />
         </button>
@@ -248,6 +253,8 @@ function ProjectManagerSprintSection(props: {
   dropActive: boolean;
   disabled: boolean;
   canStart: boolean;
+  /// Present on the active sprint: starts one delivery check of its Tasks.
+  check: (() => void) | undefined;
   children: ReactNode;
   onDragOver(): void;
   onDragLeave(): void;
@@ -284,14 +291,21 @@ function ProjectManagerSprintSection(props: {
           type="button"
           className="pm-sprint-action"
           disabled={props.disabled || !props.canStart}
-          title={props.canStart ? "Start this sprint; its Tasks get their Agents" : "Complete the active sprint first"}
+          title={props.canStart ? "Start this sprint; TermLoop reads Jira and pull requests for its Tasks" : "Complete the active sprint first"}
           onClick={() => props.setState("active")}
         >Start</button> : null}
+        {props.check ? <button
+          type="button"
+          className="pm-sprint-action"
+          disabled={props.disabled}
+          title="Start a delivery check of this sprint's open Tasks"
+          onClick={props.check}
+        >Check</button> : null}
         {state === "active" ? <button
           type="button"
           className="pm-sprint-action"
           disabled={props.disabled}
-          title="Complete this sprint; its Agents stop and their findings stay"
+          title="Complete this sprint; its facts stay as they are"
           onClick={() => props.setState("closed")}
         >Complete</button> : null}
         {state === "closed" ? <button

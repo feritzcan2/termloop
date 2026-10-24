@@ -43,20 +43,6 @@ pub(super) struct TaskAutomationSelection {
 }
 
 impl TaskAutomationSelection {
-    fn inherits(&self) -> bool {
-        matches!(
-            self.worktree_intent,
-            protocol::TaskCreateWorktreeIntent::Inherit
-        ) && self.worktree_prefix.is_none()
-            && self.base_ref.is_none()
-            && self.agent_id.is_none()
-            && self.model.is_none()
-            && self.permission.is_none()
-            && self.reasoning.is_none()
-            && self.kickoff_message.is_none()
-            && self.workflow_id.is_none()
-    }
-
     pub(super) fn inherit() -> Self {
         Self {
             worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
@@ -87,15 +73,7 @@ impl PreparedTaskAutomation {
         selection: TaskAutomationSelection,
     ) -> Result<Self, CoreError> {
         let configuration = core.project_task_automation_configuration(project_id)?;
-        let inherits = selection.inherits();
-        let mut prepared = Self::from_configuration(&configuration, selection)?;
-        if inherits && core.is_project_manager_project(project_id) {
-            prepared.settings = project_manager_settings(
-                prepared.settings,
-                core.project_manager_task_agent_selection(project_id),
-            );
-        }
-        Ok(prepared)
+        Self::from_configuration(&configuration, selection)
     }
 
     fn from_configuration(
@@ -395,64 +373,6 @@ fn action_from_task(
     })
 }
 
-/// In a Project opened as Project Manager every Task gets its own Agent, which
-/// opens by investigating the Task. Project defaults still choose the worktree
-/// prefix, base, provider, and any workflow; only a missing Agent is filled in
-/// from the last ordinary Agent launch.
-fn project_manager_settings(
-    settings: EffectiveTaskAutomation,
-    fallback_agent: Option<(String, String, String, String)>,
-) -> EffectiveTaskAutomation {
-    let (
-        _,
-        worktree_prefix,
-        base_ref,
-        agent_id,
-        model,
-        permission,
-        reasoning,
-        kickoff_message,
-        workflow_id,
-    ) = settings;
-    if workflow_id.is_some() || agent_id.is_some() {
-        return (
-            true,
-            worktree_prefix,
-            base_ref,
-            agent_id,
-            model,
-            permission,
-            reasoning,
-            kickoff_message,
-            workflow_id,
-        );
-    }
-    match fallback_agent {
-        Some((agent_id, model, permission, reasoning)) => (
-            true,
-            worktree_prefix,
-            base_ref,
-            Some(agent_id),
-            Some(model),
-            Some(permission),
-            Some(reasoning),
-            kickoff_message,
-            None,
-        ),
-        None => (
-            true,
-            worktree_prefix,
-            base_ref,
-            None,
-            model,
-            permission,
-            reasoning,
-            kickoff_message,
-            None,
-        ),
-    }
-}
-
 fn effective_settings(
     configuration: &ProjectTaskAutomationConfiguration,
     selection: TaskAutomationSelection,
@@ -577,161 +497,19 @@ type EffectiveTaskAutomation = (
     Option<String>,
 );
 
-/// Starts the one Agent of an existing Task in a Project opened as Project
-/// Manager, the same way an imported Task gets it: prepare the Task's worktree
-/// when it has none, then launch the Project's Task Agent, which opens by
-/// investigating the Task.
-pub(super) async fn start_project_manager_task_agent(
-    params: Value,
-    state: &AppState,
-) -> Result<Value, CoreError> {
-    let task_id = params
-        .get("taskId")
-        .and_then(Value::as_str)
-        .ok_or_else(|| CoreError::InvalidParams("taskId".into()))?
-        .to_owned();
-    let chosen_agent = params
-        .get("agentId")
-        .and_then(Value::as_str)
-        .map(|agent_id| {
-            let field = |name: &str| {
-                params
-                    .get(name)
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .ok_or_else(|| CoreError::InvalidParams(name.into()))
-            };
-            Ok::<_, CoreError>((
-                agent_id.to_owned(),
-                field("model")?,
-                field("permission")?,
-                field("reasoning")?,
-            ))
-        })
-        .transpose()?;
-    let (mut action, has_worktree) = {
-        let core = state.core.lock().await;
-        let task = core.task_current_projection(&task_id)?;
-        let project_id = task
-            .get("project_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| CoreError::Store("Task projection has no Project".into()))?;
-        if !core.is_project_manager_project(project_id) {
-            return Err(CoreError::CapabilityDenied);
-        }
-        if !core.task_in_active_sprint(&task_id) {
-            return Err(CoreError::InvalidParams("sprint".into()));
-        }
-        let automation =
-            PreparedTaskAutomation::prepare(&core, project_id, TaskAutomationSelection::inherit())?;
-        (
-            action_from_task(&automation, &task)?,
-            task.get("worktree")
-                .is_some_and(|worktree| !worktree.is_null()),
-        )
-    };
-    // An Agent the project manager picked for this Task wins over the
-    // Project defaults; it never starts a workflow instead.
-    if let Some((agent_id, model, permission, reasoning)) = chosen_agent {
-        action.agent_id = Some(agent_id);
-        action.model = Some(model);
-        action.permission = Some(permission);
-        action.reasoning = Some(reasoning);
-        action.workflow_id = None;
-    }
-    if !has_worktree {
-        provision_worktree(&action, state).await?;
-    }
-    if let Some(workflow_id) = &action.workflow_id {
-        super::control::launch_automated_task_workflow(
-            json!({
-                "taskId": action.task_id,
-                "workflowId": workflow_id,
-                "goal": action.workflow_goal,
-            }),
-            state,
-        )
-        .await?;
-    } else {
-        let agent_id = action
-            .agent_id
-            .as_deref()
-            .ok_or(CoreError::AgentUnsupported)?;
-        launch_agent(&action, agent_id, state).await?;
-    }
-    Ok(json!({ "taskId": task_id, "status": "started" }))
-}
-
-/// Applies one Project Manager sprint, tracking, or Task command, then makes
-/// the Project's Agents match its active sprint.
-pub(super) async fn project_manager_command(
-    method: &str,
-    params: Value,
-    state: &AppState,
-) -> Result<Value, CoreError> {
-    let (result, previous_revision, current_revision) = {
-        let mut core = state.core.lock().await;
-        let previous_revision = core.state_revision();
-        let result = core.handle(method, params)?;
-        (result, previous_revision, core.state_revision())
-    };
-    super::invalidation::queue_changed_commit_invalidation(
-        state,
-        super::invalidation::CommitImpact::Task,
-        previous_revision,
-        current_revision,
-    )
-    .await;
-    if let Some(project_id) = result
-        .get("projectId")
-        .or_else(|| result.get("board").and_then(|board| board.get("projectId")))
-        .and_then(Value::as_str)
-    {
-        reconcile_project_manager_agents(project_id.to_owned(), state.clone());
-    }
-    Ok(result)
-}
-
-/// Starts an Agent for each open Task of the active sprint that has none and
-/// stops the Agents of every other Task; tracked facts stay. Runs in the
-/// background so a sprint change answers at once.
-pub(super) fn reconcile_project_manager_agents(project_id: String, state: AppState) {
-    tokio::spawn(async move {
-        let plan = state
-            .core
-            .lock()
-            .await
-            .project_manager_agent_reconciliation(&project_id);
-        for session_id in plan.stop_session_ids {
-            if let Err(error) =
-                super::control::terminate_session(json!({ "sessionId": session_id }), &state).await
-            {
-                tracing::warn!(%error, %session_id, "could not stop a Task Agent outside the active sprint");
-            }
-        }
-        for task_id in plan.start_task_ids {
-            if let Err(error) =
-                start_project_manager_task_agent(json!({ "taskId": task_id }), &state).await
-            {
-                tracing::warn!(%error, %task_id, "could not start a Task Agent for the active sprint");
-            }
-        }
-    });
-}
-
 async fn run_one(action: &TaskAutomationAction, state: &AppState) -> Result<(), CoreError> {
     if !action.create_worktree {
         return Ok(());
     }
+    // A Project Manager Task has no worktree or Agent of its own: TermLoop
+    // reads its delivery facts and runs short delivery checks instead.
+    if state
+        .core
+        .lock()
+        .await
+        .is_project_manager_project(&action.project_id)
     {
-        // A Project Manager's imported Task waits in the backlog; it gets its
-        // Agent when it joins the active sprint.
-        let core = state.core.lock().await;
-        if core.is_project_manager_project(&action.project_id)
-            && !core.task_in_active_sprint(&action.task_id)
-        {
-            return Ok(());
-        }
+        return Ok(());
     }
     provision_worktree(action, state).await?;
     if let Some(workflow_id) = &action.workflow_id {
@@ -925,54 +703,6 @@ mod creation_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn project_manager_tasks_always_get_a_worktree_and_an_investigating_agent() {
-        let unset: EffectiveTaskAutomation = (
-            false,
-            "task".into(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
-        let fallback = Some((
-            "claude".into(),
-            "default".into(),
-            "auto".into(),
-            "high".into(),
-        ));
-        let filled = project_manager_settings(unset.clone(), fallback.clone());
-        assert!(filled.0);
-        assert_eq!(filled.3.as_deref(), Some("claude"));
-        assert_eq!(filled.6.as_deref(), Some("high"));
-
-        // Configured defaults win over the remembered launch.
-        let configured: EffectiveTaskAutomation = (
-            false,
-            "pm".into(),
-            None,
-            Some("codex".into()),
-            Some("gpt".into()),
-            Some("default".into()),
-            Some("medium".into()),
-            Some("Check deploys".into()),
-            None,
-        );
-        let kept = project_manager_settings(configured, fallback);
-        assert!(kept.0);
-        assert_eq!(kept.3.as_deref(), Some("codex"));
-        assert_eq!(kept.7.as_deref(), Some("Check deploys"));
-
-        // Without any remembered Agent the worktree is still prepared.
-        let bare = project_manager_settings(unset, None);
-        assert!(bare.0);
-        assert_eq!(bare.3, None);
-        assert!(TaskAutomationSelection::inherit().inherits());
-    }
 
     #[test]
     fn deterministic_names_are_bounded_and_base_selection_prefers_integration_branches() {

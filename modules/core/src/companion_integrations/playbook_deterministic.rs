@@ -7,6 +7,10 @@
 //! the branch commit summary cache, or the provider row cache, because a
 //! cached display affordance must never satisfy a delivery gate.
 //!
+//! In a Project opened as Project Manager a Task has no branch of its own: the
+//! developer's work is found by the Task's Jira key instead, in the head
+//! branch or title of the pull requests of the Project's repository.
+//!
 //! The read follows the usual plan/observe/apply boundary. Core plans under its
 //! lock, the Git and provider CLI work runs without it, and the outcome is
 //! revalidated against the current claim before anything is recorded. A
@@ -48,6 +52,15 @@ pub struct DeterministicStepPlan {
     azure: Option<AzureDevOpsClient>,
     /// Set only for a commit check, whose read is local Git alone.
     commits: Option<TaskBranchCommitProbe>,
+    /// Set for a pull request check of a Project Manager Task: its Jira key
+    /// and the Project checkout whose repository holds the developer's work.
+    issue_key: Option<IssueKeyScope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IssueKeyScope {
+    key: Option<String>,
+    project_folder: std::path::PathBuf,
 }
 
 /// What the fresh read observed, waiting to be revalidated and applied.
@@ -56,6 +69,7 @@ pub struct DeterministicStepObservation {
     milestone_id: String,
     check: PlaybookDeterministicCheck,
     snapshot: TaskSnapshot,
+    issue_key: Option<IssueKeyScope>,
     read: StepRead,
 }
 
@@ -137,7 +151,11 @@ impl CoreRuntime {
         let task_id = self.claimed_step_task_id(capability)?;
         let task = self.store.tasks().iter().find(|task| task.id == task_id)?;
         let commit_check = check.kind == PlaybookDeterministicCheckKind::BranchCommitted;
+        let issue_key = (!commit_check && self.is_project_manager_project(&task.project_id))
+            .then(|| self.issue_key_scope(task))
+            .flatten();
         Some(DeterministicStepPlan {
+            issue_key,
             capability: capability.clone(),
             milestone_id,
             commits: commit_check
@@ -176,6 +194,12 @@ impl CoreRuntime {
                 current.task_id == observation.snapshot.task_id
                     && current.branch_name == observation.snapshot.branch_name
                     && current.repository_root == observation.snapshot.repository_root
+                    && (observation.check.kind == PlaybookDeterministicCheckKind::BranchCommitted
+                        || self
+                            .is_project_manager_project(&task.project_id)
+                            .then(|| self.issue_key_scope(task))
+                            .flatten()
+                            == observation.issue_key)
             });
         // The board or the Task's branch moved while the read ran. The read
         // proves nothing about the current question; the Routine asks it.
@@ -228,6 +252,20 @@ impl CoreRuntime {
     }
 }
 
+impl CoreRuntime {
+    fn issue_key_scope(&self, task: &termloop_domain::TaskRecord) -> Option<IssueKeyScope> {
+        let project = self
+            .store
+            .projects()
+            .iter()
+            .find(|project| project.id == task.project_id)?;
+        Some(IssueKeyScope {
+            key: self.task_jira_key(&task.id),
+            project_folder: std::path::PathBuf::from(&project.folder_path),
+        })
+    }
+}
+
 impl DeterministicStepPlan {
     /// The bounded read the claim would make if it ran now.
     pub fn timeout(&self) -> Duration {
@@ -241,6 +279,13 @@ impl DeterministicStepPlan {
             StepRead::Commits(read_task_branch_commits(
                 &self.snapshot,
                 self.commits.as_ref(),
+            ))
+        } else if let Some(scope) = &self.issue_key {
+            StepRead::PullRequests(read_issue_key_pull_requests(
+                scope,
+                &self.github,
+                &self.azure,
+                self.check.kind == PlaybookDeterministicCheckKind::PullRequestChecksPassing,
             ))
         } else {
             StepRead::PullRequests(read_task_branch_pull_requests(
@@ -287,6 +332,7 @@ impl DeterministicStepPlan {
             milestone_id: self.milestone_id,
             check: self.check,
             snapshot: self.snapshot,
+            issue_key: self.issue_key,
             read,
         }
     }
@@ -324,6 +370,39 @@ fn short_ref(reference: &str) -> String {
         .or_else(|| reference.strip_prefix("refs/heads/"))
         .unwrap_or(reference)
         .to_owned()
+}
+
+/// A Project Manager Task's pull requests: those in the Project checkout's
+/// repository whose head branch or title names its Jira key.
+fn read_issue_key_pull_requests(
+    scope: &IssueKeyScope,
+    github: &Option<GitHubClient>,
+    azure: &Option<AzureDevOpsClient>,
+    include_checks: bool,
+) -> PullRequestRead {
+    let Some(key) = &scope.key else {
+        return PullRequestRead::Unavailable(Fallback::NoTaskBranch);
+    };
+    let repository = match super::delivery_facts::project_repository(&scope.project_folder) {
+        Ok(repository) => repository,
+        Err(reason) => return PullRequestRead::Unavailable(local_fallback(reason)),
+    };
+    match super::delivery_facts::read_issue_key_pull_requests(
+        &repository,
+        key,
+        github.as_ref(),
+        azure.as_ref(),
+        include_checks,
+        READ_DEADLINE,
+    ) {
+        Ok(read) => PullRequestRead::Read {
+            repository: super::delivery_facts::repository_label(&repository),
+            branch: format!("a branch or title naming {key}"),
+            pull_requests: read.pull_requests,
+            truncated: read.truncated,
+        },
+        Err(failure) => PullRequestRead::Unavailable(provider_fallback(failure)),
+    }
 }
 
 fn read_task_branch_pull_requests(

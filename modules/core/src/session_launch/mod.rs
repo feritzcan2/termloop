@@ -5,6 +5,8 @@ mod conversation;
 pub use conversation::{ObservedSessionConversation, SessionConversationPlan};
 mod playbook_evaluation;
 pub use playbook_evaluation::PlaybookEvaluationLaunch;
+mod delivery_check;
+pub use delivery_check::DeliveryCheckLaunch;
 mod agent_library;
 mod workflow_creator;
 
@@ -205,12 +207,7 @@ struct TaskKickoffLaunch {
     title: String,
     brief: Option<String>,
     jira_url: Option<String>,
-    /// Empty only for a Project Manager investigation without configured
-    /// Project instructions.
     kickoff_message: String,
-    /// A Task Agent in a Project Manager Project opens by investigating its
-    /// Task instead of with the configured kickoff message alone.
-    investigation: bool,
 }
 
 #[derive(Clone)]
@@ -228,6 +225,10 @@ struct WorkflowLaunch {
 pub enum AgentMcpRole {
     Interactive,
     PlaybookEvaluator {
+        check_id: String,
+    },
+    /// One temporary delivery check of a Project opened as Project Manager.
+    DeliveryCheck {
         check_id: String,
     },
     /// One target-bound Improve Agent. It may use ordinary Agent coordination
@@ -275,6 +276,7 @@ impl AgentMcpRole {
             Self::PlaybookEvaluator { .. } => {
                 termloop_invocation::AgentMcpProfile::PlaybookEvaluator
             }
+            Self::DeliveryCheck { .. } => termloop_invocation::AgentMcpProfile::DeliveryCheck,
             Self::Improver { .. } => termloop_invocation::AgentMcpProfile::Improver,
             Self::Steward { .. } => termloop_invocation::AgentMcpProfile::Steward,
             Self::Helper { .. } => termloop_invocation::AgentMcpProfile::Helper,
@@ -287,7 +289,8 @@ impl AgentMcpRole {
             Self::Interactive
             | Self::Improver { .. }
             | Self::Helper { .. }
-            | Self::PlaybookEvaluator { .. } => AgentResumeLane::Ordinary,
+            | Self::PlaybookEvaluator { .. }
+            | Self::DeliveryCheck { .. } => AgentResumeLane::Ordinary,
         }
     }
 }
@@ -1622,32 +1625,9 @@ impl CoreRuntime {
 
     pub fn attach_task_kickoff(
         &self,
-        plan: AgentLaunchPlan,
-        task_id: &str,
-        kickoff_message: &str,
-    ) -> Result<AgentLaunchPlan, CoreError> {
-        self.attach_task_opening(plan, task_id, Some(kickoff_message))
-    }
-
-    /// A Task Agent launched without a kickoff message in a Project opened as
-    /// Project Manager still opens by investigating its Task. Developer
-    /// Projects launch it exactly as before.
-    pub fn attach_project_manager_investigation(
-        &self,
-        plan: AgentLaunchPlan,
-        task_id: &str,
-    ) -> Result<AgentLaunchPlan, CoreError> {
-        if plan.project_mode != termloop_domain::ProjectMode::ProjectManager {
-            return Ok(plan);
-        }
-        self.attach_task_opening(plan, task_id, None)
-    }
-
-    fn attach_task_opening(
-        &self,
         mut plan: AgentLaunchPlan,
         task_id: &str,
-        kickoff_message: Option<&str>,
+        kickoff_message: &str,
     ) -> Result<AgentLaunchPlan, CoreError> {
         if plan
             .task_guard
@@ -1668,32 +1648,20 @@ impl CoreRuntime {
             .iter()
             .find(|link| link.task_id == task_id && link.provider == IssueLinkProvider::Jira)
             .and_then(|link| link.url.as_deref());
-        let investigation = plan.project_mode == termloop_domain::ProjectMode::ProjectManager;
-        if investigation {
-            termloop_invocation::task_investigation_prompt(
-                task_id,
-                &task.title,
-                task.brief.as_deref(),
-                jira_url,
-                kickoff_message,
-            )
-        } else {
-            termloop_invocation::task_kickoff_prompt(
-                task_id,
-                &task.title,
-                task.brief.as_deref(),
-                jira_url,
-                kickoff_message.unwrap_or_default(),
-            )
-        }
+        termloop_invocation::task_kickoff_prompt(
+            task_id,
+            &task.title,
+            task.brief.as_deref(),
+            jira_url,
+            kickoff_message,
+        )
         .map_err(|_| CoreError::InvalidParams("kickoffMessage".into()))?;
         plan.task_kickoff = Some(TaskKickoffLaunch {
             task_id: task_id.to_owned(),
             title: task.title.clone(),
             brief: task.brief.clone(),
             jira_url: jira_url.map(str::to_owned),
-            kickoff_message: kickoff_message.unwrap_or_default().to_owned(),
-            investigation,
+            kickoff_message: kickoff_message.to_owned(),
         });
         Ok(plan)
     }
@@ -1802,6 +1770,7 @@ impl CoreRuntime {
             return Err(CoreError::NotFound);
         }
         self.revalidate_playbook_evaluator_launch(plan)?;
+        self.revalidate_delivery_check_launch(plan)?;
         self.revalidate_workflow_launch(plan)?;
         self.revalidate_workflow_creator(plan)?;
         self.validate_history_launch_plan(plan)?;
@@ -1943,6 +1912,15 @@ impl CoreRuntime {
             Ok(launch)
         } else if let Some(quick_action) = &plan.quick_action {
             resolve_quick_action_launch(plan, quick_action, conversation, observation, mcp)
+        } else if matches!(&plan.mcp_role, AgentMcpRole::DeliveryCheck { .. }) {
+            termloop_invocation::delivery_check_for_conversation(
+                &plan.agent_id,
+                &plan.cwd,
+                &plan.interactive_options.clone().unwrap_or_default(),
+                conversation.in_account(plan.account.as_ref()),
+                observation,
+                mcp.ok_or(CoreError::AgentUnsupported)?,
+            )
         } else if matches!(&plan.mcp_role, AgentMcpRole::PlaybookEvaluator { .. }) {
             termloop_invocation::playbook_evaluator_for_conversation(
                 &plan.agent_id,
@@ -2686,28 +2664,6 @@ fn resolve_interactive_agent_launch_with_transport(
             workflow.jira_url.as_deref(),
             &workflow.goal,
             &workflow.configuration,
-            conversation,
-            observation,
-            mcp,
-        )
-    } else if let Some(kickoff) = plan
-        .task_kickoff
-        .as_ref()
-        .filter(|kickoff| kickoff.investigation)
-    {
-        let selection = plan.interactive_options.clone().unwrap_or_default();
-        termloop_invocation::task_agent_with_investigation_for_conversation(
-            &plan.agent_id,
-            &plan.cwd,
-            &selection.model,
-            &selection.permission,
-            &selection.reasoning,
-            &kickoff.task_id,
-            &kickoff.title,
-            kickoff.brief.as_deref(),
-            kickoff.jira_url.as_deref(),
-            Some(kickoff.kickoff_message.as_str()).filter(|message| !message.is_empty()),
-            managed_worktree,
             conversation,
             observation,
             mcp,

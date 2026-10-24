@@ -2,6 +2,7 @@
 
 pub mod assistant_reset;
 pub mod assistant_session;
+pub mod delivery_facts;
 pub(crate) mod finding_disposition;
 pub mod playbook;
 pub mod playbook_deterministic;

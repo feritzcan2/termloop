@@ -97,7 +97,10 @@ pub(super) fn derive_resumed_mcp_role(
         // A detached persistent-assistant Session must never fall back to the
         // ordinary interactive MCP profile.
         Some(
-            ASSISTANT_ACTIVATION_TEMPLATE | STEWARD_TEMPLATE | "builtin.agent.playbook-evaluator",
+            ASSISTANT_ACTIVATION_TEMPLATE
+            | STEWARD_TEMPLATE
+            | "builtin.agent.playbook-evaluator"
+            | crate::runtime::delivery_check::DELIVERY_CHECK_TEMPLATE,
         ) => None,
         _ => (steward_links.is_empty()
             && session.ask_to_source_session_id.is_none()

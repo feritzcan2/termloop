@@ -28,6 +28,9 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
     if schema_version < 63 {
         remove_orphan_task_branch_sets(&mut value);
     }
+    if schema_version < 70 {
+        separate_project_manager_facts(&mut value);
+    }
     match schema_version {
         1 => {
             add_legacy_generation_fields(&mut value)?;
@@ -563,7 +566,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             validate_current_state(&state)?;
             Ok((state, true))
         }
-        57..=68 => {
+        57..=69 => {
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             state.schema_version = CURRENT_SCHEMA_VERSION;
@@ -675,6 +678,93 @@ fn remove_retired_session_topics(value: &mut serde_json::Value) -> Result<bool, 
         changed |= overrides.len() != previous_len;
     }
     Ok(changed)
+}
+
+/// Before version 70 a Project Manager tracking record and every ticket
+/// version also held the Jira status and environments, written by the Project
+/// Manager and the Task Agent alike. Those become observed delivery facts
+/// attributed to a check; the ticket keeps only its title and description.
+fn separate_project_manager_facts(value: &mut serde_json::Value) {
+    use serde_json::{Value, json};
+    let mut facts = Vec::new();
+    if let Some(records) = value
+        .get_mut("task_tracking_records")
+        .and_then(Value::as_array_mut)
+    {
+        for record in records.iter_mut() {
+            let Some(record) = record.as_object_mut() else {
+                continue;
+            };
+            let jira_status = record.remove("jiraStatus");
+            let environments = record.remove("environments");
+            let task_id = record.get("taskId").cloned().unwrap_or(Value::Null);
+            let at = record.get("updatedAtEpochMs").cloned().unwrap_or(json!(0));
+            let mut fact = serde_json::Map::new();
+            if let Some(status) = jira_status.filter(Value::is_string) {
+                fact.insert(
+                    "jira".into(),
+                    json!({"status": status, "observedAtEpochMs": at, "changedAtEpochMs": at}),
+                );
+            }
+            let environments = environments
+                .and_then(|environments| environments.as_array().cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|environment| {
+                    let environment = environment.as_object()?;
+                    Some(json!({
+                        "name": environment.get("name")?,
+                        "state": environment.get("state").cloned().unwrap_or(json!("unknown")),
+                        "detail": environment.get("detail").cloned().unwrap_or(Value::Null),
+                        "source": "check",
+                        "observedAtEpochMs": at,
+                        "changedAtEpochMs": at,
+                    }))
+                })
+                .collect::<Vec<_>>();
+            if !environments.is_empty() {
+                fact.insert("environments".into(), Value::Array(environments));
+            }
+            if !fact.is_empty() {
+                fact.insert("taskId".into(), task_id);
+                facts.push(Value::Object(fact));
+            }
+        }
+        records.retain(|record| {
+            record.as_object().is_some_and(|record| {
+                ["sprintId", "developer", "blockers", "note"]
+                    .iter()
+                    .any(|key| record.get(*key).is_some_and(|value| !value.is_null()))
+            })
+        });
+    }
+    if let Some(versions) = value
+        .get_mut("task_ticket_versions")
+        .and_then(Value::as_array_mut)
+    {
+        for version in versions.iter_mut() {
+            if let Some(content) = version.get_mut("content").and_then(Value::as_object_mut) {
+                content.retain(|key, _| key == "title" || key == "brief");
+            }
+        }
+    }
+    // The Task Agent status tools these descriptions customized are gone.
+    if let Some(overrides) = value
+        .get_mut("mcp_tool_description_overrides")
+        .and_then(Value::as_array_mut)
+    {
+        overrides.retain(|value| {
+            !matches!(
+                value.get("tool").and_then(Value::as_str),
+                Some("task_status_read" | "task_status_record")
+            )
+        });
+    }
+    if !facts.is_empty()
+        && let Some(state) = value.as_object_mut()
+    {
+        state.insert("task_delivery_facts".into(), Value::Array(facts));
+    }
 }
 
 fn migrate_v1_to_v2(state: &mut CurrentState) {

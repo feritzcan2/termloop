@@ -36,6 +36,7 @@ pub(in crate::app) use handlers::{
     launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
     project_list_local_branches, provision_task_worktree, terminate_session,
 };
+pub(super) use task_source::observe_jira;
 pub(in crate::app) use task_source::{
     TaskSourceCredentialPresence, run_deadlines as run_task_source_deadlines,
 };

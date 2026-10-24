@@ -48,6 +48,10 @@ pub use error::{
 pub(crate) use error::{json_error, required_string, store_error, terminal_error};
 pub use mcp_settings::{McpToolCatalogEntry, McpToolDescriptions, McpToolRole};
 pub use runtime::AgentAccountSwitchPlan;
+pub use runtime::delivery_check::{
+    DeliveryCheckEnvironment, DeliveryCheckReason, DeliveryCheckReport, DeliveryCheckTaskReport,
+    DeliveryCheckTicketProposal,
+};
 pub use runtime::generated_input_delivery::{
     GeneratedInputDeliveryCancelCause, GeneratedInputDeliveryDiagnostics,
     GeneratedInputDeliveryFailure, GeneratedInputDeliveryState, GeneratedInputRuntimeEvent,
@@ -173,6 +177,7 @@ pub struct CoreRuntime {
     pub(crate) runtime_epoch: u64,
     pub(crate) observation_transport: Option<AgentObservationTransport>,
     pub(crate) playbook_evaluation: runtime::playbook_evaluation::PlaybookEvaluationRuntime,
+    pub(crate) delivery_checks: runtime::delivery_check::DeliveryCheckRuntime,
     pub(crate) agent_observations: HashMap<String, AgentObservationCapability>,
     pub(crate) provider_observation_ingress:
         runtime::provider_observation_ingress::ProviderObservationIngress,
@@ -688,6 +693,7 @@ impl CoreRuntime {
             runtime_epoch,
             observation_transport: None,
             playbook_evaluation: Default::default(),
+            delivery_checks: Default::default(),
             agent_observations: HashMap::new(),
             provider_observation_ingress:
                 runtime::provider_observation_ingress::ProviderObservationIngress::default(),

@@ -43,26 +43,6 @@ impl CoreRuntime {
         self.project_mode_or_developer(project_id) == ProjectMode::ProjectManager
     }
 
-    /// The provider tuple a Project Manager Project's imported Tasks start
-    /// their investigating Agent with when Task automation names none: the
-    /// last ordinary Agent launch, as `(agent, model, permission, reasoning)`.
-    pub fn project_manager_task_agent_selection(
-        &self,
-        project_id: &str,
-    ) -> Option<(String, String, String, String)> {
-        if !self.is_project_manager_project(project_id) {
-            return None;
-        }
-        self.store.last_agent_launch_selection().map(|saved| {
-            (
-                saved.agent_id.clone(),
-                saved.selection.model.clone(),
-                saved.selection.permission.clone(),
-                saved.selection.reasoning.clone(),
-            )
-        })
-    }
-
     pub(crate) fn get_project_mode(&self, params: Value) -> Result<Value, CoreError> {
         let project_id = required_string(&params, "projectId")?;
         let mode = self.project_mode(&project_id)?;

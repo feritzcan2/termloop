@@ -3,6 +3,7 @@
 mod agent_accounts;
 pub use agent_accounts::AgentAccountSwitchPlan;
 mod codex_thread_name;
+pub(crate) mod delivery_check;
 pub(crate) mod generated_input_delivery;
 pub(crate) mod playbook_evaluation;
 mod playbook_evaluation_history;
@@ -50,7 +51,6 @@ impl CoreRuntime {
             "project.modeSet" => self.set_project_mode(params),
             "projectManager.modeGet" => Ok(self.get_project_manager_mode()),
             "projectManager.modeSet" => self.set_project_manager_mode(params),
-            "task.investigationRequest" => self.request_task_reinvestigation_command(params),
             "projectManager.boardGet" => self.project_manager_board_command(params),
             "projectManager.sprintCreate" => self.create_project_sprint_command(params),
             "projectManager.sprintUpdate" => self.update_project_sprint_command(params),
@@ -60,6 +60,9 @@ impl CoreRuntime {
             "projectManager.ticketSave" => self.save_task_ticket_command(params),
             "projectManager.ticketVersions" => self.task_ticket_versions_command(params),
             "projectManager.ticketRestore" => self.restore_task_ticket_command(params),
+            "projectManager.proposalAccept" => self.accept_ticket_proposal_command(params),
+            "projectManager.proposalDismiss" => self.dismiss_ticket_proposal_command(params),
+            "projectManager.environmentSet" => self.set_task_environment_command(params),
             "project.updateDetails" => self.update_project_details(params),
             "project.delete" => {
                 let result = self.delete_project(params);

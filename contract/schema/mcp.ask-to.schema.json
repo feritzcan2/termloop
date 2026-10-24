@@ -661,9 +661,9 @@
         "openWorldHint": false
       }
     },
-    "task_status_read": {
-      "description": "Read the Task this Session is the Agent of, in a Project opened as Project Manager: its ticket (title, Markdown description, tracked delivery facts, the project manager's note) with its ticketVersion, its Jira link, and the current status record with its revision. Call it before every task_status_record. capabilityDenied means this Session is not the Agent of an open Task in a Project Manager Project: do not record.",
-      "role": "interactive",
+    "delivery_check_read": {
+      "description": "Read the assignment of this temporary delivery check of a Project opened as Project Manager: the check ID, why it runs, and the Tasks to check, each with its ticket, Jira link and key, the facts TermLoop already read (Jira status, the pull requests that name the Jira key, environment states with source and time), what the project manager stated, and earlier check notes. Read before recording.",
+      "role": "deliveryCheck",
       "params": {
         "$ref": "#/$defs/assistantEmptyParams"
       },
@@ -671,27 +671,27 @@
         "$ref": "#/$defs/assistantTextResult"
       },
       "annotations": {
-        "title": "Read your Task's status record",
+        "title": "Read the delivery check",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false
       }
     },
-    "task_status_record": {
-      "description": "Keep the ticket of the Task this Session is the Agent of up to date, in a Project opened as Project Manager; that is your main job. Pass ticket with the improved title and the complete Markdown description, tracking with the developer, Jira status, every environment, and blockers, changeSummary saying what changed, and expectedTicketVersion from task_status_read; every change becomes a ticket version the project manager can compare and restore. Also replace the status record with your complete current findings in Markdown: who works on it, its Jira status, branches and pull requests, whether it is merged, and which environments run it, each with its source, plus anything you could not determine. Pass the statusRevision from task_status_read; on revisionConflict read again and rewrite. The status record is replaced whole, so never write only what changed.",
-      "role": "interactive",
+    "delivery_check_record": {
+      "description": "Record this delivery check's one report after delivery_check_read, copying its checkId. For each Task you checked give environments (each with state deployed, inProgress, notDeployed, or unknown, and short detail such as a version, run, or date), blockers or null, notesMarkdown with your findings under ## Observed (with sources), ## Inferred, and ## Unknown, and a ticketProposal only when the ticket should change. Do not record the Jira status or pull requests; TermLoop reads them itself. invalidArguments means nothing was recorded: correct the arguments and retry. Stop after an accepted report or on staleCheck.",
+      "role": "deliveryCheck",
       "params": {
-        "$ref": "#/$defs/taskStatusRecordParams"
+        "$ref": "#/$defs/deliveryCheckRecordParams"
       },
       "result": {
-        "$ref": "#/$defs/taskStatusRecordResult"
+        "$ref": "#/$defs/deliveryCheckRecordResult"
       },
       "annotations": {
-        "title": "Record your Task's current status",
+        "title": "Record the delivery check",
         "readOnlyHint": false,
         "destructiveHint": false,
-        "idempotentHint": true,
+        "idempotentHint": false,
         "openWorldHint": false
       }
     }
@@ -2274,176 +2274,173 @@
         }
       }
     },
-    "taskStatusRecordParams": {
+    "deliveryCheckRecordParams": {
       "x-codegen": true,
-      "x-codegen-name": "TaskStatusRecordParams",
+      "x-codegen-name": "DeliveryCheckRecordParams",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "statusMarkdown",
-        "expectedStatusRevision"
+        "checkId",
+        "tasks"
       ],
       "properties": {
-        "statusMarkdown": {
-          "description": "The complete current findings, at most 8192 UTF-8 bytes.",
+        "checkId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8192,
-          "x-utf8-max-bytes": 8192
+          "maxLength": 128
         },
-        "expectedStatusRevision": {
-          "description": "The statusRevision returned by task_status_read.",
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
-        },
-        "tracking": {
-          "description": "The Task's tracked delivery facts, replacing the previous ones: the developer, the Jira status, each environment with whether the change reached it, and current blockers. The project manager's sprint and note are kept.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "developer",
-            "jiraStatus",
-            "environments",
-            "blockers"
-          ],
-          "properties": {
-            "developer": {
-              "description": "Who works on the Task, as named in Jira or the pull request; null when unknown.",
-              "type": [
-                "string",
-                "null"
-              ],
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "jiraStatus": {
-              "description": "The Jira status name; null when unknown.",
-              "type": [
-                "string",
-                "null"
-              ],
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "environments": {
-              "description": "One entry per environment the change ships through, in delivery order.",
-              "type": "array",
-              "maxItems": 12,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "name",
-                  "state",
-                  "detail"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "state": {
-                    "type": "string",
-                    "enum": [
-                      "unknown",
-                      "notDeployed",
-                      "inProgress",
-                      "deployed"
-                    ]
-                  },
-                  "detail": {
-                    "description": "Short evidence such as a version, date, or pipeline run; null when none.",
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "minLength": 1,
-                    "maxLength": 120
-                  }
-                }
-              }
-            },
-            "blockers": {
-              "description": "What currently blocks delivery; null when nothing does.",
-              "type": [
-                "string",
-                "null"
-              ],
-              "minLength": 1,
-              "maxLength": 4000
-            }
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/deliveryCheckTaskReport"
           }
-        },
-        "ticket": {
-          "description": "Your update to the Task's ticket, the page the project manager reads: a clearer title and the complete Markdown description of what the Task is, who does it, where it stands, and what is left. Omit a field to keep it. Each change becomes a new ticket version.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "title": {
-              "description": "The Task title, at most 160 characters.",
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 160
-            },
-            "description": {
-              "description": "The complete ticket description in Markdown (headings, lists, task lists, tables, links), at most 8000 characters.",
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 8000
-            }
-          }
-        },
-        "changeSummary": {
-          "description": "One short line saying what you changed and why, shown in the ticket's version history, such as 'Staging deployed v1.4; PR #42 merged'.",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "expectedTicketVersion": {
-          "description": "The ticketVersion returned by task_status_read. On revisionConflict the project manager or a check saved the ticket since; read again and merge.",
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
         }
       }
     },
-    "taskStatusRecordResult": {
+    "deliveryCheckTaskReport": {
       "x-codegen": true,
-      "x-codegen-name": "TaskStatusRecordResult",
+      "x-codegen-name": "DeliveryCheckTaskReport",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "taskId",
-        "status",
-        "statusRevision",
-        "ticketVersion"
+        "environments",
+        "blockers",
+        "notesMarkdown"
       ],
       "properties": {
         "taskId": {
           "type": "string",
           "minLength": 1
         },
+        "environments": {
+          "description": "Every environment you found evidence for, in delivery order.",
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/deliveryCheckEnvironment"
+          }
+        },
+        "blockers": {
+          "description": "What currently blocks delivery; null when nothing does.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "notesMarkdown": {
+          "description": "Your findings under ## Observed (with sources), ## Inferred, and ## Unknown, at most 8192 UTF-8 bytes.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "x-utf8-max-bytes": 8192
+        },
+        "ticketProposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/deliveryCheckTicketProposal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "deliveryCheckEnvironment": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckEnvironment",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "state",
+        "detail"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "notDeployed",
+            "inProgress",
+            "deployed"
+          ]
+        },
+        "detail": {
+          "description": "Short evidence such as a version, run, or date; null when none.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        }
+      }
+    },
+    "deliveryCheckTicketProposal": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckTicketProposal",
+      "description": "A suggested ticket change the project manager accepts or dismisses.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary"
+      ],
+      "properties": {
+        "title": {
+          "description": "A clearer title, only when the current one is unclear.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "description": {
+          "description": "The complete proposed ticket description in Markdown.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "summary": {
+          "description": "One line saying what you changed and why.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "deliveryCheckRecordResult": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckRecordResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "taskIds"
+      ],
+      "properties": {
         "status": {
           "type": "string",
           "enum": [
             "recorded"
           ]
         },
-        "statusRevision": {
-          "type": "integer",
-          "minimum": 0,
-          "x-rust-type": "u64"
-        },
-        "ticketVersion": {
-          "description": "The ticket's newest version after this record; null when it has none.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0,
-          "x-rust-type": "u64"
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },

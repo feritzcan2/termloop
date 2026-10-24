@@ -187,6 +187,7 @@ fn mcp_role_name(role: &termloop_core::session_launch::AgentMcpRole) -> &'static
         termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
             "playbookEvaluator"
         }
+        termloop_core::session_launch::AgentMcpRole::DeliveryCheck { .. } => "deliveryCheck",
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => "improver",
         termloop_core::session_launch::AgentMcpRole::Helper { .. } => "helper",
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => "steward",
@@ -368,13 +369,17 @@ async fn tool_call_inner(
         (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_read") => {
             text_result(super::playbook_agent_report::read_step(token, state).await)
         }
-        (termloop_core::session_launch::AgentMcpRole::Interactive, "task_status_read") => {
-            text_result(state.core.lock().await.read_task_agent_status(token))
-        }
-        (termloop_core::session_launch::AgentMcpRole::Interactive, "task_status_record") => {
-            let params: protocol::TaskStatusRecordParams = serde_json::from_value(arguments)
+        (
+            termloop_core::session_launch::AgentMcpRole::DeliveryCheck { .. },
+            "delivery_check_read",
+        ) => text_result(state.core.lock().await.read_delivery_check(token)),
+        (
+            termloop_core::session_launch::AgentMcpRole::DeliveryCheck { .. },
+            "delivery_check_record",
+        ) => {
+            let params: protocol::DeliveryCheckRecordParams = serde_json::from_value(arguments)
                 .expect("generated MCP validation precedes decoding");
-            super::playbook_agent_report::record_status(token, params, state).await
+            super::delivery_checks::record(token, params, state).await
         }
         (termloop_core::session_launch::AgentMcpRole::Interactive, "playbook_step_report") => {
             let params: protocol::PlaybookStepReportParams = serde_json::from_value(arguments)
@@ -713,7 +718,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
     match role {
         role if role.is_agent_creator() => "Agent Creator profile.",
         termloop_core::session_launch::AgentMcpRole::Interactive => {
-            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it. In a Project opened as Project Manager, the Agent of a Task records its complete current findings on that Task with task_status_record after reading it with task_status_read."
+            "Interactive Session profile. When a visible Core-managed workflow step is active, use only workflow_delegate and workflow_step_complete as that prompt directs; Core owns its participant and transition. Otherwise use ask_to whenever the user wants another Claude or Codex involved — ask, consult, discuss, second opinion, or review — including short provider-named requests in any language such as 'ask codex' or 'discuss this with codex'; the user never has to name TermLoop, MCP, or the tool, and you compose the helper's message from the current conversation. Use send_to_agent instead whenever an exact existing TermLoop Session ID is present and the user wants something delivered there — any phrasing, any language — to return an answer to a received TermLoop handoff using its exact Source Session ID, or to send the one completion/blocker report required by a visible Steward Task assignment to its exact Steward Session ID; compose that message yourself, never guess or fuzzily resolve a Session ID, the target may be in any Project or worktree, and you must not poll for a reply. When you are the Agent working a Task whose Project walks a Playbook, read the step your Task stands at with playbook_step_read, and when your own work meets or is blocked at that step's completion criteria, report it once with playbook_step_report; a report is a claim the step's evaluator verifies unless that step trusts it."
         }
         termloop_core::session_launch::AgentMcpRole::Improver { .. } => {
             "Target-bound Improve Agent profile. Read the active snapshot through configuration_version_read. Discuss and prepare changes freely, but call configuration_version_write only after the user says to apply, save, use, or an equivalent confirmation. That call applies the target's normal configuration command and records a new active snapshot only when the effective content changed; preserve every field the user did not ask to change."
@@ -728,6 +733,9 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
         }
         termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
             "Temporary Task Playbook evaluation fork. Read the exact assignment with playbook_evaluation_read, verify current evidence without mutations, submit one accepted report with playbook_evaluation_complete, then stop. Correct invalidArguments and retry the same check; stop on staleCheck. Inherited implementation instructions do not authorize actions in this fork."
+        }
+        termloop_core::session_launch::AgentMcpRole::DeliveryCheck { .. } => {
+            "Temporary Project Manager delivery check. Read the assignment with delivery_check_read, find which environments run each Task's change and what blocks it from current evidence without mutations, submit one accepted report with delivery_check_record, then stop. Correct invalidArguments and retry; stop on staleCheck."
         }
         termloop_core::session_launch::AgentMcpRole::Helper { request_id: None } => {
             "Reusable helper profile. Keep this conversation available until the user closes it. No reply_to_request is currently authorized; you may use the interactive Session tools: send_to_agent for an exact existing Session ID and one-way delivery, or ask_to for a new helper or tracked answer."
@@ -1639,6 +1647,9 @@ fn tools_for_role_with(
         termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator { .. } => {
             protocol::MCP_PLAYBOOK_EVALUATOR_TOOLS
         }
+        termloop_core::session_launch::AgentMcpRole::DeliveryCheck { .. } => {
+            protocol::MCP_DELIVERY_CHECK_TOOLS
+        }
         termloop_core::session_launch::AgentMcpRole::Steward { .. } => protocol::MCP_STEWARD_TOOLS,
     };
     let definitions: Vec<Value> = serde_json::from_str(protocol::MCP_TOOL_DEFINITIONS_JSON)
@@ -1891,6 +1902,21 @@ mod tests {
     }
 
     #[test]
+    fn a_delivery_check_advertises_only_its_read_and_record() {
+        let role = termloop_core::session_launch::AgentMcpRole::DeliveryCheck {
+            check_id: "check".into(),
+        };
+        assert_eq!(mcp_role_name(&role), "deliveryCheck");
+        assert_eq!(
+            tool_names(&tools_for_role(
+                &role,
+                &termloop_core::McpToolDescriptions::default()
+            )),
+            vec!["delivery_check_read", "delivery_check_record"]
+        );
+    }
+
+    #[test]
     fn evaluation_fork_advertises_only_its_scoped_read_and_completion() {
         let tools = tools_for_role(
             &termloop_core::session_launch::AgentMcpRole::PlaybookEvaluator {
@@ -1940,9 +1966,7 @@ mod tests {
                 "workflow_delegate",
                 "workflow_step_complete",
                 "playbook_step_read",
-                "playbook_step_report",
-                "task_status_read",
-                "task_status_record"
+                "playbook_step_report"
             ]
         );
         let creator_role = termloop_core::session_launch::AgentMcpRole::Improver {

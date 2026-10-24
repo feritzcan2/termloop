@@ -25,11 +25,11 @@ use termloop_domain::{
     ProjectTaskAutomationConfiguration, RunConfiguration, RunSetupMark, SavedAgentLaunchSelection,
     SessionArchiveOperation, SessionRecord, SessionRelocationOperation, SessionRelocationReceipt,
     StewardConfiguration, StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension,
-    TaskBranchBinding, TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskTicketVersion,
-    TaskTrackingRecord, TaskWorktreeBinding, TrackerConfiguration, WorkflowConfiguration,
-    WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
-    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
-    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    TaskBranchBinding, TaskBranchSet, TaskDeliveryFacts, TaskRecord, TaskSourceConfiguration,
+    TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TaskWorktreeBinding,
+    TrackerConfiguration, WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation,
+    WorktreeCleanupReceipt, WorktreeProvisioningOperation, WorktreeRepairOperation,
+    WorktreeRepairReceipt, WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -76,7 +76,9 @@ use termloop_domain::{
 // Version 67 adds local sprints and per-Task Project Manager tracking records.
 // Version 68 adds bounded Project Manager ticket versions.
 // Version 69 adds the daemon-wide experimental Project Manager mode switch.
-const CURRENT_SCHEMA_VERSION: u32 = 69;
+// Version 70 separates observed Project Manager delivery facts and Agent ticket
+// proposals from the Project Manager's own tracking record and ticket.
+const CURRENT_SCHEMA_VERSION: u32 = 70;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -128,6 +130,10 @@ struct CurrentState {
     task_tracking_records: Vec<TaskTrackingRecord>,
     #[serde(default)]
     task_ticket_versions: Vec<TaskTicketVersion>,
+    #[serde(default)]
+    task_ticket_proposals: Vec<TaskTicketProposal>,
+    #[serde(default)]
+    task_delivery_facts: Vec<TaskDeliveryFacts>,
     #[serde(default)]
     provisioning_operations: Vec<WorktreeProvisioningOperation>,
     #[serde(default)]
@@ -212,6 +218,8 @@ impl Default for CurrentState {
             project_sprints: vec![],
             task_tracking_records: vec![],
             task_ticket_versions: vec![],
+            task_ticket_proposals: vec![],
+            task_delivery_facts: vec![],
             provisioning_operations: vec![],
             managed_worktrees: vec![],
             cleanup_operations: vec![],
@@ -428,6 +436,12 @@ impl Store {
     }
     pub fn project_sprints(&self) -> &[ProjectSprint] {
         &self.state.project_sprints
+    }
+    pub fn task_ticket_proposals(&self) -> &[TaskTicketProposal] {
+        &self.state.task_ticket_proposals
+    }
+    pub fn task_delivery_facts(&self) -> &[TaskDeliveryFacts] {
+        &self.state.task_delivery_facts
     }
     pub fn task_tracking_records(&self) -> &[TaskTrackingRecord] {
         &self.state.task_tracking_records

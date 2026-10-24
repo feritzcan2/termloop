@@ -1,13 +1,14 @@
-//! Local sprints and the delivery facts a Project Manager tracks per Task.
+//! Sprints, the Project Manager's own statements about a Task, and its
+//! versioned ticket.
 //!
-//! Sprints belong to TermLoop, not to Jira: a Project Manager plans Tasks into
-//! them, and only the Tasks of the one active sprint keep a Task Agent.
+//! Everything here is written by the Project Manager. What TermLoop observes
+//! about a Task lives in `project_delivery`; an Agent can only propose a
+//! ticket change.
 
 pub const SPRINT_NAME_MAX_CHARS: usize = 80;
 pub const PROJECT_SPRINTS_MAX: usize = 64;
 pub const TASK_TRACKING_TEXT_MAX_BYTES: usize = 4_000;
 pub const TASK_TRACKING_SHORT_MAX_CHARS: usize = 120;
-pub const TASK_ENVIRONMENTS_MAX: usize = 12;
 pub const TASK_TICKET_VERSIONS_MAX: usize = 50;
 pub const TASK_TICKET_TITLE_MAX_CHARS: usize = 160;
 pub const TASK_TICKET_BRIEF_MAX_CHARS: usize = 8_000;
@@ -44,40 +45,18 @@ pub fn valid_sprint_name(name: &str) -> bool {
     !name.trim().is_empty() && name.trim() == name && name.chars().count() <= SPRINT_NAME_MAX_CHARS
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum EnvironmentDeployState {
-    #[default]
-    Unknown,
-    NotDeployed,
-    InProgress,
-    Deployed,
-}
-
-/// Whether, and with what evidence, a Task's change reached one environment.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct TaskEnvironmentStatus {
-    pub name: String,
-    pub state: EnvironmentDeployState,
-    #[serde(default)]
-    pub detail: Option<String>,
-}
-
-/// The Project Manager's record for one Task: its sprint and the delivery
-/// facts the Task Agent fills in and the Project Manager corrects.
+/// The Project Manager's own record for one Task: its sprint and what the
+/// Project Manager states about it. Facts TermLoop observes live in
+/// [`crate::TaskDeliveryFacts`]; nothing here is written by an Agent.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TaskTrackingRecord {
     pub task_id: String,
     #[serde(default)]
     pub sprint_id: Option<String>,
+    /// Who works on the Task when the Project Manager knows better than Jira.
     #[serde(default)]
     pub developer: Option<String>,
-    #[serde(default)]
-    pub jira_status: Option<String>,
-    #[serde(default)]
-    pub environments: Vec<TaskEnvironmentStatus>,
     #[serde(default)]
     pub blockers: Option<String>,
     #[serde(default)]
@@ -93,29 +72,14 @@ impl TaskTrackingRecord {
                 .as_deref()
                 .is_none_or(|id| !id.trim().is_empty())
             && valid_short(self.developer.as_deref())
-            && valid_short(self.jira_status.as_deref())
             && valid_long(self.blockers.as_deref())
             && valid_long(self.note.as_deref())
-            && self.environments.len() <= TASK_ENVIRONMENTS_MAX
-            && self
-                .environments
-                .iter()
-                .enumerate()
-                .all(|(index, environment)| {
-                    valid_short(Some(&environment.name))
-                        && valid_short(environment.detail.as_deref())
-                        && !self.environments[index + 1..]
-                            .iter()
-                            .any(|other| other.name.eq_ignore_ascii_case(&environment.name))
-                })
     }
 
     /// A record with nothing in it is stored as its absence.
     pub fn is_empty(&self) -> bool {
         self.sprint_id.is_none()
             && self.developer.is_none()
-            && self.jira_status.is_none()
-            && self.environments.is_empty()
             && self.blockers.is_none()
             && self.note.is_none()
     }
@@ -129,59 +93,39 @@ pub enum TicketAuthor {
     Agent,
 }
 
-/// Everything a Project Manager ticket says: the Task's title and Markdown
-/// description and its tracked delivery facts. The sprint is planning, not
-/// ticket content, so it is not versioned.
+/// What a Project Manager ticket says: the Task's title and Markdown
+/// description. The Project Manager owns it; an Agent can only propose a
+/// change ([`TaskTicketProposal`]) for the Project Manager to accept.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TaskTicketContent {
     pub title: String,
     #[serde(default)]
     pub brief: Option<String>,
-    #[serde(default)]
-    pub developer: Option<String>,
-    #[serde(default)]
-    pub jira_status: Option<String>,
-    #[serde(default)]
-    pub environments: Vec<TaskEnvironmentStatus>,
-    #[serde(default)]
-    pub blockers: Option<String>,
-    #[serde(default)]
-    pub note: Option<String>,
 }
 
 impl TaskTicketContent {
     pub fn is_valid(&self) -> bool {
-        !self.title.trim().is_empty()
-            && self.title.trim() == self.title
-            && self.title.chars().count() <= TASK_TICKET_TITLE_MAX_CHARS
-            && self.brief.as_deref().is_none_or(|brief| {
-                !brief.trim().is_empty() && brief.chars().count() <= TASK_TICKET_BRIEF_MAX_CHARS
-            })
-            && TaskTrackingRecord {
-                task_id: "ticket".into(),
-                ..self.tracking(None, 0)
-            }
-            .is_valid()
+        valid_ticket_title(&self.title) && valid_ticket_brief(self.brief.as_deref())
     }
+}
 
-    /// The tracking record this content describes, in the given sprint.
-    pub fn tracking(
-        &self,
-        sprint_id: Option<String>,
-        updated_at_epoch_ms: u64,
-    ) -> TaskTrackingRecord {
-        TaskTrackingRecord {
-            task_id: String::new(),
-            sprint_id,
-            developer: self.developer.clone(),
-            jira_status: self.jira_status.clone(),
-            environments: self.environments.clone(),
-            blockers: self.blockers.clone(),
-            note: self.note.clone(),
-            updated_at_epoch_ms,
-        }
-    }
+fn valid_ticket_title(title: &str) -> bool {
+    !title.trim().is_empty()
+        && title.trim() == title
+        && title.chars().count() <= TASK_TICKET_TITLE_MAX_CHARS
+}
+
+fn valid_ticket_brief(brief: Option<&str>) -> bool {
+    brief.is_none_or(|brief| {
+        !brief.trim().is_empty() && brief.chars().count() <= TASK_TICKET_BRIEF_MAX_CHARS
+    })
+}
+
+fn valid_ticket_summary(summary: Option<&str>) -> bool {
+    summary.is_none_or(|summary| {
+        !summary.trim().is_empty() && summary.chars().count() <= TASK_TICKET_SUMMARY_MAX_CHARS
+    })
 }
 
 /// One saved state of a Task's ticket. Versions are numbered from 1 per Task
@@ -202,15 +146,39 @@ impl TaskTicketVersion {
     pub fn is_valid(&self) -> bool {
         !self.task_id.trim().is_empty()
             && self.number > 0
-            && self.summary.as_deref().is_none_or(|summary| {
-                !summary.trim().is_empty()
-                    && summary.chars().count() <= TASK_TICKET_SUMMARY_MAX_CHARS
-            })
+            && valid_ticket_summary(self.summary.as_deref())
             && self.content.is_valid()
     }
 }
 
-fn valid_short(value: Option<&str>) -> bool {
+/// An Agent's suggested change to a Task's ticket, waiting for the Project
+/// Manager. A Task has at most one; a newer proposal replaces it. Accepting
+/// it saves a ticket version, dismissing it removes it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TaskTicketProposal {
+    pub task_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub brief: Option<String>,
+    pub summary: String,
+    /// The ticket version the proposal was written against; 0 for none.
+    pub base_version: u64,
+    pub proposed_at_epoch_ms: u64,
+}
+
+impl TaskTicketProposal {
+    pub fn is_valid(&self) -> bool {
+        !self.task_id.trim().is_empty()
+            && (self.title.is_some() || self.brief.is_some())
+            && self.title.as_deref().is_none_or(valid_ticket_title)
+            && valid_ticket_brief(self.brief.as_deref())
+            && valid_ticket_summary(Some(&self.summary))
+    }
+}
+
+pub(crate) fn valid_short(value: Option<&str>) -> bool {
     value.is_none_or(|value| {
         !value.trim().is_empty()
             && value.trim() == value
@@ -218,7 +186,7 @@ fn valid_short(value: Option<&str>) -> bool {
     })
 }
 
-fn valid_long(value: Option<&str>) -> bool {
+pub(crate) fn valid_long(value: Option<&str>) -> bool {
     value
         .is_none_or(|value| !value.trim().is_empty() && value.len() <= TASK_TRACKING_TEXT_MAX_BYTES)
 }
@@ -227,42 +195,62 @@ fn valid_long(value: Option<&str>) -> bool {
 mod tests {
     use super::*;
 
-    fn record() -> TaskTrackingRecord {
-        TaskTrackingRecord {
+    #[test]
+    fn tracking_records_hold_bounded_trimmed_project_manager_statements() {
+        let record = TaskTrackingRecord {
             task_id: "task".into(),
             developer: Some("Ada".into()),
-            environments: vec![TaskEnvironmentStatus {
-                name: "Staging".into(),
-                state: EnvironmentDeployState::Deployed,
-                detail: Some("v1.4.2".into()),
-            }],
+            note: Some("Ask QA first".into()),
             ..TaskTrackingRecord::default()
-        }
-    }
-
-    #[test]
-    fn tracking_records_hold_bounded_trimmed_facts_with_unique_environments() {
-        assert!(record().is_valid());
+        };
+        assert!(record.is_valid());
         assert!(
             !TaskTrackingRecord {
                 developer: Some(" Ada".into()),
-                ..record()
+                ..record.clone()
             }
             .is_valid()
         );
-        let mut duplicate = record();
-        duplicate.environments.push(TaskEnvironmentStatus {
-            name: "staging".into(),
-            state: EnvironmentDeployState::Unknown,
-            detail: None,
-        });
-        assert!(!duplicate.is_valid());
         assert!(
             TaskTrackingRecord {
                 task_id: "task".into(),
                 ..TaskTrackingRecord::default()
             }
             .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_proposal_changes_something_within_the_ticket_bounds() {
+        let proposal = TaskTicketProposal {
+            task_id: "task".into(),
+            title: None,
+            brief: Some("## Status\n- Merged".into()),
+            summary: "PR #42 merged".into(),
+            base_version: 3,
+            proposed_at_epoch_ms: 1,
+        };
+        assert!(proposal.is_valid());
+        assert!(
+            !TaskTicketProposal {
+                brief: None,
+                ..proposal.clone()
+            }
+            .is_valid()
+        );
+        assert!(
+            !TaskTicketProposal {
+                title: Some(" padded".into()),
+                ..proposal.clone()
+            }
+            .is_valid()
+        );
+        assert!(
+            !TaskTicketProposal {
+                summary: "x".repeat(TASK_TICKET_SUMMARY_MAX_CHARS + 1),
+                ..proposal
+            }
+            .is_valid()
         );
     }
 

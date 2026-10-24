@@ -16,6 +16,7 @@ describe("MCP settings presentation", () => {
     expect(mcpToolRoleLabel("helper")).toBe("Helper");
     expect(mcpToolRoleLabel("steward")).toBe("Steward");
     expect(mcpToolRoleLabel("playbookEvaluator")).toBe("Playbook Evaluator");
+    expect(mcpToolRoleLabel("deliveryCheck")).toBe("Delivery Check");
     expect(mcpToolRoleLabel("improver")).toBe("Improver");
     expect(mcpToolDescriptionError("Visible instruction")).toBeUndefined();
     expect(mcpToolDescriptionError(" instruction ")).toContain("whitespace");

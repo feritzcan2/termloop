@@ -58,6 +58,8 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || project_sprints_are_invalid(state)
         || task_tracking_records_are_invalid(state)
         || task_ticket_versions_are_invalid(state)
+        || task_ticket_proposals_are_invalid(state)
+        || task_delivery_facts_are_invalid(state)
         || archive_records_are_invalid(state)
         || relocation_records_are_invalid(state)
         || state
@@ -751,6 +753,35 @@ fn task_ticket_versions_are_invalid(state: &CurrentState) -> bool {
                 .filter(|version| version.task_id == task.id)
                 .count()
                 > termloop_domain::TASK_TICKET_VERSIONS_MAX
+        })
+}
+
+fn task_ticket_proposals_are_invalid(state: &CurrentState) -> bool {
+    state
+        .task_ticket_proposals
+        .iter()
+        .enumerate()
+        .any(|(index, proposal)| {
+            !proposal.is_valid()
+                || !state.tasks.iter().any(|task| task.id == proposal.task_id)
+                || state.task_ticket_proposals[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.task_id == proposal.task_id)
+        })
+}
+
+fn task_delivery_facts_are_invalid(state: &CurrentState) -> bool {
+    state
+        .task_delivery_facts
+        .iter()
+        .enumerate()
+        .any(|(index, facts)| {
+            !facts.is_valid()
+                || facts.is_empty()
+                || !state.tasks.iter().any(|task| task.id == facts.task_id)
+                || state.task_delivery_facts[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.task_id == facts.task_id)
         })
 }
 

@@ -340,22 +340,6 @@
         "$ref": "#/$defs/projectModeResult"
       }
     },
-    "task.projectManagerAgentStart": {
-      "params": {
-        "$ref": "#/$defs/taskProjectManagerAgentStartParams"
-      },
-      "result": {
-        "$ref": "#/$defs/taskProjectManagerAgentStartResult"
-      }
-    },
-    "task.investigationRequest": {
-      "params": {
-        "$ref": "#/$defs/taskIdParams"
-      },
-      "result": {
-        "$ref": "#/$defs/taskInvestigationRequestResult"
-      }
-    },
     "projectManager.boardGet": {
       "params": {
         "$ref": "#/$defs/projectIdParams"
@@ -443,6 +427,46 @@
     "projectManager.modeSet": {
       "params": { "$ref": "#/$defs/projectManagerModeSetParams" },
       "result": { "$ref": "#/$defs/projectManagerModeResult" }
+    },
+    "projectManager.environmentSet": {
+      "params": {
+        "$ref": "#/$defs/projectManagerEnvironmentSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.proposalAccept": {
+      "params": {
+        "$ref": "#/$defs/projectManagerProposalAcceptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerTicketSaveResult"
+      }
+    },
+    "projectManager.proposalDismiss": {
+      "params": {
+        "$ref": "#/$defs/taskIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.checkRequest": {
+      "params": {
+        "$ref": "#/$defs/projectManagerCheckRequestParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerCheckRequestResult"
+      }
+    },
+    "projectManager.factsRefresh": {
+      "params": {
+        "$ref": "#/$defs/projectIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
     },
     "project.worktreeSummary": {
       "params": {
@@ -2505,8 +2529,6 @@
         "project.taskAutomationSet",
         "project.modeGet",
         "project.modeSet",
-        "task.projectManagerAgentStart",
-        "task.investigationRequest",
         "projectManager.boardGet",
         "projectManager.sprintCreate",
         "projectManager.sprintUpdate",
@@ -2519,6 +2541,11 @@
         "projectManager.ticketRestore",
         "projectManager.modeGet",
         "projectManager.modeSet",
+        "projectManager.environmentSet",
+        "projectManager.proposalAccept",
+        "projectManager.proposalDismiss",
+        "projectManager.checkRequest",
+        "projectManager.factsRefresh",
         "project.worktreeSummary",
         "project.worktreeChangeList",
         "project.worktreeDiff",
@@ -2996,8 +3023,8 @@
         "playbook_evaluation_complete",
         "playbook_step_read",
         "playbook_step_report",
-        "task_status_read",
-        "task_status_record"
+        "delivery_check_read",
+        "delivery_check_record"
       ]
     },
     "mcpToolRole": {
@@ -3010,7 +3037,8 @@
         "steward",
         "improver",
         "agentCreator",
-        "playbookEvaluator"
+        "playbookEvaluator",
+        "deliveryCheck"
       ]
     },
     "mcpToolSettingsDto": {
@@ -3554,64 +3582,6 @@
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" }
       }
     },
-    "taskProjectManagerAgentStartParams": {
-      "x-codegen": true,
-      "x-codegen-name": "TaskProjectManagerAgentStartParams",
-      "description": "The Agent to start for the Task. Without agentId the Project's Task automation Agent, or the last ordinary Agent launch, is used.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "taskId"
-      ],
-      "properties": {
-        "taskId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "agentId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "permission": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "reasoning": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        }
-      }
-    },
-    "taskProjectManagerAgentStartResult": {
-      "x-codegen": true,
-      "x-codegen-name": "TaskProjectManagerAgentStartResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "taskId",
-        "status"
-      ],
-      "properties": {
-        "taskId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "started"
-          ]
-        }
-      }
-    },
     "sprintState": {
       "x-codegen": true,
       "x-codegen-name": "SprintState",
@@ -3632,6 +3602,529 @@
         "inProgress",
         "deployed"
       ]
+    },
+    "factSource": {
+      "x-codegen": true,
+      "x-codegen-name": "FactSource",
+      "type": "string",
+      "enum": [
+        "jira",
+        "gitHost",
+        "probe",
+        "check",
+        "projectManager"
+      ]
+    },
+    "jiraFactDto": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraFactDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "assignee",
+        "observedAtEpochMs",
+        "changedAtEpochMs"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "observedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "changedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pullRequestFactDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PullRequestFactDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "title",
+        "url",
+        "state",
+        "checks",
+        "baseBranch",
+        "headBranch",
+        "mergeCommit",
+        "updatedAtEpochMs"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "draft",
+            "merged",
+            "closed"
+          ]
+        },
+        "checks": {
+          "type": "string",
+          "enum": [
+            "passing",
+            "failing",
+            "pending",
+            "unknown"
+          ]
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "headBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "mergeCommit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "updatedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "pullRequestsFactDto": {
+      "x-codegen": true,
+      "x-codegen-name": "PullRequestsFactDto",
+      "description": "The pull requests whose head branch or title names the Task's Jira key.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "items",
+        "truncated",
+        "observedAtEpochMs",
+        "changedAtEpochMs"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/pullRequestFactDto"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "observedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "changedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "environmentFactDto": {
+      "x-codegen": true,
+      "x-codegen-name": "EnvironmentFactDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "state",
+        "detail",
+        "source",
+        "observedAtEpochMs",
+        "changedAtEpochMs"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "$ref": "#/$defs/environmentDeployState"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "source": {
+          "$ref": "#/$defs/factSource"
+        },
+        "observedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "changedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "factReadFailureDto": {
+      "x-codegen": true,
+      "x-codegen-name": "FactReadFailureDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "reason",
+        "atEpochMs"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/factSource"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "atEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "checkNotesDto": {
+      "x-codegen": true,
+      "x-codegen-name": "CheckNotesDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blockers",
+        "markdown",
+        "recordedAtEpochMs"
+      ],
+      "properties": {
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "markdown": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "recordedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "taskDeliveryFactsDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskDeliveryFactsDto",
+      "description": "What TermLoop observed about a Task's delivery, each fact with its source and times.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "jira",
+        "pullRequests",
+        "environments",
+        "checkNotes",
+        "readFailures"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jira": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/jiraFactDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pullRequests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pullRequestsFactDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/environmentFactDto"
+          }
+        },
+        "checkNotes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/checkNotesDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readFailures": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/factReadFailureDto"
+          }
+        }
+      }
+    },
+    "taskTicketProposalDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskTicketProposalDto",
+      "description": "A delivery check's suggested ticket change, waiting for the Project Manager.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "title",
+        "brief",
+        "summary",
+        "baseVersion",
+        "proposedAtEpochMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "brief": {
+          "description": "Markdown.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "baseVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "proposedAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "deliveryCheckDto": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckDto",
+      "description": "A delivery check running now.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "taskIds"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "projectManagerEnvironmentSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerEnvironmentSetParams",
+      "description": "The Project Manager states or corrects one environment of a Task, or removes it with remove.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "name"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "$ref": "#/$defs/environmentDeployState"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "remove": {
+          "type": "boolean"
+        }
+      }
+    },
+    "projectManagerProposalAcceptParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerProposalAcceptParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-rust-type": "u64"
+        }
+      }
+    },
+    "projectManagerCheckRequestParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerCheckRequestParams",
+      "description": "Starts a delivery check of the named Tasks, or of every Task of the active sprint.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskIds": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "projectManagerCheckRequestResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerCheckRequestResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "sessionId",
+        "taskIds"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "started",
+            "alreadyRunning"
+          ]
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     },
     "projectSprintDto": {
       "x-codegen": true,
@@ -3664,71 +4157,16 @@
         }
       }
     },
-    "taskEnvironmentStatusDto": {
-      "x-codegen": true,
-      "x-codegen-name": "TaskEnvironmentStatusDto",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "state",
-        "detail"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "state": {
-          "$ref": "#/$defs/environmentDeployState"
-        },
-        "detail": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        }
-      }
-    },
-    "taskEnvironmentStatusInput": {
-      "x-codegen": true,
-      "x-codegen-name": "TaskEnvironmentStatusInput",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120
-        },
-        "state": {
-          "$ref": "#/$defs/environmentDeployState"
-        },
-        "detail": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        }
-      }
-    },
     "taskTrackingDto": {
       "x-codegen": true,
       "x-codegen-name": "TaskTrackingDto",
+      "description": "What the Project Manager states about a Task: its sprint, who works on it when Jira says otherwise, blockers, and a note.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "taskId",
         "sprintId",
         "developer",
-        "jiraStatus",
-        "environments",
         "blockers",
         "note",
         "updatedAtEpochMs"
@@ -3751,20 +4189,6 @@
             "null"
           ],
           "maxLength": 120
-        },
-        "jiraStatus": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "environments": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "$ref": "#/$defs/taskEnvironmentStatusDto"
-          }
         },
         "blockers": {
           "type": [
@@ -3790,14 +4214,17 @@
     "projectManagerBoardResult": {
       "x-codegen": true,
       "x-codegen-name": "ProjectManagerBoardResult",
-      "description": "A Project Manager Project's local sprints and per-Task tracking records.",
+      "description": "A Project Manager Project's local sprints, the Project Manager's tracking records, the delivery facts TermLoop observed, ticket heads, pending Agent proposals, and running delivery checks.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "projectId",
         "sprints",
         "tracking",
+        "facts",
         "tickets",
+        "proposals",
+        "checks",
         "stateRevision"
       ],
       "properties": {
@@ -3818,11 +4245,29 @@
             "$ref": "#/$defs/taskTrackingDto"
           }
         },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskDeliveryFactsDto"
+          }
+        },
         "tickets": {
           "description": "The newest version of each Task ticket that has one.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/taskTicketHeadDto"
+          }
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskTicketProposalDto"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryCheckDto"
           }
         },
         "stateRevision": {
@@ -3925,20 +4370,6 @@
           ],
           "maxLength": 120
         },
-        "jiraStatus": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "environments": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "$ref": "#/$defs/taskEnvironmentStatusInput"
-          }
-        },
         "blockers": {
           "type": [
             "string",
@@ -3997,13 +4428,6 @@
           "minLength": 1
         },
         "developer": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "jiraStatus": {
           "type": [
             "string",
             "null"
@@ -4149,17 +4573,12 @@
     "taskTicketContentDto": {
       "x-codegen": true,
       "x-codegen-name": "TaskTicketContentDto",
-      "description": "Everything a ticket says: the Task title, its Markdown description, and its tracked delivery facts.",
+      "description": "What a ticket says: the Task title and its Markdown description.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "title",
-        "brief",
-        "developer",
-        "jiraStatus",
-        "environments",
-        "blockers",
-        "note"
+        "brief"
       ],
       "properties": {
         "title": {
@@ -4174,41 +4593,6 @@
             "null"
           ],
           "maxLength": 8000
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "jiraStatus": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "environments": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "$ref": "#/$defs/taskEnvironmentStatusDto"
-          }
-        },
-        "blockers": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 4000
-        },
-        "note": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 4000
         }
       }
     },
@@ -4292,7 +4676,7 @@
     "projectManagerTicketSaveParams": {
       "x-codegen": true,
       "x-codegen-name": "ProjectManagerTicketSaveParams",
-      "description": "Saves the whole ticket as its next version; an omitted field is cleared and the sprint stays. With expectedVersion, a newer save is refused as a revision conflict.",
+      "description": "Saves the ticket's title and description as its next version; an omitted description is cleared. With expectedVersion, a newer save is refused as a revision conflict.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -4316,41 +4700,6 @@
             "null"
           ],
           "maxLength": 8000
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "jiraStatus": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 120
-        },
-        "environments": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "$ref": "#/$defs/taskEnvironmentStatusInput"
-          }
-        },
-        "blockers": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 4000
-        },
-        "note": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 4000
         },
         "summary": {
           "type": [
@@ -4460,33 +4809,6 @@
           ],
           "minimum": 0,
           "x-rust-type": "u64"
-        }
-      }
-    },
-    "taskInvestigationRequestResult": {
-      "x-codegen": true,
-      "x-codegen-name": "TaskInvestigationRequestResult",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "taskId",
-        "sessionId",
-        "status"
-      ],
-      "properties": {
-        "taskId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "sessionId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "submitting"
-          ]
         }
       }
     },

@@ -600,13 +600,26 @@ handleIpc(
   (_event, params: import("@termloop/contract/current").ProjectManagerModeSetParams) =>
     controlCall("projectManager.modeSet", params),
 );
-handleIpc("termloop:task-investigation-request", (_event, taskId: string) =>
-  controlCall("task.investigationRequest", { taskId }),
+handleIpc(
+  "termloop:project-manager-environment-set",
+  (_event, params: import("@termloop/contract/current").ProjectManagerEnvironmentSetParams) =>
+    controlCall("projectManager.environmentSet", params),
 );
 handleIpc(
-  "termloop:task-project-manager-agent-start",
-  (_event, params: import("@termloop/contract/current").TaskProjectManagerAgentStartParams) =>
-    controlCall("task.projectManagerAgentStart", params),
+  "termloop:project-manager-proposal-accept",
+  (_event, params: import("@termloop/contract/current").ProjectManagerProposalAcceptParams) =>
+    controlCall("projectManager.proposalAccept", params),
+);
+handleIpc("termloop:project-manager-proposal-dismiss", (_event, taskId: string) =>
+  controlCall("projectManager.proposalDismiss", { taskId }),
+);
+handleIpc(
+  "termloop:project-manager-check-request",
+  (_event, params: import("@termloop/contract/current").ProjectManagerCheckRequestParams) =>
+    controlCall("projectManager.checkRequest", params),
+);
+handleIpc("termloop:project-manager-facts-refresh", (_event, projectId: string) =>
+  controlCall("projectManager.factsRefresh", { projectId }),
 );
 handleIpc("termloop:project-manager-board-get", (_event, projectId: string) =>
   controlCall("projectManager.boardGet", { projectId }),

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   PlaybookGetResult,
   PlaybookMilestoneDto,
   PlaybookRuntimeResult,
   ProjectManagerBoardResult,
+  ProjectManagerCheckRequestResult,
+  ProjectManagerEnvironmentSetParams,
   ProjectManagerJiraSearchResult,
   ProjectManagerTaskCreateParams,
   ProjectManagerTaskCreateResult,
@@ -14,17 +16,11 @@ import type {
   SprintState,
 } from "@termloop/contract/current";
 
-import type { AgentStatus, Session, Task } from "../model.js";
-import { isLiveSession } from "../model.js";
-import { taskSessions } from "./TaskRail.js";
+import type { Task } from "../model.js";
 import { ProjectManagerTicket } from "./ProjectManagerTicket.js";
 
 export type ProjectManagerWorkspaceActions = {
   loadPlaybook(): Promise<PlaybookGetResult>;
-  /// Without an Agent, the Project's Task automation Agent or the last
-  /// ordinary Agent launch starts.
-  startTaskAgent(taskId: string, agentId?: string): Promise<string | undefined>;
-  requestInvestigation(taskId: string): Promise<string | undefined>;
   openTaskSources(): void;
   openPlaybookBuilder(): void;
   openExternal(url: string): void;
@@ -40,6 +36,14 @@ export type ProjectManagerWorkspaceActions = {
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<ProjectManagerTicketSaveResult>;
   loadTicketVersions(taskId: string): Promise<ProjectManagerTicketVersionsResult>;
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
+  /// Starts one short-lived delivery check of the named Tasks, or of every
+  /// tracked Task without any.
+  requestCheck(taskIds: string[] | null): Promise<ProjectManagerCheckRequestResult>;
+  /// Reads Jira and pull requests for the tracked Tasks now.
+  refreshFacts(): Promise<ProjectManagerBoardResult>;
+  setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
+  acceptProposal(taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
+  dismissProposal(taskId: string): Promise<ProjectManagerBoardResult>;
 };
 
 /// The same commands addressed by Project, as the composition provides them.
@@ -54,15 +58,20 @@ export type ProjectManagerProjectActions = {
   saveTicket(projectId: string, params: ProjectManagerTicketSaveParams): Promise<ProjectManagerTicketSaveResult>;
   loadTicketVersions(projectId: string, taskId: string): Promise<ProjectManagerTicketVersionsResult>;
   restoreTicket(projectId: string, taskId: string, number: number, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
+  requestCheck(projectId: string, taskIds: string[] | null): Promise<ProjectManagerCheckRequestResult>;
+  refreshFacts(projectId: string): Promise<ProjectManagerBoardResult>;
+  setEnvironment(projectId: string, params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
+  acceptProposal(projectId: string, taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
+  dismissProposal(projectId: string, taskId: string): Promise<ProjectManagerBoardResult>;
 };
 
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/// The selected Project's board, reloaded whenever its Tasks change (an
-/// Agent's recorded facts arrive as a Task change) and replaced by each
-/// command's own result.
+/// The selected Project's board, reloaded whenever its Tasks change (newly
+/// read facts and a delivery check's report arrive as a Task change) and
+/// replaced by each command's own result.
 export function useProjectManagerBoard(
   loadBoard: (() => Promise<ProjectManagerBoardResult>) | undefined,
   reloadKey: unknown,
@@ -105,13 +114,9 @@ export type PlaybookStepTrack = {
   evidence: string | null;
 };
 
-/// The one Agent a Project Manager works a Task through: its live, ordinary
-/// (non-helper) Agent Session, preferring a running one. An Agent stopped when
-/// its Task left the active sprint is not one; it has no terminal to attach.
-export function projectManagerTaskAgent(task: Task, sessionsById: ReadonlyMap<string, Session>): Session | undefined {
-  const agents = taskSessions(task, sessionsById)
-    .filter((session) => session.kind === "Agent" && !session.ask_to_source_session_id && isLiveSession(session));
-  return agents.find((session) => session.lifecycle_state === "running") ?? agents[0];
+/// The running delivery check that covers a Task, if any.
+export function projectManagerTaskCheck(taskId: string, board: ProjectManagerBoardResult | null): ProjectManagerBoardResult["checks"][number] | undefined {
+  return board?.checks.find((check) => check.taskIds.includes(taskId));
 }
 
 /// Where one Task stands on the Playbook, from the daemon's runtime: steps
@@ -172,72 +177,65 @@ export function visibleProjectManagerTasks(tasks: readonly Task[], query: string
     .sort((left, right) => left.rank - right.rank);
 }
 
-export function agentStatusLabel(status: AgentStatus["status"] | undefined): string | undefined {
-  switch (status) {
-    case "working": return "Working";
-    case "idle": return "Idle";
-    case "awaitingInput": return "Needs input";
-    case "compacting": return "Compacting";
-    case "failed": return "Failed";
-    case "interrupted": return "Interrupted";
-    default: return undefined;
-  }
-}
-
-/// The Project Manager stage: the selected Task's info form, ticket, and its
-/// Agent's terminal while it is in the active sprint, beside the Playbook.
+/// The Project Manager stage: the selected Task's ticket and delivery facts
+/// beside the Playbook.
 export function ProjectManagerStage(props: {
   task: Task | undefined;
   board: ProjectManagerBoardResult | null;
-  sessionsById: ReadonlyMap<string, Session>;
   milestones: readonly PlaybookMilestoneDto[];
   playbookError: string | undefined;
   playbookRuntime: PlaybookRuntimeResult | null;
-  /// Agent CLIs available to start a Task Agent with.
-  agents: readonly { id: string; label: string }[];
   disabled: boolean;
   actions: ProjectManagerWorkspaceActions;
+  /// Each command below takes the returned board and answers with the
+  /// failure to show, if any.
   setTracking(params: ProjectManagerTaskTrackingSetParams): Promise<string | undefined>;
-  /// Saves or restores a ticket version and takes the returned board.
   saveTicket(params: ProjectManagerTicketSaveParams): Promise<string | undefined>;
   restoreTicket(taskId: string, number: number, expectedVersion: number | null): Promise<string | undefined>;
+  setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
+  acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
+  dismissProposal(taskId: string): Promise<string | undefined>;
+  requestCheck(taskIds: string[]): Promise<string | undefined>;
+  /// Opens a running delivery check's terminal in place of the Task page.
+  openCheck(sessionId: string): void;
   addTask(): void;
-  renderTerminal(sessionId: string): ReactNode;
-  statusesById?: ReadonlyMap<string, AgentStatus>;
 }) {
-  const { task, milestones, actions } = props;
+  const { task, milestones, actions, board } = props;
   const track = task
     ? projectManagerStepTrack(task.id, milestones, props.playbookRuntime)
     : milestones.map((milestone) => ({ id: milestone.id, title: milestone.title, state: "ahead" as const, evidence: null }));
-  const tracking = task ? props.board?.tracking.find((record) => record.taskId === task.id) : undefined;
-  const sprints = props.board?.sprints ?? [];
+  const tracking = task ? board?.tracking.find((record) => record.taskId === task.id) : undefined;
+  const sprints = board?.sprints ?? [];
   const sprint = sprints.find((candidate) => candidate.id === tracking?.sprintId);
   const activeSprint = sprints.find((candidate) => candidate.state === "active");
   const inActiveSprint = Boolean(task && sprint && sprint.state === "active" && task.status === "open");
-  const taskAgent = task && inActiveSprint ? projectManagerTaskAgent(task, props.sessionsById) : undefined;
   return <div className="pm-workspace">
     <section className="pm-center" aria-label="Task">
       {task ? <ProjectManagerTicket
         key={task.id}
         task={task}
         tracking={tracking}
-        head={props.board?.tickets.find((head) => head.taskId === task.id)}
+        facts={board?.facts.find((facts) => facts.taskId === task.id)}
+        proposal={board?.proposals.find((proposal) => proposal.taskId === task.id)}
+        check={projectManagerTaskCheck(task.id, board)}
+        head={board?.tickets.find((head) => head.taskId === task.id)}
         sprints={sprints}
         activeSprint={activeSprint}
         inActiveSprint={inActiveSprint}
-        agent={taskAgent}
-        agentStatus={taskAgent ? props.statusesById?.get(taskAgent.id) : undefined}
         track={track}
-        agents={props.agents}
         disabled={props.disabled}
         actions={actions}
         saveTicket={props.saveTicket}
         restoreTicket={props.restoreTicket}
         setTracking={props.setTracking}
-        renderTerminal={props.renderTerminal}
+        setEnvironment={props.setEnvironment}
+        acceptProposal={props.acceptProposal}
+        dismissProposal={props.dismissProposal}
+        requestCheck={props.requestCheck}
+        openCheck={props.openCheck}
       /> : <div className="pm-placeholder">
         <h2>No Task selected</h2>
-        <p>Plan Tasks into sprints. Each Task in the active sprint gets an Agent that fills in its developer, Jira status, and environments.</p>
+        <p>Plan Tasks into sprints. TermLoop reads Jira and pull requests for the active sprint's Tasks; a delivery check looks at the rest when you ask.</p>
         <button type="button" className="primary-button" onClick={props.addTask}>Add Task</button>
       </div>}
     </section>
@@ -266,7 +264,7 @@ export function ProjectManagerStage(props: {
 
 type FindingsSection = { title: string; tone: "observed" | "inferred" | "unknown" | "other"; lines: string[] };
 
-/// The Task Agent records its findings as Markdown under `## Observed`,
+/// A delivery check records its notes as Markdown under `## Observed`,
 /// `## Inferred`, and `## Unknown`; anything else stays a plain section.
 export function projectManagerFindingsSections(markdown: string): FindingsSection[] {
   const sections: FindingsSection[] = [];

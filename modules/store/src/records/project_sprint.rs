@@ -1,6 +1,7 @@
 use termloop_domain::{
-    PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX, TaskTicketContent,
-    TaskTicketVersion, TaskTrackingRecord, TicketAuthor, valid_sprint_name,
+    PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX, TaskDeliveryFacts,
+    TaskTicketContent, TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
+    valid_sprint_name,
 };
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
@@ -161,11 +162,12 @@ impl Store {
         self.commit_or_restore(previous)
     }
 
-    /// Saves a Task's whole ticket — title, description, and tracked facts —
-    /// as its next version, in one commit. Its sprint stays. The first save of
-    /// a ticket that has no version yet keeps what it said before as version 1.
-    /// `expected_version` guards against overwriting a newer save; saving the
-    /// content the newest version already holds records nothing.
+    /// Saves a Task's ticket — its title and description — as its next
+    /// version, in one commit. The first save of a ticket that has no version
+    /// yet keeps what it said before as version 1. `expected_version` guards
+    /// against overwriting a newer save; saving the content the newest
+    /// version already holds records nothing. With `settle_proposal` the
+    /// Task's pending Agent proposal is removed in the same commit.
     #[allow(clippy::too_many_arguments)]
     pub fn save_task_ticket(
         &mut self,
@@ -175,6 +177,7 @@ impl Store {
         author: TicketAuthor,
         summary: Option<String>,
         expected_version: Option<u64>,
+        settle_proposal: bool,
         now_epoch_ms: u64,
     ) -> Result<u64, StoreError> {
         let task_index = self
@@ -194,10 +197,23 @@ impl Store {
         let current = self
             .task_ticket_content(task_id)
             .ok_or(StoreError::NotFound)?;
-        if current == content && head.as_ref().is_some_and(|head| head.content == content) {
+        let has_proposal = self.task_ticket_proposal(task_id).is_some();
+        if current == content
+            && head.as_ref().is_some_and(|head| head.content == content)
+            && !(settle_proposal && has_proposal)
+        {
             return Ok(head_number);
         }
         let previous = self.state.clone();
+        if settle_proposal {
+            self.state
+                .task_ticket_proposals
+                .retain(|proposal| proposal.task_id != task_id);
+        }
+        if current == content && head.as_ref().is_some_and(|head| head.content == content) {
+            self.commit_or_restore(previous)?;
+            return Ok(head_number);
+        }
         let mut number = head_number;
         if head.is_none() && current != content && current.is_valid() {
             number += 1;
@@ -214,19 +230,6 @@ impl Store {
         task.title = content.title.clone();
         task.brief = content.brief.clone();
         task.updated_at_epoch_ms = now_epoch_ms.max(task.updated_at_epoch_ms + 1);
-        let sprint_id = self
-            .task_tracking(task_id)
-            .and_then(|record| record.sprint_id.clone());
-        let record = TaskTrackingRecord {
-            task_id: task_id.to_owned(),
-            ..content.tracking(sprint_id, now_epoch_ms)
-        };
-        self.state
-            .task_tracking_records
-            .retain(|existing| existing.task_id != task_id);
-        if !record.is_empty() {
-            self.state.task_tracking_records.push(record);
-        }
         number += 1;
         self.state.task_ticket_versions.push(TaskTicketVersion {
             task_id: task_id.to_owned(),
@@ -259,16 +262,110 @@ impl Store {
     /// What a Task's ticket says now.
     pub fn task_ticket_content(&self, task_id: &str) -> Option<TaskTicketContent> {
         let task = self.state.tasks.iter().find(|task| task.id == task_id)?;
-        let tracking = self.task_tracking(task_id).cloned().unwrap_or_default();
         Some(TaskTicketContent {
             title: task.title.clone(),
             brief: task.brief.clone(),
-            developer: tracking.developer,
-            jira_status: tracking.jira_status,
-            environments: tracking.environments,
-            blockers: tracking.blockers,
-            note: tracking.note,
         })
+    }
+
+    /// Replaces a Task's pending Agent proposal.
+    pub fn set_task_ticket_proposal(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        proposal: TaskTicketProposal,
+    ) -> Result<u64, StoreError> {
+        if !self
+            .state
+            .tasks
+            .iter()
+            .any(|task| task.id == proposal.task_id)
+        {
+            return Err(StoreError::NotFound);
+        }
+        if !proposal.is_valid() {
+            return Err(StoreError::ConstraintViolation);
+        }
+        if self.task_ticket_proposal(&proposal.task_id) == Some(&proposal) {
+            return Ok(self.state.revision);
+        }
+        let previous = self.state.clone();
+        self.state
+            .task_ticket_proposals
+            .retain(|existing| existing.task_id != proposal.task_id);
+        self.state.task_ticket_proposals.push(proposal);
+        self.commit_or_restore(previous)
+    }
+
+    pub fn remove_task_ticket_proposal(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        task_id: &str,
+    ) -> Result<u64, StoreError> {
+        if self.task_ticket_proposal(task_id).is_none() {
+            return Err(StoreError::NotFound);
+        }
+        let previous = self.state.clone();
+        self.state
+            .task_ticket_proposals
+            .retain(|proposal| proposal.task_id != task_id);
+        self.commit_or_restore(previous)
+    }
+
+    pub fn task_ticket_proposal(&self, task_id: &str) -> Option<&TaskTicketProposal> {
+        self.state
+            .task_ticket_proposals
+            .iter()
+            .find(|proposal| proposal.task_id == task_id)
+    }
+
+    /// Replaces the delivery facts of several Tasks in one commit. Records
+    /// that end up empty are stored as their absence; unchanged records commit
+    /// nothing.
+    pub fn set_task_delivery_facts(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        records: Vec<TaskDeliveryFacts>,
+    ) -> Result<u64, StoreError> {
+        for record in &records {
+            if !self
+                .state
+                .tasks
+                .iter()
+                .any(|task| task.id == record.task_id)
+            {
+                return Err(StoreError::NotFound);
+            }
+            if !record.is_valid() {
+                return Err(StoreError::ConstraintViolation);
+            }
+        }
+        let changed =
+            records.iter().any(
+                |record| match self.task_delivery_facts_for(&record.task_id) {
+                    Some(current) => current != record,
+                    None => !record.is_empty(),
+                },
+            );
+        if !changed {
+            return Ok(self.state.revision);
+        }
+        let previous = self.state.clone();
+        for record in records {
+            self.state
+                .task_delivery_facts
+                .retain(|existing| existing.task_id != record.task_id);
+            if !record.is_empty() {
+                self.state.task_delivery_facts.push(record);
+            }
+        }
+        self.commit_or_restore(previous)
+    }
+
+    pub fn task_delivery_facts_for(&self, task_id: &str) -> Option<&TaskDeliveryFacts> {
+        self.state
+            .task_delivery_facts
+            .iter()
+            .find(|facts| facts.task_id == task_id)
     }
 
     /// The newest saved version of a Task's ticket.

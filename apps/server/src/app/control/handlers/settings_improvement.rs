@@ -151,6 +151,7 @@ fn role_summary(roles: &[protocol::McpToolRole]) -> String {
             protocol::McpToolRole::Interactive => "interactive Sessions",
             protocol::McpToolRole::Helper => "Ask-To helpers",
             protocol::McpToolRole::PlaybookEvaluator => "Task Playbook evaluators",
+            protocol::McpToolRole::DeliveryCheck => "Project Manager delivery checks",
             protocol::McpToolRole::Steward => "the Project Steward",
             protocol::McpToolRole::Improver => "Improve Agents",
             protocol::McpToolRole::AgentCreator => "Agent Creator",

@@ -172,6 +172,12 @@ impl Store {
             .task_ticket_versions
             .retain(|version| !task_ids.contains(&version.task_id));
         self.state
+            .task_ticket_proposals
+            .retain(|proposal| !task_ids.contains(&proposal.task_id));
+        self.state
+            .task_delivery_facts
+            .retain(|facts| !task_ids.contains(&facts.task_id));
+        self.state
             .provisioning_operations
             .retain(|operation| !task_ids.contains(&operation.task_id));
         self.state

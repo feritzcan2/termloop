@@ -1,6 +1,7 @@
 //! Project command/projection ownership boundary.
 
 mod changes;
+mod delivery;
 mod mode;
 mod sprint;
 mod ticket;
@@ -9,8 +10,6 @@ pub use changes::{
     ObservedProjectWorktreeChanges, ObservedProjectWorktreeDiff, ObservedProjectWorktreePreImage,
     ProjectWorktreeChangeListPlan, ProjectWorktreeDiffPlan, ProjectWorktreePreImagePlan,
 };
-pub use sprint::ProjectManagerAgentReconciliation;
-pub(crate) use sprint::environments as tracking_environments;
 
 use crate::{
     CodexRuntime, CoreError, CoreRuntime, ProjectDeleteBlocker, json_error, required_string,

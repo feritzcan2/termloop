@@ -1,24 +1,18 @@
 import type {
   EnvironmentDeployState,
+  FactSource,
   ProjectManagerTicketSaveParams,
   TaskTicketContentDto,
-  TaskTrackingDto,
 } from "@termloop/contract/current";
 
 import type { Task } from "../model.js";
 import { taskBriefBlocks } from "./TaskBrief.js";
 
-export type EnvironmentDraft = { name: string; state: EnvironmentDeployState; detail: string };
-
-/// What the Project Manager edits on a ticket. The description is Markdown.
+/// What the Project Manager edits on a ticket: its title and Markdown
+/// description. Delivery facts are machine-owned and never part of it.
 export type TicketDraft = {
   title: string;
   brief: string;
-  developer: string;
-  jiraStatus: string;
-  environments: EnvironmentDraft[];
-  blockers: string;
-  note: string;
 };
 
 export const ENVIRONMENT_STATES: readonly { value: EnvironmentDeployState; label: string }[] = [
@@ -27,6 +21,21 @@ export const ENVIRONMENT_STATES: readonly { value: EnvironmentDeployState; label
   { value: "inProgress", label: "Deploying" },
   { value: "deployed", label: "Deployed" },
 ];
+
+export function environmentStateLabel(state: EnvironmentDeployState): string {
+  return ENVIRONMENT_STATES.find((candidate) => candidate.value === state)?.label ?? state;
+}
+
+/// Where a delivery fact came from, as the ticket names it.
+export function factSourceLabel(source: FactSource): string {
+  switch (source) {
+    case "jira": return "Jira";
+    case "gitHost": return "Pull requests";
+    case "probe": return "Probe";
+    case "check": return "Delivery check";
+    case "projectManager": return "You";
+  }
+}
 
 const JIRA_INLINE = /\{\{([^{}\n]+)\}\}|\*([^*\n]+)\*/gu;
 
@@ -49,39 +58,18 @@ export function jiraWikiToMarkdown(brief: string): string {
 
 /// The ticket as saved. A Jira-imported description that was never saved
 /// through the editor is still Jira wiki and is shown as Markdown.
-export function ticketDraft(task: Task, tracking: TaskTrackingDto | undefined, versioned: boolean): TicketDraft {
+export function ticketDraft(task: Task, versioned: boolean): TicketDraft {
   const brief = task.brief ?? "";
   return {
     title: task.title,
     brief: !versioned && task.jira_url && brief ? jiraWikiToMarkdown(brief) : brief,
-    developer: tracking?.developer ?? "",
-    jiraStatus: tracking?.jiraStatus ?? "",
-    environments: (tracking?.environments ?? []).map((environment) => ({
-      name: environment.name,
-      state: environment.state,
-      detail: environment.detail ?? "",
-    })),
-    blockers: tracking?.blockers ?? "",
-    note: tracking?.note ?? "",
-  };
-}
-
-export function contentDraft(content: TaskTicketContentDto): TicketDraft {
-  return {
-    title: content.title,
-    brief: content.brief ?? "",
-    developer: content.developer ?? "",
-    jiraStatus: content.jiraStatus ?? "",
-    environments: content.environments.map((environment) => ({ ...environment, detail: environment.detail ?? "" })),
-    blockers: content.blockers ?? "",
-    note: content.note ?? "",
   };
 }
 
 const text = (value: string) => value.trim() || null;
 
-/// The whole ticket the daemon saves as its next version; blank fields
-/// clear and blank environment names are dropped.
+/// The whole ticket the daemon saves as its next version; a blank
+/// description clears it.
 export function ticketSaveParams(
   taskId: string,
   draft: TicketDraft,
@@ -92,47 +80,21 @@ export function ticketSaveParams(
     taskId,
     title: draft.title.trim(),
     brief: text(draft.brief),
-    developer: text(draft.developer),
-    jiraStatus: text(draft.jiraStatus),
-    environments: draft.environments
-      .filter((environment) => environment.name.trim())
-      .map((environment) => ({ name: environment.name.trim(), state: environment.state, detail: text(environment.detail) })),
-    blockers: text(draft.blockers),
-    note: text(draft.note),
     summary: text(summary),
     expectedVersion,
   };
 }
 
 export function sameTicket(left: TicketDraft, right: TicketDraft): boolean {
-  const comparable = (draft: TicketDraft) => {
-    const { summary: _summary, expectedVersion: _version, ...rest } = ticketSaveParams("", draft, "", null);
-    return JSON.stringify(rest);
-  };
-  return comparable(left) === comparable(right);
+  return left.title.trim() === right.title.trim() && left.brief.trim() === right.brief.trim();
 }
 
 export type TicketFieldChange = { field: string; before: string; after: string };
 
-function environmentsText(environments: TaskTicketContentDto["environments"]): string {
-  return environments
-    .map((environment) => `${environment.name}: ${ENVIRONMENT_STATES.find((state) => state.value === environment.state)?.label ?? environment.state}${environment.detail ? ` (${environment.detail})` : ""}`)
-    .join(", ");
-}
-
 /// The fields other than the description that differ between two versions.
 export function ticketFieldChanges(before: TaskTicketContentDto | undefined, after: TaskTicketContentDto): TicketFieldChange[] {
-  const fields: { field: string; read(content: TaskTicketContentDto): string }[] = [
-    { field: "Title", read: (content) => content.title },
-    { field: "Developer", read: (content) => content.developer ?? "" },
-    { field: "Jira status", read: (content) => content.jiraStatus ?? "" },
-    { field: "Environments", read: (content) => environmentsText(content.environments) },
-    { field: "Blockers", read: (content) => content.blockers ?? "" },
-    { field: "Note", read: (content) => content.note ?? "" },
-  ];
-  return fields
-    .map(({ field, read }) => ({ field, before: before ? read(before) : "", after: read(after) }))
-    .filter((change) => change.before !== change.after);
+  const title = before?.title ?? "";
+  return title === after.title ? [] : [{ field: "Title", before: title, after: after.title }];
 }
 
 export function isRevisionConflict(message: string): boolean {

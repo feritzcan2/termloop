@@ -16,6 +16,7 @@ pub enum McpToolRole {
     Steward,
     Worker,
     PlaybookEvaluator,
+    DeliveryCheck,
 }
 
 impl McpToolRole {
@@ -28,6 +29,7 @@ impl McpToolRole {
             Self::Steward => "steward",
             Self::Worker => "worker",
             Self::PlaybookEvaluator => "playbookEvaluator",
+            Self::DeliveryCheck => "deliveryCheck",
         }
     }
 }

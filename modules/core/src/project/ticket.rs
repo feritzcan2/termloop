@@ -1,7 +1,7 @@
-//! Versioned Project Manager tickets. A ticket is a Task's title, Markdown
-//! description, and tracked delivery facts; every save by the Project Manager
-//! or the Task Agent becomes a numbered version that can be compared and
-//! restored.
+//! Versioned Project Manager tickets. A ticket is a Task's title and Markdown
+//! description, owned by the Project Manager: every save becomes a numbered
+//! version that can be compared and restored. A delivery check can only
+//! propose a change, which the Project Manager accepts or dismisses.
 
 use serde_json::{Value, json};
 use termloop_domain::{
@@ -9,7 +9,7 @@ use termloop_domain::{
     TaskTicketContent, TaskTicketVersion, TicketAuthor,
 };
 
-use super::sprint::{bounded_text, environments, optional_text};
+use super::sprint::bounded_text;
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 
 impl CoreRuntime {
@@ -22,11 +22,6 @@ impl CoreRuntime {
             title: bounded_text(&params, "title", TASK_TICKET_TITLE_MAX_CHARS)?
                 .ok_or_else(|| CoreError::InvalidParams("title".into()))?,
             brief: bounded_text(&params, "brief", TASK_TICKET_BRIEF_MAX_CHARS)?,
-            developer: optional_text(&params, "developer")?,
-            jira_status: optional_text(&params, "jiraStatus")?,
-            environments: environments(&params)?.unwrap_or_default(),
-            blockers: optional_text(&params, "blockers")?,
-            note: optional_text(&params, "note")?,
         };
         let version = self.save_ticket(
             &task.id,
@@ -34,6 +29,7 @@ impl CoreRuntime {
             TicketAuthor::ProjectManager,
             ticket_summary(&params, "summary")?,
             expected_version(&params)?,
+            false,
         )?;
         Ok(self.ticket_saved(&task.project_id, &task.id, version))
     }
@@ -81,6 +77,7 @@ impl CoreRuntime {
             TicketAuthor::ProjectManager,
             Some(format!("Restored version {number}")),
             expected_version(&params)?,
+            false,
         )?;
         Ok(self.ticket_saved(&task.project_id, &task.id, version))
     }
@@ -92,6 +89,7 @@ impl CoreRuntime {
         author: TicketAuthor,
         summary: Option<String>,
         expected_version: Option<u64>,
+        settle_proposal: bool,
     ) -> Result<u64, CoreError> {
         if !content.is_valid() {
             return Err(CoreError::InvalidParams("ticket".into()));
@@ -104,9 +102,79 @@ impl CoreRuntime {
                 author,
                 summary,
                 expected_version,
+                settle_proposal,
                 termloop_platform::current_epoch_ms(),
             )
             .map_err(store_error)
+    }
+
+    /// Applies a Task's pending proposal as the next ticket version. The
+    /// Project Manager accepts it against the newest version they saw.
+    pub(crate) fn accept_ticket_proposal_command(
+        &mut self,
+        params: Value,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        let task = self.task_record(&task_id)?;
+        self.ensure_project_manager_project(&task.project_id)?;
+        let proposal = self
+            .store
+            .task_ticket_proposal(&task.id)
+            .cloned()
+            .ok_or(CoreError::NotFound)?;
+        let current = self
+            .store
+            .task_ticket_content(&task.id)
+            .ok_or(CoreError::NotFound)?;
+        let version = self.save_ticket(
+            &task.id,
+            TaskTicketContent {
+                title: proposal.title.unwrap_or(current.title),
+                brief: proposal.brief.or(current.brief),
+            },
+            TicketAuthor::Agent,
+            Some(proposal.summary),
+            expected_version(&params)?,
+            true,
+        )?;
+        Ok(self.ticket_saved(&task.project_id, &task.id, version))
+    }
+
+    pub(crate) fn dismiss_ticket_proposal_command(
+        &mut self,
+        params: Value,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        let task = self.task_record(&task_id)?;
+        self.ensure_project_manager_project(&task.project_id)?;
+        self.store
+            .remove_task_ticket_proposal(&self.write_authority, &task.id)
+            .map_err(store_error)?;
+        Ok(self.project_manager_board(&task.project_id))
+    }
+
+    /// The pending proposal of each of a Project's tickets, for the board.
+    pub(super) fn ticket_proposals_json(&self, project_id: &str) -> Vec<Value> {
+        self.store
+            .task_ticket_proposals()
+            .iter()
+            .filter(|proposal| {
+                self.store
+                    .tasks()
+                    .iter()
+                    .any(|task| task.id == proposal.task_id && task.project_id == project_id)
+            })
+            .map(|proposal| {
+                json!({
+                    "taskId": proposal.task_id,
+                    "title": proposal.title,
+                    "brief": proposal.brief,
+                    "summary": proposal.summary,
+                    "baseVersion": proposal.base_version,
+                    "proposedAtEpochMs": proposal.proposed_at_epoch_ms,
+                })
+            })
+            .collect()
     }
 
     /// The newest version of each of a Project's tickets, for the board.
@@ -155,15 +223,6 @@ pub(crate) fn ticket_content_json(content: &TaskTicketContent) -> Value {
     json!({
         "title": content.title,
         "brief": content.brief,
-        "developer": content.developer,
-        "jiraStatus": content.jira_status,
-        "environments": content.environments.iter().map(|environment| json!({
-            "name": environment.name,
-            "state": environment.state,
-            "detail": environment.detail,
-        })).collect::<Vec<_>>(),
-        "blockers": content.blockers,
-        "note": content.note,
     })
 }
 

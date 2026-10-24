@@ -28,6 +28,7 @@ mod attachments;
 mod companion_supervisor;
 mod control;
 mod core_lock;
+mod delivery_checks;
 mod discovery;
 mod forward_plane;
 mod gates;
@@ -44,7 +45,6 @@ mod steward_change;
 mod steward_presence;
 mod steward_task_start;
 mod task_automation;
-mod task_reinvestigation;
 mod terminal_grids;
 mod terminal_plane;
 mod tracker_runtime;
@@ -222,6 +222,9 @@ fn generated_mcp_tool_catalog()
             }
             if termloop_contract::current::MCP_PLAYBOOK_EVALUATOR_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::PlaybookEvaluator);
+            }
+            if termloop_contract::current::MCP_DELIVERY_CHECK_TOOLS.contains(&tool_name) {
+                roles.push(termloop_core::McpToolRole::DeliveryCheck);
             }
             if termloop_contract::current::MCP_HELPER_TOOLS.contains(&tool_name) {
                 roles.push(termloop_core::McpToolRole::Helper);
@@ -570,9 +573,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(keep_awake::supervise(state.clone()));
     tokio::spawn(tracker_runtime::run_tracker_deadlines(state.clone()));
     tokio::spawn(control::run_task_source_deadlines(state.clone()));
-    tokio::spawn(task_reinvestigation::run_task_reinvestigations(
-        state.clone(),
-    ));
+    tokio::spawn(delivery_checks::run_delivery_facts(state.clone()));
     tokio::spawn(control::load_azure_devops_credential(state.clone()));
     tokio::spawn(reconcile_agent_runtime_signals(
         bridge_agent_runtime_signals(agent_runtime_signals),

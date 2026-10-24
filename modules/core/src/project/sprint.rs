@@ -1,12 +1,12 @@
-//! Local sprints and per-Task tracking for Projects opened as Project
-//! Manager. Sprints are TermLoop's own; a Task copied from Jira keeps only its
-//! IssueLink sidecar. Only open Tasks of the one active sprint keep an Agent.
+//! Local sprints and the Project Manager's own tracking record per Task, for
+//! Projects opened as Project Manager. Sprints are TermLoop's own; a Task
+//! copied from Jira keeps only its IssueLink sidecar. TermLoop keeps delivery
+//! facts for the open Tasks of the one active sprint.
 
 use serde_json::{Value, json};
 use termloop_domain::{
-    EnvironmentDeployState, IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ProjectSprint,
-    SprintState, TASK_ENVIRONMENTS_MAX, TaskEnvironmentStatus, TaskRecord, TaskStatus,
-    TaskTrackingRecord,
+    IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, ProjectSprint, SprintState, TaskRecord,
+    TaskStatus, TaskTrackingRecord,
 };
 use termloop_providers::{JiraSearchRequest, JiraSearchResult, JiraSearchScope};
 
@@ -15,14 +15,6 @@ use crate::{CoreError, CoreRuntime, TaskSourceRefreshPlan, required_string, stor
 const TASK_TITLE_MAX_CHARS: usize = 160;
 const TASK_BRIEF_MAX_CHARS: usize = 8_000;
 const JIRA_QUERY_MAX_CHARS: usize = 200;
-
-/// What the daemon must change so that exactly the open Tasks of a Project's
-/// active sprint have an Agent.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ProjectManagerAgentReconciliation {
-    pub start_task_ids: Vec<String>,
-    pub stop_session_ids: Vec<String>,
-}
 
 impl CoreRuntime {
     pub(super) fn ensure_project_manager_project(&self, project_id: &str) -> Result<(), CoreError> {
@@ -65,7 +57,14 @@ impl CoreRuntime {
             "projectId": project_id,
             "sprints": sprints,
             "tracking": tracking,
+            "facts": self.project_facts_json(project_id),
             "tickets": self.ticket_heads(project_id),
+            "proposals": self.ticket_proposals_json(project_id),
+            "checks": self
+                .running_delivery_checks(project_id)
+                .into_iter()
+                .map(|(session_id, task_ids)| json!({ "sessionId": session_id, "taskIds": task_ids }))
+                .collect::<Vec<_>>(),
             "stateRevision": self.store.revision(),
         })
     }
@@ -122,8 +121,7 @@ impl CoreRuntime {
         Ok(self.project_manager_board(&project_id))
     }
 
-    /// Replaces a Task's sprint and tracked facts as the Project Manager
-    /// edited them.
+    /// Replaces a Task's sprint and what the Project Manager states about it.
     pub(crate) fn set_task_tracking_command(&mut self, params: Value) -> Result<Value, CoreError> {
         let task_id = required_string(&params, "taskId")?;
         let task = self.task_record(&task_id)?;
@@ -132,8 +130,6 @@ impl CoreRuntime {
             task_id: task.id.clone(),
             sprint_id: optional_text(&params, "sprintId")?,
             developer: optional_text(&params, "developer")?,
-            jira_status: optional_text(&params, "jiraStatus")?,
-            environments: environments(&params)?.unwrap_or_default(),
             blockers: optional_text(&params, "blockers")?,
             note: optional_text(&params, "note")?,
             updated_at_epoch_ms: termloop_platform::current_epoch_ms(),
@@ -194,7 +190,6 @@ impl CoreRuntime {
             task_id: task.id.clone(),
             sprint_id: optional_text(&params, "sprintId")?,
             developer: optional_text(&params, "developer")?,
-            jira_status: optional_text(&params, "jiraStatus")?,
             updated_at_epoch_ms: now,
             ..TaskTrackingRecord::default()
         };
@@ -255,6 +250,7 @@ impl CoreRuntime {
             termloop_domain::TicketAuthor::ProjectManager,
             Some(created),
             None,
+            false,
         )?;
         Ok(json!({
             "task": self.task_projection(&task)?,
@@ -340,47 +336,6 @@ impl CoreRuntime {
                 })
     }
 
-    /// Tasks of the active sprint that have no running Agent yet, and running
-    /// Agents of Tasks outside it. Their tracked facts stay either way.
-    pub fn project_manager_agent_reconciliation(
-        &self,
-        project_id: &str,
-    ) -> ProjectManagerAgentReconciliation {
-        if !self.is_project_manager_project(project_id) {
-            return ProjectManagerAgentReconciliation::default();
-        }
-        let mut plan = ProjectManagerAgentReconciliation::default();
-        for task in self
-            .store
-            .tasks()
-            .iter()
-            .filter(|task| task.project_id == project_id)
-        {
-            let sessions = self
-                .task_agent_session_ids_for_executor(project_id, &task.id)
-                .unwrap_or_default();
-            let live = self
-                .store
-                .sessions()
-                .iter()
-                .filter(|session| {
-                    sessions.contains(&session.id)
-                        && matches!(session.lifecycle_state.as_str(), "running" | "resuming")
-                })
-                .map(|session| session.id.clone())
-                .collect::<Vec<_>>();
-            if self.task_in_active_sprint(&task.id) {
-                if live.is_empty() {
-                    plan.start_task_ids.push(task.id.clone());
-                }
-            } else {
-                plan.stop_session_ids.extend(live);
-            }
-        }
-        plan.stop_session_ids.sort();
-        plan
-    }
-
     fn sprint_project_id(&self, sprint_id: &str) -> Result<String, CoreError> {
         self.store
             .project_sprints()
@@ -390,7 +345,7 @@ impl CoreRuntime {
             .ok_or(CoreError::NotFound)
     }
 
-    pub(super) fn task_record(&self, task_id: &str) -> Result<TaskRecord, CoreError> {
+    pub(crate) fn task_record(&self, task_id: &str) -> Result<TaskRecord, CoreError> {
         self.store
             .tasks()
             .iter()
@@ -414,12 +369,6 @@ pub(crate) fn tracking_json(record: &TaskTrackingRecord) -> Value {
         "taskId": record.task_id,
         "sprintId": record.sprint_id,
         "developer": record.developer,
-        "jiraStatus": record.jira_status,
-        "environments": record.environments.iter().map(|environment| json!({
-            "name": environment.name,
-            "state": environment.state,
-            "detail": environment.detail,
-        })).collect::<Vec<_>>(),
         "blockers": record.blockers,
         "note": record.note,
         "updatedAtEpochMs": record.updated_at_epoch_ms,
@@ -488,47 +437,6 @@ pub(super) fn bounded_text(
         return Err(CoreError::InvalidParams(key.into()));
     }
     Ok(value)
-}
-
-pub(crate) fn environments(
-    params: &Value,
-) -> Result<Option<Vec<TaskEnvironmentStatus>>, CoreError> {
-    let invalid = || CoreError::InvalidParams("environments".into());
-    let Some(values) = params.get("environments").filter(|value| !value.is_null()) else {
-        return Ok(None);
-    };
-    let values = values.as_array().ok_or_else(invalid)?;
-    if values.len() > TASK_ENVIRONMENTS_MAX {
-        return Err(invalid());
-    }
-    values
-        .iter()
-        .map(|value| {
-            let object = value.as_object().ok_or_else(invalid)?;
-            let name =
-                optional_text(&Value::Object(object.clone()), "name")?.ok_or_else(invalid)?;
-            let state = object
-                .get("state")
-                .cloned()
-                .map(serde_json::from_value::<EnvironmentDeployState>)
-                .transpose()
-                .map_err(|_| invalid())?
-                .unwrap_or_default();
-            let detail = optional_text(&Value::Object(object.clone()), "detail")?;
-            if object
-                .keys()
-                .any(|key| !matches!(key.as_str(), "name" | "state" | "detail"))
-            {
-                return Err(invalid());
-            }
-            Ok(TaskEnvironmentStatus {
-                name,
-                state,
-                detail,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Some)
 }
 
 #[cfg(test)]

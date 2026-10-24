@@ -195,7 +195,9 @@ impl CoreRuntime {
         };
         if session.ask_to_source_session_id.is_some()
             || session.improver_target.is_some()
-            || session.process.template_ref.as_deref() == Some(EVALUATOR_TEMPLATE)
+            || super::delivery_check::is_temporary_check_template(
+                session.process.template_ref.as_deref(),
+            )
             || self
                 .store
                 .steward_configurations()

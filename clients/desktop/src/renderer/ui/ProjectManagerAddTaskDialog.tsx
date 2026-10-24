@@ -79,7 +79,6 @@ export function ProjectManagerAddTaskDialog(props: {
       sprintId: sprintId || null,
       jiraUrl: copied?.url ?? null,
       developer: copied?.assigneeDisplay?.slice(0, 120) ?? null,
-      jiraStatus: copied?.statusName.slice(0, 120) ?? null,
     });
     setBusy(false);
     if (failure) setMessage(failure.includes("jiraUrl") ? "This Jira issue is already a Task here." : failure);

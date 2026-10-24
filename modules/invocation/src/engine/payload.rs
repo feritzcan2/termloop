@@ -16,6 +16,8 @@ pub enum AgentMcpProfile {
     Steward,
     Helper,
     PlaybookEvaluator,
+    /// A temporary delivery check in a Project opened as Project Manager.
+    DeliveryCheck,
 }
 
 impl AgentMcpProfile {
@@ -25,7 +27,7 @@ impl AgentMcpProfile {
         match self {
             Self::Interactive | Self::Improver => Some(&INTERACTIVE_AGENT_TEMPLATE),
             Self::ProjectManager => Some(&PROJECT_MANAGER_AGENT_TEMPLATE),
-            Self::Steward | Self::Helper | Self::PlaybookEvaluator => None,
+            Self::Steward | Self::Helper | Self::PlaybookEvaluator | Self::DeliveryCheck => None,
         }
     }
 }

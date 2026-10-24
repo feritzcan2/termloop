@@ -35,10 +35,7 @@ fn task(id: &str, project_id: &str) -> TaskRecord {
 
 #[test]
 fn sprints_keep_one_active_per_project_and_tracking_follows_tasks_and_sprints() {
-    use termloop_domain::{
-        EnvironmentDeployState, ProjectSprint, SprintState, TaskEnvironmentStatus,
-        TaskTrackingRecord,
-    };
+    use termloop_domain::{ProjectSprint, SprintState, TaskTrackingRecord};
     let path = std::env::temp_dir().join(format!(
         "termloop-store-sprints-{}-{}.json",
         std::process::id(),
@@ -84,11 +81,6 @@ fn sprints_keep_one_active_per_project_and_tracking_follows_tasks_and_sprints() 
         task_id: "task-a".into(),
         sprint_id: Some("2".into()),
         developer: Some("Ada".into()),
-        environments: vec![TaskEnvironmentStatus {
-            name: "Staging".into(),
-            state: EnvironmentDeployState::Deployed,
-            detail: None,
-        }],
         updated_at_epoch_ms: 5,
         ..TaskTrackingRecord::default()
     };
@@ -176,8 +168,6 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
     let content = |brief: &str| TaskTicketContent {
         title: "Ship CORS fix".into(),
         brief: Some(brief.into()),
-        developer: Some("Ada".into()),
-        ..TaskTicketContent::default()
     };
     let saved = store
         .save_task_ticket(
@@ -187,6 +177,7 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
             TicketAuthor::ProjectManager,
             None,
             Some(0),
+            false,
             10,
         )
         .unwrap();
@@ -196,7 +187,6 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
     assert_eq!(store.tasks()[0].brief.as_deref(), Some("First"));
     let tracking = store.task_tracking("task-a").unwrap();
     assert_eq!(tracking.sprint_id.as_deref(), Some("s1"));
-    assert_eq!(tracking.developer.as_deref(), Some("Ada"));
 
     assert!(matches!(
         store.save_task_ticket(
@@ -206,6 +196,7 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
             TicketAuthor::ProjectManager,
             None,
             Some(1),
+            false,
             11
         ),
         Err(StoreError::RevisionConflict)
@@ -220,6 +211,7 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
                 TicketAuthor::Agent,
                 None,
                 None,
+                false,
                 12
             )
             .unwrap(),
@@ -239,6 +231,7 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
                 TicketAuthor::Agent,
                 Some("Checked Jira".into()),
                 None,
+                false,
                 20 + index as u64,
             )
             .unwrap();
@@ -253,6 +246,160 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
     assert_eq!(store.task_ticket_versions().len(), TASK_TICKET_VERSIONS_MAX);
     store.delete_task(&authority, "task-a").unwrap();
     assert!(store.task_ticket_versions().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn accepting_a_proposal_saves_a_version_and_settles_the_proposal_in_one_commit() {
+    use termloop_domain::{TaskTicketContent, TaskTicketProposal, TicketAuthor};
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-proposals-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    store.insert_task(&authority, task("task-a", "pm")).unwrap();
+    let proposal = TaskTicketProposal {
+        task_id: "task-a".into(),
+        title: None,
+        brief: Some("## Status\n- Merged".into()),
+        summary: "PR #42 merged".into(),
+        base_version: 0,
+        proposed_at_epoch_ms: 3,
+    };
+    assert!(matches!(
+        store.set_task_ticket_proposal(
+            &authority,
+            TaskTicketProposal {
+                task_id: "missing".into(),
+                ..proposal.clone()
+            }
+        ),
+        Err(StoreError::NotFound)
+    ));
+    store
+        .set_task_ticket_proposal(&authority, proposal.clone())
+        .unwrap();
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .set_task_ticket_proposal(&authority, proposal.clone())
+            .unwrap(),
+        revision
+    );
+    let version = store
+        .save_task_ticket(
+            &authority,
+            "task-a",
+            TaskTicketContent {
+                title: "task-a".into(),
+                brief: proposal.brief.clone(),
+            },
+            TicketAuthor::Agent,
+            Some(proposal.summary.clone()),
+            Some(0),
+            true,
+            5,
+        )
+        .unwrap();
+    assert_eq!(version, 2, "the ticket as it was is version 1");
+    assert!(store.task_ticket_proposal("task-a").is_none());
+    store
+        .set_task_ticket_proposal(&authority, proposal)
+        .unwrap();
+    store
+        .remove_task_ticket_proposal(&authority, "task-a")
+        .unwrap();
+    assert!(matches!(
+        store.remove_task_ticket_proposal(&authority, "task-a"),
+        Err(StoreError::NotFound)
+    ));
+    store
+        .set_task_ticket_proposal(
+            &authority,
+            TaskTicketProposal {
+                task_id: "task-a".into(),
+                title: Some("Renamed".into()),
+                brief: None,
+                summary: "Clearer title".into(),
+                base_version: 1,
+                proposed_at_epoch_ms: 6,
+            },
+        )
+        .unwrap();
+    store.delete_task(&authority, "task-a").unwrap();
+    assert!(store.task_ticket_proposals().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn delivery_facts_replace_in_place_and_follow_their_task() {
+    use termloop_domain::{EnvironmentDeployState, FactSource, TaskDeliveryFacts};
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-facts-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    store.insert_task(&authority, task("task-a", "pm")).unwrap();
+    let mut facts = TaskDeliveryFacts {
+        task_id: "task-a".into(),
+        ..TaskDeliveryFacts::default()
+    };
+    facts.observe_jira("In Review".into(), Some("Ada".into()), 1);
+    facts.observe_environment(
+        "Staging",
+        EnvironmentDeployState::Deployed,
+        None,
+        FactSource::Probe,
+        1,
+    );
+    store
+        .set_task_delivery_facts(&authority, vec![facts.clone()])
+        .unwrap();
+    let revision = store.revision();
+    assert_eq!(
+        store
+            .set_task_delivery_facts(&authority, vec![facts.clone()])
+            .unwrap(),
+        revision,
+        "unchanged facts commit nothing"
+    );
+    let mut duplicate = facts.clone();
+    duplicate
+        .environments
+        .push(duplicate.environments[0].clone());
+    assert!(matches!(
+        store.set_task_delivery_facts(&authority, vec![duplicate]),
+        Err(StoreError::ConstraintViolation)
+    ));
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.task_delivery_facts_for("task-a"), Some(&facts));
+    store
+        .set_task_delivery_facts(
+            &authority,
+            vec![TaskDeliveryFacts {
+                task_id: "task-a".into(),
+                ..TaskDeliveryFacts::default()
+            }],
+        )
+        .unwrap();
+    assert!(
+        store.task_delivery_facts().is_empty(),
+        "empty facts are absent"
+    );
+    store
+        .set_task_delivery_facts(&authority, vec![facts])
+        .unwrap();
+    store
+        .delete_project_and_related_records(&authority, "pm")
+        .unwrap();
+    assert!(store.task_delivery_facts().is_empty());
     let _ = std::fs::remove_file(path);
 }
 

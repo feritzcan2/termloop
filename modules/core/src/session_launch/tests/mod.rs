@@ -2952,76 +2952,6 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
     }));
     drop(kickoff_plan);
 
-    // A Developer Project launches a Task Agent without a kickoff unchanged;
-    // a Project Manager Project opens the same launch with an investigation.
-    let task_agent_plan = |runtime: &CoreRuntime| {
-        let mut plan = runtime
-            .plan_agent_launch(json!({
-                "projectId": project["id"],
-                "cwd": root,
-                "agentId": "codex",
-                "model": "gpt-5.6-sol",
-                "permission": "default",
-                "reasoning": "high"
-            }))
-            .unwrap();
-        plan.task_guard = Some(TaskLaunchGuard {
-            task_id: task_id.into(),
-            managed_worktree_operation_id: task_id.into(),
-            worktree_generation: 1,
-            cwd: root.display().to_string(),
-            repository_common_dir: root.display().to_string(),
-            branch_ref: "refs/heads/termloop/linked-task".into(),
-        });
-        plan
-    };
-    let developer_plan = runtime
-        .attach_project_manager_investigation(task_agent_plan(&runtime), task_id)
-        .unwrap();
-    assert!(developer_plan.task_kickoff.is_none());
-    drop(developer_plan);
-    runtime
-        .handle("projectManager.modeSet", json!({"enabled": true}))
-        .unwrap();
-    let revision = runtime.state_revision();
-    runtime
-        .handle(
-            "project.modeSet",
-            json!({"projectId": project["id"], "mode": "projectManager", "expectedRevision": revision}),
-        )
-        .unwrap();
-    let investigation_plan = runtime
-        .attach_project_manager_investigation(task_agent_plan(&runtime), task_id)
-        .unwrap();
-    let investigation = resolve_interactive_agent_launch(&investigation_plan).unwrap();
-    assert_eq!(
-        investigation.provenance().template_ref,
-        "builtin.agent.task-investigation"
-    );
-    assert!(investigation.initial_input().is_some_and(|input| {
-        input.contains("task_status_record")
-            && input.contains("Jira: https://example.atlassian.net/browse/TERM-42")
-            && !input.contains("Project instructions:")
-    }));
-    drop(investigation_plan);
-    let configured = runtime
-        .attach_task_kickoff(
-            task_agent_plan(&runtime),
-            task_id,
-            "Watch the release train.",
-        )
-        .unwrap();
-    let configured = resolve_interactive_agent_launch(&configured).unwrap();
-    assert_eq!(
-        configured.provenance().template_ref,
-        "builtin.agent.task-investigation"
-    );
-    assert!(
-        configured.initial_input().is_some_and(|input| {
-            input.contains("Project instructions: Watch the release train.")
-        })
-    );
-
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -4062,7 +3992,7 @@ fn a_project_manager_project_launches_agents_under_the_project_manager_protocol(
         .unwrap();
     assert_eq!(
         protocol_source(&mut runtime).as_deref(),
-        Some("resources/prompts/builtin.agent.project-manager@3")
+        Some("resources/prompts/builtin.agent.project-manager@4")
     );
     let _ = std::fs::remove_dir_all(root);
 }

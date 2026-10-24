@@ -428,10 +428,10 @@ fn playbook_builder_adds_the_visible_delivery_policy_only_for_project_manager_pr
     let manager = manager.delivered_prompt().unwrap();
     assert!(manager.contains("This Project is opened as Project Manager"));
     assert!(manager.contains("deployed to each environment the Project really has"));
-    // The Task branch is only the Task Agent's tracking checkout, so the
-    // policy turns off every check that reads it.
+    // A Project Manager Task has no branch of its own, so the policy turns
+    // off the check that reads one.
     assert!(manager.contains("do not add the **Committed** first"));
-    assert!(manager.contains("`deterministicCheck` to `null` on every step"));
+    assert!(manager.contains("never use the\n`branchCommitted` check"));
     assert!(manager.contains(project_manager_playbook_policy_body()));
     // The policy only adds to the Developer prompt; nothing else changes.
     assert_eq!(
@@ -2086,7 +2086,7 @@ fn project_manager_profile_delivers_its_own_visible_protocol_with_interactive_to
             .expect("protocol part");
         assert_eq!(
             protocol.source,
-            "resources/prompts/builtin.agent.project-manager@3"
+            "resources/prompts/builtin.agent.project-manager@4"
         );
         assert_eq!(
             protocol.content,

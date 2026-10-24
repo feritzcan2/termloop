@@ -28,6 +28,76 @@ fn schema_65_reads_every_project_as_developer_without_inference() {
 }
 
 #[test]
+fn schema_69_moves_observed_tracking_into_facts_and_keeps_ticket_text_only() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-pm-facts-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 69, "revision": 9,
+            "projects": [{"id":"pm","name":"Demo","folder_path":"/tmp/demo"}],
+            "tasks": [
+                {"id":"task-a","project_id":"pm","title":"Ship","brief":null,"status":"open","branch":null,"worktree":null,"worktree_generation":0,"rank":0,
+                 "created_at_epoch_ms":1,"updated_at_epoch_ms":1},
+                {"id":"task-b","project_id":"pm","title":"Watch","brief":null,"status":"open","branch":null,"worktree":null,"worktree_generation":0,"rank":1,
+                 "created_at_epoch_ms":1,"updated_at_epoch_ms":1}
+            ],
+            "sessions": [],
+            "task_tracking_records": [
+                {"taskId":"task-a","developer":"Ada","jiraStatus":"In Review",
+                 "environments":[{"name":"Staging","state":"deployed","detail":"v1.4"}],
+                 "note":"Ask QA","updatedAtEpochMs":7},
+                {"taskId":"task-b","jiraStatus":"To Do","environments":[],"updatedAtEpochMs":8}
+            ],
+            "task_ticket_versions": [
+                {"taskId":"task-a","number":1,"author":"agent","summary":null,
+                 "content":{"title":"Ship","brief":"Goal","developer":"Ada","jiraStatus":"In Review",
+                            "environments":[],"blockers":null,"note":null},
+                 "createdAtEpochMs":7}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let store = Store::open(&path).unwrap();
+    let tracking = store.task_tracking("task-a").unwrap();
+    assert_eq!(tracking.developer.as_deref(), Some("Ada"));
+    assert_eq!(tracking.note.as_deref(), Some("Ask QA"));
+    assert!(
+        store.task_tracking("task-b").is_none(),
+        "a record that only held observed facts is gone"
+    );
+    let facts = store.task_delivery_facts_for("task-a").unwrap();
+    assert_eq!(facts.jira.as_ref().unwrap().status, "In Review");
+    assert_eq!(facts.environments[0].name, "Staging");
+    assert_eq!(
+        facts.environments[0].source,
+        termloop_domain::FactSource::Check
+    );
+    assert_eq!(
+        store
+            .task_delivery_facts_for("task-b")
+            .unwrap()
+            .jira
+            .as_ref()
+            .unwrap()
+            .status,
+        "To Do"
+    );
+    assert_eq!(
+        store.task_ticket_versions()[0].content.brief.as_deref(),
+        Some("Goal")
+    );
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(persisted["revision"], 9);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn schema_59_preserves_single_agent_automation_without_inferring_a_workflow() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-automation-workflow-{}.json",

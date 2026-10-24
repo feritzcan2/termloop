@@ -36,7 +36,7 @@ pub struct ProjectRepositoryPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ProjectRepository {
+pub(super) enum ProjectRepository {
     Github(termloop_providers::GitHubRepository),
     Azure(AzureRepository),
 }
@@ -128,7 +128,9 @@ impl ProjectRepositoryPlan {
     }
 }
 
-fn observe_repository(project_folder: &Path) -> Result<ProjectRepository, GitHostProjectionReason> {
+pub(super) fn observe_repository(
+    project_folder: &Path,
+) -> Result<ProjectRepository, GitHostProjectionReason> {
     GitRunner::discover_with_timeout(REMOTE_DEADLINE)
         .and_then(|runner| runner.observe_remotes_with_timeout(project_folder, REMOTE_DEADLINE))
         .map_err(|error| map_git_error(&error))

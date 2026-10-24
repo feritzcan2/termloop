@@ -58,11 +58,17 @@ mod project_mode;
 pub use project_mode::{ProjectMode, ProjectModeSetting};
 mod project_sprint;
 pub use project_sprint::{
-    EnvironmentDeployState, PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_ENVIRONMENTS_MAX,
-    TASK_TICKET_BRIEF_MAX_CHARS, TASK_TICKET_SUMMARY_MAX_CHARS, TASK_TICKET_TITLE_MAX_CHARS,
-    TASK_TICKET_VERSIONS_MAX, TASK_TRACKING_SHORT_MAX_CHARS, TASK_TRACKING_TEXT_MAX_BYTES,
-    TaskEnvironmentStatus, TaskTicketContent, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
-    valid_sprint_name,
+    PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_BRIEF_MAX_CHARS,
+    TASK_TICKET_SUMMARY_MAX_CHARS, TASK_TICKET_TITLE_MAX_CHARS, TASK_TICKET_VERSIONS_MAX,
+    TASK_TRACKING_SHORT_MAX_CHARS, TASK_TRACKING_TEXT_MAX_BYTES, TaskTicketContent,
+    TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor, valid_sprint_name,
+};
+mod project_delivery;
+pub use project_delivery::{
+    CheckNotes, EnvironmentDeployState, EnvironmentFact, FactReadFailure, FactSource, JiraFact,
+    PullRequestFact, PullRequestFactChecks, PullRequestFactState, PullRequestsFact,
+    TASK_CHECK_NOTES_MAX_BYTES, TASK_ENVIRONMENT_FACTS_MAX, TASK_PULL_REQUEST_FACTS_MAX,
+    TaskDeliveryFacts,
 };
 
 mod project_task_automation;
@@ -198,10 +204,10 @@ pub enum McpToolName {
     PlaybookStepRead,
     #[serde(rename = "playbook_step_report")]
     PlaybookStepReport,
-    #[serde(rename = "task_status_read")]
-    TaskStatusRead,
-    #[serde(rename = "task_status_record")]
-    TaskStatusRecord,
+    #[serde(rename = "delivery_check_read")]
+    DeliveryCheckRead,
+    #[serde(rename = "delivery_check_record")]
+    DeliveryCheckRecord,
 }
 
 impl McpToolName {
@@ -244,8 +250,8 @@ impl McpToolName {
         Self::AgentProfileCreate,
         Self::PlaybookStepRead,
         Self::PlaybookStepReport,
-        Self::TaskStatusRead,
-        Self::TaskStatusRecord,
+        Self::DeliveryCheckRead,
+        Self::DeliveryCheckRecord,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -288,8 +294,8 @@ impl McpToolName {
             Self::AgentProfileCreate => "agent_profile_create",
             Self::PlaybookStepRead => "playbook_step_read",
             Self::PlaybookStepReport => "playbook_step_report",
-            Self::TaskStatusRead => "task_status_read",
-            Self::TaskStatusRecord => "task_status_record",
+            Self::DeliveryCheckRead => "delivery_check_read",
+            Self::DeliveryCheckRecord => "delivery_check_record",
         }
     }
 }
@@ -339,8 +345,8 @@ impl std::str::FromStr for McpToolName {
             "agent_profile_create" => Ok(Self::AgentProfileCreate),
             "playbook_step_read" => Ok(Self::PlaybookStepRead),
             "playbook_step_report" => Ok(Self::PlaybookStepReport),
-            "task_status_read" => Ok(Self::TaskStatusRead),
-            "task_status_record" => Ok(Self::TaskStatusRecord),
+            "delivery_check_read" => Ok(Self::DeliveryCheckRead),
+            "delivery_check_record" => Ok(Self::DeliveryCheckRecord),
             _ => Err(()),
         }
     }
@@ -1551,8 +1557,8 @@ mod tests {
                 "agent_profile_create",
                 "playbook_step_read",
                 "playbook_step_report",
-                "task_status_read",
-                "task_status_record",
+                "delivery_check_read",
+                "delivery_check_record",
             ]
         );
         assert!("unknown".parse::<McpToolName>().is_err());

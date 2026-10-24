@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerEnvironmentSetParams, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -1537,36 +1537,8 @@ export function DesktopApp() {
       return message;
     }
   }, [admitRunSession]);
-  /// Project Manager Task commands. Each returns the failure to show beside
-  /// the Task, or undefined once the daemon accepted it.
+  /// Project Manager commands, addressed by Project.
   const projectManagerTaskActions = useMemo(() => ({
-    startTaskAgent: async (taskId: string, agentId?: string) => {
-      const capability = agentId
-        ? agentCapabilities.find((candidate) => candidate.agent_id === agentId && candidate.available)
-        : undefined;
-      if (agentId && !capability) return "The selected agent CLI is unavailable.";
-      const preset = capability && agentId
-        ? isQuickActionAgentId(agentId) ? readTaskAgentPreset(agentId) : defaultCapabilityLaunchPreset(capability)
-        : undefined;
-      try {
-        await sourceApiForTask(taskId).taskProjectManagerAgentStart({
-          taskId,
-          ...(agentId && preset ? { agentId, ...preset } : {}),
-        });
-        await refreshProjection();
-        return undefined;
-      } catch (error) {
-        return controlErrorMessage(error);
-      }
-    },
-    requestInvestigation: async (taskId: string) => {
-      try {
-        await sourceApiForTask(taskId).taskInvestigationRequest(taskId);
-        return undefined;
-      } catch (error) {
-        return controlErrorMessage(error);
-      }
-    },
     loadBoard: (projectId: string) => withControlError(sourceApiForProject(projectId).projectManagerBoardGet(projectId)),
     createSprint: (projectId: string, name: string, state?: SprintState) =>
       withControlError(sourceApiForProject(projectId).projectManagerSprintCreate({ projectId, name, ...(state ? { state } : {}) })),
@@ -1595,7 +1567,20 @@ export function DesktopApp() {
       await refreshProjection();
       return result;
     },
-  }), [agentCapabilities]);
+    requestCheck: (projectId: string, taskIds: string[] | null) =>
+      withControlError(sourceApiForProject(projectId).projectManagerCheckRequest({ projectId, taskIds })),
+    refreshFacts: (projectId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerFactsRefresh(projectId)),
+    setEnvironment: (projectId: string, params: ProjectManagerEnvironmentSetParams) =>
+      withControlError(sourceApiForProject(projectId).projectManagerEnvironmentSet(params)),
+    acceptProposal: async (projectId: string, taskId: string, expectedVersion: number | null) => {
+      const result = await withControlError(sourceApiForProject(projectId).projectManagerProposalAccept({ taskId, expectedVersion }));
+      await refreshProjection();
+      return result;
+    },
+    dismissProposal: (projectId: string, taskId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerProposalDismiss(taskId)),
+  }), []);
   const launchTaskAgent = useCallback(async (
     taskId: string,
     agentId: string,

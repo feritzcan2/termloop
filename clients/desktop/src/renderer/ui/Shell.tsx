@@ -11,7 +11,7 @@ import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
-import type { AgentAccountDto, ProjectMode } from "@termloop/contract/current";
+import type { AgentAccountDto, ProjectManagerBoardResult, ProjectMode } from "@termloop/contract/current";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { AgentAccountSwitcher } from "./AgentAccountSwitcher.js";
 import { TerminalStatus } from "./TerminalStatus.js";
@@ -256,7 +256,7 @@ export type ShellProps = {
   projectManagerSwitch?: ProjectManagerSwitchActions;
   /// Project Manager Task commands; present while the experimental mode can
   /// be used.
-  projectManagerTaskActions?: Pick<ProjectManagerWorkspaceActions, "startTaskAgent" | "requestInvestigation"> & ProjectManagerProjectActions;
+  projectManagerTaskActions?: ProjectManagerProjectActions;
   loadRepositoryPullRequests(
     projectId: string,
     filter: import("@termloop/contract/current").GitHostRepositoryPullRequestFilter,
@@ -1155,8 +1155,6 @@ export function Shell(props: ShellProps) {
     const projectId = projectManagerProjectId;
     return {
       loadPlaybook: props.assistantActions.getPlaybook,
-      startTaskAgent: pm.startTaskAgent,
-      requestInvestigation: pm.requestInvestigation,
       openTaskSources: () => openStagePage({ kind: "taskSettings" }),
       openPlaybookBuilder,
       openExternal: props.openExternal,
@@ -1170,6 +1168,11 @@ export function Shell(props: ShellProps) {
       saveTicket: (params) => pm.saveTicket(projectId, params),
       loadTicketVersions: (taskId) => pm.loadTicketVersions(projectId, taskId),
       restoreTicket: (taskId, number, expectedVersion) => pm.restoreTicket(projectId, taskId, number, expectedVersion),
+      requestCheck: (taskIds) => pm.requestCheck(projectId, taskIds),
+      refreshFacts: () => pm.refreshFacts(projectId),
+      setEnvironment: (params) => pm.setEnvironment(projectId, params),
+      acceptProposal: (taskId, expectedVersion) => pm.acceptProposal(projectId, taskId, expectedVersion),
+      dismissProposal: (taskId) => pm.dismissProposal(projectId, taskId),
     };
   }, [props.projectManagerTaskActions, projectManagerProjectId, props.assistantActions.getPlaybook, openStagePage, openPlaybookBuilder, props.openExternal]);
   const projectManagerBoard = useProjectManagerBoard(
@@ -1195,6 +1198,20 @@ export function Shell(props: ShellProps) {
         ? projectManagerBoard.apply(async () => (await projectManagerActions.restoreTicket(taskId, number, expectedVersion)).board)
         : Promise.resolve(undefined),
     [projectManagerActions, projectManagerBoard.apply],
+  );
+  const projectManagerBoardCommand = useCallback(
+    (operation: (actions: ProjectManagerWorkspaceActions) => Promise<ProjectManagerBoardResult>) =>
+      projectManagerActions ? projectManagerBoard.apply(() => operation(projectManagerActions)) : Promise.resolve(undefined),
+    [projectManagerActions, projectManagerBoard.apply],
+  );
+  /// Starts a delivery check and takes the board that now shows it running.
+  const requestProjectManagerCheck = useCallback(
+    (taskIds: string[] | null) => projectManagerBoardCommand(async (actions) => {
+      const result = await actions.requestCheck(taskIds);
+      if (result.status === "alreadyRunning") throw new Error("A running delivery check already covers these Tasks.");
+      return actions.loadBoard();
+    }),
+    [projectManagerBoardCommand],
   );
   const projectManagerPlaybook = useProjectManagerPlaybook(
     projectManagerActive && projectManagerActions ? projectManagerActions.loadPlaybook : noPlaybook,
@@ -1681,14 +1698,12 @@ export function Shell(props: ShellProps) {
           {projectManagerActive && projectManagerActions ? <ProjectManagerTaskList
             tasks={props.projectTasks}
             board={projectManagerBoard.board}
-            sessionsById={sessionsById}
-            statusesById={statusesById}
             milestones={projectManagerPlaybook.milestones}
             playbookRuntime={props.playbookRuntime}
             selectedTaskId={projectManagerTask?.id}
             disabled={disabled}
             select={(taskId) => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(taskId); }}
-            openAgent={(taskId, sessionId) => {
+            openCheck={(taskId, sessionId) => {
               setProjectManagerTaskId(taskId);
               selectSession(sessionId);
               setProjectManagerTerminal(true);
@@ -1706,12 +1721,12 @@ export function Shell(props: ShellProps) {
                   taskId,
                   sprintId,
                   developer: record?.developer ?? null,
-                  jiraStatus: record?.jiraStatus ?? null,
-                  environments: (record?.environments ?? []).map((environment) => ({ ...environment })),
                   blockers: record?.blockers ?? null,
                   note: record?.note ?? null,
                 });
               },
+              refreshFacts: () => projectManagerBoard.apply(() => projectManagerActions.refreshFacts()),
+              checkSprint: () => requestProjectManagerCheck(null),
             }}
           /> : <>
           <WorkspaceViewSwitch
@@ -2192,25 +2207,17 @@ export function Shell(props: ShellProps) {
               setTracking={setProjectManagerTracking}
               saveTicket={saveProjectManagerTicket}
               restoreTicket={restoreProjectManagerTicket}
+              setEnvironment={(params) => projectManagerBoardCommand((actions) => actions.setEnvironment(params))}
+              acceptProposal={(taskId, expectedVersion) => projectManagerBoardCommand(async (actions) => (await actions.acceptProposal(taskId, expectedVersion)).board)}
+              dismissProposal={(taskId) => projectManagerBoardCommand((actions) => actions.dismissProposal(taskId))}
+              requestCheck={requestProjectManagerCheck}
+              openCheck={(sessionId) => { selectSession(sessionId); setProjectManagerTerminal(true); }}
               addTask={() => setProjectManagerAddTask({ sprintId: projectManagerBoard.board?.sprints.find((sprint) => sprint.state === "active")?.id ?? null })}
-              sessionsById={sessionsById}
-              statusesById={statusesById}
               milestones={projectManagerPlaybook.milestones}
               playbookError={projectManagerPlaybook.error}
               playbookRuntime={props.playbookRuntime}
-              agents={props.agentCapabilities
-                .filter((capability) => capability.available)
-                .map((capability) => ({ id: capability.agent_id, label: capability.label }))}
               disabled={disabled}
               actions={projectManagerActions}
-              renderTerminal={(sessionId) => <AssistantTerminalHost
-                sessionId={sessionId}
-                session={sessionsById.get(sessionId)}
-                terminalPresentation={props.terminalPresentation}
-                bindTerminalHost={props.bindTerminalHost}
-                resumeSession={props.resumeSession}
-                repairProviderHistory={setProviderHistoryRepairSessionId}
-              />}
             /> : props.layout ? (
               <PaneTree
                 node={props.layout.root}
