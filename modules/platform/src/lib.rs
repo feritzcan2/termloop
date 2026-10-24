@@ -20,6 +20,7 @@ mod process_directory;
 mod process_tree;
 mod runtime;
 mod secure_credentials;
+mod shared_entries;
 // Catalog orchestration keeps CLI execution and filesystem discovery in
 // separate submodules behind this single platform-owned surface.
 mod skill_manager;
@@ -109,6 +110,10 @@ pub use runtime::{
 pub use secure_credentials::{
     NativeSecureCredentialStore, PersistentSecureCredentialStore, SecureCredentialError,
     SecureCredentialKey, SecureCredentialStore, SecureSecret, read_external_keychain_password,
+};
+pub use shared_entries::{
+    SharedEntryKind, SharedEntryOutcome, copy_shared_file, link_shared_directory, list_entry_names,
+    shared_entry_kind, write_shared_file,
 };
 pub use skill_manager::{
     SkillAgent, SkillAgentState, SkillAvailability, SkillCatalog, SkillCatalogItem,

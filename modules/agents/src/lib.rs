@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod account_context;
+mod claude_profile;
 pub use account_context::AgentAccountContext;
 
 mod catalog;

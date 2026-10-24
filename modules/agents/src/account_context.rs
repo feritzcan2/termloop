@@ -38,6 +38,16 @@ impl AgentAccountContext {
         Ok(())
     }
 
+    /// Before a launch, shares the server user's own provider setup with this
+    /// account's private folder. Best effort: it never fails a launch.
+    pub fn share_user_setup(&self) {
+        if let ("claude", Some(directory)) = (self.agent_id.as_str(), &self.config_directory)
+            && let Some(home) = termloop_platform::user_home_directory()
+        {
+            crate::claude_profile::share_user_setup(&home, directory);
+        }
+    }
+
     pub fn credential_args(&self) -> Vec<String> {
         if self.agent_id == "codex" && self.config_directory.is_some() {
             vec!["-c".into(), "cli_auth_credentials_store=\"file\"".into()]
