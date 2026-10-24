@@ -4,6 +4,7 @@ mod changes;
 mod delivery;
 mod jira_sprints;
 mod mode;
+mod probes;
 mod risks;
 mod sprint;
 mod ticket;
@@ -14,6 +15,7 @@ pub use changes::{
 };
 pub use jira_sprints::JiraSprintSyncPlan;
 pub(crate) use jira_sprints::JiraSprintSyncStatus;
+pub use probes::DeliveryCheckProbeProposal;
 
 use crate::{
     CodexRuntime, CoreError, CoreRuntime, ProjectDeleteBlocker, json_error, required_string,

@@ -19,17 +19,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use termloop_domain::{
     AgentConversationReadiness, AgentConversationReadinessRecord, CompanionMessage,
-    ConfigurationVersion, ConfigurationVersionSelection, DeletedSessionRecord, DurableAgentPlan,
-    IssueLink, KeepAwakePreference, ManagedWorktreeProof, McpToolDescriptionOverride,
-    PlaybookConfiguration, PlaybookStepProgress, ProjectModeSetting, ProjectRecord, ProjectSprint,
-    ProjectTaskAutomationConfiguration, RunConfiguration, RunSetupMark, SavedAgentLaunchSelection,
-    SessionArchiveOperation, SessionRecord, SessionRelocationOperation, SessionRelocationReceipt,
-    StewardConfiguration, StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension,
-    TaskBranchBinding, TaskBranchSet, TaskDeliveryFacts, TaskRecord, TaskSourceConfiguration,
-    TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TaskWorktreeBinding,
-    TrackerConfiguration, WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation,
-    WorktreeCleanupReceipt, WorktreeProvisioningOperation, WorktreeRepairOperation,
-    WorktreeRepairReceipt, WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    ConfigurationVersion, ConfigurationVersionSelection, DeletedSessionRecord, DeliveryProbe,
+    DurableAgentPlan, IssueLink, KeepAwakePreference, ManagedWorktreeProof,
+    McpToolDescriptionOverride, PlaybookConfiguration, PlaybookStepProgress, ProjectModeSetting,
+    ProjectRecord, ProjectSprint, ProjectTaskAutomationConfiguration, RunConfiguration,
+    RunSetupMark, SavedAgentLaunchSelection, SessionArchiveOperation, SessionRecord,
+    SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
+    StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
+    TaskBranchSet, TaskDeliveryFacts, TaskRecord, TaskSourceConfiguration, TaskTicketProposal,
+    TaskTicketVersion, TaskTrackingRecord, TaskWorktreeBinding, TrackerConfiguration,
+    WorkflowConfiguration, WorkflowExecution, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
+    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
 };
 
 // Schema 20 was independently assigned to Ask-To continuation and IssueLink
@@ -79,7 +80,8 @@ use termloop_domain::{
 // Version 70 separates observed Project Manager delivery facts and Agent ticket
 // proposals from the Project Manager's own tracking record and ticket.
 // Version 71 lets a sprint mirror a Jira sprint.
-const CURRENT_SCHEMA_VERSION: u32 = 71;
+// Version 72 adds Project Manager delivery probes.
+const CURRENT_SCHEMA_VERSION: u32 = 72;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -135,6 +137,8 @@ struct CurrentState {
     task_ticket_proposals: Vec<TaskTicketProposal>,
     #[serde(default)]
     task_delivery_facts: Vec<TaskDeliveryFacts>,
+    #[serde(default)]
+    delivery_probes: Vec<DeliveryProbe>,
     #[serde(default)]
     provisioning_operations: Vec<WorktreeProvisioningOperation>,
     #[serde(default)]
@@ -221,6 +225,7 @@ impl Default for CurrentState {
             task_ticket_versions: vec![],
             task_ticket_proposals: vec![],
             task_delivery_facts: vec![],
+            delivery_probes: vec![],
             provisioning_operations: vec![],
             managed_worktrees: vec![],
             cleanup_operations: vec![],
@@ -443,6 +448,9 @@ impl Store {
     }
     pub fn task_delivery_facts(&self) -> &[TaskDeliveryFacts] {
         &self.state.task_delivery_facts
+    }
+    pub fn delivery_probes(&self) -> &[DeliveryProbe] {
+        &self.state.delivery_probes
     }
     pub fn task_tracking_records(&self) -> &[TaskTrackingRecord] {
         &self.state.task_tracking_records

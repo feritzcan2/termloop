@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerEnvironmentSetParams, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerEnvironmentSetParams, ProjectManagerProbeCreateParams, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -1580,6 +1580,12 @@ export function DesktopApp() {
     },
     dismissProposal: (projectId: string, taskId: string) =>
       withControlError(sourceApiForProject(projectId).projectManagerProposalDismiss(taskId)),
+    createProbe: (projectId: string, params: Omit<ProjectManagerProbeCreateParams, "projectId">) =>
+      withControlError(sourceApiForProject(projectId).projectManagerProbeCreate({ projectId, ...params })),
+    approveProbe: (projectId: string, probeId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerProbeApprove(probeId)),
+    deleteProbe: (projectId: string, probeId: string) =>
+      withControlError(sourceApiForProject(projectId).projectManagerProbeDelete(probeId)),
   }), []);
   const launchTaskAgent = useCallback(async (
     taskId: string,

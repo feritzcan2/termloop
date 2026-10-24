@@ -60,6 +60,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || task_ticket_versions_are_invalid(state)
         || task_ticket_proposals_are_invalid(state)
         || task_delivery_facts_are_invalid(state)
+        || delivery_probes_are_invalid(state)
         || archive_records_are_invalid(state)
         || relocation_records_are_invalid(state)
         || state
@@ -771,6 +772,31 @@ fn task_ticket_proposals_are_invalid(state: &CurrentState) -> bool {
                 || state.task_ticket_proposals[index + 1..]
                     .iter()
                     .any(|candidate| candidate.task_id == proposal.task_id)
+        })
+}
+
+fn delivery_probes_are_invalid(state: &CurrentState) -> bool {
+    state
+        .delivery_probes
+        .iter()
+        .enumerate()
+        .any(|(index, probe)| {
+            !probe.is_valid()
+                || !state
+                    .projects
+                    .iter()
+                    .any(|project| project.id == probe.project_id)
+                || state.delivery_probes[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.id == probe.id)
+        })
+        || state.projects.iter().any(|project| {
+            state
+                .delivery_probes
+                .iter()
+                .filter(|probe| probe.project_id == project.id)
+                .count()
+                > termloop_domain::PROJECT_PROBES_MAX
         })
 }
 

@@ -64,6 +64,12 @@ pub use project_sprint::{
     TaskTicketContent, TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
     valid_sprint_name,
 };
+mod delivery_probe;
+pub use delivery_probe::{
+    DeliveryProbe, PROBE_ARGUMENT_MAX_BYTES, PROBE_ARGV_MAX, PROBE_ENVIRONMENT_MAX_CHARS,
+    PROBE_FAILURE_MAX_BYTES, PROBE_REASON_MAX_CHARS, PROJECT_PROBES_MAX, ProbeAuthor, ProbeMatcher,
+    ProbeRun, ProbeStatus, valid_commit, valid_probe_argv, valid_probe_environment,
+};
 mod project_delivery;
 pub use project_delivery::{
     CheckNotes, EnvironmentDeployState, EnvironmentFact, FactReadFailure, FactSource, JiraFact,

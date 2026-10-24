@@ -42,6 +42,7 @@ import type {
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerProposalAcceptParams,
+  ProjectManagerProbeCreateParams,
   ProjectManagerBoardResult,
   ProjectManagerJiraSearchParams,
   ProjectManagerJiraSearchResult,
@@ -356,6 +357,9 @@ export type DesktopApi = {
   projectManagerProposalDismiss(taskId: string): Promise<ProjectManagerBoardResult>;
   projectManagerCheckRequest(params: ProjectManagerCheckRequestParams): Promise<ProjectManagerCheckRequestResult>;
   projectManagerFactsRefresh(projectId: string): Promise<ProjectManagerBoardResult>;
+  projectManagerProbeCreate(params: ProjectManagerProbeCreateParams): Promise<ProjectManagerBoardResult>;
+  projectManagerProbeApprove(probeId: string): Promise<ProjectManagerBoardResult>;
+  projectManagerProbeDelete(probeId: string): Promise<ProjectManagerBoardResult>;
   projectManagerBoardGet(projectId: string): Promise<ProjectManagerBoardResult>;
   projectManagerSprintCreate(params: ProjectManagerSprintCreateParams): Promise<ProjectManagerBoardResult>;
   projectManagerSprintUpdate(params: ProjectManagerSprintUpdateParams): Promise<ProjectManagerBoardResult>;

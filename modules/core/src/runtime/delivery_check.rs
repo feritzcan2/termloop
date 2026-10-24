@@ -93,6 +93,9 @@ impl DeliveryCheck {
 pub struct DeliveryCheckReport {
     pub check_id: String,
     pub tasks: Vec<DeliveryCheckTaskReport>,
+    /// Probes the check found, which run only once the Project Manager
+    /// approves them.
+    pub probe_proposals: Vec<crate::project::DeliveryCheckProbeProposal>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -206,6 +209,7 @@ impl CoreRuntime {
             "reason": check.reason,
             "context": check.context,
             "tasks": tasks,
+            "probes": self.delivery_check_probes_json(&project.id),
         });
         if let Some(check) = self.delivery_checks.checks.get_mut(&check_id) {
             check.read = true;
@@ -247,9 +251,15 @@ impl CoreRuntime {
                 proposals.push(self.reported_proposal(&task.id, proposal, now_epoch_ms)?);
             }
         }
+        let probes = self.proposed_probes(&check.project_id, &report.probe_proposals)?;
         self.store
             .set_task_delivery_facts(&self.write_authority, facts)
             .map_err(store_error)?;
+        for probe in probes {
+            self.store
+                .create_delivery_probe(&self.write_authority, probe)
+                .map_err(store_error)?;
+        }
         for proposal in proposals {
             self.store
                 .set_task_ticket_proposal(&self.write_authority, proposal)

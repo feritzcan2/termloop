@@ -1173,6 +1173,9 @@ export function Shell(props: ShellProps) {
       setEnvironment: (params) => pm.setEnvironment(projectId, params),
       acceptProposal: (taskId, expectedVersion) => pm.acceptProposal(projectId, taskId, expectedVersion),
       dismissProposal: (taskId) => pm.dismissProposal(projectId, taskId),
+      createProbe: (params) => pm.createProbe(projectId, params),
+      approveProbe: (probeId) => pm.approveProbe(projectId, probeId),
+      deleteProbe: (probeId) => pm.deleteProbe(projectId, probeId),
     };
   }, [props.projectManagerTaskActions, projectManagerProjectId, props.assistantActions.getPlaybook, openStagePage, openPlaybookBuilder, props.openExternal]);
   const projectManagerBoard = useProjectManagerBoard(
@@ -2214,6 +2217,11 @@ export function Shell(props: ShellProps) {
               acceptProposal={(taskId, expectedVersion) => projectManagerBoardCommand(async (actions) => (await actions.acceptProposal(taskId, expectedVersion)).board)}
               dismissProposal={(taskId) => projectManagerBoardCommand((actions) => actions.dismissProposal(taskId))}
               requestCheck={requestProjectManagerCheck}
+              probes={{
+                create: (params) => projectManagerBoardCommand((actions) => actions.createProbe(params)),
+                approve: (probeId) => projectManagerBoardCommand((actions) => actions.approveProbe(probeId)),
+                remove: (probeId) => projectManagerBoardCommand((actions) => actions.deleteProbe(probeId)),
+              }}
               openCheck={(sessionId) => { selectSession(sessionId); setProjectManagerTerminal(true); }}
               addTask={() => setProjectManagerAddTask({ sprintId: projectManagerBoard.board?.sprints.find((sprint) => sprint.state === "active")?.id ?? null })}
               milestones={projectManagerPlaybook.milestones}

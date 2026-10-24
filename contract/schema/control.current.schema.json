@@ -468,6 +468,30 @@
         "$ref": "#/$defs/projectManagerBoardResult"
       }
     },
+    "projectManager.probeCreate": {
+      "params": {
+        "$ref": "#/$defs/projectManagerProbeCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.probeApprove": {
+      "params": {
+        "$ref": "#/$defs/probeIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
+    "projectManager.probeDelete": {
+      "params": {
+        "$ref": "#/$defs/probeIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/projectManagerBoardResult"
+      }
+    },
     "project.worktreeSummary": {
       "params": {
         "$ref": "#/$defs/projectIdParams"
@@ -2546,6 +2570,9 @@
         "projectManager.proposalDismiss",
         "projectManager.checkRequest",
         "projectManager.factsRefresh",
+        "projectManager.probeCreate",
+        "projectManager.probeApprove",
+        "projectManager.probeDelete",
         "project.worktreeSummary",
         "project.worktreeChangeList",
         "project.worktreeDiff",
@@ -4059,6 +4086,196 @@
         "jiraAhead"
       ]
     },
+    "probeMatcher": {
+      "x-codegen": true,
+      "x-codegen-name": "ProbeMatcher",
+      "description": "commitAncestry: the output names the deployed commit, and a Task is deployed when its merge commit is that commit or an ancestor. agent: only a delivery check can read the output; a change starts one.",
+      "type": "string",
+      "enum": [
+        "commitAncestry",
+        "agent"
+      ]
+    },
+    "deliveryProbeDto": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryProbeDto",
+      "description": "A command that reports what one environment runs. A proposed probe never runs until the Project Manager approves it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "environment",
+        "argv",
+        "matcher",
+        "status",
+        "author",
+        "reason",
+        "createdAtEpochMs",
+        "lastRun"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "matcher": {
+          "$ref": "#/$defs/probeMatcher"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "proposed",
+            "approved"
+          ]
+        },
+        "author": {
+          "type": "string",
+          "enum": [
+            "projectManager",
+            "agent"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 400
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "lastRun": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probeRunDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "probeRunDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProbeRunDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atEpochMs",
+        "changedAtEpochMs",
+        "deployedCommit",
+        "failure"
+      ],
+      "properties": {
+        "atEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "x-rust-type": "u64"
+        },
+        "changedAtEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedCommit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "failure": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        }
+      }
+    },
+    "projectManagerProbeCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerProbeCreateParams",
+      "description": "The Project Manager writes a probe; it is approved as written. argv runs without a shell in the Project folder.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "environment",
+        "argv",
+        "matcher"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "matcher": {
+          "$ref": "#/$defs/probeMatcher"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 400
+        }
+      }
+    },
+    "probeIdParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ProbeIdParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probeId"
+      ],
+      "properties": {
+        "probeId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "projectManagerEnvironmentSetParams": {
       "x-codegen": true,
       "x-codegen-name": "ProjectManagerEnvironmentSetParams",
@@ -4404,6 +4621,7 @@
         "facts",
         "tickets",
         "proposals",
+        "probes",
         "risks",
         "checks",
         "stateRevision"
@@ -4453,6 +4671,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/taskTicketProposalDto"
+          }
+        },
+        "probes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/deliveryProbeDto"
           }
         },
         "risks": {

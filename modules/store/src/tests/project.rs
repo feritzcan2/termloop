@@ -829,3 +829,88 @@ fn project_delete_blocks_only_worktrees_and_cascades_running_sessions() {
     );
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn delivery_probes_run_only_once_approved_and_go_with_their_project() {
+    use termloop_domain::{
+        DeliveryProbe, PROJECT_PROBES_MAX, ProbeAuthor, ProbeMatcher, ProbeRun, ProbeStatus,
+    };
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-probes-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    let probe = |id: &str| DeliveryProbe {
+        id: id.into(),
+        project_id: "pm".into(),
+        environment: "Staging".into(),
+        argv: vec![
+            "curl".into(),
+            "-s".into(),
+            "https://staging.example.com/version".into(),
+        ],
+        matcher: ProbeMatcher::CommitAncestry,
+        status: ProbeStatus::Proposed,
+        author: ProbeAuthor::Agent,
+        reason: Some("The version endpoint names the deployed commit".into()),
+        created_at_epoch_ms: 1,
+        last_run: None,
+    };
+    store
+        .create_delivery_probe(&authority, probe("p1"))
+        .unwrap();
+    let run = ProbeRun {
+        at_epoch_ms: 5,
+        output_hash: Some("a".repeat(64)),
+        changed_at_epoch_ms: Some(5),
+        deployed_commit: Some("abc1234".into()),
+        failure: None,
+    };
+    let argv = probe("p1").argv;
+    // A proposed probe never records a run.
+    assert!(matches!(
+        store.record_delivery_probe_run(&authority, "p1", &argv, run.clone()),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store.approve_delivery_probe(&authority, "p1").unwrap();
+    // A run of a command that changed since it was planned is dropped.
+    assert!(matches!(
+        store.record_delivery_probe_run(&authority, "p1", &["curl".into()], run.clone()),
+        Err(StoreError::ConstraintViolation)
+    ));
+    store
+        .record_delivery_probe_run(&authority, "p1", &argv, run.clone())
+        .unwrap();
+    assert_eq!(store.delivery_probes()[0].last_run.as_ref(), Some(&run));
+    assert!(matches!(
+        store.create_delivery_probe(
+            &authority,
+            DeliveryProbe {
+                argv: vec!["-rf".into()],
+                ..probe("bad")
+            }
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    for index in 1..PROJECT_PROBES_MAX {
+        store
+            .create_delivery_probe(&authority, probe(&format!("p{}", index + 1)))
+            .unwrap();
+    }
+    assert!(matches!(
+        store.create_delivery_probe(&authority, probe("one-too-many")),
+        Err(StoreError::ConstraintViolation)
+    ));
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    assert_eq!(store.delivery_probes().len(), PROJECT_PROBES_MAX);
+    store.delete_delivery_probe(&authority, "p2").unwrap();
+    store
+        .delete_project_and_related_records(&authority, "pm")
+        .unwrap();
+    assert!(store.delivery_probes().is_empty());
+    std::fs::remove_file(path).unwrap();
+}

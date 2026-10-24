@@ -1236,7 +1236,9 @@ async fn dispatch_inner(
             | "projectManager.sprintUpdate"
             | "projectManager.sprintDelete"
             | "projectManager.taskTrackingSet"
-            | "projectManager.taskCreate" => {
+            | "projectManager.taskCreate"
+            | "projectManager.probeCreate"
+            | "projectManager.probeApprove" => {
                 super::super::delivery_checks::project_manager_command(
                     &request.method,
                     request.params,

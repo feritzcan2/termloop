@@ -2,6 +2,7 @@ import type { DeliveryRiskDto, DeliveryRiskKind, ProjectManagerBoardResult } fro
 
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
+import { ProjectManagerProbes, type ProjectManagerProbeActions } from "./ProjectManagerProbes.js";
 import { relativeTime } from "./project-manager-ticket.js";
 import { jiraIssueKey } from "./ProjectManagerWorkspace.js";
 
@@ -60,6 +61,7 @@ export function ProjectManagerOverview(props: {
   select(taskId: string): void;
   checkSprint(): void;
   addTask(): void;
+  probes: ProjectManagerProbeActions;
 }) {
   const digest = projectManagerDigest(props.tasks, props.board);
   const stats: [string, number][] = [
@@ -106,5 +108,6 @@ export function ProjectManagerOverview(props: {
           </li>)}
         </ul>}
     </section>
+    <ProjectManagerProbes probes={props.board?.probes ?? []} disabled={props.disabled} actions={props.probes} />
   </div>;
 }

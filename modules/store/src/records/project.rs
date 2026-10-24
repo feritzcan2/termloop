@@ -157,6 +157,9 @@ impl Store {
             .task_source_configurations
             .retain(|source| source.project_id != project_id);
         self.state
+            .delivery_probes
+            .retain(|probe| probe.project_id != project_id);
+        self.state
             .project_task_automation_configurations
             .retain(|configuration| configuration.project_id != project_id);
         self.state

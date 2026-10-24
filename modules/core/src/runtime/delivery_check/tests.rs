@@ -105,6 +105,16 @@ fn report(check_id: &str, task_id: &str) -> DeliveryCheckReport {
                 summary: "Staging runs v1.4.2".into(),
             }),
         }],
+        probe_proposals: vec![crate::project::DeliveryCheckProbeProposal {
+            environment: "Staging".into(),
+            argv: vec![
+                "curl".into(),
+                "-s".into(),
+                "https://staging.example.com/version".into(),
+            ],
+            matcher: "commitAncestry".into(),
+            reason: "The version endpoint names the deployed commit".into(),
+        }],
     }
 }
 
@@ -176,6 +186,10 @@ fn a_delivery_check_runs_in_the_project_checkout_records_once_and_is_retired() {
     assert_eq!(staging.detail.as_deref(), Some("v1.4.2"));
     let notes = facts.check_notes.as_ref().unwrap();
     assert_eq!(notes.blockers.as_deref(), Some("Waiting for QA sign-off"));
+    // The probe it found waits for the Project Manager's approval.
+    let probe = &runtime.store.delivery_probes()[0];
+    assert_eq!(probe.status, termloop_domain::ProbeStatus::Proposed);
+    assert_eq!(probe.author, termloop_domain::ProbeAuthor::Agent);
     let proposal = runtime.store.task_ticket_proposal("task-1").unwrap();
     assert_eq!(proposal.summary, "Staging runs v1.4.2");
     assert_eq!(proposal.brief.as_deref(), Some("## Status\n- On staging"));

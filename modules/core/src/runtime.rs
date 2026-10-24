@@ -63,6 +63,9 @@ impl CoreRuntime {
             "projectManager.proposalAccept" => self.accept_ticket_proposal_command(params),
             "projectManager.proposalDismiss" => self.dismiss_ticket_proposal_command(params),
             "projectManager.environmentSet" => self.set_task_environment_command(params),
+            "projectManager.probeCreate" => self.create_probe_command(params),
+            "projectManager.probeApprove" => self.approve_probe_command(params),
+            "projectManager.probeDelete" => self.delete_probe_command(params),
             "project.updateDetails" => self.update_project_details(params),
             "project.delete" => {
                 let result = self.delete_project(params);

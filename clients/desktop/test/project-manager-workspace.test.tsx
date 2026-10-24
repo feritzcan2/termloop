@@ -20,6 +20,7 @@ import { ProjectManagerTicketHistory } from "../src/renderer/ui/ProjectManagerTi
 import { ProjectManagerAddTaskDialog } from "../src/renderer/ui/ProjectManagerAddTaskDialog.js";
 import { PROFILED_DESKTOP_OPERATIONS } from "../src/source-operations.js";
 import { projectManagerDigest } from "../src/renderer/ui/ProjectManagerOverview.js";
+import { argvText, commandArgv } from "../src/renderer/ui/ProjectManagerProbes.js";
 import { projectManagerLayoutActive } from "../src/renderer/ui/ProjectModeMenuItems.js";
 
 const NOW = 1_700_000_000_000;
@@ -103,6 +104,7 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
     facts: [facts()],
     tickets: [],
     proposals: [],
+    probes: [],
     risks: [],
     checks: [],
     stateRevision: 4,
@@ -124,6 +126,9 @@ function actions(overrides: Partial<ProjectManagerWorkspaceActions> = {}): Proje
     loadTicketVersions: vi.fn(async () => ({ taskId: "task-1", versions: [] })),
     restoreTicket: vi.fn(async () => ({ taskId: "task-1", version: 1, board: board() })),
     requestCheck: vi.fn(async () => ({ status: "started" as const, sessionId: "check-1", taskIds: ["task-1"] })),
+    createProbe: async () => board(),
+    approveProbe: async () => board(),
+    deleteProbe: async () => board(),
     refreshFacts: async () => board(),
     setEnvironment: async () => board(),
     acceptProposal: vi.fn(async () => ({ taskId: "task-1", version: 2, board: board() })),
@@ -217,6 +222,7 @@ function stageProps(overrides: Partial<StageProps> = {}): StageProps {
     dismissProposal: vi.fn(async () => undefined),
     requestCheck: vi.fn(async () => undefined),
     openCheck: vi.fn(),
+    probes: { create: vi.fn(async () => undefined), approve: vi.fn(async () => undefined), remove: vi.fn(async () => undefined) },
     selectTask: vi.fn(),
     addTask: vi.fn(),
     ...overrides,
@@ -606,5 +612,42 @@ describe("Project Manager workspace", () => {
     expect(host.querySelector(".pm-overview-count")?.textContent).toBe("1 need attention");
     await act(async () => host.querySelector<HTMLButtonElement>(".pm-overview-link")!.click());
     expect(selectOverview).toHaveBeenCalled();
+  });
+
+  it("splits a probe command without a shell and shows it back", () => {
+    expect(commandArgv(`curl -s "https://staging.example.com/version" -H 'Accept: text/plain'`)).toEqual([
+      "curl", "-s", "https://staging.example.com/version", "-H", "Accept: text/plain",
+    ]);
+    expect(commandArgv(`kubectl get deploy pay -o jsonpath='{.spec.template.spec.containers[0].image}'`).at(-1)).toBe("jsonpath={.spec.template.spec.containers[0].image}");
+    expect(commandArgv("echo ''")).toEqual(["echo", ""]);
+    expect(commandArgv("  ")).toEqual([]);
+    expect(argvText(["curl", "-H", "Accept: text/plain"])).toBe("curl -H 'Accept: text/plain'");
+  });
+
+  it("approves or rejects a proposed probe and adds the Project Manager's own", async () => {
+    const props = stageProps({
+      task: undefined,
+      board: board({
+        probes: [
+          { id: "p1", environment: "Production", argv: ["gh", "run", "list", "-w", "deploy-prod"], matcher: "agent", status: "proposed", author: "agent", reason: "The deploy workflow shows production", createdAtEpochMs: NOW, lastRun: null },
+          { id: "p2", environment: "Staging", argv: ["curl", "-s", "https://staging.example.com/version"], matcher: "commitAncestry", status: "approved", author: "projectManager", reason: null, createdAtEpochMs: NOW, lastRun: { atEpochMs: NOW, changedAtEpochMs: NOW, deployedCommit: "abc1234def5678", failure: null } },
+        ],
+      }),
+    });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    const rows = [...host.querySelectorAll(".pm-probe")];
+    expect(rows[0]!.textContent).toContain("Proposed by a delivery check: The deploy workflow shows production");
+    expect(rows[1]!.textContent).toContain("Runs abc1234def56");
+    await act(async () => button("Approve")!.click());
+    expect(props.probes.approve).toHaveBeenCalledWith("p1");
+    await act(async () => button("Reject")!.click());
+    expect(props.probes.remove).toHaveBeenCalledWith("p1");
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Probes"] .pm-chip')!.click());
+    await act(async () => type(host.querySelector<HTMLInputElement>('input[aria-label="Probe environment"]')!, "Dev"));
+    await act(async () => type(host.querySelector<HTMLInputElement>('input[aria-label="Probe command"]')!, "curl -s https://dev.example.com/version"));
+    await act(async () => host.querySelector<HTMLButtonElement>('.pm-probe-form button[type="submit"]')!.click());
+    expect(props.probes.create).toHaveBeenCalledWith({
+      environment: "Dev", argv: ["curl", "-s", "https://dev.example.com/version"], matcher: "commitAncestry",
+    });
   });
 });

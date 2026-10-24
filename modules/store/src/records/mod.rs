@@ -4,6 +4,7 @@ mod agent_plan;
 mod companion;
 pub(crate) mod configuration_version;
 mod deleted_session;
+mod delivery_probe;
 pub(crate) mod issue_link;
 mod keep_awake;
 mod mcp_settings;

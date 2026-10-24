@@ -85,7 +85,61 @@ pub(super) async fn refresh_facts(state: &AppState, project_id: &str) -> Result<
     if changed {
         publish_task_change(state).await;
     }
-    Ok(synced || changed)
+    let probed = run_probes(state, project_id).await?;
+    Ok(synced || changed || probed)
+}
+
+/// Runs a Project's approved probes outside the core lock, records what they
+/// saw, and starts a delivery check for each Agent probe whose output
+/// changed. A running check that covers the Tasks already takes the change.
+async fn run_probes(state: &AppState, project_id: &str) -> Result<bool, CoreError> {
+    let Some(plan) = state.core.lock().await.plan_probe_runs(project_id) else {
+        return Ok(false);
+    };
+    let (plan, observation) = tokio::task::spawn_blocking(move || {
+        let observation = plan.observe();
+        (plan, observation)
+    })
+    .await
+    .map_err(|_| CoreError::Store("Delivery probe run failed".into()))?;
+    let outcome =
+        state
+            .core
+            .lock()
+            .await
+            .apply_probe_runs(plan, observation, super::current_epoch_ms())?;
+    if outcome.changed {
+        publish_task_change(state).await;
+    }
+    for context in outcome.check_contexts {
+        let launch = state.core.lock().await.plan_delivery_check(
+            project_id,
+            None,
+            termloop_core::DeliveryCheckReason::ProbeChanged,
+            Some(context),
+        );
+        match launch {
+            Ok(Some(launch)) => {
+                let check_id = launch.check_id.clone();
+                if let Err(error) =
+                    super::agent_launch::execute_agent_launch(state, *launch.plan).await
+                {
+                    tracing::debug!(?error, "Probe-started delivery check deferred");
+                    state
+                        .core
+                        .lock()
+                        .await
+                        .fail_delivery_check_launch(&check_id);
+                    reap(state).await;
+                } else {
+                    publish_task_change(state).await;
+                }
+            }
+            Ok(None) => {}
+            Err(error) => tracing::debug!(?error, "Probe-started delivery check deferred"),
+        }
+    }
+    Ok(outcome.changed)
 }
 
 /// Mirrors a Project's Jira sprints and copies its active sprint's new
@@ -233,6 +287,19 @@ pub(super) async fn record(
                     }
                 }),
             })
+            .collect(),
+        probe_proposals: params
+            .probe_proposals
+            .unwrap_or_default()
+            .into_iter()
+            .map(
+                |proposal| termloop_core::project::DeliveryCheckProbeProposal {
+                    environment: proposal.environment,
+                    argv: proposal.argv,
+                    matcher: proposal.matcher,
+                    reason: proposal.reason,
+                },
+            )
             .collect(),
     };
     let recorded =

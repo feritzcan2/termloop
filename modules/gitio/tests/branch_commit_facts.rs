@@ -549,3 +549,39 @@ fn lists_branch_commits_and_renders_exact_literal_and_rename_paths_without_index
     assert!(!patch.contains("A1_ONLY"));
     assert_eq!(before, repository.index_snapshot(repository.root()));
 }
+
+#[test]
+fn commit_ancestry_answers_contained_not_contained_and_unknown() {
+    let repository = TestRepository::init("commit-ancestry");
+    repository.create_commit("first");
+    let head = |repository: &TestRepository| {
+        String::from_utf8(repository.git(["rev-parse", "HEAD"]).stdout)
+            .unwrap()
+            .trim()
+            .to_owned()
+    };
+    let first = head(&repository);
+    repository.create_commit("second");
+    let second = head(&repository);
+    let git = GitRunner::discover().unwrap();
+    assert_eq!(
+        git.commit_contains(repository.root(), &second, &first[..12])
+            .unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        git.commit_contains(repository.root(), &first, &second)
+            .unwrap(),
+        Some(false)
+    );
+    assert_eq!(
+        git.commit_contains(repository.root(), &second, &"0".repeat(40))
+            .unwrap(),
+        None,
+        "a commit the repository does not have is unknown"
+    );
+    assert!(
+        git.commit_contains(repository.root(), &second, "--help")
+            .is_err()
+    );
+}

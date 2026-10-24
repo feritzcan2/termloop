@@ -380,3 +380,22 @@
 .pm-overview-link:hover { background: var(--bg-hover); color: var(--text); }
 .pm-overview-link.selected { border-color: rgba(102,179,255,.22); background: var(--accent-wash); color: var(--text); }
 .pm-overview-count { margin-left: auto; color: var(--warning); font: 10.5px/1.3 var(--font-ui); }
+
+/* Delivery probes. */
+.pm-probes { display: grid; gap: 8px; }
+.pm-probes h3 { margin: 0; color: var(--td-text); font: 650 14px/1.3 var(--font-ui); }
+.pm-probes > .pm-muted { margin: 0; font: 12px/1.45 var(--font-ui); }
+.pm-probe-form { display: grid; grid-template-columns: minmax(110px,.6fr) minmax(0,2fr) minmax(140px,.8fr) auto auto; gap: 6px; }
+.pm-probe-form input, .pm-probe-form select { height: 28px; min-width: 0; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: light-dark(#f8fafc, #24282b); color: var(--td-text); font: 12.5px/1 var(--font-ui); }
+.pm-probe-form .pm-probe-command { font-family: var(--font-mono); }
+.pm-probe-rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pm-probe { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; }
+.pm-probe.proposed { border-color: rgba(167,139,250,.45); background: rgba(167,139,250,.06); }
+.pm-probe-main { display: grid; gap: 3px; min-width: 0; font: 12px/1.45 var(--font-ui); }
+.pm-probe-main strong { color: var(--td-text); font-weight: 650; }
+.pm-probe-main code { overflow-wrap: anywhere; color: var(--td-body); font: 11.5px/1.45 var(--font-mono); }
+.pm-probe-state { color: var(--td-body); }
+.pm-probe-actions { display: flex; flex: none; gap: 6px; }
+@media (max-width: 720px) {
+  .pm-probe-form { grid-template-columns: minmax(0,1fr); }
+}

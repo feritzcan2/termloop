@@ -621,6 +621,17 @@ handleIpc(
 handleIpc("termloop:project-manager-facts-refresh", (_event, projectId: string) =>
   controlCall("projectManager.factsRefresh", { projectId }),
 );
+handleIpc(
+  "termloop:project-manager-probe-create",
+  (_event, params: import("@termloop/contract/current").ProjectManagerProbeCreateParams) =>
+    controlCall("projectManager.probeCreate", params),
+);
+handleIpc("termloop:project-manager-probe-approve", (_event, probeId: string) =>
+  controlCall("projectManager.probeApprove", { probeId }),
+);
+handleIpc("termloop:project-manager-probe-delete", (_event, probeId: string) =>
+  controlCall("projectManager.probeDelete", { probeId }),
+);
 handleIpc("termloop:project-manager-board-get", (_event, projectId: string) =>
   controlCall("projectManager.boardGet", { projectId }),
 );

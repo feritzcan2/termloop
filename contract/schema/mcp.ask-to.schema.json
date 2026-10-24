@@ -679,7 +679,7 @@
       }
     },
     "delivery_check_record": {
-      "description": "Record this delivery check's one report after delivery_check_read, copying its checkId. For each Task you checked give environments (each with state deployed, inProgress, notDeployed, or unknown, and short detail such as a version, run, or date), blockers or null, notesMarkdown with your findings under ## Observed (with sources), ## Inferred, and ## Unknown, and a ticketProposal only when the ticket should change. Do not record the Jira status or pull requests; TermLoop reads them itself. invalidArguments means nothing was recorded: correct the arguments and retry. Stop after an accepted report or on staleCheck.",
+      "description": "Record this delivery check's one report after delivery_check_read, copying its checkId. For each Task you checked give environments (each with state deployed, inProgress, notDeployed, or unknown, and short detail such as a version, run, or date), blockers or null, notesMarkdown with your findings under ## Observed (with sources), ## Inferred, and ## Unknown, and a ticketProposal only when the ticket should change. When you found a read-only command that reliably reports what an environment runs, add it to probeProposals. Do not record the Jira status or pull requests; TermLoop reads them itself. invalidArguments means nothing was recorded: correct the arguments and retry. Stop after an accepted report or on staleCheck.",
       "role": "deliveryCheck",
       "params": {
         "$ref": "#/$defs/deliveryCheckRecordParams"
@@ -2296,6 +2296,14 @@
           "items": {
             "$ref": "#/$defs/deliveryCheckTaskReport"
           }
+        },
+        "probeProposals": {
+          "description": "Commands that report what an environment runs, proposed for TermLoop to run on a schedule once the project manager approves them. Propose only a read-only command you ran successfully, and none that is already listed in delivery_check_read probes.",
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/deliveryCheckProbeProposal"
+          }
         }
       }
     },
@@ -2416,6 +2424,49 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200
+        }
+      }
+    },
+    "deliveryCheckProbeProposal": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryCheckProbeProposal",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "argv",
+        "matcher",
+        "reason"
+      ],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "argv": {
+          "description": "The program and its arguments, run without a shell in the Project folder.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "matcher": {
+          "description": "commitAncestry when the output names the deployed commit SHA; otherwise agent.",
+          "type": "string",
+          "enum": [
+            "commitAncestry",
+            "agent"
+          ]
+        },
+        "reason": {
+          "description": "Why this output tells the environment's state.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
         }
       }
     },

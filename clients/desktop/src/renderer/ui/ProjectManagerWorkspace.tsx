@@ -6,6 +6,7 @@ import type {
   ProjectManagerBoardResult,
   ProjectManagerCheckRequestResult,
   ProjectManagerEnvironmentSetParams,
+  ProjectManagerProbeCreateParams,
   ProjectManagerJiraSearchResult,
   ProjectManagerTaskCreateParams,
   ProjectManagerTaskCreateResult,
@@ -18,6 +19,7 @@ import type {
 
 import type { Task } from "../model.js";
 import { ProjectManagerOverview } from "./ProjectManagerOverview.js";
+import type { ProjectManagerProbeActions } from "./ProjectManagerProbes.js";
 import { ProjectManagerTicket } from "./ProjectManagerTicket.js";
 
 export type ProjectManagerWorkspaceActions = {
@@ -45,6 +47,10 @@ export type ProjectManagerWorkspaceActions = {
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(taskId: string): Promise<ProjectManagerBoardResult>;
+  /// Writes a probe, approved as written.
+  createProbe(params: Omit<ProjectManagerProbeCreateParams, "projectId">): Promise<ProjectManagerBoardResult>;
+  approveProbe(probeId: string): Promise<ProjectManagerBoardResult>;
+  deleteProbe(probeId: string): Promise<ProjectManagerBoardResult>;
 };
 
 /// The same commands addressed by Project, as the composition provides them.
@@ -64,6 +70,9 @@ export type ProjectManagerProjectActions = {
   setEnvironment(projectId: string, params: ProjectManagerEnvironmentSetParams): Promise<ProjectManagerBoardResult>;
   acceptProposal(projectId: string, taskId: string, expectedVersion: number | null): Promise<ProjectManagerTicketSaveResult>;
   dismissProposal(projectId: string, taskId: string): Promise<ProjectManagerBoardResult>;
+  createProbe(projectId: string, params: Omit<ProjectManagerProbeCreateParams, "projectId">): Promise<ProjectManagerBoardResult>;
+  approveProbe(projectId: string, probeId: string): Promise<ProjectManagerBoardResult>;
+  deleteProbe(projectId: string, probeId: string): Promise<ProjectManagerBoardResult>;
 };
 
 export function errorText(error: unknown): string {
@@ -199,6 +208,8 @@ export function ProjectManagerStage(props: {
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
   dismissProposal(taskId: string): Promise<string | undefined>;
   requestCheck(taskIds: string[] | null): Promise<string | undefined>;
+  /// Probe commands, each taking the returned board.
+  probes: ProjectManagerProbeActions;
   /// Opens a running delivery check's terminal in place of the Task page.
   openCheck(sessionId: string): void;
   selectTask(taskId: string): void;
@@ -245,6 +256,7 @@ export function ProjectManagerStage(props: {
         disabled={props.disabled}
         select={props.selectTask}
         checkSprint={() => void props.requestCheck(null)}
+        probes={props.probes}
         addTask={props.addTask}
       />}
     </section>
