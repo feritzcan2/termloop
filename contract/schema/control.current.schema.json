@@ -4006,6 +4006,59 @@
         }
       }
     },
+    "deliveryRiskDto": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryRiskDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "kind",
+        "detail",
+        "sinceEpochMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/deliveryRiskKind"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "sinceEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "deliveryRiskKind": {
+      "x-codegen": true,
+      "x-codegen-name": "DeliveryRiskKind",
+      "type": "string",
+      "enum": [
+        "blocked",
+        "readFailed",
+        "reviewStalled",
+        "checksFailing",
+        "mergedNotDeployed",
+        "notInProduction",
+        "jiraBehind",
+        "jiraAhead"
+      ]
+    },
     "projectManagerEnvironmentSetParams": {
       "x-codegen": true,
       "x-codegen-name": "ProjectManagerEnvironmentSetParams",
@@ -4351,6 +4404,7 @@
         "facts",
         "tickets",
         "proposals",
+        "risks",
         "checks",
         "stateRevision"
       ],
@@ -4399,6 +4453,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/taskTicketProposalDto"
+          }
+        },
+        "risks": {
+          "description": "What may keep each open Task from delivery, derived from its facts and the Project Manager's record on every read; most pressing first per Task.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryRiskDto"
           }
         },
         "checks": {

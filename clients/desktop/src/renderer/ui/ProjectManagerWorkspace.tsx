@@ -17,6 +17,7 @@ import type {
 } from "@termloop/contract/current";
 
 import type { Task } from "../model.js";
+import { ProjectManagerOverview } from "./ProjectManagerOverview.js";
 import { ProjectManagerTicket } from "./ProjectManagerTicket.js";
 
 export type ProjectManagerWorkspaceActions = {
@@ -181,6 +182,8 @@ export function visibleProjectManagerTasks(tasks: readonly Task[], query: string
 /// beside the Playbook.
 export function ProjectManagerStage(props: {
   task: Task | undefined;
+  /// The Project's Tasks, for the sprint overview shown without a Task.
+  tasks: readonly Task[];
   board: ProjectManagerBoardResult | null;
   milestones: readonly PlaybookMilestoneDto[];
   playbookError: string | undefined;
@@ -195,9 +198,10 @@ export function ProjectManagerStage(props: {
   setEnvironment(params: ProjectManagerEnvironmentSetParams): Promise<string | undefined>;
   acceptProposal(taskId: string, expectedVersion: number | null): Promise<string | undefined>;
   dismissProposal(taskId: string): Promise<string | undefined>;
-  requestCheck(taskIds: string[]): Promise<string | undefined>;
+  requestCheck(taskIds: string[] | null): Promise<string | undefined>;
   /// Opens a running delivery check's terminal in place of the Task page.
   openCheck(sessionId: string): void;
+  selectTask(taskId: string): void;
   addTask(): void;
 }) {
   const { task, milestones, actions, board } = props;
@@ -218,6 +222,7 @@ export function ProjectManagerStage(props: {
         facts={board?.facts.find((facts) => facts.taskId === task.id)}
         proposal={board?.proposals.find((proposal) => proposal.taskId === task.id)}
         check={projectManagerTaskCheck(task.id, board)}
+        risks={board?.risks.filter((risk) => risk.taskId === task.id) ?? []}
         head={board?.tickets.find((head) => head.taskId === task.id)}
         sprints={sprints}
         activeSprint={activeSprint}
@@ -234,11 +239,14 @@ export function ProjectManagerStage(props: {
         dismissProposal={props.dismissProposal}
         requestCheck={props.requestCheck}
         openCheck={props.openCheck}
-      /> : <div className="pm-placeholder">
-        <h2>No Task selected</h2>
-        <p>Plan Tasks into sprints. TermLoop reads Jira and pull requests for the active sprint's Tasks; a delivery check looks at the rest when you ask.</p>
-        <button type="button" className="primary-button" onClick={props.addTask}>Add Task</button>
-      </div>}
+      /> : <ProjectManagerOverview
+        tasks={props.tasks}
+        board={board}
+        disabled={props.disabled}
+        select={props.selectTask}
+        checkSprint={() => void props.requestCheck(null)}
+        addTask={props.addTask}
+      />}
     </section>
     <aside className="pm-playbook" aria-label="Playbook">
       <header>

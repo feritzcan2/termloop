@@ -82,6 +82,8 @@ export function ProjectManagerTaskList(props: {
   selectedTaskId: string | undefined;
   disabled: boolean;
   select(taskId: string): void;
+  /// Shows the sprint overview in place of a Task.
+  selectOverview(): void;
   /// Opens a running delivery check's terminal in place of the Task page.
   openCheck(taskId: string, sessionId: string): void;
   /// The check terminal currently filling the stage, if any.
@@ -146,7 +148,7 @@ export function ProjectManagerTaskList(props: {
         const selected = task.id === props.selectedTaskId && !terminalOpen;
         const detail = [record?.developer ?? facts.get(task.id)?.jira?.assignee, facts.get(task.id)?.jira?.status]
           .filter(Boolean).join(" · ") || null;
-        const failing = (facts.get(task.id)?.readFailures.length ?? 0) > 0;
+        const risks = (props.board?.risks ?? []).filter((risk) => risk.taskId === task.id);
         return <li key={task.id}>
           <button
             type="button"
@@ -160,7 +162,7 @@ export function ProjectManagerTaskList(props: {
             <span className="pm-task-key">{jiraIssueKey(task.jira_url) ?? "Local"}</span>
             <span className="pm-task-title">{task.title}</span>
             {detail ? <span className="pm-task-agent">{detail}</span> : null}
-            {failing ? <span className="pm-task-failing" title="A read failed; the facts may be stale"><Icon name="alert" /></span> : null}
+            {risks.length > 0 ? <span className="pm-task-failing" title={risks.map((risk) => risk.detail).join("\n")} aria-label={`${risks.length} risk${risks.length === 1 ? "" : "s"}`}><Icon name="alert" /></span> : null}
             {active && step ? <span className="pm-task-step">{step}</span> : null}
           </button>
           {check ? <button
@@ -214,6 +216,15 @@ export function ProjectManagerTaskList(props: {
         : <>Sprints follow {sprintSync.sourceName}{sprintSync.syncedAtEpochMs ? ` · read ${relativeTime(sprintSync.syncedAtEpochMs)}` : " · not read yet"}</>}
     </p> : null}
     {message ? <p className="form-error pm-list-error" role="alert">{message}</p> : null}
+    <button
+      type="button"
+      className={`pm-overview-link${props.selectedTaskId === undefined && !props.terminalSessionId ? " selected" : ""}`}
+      aria-current={props.selectedTaskId === undefined && !props.terminalSessionId ? "true" : undefined}
+      onClick={props.selectOverview}
+    >
+      <Icon name="task" /><span>Overview</span>
+      {(props.board?.risks.length ?? 0) > 0 ? <span className="pm-overview-count">{new Set(props.board!.risks.map((risk) => risk.taskId)).size} need attention</span> : null}
+    </button>
     <div className="pm-sprints">
       {groups.active ? section(groups.active) : null}
       {groups.planned.map((group) => section(group))}

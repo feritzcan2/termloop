@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:9341648be56af9e4229cac473bbe05a05f11c421756b55a78427001ce1bb1ce6";
+    "sha256:3aa39bffc1bfd9cd63ea58fa5ae0fd081c0898914389b49564015ce2a701c386";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1596,6 +1596,40 @@ pub struct DeliveryCheckDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct DeliveryRiskDto {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub kind: DeliveryRiskKind,
+    pub detail: String,
+    #[serde(
+        rename = "sinceEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub since_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DeliveryRiskKind {
+    #[serde(rename = "blocked")]
+    Blocked,
+    #[serde(rename = "readFailed")]
+    ReadFailed,
+    #[serde(rename = "reviewStalled")]
+    ReviewStalled,
+    #[serde(rename = "checksFailing")]
+    ChecksFailing,
+    #[serde(rename = "mergedNotDeployed")]
+    MergedNotDeployed,
+    #[serde(rename = "notInProduction")]
+    NotInProduction,
+    #[serde(rename = "jiraBehind")]
+    JiraBehind,
+    #[serde(rename = "jiraAhead")]
+    JiraAhead,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectManagerEnvironmentSetParams {
     #[serde(rename = "taskId")]
     pub task_id: String,
@@ -1729,6 +1763,7 @@ pub struct ProjectManagerBoardResult {
     pub facts: Vec<TaskDeliveryFactsDto>,
     pub tickets: Vec<TaskTicketHeadDto>,
     pub proposals: Vec<TaskTicketProposalDto>,
+    pub risks: Vec<DeliveryRiskDto>,
     pub checks: Vec<DeliveryCheckDto>,
     #[serde(rename = "stateRevision")]
     pub state_revision: u64,
@@ -12999,6 +13034,65 @@ fn validate_delivery_check_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_delivery_risk_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object
+                .get("kind")
+                .is_some_and(|field| validate_delivery_risk_kind(field))
+            && object.get("detail").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 400)
+            })
+            && object.get("sinceEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object
+                .keys()
+                .all(|key| ["taskId", "kind", "detail", "sinceEpochMs"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_delivery_risk_kind(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "blocked",
+            "readFailed",
+            "reviewStalled",
+            "checksFailing",
+            "mergedNotDeployed",
+            "notInProduction",
+            "jiraBehind",
+            "jiraAhead",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_project_manager_environment_set_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object
@@ -13341,6 +13435,11 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                         .all(|item| validate_task_ticket_proposal_dto(item))
                 })
             })
+            && object.get("risks").is_some_and(|field| {
+                field
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(|item| validate_delivery_risk_dto(item)))
+            })
             && object.get("checks").is_some_and(|field| {
                 field
                     .as_array()
@@ -13361,6 +13460,7 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     "facts",
                     "tickets",
                     "proposals",
+                    "risks",
                     "checks",
                     "stateRevision",
                 ]

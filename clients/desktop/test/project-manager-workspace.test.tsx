@@ -19,6 +19,7 @@ import { jiraWikiToMarkdown, sameTicket, ticketDraft, ticketFieldChanges, ticket
 import { ProjectManagerTicketHistory } from "../src/renderer/ui/ProjectManagerTicketHistory.js";
 import { ProjectManagerAddTaskDialog } from "../src/renderer/ui/ProjectManagerAddTaskDialog.js";
 import { PROFILED_DESKTOP_OPERATIONS } from "../src/source-operations.js";
+import { projectManagerDigest } from "../src/renderer/ui/ProjectManagerOverview.js";
 import { projectManagerLayoutActive } from "../src/renderer/ui/ProjectModeMenuItems.js";
 
 const NOW = 1_700_000_000_000;
@@ -102,6 +103,7 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
     facts: [facts()],
     tickets: [],
     proposals: [],
+    risks: [],
     checks: [],
     stateRevision: 4,
     ...overrides,
@@ -200,6 +202,7 @@ type StageProps = Parameters<typeof ProjectManagerStage>[0];
 function stageProps(overrides: Partial<StageProps> = {}): StageProps {
   return {
     task: task(),
+    tasks: [task()],
     board: board(),
     milestones: milestones as never,
     playbookError: undefined,
@@ -214,6 +217,7 @@ function stageProps(overrides: Partial<StageProps> = {}): StageProps {
     dismissProposal: vi.fn(async () => undefined),
     requestCheck: vi.fn(async () => undefined),
     openCheck: vi.fn(),
+    selectTask: vi.fn(),
     addTask: vi.fn(),
     ...overrides,
   };
@@ -242,6 +246,7 @@ describe("Project Manager workspace", () => {
       selectedTaskId="task-1"
       disabled={false}
       select={select}
+      selectOverview={vi.fn()}
       openCheck={openCheck}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
@@ -295,6 +300,7 @@ describe("Project Manager workspace", () => {
       selectedTaskId={undefined}
       disabled={false}
       select={vi.fn()}
+      selectOverview={vi.fn()}
       openCheck={vi.fn()}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
@@ -325,6 +331,7 @@ describe("Project Manager workspace", () => {
       selectedTaskId={undefined}
       disabled={false}
       select={vi.fn()}
+      selectOverview={vi.fn()}
       openCheck={vi.fn()}
       terminalSessionId={undefined}
       openTaskSources={vi.fn()}
@@ -543,5 +550,61 @@ describe("Project Manager workspace", () => {
     expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value).toBe("Checkout times out");
     expect(host.querySelector(".pm-md")?.textContent).toContain("Users wait at checkout.");
     expect(host.querySelector(".pm-save-bar")).toBeNull();
+  });
+
+  it("counts the active sprint and lists the Tasks that need attention", async () => {
+    const tasks = [task(), task({ id: "task-2", title: "Planned work", rank: 2 }), task({ id: "task-4", title: "Stuck", jira_url: null, rank: 4 })];
+    const risky = board({
+      tracking: [
+        ...board().tracking,
+        { taskId: "task-4", sprintId: "s14", developer: null, blockers: "Vendor", note: null, updatedAtEpochMs: NOW },
+      ],
+      risks: [
+        { taskId: "task-4", kind: "blocked", detail: "Vendor", sinceEpochMs: null },
+        { taskId: "task-2", kind: "reviewStalled", detail: "#3 has not moved for 4 days", sinceEpochMs: NOW },
+      ],
+    });
+    const digest = projectManagerDigest(tasks, risky);
+    expect(digest).toMatchObject({ sprintName: "Sprint 14", tasks: 2, inReview: 0, merged: 1, inProduction: 0 });
+    // task-2 is outside the active sprint, so only task-4 needs attention here.
+    expect(digest.atRisk.map((entry) => entry.task.id)).toEqual(["task-4"]);
+
+    const props = stageProps({ task: undefined, tasks, board: risky });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    const overview = host.querySelector('[aria-label="Sprint overview"]')!;
+    expect(overview.querySelector("h2")?.textContent).toBe("Sprint 14");
+    expect([...overview.querySelectorAll(".pm-overview-stat")].map((stat) => stat.textContent)).toEqual([
+      "Tasks2", "In review0", "Merged1", "In production0", "Need attention1",
+    ]);
+    expect(overview.querySelector(".pm-risk")?.textContent).toBe("Blocked Vendor");
+    await act(async () => overview.querySelector<HTMLButtonElement>(".pm-overview-risks button")!.click());
+    expect(props.selectTask).toHaveBeenCalledWith("task-4");
+    await act(async () => button("Check sprint")!.click());
+    expect(props.requestCheck).toHaveBeenCalledWith(null);
+  });
+
+  it("shows a Task's risks on its ticket and in the sidebar", async () => {
+    const risky = board({ risks: [{ taskId: "task-1", kind: "notInProduction", detail: "On Staging for 4 days but not on Production", sinceEpochMs: NOW }] });
+    await act(async () => root.render(<ProjectManagerStage {...stageProps({ board: risky })} />));
+    expect(host.querySelector('[aria-label="Risks"]')?.textContent).toBe("Not in productionOn Staging for 4 days but not on Production");
+    const selectOverview = vi.fn();
+    await act(async () => root.render(<ProjectManagerTaskList
+      tasks={[task()]}
+      board={risky}
+      milestones={milestones}
+      playbookRuntime={null}
+      selectedTaskId="task-1"
+      disabled={false}
+      select={vi.fn()}
+      selectOverview={selectOverview}
+      openCheck={vi.fn()}
+      terminalSessionId={undefined}
+      openTaskSources={vi.fn()}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+    />));
+    expect(host.querySelector('.pm-task-failing')?.getAttribute("aria-label")).toBe("1 risk");
+    expect(host.querySelector(".pm-overview-count")?.textContent).toBe("1 need attention");
+    await act(async () => host.querySelector<HTMLButtonElement>(".pm-overview-link")!.click());
+    expect(selectOverview).toHaveBeenCalled();
   });
 });

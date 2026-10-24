@@ -149,6 +149,24 @@ fn a_read_records_jira_and_pull_request_facts_and_keeps_them_through_a_failure()
         .unwrap();
     assert_eq!(task_facts["jira"]["status"], "In Review");
     assert_eq!(task_facts["readFailures"].as_array().unwrap().len(), 2);
+    // The board derives the Task's risks from those facts as of now: both
+    // reads failed, and the epoch-old pull requests stalled and never shipped.
+    let risks = board["risks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|risk| risk["taskId"] == task_id.as_str())
+        .map(|risk| risk["kind"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        risks,
+        [
+            "readFailed",
+            "readFailed",
+            "reviewStalled",
+            "mergedNotDeployed"
+        ]
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 

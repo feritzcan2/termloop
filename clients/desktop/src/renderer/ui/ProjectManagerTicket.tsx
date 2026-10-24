@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeliveryCheckDto,
+  DeliveryRiskDto,
   ProjectManagerEnvironmentSetParams,
   ProjectManagerTaskTrackingSetParams,
   ProjectManagerTicketSaveParams,
@@ -15,6 +16,7 @@ import type {
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
 import { ProjectManagerMarkdownEditor } from "./ProjectManagerMarkdownEditor.js";
+import { RISK_LABELS } from "./ProjectManagerOverview.js";
 import { ProjectManagerDeliveryFacts, ProjectManagerTicketText } from "./ProjectManagerTicketFields.js";
 import { ProjectManagerTicketHistory, ticketAuthorLabel } from "./ProjectManagerTicketHistory.js";
 import {
@@ -49,6 +51,7 @@ export function ProjectManagerTicket(props: {
   facts: TaskDeliveryFactsDto | undefined;
   proposal: TaskTicketProposalDto | undefined;
   check: DeliveryCheckDto | undefined;
+  risks: readonly DeliveryRiskDto[];
   head: TaskTicketHeadDto | undefined;
   sprints: readonly ProjectSprintDto[];
   activeSprint: ProjectSprintDto | undefined;
@@ -266,6 +269,11 @@ export function ProjectManagerTicket(props: {
             {conflict ? <button type="button" className="td-mini danger" disabled={busy !== undefined} onClick={() => void save(true)}>Save mine anyway</button> : null}
           </div> : null}
           {message ? <div className="pm-banner danger" role="alert"><span>{message}</span></div> : null}
+          {props.risks.length > 0 && open ? <ul className="pm-risks" aria-label="Risks">
+            {props.risks.map((risk, index) => <li key={index} className={`pm-risk ${risk.kind}`}>
+              <Icon name="alert" /><b>{RISK_LABELS[risk.kind]}</b><span>{risk.detail}</span>
+            </li>)}
+          </ul> : null}
           {proposal ? <div className="pm-banner proposal" role="status" aria-label="Proposed ticket update">
             <Icon name="sparkles" />
             <span>A delivery check proposes: <strong>{proposal.summary}</strong> · {relativeTime(proposal.proposedAtEpochMs)}</span>

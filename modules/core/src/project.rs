@@ -4,6 +4,7 @@ mod changes;
 mod delivery;
 mod jira_sprints;
 mod mode;
+mod risks;
 mod sprint;
 mod ticket;
 pub(crate) use changes::ProjectChangeObservationCache;

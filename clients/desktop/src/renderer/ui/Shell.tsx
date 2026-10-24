@@ -1217,8 +1217,8 @@ export function Shell(props: ShellProps) {
     projectManagerActive && projectManagerActions ? projectManagerActions.loadPlaybook : noPlaybook,
     projectManagerActive ? props.playbookRuntime?.stateRevision : undefined,
   );
-  const projectManagerTask = props.projectTasks.find((task) => task.id === projectManagerTaskId)
-    ?? props.projectTasks.find((task) => task.status === "open" && task.archived_at_epoch_ms === null);
+  /// Without a chosen Task the stage shows the sprint overview.
+  const projectManagerTask = props.projectTasks.find((task) => task.id === projectManagerTaskId);
   useEffect(() => {
     if (props.connection !== "connected") setChangesPresentation(undefined);
   }, [props.connection]);
@@ -1703,6 +1703,7 @@ export function Shell(props: ShellProps) {
             selectedTaskId={projectManagerTask?.id}
             disabled={disabled}
             select={(taskId) => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(taskId); }}
+            selectOverview={() => { dismissStagePages(); setProjectManagerTerminal(false); setProjectManagerTaskId(undefined); }}
             openCheck={(taskId, sessionId) => {
               setProjectManagerTaskId(taskId);
               selectSession(sessionId);
@@ -2196,13 +2197,15 @@ export function Shell(props: ShellProps) {
               <span><Icon name="sparkles" /><strong>Workflow Creator</strong><small>Proposals stay separate until you save them.</small></span>
               <button type="button" className="secondary-button" onClick={() => openStagePage({ kind: "workflow", id: props.selectedSession!.improver_target!.targetId })}>Review AI draft</button>
             </div> : null}
-            {projectManagerActive && projectManagerActions && projectManagerTerminal && projectManagerTask ? <div className="pm-terminal-bar">
+            {projectManagerActive && projectManagerActions && projectManagerTerminal ? <div className="pm-terminal-bar">
               <button type="button" className="td-mini" onClick={() => setProjectManagerTerminal(false)}>
-                <Icon name="arrowLeft" />{projectManagerTask.title}
+                <Icon name="arrowLeft" />{projectManagerTask?.title ?? "Overview"}
               </button>
             </div> : null}
             {projectManagerActive && projectManagerActions && !projectManagerTerminal ? <ProjectManagerStage
               task={projectManagerTask}
+              tasks={props.projectTasks}
+              selectTask={setProjectManagerTaskId}
               board={projectManagerBoard.board}
               setTracking={setProjectManagerTracking}
               saveTicket={saveProjectManagerTicket}
