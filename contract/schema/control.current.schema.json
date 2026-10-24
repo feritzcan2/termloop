@@ -4135,7 +4135,8 @@
         "id",
         "name",
         "state",
-        "createdAtEpochMs"
+        "createdAtEpochMs",
+        "jira"
       ],
       "properties": {
         "id": {
@@ -4154,6 +4155,131 @@
           "type": "integer",
           "minimum": 0,
           "x-rust-type": "u64"
+        },
+        "jira": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/jiraSprintMirrorDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "A sprint of a Project Manager Project. A sprint with jira mirrors that Jira sprint and changes only with Jira."
+    },
+    "jiraSprintMirrorDto": {
+      "x-codegen": true,
+      "x-codegen-name": "JiraSprintMirrorDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprintId",
+        "boardId",
+        "startEpochMs",
+        "endEpochMs"
+      ],
+      "properties": {
+        "sprintId": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "boardId": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u64"
+        },
+        "startEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "projectManagerSprintSyncDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ProjectManagerSprintSyncDto",
+      "description": "Present when the Project's sprints follow the boards its Jira Task Source selects: when they were last read and why the last read failed, if it did.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceName",
+        "boardIds",
+        "syncedAtEpochMs",
+        "failureReason",
+        "failedAtEpochMs"
+      ],
+      "properties": {
+        "sourceName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "boardIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "x-rust-type": "u64"
+          }
+        },
+        "syncedAtEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failedAtEpochMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "x-rust-type": "u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -4214,12 +4340,13 @@
     "projectManagerBoardResult": {
       "x-codegen": true,
       "x-codegen-name": "ProjectManagerBoardResult",
-      "description": "A Project Manager Project's local sprints, the Project Manager's tracking records, the delivery facts TermLoop observed, ticket heads, pending Agent proposals, and running delivery checks.",
+      "description": "A Project Manager Project's sprints (its own, or mirrored from Jira when sprintSync is present), the Project Manager's tracking records, the delivery facts TermLoop observed, ticket heads, pending Agent proposals, and running delivery checks.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "projectId",
         "sprints",
+        "sprintSync",
         "tracking",
         "facts",
         "tickets",
@@ -4238,6 +4365,16 @@
           "items": {
             "$ref": "#/$defs/projectSprintDto"
           }
+        },
+        "sprintSync": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/projectManagerSprintSyncDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tracking": {
           "type": "array",

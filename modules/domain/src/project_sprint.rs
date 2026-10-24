@@ -31,6 +31,10 @@ pub struct ProjectSprint {
     pub name: String,
     pub state: SprintState,
     pub created_at_epoch_ms: u64,
+    /// The Jira sprint this one mirrors. A mirrored sprint follows Jira and
+    /// is never edited locally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jira: Option<JiraSprintMirror>,
 }
 
 impl ProjectSprint {
@@ -38,6 +42,25 @@ impl ProjectSprint {
         !self.id.trim().is_empty()
             && !self.project_id.trim().is_empty()
             && valid_sprint_name(&self.name)
+            && self.jira.as_ref().is_none_or(JiraSprintMirror::is_valid)
+    }
+}
+
+/// Which Jira sprint a mirrored sprint follows, and its planned dates.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct JiraSprintMirror {
+    pub sprint_id: u64,
+    pub board_id: u64,
+    #[serde(default)]
+    pub start_epoch_ms: Option<u64>,
+    #[serde(default)]
+    pub end_epoch_ms: Option<u64>,
+}
+
+impl JiraSprintMirror {
+    pub fn is_valid(&self) -> bool {
+        self.sprint_id > 0 && self.board_id > 0
     }
 }
 

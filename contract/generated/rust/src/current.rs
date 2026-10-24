@@ -225,7 +225,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:03212a3f7e8c7ff1869345a9552a4904c29e29391d1c9b90e8c64c7333d75194";
+    "sha256:9341648be56af9e4229cac473bbe05a05f11c421756b55a78427001ce1bb1ce6";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1647,6 +1647,51 @@ pub struct ProjectSprintDto {
     pub state: SprintState,
     #[serde(rename = "createdAtEpochMs")]
     pub created_at_epoch_ms: u64,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub jira: Option<JiraSprintMirrorDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct JiraSprintMirrorDto {
+    #[serde(rename = "sprintId")]
+    pub sprint_id: u64,
+    #[serde(rename = "boardId")]
+    pub board_id: u64,
+    #[serde(
+        rename = "startEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub start_epoch_ms: Option<u64>,
+    #[serde(
+        rename = "endEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub end_epoch_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectManagerSprintSyncDto {
+    #[serde(rename = "sourceName")]
+    pub source_name: String,
+    #[serde(rename = "boardIds")]
+    pub board_ids: Vec<u64>,
+    #[serde(
+        rename = "syncedAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub synced_at_epoch_ms: Option<u64>,
+    #[serde(
+        rename = "failureReason",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub failure_reason: Option<String>,
+    #[serde(
+        rename = "failedAtEpochMs",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub failed_at_epoch_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1675,6 +1720,11 @@ pub struct ProjectManagerBoardResult {
     #[serde(rename = "projectId")]
     pub project_id: String,
     pub sprints: Vec<ProjectSprintDto>,
+    #[serde(
+        rename = "sprintSync",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub sprint_sync: Option<ProjectManagerSprintSyncDto>,
     pub tracking: Vec<TaskTrackingDto>,
     pub facts: Vec<TaskDeliveryFactsDto>,
     pub tickets: Vec<TaskTicketHeadDto>,
@@ -13088,8 +13138,105 @@ fn validate_project_sprint_dto(value: &Value) -> bool {
                 })
             })
             && object
-                .keys()
-                .all(|key| ["id", "name", "state", "createdAtEpochMs"].contains(&key.as_str()))
+                .get("jira")
+                .is_some_and(|field| (validate_jira_sprint_mirror_dto(field) || field.is_null()))
+            && object.keys().all(|key| {
+                ["id", "name", "state", "createdAtEpochMs", "jira"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_jira_sprint_mirror_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("sprintId").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("boardId").is_some_and(|field| {
+            field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+            })
+        }) && object.get("startEpochMs").is_some_and(|field| {
+            (field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            }) || field.is_null())
+        }) && object.get("endEpochMs").is_some_and(|field| {
+            (field.as_number().is_some_and(|number| {
+                (number.as_i64().is_some() || number.as_u64().is_some())
+                    && (number.as_u64().is_some_and(|number| number >= 0_u64))
+            }) || field.is_null())
+        }) && object.keys().all(|key| {
+            ["sprintId", "boardId", "startEpochMs", "endEpochMs"].contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_project_manager_sprint_sync_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("sourceName")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("boardIds").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() >= 1
+                        && items.len() <= 4
+                        && items.iter().all(|item| {
+                            item.as_number().is_some_and(|number| {
+                                (number.as_i64().is_some() || number.as_u64().is_some())
+                                    && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                            })
+                        })
+                })
+            })
+            && object.get("syncedAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.get("failureReason").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                    || field.is_null())
+            })
+            && object.get("failedAtEpochMs").is_some_and(|field| {
+                (field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                }) || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "sourceName",
+                    "boardIds",
+                    "syncedAtEpochMs",
+                    "failureReason",
+                    "failedAtEpochMs",
+                ]
+                .contains(&key.as_str())
+            })
     })
 }
 
@@ -13167,6 +13314,9 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                     items.len() <= 64 && items.iter().all(|item| validate_project_sprint_dto(item))
                 })
             })
+            && object.get("sprintSync").is_some_and(|field| {
+                (validate_project_manager_sprint_sync_dto(field) || field.is_null())
+            })
             && object.get("tracking").is_some_and(|field| {
                 field
                     .as_array()
@@ -13206,6 +13356,7 @@ fn validate_project_manager_board_result(value: &Value) -> bool {
                 [
                     "projectId",
                     "sprints",
+                    "sprintSync",
                     "tracking",
                     "facts",
                     "tickets",

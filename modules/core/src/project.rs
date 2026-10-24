@@ -2,6 +2,7 @@
 
 mod changes;
 mod delivery;
+mod jira_sprints;
 mod mode;
 mod sprint;
 mod ticket;
@@ -10,6 +11,8 @@ pub use changes::{
     ObservedProjectWorktreeChanges, ObservedProjectWorktreeDiff, ObservedProjectWorktreePreImage,
     ProjectWorktreeChangeListPlan, ProjectWorktreeDiffPlan, ProjectWorktreePreImagePlan,
 };
+pub use jira_sprints::JiraSprintSyncPlan;
+pub(crate) use jira_sprints::JiraSprintSyncStatus;
 
 use crate::{
     CodexRuntime, CoreError, CoreRuntime, ProjectDeleteBlocker, json_error, required_string,

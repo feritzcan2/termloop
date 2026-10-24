@@ -90,10 +90,11 @@ function board(overrides: Partial<ProjectManagerBoardResult> = {}): ProjectManag
   return {
     projectId: "project-1",
     sprints: [
-      { id: "s14", name: "Sprint 14", state: "active", createdAtEpochMs: NOW },
-      { id: "s15", name: "Sprint 15", state: "planned", createdAtEpochMs: NOW },
-      { id: "s13", name: "Sprint 13", state: "closed", createdAtEpochMs: NOW },
+      { id: "s14", name: "Sprint 14", state: "active", createdAtEpochMs: NOW, jira: null },
+      { id: "s15", name: "Sprint 15", state: "planned", createdAtEpochMs: NOW, jira: null },
+      { id: "s13", name: "Sprint 13", state: "closed", createdAtEpochMs: NOW, jira: null },
     ],
+    sprintSync: null,
     tracking: [
       { taskId: "task-1", sprintId: "s14", developer: "Ada", blockers: null, note: null, updatedAtEpochMs: NOW },
       { taskId: "task-2", sprintId: "s15", developer: "Linus", blockers: null, note: null, updatedAtEpochMs: NOW },
@@ -274,6 +275,62 @@ describe("Project Manager workspace", () => {
     expect(select).toHaveBeenCalledWith("task-2");
     await act(async () => button("Task")!.click());
     expect(addTask).toHaveBeenCalledWith("s14");
+  });
+
+  it("follows Jira's sprints without local sprint editing", async () => {
+    const jira = (sprintId: number) => ({ sprintId, boardId: 7, startEpochMs: null, endEpochMs: null });
+    const synced = board({
+      sprints: [
+        { id: "s14", name: "PAY Sprint 14", state: "active", createdAtEpochMs: NOW, jira: jira(14) },
+        { id: "s15", name: "PAY Sprint 15", state: "planned", createdAtEpochMs: NOW, jira: jira(15) },
+        { id: "local", name: "Old local", state: "planned", createdAtEpochMs: NOW, jira: null },
+      ],
+      sprintSync: { sourceName: "Pay Jira", boardIds: [7], syncedAtEpochMs: NOW, failureReason: null, failedAtEpochMs: null },
+    });
+    await act(async () => root.render(<ProjectManagerTaskList
+      tasks={[task(), task({ id: "task-2", title: "Local work", jira_url: null, rank: 2 })]}
+      board={synced}
+      milestones={milestones}
+      playbookRuntime={runtime()}
+      selectedTaskId={undefined}
+      disabled={false}
+      select={vi.fn()}
+      openCheck={vi.fn()}
+      terminalSessionId={undefined}
+      openTaskSources={vi.fn()}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+    />));
+    expect(host.querySelector(".pm-sprint-sync")?.textContent).toContain("Sprints follow Pay Jira");
+    expect(button("New sprint")).toBeUndefined();
+    expect(button("Complete")).toBeUndefined();
+    expect([...host.querySelectorAll(".pm-sprint-badge.jira")]).toHaveLength(2);
+    // A local planned sprint cannot start beside Jira's active one.
+    expect(button("Start")!.disabled).toBe(true);
+    const rows = [...host.querySelectorAll<HTMLButtonElement>(".pm-task-rows button[draggable]")];
+    expect(rows.map((row) => row.getAttribute("draggable"))).toEqual(["false", "true"]);
+
+    const props = stageProps({ board: synced });
+    await act(async () => root.render(<ProjectManagerStage {...props} />));
+    const sprintSelect = host.querySelector<HTMLSelectElement>('select[aria-label="Sprint"]')!;
+    expect(sprintSelect.disabled).toBe(true);
+    expect(sprintSelect.title).toBe("Jira decides this Task's sprint");
+  });
+
+  it("says when Jira sprints could not be read", async () => {
+    await act(async () => root.render(<ProjectManagerTaskList
+      tasks={[]}
+      board={board({ sprintSync: { sourceName: "Pay Jira", boardIds: [7], syncedAtEpochMs: null, failureReason: "credentialsInvalid", failedAtEpochMs: NOW } })}
+      milestones={milestones}
+      playbookRuntime={null}
+      selectedTaskId={undefined}
+      disabled={false}
+      select={vi.fn()}
+      openCheck={vi.fn()}
+      terminalSessionId={undefined}
+      openTaskSources={vi.fn()}
+      actions={{ addTask: vi.fn(), createSprint: vi.fn(async () => undefined), updateSprint: vi.fn(async () => undefined), deleteSprint: vi.fn(async () => undefined), moveTask: vi.fn(async () => undefined), refreshFacts: vi.fn(async () => undefined), checkSprint: vi.fn(async () => undefined) }}
+    />));
+    expect(host.querySelector(".pm-sprint-sync.failed")?.textContent).toContain("Jira sprints could not be read (credentialsInvalid)");
   });
 
   it("names the next sprint and groups unknown sprints into the backlog", () => {

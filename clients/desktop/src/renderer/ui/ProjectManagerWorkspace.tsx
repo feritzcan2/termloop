@@ -222,6 +222,7 @@ export function ProjectManagerStage(props: {
         sprints={sprints}
         activeSprint={activeSprint}
         inActiveSprint={inActiveSprint}
+        sprintsFromJira={Boolean(board?.sprintSync)}
         track={track}
         disabled={props.disabled}
         actions={actions}

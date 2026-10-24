@@ -56,9 +56,10 @@ fn due_projects(
         .collect()
 }
 
-/// Reads one Project's Jira and pull request facts now. Returns whether they
-/// changed.
+/// Reads one Project's Jira sprints, when they follow Jira, and then its
+/// Jira and pull request facts now. Returns whether anything changed.
 pub(super) async fn refresh_facts(state: &AppState, project_id: &str) -> Result<bool, CoreError> {
+    let synced = sync_sprints(state, project_id).await?;
     let Some(plan) = state.core.lock().await.plan_delivery_facts_read(project_id) else {
         return Ok(false);
     };
@@ -84,6 +85,32 @@ pub(super) async fn refresh_facts(state: &AppState, project_id: &str) -> Result<
     if changed {
         publish_task_change(state).await;
     }
+    Ok(synced || changed)
+}
+
+/// Mirrors a Project's Jira sprints and copies its active sprint's new
+/// issues into Tasks. A failed read is kept for the board to show.
+async fn sync_sprints(state: &AppState, project_id: &str) -> Result<bool, CoreError> {
+    let Some(plan) = state.core.lock().await.plan_jira_sprint_sync(project_id) else {
+        return Ok(false);
+    };
+    let observation = super::control::observe_jira_sprints(state, &plan).await;
+    let (changed, previous_revision, current_revision) = {
+        let mut core = state.core.lock().await;
+        let previous_revision = core.state_revision();
+        let changed = core.apply_jira_sprint_sync(plan, observation, super::current_epoch_ms())?;
+        (changed, previous_revision, core.state_revision())
+    };
+    if changed {
+        super::invalidation::queue_changed_commit_invalidation(
+            state,
+            super::invalidation::CommitImpact::Task,
+            previous_revision,
+            current_revision,
+        )
+        .await;
+    }
+    publish_task_change(state).await;
     Ok(changed)
 }
 

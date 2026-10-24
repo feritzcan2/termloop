@@ -15,8 +15,9 @@ pub use termloop_domain::{
 mod observer;
 mod projection;
 pub use observer::{
-    JiraTaskSourceRefreshObserver, TaskSourceBoard, TaskSourceBoardList, TaskSourceBoardObserver,
-    TaskSourceJiraObserver, TaskSourceRefreshObserver, TaskSourceStatus, TaskSourceStatusList,
+    JiraBoardSprints, JiraSprintObservation, JiraTaskSourceRefreshObserver, TaskSourceBoard,
+    TaskSourceBoardList, TaskSourceBoardObserver, TaskSourceJiraObserver,
+    TaskSourceRefreshObserver, TaskSourceSprintObserver, TaskSourceStatus, TaskSourceStatusList,
     UnavailableTaskSourceRefreshObserver,
 };
 pub use projection::{task_source_candidate_json, task_source_failure_wire, task_source_view_json};
@@ -1162,11 +1163,11 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     value[..end].to_owned()
 }
 
-fn imported_title(candidate: &TaskSourceCandidateSnapshot) -> String {
+pub(crate) fn imported_title(candidate: &TaskSourceCandidateSnapshot) -> String {
     truncate_utf8(candidate.title.trim(), TITLE_LIMIT)
 }
 
-fn imported_brief(candidate: &TaskSourceCandidateSnapshot) -> Option<String> {
+pub(crate) fn imported_brief(candidate: &TaskSourceCandidateSnapshot) -> Option<String> {
     candidate
         .description
         .as_deref()

@@ -69,12 +69,13 @@ pub use session_launch::{
 pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};
 pub use task_source::{
-    JiraTaskSourceRefreshObserver, TaskSourceBoard, TaskSourceBoardList, TaskSourceBoardObserver,
-    TaskSourceBoardSelection, TaskSourceCandidateSnapshot, TaskSourceCandidateView,
-    TaskSourceConfiguration, TaskSourceDelete, TaskSourceFailure, TaskSourceImport,
-    TaskSourceImportPolicy, TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply,
-    TaskSourceRefreshObserver, TaskSourceRefreshOutcome, TaskSourceRefreshPlan,
-    TaskSourceRuntimeStatus, TaskSourceStatus, TaskSourceStatusList, TaskSourceStatusSelection,
+    JiraBoardSprints, JiraSprintObservation, JiraTaskSourceRefreshObserver, TaskSourceBoard,
+    TaskSourceBoardList, TaskSourceBoardObserver, TaskSourceBoardSelection,
+    TaskSourceCandidateSnapshot, TaskSourceCandidateView, TaskSourceConfiguration,
+    TaskSourceDelete, TaskSourceFailure, TaskSourceImport, TaskSourceImportPolicy,
+    TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply, TaskSourceRefreshObserver,
+    TaskSourceRefreshOutcome, TaskSourceRefreshPlan, TaskSourceRuntimeStatus,
+    TaskSourceSprintObserver, TaskSourceStatus, TaskSourceStatusList, TaskSourceStatusSelection,
     TaskSourceView, UnavailableTaskSourceRefreshObserver, task_source_candidate_json,
     task_source_failure_wire, task_source_view_json,
 };
@@ -178,6 +179,7 @@ pub struct CoreRuntime {
     pub(crate) observation_transport: Option<AgentObservationTransport>,
     pub(crate) playbook_evaluation: runtime::playbook_evaluation::PlaybookEvaluationRuntime,
     pub(crate) delivery_checks: runtime::delivery_check::DeliveryCheckRuntime,
+    pub(crate) jira_sprint_syncs: HashMap<String, project::JiraSprintSyncStatus>,
     pub(crate) agent_observations: HashMap<String, AgentObservationCapability>,
     pub(crate) provider_observation_ingress:
         runtime::provider_observation_ingress::ProviderObservationIngress,
@@ -694,6 +696,7 @@ impl CoreRuntime {
             observation_transport: None,
             playbook_evaluation: Default::default(),
             delivery_checks: Default::default(),
+            jira_sprint_syncs: HashMap::new(),
             agent_observations: HashMap::new(),
             provider_observation_ingress:
                 runtime::provider_observation_ingress::ProviderObservationIngress::default(),

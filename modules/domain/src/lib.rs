@@ -58,10 +58,11 @@ mod project_mode;
 pub use project_mode::{ProjectMode, ProjectModeSetting};
 mod project_sprint;
 pub use project_sprint::{
-    PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_BRIEF_MAX_CHARS,
-    TASK_TICKET_SUMMARY_MAX_CHARS, TASK_TICKET_TITLE_MAX_CHARS, TASK_TICKET_VERSIONS_MAX,
-    TASK_TRACKING_SHORT_MAX_CHARS, TASK_TRACKING_TEXT_MAX_BYTES, TaskTicketContent,
-    TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor, valid_sprint_name,
+    JiraSprintMirror, PROJECT_SPRINTS_MAX, ProjectSprint, SPRINT_NAME_MAX_CHARS, SprintState,
+    TASK_TICKET_BRIEF_MAX_CHARS, TASK_TICKET_SUMMARY_MAX_CHARS, TASK_TICKET_TITLE_MAX_CHARS,
+    TASK_TICKET_VERSIONS_MAX, TASK_TRACKING_SHORT_MAX_CHARS, TASK_TRACKING_TEXT_MAX_BYTES,
+    TaskTicketContent, TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
+    valid_sprint_name,
 };
 mod project_delivery;
 pub use project_delivery::{

@@ -349,3 +349,7 @@
 .pm-proposal-brief { max-height: 240px; margin: 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: light-dark(#ffffff, rgba(255,255,255,.02)); color: var(--td-body); font: 12px/1.55 var(--font-mono); white-space: pre-wrap; }
 .pm-task-failing { display: inline-flex; grid-column: 2; grid-row: 2; justify-self: start; color: var(--warning); }
 .pm-task-failing svg { width: 11px; height: 11px; }
+.pm-sprint-badge.jira { background: rgba(102,179,255,.12); color: light-dark(#2f5d8f, #a8d0ff); }
+.pm-sprint-sync { display: flex; align-items: center; gap: 6px; margin: 0 10px 6px; color: var(--text-muted); font: 10.5px/1.4 var(--font-ui); }
+.pm-sprint-sync svg { flex: none; width: 11px; height: 11px; color: var(--warning); }
+.pm-sprint-sync.failed { color: var(--text-secondary); }

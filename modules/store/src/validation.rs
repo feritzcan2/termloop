@@ -691,9 +691,13 @@ fn project_sprints_are_invalid(state: &CurrentState) -> bool {
                     .projects
                     .iter()
                     .any(|project| project.id == sprint.project_id)
-                || state.project_sprints[index + 1..]
-                    .iter()
-                    .any(|candidate| candidate.id == sprint.id)
+                || state.project_sprints[index + 1..].iter().any(|candidate| {
+                    candidate.id == sprint.id
+                        || candidate.project_id == sprint.project_id
+                            && candidate.jira.is_some()
+                            && candidate.jira.as_ref().map(|jira| jira.sprint_id)
+                                == sprint.jira.as_ref().map(|jira| jira.sprint_id)
+                })
                 || (sprint.state == termloop_domain::SprintState::Active
                     && state.project_sprints[index + 1..].iter().any(|candidate| {
                         candidate.project_id == sprint.project_id

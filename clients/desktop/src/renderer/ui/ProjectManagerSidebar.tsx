@@ -10,6 +10,7 @@ import type {
 
 import type { Task } from "../model.js";
 import { Icon } from "./Icon.js";
+import { relativeTime } from "./project-manager-ticket.js";
 import {
   jiraIssueKey,
   projectManagerStepTrack,
@@ -100,6 +101,9 @@ export function ProjectManagerTaskList(props: {
   const groups = useMemo(() => projectManagerSprintGroups(visibleTasks, props.board), [visibleTasks, props.board]);
   const tracking = useMemo(() => trackingByTask(props.board), [props.board]);
   const facts = useMemo(() => new Map((props.board?.facts ?? []).map((record) => [record.taskId, record])), [props.board]);
+  /// Present when the sprints mirror Jira: Jira then decides the sprint of
+  /// every Jira-linked Task.
+  const sprintSync = props.board?.sprintSync ?? null;
   const run = async (operation: Promise<string | undefined>) => {
     setMessage(undefined);
     const failure = await operation;
@@ -116,7 +120,8 @@ export function ProjectManagerTaskList(props: {
       defaultOpen={!options.collapsed}
       dropActive={dropTarget === key}
       disabled={props.disabled}
-      canStart={state === "planned" && !groups.active}
+      canStart={state === "planned" && !groups.active && !sprintSync}
+      mirrored={Boolean(group.sprint?.jira)}
       onDragOver={() => setDropTarget(key)}
       onDragLeave={() => setDropTarget((current) => current === key ? undefined : current)}
       onDrop={(taskId) => {
@@ -145,7 +150,7 @@ export function ProjectManagerTaskList(props: {
         return <li key={task.id}>
           <button
             type="button"
-            draggable={!props.disabled}
+            draggable={!props.disabled && !(sprintSync && task.jira_url)}
             className={selected ? "selected" : undefined}
             aria-current={selected ? "true" : undefined}
             onDragStart={(event) => { event.dataTransfer.setData("text/plain", task.id); event.dataTransfer.effectAllowed = "move"; }}
@@ -203,11 +208,16 @@ export function ProjectManagerTaskList(props: {
         Closed
       </label>
     </div>
+    {sprintSync ? <p className={`pm-sprint-sync${sprintSync.failureReason ? " failed" : ""}`} role="status">
+      {sprintSync.failureReason
+        ? <><Icon name="alert" />Jira sprints could not be read ({sprintSync.failureReason}){sprintSync.syncedAtEpochMs ? ` · last read ${relativeTime(sprintSync.syncedAtEpochMs)}` : ""}</>
+        : <>Sprints follow {sprintSync.sourceName}{sprintSync.syncedAtEpochMs ? ` · read ${relativeTime(sprintSync.syncedAtEpochMs)}` : " · not read yet"}</>}
+    </p> : null}
     {message ? <p className="form-error pm-list-error" role="alert">{message}</p> : null}
     <div className="pm-sprints">
       {groups.active ? section(groups.active) : null}
       {groups.planned.map((group) => section(group))}
-      {newSprint !== undefined ? <form
+      {sprintSync ? null : newSprint !== undefined ? <form
         className="pm-new-sprint"
         onSubmit={(event) => {
           event.preventDefault();
@@ -253,6 +263,8 @@ function ProjectManagerSprintSection(props: {
   dropActive: boolean;
   disabled: boolean;
   canStart: boolean;
+  /// A sprint mirrored from Jira changes only with Jira.
+  mirrored: boolean;
   /// Present on the active sprint: starts one delivery check of its Tasks.
   check: (() => void) | undefined;
   children: ReactNode;
@@ -284,10 +296,11 @@ function ProjectManagerSprintSection(props: {
         <Icon name="chevronDown" />
         <span className="pm-sprint-name">{name}</span>
         {state === "active" ? <span className="pm-sprint-badge">Active</span> : null}
+        {props.mirrored ? <span className="pm-sprint-badge jira" title="Mirrored from Jira">Jira</span> : null}
         <span className="pm-sprint-count">{props.group.tasks.length}</span>
       </button>
       <div className="pm-sprint-actions">
-        {state === "planned" ? <button
+        {state === "planned" && !props.mirrored ? <button
           type="button"
           className="pm-sprint-action"
           disabled={props.disabled || !props.canStart}
@@ -301,21 +314,21 @@ function ProjectManagerSprintSection(props: {
           title="Start a delivery check of this sprint's open Tasks"
           onClick={props.check}
         >Check</button> : null}
-        {state === "active" ? <button
+        {state === "active" && !props.mirrored ? <button
           type="button"
           className="pm-sprint-action"
           disabled={props.disabled}
           title="Complete this sprint; its facts stay as they are"
           onClick={() => props.setState("closed")}
         >Complete</button> : null}
-        {state === "closed" ? <button
+        {state === "closed" && !props.mirrored ? <button
           type="button"
           className="pm-sprint-action"
           disabled={props.disabled}
           title="Reopen as a planned sprint"
           onClick={() => props.setState("planned")}
         >Reopen</button> : null}
-        {sprint && state !== "active" ? confirmDelete
+        {sprint && state !== "active" && !props.mirrored ? confirmDelete
           ? <button type="button" className="pm-sprint-action danger" onBlur={() => setConfirmDelete(false)} onClick={props.remove}>Delete?</button>
           : <button type="button" className="icon-button quiet pm-sprint-icon" aria-label={`Delete ${name}`} title="Delete sprint; its Tasks move to the backlog" disabled={props.disabled} onClick={() => setConfirmDelete(true)}>
             <Icon name="trash" />

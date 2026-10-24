@@ -1,5 +1,6 @@
 use termloop_providers::{
     JiraBoardSource, JiraCloudClient, JiraCredential, JiraIssueSource, JiraSearchError,
+    JiraSearchResult, JiraSprint, JiraSprintListResult, JiraSprintSource, JiraSprintState,
 };
 
 use super::{TaskSourceFailure, TaskSourceRefreshOutcome, TaskSourceRefreshPlan};
@@ -59,9 +60,42 @@ pub struct TaskSourceStatusList {
     pub statuses: Vec<TaskSourceStatus>,
 }
 
-pub trait TaskSourceJiraObserver: TaskSourceRefreshObserver + TaskSourceBoardObserver {}
+/// One Jira sprint read: each board's active and future sprints and the
+/// issues of the one sprint taken as active.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraSprintObservation {
+    pub boards: Vec<JiraBoardSprints>,
+    /// The first active sprint in board order, with its issues.
+    pub active: Option<(JiraSprint, JiraSearchResult)>,
+}
 
-impl<T> TaskSourceJiraObserver for T where T: TaskSourceRefreshObserver + TaskSourceBoardObserver {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JiraBoardSprints {
+    pub board_id: u64,
+    /// `None` for a board without sprints, such as a kanban board.
+    pub sprints: Option<Vec<JiraSprint>>,
+    pub truncated: bool,
+}
+
+pub trait TaskSourceSprintObserver: Send + Sync {
+    fn observe_sprints(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        board_ids: &[u64],
+    ) -> Result<JiraSprintObservation, TaskSourceFailure>;
+}
+
+pub trait TaskSourceJiraObserver:
+    TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceSprintObserver
+{
+}
+
+impl<T> TaskSourceJiraObserver for T where
+    T: TaskSourceRefreshObserver + TaskSourceBoardObserver + TaskSourceSprintObserver
+{
+}
 
 pub struct JiraTaskSourceRefreshObserver {
     client: JiraCloudClient,
@@ -102,6 +136,18 @@ impl TaskSourceBoardObserver for UnavailableTaskSourceRefreshObserver {
         _api_token: &str,
         _board_ids: &[String],
     ) -> Result<TaskSourceStatusList, TaskSourceFailure> {
+        Err(TaskSourceFailure::ProviderUnavailable)
+    }
+}
+
+impl TaskSourceSprintObserver for UnavailableTaskSourceRefreshObserver {
+    fn observe_sprints(
+        &self,
+        _site_base_url: &str,
+        _email: &str,
+        _api_token: &str,
+        _board_ids: &[u64],
+    ) -> Result<JiraSprintObservation, TaskSourceFailure> {
         Err(TaskSourceFailure::ProviderUnavailable)
     }
 }
@@ -178,6 +224,54 @@ impl TaskSourceBoardObserver for JiraTaskSourceRefreshObserver {
                     .collect(),
             })
             .map_err(task_source_failure_from)
+    }
+}
+
+impl TaskSourceSprintObserver for JiraTaskSourceRefreshObserver {
+    fn observe_sprints(
+        &self,
+        site_base_url: &str,
+        email: &str,
+        api_token: &str,
+        board_ids: &[u64],
+    ) -> Result<JiraSprintObservation, TaskSourceFailure> {
+        let credential = || JiraCredential { email, api_token };
+        let mut boards = Vec::with_capacity(board_ids.len());
+        for board_id in board_ids {
+            let board = match self
+                .client
+                .list_sprints(site_base_url, credential(), *board_id)
+                .map_err(task_source_failure_from)?
+            {
+                JiraSprintListResult::Sprints { sprints, truncated } => JiraBoardSprints {
+                    board_id: *board_id,
+                    sprints: Some(sprints),
+                    truncated,
+                },
+                JiraSprintListResult::SprintsUnsupported => JiraBoardSprints {
+                    board_id: *board_id,
+                    sprints: None,
+                    truncated: false,
+                },
+            };
+            boards.push(board);
+        }
+        let active = boards
+            .iter()
+            .flat_map(|board| board.sprints.iter().flatten())
+            .find(|sprint| sprint.state == JiraSprintState::Active)
+            .cloned();
+        let active = match active {
+            Some(sprint) => {
+                let issues = self
+                    .client
+                    .sprint_issues(site_base_url, credential(), sprint.id)
+                    .map_err(task_source_failure_from)?;
+                Some((sprint, issues))
+            }
+            None => None,
+        };
+        Ok(JiraSprintObservation { boards, active })
     }
 }
 

@@ -53,6 +53,8 @@ export function ProjectManagerTicket(props: {
   sprints: readonly ProjectSprintDto[];
   activeSprint: ProjectSprintDto | undefined;
   inActiveSprint: boolean;
+  /// Whether the Project's sprints mirror Jira.
+  sprintsFromJira: boolean;
   track: readonly PlaybookStepTrack[];
   disabled: boolean;
   actions: ProjectManagerTicketActions;
@@ -180,6 +182,8 @@ export function ProjectManagerTicket(props: {
   const sprintId = props.tracking?.sprintId ?? "";
   const selectableSprints = props.sprints.filter((sprint) => sprint.state !== "closed" || sprint.id === sprintId);
   const open = task.status === "open";
+  /// When the sprints mirror Jira, Jira decides a Jira-linked Task's sprint.
+  const sprintFromJira = props.sprintsFromJira && Boolean(task.jira_url);
 
   return <div className={`task-detail pm-ticket${historyOpen ? " with-history" : ""}`}>
     <header className="pm-doc-bar">
@@ -194,7 +198,8 @@ export function ProjectManagerTicket(props: {
           <select
             aria-label="Sprint"
             value={sprintId}
-            disabled={props.disabled || busy !== undefined}
+            disabled={props.disabled || busy !== undefined || sprintFromJira}
+            title={sprintFromJira ? "Jira decides this Task's sprint" : undefined}
             onChange={(event) => void run("sprint", () => props.setTracking(tracked({ sprintId: event.target.value || null })))}
           >
             <option value="">Backlog</option>
@@ -286,7 +291,7 @@ export function ProjectManagerTicket(props: {
             <span>
               TermLoop reads Jira and pull requests only for Tasks in the active sprint{props.activeSprint ? ` (${props.activeSprint.name})` : ""}.
             </span>
-            {props.activeSprint ? <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
+            {props.activeSprint && !sprintFromJira ? <button type="button" className="td-mini" disabled={props.disabled || busy !== undefined}
               onClick={() => void run("move", () => props.setTracking(tracked({ sprintId: props.activeSprint!.id })))}>
               {busy === "move" ? "Moving…" : `Move to ${props.activeSprint.name}`}
             </button> : null}

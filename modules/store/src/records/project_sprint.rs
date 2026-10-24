@@ -1,10 +1,10 @@
 use termloop_domain::{
-    PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX, TaskDeliveryFacts,
-    TaskTicketContent, TaskTicketProposal, TaskTicketVersion, TaskTrackingRecord, TicketAuthor,
-    valid_sprint_name,
+    IssueLink, PROJECT_SPRINTS_MAX, ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX,
+    TaskDeliveryFacts, TaskRecord, TaskTicketContent, TaskTicketProposal, TaskTicketVersion,
+    TaskTrackingRecord, TicketAuthor, valid_sprint_name,
 };
 
-use super::super::{CoreWriteAuthority, Store, StoreError};
+use super::super::{CoreWriteAuthority, CurrentState, Store, StoreError};
 
 impl Store {
     pub fn create_project_sprint(
@@ -109,6 +109,98 @@ impl Store {
             .task_tracking_records
             .retain(|record| !record.is_empty());
         self.commit_or_restore(previous)
+    }
+
+    /// Applies one Jira sprint sync of a Project in one commit: the
+    /// Project's complete sprint list, Tasks newly copied from Jira issues
+    /// with their links, and replaced tracking records. A sprint left out is
+    /// removed and its Tasks return to the backlog. Returns `None` when
+    /// nothing changed.
+    pub fn apply_jira_sprint_sync(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        project_id: &str,
+        sprints: Vec<ProjectSprint>,
+        new_tasks: Vec<(TaskRecord, IssueLink)>,
+        tracking: Vec<TaskTrackingRecord>,
+    ) -> Result<Option<u64>, StoreError> {
+        if !self
+            .state
+            .projects
+            .iter()
+            .any(|project| project.id == project_id)
+        {
+            return Err(StoreError::NotFound);
+        }
+        if sprints.iter().any(|sprint| sprint.project_id != project_id) {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let mut next = self.state.clone();
+        next.project_sprints
+            .retain(|sprint| sprint.project_id != project_id);
+        next.project_sprints.extend(sprints);
+        for (task, link) in new_tasks {
+            if task.project_id != project_id || link.task_id != task.id {
+                return Err(StoreError::ConstraintViolation);
+            }
+            super::task::insert_task_record(&mut next.tasks, task)?;
+            super::issue_link::insert_jira_issue_link_record(
+                &next.tasks,
+                &next.task_source_configurations,
+                &mut next.issue_links,
+                link,
+            )?;
+        }
+        for record in tracking {
+            if !next
+                .tasks
+                .iter()
+                .any(|task| task.id == record.task_id && task.project_id == project_id)
+            {
+                return Err(StoreError::ConstraintViolation);
+            }
+            next.task_tracking_records
+                .retain(|existing| existing.task_id != record.task_id);
+            if !record.is_empty() {
+                next.task_tracking_records.push(record);
+            }
+        }
+        for record in &mut next.task_tracking_records {
+            if record.sprint_id.as_deref().is_some_and(|sprint_id| {
+                !next
+                    .project_sprints
+                    .iter()
+                    .any(|sprint| sprint.id == sprint_id)
+            }) {
+                record.sprint_id = None;
+            }
+        }
+        next.task_tracking_records
+            .retain(|record| !record.is_empty());
+        let project_sprints = |state: &CurrentState| {
+            let mut sprints = state
+                .project_sprints
+                .iter()
+                .filter(|sprint| sprint.project_id == project_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            sprints.sort_by(|left, right| left.id.cmp(&right.id));
+            sprints
+        };
+        let mut tracking_before = self.state.task_tracking_records.clone();
+        let mut tracking_after = next.task_tracking_records.clone();
+        tracking_before.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        tracking_after.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        if next.tasks.len() == self.state.tasks.len()
+            && tracking_before == tracking_after
+            && project_sprints(&next) == project_sprints(&self.state)
+        {
+            return Ok(None);
+        }
+        crate::validation::validate_current_state(&next)
+            .map_err(|_| StoreError::ConstraintViolation)?;
+        let previous = std::mem::replace(&mut self.state, next);
+        self.commit_or_restore(previous).map(Some)
     }
 
     /// Replaces one Task's tracking record. An empty record is stored as its

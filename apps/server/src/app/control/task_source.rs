@@ -1008,6 +1008,33 @@ pub(crate) async fn observe_jira(
     outcome
 }
 
+/// Reads a Project's Jira sprints with its Task Source's stored credential,
+/// outside the core lock.
+pub(crate) async fn observe_jira_sprints(
+    state: &AppState,
+    plan: &termloop_core::project::JiraSprintSyncPlan,
+) -> Result<termloop_core::JiraSprintObservation, TaskSourceFailure> {
+    let secret = read_stored_credential(state, &plan.source_id).await?;
+    let observer = state.task_source_refresh_observer.clone();
+    let site_base_url = plan.site_base_url.clone();
+    let board_ids = plan.board_ids.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let (email, token) = expose_credential(&secret)?;
+        observer.observe_sprints(&site_base_url, email, token, &board_ids)
+    })
+    .await
+    .unwrap_or(Err(TaskSourceFailure::ProviderUnavailable));
+    set_credential_state(
+        state,
+        &plan.source_id,
+        match &outcome {
+            Ok(_) => TaskSourceCredentialPresence::Present,
+            Err(reason) => credential_presence_for_failure(Some(*reason)),
+        },
+    );
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -78,7 +78,8 @@ use termloop_domain::{
 // Version 69 adds the daemon-wide experimental Project Manager mode switch.
 // Version 70 separates observed Project Manager delivery facts and Agent ticket
 // proposals from the Project Manager's own tracking record and ticket.
-const CURRENT_SCHEMA_VERSION: u32 = 70;
+// Version 71 lets a sprint mirror a Jira sprint.
+const CURRENT_SCHEMA_VERSION: u32 = 71;
 
 pub struct CoreWriteAuthority {
     _private: (),

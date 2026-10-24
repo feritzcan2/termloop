@@ -53,8 +53,8 @@ pub struct PullRequestFactsRead {
 }
 
 impl CoreRuntime {
-    /// Project Manager Projects with at least one tracked Task, the scope of
-    /// the periodic fact read.
+    /// Project Manager Projects whose sprints follow Jira or that have a
+    /// tracked Task, the scope of the periodic sprint and fact read.
     pub fn delivery_facts_projects(&self) -> Vec<String> {
         let mut projects = self
             .store
@@ -62,7 +62,8 @@ impl CoreRuntime {
             .iter()
             .filter(|project| {
                 self.is_project_manager_project(&project.id)
-                    && !self.project_manager_tracked_tasks(&project.id).is_empty()
+                    && (self.plan_jira_sprint_sync(&project.id).is_some()
+                        || !self.project_manager_tracked_tasks(&project.id).is_empty())
             })
             .map(|project| project.id.clone())
             .collect::<Vec<_>>();

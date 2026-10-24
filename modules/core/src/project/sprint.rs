@@ -56,6 +56,7 @@ impl CoreRuntime {
         json!({
             "projectId": project_id,
             "sprints": sprints,
+            "sprintSync": self.sprint_sync_json(project_id),
             "tracking": tracking,
             "facts": self.project_facts_json(project_id),
             "tickets": self.ticket_heads(project_id),
@@ -75,6 +76,10 @@ impl CoreRuntime {
     ) -> Result<Value, CoreError> {
         let project_id = required_string(&params, "projectId")?;
         self.ensure_project_manager_project(&project_id)?;
+        // Sprints of a Project that follows Jira come only from Jira.
+        if self.sprints_follow_jira(&project_id) {
+            return Err(CoreError::CapabilityDenied);
+        }
         let name = sprint_name(&params)?;
         let state = optional_sprint_state(&params)?.unwrap_or_default();
         self.store
@@ -86,6 +91,7 @@ impl CoreRuntime {
                     name,
                     state,
                     created_at_epoch_ms: termloop_platform::current_epoch_ms(),
+                    jira: None,
                 },
             )
             .map_err(store_error)?;
@@ -102,6 +108,13 @@ impl CoreRuntime {
         let name = sprint_name(&params)?;
         let state = optional_sprint_state(&params)?
             .ok_or_else(|| CoreError::InvalidParams("state".into()))?;
+        // A mirrored sprint follows Jira; beside Jira's sprints a local one
+        // never becomes active.
+        if self.sprint_mirrors_jira(&sprint_id)
+            || state == SprintState::Active && self.sprints_follow_jira(&project_id)
+        {
+            return Err(CoreError::CapabilityDenied);
+        }
         self.store
             .update_project_sprint(&self.write_authority, &sprint_id, &name, state)
             .map_err(store_error)?;
@@ -115,6 +128,9 @@ impl CoreRuntime {
         let sprint_id = required_string(&params, "sprintId")?;
         let project_id = self.sprint_project_id(&sprint_id)?;
         self.ensure_project_manager_project(&project_id)?;
+        if self.sprint_mirrors_jira(&sprint_id) {
+            return Err(CoreError::CapabilityDenied);
+        }
         self.store
             .delete_project_sprint(&self.write_authority, &sprint_id)
             .map_err(store_error)?;
@@ -336,6 +352,13 @@ impl CoreRuntime {
                 })
     }
 
+    fn sprint_mirrors_jira(&self, sprint_id: &str) -> bool {
+        self.store
+            .project_sprints()
+            .iter()
+            .any(|sprint| sprint.id == sprint_id && sprint.jira.is_some())
+    }
+
     fn sprint_project_id(&self, sprint_id: &str) -> Result<String, CoreError> {
         self.store
             .project_sprints()
@@ -361,6 +384,12 @@ pub(crate) fn sprint_json(sprint: &ProjectSprint) -> Value {
         "name": sprint.name,
         "state": sprint.state,
         "createdAtEpochMs": sprint.created_at_epoch_ms,
+        "jira": sprint.jira.as_ref().map(|mirror| json!({
+            "sprintId": mirror.sprint_id,
+            "boardId": mirror.board_id,
+            "startEpochMs": mirror.start_epoch_ms,
+            "endEpochMs": mirror.end_epoch_ms,
+        })),
     })
 }
 

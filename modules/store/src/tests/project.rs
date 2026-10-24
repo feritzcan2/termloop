@@ -51,6 +51,7 @@ fn sprints_keep_one_active_per_project_and_tracking_follows_tasks_and_sprints() 
         name: format!("Sprint {id}"),
         state,
         created_at_epoch_ms: 1,
+        jira: None,
     };
     store
         .create_project_sprint(&authority, sprint("1", SprintState::Active))
@@ -128,6 +129,160 @@ fn sprints_keep_one_active_per_project_and_tracking_follows_tasks_and_sprints() 
 }
 
 #[test]
+fn a_jira_sprint_sync_replaces_the_projects_sprints_and_moves_tasks_in_one_commit() {
+    use termloop_domain::{
+        IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, JiraSprintMirror, ProjectSprint,
+        SprintState, TaskTrackingRecord,
+    };
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-jira-sprints-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store.insert_project(&authority, project("pm")).unwrap();
+    store.insert_project(&authority, project("other")).unwrap();
+    store.insert_task(&authority, task("task-a", "pm")).unwrap();
+    let local = ProjectSprint {
+        id: "local".into(),
+        project_id: "pm".into(),
+        name: "Local".into(),
+        state: SprintState::Active,
+        created_at_epoch_ms: 1,
+        jira: None,
+    };
+    store
+        .create_project_sprint(&authority, local.clone())
+        .unwrap();
+    store
+        .set_task_tracking(
+            &authority,
+            TaskTrackingRecord {
+                task_id: "task-a".into(),
+                sprint_id: Some("local".into()),
+                note: Some("Keep".into()),
+                updated_at_epoch_ms: 1,
+                ..TaskTrackingRecord::default()
+            },
+        )
+        .unwrap();
+    let mirrored = |id: &str, jira_id: u64, state| ProjectSprint {
+        id: id.into(),
+        project_id: "pm".into(),
+        name: format!("Jira {jira_id}"),
+        state,
+        created_at_epoch_ms: 2,
+        jira: Some(JiraSprintMirror {
+            sprint_id: jira_id,
+            board_id: 7,
+            start_epoch_ms: None,
+            end_epoch_ms: None,
+        }),
+    };
+    let copied = TaskRecord {
+        rank: 1,
+        ..task("task-jira", "pm")
+    };
+    let link = IssueLink {
+        task_id: "task-jira".into(),
+        provider: IssueLinkProvider::Jira,
+        external_ref: "PAY-1".into(),
+        source_id: None,
+        external_id: None,
+        external_updated_at: None,
+        url: Some("https://example.atlassian.net/browse/PAY-1".into()),
+        sync_authority: IssueLinkSyncAuthority::None,
+    };
+    let revision = store.revision();
+    // Two sprints cannot mirror one Jira sprint, and nothing is written.
+    assert!(matches!(
+        store.apply_jira_sprint_sync(
+            &authority,
+            "pm",
+            vec![
+                mirrored("j1", 41, SprintState::Active),
+                mirrored("j2", 41, SprintState::Planned)
+            ],
+            vec![],
+            vec![],
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert!(matches!(
+        store.apply_jira_sprint_sync(
+            &authority,
+            "pm",
+            vec![ProjectSprint {
+                project_id: "other".into(),
+                ..mirrored("j1", 41, SprintState::Active)
+            }],
+            vec![],
+            vec![],
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+    // The local sprint is left out, so task-a returns to the backlog with its
+    // note kept; the copied Task lands in the mirrored active sprint.
+    let committed = store
+        .apply_jira_sprint_sync(
+            &authority,
+            "pm",
+            vec![mirrored("j1", 41, SprintState::Active)],
+            vec![(copied, link)],
+            vec![TaskTrackingRecord {
+                task_id: "task-jira".into(),
+                sprint_id: Some("j1".into()),
+                updated_at_epoch_ms: 3,
+                ..TaskTrackingRecord::default()
+            }],
+        )
+        .unwrap();
+    assert_eq!(committed, Some(revision + 1));
+    assert_eq!(store.task_tracking("task-a").unwrap().sprint_id, None);
+    assert_eq!(
+        store.task_tracking("task-a").unwrap().note.as_deref(),
+        Some("Keep")
+    );
+    assert_eq!(
+        store
+            .task_tracking("task-jira")
+            .unwrap()
+            .sprint_id
+            .as_deref(),
+        Some("j1")
+    );
+    assert_eq!(store.active_sprint("pm").unwrap().id, "j1");
+    // The same sync again writes nothing; the state survives a reopen.
+    assert_eq!(
+        store
+            .apply_jira_sprint_sync(
+                &authority,
+                "pm",
+                vec![mirrored("j1", 41, SprintState::Active)],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
+        None
+    );
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store
+            .active_sprint("pm")
+            .unwrap()
+            .jira
+            .as_ref()
+            .unwrap()
+            .sprint_id,
+        41
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
     use termloop_domain::{
         ProjectSprint, SprintState, TASK_TICKET_VERSIONS_MAX, TaskTicketContent,
@@ -151,6 +306,7 @@ fn ticket_saves_are_numbered_versions_that_keep_the_original_and_the_sprint() {
                 name: "Sprint 1".into(),
                 state: SprintState::Active,
                 created_at_epoch_ms: 1,
+                jira: None,
             },
         )
         .unwrap();
