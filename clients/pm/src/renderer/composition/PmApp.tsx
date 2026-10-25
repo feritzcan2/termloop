@@ -358,6 +358,15 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             onDismiss={() => setCreated(undefined)}
           />
         )}
+        {noteDialog && noteTicket && (
+          <NoteDialog
+            key={`${noteDialog.ticketId}:${noteDialog.kind}`}
+            kind={noteDialog.kind}
+            ticketLabel={`${ticketLabel(noteTicket)} · ${noteTicket.title}`}
+            onSubmit={(draft) => controller.addNote(noteDialog.ticketId, draft)}
+            onClose={() => setNoteDialog(undefined)}
+          />
+        )}
         {state.jiraDialog && (
           <JiraSyncDialog dialog={state.jiraDialog} onApply={() => void controller.applyJira()} onClose={() => controller.closeJiraDialog()} />
         )}
