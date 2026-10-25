@@ -10,7 +10,7 @@ import { emptyLayoutDocument, panes, type LayoutDocument, type SplitDirection, t
 import { desktopApi, type SourceDesktopApi } from "../transport/desktop-api.js";
 import { taskBindBranchFailureMessage } from "../transport/task-branch-binding.js";
 import { provisionTaskWorktree as submitTaskWorktreeProvisioning, taskProvisionWorktreeFailureMessage } from "../transport/task-worktree-provisioning.js";
-import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectManagerEnvironmentSetParams, ProjectManagerProbeCreateParams, ProjectManagerTaskCreateParams, ProjectManagerTaskTrackingSetParams, ProjectManagerTicketSaveParams, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SprintState, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AgentProfileDto, AssistantPromptImproverTarget, ConfigurationVersionDto, GitHostRepositoryPullRequestFilter, QuickActionParams, SettingsImproverTarget, ProjectLocalBranchListResult, ProjectMode, ProtocolErrorDetails, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskBranchCommitSummaryDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, VersionedConfigurationTarget, WorkflowConfigurationCreateParams, WorkflowConfigurationDto, WorkflowConfigurationUpdateParams } from "@termloop/contract/current";
 import { rememberPromptImproverSession } from "../prompt-improver-session-link.js";
 import { taskLaunchFailureMessage } from "../transport/task-launch.js";
 import { onGatewayState } from "../transport/terminal-port.js";
@@ -87,6 +87,7 @@ import {
   type AssistantReadIdentity,
 } from "./assistant-read-coordinator.js";
 import { createAssistantActions } from "./assistant-actions.js";
+import { createProjectManagerActions } from "./project-manager-actions.js";
 import { presentedAgentStatus } from "../session-presentation.js";
 import { nativeOverlayPassiveVisible, restoreTerminalFocusAfterOverlay, terminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
@@ -1538,54 +1539,10 @@ export function DesktopApp() {
     }
   }, [admitRunSession]);
   /// Project Manager commands, addressed by Project.
-  const projectManagerTaskActions = useMemo(() => ({
-    loadBoard: (projectId: string) => withControlError(sourceApiForProject(projectId).projectManagerBoardGet(projectId)),
-    createSprint: (projectId: string, name: string, state?: SprintState) =>
-      withControlError(sourceApiForProject(projectId).projectManagerSprintCreate({ projectId, name, ...(state ? { state } : {}) })),
-    updateSprint: (projectId: string, sprintId: string, name: string, state: SprintState) =>
-      withControlError(sourceApiForProject(projectId).projectManagerSprintUpdate({ sprintId, name, state })),
-    deleteSprint: (projectId: string, sprintId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerSprintDelete(sprintId)),
-    setTracking: (projectId: string, params: ProjectManagerTaskTrackingSetParams) =>
-      withControlError(sourceApiForProject(projectId).projectManagerTaskTrackingSet(params)),
-    createTask: async (projectId: string, params: Omit<ProjectManagerTaskCreateParams, "projectId">) => {
-      const result = await withControlError(sourceApiForProject(projectId).projectManagerTaskCreate({ projectId, ...params }));
-      await refreshProjection();
-      return result;
-    },
-    searchJira: (projectId: string, query: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerJiraSearch({ projectId, query })),
-    saveTicket: async (projectId: string, params: ProjectManagerTicketSaveParams) => {
-      const result = await withControlError(sourceApiForProject(projectId).projectManagerTicketSave(params));
-      await refreshProjection();
-      return result;
-    },
-    loadTicketVersions: (projectId: string, taskId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerTicketVersions(taskId)),
-    restoreTicket: async (projectId: string, taskId: string, number: number, expectedVersion: number | null) => {
-      const result = await withControlError(sourceApiForProject(projectId).projectManagerTicketRestore({ taskId, number, expectedVersion }));
-      await refreshProjection();
-      return result;
-    },
-    requestCheck: (projectId: string, taskIds: string[] | null) =>
-      withControlError(sourceApiForProject(projectId).projectManagerCheckRequest({ projectId, taskIds })),
-    refreshFacts: (projectId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerFactsRefresh(projectId)),
-    setEnvironment: (projectId: string, params: ProjectManagerEnvironmentSetParams) =>
-      withControlError(sourceApiForProject(projectId).projectManagerEnvironmentSet(params)),
-    acceptProposal: async (projectId: string, taskId: string, expectedVersion: number | null) => {
-      const result = await withControlError(sourceApiForProject(projectId).projectManagerProposalAccept({ taskId, expectedVersion }));
-      await refreshProjection();
-      return result;
-    },
-    dismissProposal: (projectId: string, taskId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerProposalDismiss(taskId)),
-    createProbe: (projectId: string, params: Omit<ProjectManagerProbeCreateParams, "projectId">) =>
-      withControlError(sourceApiForProject(projectId).projectManagerProbeCreate({ projectId, ...params })),
-    approveProbe: (projectId: string, probeId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerProbeApprove(probeId)),
-    deleteProbe: (projectId: string, probeId: string) =>
-      withControlError(sourceApiForProject(projectId).projectManagerProbeDelete(probeId)),
+  const projectManagerTaskActions = useMemo(() => createProjectManagerActions({
+    api: sourceApiForProject,
+    guard: withControlError,
+    refresh: refreshProjection,
   }), []);
   const launchTaskAgent = useCallback(async (
     taskId: string,

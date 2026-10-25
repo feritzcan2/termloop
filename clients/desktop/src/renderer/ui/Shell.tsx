@@ -11,7 +11,8 @@ import { useFileEditor } from "./use-file-editor.js";
 import { useSidebarResizeDrag } from "./use-sidebar-resize-drag.js";
 import type { WorkspaceFilesParams, WorkspaceDirectoryResult, WorkspaceFileReadResult, WorkspaceFileSearchParams, WorkspaceFileSearchResult, WorkspaceFileWriteParams, WorkspaceFileWriteResult } from "@termloop/contract/current";
 import type { SshSetupActions } from "../../ssh-setup-types.js";
-import type { AgentAccountDto, ProjectManagerBoardResult, ProjectMode } from "@termloop/contract/current";
+import type { AgentAccountDto, ProjectMode } from "@termloop/contract/current";
+import { bindProjectManagerActions, useProjectManagerCommands } from "./project-manager-commands.js";
 import type { AgentConnectionActions } from "./AgentConnectionsPanel.js";
 import { AgentAccountSwitcher } from "./AgentAccountSwitcher.js";
 import { TerminalStatus } from "./TerminalStatus.js";
@@ -121,7 +122,6 @@ import {
 import { ProjectModeMenuItems, projectManagerLayoutActive, useProjectManagerSwitch, useProjectMode, type ProjectManagerSwitchActions, type ProjectModeActions } from "./ProjectModeMenuItems.js";
 import {
   ProjectManagerStage,
-  useProjectManagerBoard,
   useProjectManagerPlaybook,
   type ProjectManagerProjectActions,
   type ProjectManagerWorkspaceActions,
@@ -1152,70 +1152,22 @@ export function Shell(props: ShellProps) {
   const projectManagerActions = useMemo<ProjectManagerWorkspaceActions | undefined>(() => {
     const pm = props.projectManagerTaskActions;
     if (!pm || !projectManagerProjectId) return undefined;
-    const projectId = projectManagerProjectId;
-    return {
+    return bindProjectManagerActions(pm, projectManagerProjectId, {
       loadPlaybook: props.assistantActions.getPlaybook,
       openTaskSources: () => openStagePage({ kind: "taskSettings" }),
       openPlaybookBuilder,
       openExternal: props.openExternal,
-      loadBoard: () => pm.loadBoard(projectId),
-      createSprint: (name, state) => pm.createSprint(projectId, name, state),
-      updateSprint: (sprintId, name, state) => pm.updateSprint(projectId, sprintId, name, state),
-      deleteSprint: (sprintId) => pm.deleteSprint(projectId, sprintId),
-      setTracking: (params) => pm.setTracking(projectId, params),
-      createTask: (params) => pm.createTask(projectId, params),
-      searchJira: (query) => pm.searchJira(projectId, query),
-      saveTicket: (params) => pm.saveTicket(projectId, params),
-      loadTicketVersions: (taskId) => pm.loadTicketVersions(projectId, taskId),
-      restoreTicket: (taskId, number, expectedVersion) => pm.restoreTicket(projectId, taskId, number, expectedVersion),
-      requestCheck: (taskIds) => pm.requestCheck(projectId, taskIds),
-      refreshFacts: () => pm.refreshFacts(projectId),
-      setEnvironment: (params) => pm.setEnvironment(projectId, params),
-      acceptProposal: (taskId, expectedVersion) => pm.acceptProposal(projectId, taskId, expectedVersion),
-      dismissProposal: (taskId) => pm.dismissProposal(projectId, taskId),
-      createProbe: (params) => pm.createProbe(projectId, params),
-      approveProbe: (probeId) => pm.approveProbe(projectId, probeId),
-      deleteProbe: (probeId) => pm.deleteProbe(projectId, probeId),
-    };
+    });
   }, [props.projectManagerTaskActions, projectManagerProjectId, props.assistantActions.getPlaybook, openStagePage, openPlaybookBuilder, props.openExternal]);
-  const projectManagerBoard = useProjectManagerBoard(
-    projectManagerActive && projectManagerActions ? projectManagerActions.loadBoard : undefined,
-    props.projectTasks,
-  );
+  const {
+    board: projectManagerBoard,
+    setTracking: setProjectManagerTracking,
+    saveTicket: saveProjectManagerTicket,
+    restoreTicket: restoreProjectManagerTicket,
+    boardCommand: projectManagerBoardCommand,
+    requestCheck: requestProjectManagerCheck,
+  } = useProjectManagerCommands(projectManagerActive ? projectManagerActions : undefined, props.projectTasks);
   const [projectManagerAddTask, setProjectManagerAddTask] = useState<{ sprintId: string | null }>();
-  const setProjectManagerTracking = useCallback(
-    (params: Parameters<ProjectManagerWorkspaceActions["setTracking"]>[0]) =>
-      projectManagerActions ? projectManagerBoard.apply(() => projectManagerActions.setTracking(params)) : Promise.resolve(undefined),
-    [projectManagerActions, projectManagerBoard.apply],
-  );
-  const saveProjectManagerTicket = useCallback(
-    (params: Parameters<ProjectManagerWorkspaceActions["saveTicket"]>[0]) =>
-      projectManagerActions
-        ? projectManagerBoard.apply(async () => (await projectManagerActions.saveTicket(params)).board)
-        : Promise.resolve(undefined),
-    [projectManagerActions, projectManagerBoard.apply],
-  );
-  const restoreProjectManagerTicket = useCallback(
-    (taskId: string, number: number, expectedVersion: number | null) =>
-      projectManagerActions
-        ? projectManagerBoard.apply(async () => (await projectManagerActions.restoreTicket(taskId, number, expectedVersion)).board)
-        : Promise.resolve(undefined),
-    [projectManagerActions, projectManagerBoard.apply],
-  );
-  const projectManagerBoardCommand = useCallback(
-    (operation: (actions: ProjectManagerWorkspaceActions) => Promise<ProjectManagerBoardResult>) =>
-      projectManagerActions ? projectManagerBoard.apply(() => operation(projectManagerActions)) : Promise.resolve(undefined),
-    [projectManagerActions, projectManagerBoard.apply],
-  );
-  /// Starts a delivery check and takes the board that now shows it running.
-  const requestProjectManagerCheck = useCallback(
-    (taskIds: string[] | null) => projectManagerBoardCommand(async (actions) => {
-      const result = await actions.requestCheck(taskIds);
-      if (result.status === "alreadyRunning") throw new Error("A running delivery check already covers these Tasks.");
-      return actions.loadBoard();
-    }),
-    [projectManagerBoardCommand],
-  );
   const projectManagerPlaybook = useProjectManagerPlaybook(
     projectManagerActive && projectManagerActions ? projectManagerActions.loadPlaybook : noPlaybook,
     projectManagerActive ? props.playbookRuntime?.stateRevision : undefined,
