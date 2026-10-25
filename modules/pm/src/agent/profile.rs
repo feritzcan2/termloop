@@ -6,7 +6,11 @@
 use termloop_launch::PromptTemplate;
 
 use super::PmAgentMode;
-use crate::{Board, DataTier, PmError, PmStore, SprintState, Ticket, TicketDelivery, valid_id};
+use crate::delivery::risks::DAY_MS;
+use crate::{
+    Board, DataTier, PmError, PmStore, Sprint, SprintState, Ticket, TicketDelivery, TicketStatus,
+    valid_id,
+};
 
 /// The bound of a built system prompt; Claude's appended system prompt
 /// argument allows 64 KiB.
@@ -45,6 +49,41 @@ reason; the project manager approves it before it ever runs. If the report \
 is refused as invalidArguments, fix it and report again. Stop once a report \
 is accepted.";
 
+/// The assistant's first message on a fresh conversation: open with a brief
+/// and concrete offers. It goes to the provider in argv, so it names no
+/// ticket text, only ids, and stays short.
+const ASSISTANT_KICKOFF: &str = "\
+Open this conversation with a short brief of at most 12 lines, taken from \
+the board in your instructions (call pm_board_read or pm_risks_read for \
+more): the active sprint's name, which day of it this is or that it is \
+over, done tickets of the total, the tickets at risk or without acceptance \
+criteria, and the ticket in focus if there is one. Then offer 3 to 5 \
+numbered things you can do right now, each one the project manager accepts \
+by replying with its number or one word. Pick them from these, in this \
+order of preference:";
+
+const ASSISTANT_KICKOFF_DRAFTS: &str = "\
+Say that everything you produce is a draft the project manager confirms: a \
+proposal changes nothing until they accept it. Do not call \
+pm_ticket_propose_description or pm_ticket_propose_acceptance_criteria \
+before the project manager answers.";
+
+const OFFER_FOCUS_DESCRIPTION: &str = "draft a clearer description for the ticket in focus";
+const OFFER_FOCUS_CRITERIA: &str = "write acceptance criteria for the ticket in focus";
+const OFFER_FOCUS_BLOCKERS: &str = "propose blockers and open questions for the ticket in focus";
+const OFFER_FOCUS_CHECK: &str =
+    "say whether the ticket in focus needs a delivery check, so you can start one";
+const OFFER_FOCUS_JIRA: &str = "prepare a Jira update for the ticket in focus as a description \
+proposal you accept and then confirm as a Jira diff";
+const OFFER_SPRINT_SUMMARY: &str = "summarise the sprint for a stand-up or stakeholder update";
+const OFFER_SPRINT_CRITERIA: &str = "write acceptance criteria for the tickets that have none";
+const OFFER_SPRINT_DESCRIPTIONS: &str = "draft clearer descriptions for the riskiest tickets";
+const OFFER_SPRINT_BLOCKERS: &str = "propose blockers for the tickets at risk";
+const OFFER_SPRINT_CHECKS: &str =
+    "list the tickets whose delivery check is due and why, so you can start them";
+const OFFER_SPRINT_JIRA: &str = "prepare a Jira update for a linked ticket as a description \
+proposal you accept and then confirm as a Jira diff";
+
 const TIER_TICKETS: &str = "\
 Data: this project has tickets only (optionally mirrored from Jira). There is \
 no pull request or deployment data; do not ask for it or guess it.";
@@ -76,7 +115,8 @@ pub(super) const DELIVERY_CHECK_TEMPLATE: PromptTemplate = PromptTemplate {
 pub struct PmAgentProfile {
     pub mode: PmAgentMode,
     pub system_prompt: String,
-    /// The non-interactive first message of a delivery check.
+    /// The first message: a delivery check's non-interactive instruction,
+    /// or the assistant's kickoff, which only a fresh conversation gets.
     pub first_message: Option<String>,
     pub tools: &'static [&'static str],
 }
@@ -96,7 +136,26 @@ fn truncated(text: &str, max_chars: usize) -> String {
     }
 }
 
-fn sprint_section(board: &Board) -> String {
+/// Where `now` falls in the sprint, in whole days: "day X of Y", "over by N
+/// days", or "day X" without a planned end.
+pub(super) fn sprint_day(sprint: &Sprint, now: u64) -> String {
+    let start = sprint
+        .activated_at_epoch_ms
+        .unwrap_or(sprint.created_at_epoch_ms);
+    let day = now.saturating_sub(start) / DAY_MS + 1;
+    match sprint.ends_at_epoch_ms {
+        Some(ends_at) if now > ends_at => {
+            format!("over by {} day(s)", (now - ends_at).div_ceil(DAY_MS))
+        }
+        Some(ends_at) => {
+            let total = ends_at.saturating_sub(start).div_ceil(DAY_MS).max(day);
+            format!("day {day} of {total}")
+        }
+        None => format!("day {day}, no planned end"),
+    }
+}
+
+fn sprint_section(board: &Board, now: u64) -> String {
     let Some(sprint) = board
         .sprints
         .iter()
@@ -114,6 +173,14 @@ fn sprint_section(board: &Board) -> String {
         .iter()
         .filter(|(_, delivery)| !delivery.risks.is_empty())
         .count();
+    let done = tickets
+        .iter()
+        .filter(|(ticket, _)| ticket.status == TicketStatus::Done)
+        .count();
+    let without_criteria = tickets
+        .iter()
+        .filter(|(ticket, _)| ticket.acceptance_criteria.is_empty())
+        .count();
     let mut section = format!("Active sprint: {}", sprint.name);
     if let Some(goal) = &sprint.goal {
         section.push_str(&format!("\nGoal: {goal}"));
@@ -121,11 +188,58 @@ fn sprint_section(board: &Board) -> String {
     if let Some(ends_at) = sprint.ends_at_epoch_ms {
         section.push_str(&format!("\nEnds at (epoch ms): {ends_at}"));
     }
+    section.push_str(&format!("\nWhen: {}", sprint_day(sprint, now)));
     section.push_str(&format!(
-        "\nTickets: {}, with risks: {at_risk}",
+        "\nTickets: {}, done: {done}, with risks: {at_risk}, without acceptance criteria: \
+         {without_criteria}",
         tickets.len()
     ));
     section
+}
+
+/// The assistant's kickoff: the brief it opens with and the offers that fit
+/// the project's data and the ticket in focus, ticket-specific ones first.
+fn assistant_kickoff(board: &Board, focus: Option<&Ticket>) -> String {
+    let deploy = board.tracking.deploy;
+    let mut offers = Vec::new();
+    if let Some(ticket) = focus {
+        offers.extend([
+            OFFER_FOCUS_DESCRIPTION,
+            OFFER_FOCUS_CRITERIA,
+            OFFER_FOCUS_BLOCKERS,
+        ]);
+        if deploy {
+            offers.push(OFFER_FOCUS_CHECK);
+        }
+        if ticket.jira_issue_key().is_some() {
+            offers.push(OFFER_FOCUS_JIRA);
+        }
+        offers.push(OFFER_SPRINT_SUMMARY);
+    } else {
+        offers.extend([
+            OFFER_SPRINT_SUMMARY,
+            OFFER_SPRINT_CRITERIA,
+            OFFER_SPRINT_DESCRIPTIONS,
+            OFFER_SPRINT_BLOCKERS,
+        ]);
+        if deploy {
+            offers.push(OFFER_SPRINT_CHECKS);
+        }
+        if board.tracking.jira {
+            offers.push(OFFER_SPRINT_JIRA);
+        }
+    }
+    let mut message = ASSISTANT_KICKOFF.to_owned();
+    for offer in offers {
+        message.push_str("\n- ");
+        message.push_str(offer);
+    }
+    if let Some(ticket) = focus {
+        message.push_str(&format!("\nThe ticket in focus is {}.", ticket.id));
+    }
+    message.push('\n');
+    message.push_str(ASSISTANT_KICKOFF_DRAFTS);
+    message
 }
 
 fn focus_section(ticket: &Ticket, delivery: Option<&TicketDelivery>, board: &Board) -> String {
@@ -204,7 +318,7 @@ impl PmAgentProfile {
             }
             .to_owned(),
             tier_copy(board.tracking.tier).to_owned(),
-            sprint_section(&board),
+            sprint_section(&board, store.now()),
         ];
         if let Some(index) = focus {
             sections.push(focus_section(
@@ -221,12 +335,13 @@ impl PmAgentProfile {
             }
             system_prompt.truncate(end);
         }
-        let first_message = (mode == PmAgentMode::DeliveryCheck).then(|| {
-            let ticket = &board.tickets[focus.expect("a delivery check has its ticket")];
-            format!(
+        let focus_ticket = focus.map(|index| &board.tickets[index]);
+        let first_message = Some(match mode {
+            PmAgentMode::Assistant => assistant_kickoff(&board, focus_ticket),
+            PmAgentMode::DeliveryCheck => format!(
                 "Run the delivery check for ticket {} and report with pm_check_report.",
-                ticket.id
-            )
+                focus_ticket.expect("a delivery check has its ticket").id
+            ),
         });
         Ok(Self {
             mode,

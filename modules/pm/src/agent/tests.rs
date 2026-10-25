@@ -71,7 +71,21 @@ fn the_prompt_names_only_the_data_the_project_has() {
             .system_prompt
             .contains("Environments in delivery order")
     );
-    assert!(profile.first_message.is_none());
+    assert!(
+        profile
+            .system_prompt
+            .contains("When: day 1, no planned end")
+    );
+    assert!(
+        profile
+            .system_prompt
+            .contains("Tickets: 1, done: 0, with risks: 1, without acceptance criteria: 1")
+    );
+    let kickoff = profile.first_message.unwrap();
+    assert!(kickoff.contains("at most 12 lines"));
+    assert!(kickoff.contains(&ticket_id));
+    assert!(!kickoff.contains("Let users log in"));
+    assert!(!kickoff.contains("delivery check"));
     assert_eq!(profile.tools, PmAgentMode::Assistant.tools());
 
     // A delivery check needs a ticket and deploy tracking.
@@ -156,11 +170,128 @@ fn the_launch_registers_the_pm_server_and_keeps_the_token_out_of_argv() {
             mode == PmAgentMode::DeliveryCheck,
             "{agent}"
         );
+        assert_eq!(args.last(), profile.first_message.as_ref(), "{agent}");
         if mode == PmAgentMode::DeliveryCheck {
             assert!(args.last().unwrap().contains(&ticket_id));
         }
     }
     std::fs::remove_dir_all(directory).ok();
+}
+
+fn offers(kickoff: &str) -> Vec<&str> {
+    kickoff
+        .lines()
+        .filter_map(|line| line.strip_prefix("- "))
+        .collect()
+}
+
+#[test]
+fn the_assistant_kickoff_fits_the_focus_and_the_tier() {
+    let (mut store, ticket_id) = project_store();
+    let kickoff = |store: &PmStore, focus: Option<&str>| {
+        PmAgentProfile::build(store, "p1", PmAgentMode::Assistant, focus)
+            .unwrap()
+            .first_message
+            .unwrap()
+    };
+
+    let sprint = kickoff(&store, None);
+    let sprint_offers = offers(&sprint);
+    assert!(sprint_offers[0].contains("summarise the sprint"));
+    assert!(
+        sprint_offers
+            .iter()
+            .all(|offer| !offer.contains("in focus"))
+    );
+    assert!((3..=6).contains(&sprint_offers.len()), "{sprint_offers:?}");
+    assert!(!sprint.contains("delivery check"));
+    assert!(sprint.contains("draft the project manager confirms"));
+    assert!(sprint.contains("Do not call pm_ticket_propose_description"));
+
+    let focused = kickoff(&store, Some(&ticket_id));
+    let focused_offers = offers(&focused);
+    assert!(focused_offers[0].contains("description for the ticket in focus"));
+    assert!(focused_offers[1].contains("acceptance criteria for the ticket in focus"));
+    assert!(focused.contains(&format!("The ticket in focus is {ticket_id}.")));
+    assert!(!focused.contains("delivery check"));
+
+    with_environments(&mut store);
+    let deploy = kickoff(&store, None);
+    assert!(
+        offers(&deploy)
+            .iter()
+            .any(|offer| offer.contains("delivery check"))
+    );
+    let deploy_focused = kickoff(&store, Some(&ticket_id));
+    assert!(
+        offers(&deploy_focused)
+            .iter()
+            .any(|offer| offer.contains("ticket in focus needs a delivery check"))
+    );
+    assert!(deploy_focused.len() < 2_048);
+}
+
+#[test]
+fn only_a_fresh_assistant_conversation_gets_the_kickoff() {
+    let (mut store, ticket_id) = project_store();
+    let profile = PmAgentProfile::build(&store, "p1", PmAgentMode::Assistant, None).unwrap();
+    let kickoff = profile.first_message.as_deref().unwrap();
+    assert_eq!(launch::first_message(&profile, true), Some(kickoff));
+    assert_eq!(launch::first_message(&profile, false), None);
+
+    // A delivery check still refuses anything but a fresh conversation.
+    with_environments(&mut store);
+    let check =
+        PmAgentProfile::build(&store, "p1", PmAgentMode::DeliveryCheck, Some(&ticket_id)).unwrap();
+    let directory = cli_directory();
+    let mut request =
+        PmLaunchRequest::new("claude", "/tmp/pm", &check, ENDPOINT, TOKEN, CONFIG_PATH);
+    request.executable_directory = Some(&directory);
+    assert!(pm_launch_plan(request).is_ok());
+    let without_message = PmAgentProfile {
+        first_message: None,
+        ..check
+    };
+    let mut request = PmLaunchRequest::new(
+        "claude",
+        "/tmp/pm",
+        &without_message,
+        ENDPOINT,
+        TOKEN,
+        CONFIG_PATH,
+    );
+    request.executable_directory = Some(&directory);
+    assert!(matches!(
+        pm_launch_plan(request),
+        Err(PmLaunchError::InvalidDeliveryCheck)
+    ));
+    // An assistant without a first message still launches.
+    let quiet = PmAgentProfile {
+        first_message: None,
+        ..profile
+    };
+    let mut request =
+        PmLaunchRequest::new("codex", "/tmp/pm", &quiet, ENDPOINT, TOKEN, CONFIG_PATH);
+    request.executable_directory = Some(&directory);
+    assert!(pm_launch_plan(request).is_ok());
+    std::fs::remove_dir_all(directory).ok();
+}
+
+#[test]
+fn the_sprint_day_counts_whole_days() {
+    use super::profile::sprint_day;
+    use crate::delivery::risks::DAY_MS;
+    let mut store = PmStore::open_in_memory().unwrap();
+    let mut sprint = store
+        .create_sprint("p1", "S", None, SprintState::Planned)
+        .unwrap();
+    sprint.activated_at_epoch_ms = Some(10 * DAY_MS);
+    sprint.ends_at_epoch_ms = Some(20 * DAY_MS);
+    assert_eq!(sprint_day(&sprint, 10 * DAY_MS), "day 1 of 10");
+    assert_eq!(sprint_day(&sprint, 14 * DAY_MS + 1), "day 5 of 10");
+    assert_eq!(sprint_day(&sprint, 22 * DAY_MS), "over by 2 day(s)");
+    sprint.ends_at_epoch_ms = None;
+    assert_eq!(sprint_day(&sprint, 12 * DAY_MS), "day 3, no planned end");
 }
 
 #[test]

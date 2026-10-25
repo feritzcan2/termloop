@@ -157,9 +157,15 @@ fn template(mode: PmAgentMode) -> &'static PromptTemplate {
     }
 }
 
+/// The profile's first message, sent only on a fresh conversation: a
+/// resumed assistant conversation already has its opening.
+pub(super) fn first_message(profile: &PmAgentProfile, fresh: bool) -> Option<&str> {
+    profile.first_message.as_deref().filter(|_| fresh)
+}
+
 /// Resolves the PM agent's launch: the profile's system prompt as provider
-/// instructions, the PM MCP server, the mode's tools approved, and for a
-/// delivery check its first message.
+/// instructions, the PM MCP server, the mode's tools approved, and on a
+/// fresh conversation the profile's first message.
 pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLaunchError> {
     if !matches!(request.agent_id, "claude" | "codex") {
         return Err(PmLaunchError::UnsupportedAgent);
@@ -197,8 +203,12 @@ pub fn pm_launch_plan(request: PmLaunchRequest<'_>) -> Result<PmLaunchPlan, PmLa
     launch.executable_directory = request.executable_directory;
     launch.approved_tools = profile.tools;
     let mut resolved = resolve(launch)?;
-    if let Some(message) = &profile.first_message {
-        resolved.positional_message(message, template.id, "PM delivery check")?;
+    if let Some(message) = first_message(profile, fresh) {
+        let purpose = match profile.mode {
+            PmAgentMode::Assistant => "PM assistant kickoff",
+            PmAgentMode::DeliveryCheck => "PM delivery check",
+        };
+        resolved.positional_message(message, template.id, purpose)?;
     }
     Ok(PmLaunchPlan {
         mode: profile.mode,
