@@ -19,6 +19,7 @@ members = [
   "modules/pm",
   "modules/core",
   "apps/server",
+  "apps/pm-daemon",
   "apps/companion",
   "spikes/r0-terminal/server",
 ]

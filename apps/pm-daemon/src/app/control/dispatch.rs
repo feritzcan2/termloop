@@ -1,0 +1,465 @@
+//! Method dispatch for the planning surface: projects, sprints, tickets,
+//! proposals, environments, sources, and probes. Each mutation publishes
+//! `pmBoardChanged` for its project.
+
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value, json};
+use termloop_pm::{
+    DeliveryCheck, NewProbe, NewTicket, PmStore, ProjectEnvironment, ProjectSources, Ticket,
+    TicketAuthor, TicketEdit,
+};
+use termloop_pm_contract::pm::{
+    CONTRACT_IDENTITY, ErrorCode, PmDigestReadParams, PmEnvironmentsSetParams, PmProbeCreateParams,
+    PmProbeRef, PmProjectCreateParams, PmProjectRef, PmProposalRef, PmSources, PmSprintCloseParams,
+    PmSprintCreateParams, PmSprintRef, PmSprintUpdateParams, PmTicketBlockerAddParams,
+    PmTicketBlockerRemoveParams, PmTicketCreateParams, PmTicketCriterionAddParams,
+    PmTicketCriterionRemoveParams, PmTicketCriterionSetDoneParams, PmTicketDescriptionSaveParams,
+    PmTicketMoveParams, PmTicketRef, PmTicketUpdateParams,
+};
+
+use super::errors::{ControlError, error, internal, not_found};
+use super::operations;
+use crate::app::AppState;
+
+const PRODUCT: &str = "termloop-pm";
+const TERMINAL_DATA_PLANE: &str = "binary-websocket";
+
+pub(crate) async fn dispatch(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    match method {
+        "pm_system_version" => Ok(json!({
+            "product": PRODUCT,
+            "version": env!("CARGO_PKG_VERSION"),
+            "protocolVersion": CONTRACT_IDENTITY,
+            "terminalDataPlane": TERMINAL_DATA_PLANE,
+        })),
+        "pm_credential_store" => operations::credential_store(state, params),
+        "pm_credential_clear" => operations::credential_clear(state, params),
+        "pm_check_start" => operations::check_start(state, params).await,
+        "pm_checks_read" => operations::checks_read(state, params),
+        "pm_jira_pull" => operations::jira_pull(state, params).await,
+        "pm_jira_diff_read" => operations::jira_diff_read(state, params).await,
+        "pm_jira_apply" => operations::jira_apply(state, params).await,
+        "pm_agent_launch" => operations::agent_launch(state, params),
+        "pm_agent_list" => operations::agent_list(state, params),
+        "pm_agent_stop" => operations::agent_stop(state, params),
+        "pm_settings_read" => operations::settings_read(state),
+        "pm_settings_update" => operations::settings_update(state, params),
+        _ => planning(state, method, params),
+    }
+}
+
+fn planning(state: &AppState, method: &str, params: &Value) -> Result<Value, ControlError> {
+    let mut store = state.store.lock();
+    let store = &mut *store;
+    match method {
+        "pm_project_list" => Ok(json!({ "projects": to_value(&store.projects()?)? })),
+        "pm_project_create" => {
+            let params: PmProjectCreateParams = parse(params)?;
+            to_value(&store.create_project(&params.name, params.folder.as_deref())?)
+        }
+        "pm_board_read" => {
+            let params: PmProjectRef = parse(params)?;
+            require_project(store, &params.project_id)?;
+            board(state, store, &params.project_id)
+        }
+        "pm_digest_read" => {
+            let params: PmDigestReadParams = parse(params)?;
+            require_project(store, &params.project_id)?;
+            to_value(&store.digest(&params.project_id, params.since_epoch_ms)?)
+        }
+        "pm_sprint_create" => sprint_create(state, store, params),
+        "pm_sprint_update" => sprint_update(state, store, params),
+        "pm_sprint_activate" => {
+            let params: PmSprintRef = parse(params)?;
+            let sprint = store.activate_sprint(&params.sprint_id)?;
+            state.board_changed(&sprint.project_id);
+            to_value(&sprint)
+        }
+        "pm_sprint_close" => {
+            let params: PmSprintCloseParams = parse(params)?;
+            let closed = store.close_sprint(&params.sprint_id, params.carry_over_to.as_deref())?;
+            state.board_changed(&closed.sprint.project_id);
+            to_value(&closed)
+        }
+        "pm_ticket_create" => ticket_create(state, store, params),
+        "pm_ticket_update" => ticket_update(state, store, params),
+        "pm_ticket_move" => ticket_move(state, store, params),
+        "pm_ticket_description_save" => {
+            let params: PmTicketDescriptionSaveParams = parse(params)?;
+            store.save_ticket_description(
+                &params.ticket_id,
+                &params.description,
+                TicketAuthor::Pm,
+                Some(params.base_version),
+            )?;
+            changed_ticket(state, store, &params.ticket_id)
+        }
+        "pm_ticket_versions_read" => {
+            let params: PmTicketRef = parse(params)?;
+            require_ticket(store, &params.ticket_id)?;
+            Ok(json!({
+                "ticketId": params.ticket_id,
+                "versions": to_value(&store.ticket_versions(&params.ticket_id)?)?,
+            }))
+        }
+        "pm_ticket_blocker_add" => {
+            let params: PmTicketBlockerAddParams = parse(params)?;
+            store.add_ticket_blocker(&params.ticket_id, &params.text)?;
+            changed_ticket(state, store, &params.ticket_id)
+        }
+        "pm_ticket_blocker_remove" => {
+            let params: PmTicketBlockerRemoveParams = parse(params)?;
+            let ticket = store.remove_ticket_blocker(&params.ticket_id, &params.blocker_id)?;
+            published_ticket(state, &ticket)
+        }
+        "pm_ticket_criterion_add" => {
+            let params: PmTicketCriterionAddParams = parse(params)?;
+            store.add_acceptance_criterion(&params.ticket_id, &params.text)?;
+            changed_ticket(state, store, &params.ticket_id)
+        }
+        "pm_ticket_criterion_set_done" => {
+            let params: PmTicketCriterionSetDoneParams = parse(params)?;
+            let ticket = store.set_acceptance_criterion_done(
+                &params.ticket_id,
+                &params.criterion_id,
+                params.done,
+            )?;
+            published_ticket(state, &ticket)
+        }
+        "pm_ticket_criterion_remove" => {
+            let params: PmTicketCriterionRemoveParams = parse(params)?;
+            let ticket =
+                store.remove_acceptance_criterion(&params.ticket_id, &params.criterion_id)?;
+            published_ticket(state, &ticket)
+        }
+        "pm_ticket_proposals_read" => {
+            let params: PmTicketRef = parse(params)?;
+            require_ticket(store, &params.ticket_id)?;
+            Ok(json!({
+                "ticketId": params.ticket_id,
+                "proposals": to_value(&store.ticket_proposals(&params.ticket_id)?)?,
+            }))
+        }
+        "pm_ticket_proposal_accept" => {
+            let params: PmProposalRef = parse(params)?;
+            let ticket = store.accept_ticket_proposal(&params.proposal_id)?;
+            published_ticket(state, &ticket)
+        }
+        "pm_ticket_proposal_reject" => {
+            let params: PmProposalRef = parse(params)?;
+            let proposal = store.proposal(&params.proposal_id)?.ok_or_else(not_found)?;
+            let project_id = require_ticket(store, &proposal.ticket_id)?.project_id;
+            store.reject_ticket_proposal(&params.proposal_id)?;
+            state.board_changed(&project_id);
+            Ok(json!({ "rejected": true }))
+        }
+        "pm_environments_set" => {
+            let params: PmEnvironmentsSetParams = parse(params)?;
+            require_project(store, &params.project_id)?;
+            let environments: Vec<ProjectEnvironment> = convert(&params.environments)?;
+            let environments = store.set_project_environments(&params.project_id, &environments)?;
+            state.board_changed(&params.project_id);
+            Ok(json!({
+                "projectId": params.project_id,
+                "environments": to_value(&environments)?,
+            }))
+        }
+        "pm_sources_read" => {
+            let params: PmProjectRef = parse(params)?;
+            require_project(store, &params.project_id)?;
+            sources(
+                &params.project_id,
+                &store.project_sources(&params.project_id)?,
+            )
+        }
+        "pm_sources_set" => {
+            let params: PmSources = parse(params)?;
+            require_project(store, &params.project_id)?;
+            let wanted = ProjectSources {
+                jira: params.jira.as_ref().map(convert).transpose()?,
+                github: params.github.as_ref().map(convert).transpose()?,
+            };
+            let stored = store.set_project_sources(&params.project_id, &wanted)?;
+            state.board_changed(&params.project_id);
+            state.fact_refresh.notify_one();
+            sources(&params.project_id, &stored)
+        }
+        "pm_probe_create" => {
+            let params: PmProbeCreateParams = parse(params)?;
+            require_project(store, &params.project_id)?;
+            let probe = store.create_probe(NewProbe {
+                project_id: params.project_id,
+                environment: params.environment,
+                argv: params.argv,
+                matcher: convert(&params.matcher)?,
+                reason: params.reason,
+            })?;
+            state.board_changed(&probe.project_id);
+            to_value(&probe)
+        }
+        "pm_probe_approve" => {
+            let params: PmProbeRef = parse(params)?;
+            let probe = store.approve_probe(&params.probe_id)?;
+            state.board_changed(&probe.project_id);
+            to_value(&probe)
+        }
+        "pm_probe_reject" | "pm_probe_delete" => {
+            let params: PmProbeRef = parse(params)?;
+            let probe = store.probe(&params.probe_id)?.ok_or_else(not_found)?;
+            if method == "pm_probe_reject" {
+                store.reject_probe(&params.probe_id)?;
+            } else {
+                store.delete_probe(&params.probe_id)?;
+            }
+            state.board_changed(&probe.project_id);
+            Ok(if method == "pm_probe_reject" {
+                json!({ "rejected": true })
+            } else {
+                json!({ "deleted": true })
+            })
+        }
+        _ => Err(error(ErrorCode::MethodNotFound, "unknown method")),
+    }
+}
+
+fn sprint_create(
+    state: &AppState,
+    store: &mut PmStore,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let parsed: PmSprintCreateParams = parse(params)?;
+    require_project(store, &parsed.project_id)?;
+    let sprint_state = match parsed.state.as_deref() {
+        None => Default::default(),
+        Some(name) => enum_value(name, "state")?,
+    };
+    let mut sprint = store.create_sprint(
+        &parsed.project_id,
+        &parsed.name,
+        parsed.goal.as_deref(),
+        sprint_state,
+    )?;
+    if let Some(ends_at) = parsed.ends_at_epoch_ms {
+        sprint = store.set_sprint_end(&sprint.id, Some(ends_at))?;
+    }
+    state.board_changed(&sprint.project_id);
+    to_value(&sprint)
+}
+
+/// Applies each present field in turn; a field sent as `null` clears it.
+fn sprint_update(
+    state: &AppState,
+    store: &mut PmStore,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let parsed: PmSprintUpdateParams = parse(params)?;
+    let id = parsed.sprint_id.as_str();
+    let mut sprint = store.sprint(id)?.ok_or_else(not_found)?;
+    if let Some(name) = &parsed.name {
+        sprint = store.rename_sprint(id, name)?;
+    }
+    if let Some(goal) = nullable_string(params, "goal") {
+        sprint = store.set_sprint_goal(id, goal.as_deref())?;
+    }
+    if let Some(ends_at) = nullable_u64(params, "endsAtEpochMs") {
+        sprint = store.set_sprint_end(id, ends_at)?;
+    }
+    state.board_changed(&sprint.project_id);
+    to_value(&sprint)
+}
+
+fn ticket_create(
+    state: &AppState,
+    store: &mut PmStore,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let parsed: PmTicketCreateParams = parse(params)?;
+    require_project(store, &parsed.project_id)?;
+    let mut new = NewTicket::new(parsed.project_id, parsed.title);
+    new.description = parsed.description.unwrap_or_default();
+    if let Some(status) = &parsed.status {
+        new.status = convert(status)?;
+    }
+    if let Some(priority) = &parsed.priority {
+        new.priority = convert(priority)?;
+    }
+    new.assignee = parsed.assignee;
+    new.sprint_id = parsed.sprint_id;
+    new.jira_url = parsed.jira_url;
+    let ticket = store.create_ticket(new)?;
+    published_ticket(state, &ticket)
+}
+
+/// Applies each present field in turn; `assignee` or `jiraUrl` sent as
+/// `null` clears it. The steps are separate store commands.
+fn ticket_update(
+    state: &AppState,
+    store: &mut PmStore,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let parsed: PmTicketUpdateParams = parse(params)?;
+    let id = parsed.ticket_id.as_str();
+    require_ticket(store, id)?;
+    let edit = TicketEdit {
+        title: parsed.title.clone(),
+        jira_url: nullable_string(params, "jiraUrl"),
+    };
+    if edit != TicketEdit::default() {
+        store.update_ticket(id, edit)?;
+    }
+    if let Some(status) = &parsed.status {
+        store.set_ticket_status(id, convert(status)?)?;
+    }
+    if let Some(priority) = &parsed.priority {
+        store.set_ticket_priority(id, convert(priority)?)?;
+    }
+    if let Some(assignee) = nullable_string(params, "assignee") {
+        store.set_ticket_assignee(id, assignee.as_deref())?;
+    }
+    changed_ticket(state, store, id)
+}
+
+/// Moves a ticket to a sprint lane (or the backlog with `null`), then to
+/// `index` within that lane when given.
+fn ticket_move(
+    state: &AppState,
+    store: &mut PmStore,
+    params: &Value,
+) -> Result<Value, ControlError> {
+    let parsed: PmTicketMoveParams = parse(params)?;
+    let id = parsed.ticket_id.as_str();
+    let ticket = require_ticket(store, id)?;
+    if ticket.sprint_id != parsed.sprint_id {
+        store.move_ticket_to_sprint(id, parsed.sprint_id.as_deref())?;
+    }
+    if let Some(index) = parsed.index {
+        let mut lane: Vec<String> = store
+            .board(&ticket.project_id)?
+            .tickets
+            .into_iter()
+            .filter(|candidate| candidate.sprint_id == parsed.sprint_id && candidate.id != id)
+            .map(|candidate| candidate.id)
+            .collect();
+        lane.insert((index as usize).min(lane.len()), id.to_owned());
+        store.reorder_tickets(&ticket.project_id, parsed.sprint_id.as_deref(), &lane)?;
+    }
+    changed_ticket(state, store, id)
+}
+
+/// The board as the contract shapes it: each ticket beside its delivery and
+/// pending proposal count, and the running checks with their agent session.
+pub(crate) fn board(
+    state: &AppState,
+    store: &PmStore,
+    project_id: &str,
+) -> Result<Value, ControlError> {
+    let board = store.board(project_id)?;
+    let tickets = board
+        .tickets
+        .iter()
+        .zip(&board.deliveries)
+        .map(|(ticket, delivery)| {
+            Ok(json!({
+                "ticket": to_value(ticket)?,
+                "delivery": to_value(delivery)?,
+                "pendingProposalCount": store.ticket_proposals(&ticket.id)?.len(),
+            }))
+        })
+        .collect::<Result<Vec<_>, ControlError>>()?;
+    let running = store
+        .delivery_checks(project_id)?
+        .into_iter()
+        .filter(DeliveryCheck::is_running)
+        .map(|check| check_value(state, &check))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(json!({
+        "projectId": board.project_id,
+        "sprints": to_value(&board.sprints)?,
+        "tickets": tickets,
+        "environments": to_value(&board.environments)?,
+        "probes": to_value(&board.probes)?,
+        "runningChecks": running,
+        "tracking": to_value(&board.tracking)?,
+    }))
+}
+
+/// A check with the agent session running it, when one does.
+pub(crate) fn check_value(state: &AppState, check: &DeliveryCheck) -> Result<Value, ControlError> {
+    let mut value = to_value(check)?;
+    let session = state.agents.check_session(&check.id);
+    if let Value::Object(fields) = &mut value {
+        fields.insert(
+            "sessionId".to_owned(),
+            session.map_or(Value::Null, Value::String),
+        );
+    }
+    Ok(value)
+}
+
+fn sources(project_id: &str, sources: &ProjectSources) -> Result<Value, ControlError> {
+    Ok(json!({
+        "projectId": project_id,
+        "jira": to_value(&sources.jira)?,
+        "github": to_value(&sources.github)?,
+    }))
+}
+
+fn changed_ticket(
+    state: &AppState,
+    store: &PmStore,
+    ticket_id: &str,
+) -> Result<Value, ControlError> {
+    published_ticket(state, &require_ticket(store, ticket_id)?)
+}
+
+fn published_ticket(state: &AppState, ticket: &Ticket) -> Result<Value, ControlError> {
+    state.board_changed(&ticket.project_id);
+    to_value(ticket)
+}
+
+pub(crate) fn require_project(
+    store: &PmStore,
+    project_id: &str,
+) -> Result<termloop_pm::Project, ControlError> {
+    store.project(project_id)?.ok_or_else(not_found)
+}
+
+pub(crate) fn require_ticket(store: &PmStore, ticket_id: &str) -> Result<Ticket, ControlError> {
+    store.ticket(ticket_id)?.ok_or_else(not_found)
+}
+
+pub(crate) fn parse<T: DeserializeOwned>(params: &Value) -> Result<T, ControlError> {
+    serde_json::from_value(params.clone())
+        .map_err(|_| error(ErrorCode::InvalidParams, "params do not match the method"))
+}
+
+pub(crate) fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<Value, ControlError> {
+    serde_json::to_value(value).map_err(|_| internal())
+}
+
+/// A contract value as the PM store's own type; both share wire names.
+pub(crate) fn convert<A: Serialize, B: DeserializeOwned>(value: &A) -> Result<B, ControlError> {
+    serde_json::from_value(to_value(value)?).map_err(|_| internal())
+}
+
+fn enum_value<T: DeserializeOwned>(name: &str, parameter: &str) -> Result<T, ControlError> {
+    serde_json::from_value(Value::String(name.to_owned()))
+        .map_err(|_| super::errors::invalid_parameter(parameter))
+}
+
+/// A nullable field as sent: absent is `None`, `null` is `Some(None)`.
+pub(crate) fn nullable_string(params: &Value, name: &str) -> Option<Option<String>> {
+    let fields: &Map<String, Value> = params.as_object()?;
+    fields
+        .get(name)
+        .map(|value| value.as_str().map(str::to_owned))
+}
+
+fn nullable_u64(params: &Value, name: &str) -> Option<Option<u64>> {
+    params.as_object()?.get(name).map(Value::as_u64)
+}

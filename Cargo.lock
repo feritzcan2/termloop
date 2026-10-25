@@ -2683,6 +2683,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "termloop-pm-daemon"
+version = "2.0.10"
+dependencies = [
+ "axum",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "sha2",
+ "termloop-agent-runtime",
+ "termloop-agents",
+ "termloop-gitio",
+ "termloop-launch",
+ "termloop-platform",
+ "termloop-pm",
+ "termloop-pm-contract",
+ "termloop-providers",
+ "termloop-terminal",
+ "termloop-terminal-wire",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "termloop-providers"
 version = "2.0.10"
 dependencies = [
