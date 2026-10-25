@@ -32,7 +32,6 @@ export function JiraIssueList(props: { sections: JiraIssueSection[]; now: number
         <span role="columnheader">Priority</span>
         <span role="columnheader">Assignee</span>
         <span role="columnheader">Updated</span>
-        <span />
       </div>
       {props.sections.map((section) => {
         const open = !collapsed.has(section.key);
@@ -59,8 +58,12 @@ function JiraIssueRow({ issue, now, actions }: { issue: PmJiraIssue; now: number
       <span className="jira-key" role="cell">{issue.key}</span>
       <span className="jira-title" role="cell">
         <span className="jira-title-text" title={issue.title}>{issue.title}</span>
-        {labels.map((label) => <span key={label} className="jira-label">{label}</span>)}
-        {issue.labels.length > labels.length && <span className="jira-label more">+{issue.labels.length - labels.length}</span>}
+        {labels.length > 0 && (
+          <span className="jira-labels">
+            {labels.map((label) => <span key={label} className="jira-label">{label}</span>)}
+            {issue.labels.length > labels.length && <span className="jira-label more">+{issue.labels.length - labels.length}</span>}
+          </span>
+        )}
       </span>
       <span role="cell"><span className={`jira-status cat-${issue.status.category}`}>{issue.status.name}</span></span>
       <span role="cell" className={`jira-priority ${tone ?? ""}`}>{issue.priority ?? "—"}</span>
