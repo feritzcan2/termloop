@@ -1,6 +1,6 @@
 // UI-local types. The UI imports contract types only; it never imports the
 // bridge, a transport, or the terminal adapter.
-import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff } from "@termloop/pm-contract/pm";
+import type { PmAgentProvider, PmAgentState, PmJiraApplyResult, PmJiraDiff, PmTicketPriority } from "@termloop/pm-contract/pm";
 
 export type PmView = "overview" | "ticket" | "settings";
 
@@ -33,3 +33,12 @@ export type AgentTab = {
 
 /** How a description save ended: saved as `headVersion`, refused because a newer version exists, or failed with a notice. */
 export type DescriptionSaveOutcome = { kind: "saved"; headVersion: number } | { kind: "conflict" } | { kind: "failed" };
+
+/** A quick-capture ticket: `sprintId` null files it in the backlog; an empty assignee leaves it unassigned. */
+export type TicketCapture = {
+  title: string;
+  sprintId: string | null;
+  priority: PmTicketPriority;
+  assignee: string;
+  askAssistant: boolean;
+};

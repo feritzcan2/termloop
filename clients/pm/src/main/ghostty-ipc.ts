@@ -1,8 +1,24 @@
 // Main-side handlers for the native Ghostty surface channels. Electron-free
 // so the channel set and argument validation are unit-testable; main.ts
 // registers each entry behind the trusted-sender check.
-import type { GhosttySurfaceManager } from "@termloop/ghostty-host";
-import { IPC, type PmGhosttyFrame } from "../pm-api.js";
+import type { GhosttySurfaceManager, NativeInputPolicy } from "@termloop/ghostty-host";
+import { DOUBLE_SHIFT_WINDOW_MS, IPC, parseNativeShortcut, type PmGhosttyFrame, type PmNativeShortcut } from "../pm-api.js";
+
+/**
+ * Keys the native host intercepts while a surface has focus: double Shift and
+ * Cmd+N (kVK_ANSI_N, Super) open quick capture, mirroring the DOM bindings.
+ */
+export const PM_NATIVE_INPUT_POLICY: NativeInputPolicy = {
+  bindings: [{ keyCode: 0x2d, modifiers: 8, action: "quickCapture" }],
+  doubleShiftAction: "quickCapture",
+  doubleShiftWindowMs: DOUBLE_SHIFT_WINDOW_MS,
+};
+
+/** The renderer message for a native shortcut; anything outside the allowlist is dropped. */
+export function nativeShortcutMessage(value: unknown): { shortcut: PmNativeShortcut } | undefined {
+  const shortcut = parseNativeShortcut(value);
+  return shortcut ? { shortcut } : undefined;
+}
 
 /** The slice of `GhosttySurfaceManager` the renderer may drive. */
 export type GhosttySurfaces = Pick<GhosttySurfaceManager,

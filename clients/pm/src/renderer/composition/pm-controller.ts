@@ -7,12 +7,14 @@ import type {
   PmEnvironment,
   PmProbeMatcher,
   PmSettingsUpdateParams,
+  PmTicket,
+  PmTicketCreateParams,
   PmTicketStatus,
   PmTicketUpdateParams,
 } from "@termloop/pm-contract/pm";
 import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
-import type { DescriptionSaveOutcome } from "../ui/types.js";
+import type { DescriptionSaveOutcome, TicketCapture } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -198,14 +200,35 @@ export class PmController {
     await this.loadProposals(ticketId);
   }
 
-  /** Creates a ticket in `sprintId`, by default the focused sprint. */
-  async createTicket(title: string, sprintId = this.state.selectedSprintId): Promise<void> {
+  /**
+   * Creates a ticket in `sprintId` (the focused sprint by default, the backlog
+   * for `null`) and opens it unless `open` is false.
+   */
+  async createTicket(
+    title: string,
+    sprintId: string | null | undefined = this.state.selectedSprintId,
+    fields: Pick<PmTicketCreateParams, "priority" | "assignee"> = {},
+    open = true,
+  ): Promise<PmTicket | undefined> {
     const projectId = this.state.projectId;
-    if (!projectId || !title.trim()) return;
-    const ticket = await this.call("pm_ticket_create", { projectId, title: title.trim(), ...(sprintId ? { sprintId } : {}) });
-    if (!ticket) return;
+    if (!projectId || !title.trim()) return undefined;
+    const ticket = await this.call("pm_ticket_create", { projectId, title: title.trim(), ...(sprintId ? { sprintId } : {}), ...fields });
+    if (!ticket) return undefined;
     await this.refreshBoard();
-    await this.selectTicket(ticket.id);
+    if (open) await this.selectTicket(ticket.id);
+    return ticket;
+  }
+
+  /**
+   * Files a ticket without leaving the current view. When asked, an assistant
+   * focused on it starts the same way "Ask assistant" does; whatever it drafts
+   * arrives as a proposal the PM reviews.
+   */
+  async captureTicket(capture: TicketCapture): Promise<PmTicket | undefined> {
+    const assignee = capture.assignee.trim();
+    const ticket = await this.createTicket(capture.title, capture.sprintId, { priority: capture.priority, ...(assignee ? { assignee } : {}) }, false);
+    if (ticket && capture.askAssistant) await this.launchAgent(ticket.id);
+    return ticket;
   }
 
   async updateTicket(ticketId: string, fields: Omit<PmTicketUpdateParams, "ticketId">): Promise<void> {

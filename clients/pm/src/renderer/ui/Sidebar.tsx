@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons.js";
+import { ResizeHandle, type WidthBounds } from "./ResizeHandle.js";
 import { ProjectSwitcher, type ProjectSwitcherProps } from "./ProjectSwitcher.js";
 import { SprintSidebar, type SprintComposer, type SprintSidebarProps } from "./SprintSidebar.js";
 import { agentTone, relativeTime } from "./format.js";
@@ -18,6 +19,10 @@ export type SidebarProps = ProjectSwitcherProps &
     onPull(): void;
     onStartAssistant(): void;
     onSelectAgent(sessionId: string): void;
+    /** Laid-out width; drags and arrow keys request a new one through `onResize`. */
+    width: number;
+    widthBounds: WidthBounds;
+    onResize(width: number): void;
   };
 
 type Mode = "sprints" | "agents";
@@ -69,6 +74,7 @@ export function Sidebar(props: SidebarProps) {
   );
   return (
     <aside className="sidebar" aria-label="Sidebar">
+      <ResizeHandle edge="right" label="sidebar" width={props.width} bounds={props.widthBounds} onResize={props.onResize} />
       <div className="brand">
         <span className="logo" />
         <b>TermLoop PM</b>

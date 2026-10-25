@@ -6,6 +6,7 @@ import {
   IPC,
   isRendererMethod,
   isSessionId,
+  parseNativeShortcut,
   terminalRendererFromArgv,
   type PmApi,
   type PmConnectionState,
@@ -52,6 +53,10 @@ const api: PmApi = {
   onConnectionState: (listener) => subscribe<PmConnectionState>(IPC.connectionStateChanged, listener),
   onEvent: (listener) => subscribe<PmEvent>(IPC.event, listener),
   openExternal: async (url) => { await ipcRenderer.invoke(IPC.openExternal, url); },
+  onNativeShortcut: (listener) => subscribe<{ shortcut: unknown }>(IPC.nativeShortcut, (message) => {
+    const shortcut = parseNativeShortcut(message?.shortcut);
+    if (shortcut) listener(shortcut);
+  }),
   terminal: {
     attach: async (sessionId, rows, cols) => {
       if (!isSessionId(sessionId)) throw new Error("invalid session id");

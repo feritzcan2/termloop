@@ -8,7 +8,7 @@ export type { RightSidebarView } from "../ui/types.js";
 const KEY = "termloop.pm.rightSidebar.v1";
 
 export const RIGHT_SIDEBAR_MIN_WIDTH = 280;
-export const RIGHT_SIDEBAR_MAX_WIDTH = 480;
+export const RIGHT_SIDEBAR_MAX_WIDTH = 640;
 export const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
 
 const RIGHT_SIDEBAR_VIEWS: readonly RightSidebarView[] = ["sprints", "assistant"];
@@ -26,14 +26,14 @@ export function toggleRightSidebar(preference: RightSidebarPreference, view: Rig
   return { ...preference, open: !closing, view };
 }
 
-type Source = Pick<Storage, "getItem"> | undefined;
-type Target = Pick<Storage, "setItem"> | undefined;
+export type PreferenceSource = Pick<Storage, "getItem"> | undefined;
+export type PreferenceTarget = Pick<Storage, "setItem"> | undefined;
 
-function defaultStorage(): Storage | undefined {
+export function defaultStorage(): Storage | undefined {
   return typeof window === "undefined" ? undefined : window.localStorage;
 }
 
-export function readRightSidebarPreference(storage?: Source): RightSidebarPreference {
+export function readRightSidebarPreference(storage?: PreferenceSource): RightSidebarPreference {
   try {
     const parsed = JSON.parse((storage ?? defaultStorage())?.getItem(KEY) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return DEFAULT_RIGHT_SIDEBAR;
@@ -48,7 +48,7 @@ export function readRightSidebarPreference(storage?: Source): RightSidebarPrefer
   }
 }
 
-export function writeRightSidebarPreference(preference: RightSidebarPreference, storage?: Target): void {
+export function writeRightSidebarPreference(preference: RightSidebarPreference, storage?: PreferenceTarget): void {
   try {
     (storage ?? defaultStorage())?.setItem(KEY, JSON.stringify(preference));
   } catch {

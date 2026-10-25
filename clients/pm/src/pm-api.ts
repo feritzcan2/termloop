@@ -117,6 +117,19 @@ export type PmGhosttyApi = {
   onClosed(listener: (surfaceId: number) => void): () => void;
 };
 
+/**
+ * App shortcuts the native Ghostty host detects while a terminal surface holds
+ * keyboard focus (DOM key events do not arrive then) and main forwards.
+ */
+export type PmNativeShortcut = "quickCapture";
+
+/** The double-Shift budget shared by the renderer and the native host. */
+export const DOUBLE_SHIFT_WINDOW_MS = 500;
+
+export function parseNativeShortcut(value: unknown): PmNativeShortcut | undefined {
+  return value === "quickCapture" ? value : undefined;
+}
+
 export type PmApi = {
   /** Fixed for the window's lifetime; `ghostty` only when main loaded the addon. */
   terminalRenderer: PmTerminalRenderer;
@@ -126,6 +139,7 @@ export type PmApi = {
   onConnectionState(listener: (state: PmConnectionState) => void): () => void;
   onEvent(listener: (event: PmEvent) => void): () => void;
   openExternal(url: string): Promise<void>;
+  onNativeShortcut(listener: (shortcut: PmNativeShortcut) => void): () => void;
   terminal: {
     /** Attaches with the surface's measured grid; it reaches the PTY before replay. */
     attach(sessionId: string, rows: number, cols: number): Promise<void>;
@@ -163,6 +177,7 @@ export const IPC = {
   ghosttyDestroy: "pm:ghostty-destroy",
   ghosttyInput: "pm:ghostty-input",
   ghosttyClosed: "pm:ghostty-closed",
+  nativeShortcut: "pm:native-shortcut",
 } as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

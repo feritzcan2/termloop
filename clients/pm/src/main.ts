@@ -8,7 +8,7 @@ import { GhosttySurfaceManager } from "@termloop/ghostty-host";
 import { IPC, isSessionId, TERMINAL_RENDERER_ARG, type PmConnectionState, type PmTerminalMessage } from "./pm-api.js";
 import { PmControl } from "./main/control.js";
 import { PmDaemonSupervisor, type PmDiscovery } from "./main/daemon-lifecycle.js";
-import { ghosttyHandlers } from "./main/ghostty-ipc.js";
+import { PM_NATIVE_INPUT_POLICY, ghosttyHandlers, nativeShortcutMessage } from "./main/ghostty-ipc.js";
 import { handleRendererCall, isOpenableUrl, isTrustedSender } from "./main/ipc.js";
 import { TerminalBridge } from "./main/terminal-bridge.js";
 import {
@@ -149,8 +149,11 @@ async function createWindow(): Promise<BrowserWindow> {
     ghosttySurfaces = new GhosttySurfaceManager(ghosttyAddon, window, config, config, {
       input: (surfaceId, data) => sendToRenderer(IPC.ghosttyInput, { surfaceId, data }),
       closed: (surfaceId) => sendToRenderer(IPC.ghosttyClosed, { surfaceId }),
-      shortcut: () => undefined,
-    });
+      shortcut: (shortcut) => {
+        const message = nativeShortcutMessage(shortcut);
+        if (message) sendToRenderer(IPC.nativeShortcut, message);
+      },
+    }, PM_NATIVE_INPUT_POLICY);
   }
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, target) => {

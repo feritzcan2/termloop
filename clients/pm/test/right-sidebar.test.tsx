@@ -38,7 +38,7 @@ describe("right sidebar preference", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
     writeRightSidebarPreference({ open: false, view: "assistant", width: 999 }, storage);
-    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "assistant", width: 480 });
+    expect(readRightSidebarPreference(storage)).toEqual({ open: false, view: "assistant", width: 640 });
     store.set([...store.keys()][0]!, JSON.stringify({ open: "yes", view: "files", width: 10 }));
     expect(readRightSidebarPreference(storage)).toEqual({ open: DEFAULT_RIGHT_SIDEBAR.open, view: "sprints", width: 280 });
     store.set([...store.keys()][0]!, "{not json");

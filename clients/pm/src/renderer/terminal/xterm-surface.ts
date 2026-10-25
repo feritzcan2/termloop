@@ -8,5 +8,3 @@ const xterm: SurfaceFactory = (onInput, onResize) => new XtermSurface(onInput, o
 
 /** Native Ghostty on macOS when available; xterm.js otherwise. */
 export const agentSurface = selectSurfaceFactory(typeof window === "undefined" ? undefined : window.pm, xterm);
-/** The name composition imports; it resolves to `agentSurface`, not always xterm. */
-export const xtermSurface = agentSurface;

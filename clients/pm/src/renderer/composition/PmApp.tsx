@@ -1,11 +1,23 @@
 // Composition: binds store state to UI props and UI intents to the
 // controller. The only renderer layer that sees both the bridge-backed
 // controller and the terminal adapter.
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PmBoardTicket } from "@termloop/pm-contract/pm";
 import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
 import {
+  LEFT_SIDEBAR_DEFAULT_WIDTH,
+  LEFT_SIDEBAR_MAX_WIDTH,
+  LEFT_SIDEBAR_MIN_WIDTH,
+  clampLeftSidebarWidth,
+  fitSidebarWidths,
+  readLeftSidebarPreference,
+  writeLeftSidebarPreference,
+} from "../state/left-sidebar-preference.js";
+import {
+  RIGHT_SIDEBAR_DEFAULT_WIDTH,
+  RIGHT_SIDEBAR_MAX_WIDTH,
+  RIGHT_SIDEBAR_MIN_WIDTH,
   clampRightSidebarWidth,
   readRightSidebarPreference,
   toggleRightSidebar,
@@ -13,9 +25,11 @@ import {
   type RightSidebarPreference,
 } from "../state/right-sidebar-preference.js";
 import { mountAgentTerminal } from "../terminal/agent-terminal.js";
-import { xtermSurface } from "../terminal/xterm-surface.js";
+import { agentSurface } from "../terminal/xterm-surface.js";
 import { AgentPanel } from "../ui/AgentPanel.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
+import { CaptureToast, QuickCapture } from "../ui/QuickCapture.js";
+import type { WidthBounds } from "../ui/ResizeHandle.js";
 import { RightActivityBar } from "../ui/RightActivityBar.js";
 import { RightSidebar } from "../ui/RightSidebar.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
@@ -26,10 +40,14 @@ import { SprintDnd } from "../ui/sprint-dnd.js";
 import { StageTabs, type StageTab } from "../ui/StageTabs.js";
 import { TicketEditor } from "../ui/TicketEditor.js";
 import { lastJiraPull, leftSprint, sprintTickets, ticketLabel } from "../ui/format.js";
-import type { AgentTab, MountTerminal } from "../ui/types.js";
+import type { AgentTab, MountTerminal, TicketCapture } from "../ui/types.js";
+import { DoubleShiftDetector, isNewTicketShortcut } from "./capture-shortcut.js";
 import type { PmController } from "./pm-controller.js";
 
 const EMPTY: never[] = [];
+const LEFT_BOUNDS: WidthBounds = { min: LEFT_SIDEBAR_MIN_WIDTH, max: LEFT_SIDEBAR_MAX_WIDTH, defaultWidth: LEFT_SIDEBAR_DEFAULT_WIDTH };
+const RIGHT_BOUNDS: WidthBounds = { min: RIGHT_SIDEBAR_MIN_WIDTH, max: RIGHT_SIDEBAR_MAX_WIDTH, defaultWidth: RIGHT_SIDEBAR_DEFAULT_WIDTH };
+const CAPTURE_TOAST_MS = 6000;
 
 export function PmApp({ controller, terminal }: { controller: PmController; terminal: PmApi["terminal"] | undefined }) {
   const store = controller.store;
@@ -40,7 +58,7 @@ export function PmApp({ controller, terminal }: { controller: PmController; term
     return () => controller.dispose();
   }, [controller]);
   const mountTerminal = useCallback<MountTerminal>(
-    (host, sessionId) => (terminal ? mountAgentTerminal(terminal, host, sessionId, xtermSurface) : () => undefined),
+    (host, sessionId) => (terminal ? mountAgentTerminal(terminal, host, sessionId, agentSurface) : () => undefined),
     [terminal],
   );
 
@@ -73,7 +91,31 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const shownSprintId = leftSprint(sprints, state.selectedSprintId)?.id;
   const lane = useMemo(() => (shownSprintId ? sprintTickets(allTickets, shownSprintId) : EMPTY), [allTickets, shownSprintId]);
   const [right, updateRight] = useRightSidebar();
+  const [leftWidth, setLeftWidth] = useLeftSidebarWidth();
+  const viewport = useViewportWidth();
+  const fitted = fitSidebarWidths(leftWidth, right.open ? right.width : undefined, viewport);
+  useNudgeNativeSurfaces(fitted.left);
   const showAssistant = () => updateRight((current) => ({ ...current, open: true, view: "assistant" }));
+  const [capturing, setCapturing] = useState(false);
+  useCaptureShortcut(controller, Boolean(project) && !state.jiraDialog, () => setCapturing(true));
+  const [created, setCreated] = useState<{ id: string; label: string }>();
+  useEffect(() => {
+    if (!created) return;
+    const timer = setTimeout(() => setCreated(undefined), CAPTURE_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [created]);
+  const capture = async (draft: TicketCapture) => {
+    const ticket = await controller.captureTicket(draft);
+    if (!ticket) return false;
+    if (draft.askAssistant) showAssistant();
+    setCreated({ id: ticket.id, label: ticketLabel(ticket) });
+    return true;
+  };
+  const captureSprintId = (sprints.find((candidate) => candidate.state === "active") ?? sprint)?.id ?? null;
+  const assignees = useMemo(
+    () => [...new Set(allTickets.flatMap((candidate) => candidate.ticket.assignee ?? []))].sort(),
+    [allTickets],
+  );
   const launchAgent = (focusTicketId: string | undefined) => {
     showAssistant();
     void controller.launchAgent(focusTicketId);
@@ -95,7 +137,10 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
       onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
       onSetStatus={(id, status) => void controller.setStatus(id, status)}
     >
-      <div className={`shell ${right.open ? "right-open" : ""}`} style={right.open ? { "--right-width": `${right.width}px` } as CSSProperties : undefined}>
+      <div
+        className={`shell ${right.open ? "right-open" : ""}`}
+        style={{ "--left-width": `${fitted.left}px`, ...(fitted.right === undefined ? {} : { "--right-width": `${fitted.right}px` }) } as CSSProperties}
+      >
         <Sidebar
           projects={state.projects}
           projectId={state.projectId}
@@ -107,6 +152,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           sprints={sprints}
           tickets={allTickets}
           tier={tier}
+          environments={board?.environments ?? EMPTY}
+          versions={state.versions}
           selectedSprintId={state.selectedSprintId}
           selectedTicketId={state.selectedTicketId}
           agents={agents}
@@ -123,6 +170,9 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           onCreateTicket={(title, sprintId) => void controller.createTicket(title, sprintId)}
           onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
           onShowSprints={() => updateRight((current) => ({ ...current, open: true, view: "sprints" }))}
+          width={fitted.left}
+          widthBounds={LEFT_BOUNDS}
+          onResize={(width) => setLeftWidth(clampLeftSidebarWidth(width))}
         />
         <main className="stage">
           <StageTabs tabs={stageTabs} view={view} onView={(next) => controller.setView(next)} />
@@ -190,6 +240,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
                 sprints={sprints}
                 tickets={tickets}
                 tier={tier}
+                environments={board?.environments ?? EMPTY}
                 digest={state.digest?.entries ?? EMPTY}
                 now={now}
                 onOpenTicket={(id) => void controller.selectTicket(id)}
@@ -202,7 +253,8 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
         {right.open && (
           <RightSidebar
             view={right.view}
-            width={right.width}
+            width={fitted.right ?? right.width}
+            bounds={RIGHT_BOUNDS}
             onResize={(width) => updateRight((current) => ({ ...current, width: clampRightSidebarWidth(width) }))}
             onClose={() => updateRight((current) => ({ ...current, open: false }))}
           >
@@ -231,6 +283,23 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
           </RightSidebar>
         )}
         <RightActivityBar open={right.open} view={right.view} onSelect={(next) => updateRight((current) => toggleRightSidebar(current, next))} />
+        {capturing && (
+          <QuickCapture
+            sprints={sprints}
+            defaultSprintId={captureSprintId}
+            assignees={assignees}
+            canAskAssistant={Boolean(project)}
+            onCreate={capture}
+            onClose={() => setCapturing(false)}
+          />
+        )}
+        {created && (
+          <CaptureToast
+            label={created.label}
+            onOpen={() => { setCreated(undefined); setCapturing(false); void controller.selectTicket(created.id); }}
+            onDismiss={() => setCreated(undefined)}
+          />
+        )}
         {state.jiraDialog && (
           <JiraSyncDialog dialog={state.jiraDialog} onApply={() => void controller.applyJira()} onClose={() => controller.closeJiraDialog()} />
         )}
@@ -244,6 +313,71 @@ function useRightSidebar(): [RightSidebarPreference, (update: (current: RightSid
   const [preference, setPreference] = useState(readRightSidebarPreference);
   useEffect(() => writeRightSidebarPreference(preference), [preference]);
   return [preference, setPreference];
+}
+
+function useLeftSidebarWidth(): [number, (width: number) => void] {
+  const [width, setWidth] = useState(() => readLeftSidebarPreference().width);
+  useEffect(() => writeLeftSidebarPreference({ width }), [width]);
+  return [width, setWidth];
+}
+
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return width;
+}
+
+/**
+ * A native Ghostty view follows its host element through a ResizeObserver,
+ * which misses a pure move. Widening the left sidebar moves the right panel's
+ * terminal without resizing it, so announce a window resize to resync frames.
+ */
+function useNudgeNativeSurfaces(leftWidth: number): void {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    window.dispatchEvent(new Event("resize"));
+  }, [leftWidth]);
+}
+
+/**
+ * Opens quick capture on double Shift or Cmd/Ctrl+N in the page, and on the
+ * same keys forwarded by main while a native terminal holds focus.
+ */
+function useCaptureShortcut(controller: PmController, enabled: boolean, open: () => void): void {
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (!enabled) return;
+    const detector = new DoubleShiftDetector();
+    const mac = /Mac/.test(navigator.platform);
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (isNewTicketShortcut(event, mac)) {
+        event.preventDefault();
+        detector.reset();
+        openRef.current();
+      } else if (detector.keyDown(event)) {
+        openRef.current();
+      }
+    };
+    const keyUp = (event: KeyboardEvent) => detector.keyUp(event);
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    const stopNative = controller.bridge.onNativeShortcut((shortcut) => {
+      detector.reset();
+      if (shortcut === "quickCapture") openRef.current();
+    });
+    return () => {
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+      stopNative();
+    };
+  }, [controller, enabled]);
 }
 
 function ConnectionScreen({ connection }: { connection: PmState["connection"] }) {
