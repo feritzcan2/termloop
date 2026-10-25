@@ -20,6 +20,7 @@ function panel(overrides: Partial<SkillsPanelProps> = {}): SkillsPanelProps {
     onSetEnabled: () => undefined,
     onRun: () => undefined,
     onCreate: () => undefined,
+    onRevise: () => undefined,
     onDryRun: () => undefined,
     onDiscard: () => undefined,
     onInstall: async () => true,
@@ -103,6 +104,50 @@ describe("SkillsPanel", () => {
     await act(async () => install.click());
     expect(onInstall).toHaveBeenCalledWith("draft-1", [slackTool], ["C0OPS"]);
     unmount();
+  });
+
+  it("offers a revision when most suggestions were rejected, and on demand", () => {
+    const onRevise = vi.fn();
+    const plain = render(<SkillsPanel {...panel({ onRevise })} />);
+    act(() => button(plain.container, "Revise").click());
+    expect(onRevise).toHaveBeenCalledWith("skill-1");
+    plain.unmount();
+    const builtin = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [skill({ builtin: "deploymentControl" })], drafts: [] } })} />);
+    expect(button(builtin.container, "Revise")).toBeUndefined();
+    builtin.unmount();
+    const offered = render(
+      <SkillsPanel {...panel({ onRevise, skills: { projectId: "project-1", skills: [skill({ revisionReason: "You rejected 13 of its last 20 suggestions." })], drafts: [] } })} />,
+    );
+    expect(offered.container.querySelector(".revision-offer")?.textContent).toContain("You rejected 13 of its last 20 suggestions.");
+    expect([...offered.container.querySelectorAll("button")].filter((candidate) => candidate.textContent === "Revise")).toHaveLength(1);
+    offered.unmount();
+  });
+
+  it("compares a revision with the installed version before it installs as the next one", () => {
+    const installed = skill({ version: 3 });
+    const draft = skillDraft({
+      origin: "revision",
+      baseSkillId: "skill-1",
+      changelog: "Skips bugs that already have an owner.",
+      manifest: { ...installed.manifest, instructions: "Suggest an owner only for unassigned bugs." },
+    });
+    const { container, unmount } = render(<SkillsPanel {...panel({ skills: { projectId: "project-1", skills: [installed], drafts: [draft] } })} />);
+    expect(container.textContent).toContain("Skill revision");
+    expect(container.textContent).toContain("What changed: Skips bugs that already have an owner.");
+    const diff = container.querySelector('[aria-label="Changes from v3"]')!;
+    expect(diff.querySelector(".diff-line.removed")?.textContent).toBe("Suggest an owner.");
+    expect(diff.querySelector(".diff-line.added")?.textContent).toBe("Suggest an owner only for unassigned bugs.");
+    expect(button(container, "Install as v4")).toBeDefined();
+    unmount();
+  });
+
+  it("starts the creator in revise mode for one skill", async () => {
+    const bridge = fakeBridge((method) => {
+      if (method === "pm_skill_creator_launch") return ok({ sessionId: "session-1" });
+      return ok({ projectId: "project-1", sessions: [] });
+    });
+    await new PmController(bridge, createPmStore({ projectId: "project-1" })).launchSkillCreator("skill-1");
+    expect(bridge.calls[0]).toEqual({ method: "pm_skill_creator_launch", params: { projectId: "project-1", skillId: "skill-1" } });
   });
 
   it("keeps Install off until the dry run completed", () => {

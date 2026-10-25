@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { PmSkill, PmSkillDraft, PmSkillsReadResult, PmTicket, PmDataTier } from "@termloop/pm-contract/pm";
+import type { PmSkill, PmSkillDraft, PmSkillManifest, PmSkillsReadResult, PmTicket, PmDataTier } from "@termloop/pm-contract/pm";
 import { Icon } from "./icons.js";
 import { relativeTime, timeUntil } from "./format.js";
-import { EvidenceList } from "./ProposalCard.js";
+import { EvidenceList, LineDiff } from "./ProposalCard.js";
 import { proposalKindLabel } from "./proposal-change.js";
 
 export type SkillsPanelProps = {
@@ -14,6 +14,8 @@ export type SkillsPanelProps = {
   onSetEnabled(skillId: string, enabled: boolean): void;
   onRun(skillId: string): void;
   onCreate(): void;
+  /** Starts the skill creator to propose a revision of an installed skill. */
+  onRevise(skillId: string): void;
   onDryRun(draftId: string): void;
   onDiscard(draftId: string): void;
   /** Resolves true once installed; `channels` are the ticked Slack channel ids. */
@@ -28,7 +30,7 @@ const OUTCOMES: Record<NonNullable<PmSkill["lastOutcome"]>, string> = {
   skipped: "nothing new",
 };
 
-function triggerText(skill: PmSkill["manifest"]): string {
+function triggerText(skill: PmSkillManifest): string {
   switch (skill.trigger.kind) {
     case "manual": return "Manual";
     case "schedule": return `Every ${skill.trigger.everyMinutes} min`;
@@ -66,7 +68,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
         </div>
       ) : (
         <ul className="skill-list" aria-label="Skills">
-          {skills.map((skill) => <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} />)}
+          {skills.map((skill) => <SkillRow key={skill.id} skill={skill} now={props.now} onSetEnabled={props.onSetEnabled} onRun={props.onRun} onRevise={props.onRevise} />)}
         </ul>
       )}
       {props.tier === "tickets" && <p className="hint pad">Skills that read GitHub pull requests appear once a repository is connected.</p>}
@@ -75,6 +77,7 @@ export function SkillsPanel(props: SkillsPanelProps) {
         <DraftCard
           key={draft.id}
           draft={draft}
+          base={skills.find((skill) => skill.id === draft.baseSkillId)}
           tickets={props.tickets}
           now={props.now}
           onDryRun={() => props.onDryRun(draft.id)}
@@ -87,7 +90,13 @@ export function SkillsPanel(props: SkillsPanelProps) {
   );
 }
 
-function SkillRow({ skill, now, onSetEnabled, onRun }: { skill: PmSkill; now: number; onSetEnabled(id: string, enabled: boolean): void; onRun(id: string): void }) {
+function SkillRow({ skill, now, onSetEnabled, onRun, onRevise }: {
+  skill: PmSkill;
+  now: number;
+  onSetEnabled(id: string, enabled: boolean): void;
+  onRun(id: string): void;
+  onRevise(id: string): void;
+}) {
   const last = skill.lastRunAtEpochMs === null
     ? "Never run"
     : `${relativeTime(skill.lastRunAtEpochMs, now)}${skill.lastOutcome ? ` · ${OUTCOMES[skill.lastOutcome]}` : ""}`;
@@ -104,6 +113,9 @@ function SkillRow({ skill, now, onSetEnabled, onRun }: { skill: PmSkill; now: nu
         {skill.pendingSuggestionCount > 0 && <span className="chip warn">{skill.pendingSuggestionCount} pending</span>}
         <span title="Runs today">{skill.runsToday} today</span>
         <span className="sp" />
+        {skill.builtin === null && !skill.revisionReason && (
+          <button type="button" className="btn sm ghost" onClick={() => onRevise(skill.id)}>Revise</button>
+        )}
         <button type="button" className="btn sm" disabled={skill.running} onClick={() => onRun(skill.id)}>{skill.running ? "Running…" : "Run now"}</button>
       </div>
       {skill.pausedReason
@@ -111,6 +123,12 @@ function SkillRow({ skill, now, onSetEnabled, onRun }: { skill: PmSkill; now: nu
         : skill.nextAttemptAtEpochMs !== null && skill.nextAttemptAtEpochMs > now && (
           <p className="hint" role="status">The last run failed; it tries again {timeUntil(skill.nextAttemptAtEpochMs, now)}.</p>
         )}
+      {skill.revisionReason && (
+        <div className="revision-offer" role="status">
+          <p>{skill.revisionReason} The skill creator can propose a better version for you to compare.</p>
+          <button type="button" className="btn sm pri" onClick={() => onRevise(skill.id)}>Revise</button>
+        </div>
+      )}
     </li>
   );
 }
@@ -126,8 +144,26 @@ function ToolName(props: { tool: string }) {
   return <span>Your agent's <code>{own[2]}</code> <span className="hint">({own[1]}, read-only)</span></span>;
 }
 
+/** A manifest as plain lines, so two versions compare line by line. */
+export function manifestLines(manifest: PmSkillManifest): string {
+  return [
+    `Name: ${manifest.name}`,
+    `Description: ${manifest.description}`,
+    `Runs: ${triggerText(manifest)}`,
+    `Reads: ${manifest.sources.join(", ")}`,
+    `Prefilter: ${manifest.prefilter}`,
+    ...manifest.approvedTools.map((tool) => `Tool: ${tool}`),
+    ...manifest.agentTools.map((tool) => `Agent tool: ${tool}`),
+    ...manifest.channels.map((channel) => `Channel: #${channel.name}`),
+    "Instructions:",
+    manifest.instructions,
+  ].join("\n");
+}
+
 function DraftCard(props: {
   draft: PmSkillDraft;
+  /** The installed skill a revision replaces. */
+  base: PmSkill | undefined;
   tickets: PmTicket[];
   now: number;
   onDryRun(): void;
@@ -160,6 +196,9 @@ function DraftCard(props: {
       <h3 className="skill-name">{draft.manifest.name}</h3>
       <p className="draft-summary">{draft.whatItWillDo}</p>
       {draft.changelog && <p className="hint">What changed: {draft.changelog}</p>}
+      {props.base && (
+        <LineDiff before={manifestLines(props.base.manifest)} after={manifestLines(draft.manifest)} label={`Changes from v${props.base.version}`} />
+      )}
       <div className="skill-meta"><span className="chip">{triggerText(draft.manifest)}</span></div>
       {draft.neededTools.filter((tool) => !tool.available).map((tool) => (
         <div key={tool.name} className="needed-tool">
@@ -224,7 +263,7 @@ function DraftCard(props: {
           disabled={blocked !== undefined || installing}
           onClick={() => void install()}
         >
-          Install
+          {props.base ? `Install as v${props.base.version + 1}` : "Install"}
         </button>
       </div>
     </section>

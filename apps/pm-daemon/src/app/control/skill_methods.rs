@@ -59,7 +59,7 @@ pub(super) fn run(state: &AppState, params: &Value) -> Result<Value, ControlErro
 pub(super) fn creator_launch(state: &AppState, params: &Value) -> Result<Value, ControlError> {
     let params: PmSkillCreatorLaunchParams = parse(params)?;
     require_project(&state.store.lock(), &params.project_id)?;
-    Ok(skills::launch_creator(state, &params.project_id)?.value())
+    Ok(skills::launch_creator(state, &params.project_id, params.skill_id.as_deref())?.value())
 }
 
 pub(super) fn feedback_read(state: &AppState, params: &Value) -> Result<Value, ControlError> {

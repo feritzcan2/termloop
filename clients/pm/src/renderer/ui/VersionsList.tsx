@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { PmTicketAuthor, PmTicketVersion } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
-import { lineDiff } from "./ProposalCard.js";
+import { LineDiff } from "./ProposalCard.js";
 
 export const AUTHOR_LABEL: Record<PmTicketAuthor, string> = { pm: "you", agent: "assistant", jira: "jira" };
 const AUTHOR_TITLE: Record<PmTicketAuthor, string> = {
@@ -53,11 +53,7 @@ export function VersionsList(props: VersionsListProps) {
               {AUTHOR_LABEL[version.author]} · {relativeTime(version.recordedAtEpochMs, props.now)}
             </time>
             {expanded && (
-              <div className="draft-diff version-diff" aria-label={`Changes in v${version.number}`}>
-                {lineDiff(previous?.description ?? "", version.description).map((line, lineIndex) => (
-                  <div key={lineIndex} className={`diff-line ${line.kind}`}>{line.text || " "}</div>
-                ))}
-              </div>
+              <LineDiff before={previous?.description ?? ""} after={version.description} className="version-diff" label={`Changes in v${version.number}`} />
             )}
           </li>
         );

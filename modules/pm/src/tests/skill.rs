@@ -2,12 +2,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{store, ticket};
 use crate::agent::{PM_BOARD_READ, PM_RISKS_READ, PM_TICKET_READ, PM_TICKET_SUGGEST};
-use crate::agent::{PmAgentMode, PmToolContext, SkillRunContext};
+use crate::agent::{PmAgentMode, PmAgentProfile, PmToolContext, SkillRunContext};
 use crate::skill::{
     BuiltinSkill, DryRunState, Evidence, FeedbackOutcome, NeededTool, NewSkillDraft,
     SKILL_RUN_DEADLINE_MS, SkillChannel, SkillDraftOrigin, SkillEvent, SkillManifest,
     SkillPrefilter, SkillRunOutcome, SkillRunTrigger, SkillSample, SkillSource, SkillTrigger,
-    evidence_sources,
+    evidence_sources, revision_reason,
 };
 use crate::{
     PmError, PmStore, ProjectEnvironment, ProposalChange, ProposalOrigin,
@@ -65,6 +65,29 @@ pub(super) fn installed(store: &mut PmStore, manifest: SkillManifest) -> crate::
         .unwrap();
     let tools = draft.first_use_tools.clone();
     store.install_skill_draft(&draft.id, &tools, None).unwrap()
+}
+
+/// A status suggestion of the skill's first version resting on `url`.
+fn skill_proposal(
+    store: &mut PmStore,
+    ticket_id: &str,
+    skill_id: &str,
+    url: &str,
+) -> crate::TicketProposal {
+    store
+        .propose_ticket_change_from(
+            ticket_id,
+            ProposalChange::Status {
+                status: TicketStatus::InProgress,
+            },
+            "Work started",
+            Some(ProposalOrigin {
+                skill_id: skill_id.to_owned(),
+                skill_version: 1,
+                evidence: evidence(url),
+            }),
+        )
+        .unwrap()
 }
 
 fn with_environments(store: &mut PmStore) {
@@ -380,6 +403,103 @@ fn feedback_is_recorded_per_version_and_a_rejected_evidence_is_not_suggested_aga
         evidence_sources(&evidence("https://github.com/acme/pay/pull/7")),
         ["github.com"]
     );
+}
+
+#[test]
+fn a_revision_is_offered_when_most_recent_suggestions_are_rejected() {
+    assert_eq!(revision_reason(9, 9), None, "too few verdicts");
+    assert_eq!(revision_reason(20, 12), None, "60% is not more than 60%");
+    assert!(revision_reason(20, 13).is_some());
+    assert!(revision_reason(10, 7).is_some());
+
+    let mut store = store();
+    let work = ticket(&mut store, "p1", "Login", None);
+    let skill = installed(&mut store, manifest());
+    let reason = |store: &PmStore| store.skill(&skill.id).unwrap().unwrap().revision_reason;
+    for index in 0..10 {
+        assert_eq!(reason(&store), None);
+        let proposal = skill_proposal(
+            &mut store,
+            &work.id,
+            &skill.id,
+            &format!("https://acme.slack.com/archives/C1/p{index}"),
+        );
+        store.reject_ticket_proposal(&proposal.id).unwrap();
+    }
+    assert_eq!(
+        reason(&store).as_deref(),
+        Some("You rejected 10 of its last 10 suggestions.")
+    );
+    // A revision waiting for the PM is not offered again.
+    let revision = store
+        .submit_skill_draft(new_draft(manifest(), Some(skill.id.clone())))
+        .unwrap();
+    assert_eq!(reason(&store), None);
+    // The new version starts without verdicts.
+    let run = store.start_dry_run(&revision.id, 0).unwrap();
+    store
+        .finish_skill_run(&run.id, SkillRunOutcome::Reported, None)
+        .unwrap();
+    let revised = store
+        .install_skill_draft(&revision.id, &revision.first_use_tools, None)
+        .unwrap();
+    assert_eq!(revised.version, 2);
+    assert_eq!(reason(&store), None);
+}
+
+#[test]
+fn the_creator_revises_a_skill_from_its_manifest_and_verdicts() {
+    let mut store = store();
+    let work = ticket(&mut store, "p1", "Login", None);
+    let skill = installed(&mut store, manifest());
+    let proposal = skill_proposal(
+        &mut store,
+        &work.id,
+        &skill.id,
+        "https://acme.slack.com/archives/C1/p1",
+    );
+    store
+        .reject_ticket_proposal_because(&proposal.id, Some("Only a branch was pushed"))
+        .unwrap();
+
+    let profile = PmAgentProfile::build_skill_reviser(&store, "p1", &skill.id).unwrap();
+    assert_eq!(profile.mode, PmAgentMode::SkillCreator);
+    assert!(profile.system_prompt.contains(&format!(
+        "Skill to revise: Standup digest (id {}, version 1)",
+        skill.id
+    )));
+    assert!(
+        profile
+            .system_prompt
+            .contains("\"instructions\": \"Look for blocked tickets.\"")
+    );
+    assert!(profile.system_prompt.contains(&format!(
+        "- rejected status on ticket {} from slack:C1: Only a branch was pushed",
+        work.id
+    )));
+    let kickoff = profile.first_message.unwrap();
+    assert!(kickoff.starts_with("Revise the installed skill below"));
+    assert!(kickoff.ends_with(&format!(
+        "The skill to revise is {} (Standup digest).",
+        skill.id
+    )));
+
+    assert!(matches!(
+        PmAgentProfile::build_skill_reviser(&store, "p2", &skill.id),
+        Err(PmError::NotFound)
+    ));
+    with_environments(&mut store);
+    store.ensure_builtin_skills("p1").unwrap();
+    let builtin = store
+        .skills("p1")
+        .unwrap()
+        .into_iter()
+        .find(|skill| skill.builtin.is_some())
+        .unwrap();
+    assert!(matches!(
+        PmAgentProfile::build_skill_reviser(&store, "p1", &builtin.id),
+        Err(PmError::Constraint(_))
+    ));
 }
 
 #[test]

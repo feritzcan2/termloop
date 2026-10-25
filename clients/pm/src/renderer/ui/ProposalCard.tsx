@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { PmEvidence, PmProposal, PmProposalChange, PmTicket } from "@termloop/pm-contract/pm";
 import { STATUS_LABEL, relativeTime } from "./format.js";
 import { proposalKindLabel, textChange, touchesJira } from "./proposal-change.js";
@@ -40,11 +40,7 @@ export function ProposalCard(props: ProposalCardProps) {
       {proposal.summary && <p className="draft-summary">{proposal.summary}</p>}
       {outdated && <p className="hint">Drafted against version {proposal.baseVersion}; the description has changed since.</p>}
       {text && showDiff && (
-        <div className="draft-diff">
-          {lineDiff(text.current, text.proposed).map((line, index) => (
-            <div key={index} className={`diff-line ${line.kind}`}>{line.text || "\u00a0"}</div>
-          ))}
-        </div>
+        <LineDiff before={text.current} after={text.proposed} />
       )}
       {!text && <p className="draft-change">{changeLine(change, ticket, props.sprintName)}</p>}
       {shortlist.length > 0 && (
@@ -91,6 +87,18 @@ export function EvidenceList({ evidence, onOpenLink }: { evidence: PmEvidence[];
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Two texts line by line: removed lines struck through, added ones marked. */
+export function LineDiff(props: { before: string; after: string; className?: string; label?: string }) {
+  const lines = useMemo(() => lineDiff(props.before, props.after), [props.before, props.after]);
+  return (
+    <div className={`draft-diff ${props.className ?? ""}`} aria-label={props.label}>
+      {lines.map((line, index) => (
+        <div key={index} className={`diff-line ${line.kind}`}>{line.text || "\u00a0"}</div>
+      ))}
+    </div>
   );
 }
 

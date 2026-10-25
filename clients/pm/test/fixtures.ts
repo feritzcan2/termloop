@@ -83,7 +83,7 @@ export function skill(overrides: Partial<PmSkill> = {}): PmSkill {
   return {
     id: "skill-1", projectId: "project-1", builtin: null, enabled: true, version: 1, manifest: manifest(),
     lastRunAtEpochMs: null, lastOutcome: null, running: false, pendingSuggestionCount: 0, runsToday: 0,
-    consecutiveFailures: 0, pausedReason: null, nextAttemptAtEpochMs: null, createdAtEpochMs: 0, ...overrides,
+    consecutiveFailures: 0, pausedReason: null, nextAttemptAtEpochMs: null, revisionReason: null, createdAtEpochMs: 0, ...overrides,
   };
 }
 

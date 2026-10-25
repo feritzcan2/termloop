@@ -280,12 +280,18 @@ pub(crate) fn dry_run(state: &AppState, draft_id: &str) -> Result<SkillRun, Cont
     Ok(run)
 }
 
-/// Launches the skill creator for the project in the Assistant pane.
+/// Launches the skill creator for the project in the Assistant pane; with
+/// a skill, the creator proposes a revision of it.
 pub(crate) fn launch_creator(
     state: &AppState,
     project_id: &str,
+    skill_id: Option<&str>,
 ) -> Result<agents::AgentRecord, ControlError> {
-    agents::launch(state, project_id, PmAgentMode::SkillCreator, None, None)
+    let Some(skill_id) = skill_id else {
+        return agents::launch(state, project_id, PmAgentMode::SkillCreator, None, None);
+    };
+    let profile = PmAgentProfile::build_skill_reviser(&state.store.lock(), project_id, skill_id)?;
+    agents::launch_profile(state, project_id, &profile, None, None, None)
 }
 
 /// A skill-run agent exited: a run it did not finish failed.

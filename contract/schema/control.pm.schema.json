@@ -5149,6 +5149,7 @@
         "consecutiveFailures",
         "pausedReason",
         "nextAttemptAtEpochMs",
+        "revisionReason",
         "createdAtEpochMs"
       ],
       "properties": {
@@ -5236,6 +5237,14 @@
           ],
           "minimum": 0,
           "x-rust-type": "u64"
+        },
+        "revisionReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 300
         },
         "createdAtEpochMs": {
           "type": "integer",
@@ -5753,6 +5762,12 @@
       ],
       "properties": {
         "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!-~]+$"
+        },
+        "skillId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,

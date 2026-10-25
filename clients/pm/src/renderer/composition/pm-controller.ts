@@ -515,11 +515,11 @@ export class PmController {
     await Promise.all([this.loadSkills(), this.refreshAgents()]);
   }
 
-  /** Starts the skill creator and shows it in the stage. */
-  async launchSkillCreator(): Promise<void> {
+  /** Starts the skill creator and shows it in the stage; with a skill, it proposes a revision of it. */
+  async launchSkillCreator(skillId?: string): Promise<void> {
     const projectId = this.state.projectId;
     if (!projectId) return;
-    const session = await this.call("pm_skill_creator_launch", { projectId });
+    const session = await this.call("pm_skill_creator_launch", skillId ? { projectId, skillId } : { projectId });
     if (!session) return;
     this.selectAgent(session.sessionId);
     await this.refreshAgents();

@@ -8,8 +8,8 @@ use super::delivery_rows::{invalid_row, json_column};
 use super::rows::parsed;
 use crate::PmError;
 use crate::skill::{
-    BuiltinSkill, DryRunState, FeedbackOutcome, SkillDraft, SkillDraftOrigin, SkillFeedback,
-    SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger,
+    BuiltinSkill, DryRunState, FeedbackOutcome, REVISION_WINDOW, SkillDraft, SkillDraftOrigin,
+    SkillFeedback, SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger,
 };
 
 /// One `skills` row before its manifest and derived state are joined in.
@@ -349,19 +349,42 @@ fn feedback_row(row: &Row<'_>) -> rusqlite::Result<SkillFeedback> {
 }
 
 /// A skill's feedback, newest first.
+/// The skill's verdicts, newest first; with a version, only the last
+/// [`REVISION_WINDOW`] on that version's suggestions.
 pub(crate) fn skill_feedback(
     connection: &Connection,
     skill_id: &str,
+    version: Option<u32>,
 ) -> Result<Vec<SkillFeedback>, PmError> {
     let mut statement = connection.prepare(
         "SELECT skill_id, version, ticket_id, kind, outcome, sources_json, reason, \
              recorded_at_epoch_ms \
-         FROM skill_feedback WHERE skill_id = ?1 ORDER BY id DESC",
+         FROM skill_feedback WHERE skill_id = ?1 AND (?2 IS NULL OR version = ?2) \
+         ORDER BY id DESC LIMIT CASE WHEN ?2 IS NULL THEN -1 ELSE ?3 END",
     )?;
     let entries = statement
-        .query_map([skill_id], feedback_row)?
+        .query_map(params![skill_id, version, REVISION_WINDOW], feedback_row)?
         .collect::<Result<_, _>>()?;
     Ok(entries)
+}
+
+/// How many of the last [`REVISION_WINDOW`] verdicts on a version's
+/// suggestions there are and how many were rejections; `None` while a
+/// revision draft of the skill waits for the PM.
+pub(crate) fn revision_verdicts(
+    connection: &Connection,
+    skill_id: &str,
+    version: u32,
+) -> Result<Option<(u32, u32)>, PmError> {
+    let (waiting, judged, rejected): (bool, u32, u32) = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM skill_drafts WHERE base_skill_id = ?1), count(*), \
+             coalesce(sum(outcome = 'rejected'), 0) \
+         FROM (SELECT outcome FROM skill_feedback WHERE skill_id = ?1 AND version = ?2 \
+             ORDER BY id DESC LIMIT ?3)",
+        params![skill_id, version, REVISION_WINDOW],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    Ok((!waiting).then_some((judged, rejected)))
 }
 
 /// The PM rejected a suggestion of the skill resting on this evidence.

@@ -41,6 +41,12 @@ pub const SKILL_FEEDBACK_REASON_MAX_CHARS: usize = 300;
 pub const SKILL_RUNS_KEPT: u32 = 200;
 /// Feedback entries kept per skill; older ones are dropped.
 pub const SKILL_FEEDBACK_KEPT: u32 = 500;
+/// A revision is offered when more than [`REVISION_REJECTED_PERCENT`] of
+/// the last [`REVISION_WINDOW`] judged suggestions of the skill's current
+/// version were rejected, once at least [`REVISION_MIN_JUDGED`] were judged.
+pub const REVISION_WINDOW: u32 = 20;
+pub const REVISION_MIN_JUDGED: u32 = 10;
+pub const REVISION_REJECTED_PERCENT: u32 = 60;
 /// A run that has not reported by then is abandoned.
 pub const SKILL_RUN_DEADLINE_MS: u64 = 20 * 60 * 1000;
 /// How far back a dry run looks.
@@ -233,7 +239,17 @@ pub struct Skill {
     pub paused_reason: Option<String>,
     /// After a failure: when the skill is next due, backing off.
     pub next_attempt_at_epoch_ms: Option<u64>,
+    /// Set when the PM rejects most of what this version suggests and no
+    /// revision is waiting; the Skills panel offers a revision.
+    pub revision_reason: Option<String>,
     pub created_at_epoch_ms: u64,
+}
+
+/// Why a revision is offered, from the verdicts on the last
+/// [`REVISION_WINDOW`] suggestions of a version; `None` when it is not.
+pub fn revision_reason(judged: u32, rejected: u32) -> Option<String> {
+    (judged >= REVISION_MIN_JUDGED && rejected * 100 > judged * REVISION_REJECTED_PERCENT)
+        .then(|| format!("You rejected {rejected} of its last {judged} suggestions."))
 }
 
 /// Where a draft came from.

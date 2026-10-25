@@ -126,7 +126,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:fc8ba4f7b1131d0f4f62eae96ba2db0a13a3f126215244da9bf3dfddeb05aafb";
+    "sha256:0e26f27c13d526737360020c70ab580a103b6b2c65fab03eaca90d475194fba9";
 pub const CAPABILITY_SCOPE: &str = "pm.full";
 pub const METHODS: &[&str] = &[
     "pm_system_version",
@@ -2035,6 +2035,11 @@ pub struct PmSkill {
         deserialize_with = "deserialize_required_nullable"
     )]
     pub next_attempt_at_epoch_ms: Option<u64>,
+    #[serde(
+        rename = "revisionReason",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub revision_reason: Option<String>,
     #[serde(rename = "createdAtEpochMs")]
     pub created_at_epoch_ms: u64,
 }
@@ -2222,6 +2227,8 @@ pub struct PmSkillRunResult {
 pub struct PmSkillCreatorLaunchParams {
     #[serde(rename = "projectId")]
     pub project_id: String,
+    #[serde(rename = "skillId", skip_serializing_if = "Option::is_none")]
+    pub skill_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7233,6 +7240,12 @@ fn validate_pm_skill(value: &Value) -> bool {
                         && (number.as_u64().is_some_and(|number| number >= 0_u64))
                 }) || field.is_null())
             })
+            && object.get("revisionReason").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 300)
+                    || field.is_null())
+            })
             && object.get("createdAtEpochMs").is_some_and(|field| {
                 field.as_number().is_some_and(|number| {
                     (number.as_i64().is_some() || number.as_u64().is_some())
@@ -7255,6 +7268,7 @@ fn validate_pm_skill(value: &Value) -> bool {
                     "consecutiveFailures",
                     "pausedReason",
                     "nextAttemptAtEpochMs",
+                    "revisionReason",
                     "createdAtEpochMs",
                 ]
                 .contains(&key.as_str())
@@ -7833,9 +7847,15 @@ fn validate_pm_skill_creator_launch_params(value: &Value) -> bool {
                     && text.chars().count() <= 128
                     && contract_pattern_matches("^[!-~]+$", text)
             })
+        }) && object.get("skillId").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 128
+                    && contract_pattern_matches("^[!-~]+$", text)
+            })
         }) && object
             .keys()
-            .all(|key| ["projectId"].contains(&key.as_str()))
+            .all(|key| ["projectId", "skillId"].contains(&key.as_str()))
     })
 }
 

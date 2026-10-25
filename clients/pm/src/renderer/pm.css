@@ -328,6 +328,8 @@ h3.s .r { margin-left: auto; color: var(--dimmer); font: 400 10px/1 var(--font-m
 .skill-description { margin: 4px 0 0 21px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .skill-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; color: var(--dimmer); font: 10px/1.6 var(--font-mono); }
 .skill-row .skill-meta, .skill-row > .hint { margin-left: 21px; }
+.revision-offer { display: flex; align-items: center; gap: 10px; margin: 8px 0 0 21px; padding: 7px 10px; border: 1px solid rgba(217, 170, 95, .3); border-radius: 6px; background: rgba(217, 170, 95, .06); }
+.revision-offer p { flex: 1; margin: 0; color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
 .skills-panel .draft-card { max-width: none; margin: 10px 10px 0; padding: 12px 14px; }
 .skill-draft h3.skill-name { margin-top: 8px; font-size: 14px; }
 .skill-draft .draft-summary { color: var(--text-secondary); }

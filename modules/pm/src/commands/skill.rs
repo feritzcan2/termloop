@@ -11,13 +11,13 @@ use crate::skill::{
     PROJECT_SKILLS_MAX, SKILL_DRAFT_SAMPLES_MAX, SKILL_FEEDBACK_KEPT, SKILL_RUN_DEADLINE_MS,
     SKILL_RUN_SUMMARY_MAX_CHARS, SKILL_RUNS_KEPT, Skill, SkillDraft, SkillEvent, SkillFeedback,
     SkillManifest, SkillRun, SkillRunOutcome, SkillRunTrigger, SkillSample, bounded_line,
-    evidence_sources, valid_evidence,
+    evidence_sources, revision_reason, valid_evidence,
 };
 use crate::store::{
     SkillRecord, ToolApproval, approved_tools_ever, builtin_skill_record, draft_by_id, json_column,
     last_completed_skill_run, last_skill_run, launched_runs_since, project_checks, project_drafts,
-    project_skill_records, run_by_id, running_skill_runs, skill_feedback, skill_is_running,
-    skill_manifest, skill_proposal_count, skill_record, skill_runs, to_json,
+    project_skill_records, revision_verdicts, run_by_id, running_skill_runs, skill_feedback,
+    skill_is_running, skill_manifest, skill_proposal_count, skill_record, skill_runs, to_json,
 };
 use crate::validation::valid_label;
 use crate::{DeliveryCheckOutcome, PmError, PmStore, ProbeStatus, TicketProposal};
@@ -78,6 +78,7 @@ fn skill_view(connection: &Connection, record: SkillRecord, now: u64) -> Result<
         consecutive_failures: record.consecutive_failures,
         paused_reason: record.paused_reason,
         next_attempt_at_epoch_ms: record.next_attempt_at_epoch_ms,
+        revision_reason: None,
         created_at_epoch_ms: record.created_at_epoch_ms,
     };
     match skill.builtin {
@@ -110,6 +111,8 @@ fn skill_view(connection: &Connection, record: SkillRecord, now: u64) -> Result<
             skill.running = skill_is_running(connection, &skill.id)?;
             skill.runs_today = launched_runs_since(connection, &skill.id, day_start(now))?;
             skill.pending_suggestion_count = skill_proposal_count(connection, &skill.id)?;
+            skill.revision_reason = revision_verdicts(connection, &skill.id, skill.version)?
+                .and_then(|(judged, rejected)| revision_reason(judged, rejected));
         }
     }
     Ok(skill)
@@ -706,7 +709,17 @@ impl PmStore {
     pub fn skill_feedback(&self, skill_id: &str) -> Result<Vec<SkillFeedback>, PmError> {
         check_id(skill_id, "skillId")?;
         require_skill(self.connection(), skill_id)?;
-        skill_feedback(self.connection(), skill_id)
+        skill_feedback(self.connection(), skill_id, None)
+    }
+
+    /// The last verdicts on a version's suggestions, newest first.
+    pub fn skill_version_feedback(
+        &self,
+        skill_id: &str,
+        version: u32,
+    ) -> Result<Vec<SkillFeedback>, PmError> {
+        check_id(skill_id, "skillId")?;
+        skill_feedback(self.connection(), skill_id, Some(version))
     }
 
     /// Notes an event for every enabled skill of the project waiting for

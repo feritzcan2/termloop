@@ -983,6 +983,18 @@ async fn a_skill_with_nothing_new_records_a_skipped_run_without_an_agent() {
     assert_eq!(ran["skill"]["runsToday"], 0);
     assert_eq!(ran["skill"]["lastOutcome"], "skipped");
     assert_eq!(ran["skill"]["nextAttemptAtEpochMs"], Value::Null);
+    assert_eq!(ran["skill"]["revisionReason"], Value::Null);
+    // Revising needs a skill of the project; nothing launches otherwise.
+    assert_eq!(
+        call(
+            state,
+            "pm_skill_creator_launch",
+            json!({ "projectId": project_id, "skillId": "missing" })
+        )
+        .await,
+        Err(ErrorCode::NotFound)
+    );
+    assert!(state.agents.project_sessions(&project_id).is_empty());
     let suggestions = call(
         state,
         "pm_skill_suggestions_read",

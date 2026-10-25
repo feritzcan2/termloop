@@ -7,6 +7,7 @@ use termloop_launch::PromptTemplate;
 
 use super::PmAgentMode;
 use crate::delivery::risks::DAY_MS;
+use crate::skill::{Skill, SkillFeedback};
 use crate::{
     Board, DataTier, PmError, PmStore, Sprint, SprintState, Ticket, TicketDelivery, TicketNote,
     TicketNoteKind, TicketStatus, valid_id,
@@ -169,6 +170,17 @@ first. Then say in plain words what this project has and which tools are \
 ready, and offer 2 to 4 numbered skills that fit, each with what it would do \
 for the project manager and any tool it is missing. The project manager \
 answers with a number. Do not submit a draft before they answer.";
+
+/// The creator's first message when the project manager asks it to revise
+/// an installed skill.
+const SKILL_REVISE_KICKOFF: &str = "\
+Revise the installed skill below; do not offer new skills. Read its \
+manifest and what the project manager accepted and rejected, then say in at \
+most 8 lines what goes wrong and the changes you propose. When the project \
+manager agrees, submit the whole revised skill with pm_skill_draft_submit, \
+baseSkillId set to the skill's id and a changelog of one or two plain \
+sentences, then call pm_skill_dry_run_request. The project manager compares \
+the old and new versions on the draft card and installs it there.";
 
 /// The assistant's first message when the project manager asks it to bring
 /// one ticket's description up to date from its notes and sources.
@@ -523,6 +535,19 @@ impl PmAgentProfile {
         focus_ticket_id: Option<&str>,
         task: AssistantTask,
     ) -> Result<Self, PmError> {
+        Self::build_with(store, project_id, mode, focus_ticket_id, task, None)
+    }
+
+    /// Builds a profile; `revise` is the skill-under-revision section,
+    /// placed right after the mode's copy so the prompt bound never cuts it.
+    fn build_with(
+        store: &PmStore,
+        project_id: &str,
+        mode: PmAgentMode,
+        focus_ticket_id: Option<&str>,
+        task: AssistantTask,
+        revise: Option<String>,
+    ) -> Result<Self, PmError> {
         if task == AssistantTask::UpdateDescription
             && (mode != PmAgentMode::Assistant || focus_ticket_id.is_none())
         {
@@ -565,6 +590,9 @@ impl PmAgentProfile {
             tier_copy(board.tracking.tier).to_owned(),
             sprint_section(&board, store.now()),
         ];
+        if let Some(section) = revise {
+            sections.insert(2, section);
+        }
         if let Some(index) = focus {
             sections.push(focus_section(
                 &board.tickets[index],
@@ -602,6 +630,36 @@ impl PmAgentProfile {
             tools: mode.tools().to_vec(),
             external_tools: Vec::new(),
         })
+    }
+
+    /// The skill creator revising an installed skill: its manifest and the
+    /// project manager's recent verdicts follow the creator's prompt.
+    pub fn build_skill_reviser(
+        store: &PmStore,
+        project_id: &str,
+        skill_id: &str,
+    ) -> Result<Self, PmError> {
+        let skill = store
+            .skill(skill_id)?
+            .filter(|skill| skill.project_id == project_id)
+            .ok_or(PmError::NotFound)?;
+        if skill.builtin.is_some() {
+            return Err(PmError::Constraint("a built-in skill is not revised"));
+        }
+        let feedback = store.skill_version_feedback(skill_id, skill.version)?;
+        let mut profile = Self::build_with(
+            store,
+            project_id,
+            PmAgentMode::SkillCreator,
+            None,
+            AssistantTask::Brief,
+            Some(revise_section(&skill, &feedback)),
+        )?;
+        profile.first_message = Some(format!(
+            "{SKILL_REVISE_KICKOFF}\nThe skill to revise is {} ({}).",
+            skill.id, skill.manifest.name
+        ));
+        Ok(profile)
     }
 
     /// The profile of one skill run: the skill's approved instructions
@@ -683,4 +741,34 @@ fn installed_skills_section(store: &PmStore, project_id: &str) -> Result<String,
         ));
     }
     Ok(section)
+}
+
+/// The skill under revision: its manifest as the draft tool takes it, and
+/// the latest verdicts on what its current version suggested.
+fn revise_section(skill: &Skill, verdicts: &[SkillFeedback]) -> String {
+    let manifest = serde_json::to_string_pretty(&skill.manifest).unwrap_or_default();
+    let mut section = format!(
+        "Skill to revise: {} (id {}, version {}).\nIts manifest:\n{manifest}",
+        skill.manifest.name, skill.id, skill.version
+    );
+    if verdicts.is_empty() {
+        section.push_str("\nNo verdicts on this version yet.");
+        return section;
+    }
+    section.push_str("\nThe project manager's latest verdicts on its suggestions:");
+    for entry in verdicts {
+        section.push_str(&format!(
+            "\n- {} {} on ticket {}",
+            entry.outcome.as_str(),
+            entry.kind,
+            entry.ticket_id
+        ));
+        if !entry.sources.is_empty() {
+            section.push_str(&format!(" from {}", entry.sources.join(", ")));
+        }
+        if let Some(reason) = &entry.reason {
+            section.push_str(&format!(": {}", truncated(reason, 200).replace('\n', " ")));
+        }
+    }
+    section
 }
