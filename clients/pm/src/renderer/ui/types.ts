@@ -27,3 +27,6 @@ export type AgentTab = {
   /** What the session is about, e.g. its focus ticket. */
   detail: string;
 };
+
+/** How a description save ended: saved as `headVersion`, refused because a newer version exists, or failed with a notice. */
+export type DescriptionSaveOutcome = { kind: "saved"; headVersion: number } | { kind: "conflict" } | { kind: "failed" };

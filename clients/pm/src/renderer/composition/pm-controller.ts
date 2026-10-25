@@ -12,6 +12,7 @@ import type {
 } from "@termloop/pm-contract/pm";
 import type { PmApi, PmEvent, RendererMethod } from "../../pm-api.js";
 import type { PmState, PmStore, PmView } from "../state/presentation-store.js";
+import type { DescriptionSaveOutcome } from "../ui/types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -221,12 +222,20 @@ export class PmController {
     if (await this.call("pm_ticket_move", params)) await this.refreshBoard();
   }
 
-  async saveDescription(ticketId: string, description: string, baseVersion: number): Promise<boolean> {
-    const ticket = await this.call("pm_ticket_description_save", { ticketId, description, baseVersion });
-    if (!ticket) return false;
+  /** Saves on `baseVersion`; a newer saved version makes it a `conflict`, shown in the editor rather than as a notice. */
+  async saveDescription(ticketId: string, description: string, baseVersion: number): Promise<DescriptionSaveOutcome> {
+    const outcome = await this.bridge.call("pm_ticket_description_save", { ticketId, description, baseVersion });
+    if (!outcome.ok && outcome.error.code === "conflict") {
+      await this.refreshBoard();
+      return { kind: "conflict" };
+    }
+    if (!outcome.ok) {
+      this.#set({ notice: { tone: "error", text: outcome.error.message } });
+      return { kind: "failed" };
+    }
     await this.refreshBoard();
     if (this.state.versions[ticketId]) await this.loadVersions(ticketId);
-    return true;
+    return { kind: "saved", headVersion: outcome.result.versions?.headNumber ?? baseVersion + 1 };
   }
 
   async loadVersions(ticketId: string): Promise<void> {

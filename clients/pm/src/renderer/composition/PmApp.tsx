@@ -134,8 +134,9 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
             />
           ) : view === "ticket" && entry && ticketId ? (
             <TicketEditor
+              key={ticketId}
               entry={entry}
-              sprintName={sprints.find((candidate) => candidate.id === entry.ticket.sprintId)?.name}
+              sprints={sprints}
               tier={tier}
               jiraConfigured={jiraConfigured}
               deployTracking={board?.tracking.deploy ?? false}
@@ -143,6 +144,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
               versions={state.versions[ticketId]}
               now={now}
               onUpdate={(fields) => void controller.updateTicket(ticketId, fields)}
+              onMoveSprint={(sprintId) => void controller.moveTicket(ticketId, sprintId)}
               onSaveDescription={(description, base) => controller.saveDescription(ticketId, description, base)}
               onLoadVersions={() => void controller.loadVersions(ticketId)}
               onAddCriterion={(text) => void controller.addCriterion(ticketId, text)}
