@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PmProposal } from "@termloop/pm-contract/pm";
+import { relativeTime } from "./format.js";
 
 export type ProposalCardProps = {
   proposal: PmProposal;
@@ -7,37 +8,35 @@ export type ProposalCardProps = {
   current: string;
   /** The description version the agent drafted against. */
   headVersion: number;
+  now: number;
   onAccept(): void;
   onReject(): void;
 };
 
-/** An agent draft. Nothing changes until the PM accepts it. */
+/** An assistant draft. Nothing changes until the PM applies it. */
 export function ProposalCard(props: ProposalCardProps) {
-  const [showDiff, setShowDiff] = useState(false);
+  const [showDiff, setShowDiff] = useState(true);
   const change = props.proposal.change;
   const proposed = change.kind === "description" ? change.description : change.criteria.join("\n");
   const outdated = change.kind === "description" && props.proposal.baseVersion !== props.headVersion;
   return (
-    <section className="pm-proposal" aria-label="Agent proposal">
-      <div className="pm-proposal-head">
-        <span className="pm-pill proposal">Agent draft</span>
-        <span className="pm-proposal-kind">{change.kind === "description" ? "Description" : "Acceptance criteria"}</span>
-        <span className="pm-proposal-actions">
-          <button type="button" className="pm-button ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide diff" : "Diff"}</button>
-          <button type="button" className="pm-button" onClick={props.onReject}>Reject</button>
-          <button type="button" className="pm-button primary" onClick={props.onAccept}>Accept</button>
-        </span>
+    <section className="draft-card" aria-label="Agent proposal">
+      <div className="draft-head">
+        <span className="sec-label">Assistant draft</span>
+        <span className="meta">{change.kind === "description" ? "description" : "acceptance criteria"} · {relativeTime(props.proposal.createdAtEpochMs, props.now)}</span>
+        <span className="sp" />
+        <button type="button" className="btn sm ghost" onClick={() => setShowDiff(!showDiff)}>{showDiff ? "Hide changes" : "Show changes"}</button>
+        <button type="button" className="btn sm" onClick={props.onReject}>Dismiss</button>
+        <button type="button" className="btn sm pri" onClick={props.onAccept}>{change.kind === "description" ? `Apply as v${props.headVersion + 1}` : "Apply"}</button>
       </div>
-      <p className="pm-proposal-summary">{props.proposal.summary}</p>
-      {outdated && <p className="pm-hint">Drafted against version {props.proposal.baseVersion}; the description has changed since.</p>}
+      {props.proposal.summary && <p className="draft-summary">{props.proposal.summary}</p>}
+      {outdated && <p className="hint">Drafted against version {props.proposal.baseVersion}; the description has changed since.</p>}
       {showDiff && (
-        <pre className="pm-diff">
+        <div className="draft-diff">
           {lineDiff(props.current, proposed).map((line, index) => (
-            <span key={index} className={`pm-diff-line ${line.kind}`}>
-              {line.kind === "added" ? "+ " : line.kind === "removed" ? "- " : "  "}{line.text}{"\n"}
-            </span>
+            <div key={index} className={`diff-line ${line.kind}`}>{line.text || "\u00a0"}</div>
           ))}
-        </pre>
+        </div>
       )}
     </section>
   );

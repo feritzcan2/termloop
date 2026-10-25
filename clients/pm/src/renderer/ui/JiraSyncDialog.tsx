@@ -31,36 +31,36 @@ export function JiraSyncDialog(props: JiraSyncDialogProps) {
   const diff = dialog.diff;
   const result = dialog.result;
   return (
-    <div className="pm-modal-backdrop">
-      <div className="pm-modal" role="dialog" aria-label="Write to Jira">
-        <div className="pm-card-head">
-          <h3>Write to Jira{diff ? ` · ${diff.issueKey}` : ""}</h3>
-          <button type="button" className="pm-icon-button" aria-label="Close" onClick={props.onClose}>×</button>
+    <div className="modal-backdrop">
+      <div className="modal" role="dialog" aria-label="Write to Jira">
+        <div className="modal-head">
+          <b>Write to Jira</b>{diff && <span className="k">{diff.issueKey}</span>}<span className="sp" />
+          <button type="button" className="icb" aria-label="Close" onClick={props.onClose}>×</button>
         </div>
-        {dialog.loading && <p className="pm-hint">{diff ? "Writing…" : "Reading Jira…"}</p>}
-        {dialog.error && <p className="pm-error">{dialog.error}</p>}
+        {dialog.loading && <p className="hint">{diff ? "Writing…" : "Reading Jira…"}</p>}
+        {dialog.error && <p className="error">{dialog.error}</p>}
         {dialog.staleNotice && (
-          <p className="pm-warning" role="status">Jira changed since this diff was read. Review the updated changes below before applying.</p>
+          <p className="warning" role="status">Jira changed since this diff was read. Review the updated changes below before applying.</p>
         )}
-        {result?.kind === "applied" && <p className="pm-success">Written to Jira: {result.changes.length} change(s).</p>}
+        {result?.kind === "applied" && <p className="success">Written to Jira: {result.changes.length} change(s).</p>}
         {result?.kind === "failed" && (
-          <p className="pm-error">
+          <p className="error">
             {FAILURE_LABEL[result.reason]}{result.applied.length > 0 ? ` ${result.applied.length} change(s) were written before the failure.` : ""}
           </p>
         )}
         {diff && !result && (
-          diff.changes.length === 0 ? <p className="pm-hint">Jira already matches this ticket.</p> : (
-            <table className="pm-table pm-jira-diff">
+          diff.changes.length === 0 ? <p className="hint">Jira already matches this ticket.</p> : (
+            <table className="diff-table">
               <thead><tr><th>Field</th><th>In Jira</th><th>Will become</th></tr></thead>
               <tbody>{diff.changes.map((change, index) => <ChangeRow key={index} change={change} />)}</tbody>
             </table>
           )
         )}
-        {diff?.statusUnreachable && !result && <p className="pm-hint">The ticket's status has no Jira transition from the current state; status is left unchanged.</p>}
-        <div className="pm-card-foot">
-          <button type="button" className="pm-button ghost" onClick={props.onClose}>{result ? "Close" : "Cancel"}</button>
+        {diff?.statusUnreachable && !result && <p className="hint">The ticket's status has no Jira transition from the current state; status is left unchanged.</p>}
+        <div className="card-foot">
+          <button type="button" className="btn sm ghost" onClick={props.onClose}>{result ? "Close" : "Cancel"}</button>
           {!result && (
-            <button type="button" className="pm-button primary" disabled={!diff || dialog.loading || diff.changes.length === 0} onClick={props.onApply}>Apply</button>
+            <button type="button" className="btn sm pri" disabled={!diff || dialog.loading || diff.changes.length === 0} onClick={props.onApply}>Apply</button>
           )}
         </div>
       </div>
@@ -73,9 +73,9 @@ function ChangeRow({ change }: { change: PmJiraChange }) {
     case "summary":
       return <tr><td>Summary</td><td>{change.jira}</td><td>{change.ticket}</td></tr>;
     case "description":
-      return <tr><td>Description</td><td className="pm-pre">{change.jira ?? "—"}</td><td className="pm-pre">{change.ticket}</td></tr>;
+      return <tr><td>Description</td><td className="pre">{change.jira ?? "—"}</td><td className="pre">{change.ticket}</td></tr>;
     case "status":
-      return <tr><td>Status</td><td>{change.jira ?? "—"}</td><td>{change.toStatus} <span className="pm-muted">via “{change.transitionName}”</span></td></tr>;
+      return <tr><td>Status</td><td>{change.jira ?? "—"}</td><td>{change.toStatus} <span className="muted">via “{change.transitionName}”</span></td></tr>;
     case "sprint":
       return <tr><td>Sprint</td><td>{change.jiraSprintId ?? "—"}</td><td>{change.ticketSprintId ?? "Backlog"}</td></tr>;
   }

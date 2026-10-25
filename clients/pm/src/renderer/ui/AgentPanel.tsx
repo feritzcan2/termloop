@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import type { PmAgentState } from "@termloop/pm-contract/pm";
-import type { MountTerminal } from "./types.js";
+import { agentTone } from "./format.js";
+import type { AgentTab, MountTerminal } from "./types.js";
 
-export type AgentTab = { sessionId: string; label: string; state: PmAgentState; assistant: boolean };
+export type { AgentTab } from "./types.js";
 
 export type AgentPanelProps = {
   tabs: AgentTab[];
@@ -10,53 +10,39 @@ export type AgentPanelProps = {
   canStart: boolean;
   focusLabel: string | undefined;
   mountTerminal: MountTerminal;
-  onSelect(sessionId: string): void;
   onStop(sessionId: string): void;
   onStart(): void;
 };
 
-/** Running PM agents, one terminal at a time. Agent output is a draft. */
+/** The right-hand terminal pane: one agent at a time, picked in the sidebar. Agent output is a draft. */
 export function AgentPanel(props: AgentPanelProps) {
   const active = props.tabs.find((tab) => tab.sessionId === props.activeSessionId);
-  const assistantRunning = props.tabs.some((tab) => tab.assistant);
   return (
-    <aside className="pm-agent-panel" aria-label="Agents">
-      <div className="pm-agent-tabs" role="tablist">
-        {props.tabs.map((tab) => (
-          <button
-            type="button"
-            role="tab"
-            key={tab.sessionId}
-            aria-selected={tab.sessionId === props.activeSessionId}
-            className={tab.sessionId === props.activeSessionId ? "active" : ""}
-            onClick={() => props.onSelect(tab.sessionId)}
-          >
-            <span className={`pm-dot ${tab.state === "running" ? "ok" : "pending"}`} />
-            {tab.label}
-          </button>
-        ))}
-        {props.tabs.length > 0 && !assistantRunning && (
-          <button type="button" className="pm-icon-button" title="Start PM agent" disabled={!props.canStart} onClick={props.onStart}>+</button>
-        )}
+    <section className="pane agent-pane" aria-label="Agents">
+      <div className="pane-head">
+        {active && <span className={`pane-dot ${agentTone(active.state, active.assistant ? "assistant" : "deliveryCheck")}`} />}
+        <b>{active ? active.label : "Assistant"}</b>
+        <span className="meta">{active ? `${active.provider} · ${active.detail}` : "not running"}</span>
+        <span className="sp" />
+        {active
+          ? <button type="button" className="btn sm ghost" onClick={() => props.onStop(active.sessionId)}>Stop</button>
+          : props.tabs.length === 0 ? null : <span className="meta">{props.tabs.length} running</span>}
       </div>
       {active ? (
         <>
           <TerminalHost key={active.sessionId} sessionId={active.sessionId} mountTerminal={props.mountTerminal} />
-          <div className="pm-agent-foot">
-            <span className="pm-muted">Agent edits arrive as drafts on the ticket; nothing is written to Jira without you.</span>
-            <button type="button" className="pm-button" onClick={() => props.onStop(active.sessionId)}>Stop</button>
-          </div>
+          <div className="agent-foot">Edits arrive as drafts on the ticket. Nothing is written to Jira without you.</div>
         </>
       ) : (
-        <div className="pm-agent-empty">
-          <p>No agent is running.</p>
-          <p className="pm-hint">The PM agent reads this project's board and drafts descriptions, criteria, and probes for you to review.</p>
-          <button type="button" className="pm-button primary" disabled={!props.canStart} onClick={props.onStart}>
-            Start PM agent{props.focusLabel ? ` on ${props.focusLabel}` : ""}
+        <div className="agent-empty">
+          <p>No assistant is running.</p>
+          <p className="hint">The assistant reads this project's board and drafts descriptions, criteria and probes for you to review.</p>
+          <button type="button" className="btn pri" disabled={!props.canStart} onClick={props.onStart}>
+            Start assistant{props.focusLabel ? ` on ${props.focusLabel}` : ""}
           </button>
         </div>
       )}
-    </aside>
+    </section>
   );
 }
 

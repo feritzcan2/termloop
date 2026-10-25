@@ -1,7 +1,7 @@
 import type { PmTicketAuthor, PmTicketVersion } from "@termloop/pm-contract/pm";
 import { relativeTime } from "./format.js";
 
-const AUTHOR_LABEL: Record<PmTicketAuthor, string> = { pm: "PM", agent: "Agent", jira: "Jira" };
+const AUTHOR_LABEL: Record<PmTicketAuthor, string> = { pm: "you", agent: "assistant", jira: "jira" };
 const AUTHOR_TITLE: Record<PmTicketAuthor, string> = {
   pm: "Saved by the project manager",
   agent: "An agent proposal the project manager accepted",
@@ -18,22 +18,19 @@ export type VersionsListProps = {
 
 /** The description history, newest first. Restoring only fills the editor. */
 export function VersionsList(props: VersionsListProps) {
-  if (!props.versions) return <p className="pm-hint">Loading versions…</p>;
-  if (props.versions.length === 0) return <p className="pm-hint">No saved versions yet.</p>;
+  if (!props.versions) return <p className="hint">Loading versions…</p>;
+  if (props.versions.length === 0) return <p className="hint">No saved versions yet.</p>;
   const versions = [...props.versions].sort((left, right) => right.number - left.number);
   return (
-    <ol className="pm-versions" aria-label="Description versions">
+    <ol className="versions" aria-label="Description versions">
       {versions.map((version) => (
         <li key={version.number}>
-          <div className="pm-version-head">
-            <span className="pm-mono">v{version.number}</span>
-            <span className={`pm-pill author-${version.author}`} title={AUTHOR_TITLE[version.author]}>{AUTHOR_LABEL[version.author]}</span>
-            <time className="pm-muted" dateTime={new Date(version.recordedAtEpochMs).toISOString()} title={TIME.format(version.recordedAtEpochMs)}>
-              {TIME.format(version.recordedAtEpochMs)} · {relativeTime(version.recordedAtEpochMs, props.now)}
-            </time>
-            <button type="button" className="pm-button ghost small" onClick={() => props.onRestore(version.description)}>Load into editor</button>
-          </div>
-          <p className="pm-version-text">{version.description.slice(0, 280) || <em>Empty</em>}</p>
+          <b>v{version.number}</b>
+          <span className="version-text" title={version.description}>{version.description.split("\n", 1)[0]!.slice(0, 160) || <em>Empty</em>}</span>
+          <button type="button" className="btn sm ghost restore" onClick={() => props.onRestore(version.description)}>Load into editor</button>
+          <time dateTime={new Date(version.recordedAtEpochMs).toISOString()} title={`${AUTHOR_TITLE[version.author]} · ${TIME.format(version.recordedAtEpochMs)}`}>
+            {AUTHOR_LABEL[version.author]} · {relativeTime(version.recordedAtEpochMs, props.now)}
+          </time>
         </li>
       ))}
     </ol>

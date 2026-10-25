@@ -51,20 +51,22 @@ describe("data tiers", () => {
   it("hides the ticket stage pill below the code tier", () => {
     const container = sidebar("tickets");
     expect(container.querySelector('[data-testid="stage-pill"]')).toBeNull();
-    expect(container.textContent).toContain("SHOP-7 · ada");
-    expect(container.textContent).toContain("↻2");
-    expect(container.textContent).toContain("checking…");
+    const row = container.querySelector(".pm-ticket-item .row")!;
+    expect(row.querySelector(".key")?.textContent).toBe("SHOP-7");
+    expect(row.querySelector(".who")?.textContent).toBe("ada");
+    expect(row.textContent).toContain("carried over ×2");
+    expect(row.textContent).toContain("checking…");
   });
 
   it("shows the stage pill from the code tier up", () => {
-    expect(sidebar("code").querySelector('[data-testid="stage-pill"]')?.textContent).toContain("Merged");
+    expect(sidebar("code").querySelector('[data-testid="stage-pill"]')?.textContent).toContain("merged");
   });
 
   it("shows where-it-runs only at the deploy tier", () => {
-    expect(overview("tickets").textContent).not.toContain("Where it runs is unknown");
-    expect(overview("code").textContent).not.toContain("Where it runs is unknown");
+    expect(overview("tickets").textContent).not.toContain("Where it is running");
+    expect(overview("code").textContent).not.toContain("Where it is running");
     const deploy = overview("deploy");
-    expect(deploy.textContent).toContain("Where it runs is unknown");
-    expect(deploy.textContent).toContain("Needs attention");
+    expect(deploy.textContent).toContain("Where it is running");
+    expect(deploy.textContent).toContain("Needs your attention");
   });
 });

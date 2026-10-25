@@ -7,15 +7,15 @@ import type { PmApi } from "../../pm-api.js";
 import { usePmState, type PmState } from "../state/presentation-store.js";
 import { mountAgentTerminal } from "../terminal/agent-terminal.js";
 import { xtermSurface } from "../terminal/xterm-surface.js";
-import { AgentPanel, type AgentTab } from "../ui/AgentPanel.js";
-import { Header } from "../ui/Header.js";
+import { AgentPanel } from "../ui/AgentPanel.js";
 import { JiraSyncDialog } from "../ui/JiraSyncDialog.js";
 import { SettingsPage } from "../ui/SettingsPage.js";
+import { Sidebar } from "../ui/Sidebar.js";
 import { SprintOverview } from "../ui/SprintOverview.js";
-import { SprintSidebar } from "../ui/SprintSidebar.js";
+import { StageTabs, type StageTab } from "../ui/StageTabs.js";
 import { TicketEditor } from "../ui/TicketEditor.js";
-import { sprintTickets, ticketLabel } from "../ui/format.js";
-import type { MountTerminal } from "../ui/types.js";
+import { lastJiraPull, sprintTickets, ticketLabel } from "../ui/format.js";
+import type { AgentTab, MountTerminal } from "../ui/types.js";
 import type { PmController } from "./pm-controller.js";
 
 const EMPTY: never[] = [];
@@ -47,54 +47,73 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
   const entry = allTickets.find((candidate) => candidate.ticket.id === state.selectedTicketId);
   const project = state.projects.find((candidate) => candidate.id === state.projectId);
   const jiraConfigured = Boolean(state.sources?.jira) || Boolean(board?.tracking.jira);
-  const tabs: AgentTab[] = state.agents.map((session) => ({
+  const agents: AgentTab[] = state.agents.map((session) => ({
     sessionId: session.sessionId,
     state: session.state,
     assistant: session.mode === "assistant",
-    label: session.mode === "assistant" ? "PM agent" : `Check · ${checkLabel(allTickets, session.focusTicketId)}`,
+    provider: session.provider,
+    label: session.mode === "assistant" ? "Assistant" : `Check ${checkLabel(allTickets, session.focusTicketId)}`,
+    detail: session.mode === "assistant"
+      ? (session.focusTicketId ? checkLabel(allTickets, session.focusTicketId) : sprint?.name.toLowerCase() ?? "project")
+      : "delivery check",
   }));
   const ticketId = entry?.ticket.id;
+  const view = state.view === "ticket" && !entry ? "overview" : state.view;
+  const stageTabs: StageTab[] = [
+    { view: "overview", label: sprint ? `${sprint.name} overview` : "Overview" },
+    ...(entry ? [{
+      view: "ticket" as const,
+      label: `${ticketLabel(entry.ticket)} · ${entry.ticket.title}`,
+      draft: entry.pendingProposalCount > 0 || (state.proposals[entry.ticket.id]?.length ?? 0) > 0,
+    }] : []),
+    { view: "settings", label: "Settings" },
+  ];
 
   return (
-    <div className="pm-app">
-      <Header
+    <div className="shell">
+      <Sidebar
         projects={state.projects}
         projectId={state.projectId}
-        view={state.view}
-        ticketSelected={Boolean(entry)}
-        jira={{ configured: jiraConfigured, status: jiraStatus(state) }}
+        hasProject={Boolean(project)}
+        view={view}
+        jira={{ configured: jiraConfigured, status: jiraStatus(state), lastPullEpochMs: lastJiraPull(sprints, allTickets) }}
         pulling={state.pulling}
+        now={now}
+        sprints={sprints}
+        tickets={allTickets}
+        sprintTickets={tickets}
+        tier={tier}
+        selectedSprintId={state.selectedSprintId}
+        selectedTicketId={state.selectedTicketId}
+        agents={agents}
+        activeAgentSessionId={state.activeAgentSessionId}
         onSelectProject={(id) => void controller.selectProject(id)}
         onCreateProject={(name) => void controller.createProject(name)}
-        onView={(view) => controller.setView(view)}
+        onView={(next) => controller.setView(next)}
         onPull={() => void controller.pullJira()}
+        onStartAssistant={() => void controller.launchAgent(view === "ticket" ? ticketId : undefined)}
+        onSelectAgent={(id) => controller.selectAgent(id)}
+        onSelectSprint={(id) => controller.selectSprint(id)}
+        onSelectTicket={(id) => void controller.selectTicket(id)}
+        onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
+        onCreateTicket={(title) => void controller.createTicket(title)}
+        onMoveTicket={(id, sprintId, index) => void controller.moveTicket(id, sprintId, index)}
       />
-      {state.notice && (
-        <div className={`pm-notice ${state.notice.tone}`} role={state.notice.tone === "error" ? "alert" : "status"}>
-          <span>{state.notice.text}</span>
-          <button type="button" className="pm-icon-button" aria-label="Dismiss" onClick={() => controller.dismissNotice()}>×</button>
-        </div>
-      )}
-      <div className="pm-body">
-        <SprintSidebar
-          sprints={sprints}
-          tickets={allTickets}
-          tier={tier}
-          selectedSprintId={state.selectedSprintId}
-          selectedTicketId={state.selectedTicketId}
-          onSelectSprint={(id) => controller.selectSprint(id)}
-          onSelectTicket={(id) => void controller.selectTicket(id)}
-          onCreateSprint={(name, goal) => void controller.createSprint(name, goal)}
-          onCreateTicket={(title) => void controller.createTicket(title)}
-          onMoveTicket={(ticketId, sprintId, index) => void controller.moveTicket(ticketId, sprintId, index)}
-        />
-        <main className="pm-center">
+      <main className="stage">
+        <StageTabs tabs={stageTabs} view={view} onView={(next) => controller.setView(next)} />
+        {state.notice && (
+          <div className={`notice ${state.notice.tone}`} role={state.notice.tone === "error" ? "alert" : "status"}>
+            <span>{state.notice.text}</span>
+            <button type="button" className="icb" aria-label="Dismiss" onClick={() => controller.dismissNotice()}>×</button>
+          </div>
+        )}
+        <div className={`panes ${view === "settings" || !project ? "single" : ""}`}>
           {!project ? (
-            <section className="pm-empty">
-              <h2>Welcome to TermLoop PM</h2>
-              <p className="pm-hint">Create a project with the + next to the project name to start planning.</p>
+            <section className="pane">
+              <div className="pane-head"><b>Welcome to TermLoop PM</b></div>
+              <div className="body empty-state"><p className="lead">Create a project from the project picker in the sidebar to start planning.</p></div>
             </section>
-          ) : state.view === "settings" ? (
+          ) : view === "settings" ? (
             <SettingsPage
               projectName={project.name}
               settings={state.settings}
@@ -113,7 +132,7 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
               onRejectProbe={(id) => void controller.rejectProbe(id)}
               onDeleteProbe={(id) => void controller.deleteProbe(id)}
             />
-          ) : state.view === "ticket" && entry && ticketId ? (
+          ) : view === "ticket" && entry && ticketId ? (
             <TicketEditor
               entry={entry}
               sprintName={sprints.find((candidate) => candidate.id === entry.ticket.sprintId)?.name}
@@ -151,18 +170,19 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
               onClose={(id, carryOverTo) => void controller.closeSprint(id, carryOverTo)}
             />
           )}
-        </main>
-        <AgentPanel
-          tabs={tabs}
-          activeSessionId={state.activeAgentSessionId}
-          canStart={Boolean(project)}
-          focusLabel={entry ? ticketLabel(entry.ticket) : undefined}
-          mountTerminal={mountTerminal}
-          onSelect={(id) => controller.selectAgent(id)}
-          onStop={(id) => void controller.stopAgent(id)}
-          onStart={() => void controller.launchAgent(state.view === "ticket" ? ticketId : undefined)}
-        />
-      </div>
+          {project && view !== "settings" && (
+            <AgentPanel
+              tabs={agents}
+              activeSessionId={state.activeAgentSessionId}
+              canStart={Boolean(project)}
+              focusLabel={view === "ticket" && entry ? ticketLabel(entry.ticket) : undefined}
+              mountTerminal={mountTerminal}
+              onStop={(id) => void controller.stopAgent(id)}
+              onStart={() => void controller.launchAgent(view === "ticket" ? ticketId : undefined)}
+            />
+          )}
+        </div>
+      </main>
       {state.jiraDialog && (
         <JiraSyncDialog dialog={state.jiraDialog} onApply={() => void controller.applyJira()} onClose={() => controller.closeJiraDialog()} />
       )}
@@ -172,15 +192,15 @@ function Workspace({ controller, state, now, mountTerminal }: { controller: PmCo
 
 function ConnectionScreen({ connection }: { connection: PmState["connection"] }) {
   return (
-    <div className="pm-app pm-connection">
-      <div className="pm-connection-card">
-        <h1>TermLoop PM</h1>
+    <div className="connection">
+      <div className="connection-card">
+        <div className="brand"><span className="logo" /><b>TermLoop PM</b></div>
         {connection.state === "failed" ? (
           <>
-            <p className="pm-error">Could not reach the PM daemon.</p>
-            <pre className="pm-pre">{connection.message}</pre>
+            <p className="error">Could not reach the PM daemon.</p>
+            <pre className="pre">{connection.message}</pre>
           </>
-        ) : <p className="pm-hint">Starting the PM daemon…</p>}
+        ) : <p className="hint">Starting the PM daemon…</p>}
       </div>
     </div>
   );

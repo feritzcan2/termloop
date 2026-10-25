@@ -18,11 +18,11 @@ describe("sprint overview", () => {
       <SprintOverview sprint={sprint()} sprints={[sprint()]} tickets={[risky, boardTicket({ id: "t2" })]} tier="tickets"
         digest={[]} now={0} onOpenTicket={noop} onActivate={noop} onClose={noop} />,
     );
-    const rows = container.querySelectorAll(".pm-table tbody tr");
+    const rows = container.querySelectorAll(".attn-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain("Merged 3 days ago; No change for 5 days");
-    const atRisk = [...container.querySelectorAll(".pm-counter")].find((counter) => counter.textContent?.includes("At risk"));
-    expect(atRisk?.querySelector(".pm-counter-value")?.textContent).toBe("1");
+    const heading = [...container.querySelectorAll("h3")].find((element) => element.textContent?.startsWith("Needs your attention"));
+    expect(heading?.querySelector("small")?.textContent).toBe("1 ticket");
     unmount();
   });
 
